@@ -28,14 +28,6 @@
     "count": 1
   },
   {
-    "name": "packages/core/src/offline.ts :: Effect.logInfo(\"offline mode ACTIVE — HTTP restricted to loopback + provider hosts\")",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/offline.ts :: Effect.logWarning(\"offline mode blocked outbound request\")",
-    "count": 1
-  },
-  {
     "name": "packages/core/src/reference.ts :: Effect.logWarning(\"failed to materialize reference\")",
     "count": 1
   },

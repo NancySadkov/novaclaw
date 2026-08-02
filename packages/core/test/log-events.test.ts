@@ -600,6 +600,29 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("filesystem.search.init.failed")).toBe(false)
   })
 
+  test("offline-policy events preserve host context without putting it on the maintenance plane", () => {
+    const [active] = lines(
+      Log.event("offline.policy.activate", {
+        "offline.policy.hosts": '["private-model.example"]',
+      }),
+    )
+    const [blocked] = lines(
+      Log.event("offline.request.blocked", {
+        "offline.request.url": "https://private.example/prompt",
+        "offline.request.host": "private.example",
+      }),
+    )
+    expect(active).toContain("event=offline.policy.activate")
+    expect(active).toContain('message="offline mode ACTIVE — HTTP restricted to loopback + provider hosts"')
+    expect(active).toContain("offline.policy.hosts=")
+    expect(blocked).toContain("event=offline.request.blocked")
+    expect(blocked).toContain('message="offline mode blocked outbound request"')
+    expect(blocked).toContain("offline.request.url=https://private.example/prompt")
+    expect(blocked).toContain("offline.request.host=private.example")
+    expect(mayEgress("offline.policy.activate")).toBe(false)
+    expect(mayEgress("offline.request.blocked")).toBe(false)
+  })
+
   test("PTY lifecycle fields stay structured and command content stays local", () => {
     const [created] = lines(
       Log.event("pty.session.create", {
@@ -620,7 +643,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("pty.session.exit")).toBe(true)
   })
 
-  test("an UN-keyed record is untouched — the 40 remaining call sites are not affected", () => {
+  test("an UN-keyed record is untouched — the 38 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))

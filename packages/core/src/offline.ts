@@ -33,6 +33,7 @@ import path from "path"
 import { Context, Effect, Layer } from "effect"
 import { HttpClient, HttpClientError } from "effect/unstable/http"
 import { EgressBlocked } from "@novaclaw/llm"
+import { Log } from "@novaclaw/schema/log"
 import { parse } from "jsonc-parser"
 import { readRowsSync } from "#sqlite"
 import { DatabasePath } from "./database/db-path"
@@ -355,8 +356,8 @@ const makeService = (source: PolicySource) =>
     builds++
     const policy = installPolicy(source)
     if (policy.enabled)
-      yield* Effect.logInfo("offline mode ACTIVE — HTTP restricted to loopback + provider hosts", {
-        allowedHosts: [...policy.allowedHosts],
+      yield* Log.event("offline.policy.activate", {
+        "offline.policy.hosts": JSON.stringify([...policy.allowedHosts]),
       })
     return Service.of({
       // A getter over the live ref, NOT the policy captured above: every method below reads the
@@ -393,9 +394,9 @@ export function guard(client: HttpClient.HttpClient, offline: Interface): HttpCl
     // Log every block server-side: consumers may wrap/flatten the typed error
     // (the LLM RequestExecutor keeps only the reason tag), so the log line is
     // where an operator reliably sees WHAT was refused and why.
-    return Effect.logWarning("offline mode blocked outbound request", {
-      url: request.url,
-      host: verdict.host,
+    return Log.event("offline.request.blocked", {
+      "offline.request.url": request.url,
+      "offline.request.host": verdict.host,
     }).pipe(Effect.andThen(
       Effect.fail(
         new HttpClientError.HttpClientError({

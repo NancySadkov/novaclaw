@@ -94,6 +94,7 @@ export const SUBSYSTEMS = {
   llm: "Model protocols",
   messenger: "Messenger",
   mcp: "MCP servers",
+  offline: "Offline mode",
   patch: "File changes",
   plugin: "Plugins",
   pty: "Terminal sessions",
@@ -754,6 +755,24 @@ export const EVENTS = {
     attributes: { directory: "path", "mcp.cause": "fault" },
     content: "user",
     file: "packages/novaclaw/src/mcp/external-tool-source.ts",
+  },
+
+  // ── offline ───────────────────────────────────────────────────────────────────────────────────
+  /** Offline mode engaged its HTTP allowlist policy. */
+  "offline.policy.activate": {
+    level: "info",
+    message: "offline mode ACTIVE — HTTP restricted to loopback + provider hosts",
+    attributes: { "offline.policy.hosts": "text" },
+    content: "user",
+    file: "packages/core/src/offline.ts",
+  },
+  /** Offline mode refused a non-allowlisted outbound HTTP request. */
+  "offline.request.blocked": {
+    level: "warn",
+    message: "offline mode blocked outbound request",
+    attributes: { "offline.request.url": "text", "offline.request.host": "text" },
+    content: "user",
+    file: "packages/core/src/offline.ts",
   },
 
   // ── patch ─────────────────────────────────────────────────────────────────────────────────────
