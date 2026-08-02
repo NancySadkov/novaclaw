@@ -758,6 +758,38 @@ export const EVENTS = {
   },
 
   // ── plugin ────────────────────────────────────────────────────────────────────────────────────
+  /** One plugin event handler failed; its subscription continues. */
+  "plugin.event.delivery.failed": {
+    level: "error",
+    message: "Plugin event handler failed",
+    attributes: { "plugin.event.type": "id", "plugin.event.id": "id", "plugin.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/plugin/host.ts",
+  },
+  /** A subscriber's bounded event queue was full, so one event was dropped. */
+  "plugin.event.dropped": {
+    level: "warn",
+    message: "Plugin event dropped — subscriber buffer full",
+    attributes: { "plugin.event.type": "id", "plugin.event.id": "id", "plugin.event.capacity": "count" },
+    content: "none",
+    file: "packages/core/src/plugin/host.ts",
+  },
+  /** A plugin event subscription stopped outside normal interruption. */
+  "plugin.event.subscription.stopped": {
+    level: "error",
+    message: "Plugin event subscription stopped",
+    attributes: { "plugin.event.type": "id", "plugin.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/plugin/host.ts",
+  },
+  /** A plugin subscribed to a public event that the kernel bus cannot publish. */
+  "plugin.event.subscription.unsupported": {
+    level: "warn",
+    message: "Plugin subscribed to an event type the kernel never publishes",
+    attributes: { "plugin.event.type": "id" },
+    content: "none",
+    file: "packages/core/src/plugin/host.ts",
+  },
   /** One external plugin could not be imported or decoded; its peers remain available. */
   "plugin.external.load.failed": {
     level: "warn",

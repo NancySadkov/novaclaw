@@ -52,22 +52,6 @@
     "count": 1
   },
   {
-    "name": "packages/core/src/plugin/host.ts :: Effect.logError(\"Plugin event handler failed\")",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/plugin/host.ts :: Effect.logError(\"Plugin event subscription stopped\")",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/plugin/host.ts :: Effect.logWarning(\"Plugin event dropped — subscriber buffer full\")",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/plugin/host.ts :: Effect.logWarning(\"Plugin subscribed to an event type the kernel never publishes\")",
-    "count": 1
-  },
-  {
     "name": "packages/core/src/pty.ts :: Effect.logInfo(\"client attached to session\")",
     "count": 1
   },

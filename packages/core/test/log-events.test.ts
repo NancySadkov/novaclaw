@@ -525,7 +525,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("filesystem.watcher.resubscribe.stale")).toBe(false)
   })
 
-  test("an UN-keyed record is untouched — the 59 remaining call sites are not affected", () => {
+  test("an UN-keyed record is untouched — the 55 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))

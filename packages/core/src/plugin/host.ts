@@ -2,6 +2,7 @@ export * as PluginHost from "./host"
 
 import type { EventMap, EventType, PluginContext as Interface } from "@novaclaw/plugin/v2/effect"
 import { EventManifest } from "@novaclaw/schema/event-manifest"
+import { Log } from "@novaclaw/schema/log"
 import { Cause, Effect, Queue, Schema, Scope, Stream } from "effect"
 import { AgentV2 } from "../agent"
 import { Catalog } from "../catalog"
@@ -52,7 +53,12 @@ const isolate = (type: string, event: PublicEvent, handler: (event: PublicEvent)
   Effect.suspend(() => handler(event)).pipe(
     Effect.catchCauseIf(
       (cause) => !Cause.hasInterrupts(cause),
-      (cause) => Effect.logError("Plugin event handler failed", { eventType: type, eventID: event.id, cause }),
+      (cause) =>
+        Log.event("plugin.event.delivery.failed", {
+          "plugin.event.type": type,
+          "plugin.event.id": event.id,
+          "plugin.cause": Cause.pretty(cause),
+        }),
     ),
   )
 
@@ -75,7 +81,7 @@ const subscribeEvents = Effect.fn("PluginHost.event.subscribe")(function* (
   // Registering silently would leave the plugin deaf with no way to find out — ruling 2: a
   // fault is never described falsely.
   if (EventManifest.Latest.get(type) === undefined) {
-    yield* Effect.logWarning("Plugin subscribed to an event type the kernel never publishes", { eventType: type })
+    yield* Log.event("plugin.event.subscription.unsupported", { "plugin.event.type": type })
   }
 
   const scope = yield* Scope.Scope
@@ -98,10 +104,10 @@ const subscribeEvents = Effect.fn("PluginHost.event.subscribe")(function* (
       Effect.flatMap((accepted) =>
         accepted
           ? Effect.void
-          : Effect.logWarning("Plugin event dropped — subscriber buffer full", {
-              eventType: type,
-              eventID: payload.id,
-              capacity: eventBufferCapacity,
+          : Log.event("plugin.event.dropped", {
+              "plugin.event.type": type,
+              "plugin.event.id": payload.id,
+              "plugin.event.capacity": eventBufferCapacity,
             }),
       ),
     )
@@ -122,7 +128,11 @@ const subscribeEvents = Effect.fn("PluginHost.event.subscribe")(function* (
     // subscription and the plugin runs deaf forever). If anything still escapes, SAY SO.
     Effect.catchCauseIf(
       (cause) => !Cause.hasInterrupts(cause),
-      (cause) => Effect.logError("Plugin event subscription stopped", { eventType: type, cause }),
+      (cause) =>
+        Log.event("plugin.event.subscription.stopped", {
+          "plugin.event.type": type,
+          "plugin.cause": Cause.pretty(cause),
+        }),
     ),
     Effect.forkIn(scope),
   )
