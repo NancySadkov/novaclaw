@@ -17,6 +17,7 @@ interface MockClientState {
   instructions?: string
   tools: Array<{ name: string; description?: string; inputSchema: object; outputSchema?: object }>
   listToolsCalls: number
+  listToolsTimeout?: number
   listPromptsCalls: number
   listResourcesCalls: number
   listResourceTemplatesCalls: number
@@ -201,8 +202,9 @@ void mock.module("@modelcontextprotocol/sdk/client/index.js", () => ({
       return this._state?.instructions
     }
 
-    async listTools(params?: { cursor?: string }) {
+    async listTools(params?: { cursor?: string }, options?: { timeout?: number }) {
       if (this._state) this._state.listToolsCalls++
+      if (this._state) this._state.listToolsTimeout = options?.timeout
       if (this._state?.listToolsShouldFail) {
         throw new Error(this._state.listToolsError)
       }
@@ -952,8 +954,27 @@ it.instance(
         yield* mcp.getPrompt("timeout-server", "test")
         yield* mcp.readResource("timeout-server", "test://resource")
 
+        expect(serverState.listToolsTimeout).toBe(2500)
         expect(serverState.getPromptTimeout).toBe(2500)
         expect(serverState.readResourceTimeout).toBe(2500)
+      }),
+    ),
+  { config: { mcp: { timeout: { request: 5000 } } } },
+)
+
+it.instance(
+  "uses the global request timeout when a server has no override",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        lastCreatedClientName = "global-timeout-server"
+        const serverState = getOrCreateClientState("global-timeout-server")
+
+        yield* mcp.add("global-timeout-server", { type: "local", command: ["echo", "test"] })
+        yield* mcp.getPrompt("global-timeout-server", "test")
+
+        expect(serverState.listToolsTimeout).toBe(5000)
+        expect(serverState.getPromptTimeout).toBe(5000)
       }),
     ),
   { config: { mcp: { timeout: { request: 5000 } } } },
@@ -1155,6 +1176,10 @@ it.instance(
         // No tools should be available
         const tools = yield* mcp.tools()
         expect(Object.keys(tools).length).toBe(0)
+
+        const reconnect = yield* mcp.connect("fail-connect")
+        expect(reconnect.status).toBe("failed")
+        if (reconnect.status === "failed") expect(reconnect.error).toContain("Connection refused")
       }),
     ),
   {
@@ -1260,7 +1285,7 @@ it.instance(
         const addResult = yield* mcp.add("hanging-server", {
           type: "local",
           command: ["node", "fake.js"],
-          timeout: { request: 100 },
+          timeout: { startup: 100, request: 5000 },
         })
 
         const serverStatus = (addResult.status as any)["hanging-server"] ?? addResult.status
@@ -1271,6 +1296,31 @@ it.instance(
       }),
     ),
   { config: { mcp: {} } },
+)
+
+it.instance(
+  "global startup timeout bounds a server without an override",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        lastCreatedClientName = "global-hanging-server"
+        getOrCreateClientState("global-hanging-server")
+        connectShouldHang = true
+        const started = Date.now()
+
+        const addResult = yield* mcp.add("global-hanging-server", {
+          type: "local",
+          command: ["node", "fake.js"],
+          timeout: { request: 5000 },
+        })
+
+        const serverStatus = (addResult.status as any)["global-hanging-server"] ?? addResult.status
+        expect(serverStatus.status).toBe("failed")
+        expect(Date.now() - started).toBeLessThan(1000)
+        expect(transportCloseCount).toBeGreaterThanOrEqual(1)
+      }),
+    ),
+  { config: { mcp: { timeout: { startup: 100 } } } },
 )
 
 // ========================================================================
@@ -1289,7 +1339,7 @@ it.instance(
         const addResult = yield* mcp.add("hanging-remote", {
           type: "remote",
           url: "http://localhost:9999/mcp",
-          timeout: { request: 100 },
+          timeout: { startup: 100, request: 5000 },
           oauth: false,
         })
 

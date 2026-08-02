@@ -73,7 +73,7 @@ export const mcpHandlers = HttpApiBuilder.group(InstanceHttpApi, "mcp", (handler
     })
 
     const connect = Effect.fn("McpHttpApi.connect")(function* (ctx: { params: { name: string } }) {
-      yield* mcp
+      return yield* mcp
         .connect(ctx.params.name)
         .pipe(
           Effect.catchTag("MCP.NotFoundError", (error) =>
@@ -82,7 +82,6 @@ export const mcpHandlers = HttpApiBuilder.group(InstanceHttpApi, "mcp", (handler
             ),
           ),
         )
-      return true
     })
 
     const disconnect = Effect.fn("McpHttpApi.disconnect")(function* (ctx: { params: { name: string } }) {

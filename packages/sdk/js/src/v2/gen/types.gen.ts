@@ -8427,9 +8427,9 @@ export type McpConnectError = McpConnectErrors[keyof McpConnectErrors]
 
 export type McpConnectResponses = {
   /**
-   * MCP server connected successfully
+   * MCP server connection status
    */
-  200: boolean
+  200: McpStatus
 }
 
 export type McpConnectResponse = McpConnectResponses[keyof McpConnectResponses]

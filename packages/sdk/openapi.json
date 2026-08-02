@@ -3813,12 +3813,11 @@
         ],
         "responses": {
           "200": {
-            "description": "MCP server connected successfully",
+            "description": "MCP server connection status",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "boolean",
-                  "description": "MCP server connected successfully"
+                  "$ref": "#/components/schemas/MCPStatus"
                 }
               }
             }

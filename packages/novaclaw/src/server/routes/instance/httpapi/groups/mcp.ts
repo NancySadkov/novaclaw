@@ -117,7 +117,7 @@ export const McpApi = HttpApi.make("mcp")
         HttpApiEndpoint.post("connect", McpPaths.connect, {
           params: { name: Schema.String },
           query: WorkspaceRoutingQuery,
-          success: described(Schema.Boolean, "MCP server connected successfully"),
+          success: described(MCP.Status, "MCP server connection status"),
           error: McpServerNotFoundError,
         }).annotateMerge(
           OpenApi.annotations({
