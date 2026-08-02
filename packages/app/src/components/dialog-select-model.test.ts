@@ -60,4 +60,9 @@ describe("add-model provider order", () => {
     expect(presets).toBeGreaterThan(-1)
     expect(custom).toBeLessThan(presets)
   })
+
+  test("the usable dialog mounts before provider discovery settles", () => {
+    expect(newModel).not.toContain("createResource")
+    expect(newModel).toMatch(/onMount\(\(\) => \{[\s\S]{0,300}providerPresets\(/)
+  })
 })

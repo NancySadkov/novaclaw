@@ -107,6 +107,10 @@ export interface InstanceRequest {
   /** `undefined` values are skipped, so callers stop writing `...(x ? { k: v } : {})`. */
   readonly query?: Record<string, string | undefined>
   readonly headers?: Record<string, string>
+  /** Abort this request when the owning view disappears. Transport failures stay unwrapped. */
+  readonly signal?: AbortSignal
+  /** Optional wall-clock bound covering the response body as well as the initial fetch. */
+  readonly timeoutMs?: number
   /**
    * Test seam, and the hook a future platform-fetch fix would use. ⚠️ All ten of this app's raw
    * clients call the GLOBAL fetch, while `server-health.ts` routes through `platform.fetch`
@@ -135,6 +139,26 @@ const FAULT_TEXT_LIMIT = 500
  * the signature makes the default and the injected override interchangeable in both directions.
  */
 type Send = (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+
+function requestAbort(request: InstanceRequest) {
+  if (request.timeoutMs === undefined) return { signal: request.signal, clear: () => undefined }
+
+  const controller = new AbortController()
+  const relay = () => controller.abort(request.signal?.reason)
+  if (request.signal?.aborted) relay()
+  if (!request.signal?.aborted) request.signal?.addEventListener("abort", relay, { once: true })
+  const timer = setTimeout(
+    () => controller.abort(new DOMException("Instance request timed out", "TimeoutError")),
+    request.timeoutMs,
+  )
+  return {
+    signal: controller.signal,
+    clear: () => {
+      clearTimeout(timer)
+      request.signal?.removeEventListener("abort", relay)
+    },
+  }
+}
 
 const trailingSlash = (url: string) => (url.endsWith("/") ? url : `${url}/`)
 
@@ -231,6 +255,7 @@ export async function instanceFetch<T>(server: ServerConnection.HttpBase, reques
   const via = request.directoryVia ?? "query"
   const routed = request.directory !== undefined
   const send: Send = request.fetch ?? ((...args) => globalThis.fetch(...args))
+  const abort = requestAbort(request)
 
   const url = instanceUrl(server, request.route, {
     ...(routed && via === "query" ? { directory: request.directory } : {}),
@@ -241,51 +266,56 @@ export async function instanceFetch<T>(server: ServerConnection.HttpBase, reques
     ...request.headers,
   })
 
-  // No try/catch: a transport failure is the runtime's own error and must reach the caller as it is.
-  const res = await send(url, {
-    method,
-    headers,
-    ...(request.body === undefined ? {} : { body: JSON.stringify(request.body) }),
-  })
-
-  if (!res.ok) {
-    const fault = decodeFault({
-      method,
-      route: request.route,
-      status: res.status,
-      text: await res.text().catch(() => ""),
-    })
-    throw request.fault ? request.fault(fault) : new InstanceFetchError(fault)
-  }
-
-  // 204/205 are DECLARED no-content by every void-returning route in the spec, so an absent body
-  // there is the answer, not a fault.
-  if (res.status === 204 || res.status === 205) return undefined as T
-  const text = await res.text()
-  if (!text) {
-    // A 2xx that promised a body and sent none. Previously this surfaced as
-    // `SyntaxError: Unexpected end of JSON input`, which names the parser rather than the fault —
-    // and for a list-returning route it is the shape that later throws inside a render.
-    throw new InstanceFetchError({
-      method,
-      route: request.route,
-      status: res.status,
-      kind: undefined,
-      message: `${method} ${request.route} answered ${res.status} with an empty body`,
-      text: "",
-    })
-  }
   try {
-    return JSON.parse(text) as T
-  } catch {
-    throw new InstanceFetchError({
+    // No catch: transport/abort failures retain the runtime's own identity and classification.
+    const res = await send(url, {
       method,
-      route: request.route,
-      status: res.status,
-      kind: undefined,
-      message: statusLine(method, request.route, res.status, text).replace(" failed: ", " answered non-JSON: "),
-      text,
+      headers,
+      ...(abort.signal === undefined ? {} : { signal: abort.signal }),
+      ...(request.body === undefined ? {} : { body: JSON.stringify(request.body) }),
     })
+
+    if (!res.ok) {
+      const fault = decodeFault({
+        method,
+        route: request.route,
+        status: res.status,
+        text: await res.text().catch(() => ""),
+      })
+      throw request.fault ? request.fault(fault) : new InstanceFetchError(fault)
+    }
+
+    // 204/205 are DECLARED no-content by every void-returning route in the spec, so an absent body
+    // there is the answer, not a fault.
+    if (res.status === 204 || res.status === 205) return undefined as T
+    const text = await res.text()
+    if (!text) {
+      // A 2xx that promised a body and sent none. Previously this surfaced as
+      // `SyntaxError: Unexpected end of JSON input`, which names the parser rather than the fault —
+      // and for a list-returning route it is the shape that later throws inside a render.
+      throw new InstanceFetchError({
+        method,
+        route: request.route,
+        status: res.status,
+        kind: undefined,
+        message: `${method} ${request.route} answered ${res.status} with an empty body`,
+        text: "",
+      })
+    }
+    try {
+      return JSON.parse(text) as T
+    } catch {
+      throw new InstanceFetchError({
+        method,
+        route: request.route,
+        status: res.status,
+        kind: undefined,
+        message: statusLine(method, request.route, res.status, text).replace(" failed: ", " answered non-JSON: "),
+        text,
+      })
+    }
+  } finally {
+    abort.clear()
   }
 }
 

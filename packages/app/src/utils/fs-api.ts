@@ -1,6 +1,8 @@
 import type { ServerConnection } from "@/context/server"
 import { instanceFetch } from "@/utils/instance-fetch"
 
+type CallOptions = { readonly signal?: AbortSignal; readonly timeoutMs?: number }
+
 // The FS-1b write endpoints (M4) plus the live session controls, the provider/shell probes and the
 // ad-hoc recipe surface — the widest of this folder's instance clients.
 //
@@ -18,13 +20,14 @@ export interface TrashEntry {
   readonly type: "file" | "directory"
 }
 
-const call = <T,>(
+const call = <T>(
   server: ServerConnection.HttpBase,
   method: "GET" | "POST" | "PUT" | "DELETE",
   route: string,
   directory: string,
   body?: unknown,
-): Promise<T> => instanceFetch<T>(server, { method, route, directory, body })
+  options?: CallOptions,
+): Promise<T> => instanceFetch<T>(server, { method, route, directory, body, ...options })
 
 export function fsWrite(
   server: ServerConnection.HttpBase,
@@ -72,14 +75,22 @@ export function providerProbe(
     baseURL?: string
     apiKey?: string
     authStyle?: "bearer" | "anthropic"
+    signal?: AbortSignal
   },
 ) {
-  return call<ProbeResult>(server, "POST", `provider/${encodeURIComponent(input.providerID)}/probe`, input.directory, {
-    ...(input.modelID === undefined ? {} : { modelID: input.modelID }),
-    ...(input.baseURL === undefined ? {} : { baseURL: input.baseURL }),
-    ...(input.apiKey === undefined ? {} : { apiKey: input.apiKey }),
-    ...(input.authStyle === undefined ? {} : { authStyle: input.authStyle }),
-  })
+  return call<ProbeResult>(
+    server,
+    "POST",
+    `provider/${encodeURIComponent(input.providerID)}/probe`,
+    input.directory,
+    {
+      ...(input.modelID === undefined ? {} : { modelID: input.modelID }),
+      ...(input.baseURL === undefined ? {} : { baseURL: input.baseURL }),
+      ...(input.apiKey === undefined ? {} : { apiKey: input.apiKey }),
+      ...(input.authStyle === undefined ? {} : { authStyle: input.authStyle }),
+    },
+    { signal: input.signal, timeoutMs: 7_000 },
+  )
 }
 
 // Provider-import presets (Settings → Models → Add models): the server-merged view of the
@@ -95,8 +106,11 @@ export interface ProviderPreset {
   readonly hidden?: boolean
 }
 
-export function providerPresets(server: ServerConnection.HttpBase, input: { directory: string }) {
-  return call<Record<string, ProviderPreset>>(server, "GET", "provider/presets", input.directory)
+export function providerPresets(server: ServerConnection.HttpBase, input: { directory: string; signal?: AbortSignal }) {
+  return call<Record<string, ProviderPreset>>(server, "GET", "provider/presets", input.directory, undefined, {
+    signal: input.signal,
+    timeoutMs: 5_000,
+  })
 }
 
 // B11 — the bundled-shell substrate (status + provisioner). Provisioning downloads
@@ -129,7 +143,12 @@ export interface OfflineStatus {
   readonly enabled: boolean
   readonly active: number
   readonly total: number
-  readonly layers: ReadonlyArray<{ readonly layer: number; readonly name: string; readonly active: boolean; readonly detail?: string }>
+  readonly layers: ReadonlyArray<{
+    readonly layer: number
+    readonly name: string
+    readonly active: boolean
+    readonly detail?: string
+  }>
 }
 
 export function offlineStatus(server: ServerConnection.HttpBase, input: { directory: string }) {

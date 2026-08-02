@@ -12,7 +12,12 @@ type Deps = {
 }
 
 export function createMenu(deps: Deps) {
-  if (process.platform !== "darwin") return
+  if (process.platform !== "darwin") {
+    // NovaClaw's interface is the HTML shell. Electron's unused default menu steals Alt on
+    // Windows/Linux (including Alt+Shift layout switching) for a developer surface we do not ship.
+    Menu.setApplicationMenu(null)
+    return
+  }
 
   const template = DESKTOP_MENU.map((menu) => {
     if (menu.role) return { role: nativeRole(menu.role) }

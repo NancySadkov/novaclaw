@@ -10,6 +10,8 @@ import { dict as en } from "@/i18n/en"
 //
 //   · a sweep hoisted to module scope, or to app boot, is a startup cost on every launch — and it
 //     looks exactly like a sweep that runs when the dialog opens;
+//   · a Resource created while dialog.push() is committing can suspend the whole dialog until a
+//     stalled instance answers, so discovery starts only after the usable dialog has mounted;
 //   · rendering `outcomes` instead of `adoptable` puts `unidentified` ports on screen as found
 //     runtimes, which is ruling 2 (*a fault is never described falsely*) with a friendly face;
 //   · binding the "couldn't check" line to an empty list instead of to `ran === false` collapses
@@ -36,14 +38,16 @@ const code = dialog.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm,
 
 describe("Add-models — the local-runtime probe wiring", () => {
   test("the sweep runs on dialog open, not at import and not at boot", () => {
-    // `createResource` inside the component body = one sweep per dialog open. A top-level call would
-    // fire when the chunk is imported, which for a lazily-imported dialog is nearly the same moment —
-    // but for anything that ever static-imports it, it is app start.
+    // `onMount` = one sweep per dialog open, after the Custom endpoint card is already usable. A
+    // top-level call would fire when the chunk is imported; createResource here used to suspend the
+    // transition that was trying to put the dialog on screen.
     expect(dialog).toContain("ConfigLocalRuntime.sweep({")
     const sweepAt = dialog.indexOf("ConfigLocalRuntime.sweep({")
     const componentAt = dialog.indexOf("export const DialogNewModel")
     expect(sweepAt).toBeGreaterThan(componentAt)
-    expect(dialog).toMatch(/const \[localSweep\] = createResource\(\(\) =>\s*\n?\s*ConfigLocalRuntime\.sweep\(\{/)
+    expect(dialog).toMatch(/onMount\(\(\) => \{[\s\S]{0,700}ConfigLocalRuntime\.sweep\(\{/)
+    expect(code).not.toContain("createResource")
+    expect(dialog).toContain("onCleanup(() => abort.abort())")
     // No timer, no interval, no re-probe loop: opening the dialog is the whole trigger.
     expect(code).not.toMatch(/setInterval|setTimeout\s*\(/)
   })
@@ -65,7 +69,9 @@ describe("Add-models — the local-runtime probe wiring", () => {
   })
 
   test("'couldn't check' is bound to ran===false, not to an empty result", () => {
-    expect(dialog).toMatch(/localUnavailable = \(\) => localSweep\.latest !== undefined && !localSweep\.latest\.ran/)
+    expect(dialog).toMatch(
+      /localUnavailable = \(\) => \{[\s\S]{0,120}const result = localSweep\(\)[\s\S]{0,100}!result\.ran/,
+    )
     expect(dialog).toMatch(/<Show when=\{localUnavailable\(\)\}>[\s\S]{0,200}settings\.models\.new\.local\.unavailable/)
   })
 
@@ -83,9 +89,7 @@ describe("Add-models — the local-runtime probe wiring", () => {
     // to whatever program is listening on loopback :11434. This is the check that it cannot happen.
     expect(dialog).toContain("providerID: freeProviderID(localCandidate.id)")
     expect(code).not.toMatch(/providerID: localCandidate\.id/)
-    expect(dialog).toContain(
-      "ConfigLocalRuntime.uniqueProviderID(base, Object.keys(config().providers ?? {}))",
-    )
+    expect(dialog).toContain("ConfigLocalRuntime.uniqueProviderID(base, Object.keys(config().providers ?? {}))")
     // …and the same resolution is what gets adopted, so the id shown is the id that was tested.
     expect(dialog).toContain("providerID: freeProviderID(found.id)")
     // The probe payload carries no apiKey of its own either — nothing to leak in the first place.

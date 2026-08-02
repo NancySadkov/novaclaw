@@ -1,4 +1,4 @@
-import { Component, For, Show, createResource, createSignal } from "solid-js"
+import { Component, For, Show, createSignal, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
@@ -49,10 +49,8 @@ export const DialogNewModel: Component<{
   // literal union and all eight keys are checked.
   const t = language.t
 
-  const [presets] = createResource(
-    () => providerPresets(props.http, { directory: props.directory }).catch(() => ({}) as Record<string, ProviderPreset>),
-    { initialValue: {} as Record<string, ProviderPreset> },
-  )
+  const [presets, setPresets] = createSignal<Record<string, ProviderPreset>>({})
+  const [localSweep, setLocalSweep] = createSignal<ConfigLocalRuntime.SweepResult>()
 
   const [step, setStep] = createSignal<"pick" | "connect" | "choose">("pick")
   // undefined = nothing chosen yet; "custom" = the free-form endpoint card.
@@ -71,7 +69,7 @@ export const DialogNewModel: Component<{
     }
   const preset = (): ProviderPreset | undefined => {
     const id = presetID()
-    return id === undefined || id === "custom" ? undefined : presets.latest[id]
+    return id === undefined || id === "custom" ? undefined : presets()[id]
   }
   // ── S0 — "you may not need the sidecar": the local-runtime probe ────────────────────────────
   //
@@ -110,23 +108,38 @@ export const DialogNewModel: Component<{
    */
   const freeProviderID = (base: string) =>
     ConfigLocalRuntime.uniqueProviderID(base, Object.keys(config().providers ?? {}))
-  const [localSweep] = createResource(() =>
-    ConfigLocalRuntime.sweep({
+  onMount(() => {
+    // A Resource created while dialog.push() commits inside a Solid transition can suspend the
+    // dialog itself. Mount the usable Custom endpoint card first; discovery fills in afterward.
+    const abort = new AbortController()
+    void providerPresets(props.http, { directory: props.directory, signal: abort.signal })
+      .then((value) => {
+        if (!abort.signal.aborted) setPresets(value)
+      })
+      .catch(() => undefined)
+    void ConfigLocalRuntime.sweep({
       probe: (localCandidate) =>
         providerProbe(props.http, {
           directory: props.directory,
           providerID: freeProviderID(localCandidate.id),
           baseURL: localCandidate.baseURL,
+          signal: abort.signal,
         }),
-    }),
-  )
+    }).then((value) => {
+      if (!abort.signal.aborted) setLocalSweep(value)
+    })
+    onCleanup(() => abort.abort())
+  })
   /** Adoptable runtimes minus the ones this instance already points at. */
   const localFound = (): readonly ConfigLocalRuntime.Outcome[] => {
-    const result = localSweep.latest
+    const result = localSweep()
     return result === undefined ? [] : ConfigLocalRuntime.excludeConfigured(result.adoptable, configuredURLs())
   }
   /** ⚠️ Ruling 2: "we could not look" is a different fact from "nothing is there". Only this is it. */
-  const localUnavailable = () => localSweep.latest !== undefined && !localSweep.latest.ran
+  const localUnavailable = () => {
+    const result = localSweep()
+    return result !== undefined && !result.ran
+  }
 
   const saved = (): SavedProvider | undefined => config().providers?.[form.providerID.trim()]
   const savedKey = () => typeof saved()?.request?.body?.apiKey === "string" && !!saved()?.request?.body?.apiKey
@@ -134,8 +147,7 @@ export const DialogNewModel: Component<{
   const validID = () => PROVIDER_ID.test(form.providerID.trim())
   const canDiscover = () => !!form.baseURL.trim() && validID() && !probing()
   const pickedIDs = () => models().filter((id) => picked[id])
-  const visiblePresets = () =>
-    Object.entries(presets.latest).filter(([, entry]) => entry.hidden !== true)
+  const visiblePresets = () => Object.entries(presets()).filter(([, entry]) => entry.hidden !== true)
 
   const statusMessage = (r: ProbeResult): string => {
     switch (r.status) {
@@ -331,7 +343,7 @@ export const DialogNewModel: Component<{
             {/* S0 — a model server already running on the instance's machine. Above the presets and
                 above Custom endpoint, because it is the only option here that needs no typing at
                 all: one click and the model list is already in hand. */}
-            <Show when={localSweep.loading}>
+            <Show when={localSweep() === undefined}>
               <span class="text-[11px] text-v2-text-text-faint">{t("settings.models.new.local.checking")}</span>
             </Show>
             <Show when={localFound().length > 0}>
@@ -506,7 +518,12 @@ export const DialogNewModel: Component<{
             {t("common.cancel")}
           </ButtonV2>
           <Show when={step() === "choose"}>
-            <ButtonV2 size="normal" variant="gold" disabled={!pickedIDs().length || saving()} onClick={() => void add()}>
+            <ButtonV2
+              size="normal"
+              variant="gold"
+              disabled={!pickedIDs().length || saving()}
+              onClick={() => void add()}
+            >
               {t("settings.models.new.add", { count: pickedIDs().length })}
             </ButtonV2>
           </Show>

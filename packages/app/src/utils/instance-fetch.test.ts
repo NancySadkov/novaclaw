@@ -222,6 +222,29 @@ describe("instanceFetch", () => {
     expect(thrown).not.toBeInstanceOf(InstanceFetchError)
   })
 
+  test("a request timeout aborts the transport without wrapping its TimeoutError", async () => {
+    let signal: AbortSignal | undefined
+    const fetch = ((_url: URL, init: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        signal = init.signal as AbortSignal
+        signal.addEventListener("abort", () => reject(signal?.reason), { once: true })
+      })) as unknown as typeof globalThis.fetch
+    const thrown = await instanceFetch(server, { route: "provider/presets", timeoutMs: 5, fetch })
+      .then(() => undefined)
+      .catch((cause: unknown) => cause)
+    expect(signal?.aborted).toBe(true)
+    expect(thrown).toBeInstanceOf(DOMException)
+    expect((thrown as Error).name).toBe("TimeoutError")
+  })
+
+  test("a completed request clears its timeout instead of aborting later", async () => {
+    const probe = recording()
+    await instanceFetch(server, { route: "provider/presets", timeoutMs: 5, fetch: probe.fetch })
+    const signal = probe.seen.init?.signal as AbortSignal
+    await new Promise((resolve) => setTimeout(resolve, 15))
+    expect(signal.aborted).toBe(false)
+  })
+
   test("a 200 that promised a body and sent none is a named fault, not a SyntaxError", async () => {
     const thrown = await instanceFetch(server, {
       route: "api/recipe",
