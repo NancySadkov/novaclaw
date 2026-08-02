@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import type { SessionMessage, V2Event } from "@novaclaw/sdk/v2"
-import { activeAssistant, appendMessage, applySessionNextEvent, findAssistant, mergeNativeMessages } from "./message-fold"
+import {
+  activeAssistant,
+  appendMessage,
+  applySessionNextEvent,
+  findAssistant,
+  mergeNativeMessages,
+} from "./message-fold"
 
 // The raw event bus delivers `{ type, properties }`; the fold consumes the typed
 // `{ type, data }` shape (as the deleted TUI adapter did). These fixtures build the
@@ -166,7 +172,12 @@ describe("applySessionNextEvent", () => {
   })
 
   test("orders oldest-first and completes the prior assistant on a new step", () => {
-    const messages = fold([], prompted("s", "msg_u", "hi", 1), stepStarted("s", "msg_a1", 2), stepStarted("s", "msg_a2", 5))
+    const messages = fold(
+      [],
+      prompted("s", "msg_u", "hi", 1),
+      stepStarted("s", "msg_a1", 2),
+      stepStarted("s", "msg_a2", 5),
+    )
     expect(messages.map((m) => m.id)).toEqual(["msg_u", "msg_a1", "msg_a2"])
     expect(findAssistant(messages, "msg_a1")!.time.completed).toBe(5) // superseded → completed
     expect(findAssistant(messages, "msg_a2")!.time.completed).toBeUndefined() // still active
@@ -210,7 +221,12 @@ describe("applySessionNextEvent", () => {
     const messages = fold(
       [],
       stepStarted("s", "msg_a"),
-      ev("session.next.reasoning.started", { timestamp: 3, sessionID: "s", assistantMessageID: "msg_a", reasoningID: "r1" }),
+      ev("session.next.reasoning.started", {
+        timestamp: 3,
+        sessionID: "s",
+        assistantMessageID: "msg_a",
+        reasoningID: "r1",
+      }),
       ev("session.next.reasoning.delta", {
         timestamp: 4,
         sessionID: "s",
@@ -239,6 +255,86 @@ describe("applySessionNextEvent", () => {
       expect(reasoning.text).toBe("think")
       expect(reasoning.time?.completed).toBe(6)
     }
+  })
+
+  test("durable stream checkpoints converge after reconnect without duplicating live deltas", () => {
+    const messages = fold(
+      [],
+      stepStarted("s", "msg_a"),
+      ev("session.next.text.started", {
+        timestamp: 3,
+        sessionID: "s",
+        assistantMessageID: "msg_a",
+        textID: "t1",
+      }),
+      ev("session.next.text.delta", {
+        timestamp: 4,
+        sessionID: "s",
+        assistantMessageID: "msg_a",
+        textID: "t1",
+        delta: "hello",
+      }),
+      ev("session.next.text.progress", {
+        timestamp: 5,
+        sessionID: "s",
+        assistantMessageID: "msg_a",
+        textID: "t1",
+        offset: 0,
+        delta: "hello",
+      }),
+      ev("session.next.text.progress", {
+        timestamp: 6,
+        sessionID: "s",
+        assistantMessageID: "msg_a",
+        textID: "t1",
+        offset: 5,
+        delta: " world",
+      }),
+    )
+    const text = findAssistant(messages, "msg_a")!.content[0]!
+    expect(text.type).toBe("text")
+    if (text.type === "text") expect(text.text).toBe("hello world")
+
+    const reconnect = fold(
+      [],
+      stepStarted("s", "msg_b"),
+      ev("session.next.tool.input.started", {
+        timestamp: 7,
+        sessionID: "s",
+        assistantMessageID: "msg_b",
+        callID: "c1",
+        name: "read",
+      }),
+      ev("session.next.tool.input.progress", {
+        timestamp: 8,
+        sessionID: "s",
+        assistantMessageID: "msg_b",
+        callID: "c1",
+        offset: 0,
+        delta: '{"path":"a"}',
+      }),
+      ev("session.next.reasoning.started", {
+        timestamp: 9,
+        sessionID: "s",
+        assistantMessageID: "msg_b",
+        reasoningID: "r1",
+      }),
+      ev("session.next.reasoning.progress", {
+        timestamp: 10,
+        sessionID: "s",
+        assistantMessageID: "msg_b",
+        reasoningID: "r1",
+        offset: 0,
+        delta: "checking",
+      }),
+    )
+    const assistant = findAssistant(reconnect, "msg_b")!
+    const tool = assistant.content[0]!
+    const reasoning = assistant.content[1]!
+    expect(tool.type).toBe("tool")
+    if (tool.type === "tool" && tool.state.status === "pending") expect(tool.state.input).toBe('{"path":"a"}')
+    expect(reasoning.type).toBe("reasoning")
+    if (reasoning.type === "reasoning") expect(reasoning.text).toBe("checking")
   })
 
   test("tool.failed transitions a running tool to error", () => {
@@ -302,7 +398,13 @@ describe("applySessionNextEvent", () => {
     const messages = fold(
       [],
       ev("session.next.moved", { timestamp: 1, sessionID: "s", location: { directory: "/x" } }),
-      ev("session.next.prompt.admitted", { timestamp: 1, sessionID: "s", messageID: "msg_u", prompt: { text: "x" }, delivery: "queue" }),
+      ev("session.next.prompt.admitted", {
+        timestamp: 1,
+        sessionID: "s",
+        messageID: "msg_u",
+        prompt: { text: "x" },
+        delivery: "queue",
+      }),
       ev("session.status", { sessionID: "s", status: { type: "idle" } }),
     )
     expect(messages).toHaveLength(0)

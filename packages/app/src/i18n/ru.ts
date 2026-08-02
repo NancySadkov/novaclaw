@@ -523,6 +523,14 @@ export const dict = {
   "session.revertDock.collapse": "Свернуть возвращённые сообщения",
   "session.revertDock.expand": "Развернуть возвращённые сообщения",
   "session.revertDock.restore": "Восстановить сообщение",
+  "session.providerRecovery.title": "Предыдущий ответ был прерван",
+  "session.providerRecovery.description":
+    "NovaClaw не смог подтвердить завершение ответа. Продолжите, когда будете готовы — прерванный запрос не запустится повторно автоматически.",
+  "session.providerRecovery.toolDescription":
+    "Инструмент мог успеть что-то изменить. Проверьте результат и продолжите — NovaClaw не станет запускать его повторно автоматически.",
+  "session.providerRecovery.resume": "Продолжить безопасно",
+  "session.providerRecovery.resuming": "Продолжаю…",
+  "session.providerRecovery.error": "Не удалось продолжить",
 
   "session.new.title": "Создавайте что угодно",
   "session.new.worktree.main": "Основная ветка",
@@ -558,7 +566,6 @@ export const dict = {
   "session.share.action.view": "Посмотреть",
   "session.share.copy.copied": "Скопировано",
   "session.share.copy.copyLink": "Копировать ссылку",
-
 
   "prompt.loading": "Загрузка запроса...",
   "terminal.loading": "Загрузка терминала...",

@@ -41,6 +41,9 @@ export function fromRow(row: typeof SessionTable.$inferSelect): SessionSchema.In
     askBeforeChanges: row.ask_before_changes ?? undefined,
     safeMode: row.safe_mode ?? undefined,
     contextBudget: row.context_budget ?? undefined,
+    providerRecovery: row.provider_recovery
+      ? { ...row.provider_recovery, startedAt: DateTime.makeUnsafe(row.provider_recovery.startedAt) }
+      : undefined,
     result: row.result ?? undefined,
     cost: row.cost,
     tokens: {

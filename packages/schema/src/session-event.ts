@@ -15,6 +15,7 @@ import { SessionType } from "./session-type"
 import { Location } from "./location"
 import { SessionMessage } from "./session-message"
 import { Revert } from "./revert"
+import { SessionProviderRecovery } from "./session-provider-recovery"
 
 export { FileAttachment }
 
@@ -235,6 +236,40 @@ export const Synthetic = Event.define({
 })
 export type Synthetic = typeof Synthetic.Type
 
+export namespace ProviderAttempt {
+  export const Started = Event.define({
+    type: "session.next.provider-attempt.started",
+    ...options,
+    schema: {
+      ...Base,
+      recovery: SessionProviderRecovery.Info,
+    },
+  })
+  export type Started = typeof Started.Type
+
+  export const Settled = Event.define({
+    type: "session.next.provider-attempt.settled",
+    ...options,
+    schema: {
+      ...Base,
+      attemptID: Event.ID,
+      outcome: Schema.Literals(["completed", "failed", "interrupted"]),
+    },
+  })
+  export type Settled = typeof Settled.Type
+
+  export const Abandoned = Event.define({
+    type: "session.next.provider-attempt.abandoned",
+    ...options,
+    schema: {
+      ...Base,
+      attemptID: Event.ID,
+      reason: Schema.Literal("new-input"),
+    },
+  })
+  export type Abandoned = typeof Abandoned.Type
+}
+
 // F1c fork: one full projected message RECORDED into a session's transcript as a single
 // durable event — how a fork copies the source transcript prefix into the NEW aggregate.
 // Self-contained (the whole message rides the event), so replaying a forked session
@@ -348,6 +383,20 @@ export namespace Text {
   })
   export type Delta = typeof Delta.Type
 
+  /** A storage-linear, idempotent checkpoint over live-only token deltas. */
+  export const Progress = Event.define({
+    type: "session.next.text.progress",
+    ...options,
+    schema: {
+      ...Base,
+      assistantMessageID: SessionMessage.ID,
+      textID: Schema.String,
+      offset: NonNegativeInt,
+      delta: Schema.String,
+    },
+  })
+  export type Progress = typeof Progress.Type
+
   export const Ended = Event.define({
     type: "session.next.text.ended",
     ...options,
@@ -385,6 +434,20 @@ export namespace Reasoning {
     },
   })
   export type Delta = typeof Delta.Type
+
+  /** A storage-linear, idempotent checkpoint over live-only token deltas. */
+  export const Progress = Event.define({
+    type: "session.next.reasoning.progress",
+    ...options,
+    schema: {
+      ...Base,
+      assistantMessageID: SessionMessage.ID,
+      reasoningID: Schema.String,
+      offset: NonNegativeInt,
+      delta: Schema.String,
+    },
+  })
+  export type Progress = typeof Progress.Type
 
   export const Ended = Event.define({
     type: "session.next.reasoning.ended",
@@ -427,6 +490,18 @@ export namespace Tool {
       },
     })
     export type Delta = typeof Delta.Type
+
+    /** A storage-linear, idempotent checkpoint over live-only token deltas. */
+    export const Progress = Event.define({
+      type: "session.next.tool.input.progress",
+      ...options,
+      schema: {
+        ...ToolBase,
+        offset: NonNegativeInt,
+        delta: Schema.String,
+      },
+    })
+    export type Progress = typeof Progress.Type
 
     export const Ended = Event.define({
       type: "session.next.tool.input.ended",
@@ -581,6 +656,9 @@ export const DurableDefinitions = Event.inventory(
   PromptAdmitted,
   ContextUpdated,
   Synthetic,
+  ProviderAttempt.Started,
+  ProviderAttempt.Settled,
+  ProviderAttempt.Abandoned,
   MessageRecorded,
   Shell.Started,
   Shell.Ended,
@@ -588,14 +666,17 @@ export const DurableDefinitions = Event.inventory(
   Step.Ended,
   Step.Failed,
   Text.Started,
+  Text.Progress,
   Text.Ended,
   Tool.Input.Started,
+  Tool.Input.Progress,
   Tool.Input.Ended,
   Tool.Called,
   Tool.Progress,
   Tool.Success,
   Tool.Failed,
   Reasoning.Started,
+  Reasoning.Progress,
   Reasoning.Ended,
   Compaction.Started,
   Compaction.Ended,
@@ -619,6 +700,9 @@ export const Definitions = Event.inventory(
   PromptAdmitted,
   ContextUpdated,
   Synthetic,
+  ProviderAttempt.Started,
+  ProviderAttempt.Settled,
+  ProviderAttempt.Abandoned,
   MessageRecorded,
   Shell.Started,
   Shell.Ended,
@@ -627,12 +711,15 @@ export const Definitions = Event.inventory(
   Step.Failed,
   Text.Started,
   Text.Delta,
+  Text.Progress,
   Text.Ended,
   Reasoning.Started,
   Reasoning.Delta,
+  Reasoning.Progress,
   Reasoning.Ended,
   Tool.Input.Started,
   Tool.Input.Delta,
+  Tool.Input.Progress,
   Tool.Input.Ended,
   Tool.Called,
   Tool.Progress,

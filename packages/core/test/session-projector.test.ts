@@ -48,6 +48,94 @@ const assistantRow = (
 }
 
 describe("SessionProjector", () => {
+  it.effect("keeps only the current unsettled provider attempt", () =>
+    Effect.gen(function* () {
+      const db = (yield* Database.Service).db
+      yield* db
+        .insert(SessionTable)
+        .values({ id: sessionID, slug: "test", directory: "/project", title: "test", version: "test" })
+        .run()
+      const events = yield* EventV2.Service
+      const first = EventV2.ID.make("evt_provider_first")
+      const second = EventV2.ID.make("evt_provider_second")
+      const assistantMessageID = SessionMessage.ID.make("msg_provider_recovery")
+      const startedAt = DateTime.makeUnsafe(100)
+      const start = (attemptID: EventV2.ID) =>
+        events.publish(SessionEvent.ProviderAttempt.Started, {
+          sessionID,
+          timestamp: startedAt,
+          recovery: { attemptID, assistantMessageID, model, startedAt, toolProtocol: false },
+        })
+
+      yield* start(first)
+      yield* start(second)
+      yield* events.publish(SessionEvent.ProviderAttempt.Settled, {
+        sessionID,
+        timestamp: startedAt,
+        attemptID: first,
+        outcome: "failed",
+      })
+      expect(
+        (yield* db.select({ recovery: SessionTable.provider_recovery }).from(SessionTable).get())?.recovery,
+      ).toMatchObject({ attemptID: second, assistantMessageID, startedAt: 100 })
+
+      yield* events.publish(SessionEvent.ProviderAttempt.Abandoned, {
+        sessionID,
+        timestamp: startedAt,
+        attemptID: second,
+        reason: "new-input",
+      })
+      expect(
+        (yield* db.select({ recovery: SessionTable.provider_recovery }).from(SessionTable).get())?.recovery,
+      ).toBeNull()
+    }),
+  )
+
+  it.effect("applies stream checkpoints once for live clients and from scratch after reconnect", () =>
+    Effect.gen(function* () {
+      const assistantMessageID = SessionMessage.ID.make("msg_checkpoint")
+      const started = {
+        id: EventV2.ID.create(),
+        type: SessionEvent.Step.Started.type,
+        data: { sessionID, assistantMessageID, timestamp: created, agent: "build", model },
+      } as EventV2.Payload<typeof SessionEvent.Step.Started>
+      const textStarted = {
+        id: EventV2.ID.create(),
+        type: SessionEvent.Text.Started.type,
+        data: { sessionID, assistantMessageID, timestamp: created, textID: "text" },
+      } as EventV2.Payload<typeof SessionEvent.Text.Started>
+      const live = {
+        id: EventV2.ID.create(),
+        type: SessionEvent.Text.Delta.type,
+        data: { sessionID, assistantMessageID, timestamp: created, textID: "text", delta: "hello" },
+      } as EventV2.Payload<typeof SessionEvent.Text.Delta>
+      const checkpoint = {
+        id: EventV2.ID.create(),
+        type: SessionEvent.Text.Progress.type,
+        data: { sessionID, assistantMessageID, timestamp: created, textID: "text", offset: 0, delta: "hello" },
+      } as EventV2.Payload<typeof SessionEvent.Text.Progress>
+      const textOf = (state: SessionMessageUpdater.MemoryState) =>
+        state.messages
+          .flatMap((message) => (message.type === "assistant" ? message.content : []))
+          .find((part) => part.type === "text")?.text
+
+      const connected: SessionMessageUpdater.MemoryState = { messages: [] }
+      const connectedAdapter = SessionMessageUpdater.memory(connected)
+      yield* SessionMessageUpdater.update(connectedAdapter, started)
+      yield* SessionMessageUpdater.update(connectedAdapter, textStarted)
+      yield* SessionMessageUpdater.update(connectedAdapter, live)
+      yield* SessionMessageUpdater.update(connectedAdapter, checkpoint)
+      expect(textOf(connected)).toBe("hello")
+
+      const reconnected: SessionMessageUpdater.MemoryState = { messages: [] }
+      const reconnectAdapter = SessionMessageUpdater.memory(reconnected)
+      yield* SessionMessageUpdater.update(reconnectAdapter, started)
+      yield* SessionMessageUpdater.update(reconnectAdapter, textStarted)
+      yield* SessionMessageUpdater.update(reconnectAdapter, checkpoint)
+      expect(textOf(reconnected)).toBe("hello")
+    }),
+  )
+
   it.effect("projects staged, cleared, and committed reverts", () =>
     Effect.gen(function* () {
       const db = (yield* Database.Service).db

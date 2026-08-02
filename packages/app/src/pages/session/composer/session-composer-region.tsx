@@ -6,6 +6,7 @@ import { SessionFollowupDock } from "@/pages/session/composer/session-followup-d
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
 import { SessionResponderDock } from "@/pages/session/composer/session-responder-dock"
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
+import { SessionProviderRecoveryDock } from "@/pages/session/composer/session-provider-recovery-dock"
 import type { SessionComposerRegionController } from "./session-composer-region-controller"
 
 export function SessionComposerRegion(props: {
@@ -133,6 +134,15 @@ export function SessionComposerRegion(props: {
                 "margin-top": `${-controller.lift()}px`,
               }}
             >
+              <Show when={controller.providerRecovery()} keyed>
+                {(recovery) => (
+                  <SessionProviderRecoveryDock
+                    sessionID={recovery.sessionID}
+                    recovery={recovery.recovery}
+                    onResume={recovery.onResume}
+                  />
+                )}
+              </Show>
               <Show when={controller.followup()?.items.length}>
                 <SessionFollowupDock
                   items={controller.followup()!.items}

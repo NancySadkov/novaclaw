@@ -47,7 +47,12 @@ import { SessionTitle } from "../title"
 import { SessionTodo } from "../todo"
 import { Log } from "@novaclaw/schema/log"
 
-import { resolveSessionConfig, rootSessionType, EFFECTIVE_CONFIG_DEFAULTS, type EffectiveConfig } from "../config-resolve"
+import {
+  resolveSessionConfig,
+  rootSessionType,
+  EFFECTIVE_CONFIG_DEFAULTS,
+  type EffectiveConfig,
+} from "../config-resolve"
 import { AgentJail } from "../../agent-jail"
 import { HostExec } from "../../host-exec"
 import { MessengerStore } from "../../messenger/store"
@@ -70,12 +75,7 @@ import { SessionStrict } from "./strict"
 import { JhStore } from "../../jh/store"
 import type { JhEngine } from "../../jh/engine"
 import { createLLMEventPublisher } from "./publish-llm-event"
-import {
-  attachmentModality,
-  needsCapabilityEvidence,
-  toLLMMessages,
-  unreadableTurnAttachments,
-} from "./to-llm-message"
+import { attachmentModality, needsCapabilityEvidence, toLLMMessages, unreadableTurnAttachments } from "./to-llm-message"
 import { AdhocGuidance } from "../../adhoc-tools/guidance"
 import { Affective } from "./affective"
 import { SessionDrive } from "./drive"
@@ -184,8 +184,7 @@ export const shouldCheckForSteer = (input: {
   readonly alreadyCut: boolean
   readonly now: number
   readonly lastCheck: number
-}): boolean =>
-  !input.sawToolCall && !input.alreadyCut && input.now - input.lastCheck >= STEER_POLL_MS
+}): boolean => !input.sawToolCall && !input.alreadyCut && input.now - input.lastCheck >= STEER_POLL_MS
 
 export const layer = Layer.effect(
   Service,
@@ -277,7 +276,9 @@ export const layer = Layer.effect(
       const failed = !result.ok
         ? {
             output: String(result.error.stderr ?? result.error.message ?? ""),
-            timedOut: /Timed out/i.test(String((result.error.cause as { message?: string } | undefined)?.message ?? "")),
+            timedOut: /Timed out/i.test(
+              String((result.error.cause as { message?: string } | undefined)?.message ?? ""),
+            ),
           }
         : result.run.exitCode !== 0
           ? { output: result.run.output?.toString("utf8") ?? "", exit: result.run.exitCode }
@@ -533,15 +534,15 @@ export const layer = Layer.effect(
       const rawExtraction = chunks.join("")
       // Distinguish "the model said there is nothing to remember" (a legitimate `[]`) from "the model
       // returned NOTHING" (a broken call). Conflating them is what hid this failure for three phases.
-      if (rawExtraction.trim() === "")
-        yield* Log.event("session.memory.extract.empty", { "session.id": sessionID })
+      if (rawExtraction.trim() === "") yield* Log.event("session.memory.extract.empty", { "session.id": sessionID })
       const facts = SessionExtract.parseExtraction(rawExtraction)
       const namedFacts = facts.filter((f): f is SessionExtract.Extracted & { name: string } => !!f.name)
       const names = [...new Set(namedFacts.map((f) => f.name))]
       // Embed the extracted facts so they're reachable by the VECTOR leg later (measured: hybrid
       // retrieval 85% vs 77% keyword-only). ONE batched call for the whole extraction, and this runs
       // in postRunMaintenance — off the turn hot-path. No device ⇒ undefined ⇒ FTS-only memories.
-      const vectors = facts.length === 0 ? undefined : yield* Effect.promise(() => KbEmbedder.embed(facts.map((f) => f.text)))
+      const vectors =
+        facts.length === 0 ? undefined : yield* Effect.promise(() => KbEmbedder.embed(facts.map((f) => f.text)))
       for (const [index, fact] of facts.entries()) {
         const vector = vectors?.[index]
         yield* memory
@@ -590,14 +591,13 @@ export const layer = Layer.effect(
       // sentence).
       if (links.length > 0) {
         const idByName = new Map<string, string>()
-        for (const fact of namedFacts) if (!idByName.has(fact.name)) idByName.set(fact.name, SessionExtract.memoryID(scope, fact.text))
+        for (const fact of namedFacts)
+          if (!idByName.has(fact.name)) idByName.set(fact.name, SessionExtract.memoryID(scope, fact.text))
         for (const link of links) {
           const from = idByName.get(link.from)
           const to = idByName.get(link.to)
           if (from === undefined || to === undefined) continue
-          yield* memory
-            .addEdge({ from, to, type: link.type, scope, source: "auto-extract" })
-            .pipe(Effect.ignore) // duplicate edge = already linked; never fail the drain
+          yield* memory.addEdge({ from, to, type: link.type, scope, source: "auto-extract" }).pipe(Effect.ignore) // duplicate edge = already linked; never fail the drain
         }
       }
     })
@@ -620,12 +620,17 @@ export const layer = Layer.effect(
       yield* SessionPatch.patchSessionRecord({ db, events }, sessionID, (info) =>
         SessionChanges.equal(info.summary, summary)
           ? undefined
-          : SessionSchema.Info.make({ ...info, summary, time: { ...info.time, updated: DateTime.makeUnsafe(Date.now()) } }),
+          : SessionSchema.Info.make({
+              ...info,
+              summary,
+              time: { ...info.time, updated: DateTime.makeUnsafe(Date.now()) },
+            }),
       )
     })
 
     const failInterruptedTools = Effect.fn("SessionRunner.failInterruptedTools")(function* (
       sessionID: SessionSchema.ID,
+      faultMessage = "Tool execution interrupted",
     ) {
       for (const message of yield* getContext(sessionID)) {
         if (message.type !== "assistant") continue
@@ -641,7 +646,7 @@ export const layer = Layer.effect(
             // calm "Interrupted" divider and a red error box — which is unlocalisable, and wrong
             // the moment a provider's own message happens to contain the word. `message` stays
             // exactly as it was: the tag is additional structure, never a replacement.
-            error: { type: "unknown", _tag: "Interrupted", message: "Tool execution interrupted" },
+            error: { type: "unknown", _tag: "Interrupted", message: faultMessage },
             provider: {
               executed: tool.provider?.executed === true,
               ...(tool.provider?.metadata === undefined ? {} : { metadata: tool.provider.metadata }),
@@ -756,9 +761,7 @@ export const layer = Layer.effect(
           Effect.tapError(surfacePreTurnFailure),
         ))
       const modelSession = { ...session, model: config.model as typeof session.model }
-      const model = yield* models
-        .resolve(modelSession)
-        .pipe(Effect.tapError(surfacePreTurnFailure))
+      const model = yield* models.resolve(modelSession).pipe(Effect.tapError(surfacePreTurnFailure))
       // Catalog identity, not the provider wire id: a model may deliberately route API requests
       // under `api.id` while users and live config know it by a different stable catalog id.
       const modelRef = yield* models.ref(modelSession)
@@ -769,9 +772,7 @@ export const layer = Layer.effect(
       // Per-model pre-prompt (owner 2026-07-29): the resolved model's optional user-authored
       // behaviour correction, wrapped as a distinct labelled section. Read best-effort off the
       // resolved catalog model exactly like the tier above; undefined ⇒ inert (see system-compose.ts).
-      const modelPrePrompt = SystemCompose.modelPrePromptSection(
-        yield* models.prePrompt(modelSession),
-      )
+      const modelPrePrompt = SystemCompose.modelPrePromptSection(yield* models.prePrompt(modelSession))
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       const context = entries.map((entry) => entry.message)
       const discoveredTools = ToolDiscovery.discovered(context)
@@ -791,10 +792,7 @@ export const layer = Layer.effect(
           // turn this into a database poll. A later todowrite result already shows its new list and
           // the periodic reminder begins at the next durable-message crossing.
           rememberTodoReminder(session.id, reminderState)
-          todoReminder = TodoReminder.render(
-            yield* SessionTodo.readTodos(db, session.id),
-            todoReminderConfig.maxTokens,
-          )
+          todoReminder = TodoReminder.render(yield* SessionTodo.readTodos(db, session.id), todoReminderConfig.maxTokens)
         }
       }
       // CAPABILITY GATE (v0.2.0 prep §10). The full reasoning — why the turn's OWN input refuses
@@ -811,9 +809,7 @@ export const layer = Layer.effect(
       // tool-returned image (`read.ts` emits one for jpeg/png/gif/webp today) rides an assistant
       // message, so the inline form made the capability gate inert for exactly the case Computer Use
       // will produce — a gate that looked complete and covered one of two doors.
-      const modelCapabilities = needsCapabilityEvidence(context)
-        ? yield* models.capabilities(modelSession)
-        : undefined
+      const modelCapabilities = needsCapabilityEvidence(context) ? yield* models.capabilities(modelSession) : undefined
       const unreadable = unreadableTurnAttachments(context, modelCapabilities)
       if (unreadable.length > 0) {
         // Name the model the USER picked, not the wire id: `model.id` is the API-side id
@@ -985,14 +981,17 @@ export const layer = Layer.effect(
         ? LLM.request({ ...LLM.requestInput(fullRequest), system: packed.system, messages: packed.messages })
         : fullRequest
       const startSnapshot = yield* snapshots.capture()
+      const assistantMessageID = SessionMessage.ID.create()
+      const attemptModelRef = {
+        id: ModelV2.ID.make(model.id),
+        providerID: ProviderV2.ID.make(model.provider),
+        ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
+      }
       const publisher = createLLMEventPublisher(events, {
         sessionID: session.id,
+        assistantMessageID,
         agent: agent.id,
-        model: {
-          id: ModelV2.ID.make(model.id),
-          providerID: ProviderV2.ID.make(model.provider),
-          ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
-        },
+        model: attemptModelRef,
         snapshot: startSnapshot,
       })
       const withPublication = Semaphore.makeUnsafe(1).withPermit
@@ -1039,7 +1038,14 @@ export const layer = Layer.effect(
           Effect.gen(function* () {
             sawProviderEvent = true
             if (event.type === "tool-call") sawToolCall = true
-            if (shouldCheckForSteer({ sawToolCall, alreadyCut: steerInterrupt, now: Date.now(), lastCheck: lastSteerCheck })) {
+            if (
+              shouldCheckForSteer({
+                sawToolCall,
+                alreadyCut: steerInterrupt,
+                now: Date.now(),
+                lastCheck: lastSteerCheck,
+              })
+            ) {
               lastSteerCheck = Date.now()
               steerInterrupt = yield* SessionInput.hasPending(db, session.id, "steer").pipe(
                 Effect.orElseSucceed(() => false),
@@ -1060,7 +1066,12 @@ export const layer = Layer.effect(
             yield* publish(event)
             if (event.type !== "tool-call" || event.providerExecuted) return
             if (!toolMaterialization) {
-              yield* withPublication(publisher.failUnsettledTools({ message: "Tools are disabled after the maximum agent steps", _tag: "ToolFailure" }))
+              yield* withPublication(
+                publisher.failUnsettledTools({
+                  message: "Tools are disabled after the maximum agent steps",
+                  _tag: "ToolFailure",
+                }),
+              )
               return
             }
             needsContinuation = true
@@ -1159,9 +1170,7 @@ export const layer = Layer.effect(
               "session.provider.reason": transient.reason._tag,
               "session.provider.message": transient.message,
             })
-            yield* restore(
-              Effect.sleep(Duration.millis(ProviderRetry.retryDelayMs(attempt, transient.retryAfterMs))),
-            )
+            yield* restore(Effect.sleep(Duration.millis(ProviderRetry.retryDelayMs(attempt, transient.retryAfterMs))))
             attempt++
             sawProviderEvent = false
             stream = yield* restore(providerStream).pipe(Effect.exit)
@@ -1182,7 +1191,10 @@ export const layer = Layer.effect(
           const llmFailure = failure instanceof LLMError ? failure : undefined
           if (llmFailure && !publisher.hasProviderError()) {
             yield* withPublication(
-              publisher.failUnsettledTools({ message: "Provider did not return a tool result", _tag: "ToolFailure" }, true),
+              publisher.failUnsettledTools(
+                { message: "Provider did not return a tool result", _tag: "ToolFailure" },
+                true,
+              ),
             )
             // ⚠️ `retryable` is the RUNNER's verdict, not `LLMError.retryable`. The schema getter answers
             // "does this reason class permit a retry" and says **false** for `Transport` — while the
@@ -1200,7 +1212,13 @@ export const layer = Layer.effect(
           const settled = yield* restore(awaitToolFibers(toolFibers)).pipe(Effect.exit)
           if (settled._tag === "Failure" && isQuestionRejected(settled.cause)) {
             yield* FiberSet.clear(toolFibers)
-            yield* withPublication(publisher.failUnsettledTools({ message: "Tool execution interrupted", _tag: "Interrupted", retryable: false }))
+            yield* withPublication(
+              publisher.failUnsettledTools({
+                message: "Tool execution interrupted",
+                _tag: "Interrupted",
+                retryable: false,
+              }),
+            )
             return yield* Effect.interrupt
           }
           if (
@@ -1208,14 +1226,28 @@ export const layer = Layer.effect(
             (settled._tag === "Failure" && Cause.hasInterrupts(settled.cause))
           ) {
             yield* FiberSet.clear(toolFibers)
-            yield* withPublication(publisher.failUnsettledTools({ message: "Tool execution interrupted", _tag: "Interrupted", retryable: false }))
+            yield* withPublication(
+              publisher.failUnsettledTools({
+                message: "Tool execution interrupted",
+                _tag: "Interrupted",
+                retryable: false,
+              }),
+            )
             if (publisher.hasActiveAssistant())
-              yield* withPublication(publisher.failAssistant({ message: "Provider turn interrupted", _tag: "Interrupted", retryable: false }))
+              yield* withPublication(
+                publisher.failAssistant({
+                  message: "Provider turn interrupted",
+                  _tag: "Interrupted",
+                  retryable: false,
+                }),
+              )
           }
           if (settled._tag === "Failure" && !Cause.hasInterrupts(settled.cause)) {
             const failure = Cause.squash(settled.cause)
             const message = failure instanceof Error ? failure.message : String(failure)
-            yield* withPublication(publisher.failUnsettledTools({ message: `Tool execution failed: ${message}`, _tag: "ToolFailure" }))
+            yield* withPublication(
+              publisher.failUnsettledTools({ message: `Tool execution failed: ${message}`, _tag: "ToolFailure" }),
+            )
           }
           const stepSettlement = publisher.stepSettlement()
           if (stepSettlement && !publisher.hasProviderError()) {
@@ -1271,9 +1303,20 @@ export const layer = Layer.effect(
               })
           }
           if (publisher.hasProviderError())
-            yield* withPublication(publisher.failUnsettledTools({ message: "Tool execution interrupted", _tag: "Interrupted", retryable: false }))
+            yield* withPublication(
+              publisher.failUnsettledTools({
+                message: "Tool execution interrupted",
+                _tag: "Interrupted",
+                retryable: false,
+              }),
+            )
           if (stream._tag === "Success" && !publisher.hasProviderError())
-            yield* withPublication(publisher.failUnsettledTools({ message: "Provider did not return a tool result", _tag: "ToolFailure" }, true))
+            yield* withPublication(
+              publisher.failUnsettledTools(
+                { message: "Provider did not return a tool result", _tag: "ToolFailure" },
+                true,
+              ),
+            )
           if (stream._tag === "Failure") return yield* Effect.failCause(stream.cause)
           if (settled._tag === "Failure" && Cause.hasInterrupts(settled.cause))
             return yield* Effect.failCause(settled.cause)
@@ -1291,9 +1334,33 @@ export const layer = Layer.effect(
           }
         }),
       )
+      const attemptID = EventV2.ID.create()
+      const startedAt = yield* DateTime.now
+      yield* events.publish(SessionEvent.ProviderAttempt.Started, {
+        sessionID: session.id,
+        timestamp: startedAt,
+        recovery: {
+          attemptID,
+          assistantMessageID,
+          model: attemptModelRef,
+          startedAt,
+          toolProtocol: false,
+        },
+      })
       return yield* scheduler.admit(dispatchSlot).pipe(
         Effect.andThen(generation),
         Effect.ensuring(scheduler.release(dispatchSlot)),
+        Effect.onExit((exit) =>
+          events
+            .publish(SessionEvent.ProviderAttempt.Settled, {
+              sessionID: session.id,
+              timestamp: DateTime.makeUnsafe(Date.now()),
+              attemptID,
+              outcome:
+                exit._tag === "Success" ? "completed" : Cause.hasInterrupts(exit.cause) ? "interrupted" : "failed",
+            })
+            .pipe(Effect.ignore),
+        ),
       )
     }, Effect.scoped)
     type RunTurn = (
@@ -1442,13 +1509,15 @@ export const layer = Layer.effect(
           })
         }).pipe(Effect.ignore)
       const session = yield* getSession(sessionID)
-      const model = yield* models.resolve({ ...session, model: resolved.model as typeof session.model }).pipe(
-        Effect.catch((error: unknown) =>
-          notice(
-            `⚠️ Strict mode couldn't run — the session's model is unavailable (${error instanceof Error ? error.message : String(error)}).`,
-          ).pipe(Effect.as(undefined)),
-        ),
-      )
+      const model = yield* models
+        .resolve({ ...session, model: resolved.model as typeof session.model })
+        .pipe(
+          Effect.catch((error: unknown) =>
+            notice(
+              `⚠️ Strict mode couldn't run — the session's model is unavailable (${error instanceof Error ? error.message : String(error)}).`,
+            ).pipe(Effect.as(undefined)),
+          ),
+        )
       if (model === undefined) return "handled" as const
       // The engine's one-shot completion (the judgeCompletion idiom). The budget is per-CALL and comes
       // from ConfigStrict: execution steps need a whole non-trivial source file of headroom (jh.md §3
@@ -1572,7 +1641,13 @@ export const layer = Layer.effect(
             // ⚠️ `saved.id`, NOT `savedKey`: this arm is the NOT-resuming path, where `savedKey` is
             // the id the NEW task is about to claim. Downgrading "running" → "interrupted" must
             // write back to the plan it describes.
-            yield* JhStore.save(db, { id: saved.id, goal: saved.goal, status: "interrupted", state: saved.state, now: Date.now() })
+            yield* JhStore.save(db, {
+              id: saved.id,
+              goal: saved.goal,
+              status: "interrupted",
+              state: saved.state,
+              now: Date.now(),
+            })
           }
           if (verdict === "chat") return "chat" as const
         }
@@ -1641,7 +1716,10 @@ export const layer = Layer.effect(
             const fork = SessionStrict.forkWorkspace(location.directory, i + 1)
             if ("refused" in fork) {
               yield* notice(`🛡️ Racing is OFF for this task — ${fork.refused}. Running a single attempt instead.`)
-              for (const d of forks) try { fs.rmSync(d, { recursive: true, force: true }) } catch {}
+              for (const d of forks)
+                try {
+                  fs.rmSync(d, { recursive: true, force: true })
+                } catch {}
               forks = []
               attempts = 1
               break
@@ -1870,27 +1948,52 @@ export const layer = Layer.effect(
         const finalize = Effect.gen(function* () {
           const reports = single
             ? [yield* runOne(0, location.directory)]
-            : yield* Effect.all(forks.map((dir, i) => runOne(i, dir)), { concurrency: "unbounded" })
-          const report = winnerIdx !== undefined ? reports[winnerIdx] : (reports.find((r) => r !== undefined) ?? undefined)
+            : yield* Effect.all(
+                forks.map((dir, i) => runOne(i, dir)),
+                { concurrency: "unbounded" },
+              )
+          const report =
+            winnerIdx !== undefined ? reports[winnerIdx] : (reports.find((r) => r !== undefined) ?? undefined)
           if (report === undefined) {
-            yield* notice("⚠️ The Strict run hit an internal error — see the server log. The working directory is left as-is.")
-            for (const d of forks) try { fs.rmSync(d, { recursive: true, force: true }) } catch {}
+            yield* notice(
+              "⚠️ The Strict run hit an internal error — see the server log. The working directory is left as-is.",
+            )
+            for (const d of forks)
+              try {
+                fs.rmSync(d, { recursive: true, force: true })
+              } catch {}
             return
           }
           let appliedFiles: string[] = []
           if (!single) {
             if (winnerIdx !== undefined && baseline) {
               appliedFiles = SessionStrict.applyBack(forks[winnerIdx]!, location.directory, baseline)
-              yield* notice(`🏁 Attempt ${winnerIdx + 1}/${attempts} WON the race — ${appliedFiles.length} changed file${appliedFiles.length === 1 ? "" : "s"} applied to the folder: ${appliedFiles.slice(0, 8).join(", ")}${appliedFiles.length > 8 ? ", …" : ""}`)
-              for (const d of forks) try { fs.rmSync(d, { recursive: true, force: true }) } catch {}
+              yield* notice(
+                `🏁 Attempt ${winnerIdx + 1}/${attempts} WON the race — ${appliedFiles.length} changed file${appliedFiles.length === 1 ? "" : "s"} applied to the folder: ${appliedFiles.slice(0, 8).join(", ")}${appliedFiles.length > 8 ? ", …" : ""}`,
+              )
+              for (const d of forks)
+                try {
+                  fs.rmSync(d, { recursive: true, force: true })
+                } catch {}
             } else if (stopRequested) {
               yield* notice(`🏁 The race was stopped before any attempt verified success — YOUR FOLDER IS UNCHANGED.`)
-              for (const d of forks) try { fs.rmSync(d, { recursive: true, force: true }) } catch {}
+              for (const d of forks)
+                try {
+                  fs.rmSync(d, { recursive: true, force: true })
+                } catch {}
             } else {
-              yield* notice(`🏁 No attempt verified success — YOUR FOLDER IS UNCHANGED. The attempt workspaces are kept for inspection: ${forks.join(" · ")}`)
+              yield* notice(
+                `🏁 No attempt verified success — YOUR FOLDER IS UNCHANGED. The attempt workspaces are kept for inspection: ${forks.join(" · ")}`,
+              )
             }
           }
-          yield* JhStore.save(db, { id: savedKey, goal, status: report.status, state: report.state, now: Date.now() }).pipe(Effect.ignore)
+          yield* JhStore.save(db, {
+            id: savedKey,
+            goal,
+            status: report.status,
+            state: report.state,
+            now: Date.now(),
+          }).pipe(Effect.ignore)
           // The terminal claim, conditioned on what the engine ACTUALLY held. This text used to
           // assert "the best verified state was kept" on every stopped run — false in every real
           // Strict session, because the engine only snapshots a best on a GRADED improvement and
@@ -1984,7 +2087,31 @@ export const layer = Layer.effect(
         yield* Log.event("session.control.operator", { "session.id": input.sessionID })
         return
       }
-      yield* failInterruptedTools(input.sessionID)
+      const providerRecovery = (yield* store.get(input.sessionID))?.providerRecovery
+      if (providerRecovery) {
+        yield* events.publish(SessionEvent.Synthetic, {
+          sessionID: input.sessionID,
+          messageID: SessionMessage.ID.create(),
+          timestamp: yield* DateTime.now,
+          text:
+            "⚠️ NovaClaw recovered a provider turn interrupted by process loss. Any response content already saved is still here. " +
+            (providerRecovery.toolProtocol
+              ? "A tool may have changed its target, so inspect the workspace or external system before repeating it."
+              : "The interrupted turn will not run again automatically."),
+        })
+        yield* failInterruptedTools(
+          input.sessionID,
+          "Tool outcome unknown after process restart; inspect target state before retrying",
+        )
+        yield* events.publish(SessionEvent.ProviderAttempt.Abandoned, {
+          sessionID: input.sessionID,
+          timestamp: yield* DateTime.now,
+          attemptID: providerRecovery.attemptID,
+          reason: "new-input",
+        })
+      } else {
+        yield* failInterruptedTools(input.sessionID)
+      }
       // B7 tier-1 / ruling 3 — the DRAIN-ENTRY derivation, placed after every early return so a wake
       // that does nothing reads nothing. It answers only the questions asked before any turn exists:
       // the Strict routing decision and the once-per-session quality-provision nudge. Each turn below
@@ -2301,11 +2428,7 @@ export const layer = Layer.effect(
           // spawned children and forks don't silently self-drive; Stop interrupts this very
           // fiber, so it remains the unconditional kill switch. See runner/drive.ts.
           const latest = yield* store.get(input.sessionID).pipe(Effect.orElseSucceed(() => undefined))
-          const decision = SessionDrive.decide(
-            latest,
-            driveState,
-            DateTime.toEpochMillis(yield* DateTime.now),
-          )
+          const decision = SessionDrive.decide(latest, driveState, DateTime.toEpochMillis(yield* DateTime.now))
           if (decision.kind === "continue") {
             driveState.rounds++
             yield* Log.event("session.drive.continue", {

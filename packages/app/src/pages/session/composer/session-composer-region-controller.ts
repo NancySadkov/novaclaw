@@ -6,6 +6,7 @@ import type { PromptInputState } from "@/components/prompt-input"
 import { useSync } from "@/context/sync"
 import { getSessionHandoff, setSessionHandoff } from "@/pages/session/handoff"
 import type { SessionComposerController } from "./session-composer-state"
+import type { SessionProviderRecovery } from "./session-provider-recovery-dock"
 
 export type SessionComposerFollowupDock = {
   items: { id: string; text: string }[]
@@ -35,6 +36,7 @@ export function createSessionComposerRegionController(input: {
   }
   followup: Accessor<SessionComposerFollowupDock | undefined>
   revert: Accessor<SessionComposerRevertDock | undefined>
+  providerRecovery: Accessor<{ sessionID: string; recovery: SessionProviderRecovery; onResume: () => void } | undefined>
   onResponseSubmit: () => void
   openParent: () => void
   setPromptRef: (el: HTMLDivElement) => void
@@ -127,6 +129,7 @@ export function createSessionComposerRegionController(input: {
     todo: input.todo,
     followup: input.followup,
     revert: input.revert,
+    providerRecovery: input.providerRecovery,
     onResponseSubmit: input.onResponseSubmit,
     openParent: input.openParent,
     setPromptRef: input.setPromptRef,

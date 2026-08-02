@@ -8,6 +8,7 @@ import {
   Match,
   Switch,
   createMemo,
+  createSignal,
   createEffect,
   createComputed,
   on,
@@ -160,6 +161,7 @@ export default function Page() {
   })
 
   const composer = createSessionComposerController()
+  const [recoveryDismissed, setRecoveryDismissed] = createSignal<string>()
   const inputController = createPromptInputController({
     sessionID: () => params.id,
     queryOptions: serverSync().queryOptions,
@@ -1719,6 +1721,16 @@ export default function Page() {
               onDiscard: () => void discardRolled(),
             }
           : undefined,
+      providerRecovery: () => {
+        const session = info()
+        const recovery = session?.providerRecovery
+        if (!session || !recovery || recoveryDismissed() === recovery.attemptID) return
+        return {
+          sessionID: session.id,
+          recovery,
+          onResume: () => setRecoveryDismissed(recovery.attemptID),
+        }
+      },
       onResponseSubmit: resumeScroll,
       openParent: () => {
         const id = info()?.parentID

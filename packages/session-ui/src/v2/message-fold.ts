@@ -71,8 +71,7 @@ export function latestTool(
   callID?: string,
 ): SessionMessageAssistantTool | undefined {
   return assistant?.content.findLast(
-    (item): item is SessionMessageAssistantTool =>
-      item.type === "tool" && (callID === undefined || item.id === callID),
+    (item): item is SessionMessageAssistantTool => item.type === "tool" && (callID === undefined || item.id === callID),
   )
 }
 
@@ -94,6 +93,14 @@ export function latestReasoning(
   return assistant?.content.findLast(
     (item): item is SessionMessageAssistantReasoning => item.type === "reasoning" && item.id === reasoningID,
   )
+}
+
+/** Merge a durable stream checkpoint without duplicating live deltas already seen by this client. */
+function mergeCheckpoint(current: string, offset: number, delta: string): string {
+  if (offset > current.length) return current
+  const overlap = current.length - offset
+  if (overlap >= delta.length) return current
+  return current + delta.slice(Math.max(0, overlap))
 }
 
 /**
@@ -216,6 +223,11 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
       if (match) match.text += event.data.delta
       break
     }
+    case "session.next.text.progress": {
+      const match = latestText(findAssistant(messages, event.data.assistantMessageID), event.data.textID)
+      if (match) match.text = mergeCheckpoint(match.text, event.data.offset, event.data.delta)
+      break
+    }
     case "session.next.text.ended": {
       const match = latestText(findAssistant(messages, event.data.assistantMessageID), event.data.textID)
       if (match) match.text = event.data.text
@@ -234,6 +246,12 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
       // Client-only: stream the pending tool input live (core no-ops this — not durable).
       const match = latestTool(findAssistant(messages, event.data.assistantMessageID), event.data.callID)
       if (match?.state.status === "pending") match.state.input += event.data.delta
+      break
+    }
+    case "session.next.tool.input.progress": {
+      const match = latestTool(findAssistant(messages, event.data.assistantMessageID), event.data.callID)
+      if (match?.state.status === "pending")
+        match.state.input = mergeCheckpoint(match.state.input, event.data.offset, event.data.delta)
       break
     }
     case "session.next.tool.input.ended": {
@@ -308,6 +326,11 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
       if (match) match.text += event.data.delta
       break
     }
+    case "session.next.reasoning.progress": {
+      const match = latestReasoning(findAssistant(messages, event.data.assistantMessageID), event.data.reasoningID)
+      if (match) match.text = mergeCheckpoint(match.text, event.data.offset, event.data.delta)
+      break
+    }
     case "session.next.reasoning.ended": {
       const match = latestReasoning(findAssistant(messages, event.data.assistantMessageID), event.data.reasoningID)
       if (match) {
@@ -350,7 +373,11 @@ function messageCreatedAt(message: SessionMessage): number | undefined {
   const created = (message as { time?: { created?: unknown } }).time?.created
   if (typeof created === "number") return created
   if (created instanceof Date) return created.getTime()
-  if (typeof created === "object" && created !== null && typeof (created as { epochMillis?: unknown }).epochMillis === "number")
+  if (
+    typeof created === "object" &&
+    created !== null &&
+    typeof (created as { epochMillis?: unknown }).epochMillis === "number"
+  )
     return (created as { epochMillis: number }).epochMillis
   return undefined
 }

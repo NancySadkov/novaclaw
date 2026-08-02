@@ -93,6 +93,9 @@ export function sessionRow(info: SessionSchema.Info): typeof SessionTable.$infer
     // that meant to restrict must not silently produce an unrestricted session.
     safe_mode: info.safeMode,
     context_budget: info.contextBudget,
+    provider_recovery: info.providerRecovery
+      ? { ...info.providerRecovery, startedAt: DateTime.toEpochMillis(info.providerRecovery.startedAt) }
+      : undefined,
     time_created: DateTime.toEpochMillis(info.time.created),
     time_updated: DateTime.toEpochMillis(info.time.updated),
     time_archived: info.time.archived ? DateTime.toEpochMillis(info.time.archived) : undefined,
@@ -324,7 +327,10 @@ export const layer = Layer.effectDiscard(
     yield* events.project(SessionEvent.PromptOverrideSwitched, (event) =>
       db
         .update(SessionTable)
-        .set({ system_prompt_override: event.data.override, time_updated: DateTime.toEpochMillis(event.data.timestamp) })
+        .set({
+          system_prompt_override: event.data.override,
+          time_updated: DateTime.toEpochMillis(event.data.timestamp),
+        })
         .where(eq(SessionTable.id, event.data.sessionID))
         .run()
         .pipe(Effect.orDie, Effect.andThen(run(db, event))),
@@ -347,7 +353,7 @@ export const layer = Layer.effectDiscard(
                     ? { safe_mode: event.data.enabled, ...stamp }
                     : event.data.feature === "contextBudget"
                       ? { context_budget: event.data.enabled, ...stamp }
-                    : { affective: event.data.enabled, ...stamp }
+                      : { affective: event.data.enabled, ...stamp }
       return db
         .update(SessionTable)
         .set(patch)
@@ -394,6 +400,41 @@ export const layer = Layer.effectDiscard(
     )
     yield* events.project(SessionEvent.ContextUpdated, (event) => run(db, event))
     yield* events.project(SessionEvent.Synthetic, (event) => run(db, event))
+    yield* events.project(SessionEvent.ProviderAttempt.Started, (event) =>
+      db
+        .update(SessionTable)
+        .set({
+          provider_recovery: {
+            ...event.data.recovery,
+            startedAt: DateTime.toEpochMillis(event.data.recovery.startedAt),
+          },
+        })
+        .where(eq(SessionTable.id, event.data.sessionID))
+        .run()
+        .pipe(Effect.orDie, Effect.asVoid),
+    )
+    const clearProviderRecovery = (sessionID: SessionSchema.ID, attemptID: string) =>
+      Effect.gen(function* () {
+        const row = yield* db
+          .select({ recovery: SessionTable.provider_recovery })
+          .from(SessionTable)
+          .where(eq(SessionTable.id, sessionID))
+          .get()
+          .pipe(Effect.orDie)
+        if (row?.recovery?.attemptID !== attemptID) return
+        yield* db
+          .update(SessionTable)
+          .set({ provider_recovery: null })
+          .where(eq(SessionTable.id, sessionID))
+          .run()
+          .pipe(Effect.orDie)
+      })
+    yield* events.project(SessionEvent.ProviderAttempt.Settled, (event) =>
+      clearProviderRecovery(event.data.sessionID, event.data.attemptID),
+    )
+    yield* events.project(SessionEvent.ProviderAttempt.Abandoned, (event) =>
+      clearProviderRecovery(event.data.sessionID, event.data.attemptID),
+    )
     // F1c fork: a copied transcript message arrives as ONE self-contained durable event —
     // insert it verbatim (seq = the event's aggregate seq, so copy order is transcript order).
     yield* events.project(SessionEvent.MessageRecorded, (event) => insertMessage(db, event, event.data.message))
@@ -421,14 +462,34 @@ export const layer = Layer.effectDiscard(
     )
     yield* events.project(SessionEvent.Step.Failed, (event) => run(db, event))
     yield* events.project(SessionEvent.Text.Started, (event) => run(db, event))
+    yield* events.project(SessionEvent.Text.Progress, (event) => run(db, event))
     yield* events.project(SessionEvent.Text.Ended, (event) => run(db, event))
-    yield* events.project(SessionEvent.Tool.Input.Started, (event) => run(db, event))
+    yield* events.project(SessionEvent.Tool.Input.Started, (event) =>
+      Effect.gen(function* () {
+        yield* run(db, event)
+        const row = yield* db
+          .select({ recovery: SessionTable.provider_recovery })
+          .from(SessionTable)
+          .where(eq(SessionTable.id, event.data.sessionID))
+          .get()
+          .pipe(Effect.orDie)
+        if (!row?.recovery || row.recovery.assistantMessageID !== event.data.assistantMessageID) return
+        yield* db
+          .update(SessionTable)
+          .set({ provider_recovery: { ...row.recovery, toolProtocol: true } })
+          .where(eq(SessionTable.id, event.data.sessionID))
+          .run()
+          .pipe(Effect.orDie)
+      }),
+    )
+    yield* events.project(SessionEvent.Tool.Input.Progress, (event) => run(db, event))
     yield* events.project(SessionEvent.Tool.Input.Ended, (event) => run(db, event))
     yield* events.project(SessionEvent.Tool.Called, (event) => run(db, event))
     yield* events.project(SessionEvent.Tool.Progress, (event) => run(db, event))
     yield* events.project(SessionEvent.Tool.Success, (event) => run(db, event))
     yield* events.project(SessionEvent.Tool.Failed, (event) => run(db, event))
     yield* events.project(SessionEvent.Reasoning.Started, (event) => run(db, event))
+    yield* events.project(SessionEvent.Reasoning.Progress, (event) => run(db, event))
     yield* events.project(SessionEvent.Reasoning.Ended, (event) => run(db, event))
     yield* events.project(SessionEvent.Compaction.Ended, (event) => {
       if (event.durable === undefined) return Effect.die("Durable Session event is missing aggregate sequence")

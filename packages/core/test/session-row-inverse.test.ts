@@ -4,6 +4,10 @@ import { fromRow } from "@novaclaw/core/session/info"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import type { SessionTable } from "@novaclaw/core/session/sql"
+import { EventV2 } from "@novaclaw/core/event"
+import { ModelV2 } from "@novaclaw/core/model"
+import { ProviderV2 } from "@novaclaw/core/provider"
+import { SessionMessage } from "@novaclaw/core/session/message"
 
 /**
  * `sessionRow` calls itself "fromRow's inverse". From the V1 nuke until 2026-07-29 that was FALSE:
@@ -47,6 +51,13 @@ function populatedInfo(): SessionSchema.Info {
     surgicalEdits: true,
     askBeforeChanges: true,
     contextBudget: true,
+    providerRecovery: {
+      attemptID: EventV2.ID.make("evt_rowinverse0000000000000"),
+      assistantMessageID: SessionMessage.ID.make("msg_rowinverse0000000000000"),
+      model: { id: ModelV2.ID.make("model"), providerID: ProviderV2.ID.make("provider") },
+      startedAt: NOW,
+      toolProtocol: true,
+    },
     cost: 0,
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
     time: { created: NOW, updated: NOW },
@@ -75,6 +86,7 @@ describe("sessionRow is fromRow's inverse", () => {
     )
     expect(back.responder, "responder did not survive").toBe(info.responder)
     expect(back.contextBudget, "contextBudget did not survive").toBe(info.contextBudget)
+    expect(back.providerRecovery, "providerRecovery did not survive").toEqual(info.providerRecovery)
   })
 
   test("no field of a fully-populated Info is silently dropped", () => {
@@ -122,6 +134,7 @@ describe("sessionRow is fromRow's inverse", () => {
     expect(back.thinkingBudget).toBeUndefined()
     expect(back.responder).toBeUndefined()
     expect(back.contextBudget).toBeUndefined()
+    expect(back.providerRecovery).toBeUndefined()
     expect(back.systemPromptOverride).toBeUndefined()
   })
 })

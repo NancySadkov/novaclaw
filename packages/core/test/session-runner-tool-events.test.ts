@@ -134,3 +134,24 @@ test("step finish records settlement without publishing step ended", async () =>
   expect(published.some((event) => event.type === "session.next.step.ended.2")).toBe(false)
   expect(publisher.stepSettlement()).toMatchObject({ finish: "stop" })
 })
+
+test("stream checkpoints stay storage-linear and identify their offsets", async () => {
+  const { published, publisher } = capture()
+  const first = "a".repeat(600)
+  const second = "b".repeat(600)
+  await Effect.runPromise(publisher.publish(LLMEvent.textStart({ id: "text-checkpoint" })))
+  await Effect.runPromise(publisher.publish(LLMEvent.textDelta({ id: "text-checkpoint", text: first })))
+  await Effect.runPromise(publisher.publish(LLMEvent.textDelta({ id: "text-checkpoint", text: second })))
+
+  const checkpoints = published
+    .filter((event) => event.type === "session.next.text.progress.1")
+    .map((event) => {
+      const data = event.data as { offset: number; delta: string }
+      return { offset: data.offset, delta: data.delta }
+    })
+  expect(checkpoints).toEqual([
+    { offset: 0, delta: first },
+    { offset: first.length, delta: second },
+  ])
+  expect(checkpoints.reduce((sum, checkpoint) => sum + checkpoint.delta.length, 0)).toBe(first.length + second.length)
+})

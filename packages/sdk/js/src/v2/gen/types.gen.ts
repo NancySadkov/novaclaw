@@ -26,6 +26,9 @@ export type Event =
   | EventSessionNextPromptAdmitted
   | EventSessionNextContextUpdated
   | EventSessionNextSynthetic
+  | EventSessionNextProviderAttemptStarted
+  | EventSessionNextProviderAttemptSettled
+  | EventSessionNextProviderAttemptAbandoned
   | EventSessionNextMessageRecorded
   | EventSessionNextShellStarted
   | EventSessionNextShellEnded
@@ -34,12 +37,15 @@ export type Event =
   | EventSessionNextStepFailed
   | EventSessionNextTextStarted
   | EventSessionNextTextDelta
+  | EventSessionNextTextProgress
   | EventSessionNextTextEnded
   | EventSessionNextReasoningStarted
   | EventSessionNextReasoningDelta
+  | EventSessionNextReasoningProgress
   | EventSessionNextReasoningEnded
   | EventSessionNextToolInputStarted
   | EventSessionNextToolInputDelta
+  | EventSessionNextToolInputProgress
   | EventSessionNextToolInputEnded
   | EventSessionNextToolCalled
   | EventSessionNextToolProgress
@@ -458,6 +464,35 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "session.next.provider-attempt.started"
+        properties: {
+          timestamp: number
+          sessionID: string
+          recovery: SessionProviderRecovery
+        }
+      }
+    | {
+        id: string
+        type: "session.next.provider-attempt.settled"
+        properties: {
+          timestamp: number
+          sessionID: string
+          attemptID: string
+          outcome: "completed" | "failed" | "interrupted"
+        }
+      }
+    | {
+        id: string
+        type: "session.next.provider-attempt.abandoned"
+        properties: {
+          timestamp: number
+          sessionID: string
+          attemptID: string
+          reason: "new-input"
+        }
+      }
+    | {
+        id: string
         type: "session.next.message.recorded"
         properties: {
           timestamp: number
@@ -554,6 +589,18 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "session.next.text.progress"
+        properties: {
+          timestamp: number
+          sessionID: string
+          assistantMessageID: string
+          textID: string
+          offset: number
+          delta: string
+        }
+      }
+    | {
+        id: string
         type: "session.next.text.ended"
         properties: {
           timestamp: number
@@ -582,6 +629,18 @@ export type GlobalEvent = {
           sessionID: string
           assistantMessageID: string
           reasoningID: string
+          delta: string
+        }
+      }
+    | {
+        id: string
+        type: "session.next.reasoning.progress"
+        properties: {
+          timestamp: number
+          sessionID: string
+          assistantMessageID: string
+          reasoningID: string
+          offset: number
           delta: string
         }
       }
@@ -616,6 +675,18 @@ export type GlobalEvent = {
           sessionID: string
           assistantMessageID: string
           callID: string
+          delta: string
+        }
+      }
+    | {
+        id: string
+        type: "session.next.tool.input.progress"
+        properties: {
+          timestamp: number
+          sessionID: string
+          assistantMessageID: string
+          callID: string
+          offset: number
           delta: string
         }
       }
@@ -1119,6 +1190,9 @@ export type GlobalEvent = {
     | SyncEventSessionNextPromptAdmitted
     | SyncEventSessionNextContextUpdated
     | SyncEventSessionNextSynthetic
+    | SyncEventSessionNextProviderAttemptStarted
+    | SyncEventSessionNextProviderAttemptSettled
+    | SyncEventSessionNextProviderAttemptAbandoned
     | SyncEventSessionNextMessageRecorded
     | SyncEventSessionNextShellStarted
     | SyncEventSessionNextShellEnded
@@ -1126,10 +1200,13 @@ export type GlobalEvent = {
     | SyncEventSessionNextStepEnded
     | SyncEventSessionNextStepFailed
     | SyncEventSessionNextTextStarted
+    | SyncEventSessionNextTextProgress
     | SyncEventSessionNextTextEnded
     | SyncEventSessionNextReasoningStarted
+    | SyncEventSessionNextReasoningProgress
     | SyncEventSessionNextReasoningEnded
     | SyncEventSessionNextToolInputStarted
+    | SyncEventSessionNextToolInputProgress
     | SyncEventSessionNextToolInputEnded
     | SyncEventSessionNextToolCalled
     | SyncEventSessionNextToolProgress
@@ -1552,6 +1629,9 @@ export type SessionDurableEvent =
   | SessionNextPromptAdmitted
   | SessionNextContextUpdated
   | SessionNextSynthetic
+  | SessionNextProviderAttemptStarted
+  | SessionNextProviderAttemptSettled
+  | SessionNextProviderAttemptAbandoned
   | SessionNextMessageRecorded
   | SessionNextShellStarted
   | SessionNextShellEnded
@@ -1559,14 +1639,17 @@ export type SessionDurableEvent =
   | SessionNextStepEnded
   | SessionNextStepFailed
   | SessionNextTextStarted
+  | SessionNextTextProgress
   | SessionNextTextEnded
   | SessionNextToolInputStarted
+  | SessionNextToolInputProgress
   | SessionNextToolInputEnded
   | SessionNextToolCalled
   | SessionNextToolProgress
   | SessionNextToolSuccess
   | SessionNextToolFailed
   | SessionNextReasoningStarted
+  | SessionNextReasoningProgress
   | SessionNextReasoningEnded
   | SessionNextCompactionStarted
   | SessionNextCompactionEnded
@@ -1702,6 +1785,9 @@ export type V2Event =
   | SessionNextPromptAdmitted
   | SessionNextContextUpdated
   | SessionNextSynthetic
+  | SessionNextProviderAttemptStarted
+  | SessionNextProviderAttemptSettled
+  | SessionNextProviderAttemptAbandoned
   | SessionNextMessageRecorded
   | SessionNextShellStarted
   | SessionNextShellEnded
@@ -1710,12 +1796,15 @@ export type V2Event =
   | SessionNextStepFailed
   | SessionNextTextStarted
   | SessionNextTextDelta
+  | SessionNextTextProgress
   | SessionNextTextEnded
   | SessionNextReasoningStarted
   | SessionNextReasoningDelta
+  | SessionNextReasoningProgress
   | SessionNextReasoningEnded
   | SessionNextToolInputStarted
   | SessionNextToolInputDelta
+  | SessionNextToolInputProgress
   | SessionNextToolInputEnded
   | SessionNextToolCalled
   | SessionNextToolProgress
@@ -1810,6 +1899,14 @@ export type SessionStrictOverride = {
   wallMinutes?: number
 }
 
+export type SessionProviderRecovery = {
+  attemptID: string
+  assistantMessageID: string
+  model: ModelRef
+  startedAt: number
+  toolProtocol: boolean
+}
+
 export type LocationRef = {
   directory: string
   workspaceID?: string
@@ -1871,6 +1968,7 @@ export type SessionV2Info = {
   askBeforeChanges?: boolean
   safeMode?: boolean
   contextBudget?: boolean
+  providerRecovery?: SessionProviderRecovery
   result?: unknown
   cost: number
   tokens: {
@@ -2593,6 +2691,56 @@ export type SyncEventSessionNextSynthetic = {
   }
 }
 
+export type SyncEventSessionNextProviderAttemptStarted = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.provider-attempt.started.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      recovery: SessionProviderRecovery
+    }
+  }
+}
+
+export type SyncEventSessionNextProviderAttemptSettled = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.provider-attempt.settled.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      attemptID: string
+      outcome: "completed" | "failed" | "interrupted"
+    }
+  }
+}
+
+export type SyncEventSessionNextProviderAttemptAbandoned = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.provider-attempt.abandoned.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      attemptID: string
+      reason: "new-input"
+    }
+  }
+}
+
 export type SyncEventSessionNextMessageRecorded = {
   type: "sync"
   id: string
@@ -2727,6 +2875,25 @@ export type SyncEventSessionNextTextStarted = {
   }
 }
 
+export type SyncEventSessionNextTextProgress = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.text.progress.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      assistantMessageID: string
+      textID: string
+      offset: number
+      delta: string
+    }
+  }
+}
+
 export type SyncEventSessionNextTextEnded = {
   type: "sync"
   id: string
@@ -2759,6 +2926,25 @@ export type SyncEventSessionNextReasoningStarted = {
       assistantMessageID: string
       reasoningID: string
       providerMetadata?: LlmProviderMetadata
+    }
+  }
+}
+
+export type SyncEventSessionNextReasoningProgress = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.reasoning.progress.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      assistantMessageID: string
+      reasoningID: string
+      offset: number
+      delta: string
     }
   }
 }
@@ -2796,6 +2982,25 @@ export type SyncEventSessionNextToolInputStarted = {
       assistantMessageID: string
       callID: string
       name: string
+    }
+  }
+}
+
+export type SyncEventSessionNextToolInputProgress = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.tool.input.progress.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      assistantMessageID: string
+      callID: string
+      offset: number
+      delta: string
     }
   }
 }
@@ -3993,6 +4198,65 @@ export type SessionNextSynthetic = {
   }
 }
 
+export type SessionNextProviderAttemptStarted = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.provider-attempt.started"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    recovery: SessionProviderRecovery
+  }
+}
+
+export type SessionNextProviderAttemptSettled = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.provider-attempt.settled"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    attemptID: string
+    outcome: "completed" | "failed" | "interrupted"
+  }
+}
+
+export type SessionNextProviderAttemptAbandoned = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.provider-attempt.abandoned"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    attemptID: string
+    reason: "new-input"
+  }
+}
+
 export type SessionNextMessageRecorded = {
   id: string
   metadata?: {
@@ -4148,6 +4412,28 @@ export type SessionNextTextStarted = {
   }
 }
 
+export type SessionNextTextProgress = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.text.progress"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    assistantMessageID: string
+    textID: string
+    offset: number
+    delta: string
+  }
+}
+
 export type SessionNextTextEnded = {
   id: string
   metadata?: {
@@ -4187,6 +4473,28 @@ export type SessionNextToolInputStarted = {
     assistantMessageID: string
     callID: string
     name: string
+  }
+}
+
+export type SessionNextToolInputProgress = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.tool.input.progress"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    assistantMessageID: string
+    callID: string
+    offset: number
+    delta: string
   }
 }
 
@@ -4337,6 +4645,28 @@ export type SessionNextReasoningStarted = {
     assistantMessageID: string
     reasoningID: string
     providerMetadata?: LlmProviderMetadata
+  }
+}
+
+export type SessionNextReasoningProgress = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.reasoning.progress"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    assistantMessageID: string
+    reasoningID: string
+    offset: number
+    delta: string
   }
 }
 
@@ -5999,6 +6329,38 @@ export type EventSessionNextSynthetic = {
   }
 }
 
+export type EventSessionNextProviderAttemptStarted = {
+  id: string
+  type: "session.next.provider-attempt.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+    recovery: SessionProviderRecovery
+  }
+}
+
+export type EventSessionNextProviderAttemptSettled = {
+  id: string
+  type: "session.next.provider-attempt.settled"
+  properties: {
+    timestamp: number
+    sessionID: string
+    attemptID: string
+    outcome: "completed" | "failed" | "interrupted"
+  }
+}
+
+export type EventSessionNextProviderAttemptAbandoned = {
+  id: string
+  type: "session.next.provider-attempt.abandoned"
+  properties: {
+    timestamp: number
+    sessionID: string
+    attemptID: string
+    reason: "new-input"
+  }
+}
+
 export type EventSessionNextMessageRecorded = {
   id: string
   type: "session.next.message.recorded"
@@ -6103,6 +6465,19 @@ export type EventSessionNextTextDelta = {
   }
 }
 
+export type EventSessionNextTextProgress = {
+  id: string
+  type: "session.next.text.progress"
+  properties: {
+    timestamp: number
+    sessionID: string
+    assistantMessageID: string
+    textID: string
+    offset: number
+    delta: string
+  }
+}
+
 export type EventSessionNextTextEnded = {
   id: string
   type: "session.next.text.ended"
@@ -6135,6 +6510,19 @@ export type EventSessionNextReasoningDelta = {
     sessionID: string
     assistantMessageID: string
     reasoningID: string
+    delta: string
+  }
+}
+
+export type EventSessionNextReasoningProgress = {
+  id: string
+  type: "session.next.reasoning.progress"
+  properties: {
+    timestamp: number
+    sessionID: string
+    assistantMessageID: string
+    reasoningID: string
+    offset: number
     delta: string
   }
 }
@@ -6172,6 +6560,19 @@ export type EventSessionNextToolInputDelta = {
     sessionID: string
     assistantMessageID: string
     callID: string
+    delta: string
+  }
+}
+
+export type EventSessionNextToolInputProgress = {
+  id: string
+  type: "session.next.tool.input.progress"
+  properties: {
+    timestamp: number
+    sessionID: string
+    assistantMessageID: string
+    callID: string
+    offset: number
     delta: string
   }
 }

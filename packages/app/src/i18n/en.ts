@@ -1022,6 +1022,14 @@ export const dict = {
   "session.revertDock.collapse": "Collapse rolled back messages",
   "session.revertDock.expand": "Expand rolled back messages",
   "session.revertDock.restore": "Restore message",
+  "session.providerRecovery.title": "A previous reply was interrupted",
+  "session.providerRecovery.description":
+    "NovaClaw could not confirm that the reply finished. Continue when you are ready; the interrupted turn will not run again automatically.",
+  "session.providerRecovery.toolDescription":
+    "A tool may have changed something before the interruption. Check its target, then continue—NovaClaw will not run it again automatically.",
+  "session.providerRecovery.resume": "Continue safely",
+  "session.providerRecovery.resuming": "Continuing…",
+  "session.providerRecovery.error": "Couldn’t continue",
   "session.revertDock.discard": "Delete {{count}} rolled back",
   "session.revertDock.discard.confirm.title": "Delete the rolled back messages?",
   "session.revertDock.discard.confirm.description":

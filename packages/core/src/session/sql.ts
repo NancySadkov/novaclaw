@@ -11,8 +11,10 @@ import { Timestamps } from "../database/schema.sql"
 import type { SystemContext } from "../system-context/index"
 import { AgentV2 } from "../agent"
 import type { Revert } from "@novaclaw/schema/revert"
+import type { SessionProviderRecovery } from "@novaclaw/schema/session-provider-recovery"
 
 type SessionMessageData = Omit<(typeof SessionMessage.Message)["Encoded"], "type" | "id">
+type StoredProviderRecovery = Omit<SessionProviderRecovery.Info, "startedAt"> & { readonly startedAt: number }
 
 export const SessionTable = sqliteTable(
   "session",
@@ -66,6 +68,7 @@ export const SessionTable = sqliteTable(
     // with no backend. Tri-state like the switches above; NULL = inherit, effective default OFF.
     safe_mode: integer({ mode: "boolean" }),
     context_budget: integer({ mode: "boolean" }),
+    provider_recovery: text({ mode: "json" }).$type<StoredProviderRecovery>(),
     result: text({ mode: "json" }).$type<unknown>(),
     ...Timestamps,
     time_compacting: integer(),

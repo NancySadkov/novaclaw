@@ -16910,6 +16910,15 @@
             "$ref": "#/components/schemas/EventSessionNextSynthetic"
           },
           {
+            "$ref": "#/components/schemas/EventSessionNextProvider-attemptStarted"
+          },
+          {
+            "$ref": "#/components/schemas/EventSessionNextProvider-attemptSettled"
+          },
+          {
+            "$ref": "#/components/schemas/EventSessionNextProvider-attemptAbandoned"
+          },
+          {
             "$ref": "#/components/schemas/EventSessionNextMessageRecorded"
           },
           {
@@ -16934,6 +16943,9 @@
             "$ref": "#/components/schemas/EventSessionNextTextDelta"
           },
           {
+            "$ref": "#/components/schemas/EventSessionNextTextProgress"
+          },
+          {
             "$ref": "#/components/schemas/EventSessionNextTextEnded"
           },
           {
@@ -16943,6 +16955,9 @@
             "$ref": "#/components/schemas/EventSessionNextReasoningDelta"
           },
           {
+            "$ref": "#/components/schemas/EventSessionNextReasoningProgress"
+          },
+          {
             "$ref": "#/components/schemas/EventSessionNextReasoningEnded"
           },
           {
@@ -16950,6 +16965,9 @@
           },
           {
             "$ref": "#/components/schemas/EventSessionNextToolInputDelta"
+          },
+          {
+            "$ref": "#/components/schemas/EventSessionNextToolInputProgress"
           },
           {
             "$ref": "#/components/schemas/EventSessionNextToolInputEnded"
@@ -18260,6 +18278,112 @@
                   },
                   "type": {
                     "type": "string",
+                    "enum": ["session.next.provider-attempt.started"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "timestamp": {
+                        "type": "number"
+                      },
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "recovery": {
+                        "$ref": "#/components/schemas/SessionProviderRecovery"
+                      }
+                    },
+                    "required": ["timestamp", "sessionID", "recovery"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["session.next.provider-attempt.settled"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "timestamp": {
+                        "type": "number"
+                      },
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "attemptID": {
+                        "type": "string",
+                        "pattern": "^evt_"
+                      },
+                      "outcome": {
+                        "type": "string",
+                        "enum": ["completed", "failed", "interrupted"]
+                      }
+                    },
+                    "required": ["timestamp", "sessionID", "attemptID", "outcome"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["session.next.provider-attempt.abandoned"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "timestamp": {
+                        "type": "number"
+                      },
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "attemptID": {
+                        "type": "string",
+                        "pattern": "^evt_"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "enum": ["new-input"]
+                      }
+                    },
+                    "required": ["timestamp", "sessionID", "attemptID", "reason"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
                     "enum": ["session.next.message.recorded"]
                   },
                   "properties": {
@@ -18599,6 +18723,49 @@
                   },
                   "type": {
                     "type": "string",
+                    "enum": ["session.next.text.progress"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "timestamp": {
+                        "type": "number"
+                      },
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "assistantMessageID": {
+                        "type": "string",
+                        "pattern": "^msg_"
+                      },
+                      "textID": {
+                        "type": "string"
+                      },
+                      "offset": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "delta": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["timestamp", "sessionID", "assistantMessageID", "textID", "offset", "delta"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
                     "enum": ["session.next.text.ended"]
                   },
                   "properties": {
@@ -18701,6 +18868,49 @@
                       }
                     },
                     "required": ["timestamp", "sessionID", "assistantMessageID", "reasoningID", "delta"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["session.next.reasoning.progress"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "timestamp": {
+                        "type": "number"
+                      },
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "assistantMessageID": {
+                        "type": "string",
+                        "pattern": "^msg_"
+                      },
+                      "reasoningID": {
+                        "type": "string"
+                      },
+                      "offset": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "delta": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["timestamp", "sessionID", "assistantMessageID", "reasoningID", "offset", "delta"],
                     "additionalProperties": false
                   }
                 },
@@ -18821,6 +19031,49 @@
                       }
                     },
                     "required": ["timestamp", "sessionID", "assistantMessageID", "callID", "delta"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["session.next.tool.input.progress"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "timestamp": {
+                        "type": "number"
+                      },
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "assistantMessageID": {
+                        "type": "string",
+                        "pattern": "^msg_"
+                      },
+                      "callID": {
+                        "type": "string"
+                      },
+                      "offset": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "delta": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["timestamp", "sessionID", "assistantMessageID", "callID", "offset", "delta"],
                     "additionalProperties": false
                   }
                 },
@@ -20564,6 +20817,15 @@
                 "$ref": "#/components/schemas/SyncEventSessionNextSynthetic"
               },
               {
+                "$ref": "#/components/schemas/SyncEventSessionNextProvider-attemptStarted"
+              },
+              {
+                "$ref": "#/components/schemas/SyncEventSessionNextProvider-attemptSettled"
+              },
+              {
+                "$ref": "#/components/schemas/SyncEventSessionNextProvider-attemptAbandoned"
+              },
+              {
                 "$ref": "#/components/schemas/SyncEventSessionNextMessageRecorded"
               },
               {
@@ -20585,16 +20847,25 @@
                 "$ref": "#/components/schemas/SyncEventSessionNextTextStarted"
               },
               {
+                "$ref": "#/components/schemas/SyncEventSessionNextTextProgress"
+              },
+              {
                 "$ref": "#/components/schemas/SyncEventSessionNextTextEnded"
               },
               {
                 "$ref": "#/components/schemas/SyncEventSessionNextReasoningStarted"
               },
               {
+                "$ref": "#/components/schemas/SyncEventSessionNextReasoningProgress"
+              },
+              {
                 "$ref": "#/components/schemas/SyncEventSessionNextReasoningEnded"
               },
               {
                 "$ref": "#/components/schemas/SyncEventSessionNextToolInputStarted"
+              },
+              {
+                "$ref": "#/components/schemas/SyncEventSessionNextToolInputProgress"
               },
               {
                 "$ref": "#/components/schemas/SyncEventSessionNextToolInputEnded"
@@ -21940,6 +22211,15 @@
             "$ref": "#/components/schemas/SessionNextSynthetic"
           },
           {
+            "$ref": "#/components/schemas/SessionNextProvider-attemptStarted"
+          },
+          {
+            "$ref": "#/components/schemas/SessionNextProvider-attemptSettled"
+          },
+          {
+            "$ref": "#/components/schemas/SessionNextProvider-attemptAbandoned"
+          },
+          {
             "$ref": "#/components/schemas/SessionNextMessageRecorded"
           },
           {
@@ -21961,10 +22241,16 @@
             "$ref": "#/components/schemas/SessionNextTextStarted"
           },
           {
+            "$ref": "#/components/schemas/SessionNextTextProgress"
+          },
+          {
             "$ref": "#/components/schemas/SessionNextTextEnded"
           },
           {
             "$ref": "#/components/schemas/SessionNextToolInputStarted"
+          },
+          {
+            "$ref": "#/components/schemas/SessionNextToolInputProgress"
           },
           {
             "$ref": "#/components/schemas/SessionNextToolInputEnded"
@@ -21983,6 +22269,9 @@
           },
           {
             "$ref": "#/components/schemas/SessionNextReasoningStarted"
+          },
+          {
+            "$ref": "#/components/schemas/SessionNextReasoningProgress"
           },
           {
             "$ref": "#/components/schemas/SessionNextReasoningEnded"
@@ -22400,6 +22689,15 @@
             "$ref": "#/components/schemas/SessionNextSynthetic"
           },
           {
+            "$ref": "#/components/schemas/SessionNextProvider-attemptStarted"
+          },
+          {
+            "$ref": "#/components/schemas/SessionNextProvider-attemptSettled"
+          },
+          {
+            "$ref": "#/components/schemas/SessionNextProvider-attemptAbandoned"
+          },
+          {
             "$ref": "#/components/schemas/SessionNextMessageRecorded"
           },
           {
@@ -22424,6 +22722,9 @@
             "$ref": "#/components/schemas/SessionNextTextDelta"
           },
           {
+            "$ref": "#/components/schemas/SessionNextTextProgress"
+          },
+          {
             "$ref": "#/components/schemas/SessionNextTextEnded"
           },
           {
@@ -22433,6 +22734,9 @@
             "$ref": "#/components/schemas/SessionNextReasoningDelta"
           },
           {
+            "$ref": "#/components/schemas/SessionNextReasoningProgress"
+          },
+          {
             "$ref": "#/components/schemas/SessionNextReasoningEnded"
           },
           {
@@ -22440,6 +22744,9 @@
           },
           {
             "$ref": "#/components/schemas/SessionNextToolInputDelta"
+          },
+          {
+            "$ref": "#/components/schemas/SessionNextToolInputProgress"
           },
           {
             "$ref": "#/components/schemas/SessionNextToolInputEnded"
@@ -22724,6 +23031,30 @@
         },
         "additionalProperties": false
       },
+      "SessionProviderRecovery": {
+        "type": "object",
+        "properties": {
+          "attemptID": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "assistantMessageID": {
+            "type": "string",
+            "pattern": "^msg_"
+          },
+          "model": {
+            "$ref": "#/components/schemas/ModelRef"
+          },
+          "startedAt": {
+            "type": "number"
+          },
+          "toolProtocol": {
+            "type": "boolean"
+          }
+        },
+        "required": ["attemptID", "assistantMessageID", "model", "startedAt", "toolProtocol"],
+        "additionalProperties": false
+      },
       "LocationRef": {
         "type": "object",
         "properties": {
@@ -22907,6 +23238,9 @@
           },
           "contextBudget": {
             "type": "boolean"
+          },
+          "providerRecovery": {
+            "$ref": "#/components/schemas/SessionProviderRecovery"
           },
           "result": {},
           "cost": {
@@ -25116,6 +25450,175 @@
         "required": ["type", "id", "syncEvent"],
         "additionalProperties": false
       },
+      "SyncEventSessionNextProvider-attemptStarted": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["sync"]
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "syncEvent": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["session.next.provider-attempt.started.1"]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "seq": {
+                "type": "number"
+              },
+              "aggregateID": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "sessionID": {
+                    "type": "string",
+                    "pattern": "^ses"
+                  },
+                  "recovery": {
+                    "$ref": "#/components/schemas/SessionProviderRecovery"
+                  }
+                },
+                "required": ["timestamp", "sessionID", "recovery"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "id", "seq", "aggregateID", "data"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["type", "id", "syncEvent"],
+        "additionalProperties": false
+      },
+      "SyncEventSessionNextProvider-attemptSettled": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["sync"]
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "syncEvent": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["session.next.provider-attempt.settled.1"]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "seq": {
+                "type": "number"
+              },
+              "aggregateID": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "sessionID": {
+                    "type": "string",
+                    "pattern": "^ses"
+                  },
+                  "attemptID": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "outcome": {
+                    "type": "string",
+                    "enum": ["completed", "failed", "interrupted"]
+                  }
+                },
+                "required": ["timestamp", "sessionID", "attemptID", "outcome"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "id", "seq", "aggregateID", "data"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["type", "id", "syncEvent"],
+        "additionalProperties": false
+      },
+      "SyncEventSessionNextProvider-attemptAbandoned": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["sync"]
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "syncEvent": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["session.next.provider-attempt.abandoned.1"]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "seq": {
+                "type": "number"
+              },
+              "aggregateID": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "sessionID": {
+                    "type": "string",
+                    "pattern": "^ses"
+                  },
+                  "attemptID": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "enum": ["new-input"]
+                  }
+                },
+                "required": ["timestamp", "sessionID", "attemptID", "reason"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "id", "seq", "aggregateID", "data"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["type", "id", "syncEvent"],
+        "additionalProperties": false
+      },
       "SyncEventSessionNextMessageRecorded": {
         "type": "object",
         "properties": {
@@ -25563,6 +26066,70 @@
         "required": ["type", "id", "syncEvent"],
         "additionalProperties": false
       },
+      "SyncEventSessionNextTextProgress": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["sync"]
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "syncEvent": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["session.next.text.progress.1"]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "seq": {
+                "type": "number"
+              },
+              "aggregateID": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "sessionID": {
+                    "type": "string",
+                    "pattern": "^ses"
+                  },
+                  "assistantMessageID": {
+                    "type": "string",
+                    "pattern": "^msg_"
+                  },
+                  "textID": {
+                    "type": "string"
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "delta": {
+                    "type": "string"
+                  }
+                },
+                "required": ["timestamp", "sessionID", "assistantMessageID", "textID", "offset", "delta"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "id", "seq", "aggregateID", "data"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["type", "id", "syncEvent"],
+        "additionalProperties": false
+      },
       "SyncEventSessionNextTextEnded": {
         "type": "object",
         "properties": {
@@ -25673,6 +26240,70 @@
                   }
                 },
                 "required": ["timestamp", "sessionID", "assistantMessageID", "reasoningID"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "id", "seq", "aggregateID", "data"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["type", "id", "syncEvent"],
+        "additionalProperties": false
+      },
+      "SyncEventSessionNextReasoningProgress": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["sync"]
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "syncEvent": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["session.next.reasoning.progress.1"]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "seq": {
+                "type": "number"
+              },
+              "aggregateID": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "sessionID": {
+                    "type": "string",
+                    "pattern": "^ses"
+                  },
+                  "assistantMessageID": {
+                    "type": "string",
+                    "pattern": "^msg_"
+                  },
+                  "reasoningID": {
+                    "type": "string"
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "delta": {
+                    "type": "string"
+                  }
+                },
+                "required": ["timestamp", "sessionID", "assistantMessageID", "reasoningID", "offset", "delta"],
                 "additionalProperties": false
               }
             },
@@ -25796,6 +26427,70 @@
                   }
                 },
                 "required": ["timestamp", "sessionID", "assistantMessageID", "callID", "name"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "id", "seq", "aggregateID", "data"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["type", "id", "syncEvent"],
+        "additionalProperties": false
+      },
+      "SyncEventSessionNextToolInputProgress": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["sync"]
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "syncEvent": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["session.next.tool.input.progress.1"]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "seq": {
+                "type": "number"
+              },
+              "aggregateID": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "sessionID": {
+                    "type": "string",
+                    "pattern": "^ses"
+                  },
+                  "assistantMessageID": {
+                    "type": "string",
+                    "pattern": "^msg_"
+                  },
+                  "callID": {
+                    "type": "string"
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "delta": {
+                    "type": "string"
+                  }
+                },
+                "required": ["timestamp", "sessionID", "assistantMessageID", "callID", "offset", "delta"],
                 "additionalProperties": false
               }
             },
@@ -29448,6 +30143,178 @@
         "required": ["id", "type", "data"],
         "additionalProperties": false
       },
+      "SessionNextProvider-attemptStarted": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.provider-attempt.started"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "recovery": {
+                "$ref": "#/components/schemas/SessionProviderRecovery"
+              }
+            },
+            "required": ["timestamp", "sessionID", "recovery"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "SessionNextProvider-attemptSettled": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.provider-attempt.settled"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "attemptID": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": ["completed", "failed", "interrupted"]
+              }
+            },
+            "required": ["timestamp", "sessionID", "attemptID", "outcome"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "SessionNextProvider-attemptAbandoned": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.provider-attempt.abandoned"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "attemptID": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "reason": {
+                "type": "string",
+                "enum": ["new-input"]
+              }
+            },
+            "required": ["timestamp", "sessionID", "attemptID", "reason"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
       "SessionNextMessageRecorded": {
         "type": "object",
         "properties": {
@@ -29902,6 +30769,71 @@
         "required": ["id", "type", "data"],
         "additionalProperties": false
       },
+      "SessionNextTextProgress": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.text.progress"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "assistantMessageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "textID": {
+                "type": "string"
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "delta": {
+                "type": "string"
+              }
+            },
+            "required": ["timestamp", "sessionID", "assistantMessageID", "textID", "offset", "delta"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
       "SessionNextTextEnded": {
         "type": "object",
         "properties": {
@@ -30018,6 +30950,71 @@
               }
             },
             "required": ["timestamp", "sessionID", "assistantMessageID", "callID", "name"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "SessionNextToolInputProgress": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.tool.input.progress"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "assistantMessageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "callID": {
+                "type": "string"
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "delta": {
+                "type": "string"
+              }
+            },
+            "required": ["timestamp", "sessionID", "assistantMessageID", "callID", "offset", "delta"],
             "additionalProperties": false
           }
         },
@@ -30446,6 +31443,71 @@
               }
             },
             "required": ["timestamp", "sessionID", "assistantMessageID", "reasoningID"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "SessionNextReasoningProgress": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.reasoning.progress"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "assistantMessageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "reasoningID": {
+                "type": "string"
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "delta": {
+                "type": "string"
+              }
+            },
+            "required": ["timestamp", "sessionID", "assistantMessageID", "reasoningID", "offset", "delta"],
             "additionalProperties": false
           }
         },
@@ -36217,6 +37279,112 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
+      "EventSessionNextProvider-attemptStarted": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.provider-attempt.started"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "recovery": {
+                "$ref": "#/components/schemas/SessionProviderRecovery"
+              }
+            },
+            "required": ["timestamp", "sessionID", "recovery"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventSessionNextProvider-attemptSettled": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.provider-attempt.settled"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "attemptID": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": ["completed", "failed", "interrupted"]
+              }
+            },
+            "required": ["timestamp", "sessionID", "attemptID", "outcome"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventSessionNextProvider-attemptAbandoned": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.provider-attempt.abandoned"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "attemptID": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "reason": {
+                "type": "string",
+                "enum": ["new-input"]
+              }
+            },
+            "required": ["timestamp", "sessionID", "attemptID", "reason"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
       "EventSessionNextMessageRecorded": {
         "type": "object",
         "properties": {
@@ -36556,6 +37724,49 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
+      "EventSessionNextTextProgress": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.text.progress"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "assistantMessageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "textID": {
+                "type": "string"
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "delta": {
+                "type": "string"
+              }
+            },
+            "required": ["timestamp", "sessionID", "assistantMessageID", "textID", "offset", "delta"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
       "EventSessionNextTextEnded": {
         "type": "object",
         "properties": {
@@ -36667,6 +37878,49 @@
               }
             },
             "required": ["timestamp", "sessionID", "assistantMessageID", "reasoningID", "delta"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventSessionNextReasoningProgress": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.reasoning.progress"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "assistantMessageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "reasoningID": {
+                "type": "string"
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "delta": {
+                "type": "string"
+              }
+            },
+            "required": ["timestamp", "sessionID", "assistantMessageID", "reasoningID", "offset", "delta"],
             "additionalProperties": false
           }
         },
@@ -36787,6 +38041,49 @@
               }
             },
             "required": ["timestamp", "sessionID", "assistantMessageID", "callID", "delta"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventSessionNextToolInputProgress": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.tool.input.progress"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "assistantMessageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "callID": {
+                "type": "string"
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "delta": {
+                "type": "string"
+              }
+            },
+            "required": ["timestamp", "sessionID", "assistantMessageID", "callID", "offset", "delta"],
             "additionalProperties": false
           }
         },

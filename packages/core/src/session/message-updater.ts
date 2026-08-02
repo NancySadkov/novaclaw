@@ -92,6 +92,16 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
   const latestReasoning = (assistant: DraftAssistant | undefined, reasoningID: string) =>
     assistant?.content.findLast((item): item is DraftReasoning => item.type === "reasoning" && item.id === reasoningID)
 
+  // A connected client has already applied the live token deltas; a reconnecting client may have
+  // only the last durable checkpoint. Offset-aware replacement makes one checkpoint idempotent in
+  // both cases without storing an ever-growing full snapshot in every event.
+  const mergeCheckpoint = (current: string, offset: number, delta: string) => {
+    if (offset > current.length) return current
+    const end = offset + delta.length
+    if (current.slice(offset, end) === delta) return current
+    return current.slice(0, offset) + delta + current.slice(end)
+  }
+
   const updateOwnedAssistant = (messageID: SessionMessage.ID, recipe: (draft: DraftAssistant) => void) =>
     Effect.gen(function* () {
       const assistant = yield* adapter.getAssistant(messageID)
@@ -174,6 +184,9 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
           }),
         )
       },
+      "session.next.provider-attempt.started": () => Effect.void,
+      "session.next.provider-attempt.settled": () => Effect.void,
+      "session.next.provider-attempt.abandoned": () => Effect.void,
       "session.next.shell.started": (event) => {
         return adapter.appendMessage(
           SessionMessage.Shell.make({
@@ -258,6 +271,12 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
           if (match) match.text += event.data.delta
         })
       },
+      "session.next.text.progress": (event) => {
+        return updateOwnedAssistant(event.data.assistantMessageID, (draft) => {
+          const match = latestText(draft, event.data.textID)
+          if (match) match.text = mergeCheckpoint(match.text, event.data.offset, event.data.delta)
+        })
+      },
       "session.next.text.ended": (event) => {
         return updateOwnedAssistant(event.data.assistantMessageID, (draft) => {
           const match = latestText(draft, event.data.textID)
@@ -280,6 +299,13 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
         })
       },
       "session.next.tool.input.delta": () => Effect.void,
+      "session.next.tool.input.progress": (event) => {
+        return updateOwnedAssistant(event.data.assistantMessageID, (draft) => {
+          const match = latestTool(draft, event.data.callID)
+          if (match && match.state.status === "pending")
+            match.state.input = mergeCheckpoint(match.state.input, event.data.offset, event.data.delta)
+        })
+      },
       "session.next.tool.input.ended": (event) => {
         return updateOwnedAssistant(event.data.assistantMessageID, (draft) => {
           const match = latestTool(draft, event.data.callID)
@@ -377,6 +403,12 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
         return updateOwnedAssistant(event.data.assistantMessageID, (draft) => {
           const match = latestReasoning(draft, event.data.reasoningID)
           if (match) match.text += event.data.delta
+        })
+      },
+      "session.next.reasoning.progress": (event) => {
+        return updateOwnedAssistant(event.data.assistantMessageID, (draft) => {
+          const match = latestReasoning(draft, event.data.reasoningID)
+          if (match) match.text = mergeCheckpoint(match.text, event.data.offset, event.data.delta)
         })
       },
       "session.next.reasoning.ended": (event) => {
