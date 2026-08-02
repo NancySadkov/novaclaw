@@ -500,6 +500,25 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("workspace.target.response.rejected")).toBe(false)
   })
 
+  test("workspace replay bounds are typed while the source directory stays local", () => {
+    const [line] = lines(
+      Log.event("workspace.sync.replay.start", {
+        "session.id": "ses_1",
+        "workspace.events": 4,
+        "workspace.sequence.first": 2,
+        "workspace.sequence.last": 5,
+        "workspace.directory": "/private/project",
+      }),
+    )
+    expect(line).toContain("event=workspace.sync.replay.start")
+    expect(line).toContain('message="sync replay requested"')
+    expect(line).toContain("workspace.events=4")
+    expect(line).toContain("workspace.sequence.first=2")
+    expect(line).toContain("workspace.sequence.last=5")
+    expect(mayEgress("workspace.sync.replay.start")).toBe(false)
+    expect(mayEgress("workspace.sync.replay.ok")).toBe(true)
+  })
+
   test("remote config URLs are structured but remain on the data plane", () => {
     const [line] = lines(
       Log.event("config.remote.fetch", { "config.url": "https://private.example/config" }),
@@ -568,7 +587,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("pty.session.exit")).toBe(true)
   })
 
-  test("an UN-keyed record is untouched — the 48 remaining call sites are not affected", () => {
+  test("an UN-keyed record is untouched — the 45 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))

@@ -128,18 +128,6 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/server/routes/instance/httpapi/handlers/sync.ts :: Effect.logInfo(\"sync replay complete\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/server/routes/instance/httpapi/handlers/sync.ts :: Effect.logInfo(\"sync replay requested\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/server/routes/instance/httpapi/handlers/sync.ts :: Effect.logInfo(\"sync session stolen\")",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/server/routes/instance/httpapi/lifecycle.ts :: Effect.logWarning(\"instance disposal failed\")",
     "count": 1
   },

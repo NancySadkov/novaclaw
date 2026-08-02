@@ -1649,6 +1649,14 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/control-plane/workspace.ts",
   },
+  /** A session record was reassigned to the current remote workspace. */
+  "workspace.session.steal": {
+    level: "info",
+    message: "sync session stolen",
+    attributes: { "session.id": "id", "workspace.id": "id" },
+    content: "none",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/sync.ts",
+  },
   /** The control plane could not establish the remote workspace's global event stream. */
   "workspace.sync.connect.failed": {
     level: "warn",
@@ -1656,6 +1664,33 @@ export const EVENTS = {
     attributes: { "workspace.name": "text", "workspace.cause": "fault" },
     content: "user",
     file: "packages/novaclaw/src/control-plane/workspace.ts",
+  },
+  /** A complete sync-event replay finished under strict workspace ownership. */
+  "workspace.sync.replay.ok": {
+    level: "info",
+    message: "sync replay complete",
+    attributes: {
+      "session.id": "id",
+      "workspace.events": "count",
+      "workspace.sequence.first": "count",
+      "workspace.sequence.last": "count",
+    },
+    content: "none",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/sync.ts",
+  },
+  /** A peer requested replay of a non-empty sync-event history. */
+  "workspace.sync.replay.start": {
+    level: "info",
+    message: "sync replay requested",
+    attributes: {
+      "session.id": "id",
+      "workspace.events": "count",
+      "workspace.sequence.first": "count",
+      "workspace.sequence.last": "count",
+      "workspace.directory": "path",
+    },
+    content: "user",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/sync.ts",
   },
   /** A successful remote workspace response did not decode as the expected representation. */
   "workspace.target.decode.failed": {

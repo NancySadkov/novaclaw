@@ -2,6 +2,7 @@ import { Workspace } from "@/control-plane/workspace"
 import * as InstanceState from "@/effect/instance-state"
 import { Database } from "@novaclaw/core/database/database"
 import { EventV2 } from "@novaclaw/core/event"
+import { Log } from "@novaclaw/schema/log"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { EventTable } from "@novaclaw/core/event/sql"
 import { asc } from "drizzle-orm"
@@ -41,20 +42,20 @@ export const syncHandlers = HttpApiBuilder.group(InstanceHttpApi, "sync", (handl
         data: { ...event.data },
       }))
       const source = payload[0].aggregateID
-      yield* Effect.logInfo("sync replay requested", {
-        sessionID: source,
-        events: payload.length,
-        first: payload[0]?.seq,
-        last: payload.at(-1)?.seq,
-        directory: ctx.payload.directory,
+      yield* Log.event("workspace.sync.replay.start", {
+        "session.id": source,
+        "workspace.events": payload.length,
+        "workspace.sequence.first": payload[0].seq,
+        "workspace.sequence.last": payload.at(-1)!.seq,
+        "workspace.directory": ctx.payload.directory,
       })
       const ownerID = yield* InstanceState.workspaceID
       yield* events.replayAll(payload, { ownerID, strictOwner: true })
-      yield* Effect.logInfo("sync replay complete", {
-        sessionID: source,
-        events: payload.length,
-        first: payload[0]?.seq,
-        last: payload.at(-1)?.seq,
+      yield* Log.event("workspace.sync.replay.ok", {
+        "session.id": source,
+        "workspace.events": payload.length,
+        "workspace.sequence.first": payload[0].seq,
+        "workspace.sequence.last": payload.at(-1)!.seq,
       })
       return { sessionID: source }
     })
@@ -72,7 +73,7 @@ export const syncHandlers = HttpApiBuilder.group(InstanceHttpApi, "sync", (handl
         }),
       )
 
-      yield* Effect.logInfo("sync session stolen", { sessionID: ctx.payload.sessionID, workspaceID })
+      yield* Log.event("workspace.session.steal", { "session.id": ctx.payload.sessionID, "workspace.id": workspaceID })
 
       return { sessionID: ctx.payload.sessionID }
     })
