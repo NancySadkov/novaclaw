@@ -96,6 +96,7 @@ export const SUBSYSTEMS = {
   mcp: "MCP servers",
   offline: "Offline mode",
   patch: "File changes",
+  permission: "Permissions",
   plugin: "Plugins",
   pty: "Terminal sessions",
   question: "Questions",
@@ -807,6 +808,24 @@ export const EVENTS = {
     attributes: { "patch.file": "path" },
     content: "user",
     file: "packages/novaclaw/src/patch/index.ts",
+  },
+
+  // ── permission ────────────────────────────────────────────────────────────────────────────────
+  /** A permission request is waiting for the user's decision. */
+  "permission.request.ask": {
+    level: "info",
+    message: "asking",
+    attributes: { "permission.request.id": "id", "permission.name": "text", "permission.patterns": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/permission/index.ts",
+  },
+  /** One requested pattern was evaluated against the effective permission rules. */
+  "permission.rule.evaluate": {
+    level: "info",
+    message: "evaluated",
+    attributes: { "permission.name": "text", "permission.pattern": "text", "permission.action": "id" },
+    content: "user",
+    file: "packages/novaclaw/src/permission/index.ts",
   },
 
   // ── plugin ────────────────────────────────────────────────────────────────────────────────────

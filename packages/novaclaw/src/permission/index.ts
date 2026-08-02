@@ -5,6 +5,7 @@ import { Wildcard } from "@novaclaw/core/util/wildcard"
 import { Deferred, Effect, Layer, Context } from "effect"
 import os from "os"
 import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
+import { Log } from "@novaclaw/schema/log"
 import { normalizeReply } from "@novaclaw/core/permission"
 import { EventV2Bridge } from "@/event-v2-bridge"
 
@@ -80,7 +81,11 @@ export const layer = Layer.effect(
 
       for (const pattern of request.patterns) {
         const rule = evaluate(request.permission, pattern, ruleset, approved)
-        yield* Effect.logInfo("evaluated", { permission: request.permission, pattern, action: rule })
+        yield* Log.event("permission.rule.evaluate", {
+          "permission.name": request.permission,
+          "permission.pattern": pattern,
+          "permission.action": rule.action,
+        })
         if (rule.action === "deny") {
           return yield* new PermissionRuleset.DeniedError({
             ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
@@ -102,7 +107,11 @@ export const layer = Layer.effect(
         always: request.always,
         tool: request.tool,
       }
-      yield* Effect.logInfo("asking", { id, permission: info.permission, patterns: info.patterns })
+      yield* Log.event("permission.request.ask", {
+        "permission.request.id": id,
+        "permission.name": info.permission,
+        "permission.patterns": JSON.stringify(info.patterns),
+      })
 
       const deferred = yield* Deferred.make<void, PermissionRuleset.RejectedError | PermissionRuleset.CorrectedError>()
       pending.set(id, { info, deferred })

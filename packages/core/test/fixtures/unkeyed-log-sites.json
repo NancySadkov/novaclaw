@@ -72,14 +72,6 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/permission/index.ts :: Effect.logInfo(\"asking\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/permission/index.ts :: Effect.logInfo(\"evaluated\")",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/project/bootstrap.ts :: Effect.logInfo(\"bootstrapping\")",
     "count": 1
   },

@@ -623,6 +623,33 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("offline.request.blocked")).toBe(false)
   })
 
+  test("permission decisions separate their closed action from user-controlled patterns", () => {
+    const [evaluated] = lines(
+      Log.event("permission.rule.evaluate", {
+        "permission.name": "bash",
+        "permission.pattern": "private-command --token secret",
+        "permission.action": "ask",
+      }),
+    )
+    const [asking] = lines(
+      Log.event("permission.request.ask", {
+        "permission.request.id": "per_123",
+        "permission.name": "bash",
+        "permission.patterns": '["private-command --token secret"]',
+      }),
+    )
+    expect(evaluated).toContain("event=permission.rule.evaluate")
+    expect(evaluated).toContain("message=evaluated")
+    expect(evaluated).toContain("permission.action=ask")
+    expect(evaluated).toContain('permission.pattern="private-command --token secret"')
+    expect(asking).toContain("event=permission.request.ask")
+    expect(asking).toContain("message=asking")
+    expect(asking).toContain("permission.request.id=per_123")
+    expect(asking).toContain("permission.patterns=")
+    expect(mayEgress("permission.rule.evaluate")).toBe(false)
+    expect(mayEgress("permission.request.ask")).toBe(false)
+  })
+
   test("PTY lifecycle fields stay structured and command content stays local", () => {
     const [created] = lines(
       Log.event("pty.session.create", {
@@ -643,7 +670,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("pty.session.exit")).toBe(true)
   })
 
-  test("an UN-keyed record is untouched — the 38 remaining call sites are not affected", () => {
+  test("an UN-keyed record is untouched — the 36 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))
