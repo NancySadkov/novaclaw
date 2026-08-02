@@ -4,18 +4,6 @@
     "count": 1
   },
   {
-    "name": "packages/core/src/config-store-write.ts :: Effect.logError(\"a config write committed but the runtime could not re-materialise\")",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/config-store-write.ts :: Effect.logInfo(\"offline policy changed by a config write\")",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/config-store-write.ts :: Effect.logWarning(\"a config write is stored but NOT LIVE until this instance restarts\")",
-    "count": 1
-  },
-  {
     "name": "packages/core/src/config.ts :: Effect.logWarning(notice)",
     "count": 1
   },

@@ -511,6 +511,29 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("config.remote.fetch")).toBe(false)
   })
 
+  test("config-write partial outcomes preserve arrays without exposing their content", () => {
+    const [reload] = lines(
+      Log.event("config.runtime.reload.failed", {
+        "config.domains": '["agents","catalog"]',
+        "config.causes": '["private materialisation fault"]',
+      }),
+    )
+    const [restart] = lines(
+      Log.event("config.runtime.restart.required", {
+        "config.keys": '["plugins"]',
+        "config.reasons": '["module cache cannot reload a private package"]',
+      }),
+    )
+    expect(reload).toContain("event=config.runtime.reload.failed")
+    expect(reload).toContain('message="a config write committed but the runtime could not re-materialise"')
+    expect(reload).toContain("config.domains=")
+    expect(reload).toContain("config.causes=")
+    expect(restart).toContain("event=config.runtime.restart.required")
+    expect(mayEgress("config.runtime.reload.failed")).toBe(false)
+    expect(mayEgress("config.runtime.restart.required")).toBe(false)
+    expect(mayEgress("config.offline.change")).toBe(false)
+  })
+
   test("watcher fallback records both attempted and still-active ignore lists", () => {
     const [line] = lines(
       Log.event("filesystem.watcher.resubscribe.stale", {
@@ -545,7 +568,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("pty.session.exit")).toBe(true)
   })
 
-  test("an UN-keyed record is untouched — the 51 remaining call sites are not affected", () => {
+  test("an UN-keyed record is untouched — the 48 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))

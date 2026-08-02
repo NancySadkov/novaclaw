@@ -245,6 +245,14 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/config/config.ts",
   },
+  /** A committed config write changed the live process-wide airgap policy. */
+  "config.offline.change": {
+    level: "info",
+    message: "offline policy changed by a config write",
+    attributes: { "config.offline.enabled": "flag", "config.offline.hosts": "text" },
+    content: "user",
+    file: "packages/core/src/config-store-write.ts",
+  },
   /** The legacy permission environment override was malformed and was skipped. */
   "config.permission.parse.failed": {
     level: "warn",
@@ -268,6 +276,22 @@ export const EVENTS = {
     attributes: { "config.url": "text" },
     content: "user",
     file: "packages/novaclaw/src/config/config.ts",
+  },
+  /** A config write committed, but one or more live runtime domains could not re-materialise it. */
+  "config.runtime.reload.failed": {
+    level: "error",
+    message: "a config write committed but the runtime could not re-materialise",
+    attributes: { "config.domains": "text", "config.causes": "fault" },
+    content: "user",
+    file: "packages/core/src/config-store-write.ts",
+  },
+  /** A durable config change cannot become live until this instance restarts. */
+  "config.runtime.restart.required": {
+    level: "warn",
+    message: "a config write is stored but NOT LIVE until this instance restarts",
+    attributes: { "config.keys": "text", "config.reasons": "text" },
+    content: "user",
+    file: "packages/core/src/config-store-write.ts",
   },
   /** One or more stored config rows were unreadable; valid peers remain available. */
   "config.store.read.degraded": {

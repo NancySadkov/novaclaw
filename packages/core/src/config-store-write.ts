@@ -1,6 +1,7 @@
 export * as ConfigStoreWrite from "./config-store-write"
 
 import { Cause, Effect, Exit, Option, Schema } from "effect"
+import { Log } from "@novaclaw/schema/log"
 import { AgentConfigStore } from "./agent-config-store"
 import { CatalogSeed } from "./catalog-seed"
 import { CatalogStore } from "./catalog-store"
@@ -732,9 +733,9 @@ const refreshDomains = (domains: readonly ReloadDomain[]) =>
     if (failures.length === 0) return
 
     const named = [...new Set(failures.map((failure) => failure.domain))].sort()
-    yield* Effect.logError("a config write committed but the runtime could not re-materialise", {
-      domains: named,
-      causes: failures.map((failure) => Cause.pretty(failure.cause)),
+    yield* Log.event("config.runtime.reload.failed", {
+      "config.domains": JSON.stringify(named),
+      "config.causes": JSON.stringify(failures.map((failure) => Cause.pretty(failure.cause))),
     })
     return yield* Effect.die(
       new Error(
@@ -821,9 +822,9 @@ export const apply = (patch: Config.Info) =>
       // Log the CHANGE, not the re-read: engaging or releasing an airgap is an operator-visible
       // event, while "saved a provider, airgap still off" is chatter that would bury it.
       if (policyKey(before) !== policyKey(policy))
-        yield* Effect.logInfo("offline policy changed by a config write", {
-          enabled: policy.enabled,
-          allowedHosts: [...policy.allowedHosts],
+        yield* Log.event("config.offline.change", {
+          "config.offline.enabled": policy.enabled,
+          "config.offline.hosts": JSON.stringify([...policy.allowedHosts]),
         })
     }
     if (consumed.has("watcher")) yield* Watcher.reload()
@@ -831,9 +832,9 @@ export const apply = (patch: Config.Info) =>
     // this process was never going to apply is a fact the operator needs either way.
     const stuck = restartRequired(consumed)
     if (stuck.length > 0)
-      yield* Effect.logWarning("a config write is stored but NOT LIVE until this instance restarts", {
-        keys: stuck,
-        reasons: stuck.map((key) => RESTART_REQUIRED_KEYS.get(key)),
+      yield* Log.event("config.runtime.restart.required", {
+        "config.keys": JSON.stringify(stuck),
+        "config.reasons": JSON.stringify(stuck.map((key) => RESTART_REQUIRED_KEYS.get(key))),
       })
     yield* refreshDomains(staleDomains(consumed))
     return consumed
