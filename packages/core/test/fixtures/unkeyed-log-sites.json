@@ -52,22 +52,6 @@
     "count": 1
   },
   {
-    "name": "packages/core/src/pty.ts :: Effect.logInfo(\"client attached to session\")",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/pty.ts :: Effect.logInfo(\"creating session\")",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/pty.ts :: Effect.logInfo(\"removing session\")",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/pty.ts :: Effect.logInfo(\"session exited\")",
-    "count": 1
-  },
-  {
     "name": "packages/core/src/reference.ts :: Effect.logWarning(\"failed to materialize reference\")",
     "count": 1
   },

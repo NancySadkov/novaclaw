@@ -96,6 +96,7 @@ export const SUBSYSTEMS = {
   mcp: "MCP servers",
   patch: "File changes",
   plugin: "Plugins",
+  pty: "Terminal sessions",
   question: "Questions",
   resource: "Host resources",
   server: "HTTP server",
@@ -797,6 +798,40 @@ export const EVENTS = {
     attributes: { "plugin.package": "text", "plugin.cause": "fault" },
     content: "user",
     file: "packages/core/src/config/plugin/external.ts",
+  },
+
+  // ── pty ──────────────────────────────────────────────────────────────────────────────────────
+  /** A client began receiving retained and live output from a running terminal session. */
+  "pty.client.attach": {
+    level: "info",
+    message: "client attached to session",
+    attributes: { "pty.id": "id", "pty.directory": "path" },
+    content: "user",
+    file: "packages/core/src/pty.ts",
+  },
+  /** A terminal process is about to be spawned. */
+  "pty.session.create": {
+    level: "info",
+    message: "creating session",
+    attributes: { "pty.id": "id", "pty.command": "text", "pty.arguments": "text", "pty.directory": "path" },
+    content: "user",
+    file: "packages/core/src/pty.ts",
+  },
+  /** A terminal process exited and its retained session became inactive. */
+  "pty.session.exit": {
+    level: "info",
+    message: "session exited",
+    attributes: { "pty.id": "id", "pty.exit_code": "count" },
+    content: "none",
+    file: "packages/core/src/pty.ts",
+  },
+  /** A retained terminal session is being removed. */
+  "pty.session.remove": {
+    level: "info",
+    message: "removing session",
+    attributes: { "pty.id": "id" },
+    content: "none",
+    file: "packages/core/src/pty.ts",
   },
 
   // ── question ──────────────────────────────────────────────────────────────────────────────────

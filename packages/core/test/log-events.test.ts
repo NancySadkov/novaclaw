@@ -525,7 +525,27 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("filesystem.watcher.resubscribe.stale")).toBe(false)
   })
 
-  test("an UN-keyed record is untouched — the 55 remaining call sites are not affected", () => {
+  test("PTY lifecycle fields stay structured and command content stays local", () => {
+    const [created] = lines(
+      Log.event("pty.session.create", {
+        "pty.id": "pty_1",
+        "pty.command": "/private/bin/my shell",
+        "pty.arguments": '["--login","project name"]',
+        "pty.directory": "/private/project",
+      }),
+    )
+    const [exited] = lines(Log.event("pty.session.exit", { "pty.id": "pty_1", "pty.exit_code": 3 }))
+    expect(created).toContain("event=pty.session.create")
+    expect(created).toContain('message="creating session"')
+    expect(created).toContain('pty.command="/private/bin/my shell"')
+    expect(created).toContain('pty.arguments="[\\"--login\\",\\"project name\\"]"')
+    expect(created).toContain("pty.directory=/private/project")
+    expect(exited).toContain("pty.exit_code=3")
+    expect(mayEgress("pty.session.create")).toBe(false)
+    expect(mayEgress("pty.session.exit")).toBe(true)
+  })
+
+  test("an UN-keyed record is untouched — the 51 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))

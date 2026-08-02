@@ -3,6 +3,7 @@ export * as Pty from "./pty"
 import { makeLocationNode } from "./effect/app-node"
 import type { Disp, Proc } from "#pty"
 import { Context, Effect, Layer, Schema, Types } from "effect"
+import { Log } from "@novaclaw/schema/log"
 import { Pty } from "@novaclaw/schema/pty"
 import { Config } from "./config"
 import { EventV2 } from "./event"
@@ -150,7 +151,7 @@ export const layer = Layer.effect(
       sessions.delete(id)
       const index = exitOrder.indexOf(id)
       if (index !== -1) exitOrder.splice(index, 1)
-      yield* Effect.logInfo("removing session", { id })
+      yield* Log.event("pty.session.remove", { "pty.id": id })
       teardown(session)
       yield* events.publish(Event.Deleted, { id: session.info.id })
     })
@@ -184,7 +185,12 @@ export const layer = Layer.effect(
         env.LC_CTYPE = "C.UTF-8"
         env.LANG = "C.UTF-8"
       }
-      yield* Effect.logInfo("creating session", { id, cmd: command, args, cwd })
+      yield* Log.event("pty.session.create", {
+        "pty.id": id,
+        "pty.command": command,
+        "pty.arguments": JSON.stringify(args),
+        "pty.directory": cwd,
+      })
       const { spawn } = yield* Effect.promise(() => pty())
       const proc = yield* Effect.sync(() => spawn(command, args, { name: "xterm-256color", cwd, env }))
       const info: Info = {
@@ -234,7 +240,7 @@ export const layer = Layer.effect(
           exitOrder.push(id)
           runFork(
             Effect.gen(function* () {
-              yield* Effect.logInfo("session exited", { id, exitCode })
+              yield* Log.event("pty.session.exit", { "pty.id": id, "pty.exit_code": exitCode })
               yield* events.publish(Event.Exited, { id, exitCode })
               while (exitOrder.length > EXITED_LIMIT) {
                 const oldest = exitOrder[0]
@@ -265,7 +271,7 @@ export const layer = Layer.effect(
     const attach = Effect.fn("Pty.attach")(function* (id: PtyID, input: AttachInput) {
       const session = yield* requireSession(id)
       if (session.info.status !== "running") return yield* new ExitedError({ ptyID: id })
-      yield* Effect.logInfo("client attached to session", { id, directory: location.directory })
+      yield* Log.event("pty.client.attach", { "pty.id": id, "pty.directory": location.directory })
       const token = {}
       const subscriber: Subscriber = {
         onData: input.onData,
