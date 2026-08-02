@@ -586,6 +586,20 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("filesystem.watcher.resubscribe.stale")).toBe(false)
   })
 
+  test("filesystem-search initialization failures name the directory but stay local", () => {
+    const [line] = lines(
+      Log.event("filesystem.search.init.failed", {
+        "filesystem.directory": "/private/project",
+        "filesystem.error": "native index unavailable",
+      }),
+    )
+    expect(line).toContain("event=filesystem.search.init.failed")
+    expect(line).toContain('message="failed to initialize fff"')
+    expect(line).toContain("filesystem.directory=/private/project")
+    expect(line).toContain('filesystem.error="native index unavailable"')
+    expect(mayEgress("filesystem.search.init.failed")).toBe(false)
+  })
+
   test("PTY lifecycle fields stay structured and command content stays local", () => {
     const [created] = lines(
       Log.event("pty.session.create", {
@@ -606,7 +620,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("pty.session.exit")).toBe(true)
   })
 
-  test("an UN-keyed record is untouched — the 42 remaining call sites are not affected", () => {
+  test("an UN-keyed record is untouched — the 40 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))

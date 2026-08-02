@@ -327,6 +327,14 @@ export const EVENTS = {
   },
 
   // ── filesystem ────────────────────────────────────────────────────────────────────────────────
+  /** The native fast-file-finder could not initialize; search degrades to empty results. */
+  "filesystem.search.init.failed": {
+    level: "warn",
+    message: "failed to initialize fff",
+    attributes: { "filesystem.directory": "path", "filesystem.error": "fault" },
+    content: "user",
+    file: "packages/core/src/filesystem/search.ts",
+  },
   /** The watcher service could not initialize and the location continues without file events. */
   "filesystem.watcher.init.failed": {
     level: "error",

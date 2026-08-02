@@ -16,10 +16,6 @@
     "count": 1
   },
   {
-    "name": "packages/core/src/filesystem/search.ts :: Effect.logWarning(\"failed to initialize fff\")",
-    "count": 2
-  },
-  {
     "name": "packages/core/src/jh/store.ts :: Effect.logWarning(\"jh artifact body over the size cap — refused, not truncated\")",
     "count": 1
   },
