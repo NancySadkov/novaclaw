@@ -1,9 +1,10 @@
 export * as SessionSpawner from "./spawner"
 
-import { count, eq } from "drizzle-orm"
+import { and, count, eq, gt, isNull } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { copySessionRecipes, storeRootIn } from "../adhoc-tools"
 import { makeLocationNode } from "../effect/app-node"
+import { KeyedMutex } from "../effect/keyed-mutex"
 import { Database } from "../database/database"
 import { EventV2 } from "../event"
 import { Global } from "../global"
@@ -41,7 +42,7 @@ import { Prompt } from "./prompt"
 /** Recursion-depth cap: a child deeper than this is refused (fork-bomb guard, must ship with spawn). */
 export const MAX_SPAWN_DEPTH = 8
 
-/** Flat fan-out cap: one parent may have at most this many direct children (K1 quota). */
+/** Active fan-out cap: one parent may have at most this many unfinished direct children (K1 quota). */
 export const MAX_SPAWN_CHILDREN = 16
 
 /** Rate cap: one parent may spawn at most this many children per rolling minute (K1 quota). */
@@ -101,63 +102,74 @@ export const layer = Layer.effect(
     // the 4D copy below lands in the root the child's own prompt will later read. Identical in
     // production; the point is that one graph can only ever have one answer.
     const sessionStoreRoot = storeRootIn((yield* Global.Service).data)
-    // Spawn-rate ledger: parentID -> recent spawn timestamps within the rolling window. In-memory
-    // per process — a restart clears it, which is fine: the rate cap guards runaway LOOPS, not
-    // long-term accounting (the flat children cap below is the durable bound).
-    const rateLedger = new Map<string, number[]>()
+    // The session rows ARE the durable quota ledger. A per-parent mutex makes the count+create
+    // decision atomic within the one instance process; a restart loses no history, and unrelated
+    // parents still spawn concurrently.
+    const spawnLocks = KeyedMutex.makeUnsafe<string>()
     return Service.of({
       spawn: Effect.fn("SessionSpawner.spawn")(function* (input) {
-        // Fork-bomb guards (K1): recursion depth + flat fan-out + spawn rate. Depth is a
-        // cycle-guarded parentID walk, like resolveSessionConfig.
-        let depth = 0
-        let ancestor: SessionSchema.ID | undefined = input.parentID
-        const seen = new Set<string>()
-        while (ancestor !== undefined && !seen.has(ancestor)) {
-          seen.add(ancestor)
-          const parent: SessionSchema.Info | undefined = yield* store.get(ancestor)
-          if (!parent) break
-          depth++
-          ancestor = parent.parentID
-        }
-        if (depth >= MAX_SPAWN_DEPTH)
-          return yield* Effect.fail(new SpawnLimitError({ reason: "depth", depth, limit: MAX_SPAWN_DEPTH }))
-        const children = yield* db
-          .select({ n: count() })
-          .from(SessionTable)
-          .where(eq(SessionTable.parent_id, input.parentID))
-          .get()
-          .pipe(Effect.orDie)
-        if ((children?.n ?? 0) >= MAX_SPAWN_CHILDREN)
-          return yield* Effect.fail(
-            new SpawnLimitError({ reason: "children", depth: children?.n ?? 0, limit: MAX_SPAWN_CHILDREN }),
-          )
-        const now = Date.now()
-        const recent = (rateLedger.get(input.parentID) ?? []).filter((t) => now - t < RATE_WINDOW_MS)
-        if (recent.length >= MAX_SPAWNS_PER_MINUTE)
-          return yield* Effect.fail(
-            new SpawnLimitError({ reason: "rate", depth: recent.length, limit: MAX_SPAWNS_PER_MINUTE }),
-          )
-        rateLedger.set(input.parentID, [...recent, now])
-        const child = yield* createSessionRecord(
-          { db, events, projects, store },
-          {
-            parentID: input.parentID,
-            agent: input.agent,
-            model: input.model,
-            systemPromptOverride: input.systemPromptOverride,
-            // A spawned session is a sub-agent thread unless the caller says otherwise (Vision).
-            type: input.type ?? "sub-agent",
-            priority: input.priority,
-            permissionMode: input.permissionMode,
-            location, // the parent's location = this seam's location
-          },
+        const child = yield* spawnLocks.withLock(input.parentID)(
+          Effect.gen(function* () {
+            // Fork-bomb guards (K1): recursion depth + ACTIVE direct fan-out + durable spawn rate.
+            // Depth is a cycle-guarded parentID walk, like resolveSessionConfig.
+            let depth = 0
+            let ancestor: SessionSchema.ID | undefined = input.parentID
+            const seen = new Set<string>()
+            while (ancestor !== undefined && !seen.has(ancestor)) {
+              seen.add(ancestor)
+              const parent: SessionSchema.Info | undefined = yield* store.get(ancestor)
+              if (!parent) break
+              depth++
+              ancestor = parent.parentID
+            }
+            if (depth >= MAX_SPAWN_DEPTH)
+              return yield* Effect.fail(new SpawnLimitError({ reason: "depth", depth, limit: MAX_SPAWN_DEPTH }))
+
+            const active = yield* db
+              .select({ n: count() })
+              .from(SessionTable)
+              .where(and(eq(SessionTable.parent_id, input.parentID), isNull(SessionTable.result)))
+              .get()
+              .pipe(Effect.orDie)
+            if ((active?.n ?? 0) >= MAX_SPAWN_CHILDREN)
+              return yield* Effect.fail(
+                new SpawnLimitError({ reason: "children", depth: active?.n ?? 0, limit: MAX_SPAWN_CHILDREN }),
+              )
+
+            const now = Date.now()
+            const recent = yield* db
+              .select({ n: count() })
+              .from(SessionTable)
+              .where(
+                and(eq(SessionTable.parent_id, input.parentID), gt(SessionTable.time_created, now - RATE_WINDOW_MS)),
+              )
+              .get()
+              .pipe(Effect.orDie)
+            if ((recent?.n ?? 0) >= MAX_SPAWNS_PER_MINUTE)
+              return yield* Effect.fail(
+                new SpawnLimitError({ reason: "rate", depth: recent?.n ?? 0, limit: MAX_SPAWNS_PER_MINUTE }),
+              )
+
+            return yield* createSessionRecord(
+              { db, events, projects, store },
+              {
+                parentID: input.parentID,
+                agent: input.agent,
+                model: input.model,
+                systemPromptOverride: input.systemPromptOverride,
+                // A spawned session is a sub-agent thread unless the caller says otherwise (Vision).
+                type: input.type ?? "sub-agent",
+                priority: input.priority,
+                permissionMode: input.permissionMode,
+                location, // the parent's location = this seam's location
+              },
+            )
+          }),
         )
         // 4D: the child inherits the parent's session-DEFINED ad-hoc recipes (copy-on-spawn —
         // the session scope is the "hand your sub-agents a tool set" channel). Best-effort:
         // a store hiccup must never fail the spawn.
-        yield* Effect.tryPromise(() =>
-          copySessionRecipes(input.parentID, child.id, { root: sessionStoreRoot }),
-        ).pipe(
+        yield* Effect.tryPromise(() => copySessionRecipes(input.parentID, child.id, { root: sessionStoreRoot })).pipe(
           Effect.catch((cause) => Effect.logWarning("adhoc-tool copy-on-spawn failed", { cause }).pipe(Effect.as(0))),
         )
         yield* SessionInput.admit(db, events, {

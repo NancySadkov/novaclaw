@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { DateTime, Deferred, Duration, Effect, Layer } from "effect"
+import { eq } from "drizzle-orm"
+import { DateTime, Deferred, Duration, Effect, Fiber, Layer } from "effect"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -23,6 +24,7 @@ import * as SessionRunnerLLM from "@novaclaw/core/session/runner/llm"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
 import { SessionStore } from "@novaclaw/core/session/store"
+import { SessionTable } from "@novaclaw/core/session/sql"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { testEffect } from "./lib/effect"
 import { settleTool, toolIdentity } from "./lib/tool"
@@ -138,11 +140,25 @@ const workspace = Effect.acquireRelease(
   (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
 ).pipe(Effect.map((tmp) => Location.Ref.make({ directory: AbsolutePath.make(tmp.path) })))
 
-const spawnChild = (parentID: SessionV2.ID, location: Location.Ref) =>
+const spawnChildEffect = (parentID: SessionV2.ID, location: Location.Ref) =>
   LocationServiceMap.Service.use((locations) =>
     SessionSpawner.Service.use((spawner) => spawner.spawn({ parentID, text: PROMPT })).pipe(
       Effect.provide(locations.get(location)),
     ),
+  )
+
+const spawnChild = (parentID: SessionV2.ID, location: Location.Ref) =>
+  spawnChildEffect(parentID, location).pipe(Effect.orDie)
+
+const settleWait = (location: Location.Ref, parentID: SessionV2.ID, childID: SessionV2.ID) =>
+  LocationServiceMap.Service.use((locations) =>
+    ToolRegistry.Service.use((registry) =>
+      settleTool(registry, {
+        sessionID: parentID,
+        ...toolIdentity,
+        call: { type: "tool-call", id: `call-wait-${childID}`, name: "wait", input: { sessionID: childID } },
+      }),
+    ).pipe(Effect.provide(locations.get(location))),
   ).pipe(Effect.orDie)
 
 describe("SessionSpawner.spawn — the child actually runs", () => {
@@ -204,6 +220,91 @@ describe("SessionSpawner.spawn — the child actually runs", () => {
       expect(rendered).not.toContain("scheduler cycle")
       expect(rendered).toContain("and started it")
       expect(rendered).toContain("call wait with sessionID")
+    }),
+  )
+})
+
+describe("wait — a durable, owned join", () => {
+  it.live("wakes from the child's completion event without a polling interval", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const parent = yield* session.create({ location })
+      const child = yield* session.create({ location, parentID: parent.id })
+
+      const waiting = yield* settleWait(location, parent.id, child.id).pipe(Effect.forkChild)
+      yield* Effect.yieldNow
+      yield* events.publish(SessionEvent.Completed, {
+        sessionID: child.id,
+        timestamp: yield* DateTime.now,
+        result: "joined by event",
+      })
+
+      const settlement = yield* Fiber.join(waiting)
+      expect(settlement.result.type).not.toBe("error")
+      expect(JSON.stringify(settlement.result)).toContain("joined by event")
+    }),
+  )
+
+  it.live("refuses a grandchild instead of allowing arbitrary session observation", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const parent = yield* session.create({ location })
+      const child = yield* session.create({ location, parentID: parent.id })
+      const grandchild = yield* session.create({ location, parentID: child.id })
+
+      const settlement = yield* settleWait(location, parent.id, grandchild.id)
+      expect(settlement.result.type).toBe("error")
+      expect(JSON.stringify(settlement.result)).toContain("not a direct child")
+      expect(JSON.stringify(settlement.result)).not.toContain("Unable to wait")
+    }),
+  )
+})
+
+describe("SessionSpawner quotas use durable session facts", () => {
+  it.live("completed direct children release the active fan-out slot", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const { db } = yield* Database.Service
+      const parent = yield* session.create({ location })
+
+      for (let index = 0; index < SessionSpawner.MAX_SPAWN_CHILDREN; index++) {
+        const child = yield* session.create({ location, parentID: parent.id })
+        yield* events.publish(SessionEvent.Completed, {
+          sessionID: child.id,
+          timestamp: yield* DateTime.now,
+          result: `done ${index}`,
+        })
+      }
+      yield* db
+        .update(SessionTable)
+        .set({ time_created: Date.now() - 120_000 })
+        .where(eq(SessionTable.parent_id, parent.id))
+        .run()
+        .pipe(Effect.orDie)
+
+      const spawned = yield* spawnChild(parent.id, location)
+      expect(spawned.started).toBe(true)
+    }),
+  )
+
+  it.live("recent child rows enforce the rate cap without an in-memory ledger", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const parent = yield* session.create({ location })
+
+      for (let index = 0; index < SessionSpawner.MAX_SPAWNS_PER_MINUTE; index++) {
+        yield* session.create({ location, parentID: parent.id })
+      }
+
+      const error = yield* spawnChildEffect(parent.id, location).pipe(Effect.flip)
+      expect(error.reason).toBe("rate")
+      expect(error.depth).toBe(SessionSpawner.MAX_SPAWNS_PER_MINUTE)
     }),
   )
 })

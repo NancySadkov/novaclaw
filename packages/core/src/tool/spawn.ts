@@ -16,7 +16,7 @@ import { Tools } from "./tools"
 // the `SessionSpawner` seam: the child carries this session as its `parentID` (so it inherits
 // agent/model/system-prompt/permissions via `resolveSessionConfig` unless overridden), its opening
 // prompt is enqueued, and the seam hands it straight to this instance's executor. Guarded by the
-// seam's fork-bomb depth/fan-out/rate caps (`MAX_SPAWN_DEPTH` 8 · `MAX_SPAWN_CHILDREN` 16 ·
+// seam's fork-bomb depth/active-fan-out/rate caps (`MAX_SPAWN_DEPTH` 8 · `MAX_SPAWN_CHILDREN` 16 ·
 // `MAX_SPAWNS_PER_MINUTE` 10, all enforced in `session/spawner.ts` — the K1 quotas SHIPPED, so no
 // TODO here asks for them any more).
 //
@@ -234,7 +234,7 @@ export const layer = Layer.effectDiscard(
                         limited: true,
                         message: {
                           depth: `Spawn refused: the session chain is already ${error.depth} deep (max ${error.limit}). Do the sub-task in this session instead of spawning deeper.`,
-                          children: `Spawn refused: this session already has ${error.depth} children (max ${error.limit}). Reuse or wait on existing children instead of spawning more.`,
+                          children: `Spawn refused: this session already has ${error.depth} unfinished children (max ${error.limit}). Reuse or wait on existing children instead of spawning more.`,
                           rate: `Spawn refused: ${error.depth} spawns in the last minute (max ${error.limit}). Slow down — wait on the children you already spawned.`,
                         }[error.reason],
                       }),
