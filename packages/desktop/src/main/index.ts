@@ -361,7 +361,6 @@ const main = Effect.gen(function* () {
     // up gracefully and the renderer's connection banner reports the outage).
     const { listener, health } = yield* Effect.promise(() =>
       superviseLocalServer(hostname, port, password, {
-        userDataPath: app.getPath("userData"),
         onStdout: (message) => writeLog("server", "stdout", { message }),
         onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
         onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),

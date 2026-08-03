@@ -22,7 +22,6 @@ const SIDECAR_START_STALL_TIMEOUT = 60_000
 const SIDECAR_STOP_TIMEOUT = 6_000
 
 type SpawnLocalServerOptions = {
-  userDataPath: string
   onStdout?: (message: string) => void
   onStderr?: (message: string) => void
   onExit?: (code: number) => void
@@ -164,7 +163,6 @@ export async function spawnLocalServer(
       hostname,
       port,
       password,
-      userDataPath: options.userDataPath,
     })
   }).catch((error) => {
     if (!exited) child.kill()
