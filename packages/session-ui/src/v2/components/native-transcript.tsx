@@ -25,6 +25,7 @@ import {
   type SessionErrorDisplay,
 } from "@novaclaw/core/session/session-error"
 import { useI18n } from "@novaclaw/ui/context/i18n"
+import { selectTranscriptMessages } from "../transcript-view"
 import "./native-transcript.css"
 
 // Level-aware fold modes (UIX residue b / C4). Reasoning and tool cards carry SEPARATE modes so
@@ -82,8 +83,6 @@ const TranscriptActionsContext = createContext<Accessor<TranscriptActions>>(() =
  * first cut (name · status · collapsible input/output) — full per-tool fidelity
  * (diffs, file previews, todo, question) lands in later S4-v3 increments.
  */
-const isSwitchMarker = (m: SessionMessage) => m.type === "agent-switched" || m.type === "model-switched"
-
 export function NativeTranscript(props: {
   messages: readonly SessionMessage[]
   class?: string
@@ -108,10 +107,7 @@ export function NativeTranscript(props: {
   // LEADING run of switch markers; a switch that lands mid-conversation still renders as a
   // divider, which is the informative case.
   const visible = createMemo(() => {
-    const messages = props.messages
-    const firstReal = messages.findIndex((m) => !isSwitchMarker(m))
-    if (firstReal <= 0) return messages as SessionMessage[]
-    return (messages as SessionMessage[]).filter((m, i) => i >= firstReal || !isSwitchMarker(m))
+    return selectTranscriptMessages(props.messages)
   })
   const hasOpenAssistant = createMemo(() =>
     visible().some((message) => message.type === "assistant" && !message.time.completed),

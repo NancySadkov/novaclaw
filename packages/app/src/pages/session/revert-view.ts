@@ -68,12 +68,23 @@ export function selectRolledMessages<T extends { id: string }>(
  * the previous USER message also destroys the assistant reply that sits between the two — one
  * message more than the user asked to discard, and it is not recoverable.
  *
- * Returns `undefined` when `targetID` is not in the list, so a caller cannot accidentally commit
- * against a boundary it could not locate.
+ * Initial agent/model switch records are setup state, not a visible predecessor: when they are the
+ * entire prefix before the first prompt this returns BEFORE_ALL. Returns `undefined` when `targetID`
+ * is not in the list, so a caller cannot accidentally commit against a boundary it could not locate.
  */
 export function commitBoundaryID(messages: readonly { id: string }[], targetID: string): string | undefined {
   const index = messages.findIndex((message) => message.id === targetID)
   if (index < 0) return undefined
+  // A session begins with agent/model selection records. They are setup state, not a visible turn:
+  // when they are the ONLY predecessors of the first prompt, keeping the last one makes "revert the
+  // first message" leave a phantom row behind. Mid-conversation switches still count as real history
+  // because at least one non-switch message precedes them.
+  const prefix = messages.slice(0, index) as readonly { id: string; type?: string }[]
+  if (
+    prefix.length > 0 &&
+    prefix.every((message) => message.type === "agent-switched" || message.type === "model-switched")
+  )
+    return BEFORE_ALL
   return messages[index - 1]?.id ?? BEFORE_ALL
 }
 

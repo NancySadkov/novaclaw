@@ -1615,9 +1615,11 @@ export default function Page() {
     if (!sessionID || revertingPrompt || reverting()) return
     // The commit boundary is the message immediately before this prompt: the revert KEEPS the boundary
     // and drops everything after, so keeping the predecessor deletes this prompt and its turn. When
-    // this is the FIRST prompt (nothing precedes it), rewind to the empty session via the "before
-    // everything" sentinel (`msg_` — sorts before every real id) so the prompt itself is dropped too;
-    // otherwise it would linger on screen and in the DB (owner-hit 2026-07-24).
+    // this is the FIRST visible prompt, rewind to the empty session via the "before everything"
+    // sentinel (`msg_` — sorts before every real id) so the prompt itself is dropped too. The native
+    // list does contain initial agent/model setup markers before that prompt; `commitBoundaryID`
+    // deliberately collapses an all-setup prefix to the sentinel, or the last marker survives as a
+    // phantom chat row (owner-hit again 2026-08-03).
     const boundaryID = commitBoundaryID(serverSync().nativeMessages.messages(sessionID) ?? [], messageID)
     if (!boundaryID) return
     const proceed = await confirm({

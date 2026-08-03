@@ -102,6 +102,25 @@ describe("staged-revert view", () => {
     expect(BEFORE_ALL < u1.id).toBe(true)
   })
 
+  test("initial agent/model setup records do not become a phantom first message", () => {
+    const { all, u1 } = conversation()
+    const setup = [
+      { id: id(), type: "agent-switched" },
+      { id: id(), type: "model-switched" },
+    ]
+
+    // The first VISIBLE prompt still means before everything. Keeping the model-switch row as the
+    // boundary is the reported regression: the prompt disappears from storage, but one chat row
+    // survives and looks like the first message was preserved.
+    expect(commitBoundaryID([...setup, ...all], u1.id)).toBe(BEFORE_ALL)
+  })
+
+  test("a mid-conversation model switch remains a real commit boundary", () => {
+    const { u1, a1, u2 } = conversation()
+    const switched = { id: id(), type: "model-switched" }
+    expect(commitBoundaryID([u1, a1, switched, u2], u2.id)).toBe(switched.id)
+  })
+
   test("an unknown target yields no boundary rather than a wrong one", () => {
     const { all } = conversation()
     expect(commitBoundaryID(all, id())).toBeUndefined()
