@@ -247,6 +247,7 @@ function cdpEvaluate(wsUrl: string, expression: string, timeoutMs: number): Prom
 }
 
 type Credentials = { url: string; username?: string; password?: string }
+type Renderer = { credentials: Credentials; wsUrl: string }
 
 /**
  * Ask the renderer for the sidecar's URL + credentials. `window.api.awaitInitialization()` is the
@@ -254,7 +255,7 @@ type Credentials = { url: string; username?: string; password?: string }
  * so this reads the real values rather than re-deriving them. Returned as a JSON STRING so the value
  * crosses `returnByValue` as plain data and never as a contextBridge proxy.
  */
-async function readCredentials(devtoolsPort: number, deadline: number): Promise<Credentials> {
+async function readRenderer(devtoolsPort: number, deadline: number): Promise<Renderer> {
   const expression = `(async () => {
     const api = globalThis.window && window.api
     if (!api || typeof api.awaitInitialization !== "function") throw new Error("window.api is not exposed yet")
@@ -279,7 +280,8 @@ async function readCredentials(devtoolsPort: number, deadline: number): Promise<
       try {
         const raw = await cdpEvaluate(target.webSocketDebuggerUrl, expression, 15_000)
         const parsed = JSON.parse(String(raw)) as Credentials
-        if (typeof parsed.url === "string" && parsed.url.length > 0) return parsed
+        if (typeof parsed.url === "string" && parsed.url.length > 0)
+          return { credentials: parsed, wsUrl: target.webSocketDebuggerUrl }
         lastError = `renderer returned no server url (${String(raw)})`
       } catch (error) {
         lastError = String(error)
@@ -288,6 +290,49 @@ async function readCredentials(devtoolsPort: number, deadline: number): Promise<
     await sleep(500)
   }
   throw new Error(`could not read the sidecar credentials from the app: ${lastError}`)
+}
+
+async function readToastSelection(wsUrl: string) {
+  const raw = await cdpEvaluate(
+    wsUrl,
+    `(() => {
+      const host = document.createElement("div")
+      host.style.userSelect = "none"
+      const probe = (component, titleSlot, descriptionSlot) => {
+        const root = document.createElement("div")
+        root.dataset.component = component
+        const title = document.createElement("div")
+        title.dataset.slot = titleSlot
+        title.textContent = "Failed to reload project"
+        const description = document.createElement("div")
+        description.dataset.slot = descriptionSlot
+        description.textContent = "Diagnostic reference: err_12345678."
+        root.append(title, description)
+        host.append(root)
+        return { title, description }
+      }
+      const legacy = probe("toast", "toast-title", "toast-description")
+      const current = probe("toast-v2", "toast-v2-title", "toast-v2-description")
+      document.body.append(host)
+      const range = document.createRange()
+      range.selectNodeContents(current.description)
+      const selection = window.getSelection()
+      selection.removeAllRanges()
+      selection.addRange(range)
+      const result = {
+        legacyTitle: getComputedStyle(legacy.title).userSelect,
+        legacyDescription: getComputedStyle(legacy.description).userSelect,
+        currentTitle: getComputedStyle(current.title).userSelect,
+        currentDescription: getComputedStyle(current.description).userSelect,
+        selected: selection.toString(),
+      }
+      selection.removeAllRanges()
+      host.remove()
+      return JSON.stringify(result)
+    })()`,
+    15_000,
+  )
+  return JSON.parse(String(raw)) as Record<string, string>
 }
 
 // ── HTTP ────────────────────────────────────────────────────────────────────────────────────────
@@ -446,8 +491,26 @@ async function run() {
   drain(child.stderr, "err")
 
   const deadline = Date.now() + READY_TIMEOUT_MS
-  const credentials = await readCredentials(devtoolsPort, deadline)
+  const renderer = await readRenderer(devtoolsPort, deadline)
+  const credentials = renderer.credentials
   console.log(`sidecar  : ${credentials.url}\n`)
+
+  // The desktop shell is deliberately select-none almost everywhere. Diagnostic popup text is the
+  // exception: a user must be able to drag-select the explanation and reference to share it with an
+  // agent or another person. Probe the COMPUTED CSS in the packaged renderer (not a copied source
+  // string), under an explicitly unselectable parent, and exercise a real DOM selection too.
+  try {
+    const selection = await readToastSelection(renderer.wsUrl)
+    for (const key of ["legacyTitle", "legacyDescription", "currentTitle", "currentDescription"])
+      check(selection[key] === "text", `toast-selectable-${key}`, `expected user-select:text, got ${selection[key]}`)
+    check(
+      selection.selected === "Diagnostic reference: err_12345678.",
+      "toast-selection-content",
+      `the browser selected ${JSON.stringify(selection.selected)}`,
+    )
+  } catch (error) {
+    check(false, "toast-selection", `could not inspect packaged popup selection: ${String(error)}`)
+  }
 
   // ── 1. health: the app is up, and it knows what it is ──────────────────────────────────────────
   let health: { healthy?: boolean; version?: string; instanceID?: string } | undefined

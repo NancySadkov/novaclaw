@@ -114,6 +114,9 @@
   }
 
   [data-slot="toast-title"] {
+    cursor: text;
+    user-select: text;
+    -webkit-user-select: text;
     color: var(--text-invert-strong);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -131,6 +134,9 @@
   }
 
   [data-slot="toast-description"] {
+    cursor: text;
+    user-select: text;
+    -webkit-user-select: text;
     color: var(--text-invert-base);
     text-wrap-style: pretty;
     overflow-wrap: anywhere;

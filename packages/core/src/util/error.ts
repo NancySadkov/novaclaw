@@ -78,11 +78,11 @@ export abstract class NamedError extends Error {
    * that their work survived, what to do next, and carries the reference that identifies it. Keep it
    * free of jargon and never point a non-developer at a developer-only surface.
    */
-  public static internalMessage(ref?: string) {
-    const reference = ref ? ` (reference ${ref})` : ""
-    return (
-      `NovaClaw hit an internal error${reference}. This is a bug on our side, not something you did — ` +
-      `nothing has been lost. Please try again, and if it keeps happening report that reference.`
-    )
+  public static internalMessage(ref?: string, detail?: string) {
+    const reason = detail?.trim()
+      ? detail.trim()
+      : "NovaClaw could not complete this request because of an unexpected problem."
+    const reference = ref ? ` Diagnostic reference: ${ref}.` : ""
+    return `${reason} Nothing has been lost.${reference} Please try again; if it keeps happening, share this message.`
   }
 }

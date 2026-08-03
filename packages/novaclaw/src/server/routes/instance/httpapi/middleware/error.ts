@@ -38,7 +38,7 @@ export const errorLayer = HttpRouter.middleware<{ handles: unknown }>()((effect)
         Effect.as(
           HttpServerResponse.jsonUnsafe(
             new NamedError.Unknown({
-              message: NamedError.internalMessage(ref),
+              message: NamedError.internalMessage(ref, safeDetail(error)),
               ref,
             }).toObject(),
             { status: 500 },
@@ -48,3 +48,11 @@ export const errorLayer = HttpRouter.middleware<{ handles: unknown }>()((effect)
     }),
   ),
 ).layer
+
+function safeDetail(error: unknown) {
+  if (typeof error !== "object" || error === null) return
+  const value = error as Record<string, unknown>
+  if (value._tag !== "AuthError" && value.name !== "AuthError") return
+  if (value.message !== "Failed to decrypt auth data") return
+  return "NovaClaw could not read the saved provider sign-in because its local encryption key did not match."
+}

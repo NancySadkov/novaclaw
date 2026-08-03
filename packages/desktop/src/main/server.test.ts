@@ -48,13 +48,12 @@ const { preferAppEnv } = await import("./server")
 
 // Nothing in this file touches the filesystem — userDataPath is only ever compared as a string.
 const USER_DATA = "/novaclaw-test/userData"
-const XDG_HOMES = ["XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"] as const
+const XDG_HOMES = ["XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"] as const
 const MANAGED_KEYS = [
   "NOVACLAW_DEV_ISOLATED",
   "NOVACLAW_CLIENT",
   "NOVACLAW_EXPERIMENTAL_ICON_DISCOVERY",
   "NOVACLAW_EXPERIMENTAL_FILEWATCHER",
-  "XDG_STATE_HOME",
   ...XDG_HOMES,
 ] as const
 
@@ -97,8 +96,7 @@ describe("preferAppEnv", () => {
     preferAppEnv(USER_DATA)
 
     expect(XDG_HOMES.filter((key) => key in process.env)).toEqual([...XDG_HOMES])
-    expect(XDG_HOMES.map((key) => process.env[key])).toEqual([USER_DATA, USER_DATA, USER_DATA])
-    expect(process.env.XDG_STATE_HOME).toBe(USER_DATA)
+    expect(XDG_HOMES.map((key) => process.env[key])).toEqual([USER_DATA, USER_DATA, USER_DATA, USER_DATA])
   })
 
   test("never overwrites an XDG home the environment already provides", () => {
@@ -107,7 +105,7 @@ describe("preferAppEnv", () => {
     preferAppEnv(USER_DATA)
 
     expect(process.env.XDG_CONFIG_HOME).toBe("/existing/config")
-    expect(["XDG_DATA_HOME", "XDG_CACHE_HOME"].filter((key) => key in process.env)).toEqual([])
+    expect(["XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"].filter((key) => key in process.env)).toEqual([])
   })
 
   test("an existing XDG home outranks the dev-isolated default", () => {
@@ -121,29 +119,19 @@ describe("preferAppEnv", () => {
     expect(process.env.XDG_CACHE_HOME).toBe(USER_DATA)
   })
 
-  test("always resolves XDG_STATE_HOME to a real path", () => {
-    // XDG_STATE_HOME is the one key assigned unconditionally, and it survived v0.1.0 only because its
-    // third fallback is always a string. Pin that so a future edit cannot quietly remove the luck.
-    const cases: ReadonlyArray<{ label: string; env: Record<string, string>; expected: string }> = [
-      { label: "plain desktop launch", env: {}, expected: USER_DATA },
-      { label: "dev-isolated", env: { NOVACLAW_DEV_ISOLATED: "1" }, expected: USER_DATA },
-      { label: "pre-existing value", env: { XDG_STATE_HOME: "/existing/state" }, expected: "/existing/state" },
-    ]
+  test("does not split the production credential key from the CLI instance", () => {
+    preferAppEnv(USER_DATA)
 
-    for (const scenario of cases) {
-      clearManaged()
-      Object.assign(process.env, scenario.env)
+    // auth.json lives under the CLI-compatible default XDG data path. Leaving state absent makes the
+    // sidecar resolve its credential.key through the matching CLI-compatible default too; assigning
+    // USER_DATA here creates two keys for one auth file and makes provider reload fail after either
+    // surface writes credentials.
+    expect("XDG_STATE_HOME" in process.env).toBe(false)
 
-      preferAppEnv(USER_DATA)
-
-      const value = process.env.XDG_STATE_HOME
-      expect({
-        case: scenario.label,
-        value,
-        poisoned: value === "undefined",
-        empty: value === undefined || value.length === 0,
-      }).toEqual({ case: scenario.label, value: scenario.expected, poisoned: false, empty: false })
-    }
+    clearManaged()
+    process.env.XDG_STATE_HOME = "/existing/state"
+    preferAppEnv(USER_DATA)
+    expect(process.env.XDG_STATE_HOME).toBe("/existing/state")
   })
 
   test("stamps the desktop client marker and the experimental flags", () => {

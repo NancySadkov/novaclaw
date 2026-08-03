@@ -110,6 +110,9 @@
   }
 
   [data-slot="toast-v2-title"] {
+    cursor: text;
+    user-select: text;
+    -webkit-user-select: text;
     color: var(--v2-text-text-base);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -124,6 +127,9 @@
   }
 
   [data-slot="toast-v2-description"] {
+    cursor: text;
+    user-select: text;
+    -webkit-user-select: text;
     color: var(--v2-text-text-muted);
     text-wrap-style: pretty;
     overflow-wrap: anywhere;

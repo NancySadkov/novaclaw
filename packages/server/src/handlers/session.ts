@@ -613,7 +613,10 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                   Effect.andThen(
                     Effect.fail(
                       new UnknownError({
-                        message: NamedError.internalMessage(ref),
+                        message: NamedError.internalMessage(
+                          ref,
+                          "NovaClaw could not prepare the requested session rollback.",
+                        ),
                         ref,
                       }),
                     ),
@@ -647,7 +650,10 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 Effect.andThen(
                   Effect.fail(
                     new UnknownError({
-                      message: NamedError.internalMessage(ref),
+                      message: NamedError.internalMessage(
+                        ref,
+                        "NovaClaw could not clear the pending session rollback.",
+                      ),
                       ref,
                     }),
                   ),
@@ -696,7 +702,13 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 }).pipe(
                   Effect.andThen(
                     Effect.fail(
-                      new UnknownError({ message: NamedError.internalMessage(ref), ref }),
+                      new UnknownError({
+                        message: NamedError.internalMessage(
+                          ref,
+                          "NovaClaw could not read one saved message in this chat.",
+                        ),
+                        ref,
+                      }),
                     ),
                   ),
                 )

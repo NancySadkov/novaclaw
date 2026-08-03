@@ -132,7 +132,7 @@
     },
     "packages/desktop": {
       "name": "@novaclaw/desktop",
-      "version": "0.1.0",
+      "version": "0.1.5",
       "dependencies": {
         "@ladybugdb/wasm-core": "0.18.2",
         "@zip.js/zip.js": "2.7.62",

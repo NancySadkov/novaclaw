@@ -57,20 +57,22 @@ export function preferAppEnv(userDataPath: string) {
   // directory to "undefined\novaclaw" and its scratch dir to "undefined\novaclaw\scratch". Clicking the
   // home prompt bar created a session at that path and answered 500.
   //
-  // XDG_STATE_HOME was the one that worked, and only by luck: it has a third fallback that is always a
-  // real string. So assign ONLY the keys that have a value — an unset variable must stay unset, which is
-  // what lets the server fall back to the documented `$HOME/.local/share` layout.
+  // XDG_STATE_HOME used to be the odd one out: production desktop forced it to Electron's private
+  // userData directory while leaving XDG_DATA_HOME on the shared, documented home-directory layout.
+  // That split the credential key (state) from auth.json (data), so desktop and CLI encrypted the SAME
+  // auth file with DIFFERENT keys. Keep all four homes under one rule: an unset variable stays unset in
+  // production, while an isolated dev build redirects the complete instance together.
   const env: Record<string, string> = {
     ...(shell ? loadShellEnv(shell, getLogger()) : null),
     NOVACLAW_EXPERIMENTAL_ICON_DISCOVERY: "true",
     NOVACLAW_EXPERIMENTAL_FILEWATCHER: "true",
     NOVACLAW_CLIENT: "desktop",
-    XDG_STATE_HOME: process.env.XDG_STATE_HOME ?? defaultData ?? userDataPath,
   }
   for (const [key, value] of [
     ["XDG_DATA_HOME", process.env.XDG_DATA_HOME ?? defaultData],
     ["XDG_CONFIG_HOME", process.env.XDG_CONFIG_HOME ?? defaultData],
     ["XDG_CACHE_HOME", process.env.XDG_CACHE_HOME ?? defaultData],
+    ["XDG_STATE_HOME", process.env.XDG_STATE_HOME ?? defaultData],
   ] as const)
     if (value !== undefined) env[key] = value
 

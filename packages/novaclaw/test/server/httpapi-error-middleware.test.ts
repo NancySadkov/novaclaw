@@ -10,13 +10,13 @@ import { testEffect } from "../lib/effect"
 
 const it = testEffect(Layer.mergeAll(NodeHttpServer.layerTest, NodeServices.layer))
 
-function expectUnknownErrorBody(body: unknown) {
+function expectUnknownErrorBody(body: unknown, detail?: string) {
   expect(body).toMatchObject({ name: "UnknownError" })
   const data = (body as { data?: { ref?: unknown; message?: unknown } }).data
   expect(data?.ref).toMatch(/^err_[0-9a-f-]{8}$/)
   // The body is asserted against the SHARED builder rather than a copied literal, so the wording can
   // be improved in one place without this test pinning it back.
-  expect(data?.message).toBe(NamedError.internalMessage(data?.ref as string))
+  expect(data?.message).toBe(NamedError.internalMessage(data?.ref as string, detail))
   // What the user reads must not send them somewhere they cannot go. The old text said "check server
   // logs", which a normal person does not have — and which was empty anyway in the packaged app.
   expect(String(data?.message)).not.toContain("server logs")
@@ -55,6 +55,30 @@ describe("HttpApi error middleware", () => {
       expect(response.status).toBe(500)
       expectUnknownErrorBody(body)
       expect(JSON.stringify(body)).not.toContain("secret named marker")
+    }),
+  )
+
+  it.live("describes a known credential failure without exposing its secret-bearing cause", () =>
+    Effect.gen(function* () {
+      yield* HttpRouter.add(
+        "GET",
+        "/auth-failure",
+        Effect.die({
+          _tag: "AuthError",
+          message: "Failed to decrypt auth data",
+          cause: { _tag: "CredentialCipher.DecryptError", message: "secret credential marker" },
+        }),
+      ).pipe(Layer.provide(errorLayer), HttpRouter.serve, Layer.build)
+
+      const response = yield* HttpClientRequest.get("/auth-failure").pipe(HttpClient.execute)
+      const body = yield* response.json
+
+      expect(response.status).toBe(500)
+      expectUnknownErrorBody(
+        body,
+        "NovaClaw could not read the saved provider sign-in because its local encryption key did not match.",
+      )
+      expect(JSON.stringify(body)).not.toContain("secret credential marker")
     }),
   )
 

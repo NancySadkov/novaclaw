@@ -38,6 +38,7 @@ export function formatServerError(error: unknown, translate?: Translator, fallba
   const unwrapped = unwrapNamedError(error)
   if (isConfigInvalidErrorLike(unwrapped)) return parseReadableConfigInvalidError(unwrapped, translate)
   if (isProviderModelNotFoundErrorLike(unwrapped)) return parseReadableProviderModelNotFoundError(unwrapped, translate)
+  if (isNamedMessageErrorLike(unwrapped)) return unwrapped.data.message
   if (error instanceof Error && error.message) return error.message
   if (typeof error === "string" && error) return error
   if (fallback) return fallback
@@ -76,6 +77,13 @@ function isProviderModelNotFoundErrorLike(error: unknown): error is ProviderMode
   if (typeof error !== "object" || error === null) return false
   const o = error as Record<string, unknown>
   return o.name === "ProviderModelNotFoundError" && typeof o.data === "object" && o.data !== null
+}
+
+function isNamedMessageErrorLike(error: unknown): error is { name: string; data: { message: string } } {
+  if (typeof error !== "object" || error === null) return false
+  const value = error as Record<string, unknown>
+  if (typeof value.name !== "string" || typeof value.data !== "object" || value.data === null) return false
+  return typeof (value.data as Record<string, unknown>).message === "string"
 }
 
 export function parseReadableConfigInvalidError(errorInput: ConfigInvalidError, translator?: Translator) {

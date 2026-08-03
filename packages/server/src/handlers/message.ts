@@ -130,7 +130,13 @@ export const MessageHandler = HttpApiBuilder.group(Api, "server.message", (handl
                 Effect.annotateLogs({ ref, sessionID: error.sessionID, messageID: error.messageID }),
                 Effect.andThen(
                   Effect.fail(
-                    new UnknownError({ message: NamedError.internalMessage(ref), ref }),
+                    new UnknownError({
+                      message: NamedError.internalMessage(
+                        ref,
+                        "NovaClaw could not read one saved message in this chat.",
+                      ),
+                      ref,
+                    }),
                   ),
                 ),
               )

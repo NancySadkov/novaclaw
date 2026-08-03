@@ -146,6 +146,19 @@ describe("formatServerError", () => {
 
     expect(formatServerError(wrapped, language.t)).toBe("Arquivo de config em config invalido: Missing host")
   })
+
+  test("uses a server-authored description from generic named errors", () => {
+    const body = {
+      name: "UnknownError",
+      data: {
+        message: "NovaClaw could not read the saved provider sign-in. Diagnostic reference: err_12345678.",
+        ref: "err_12345678",
+      },
+    }
+    const wrapped = new Error("Request failed with status 500", { cause: { body, status: 500 } })
+
+    expect(formatServerError(wrapped, language.t)).toBe(body.data.message)
+  })
 })
 
 describe("isSessionNotFoundError", () => {
