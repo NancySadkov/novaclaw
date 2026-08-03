@@ -190,6 +190,7 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "instances",
       "instructions",
       "introspection",
+      "local_model_catalog",
       "mcp",
       "memory",
       "models",
@@ -469,12 +470,16 @@ describe("ruling 2: a write that did not happen never reports success", () => {
           op: "set",
           config: {
             provider_presets: { anthropic: { baseURL: "https://api.anthropic.com/v1" } },
+            local_model_catalog: {
+              runtime: { url: "https://mirror.example/llama.zip", sha256: "a".repeat(64) },
+            },
             models: { "qwen3.6-35b": { url: "http://192.168.178.40:8000/v1" } },
             providers: { spark: { api: { type: "native", url: "http://192.168.178.40:8000/v1", settings: {} } } },
           },
         })
         expect(result.type).toBe("text")
         expect(textOf(result)).toContain("provider_presets")
+        expect(textOf(result)).toContain("local_model_catalog")
         expect(Object.keys(yield* catalog.providers())).toContain("spark")
       }),
     ),

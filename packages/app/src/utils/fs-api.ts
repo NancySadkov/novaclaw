@@ -114,6 +114,75 @@ export function providerPresets(server: ServerConnection.HttpBase, input: { dire
   })
 }
 
+export interface LocalModelProfile {
+  readonly id: string
+  readonly name: string
+  readonly description: string
+  readonly modelID: string
+  readonly quant: string
+  readonly license: string
+  readonly sourceURL: string
+  readonly downloadBytes: number
+  readonly minimumMemoryBytes: number
+  readonly workingMemoryBytes: number
+  readonly contexts: readonly number[]
+}
+
+export interface LocalModelStatus {
+  readonly supported: boolean
+  readonly platform: string
+  readonly profiles: readonly LocalModelProfile[]
+  readonly stage:
+    | "idle"
+    | "checking"
+    | "downloading-runtime"
+    | "installing-runtime"
+    | "downloading-model"
+    | "starting"
+    | "ready"
+    | "error"
+  readonly profileID?: string
+  readonly completed?: number
+  readonly total?: number
+  readonly message?: string
+  readonly detail?: string
+  readonly baseURL?: string
+  readonly modelID?: string
+  readonly context?: number
+  readonly output?: number
+  readonly preflight?: {
+    readonly ok: boolean
+    readonly issues: readonly string[]
+    readonly warnings: readonly string[]
+    readonly memory?: { readonly freeBytes: number; readonly limitBytes: number }
+    readonly disk?: { readonly freeBytes: number; readonly requiredBytes: number }
+  }
+  readonly recommendedContext: number
+}
+
+export function localModelStatus(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; signal?: AbortSignal },
+) {
+  return call<LocalModelStatus>(server, "GET", "api/provider/local-models", input.directory, undefined, {
+    signal: input.signal,
+    timeoutMs: 15_000,
+  })
+}
+
+export function localModelStart(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; profileID: string; context?: number },
+) {
+  return call<LocalModelStatus>(
+    server,
+    "POST",
+    `api/provider/local-models/${encodeURIComponent(input.profileID)}/start`,
+    input.directory,
+    { ...(input.context === undefined ? {} : { context: input.context }) },
+  )
+}
+
 // B11 — the bundled-shell substrate (status + provisioner). Provisioning downloads
 // ~59 MB and extracts for a minute; the caller shows a busy state and awaits.
 export interface ShellStatus {

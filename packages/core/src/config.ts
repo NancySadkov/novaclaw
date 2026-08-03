@@ -20,6 +20,7 @@ import { ConfigFormatter } from "./config/formatter"
 import { ConfigAdhocTools } from "./config/adhoc-tools"
 import { ConfigAffective } from "./config/affective"
 import { ConfigIntrospection } from "./config/introspection"
+import { ConfigLocalModelCatalog } from "./config/local-model-catalog"
 import { ConfigMCP } from "./config/mcp"
 import { ConfigPersona } from "./config/persona"
 import { ConfigPlugin } from "./config/plugin"
@@ -323,6 +324,12 @@ export class Info extends Schema.Class<Info>("Config.Info")({
         "provider, so a hostile baseURL here still has to be picked up by a user-driven import that shows " +
         "the URL and asks for a key.",
     }),
+  local_model_catalog: ConfigLocalModelCatalog.Info.pipe(Schema.optional).annotate({
+    description:
+      "Runtime repair overrides for managed local-model downloads. Built-in tested artifacts remain the defaults; " +
+      "runtime/models URL and SHA-256 fields here win so an agent can repair a moved mirror or republished artifact " +
+      "through PATCH /config without rebuilding NovaClaw. PRIVILEGED: these values select downloaded executable bytes.",
+  }),
   // ⚠️ Ruling 4: PRIVILEGED, and the reason is not the URL alone. Each nested model carries a
   // `prePrompt` that `config/provider.ts` describes as "prepended to the system context" — so this key
   // is a prompt-text channel as well as an endpoint, and it fails ruling 4's fourth test outright.

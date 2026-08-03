@@ -31,6 +31,8 @@ export interface Options {
   readonly stallTimeout?: Duration.Input
   readonly retries?: number
   readonly onProgress?: (progress: Progress) => Effect.Effect<void>
+  /** Keep a digest-named partial across an app shutdown so the next call can resume it safely. */
+  readonly preservePartialOnInterrupt?: boolean
 }
 
 export class DownloadError extends Error {
@@ -200,7 +202,13 @@ const toFileUnlocked = Effect.fn("Download.toFileUnlocked")(function* (options: 
     ),
   )
 
-  return yield* result.pipe(Effect.onInterrupt(() => fs.remove(partial, { force: true }).pipe(Effect.ignore)))
+  return yield* result.pipe(
+    Effect.onInterrupt(() =>
+      options.preservePartialOnInterrupt && digest !== undefined
+        ? Effect.void
+        : fs.remove(partial, { force: true }).pipe(Effect.ignore),
+    ),
+  )
 })
 
 export const toFile = Effect.fn("Download.toFile")(function* (options: Options) {

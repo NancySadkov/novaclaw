@@ -1,5 +1,7 @@
 import { Catalog } from "@novaclaw/core/catalog"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
+import { Config } from "@novaclaw/core/config"
+import { LocalModelManager } from "@novaclaw/core/local-model-manager"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { Api } from "../api"
@@ -14,6 +16,26 @@ export const ProviderHandler = HttpApiBuilder.group(Api, "server.provider", (han
         Effect.fn(function* () {
           const catalog = yield* Catalog.Service
           return yield* response(catalog.provider.available())
+        }),
+      )
+      .handle(
+        "provider.localModels",
+        Effect.fn(function* () {
+          const config = yield* Config.Service
+          const manager = yield* LocalModelManager.Service
+          return yield* manager.status(Config.latest(yield* config.entries(), "local_model_catalog"))
+        }),
+      )
+      .handle(
+        "provider.startLocalModel",
+        Effect.fn(function* (ctx) {
+          const config = yield* Config.Service
+          const manager = yield* LocalModelManager.Service
+          return yield* manager.start(
+            ctx.params.profileID,
+            ctx.payload.context,
+            Config.latest(yield* config.entries(), "local_model_catalog"),
+          )
         }),
       )
       .handle(

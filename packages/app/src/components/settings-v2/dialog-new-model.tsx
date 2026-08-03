@@ -9,7 +9,15 @@ import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
-import { providerPresets, providerProbe, type ProbeResult, type ProviderPreset } from "@/utils/fs-api"
+import {
+  localModelStart,
+  localModelStatus,
+  providerPresets,
+  providerProbe,
+  type LocalModelStatus,
+  type ProbeResult,
+  type ProviderPreset,
+} from "@/utils/fs-api"
 import { matchPreset } from "@/utils/model-presets"
 import { ConfigLocalRuntime } from "@novaclaw/core/config/local-runtime"
 import { ModelV2 } from "@novaclaw/core/model"
@@ -53,7 +61,7 @@ export const DialogNewModel: Component<{
   const [presets, setPresets] = createSignal<Record<string, ProviderPreset>>({})
   const [localSweep, setLocalSweep] = createSignal<ConfigLocalRuntime.SweepResult>()
 
-  const [step, setStep] = createSignal<"pick" | "connect" | "choose">("pick")
+  const [step, setStep] = createSignal<"pick" | "local" | "connect" | "choose">("pick")
   // undefined = nothing chosen yet; "custom" = the free-form endpoint card.
   const [presetID, setPresetID] = createSignal<string | "custom">()
   const [form, setForm] = createStore({ baseURL: "", providerID: "", name: "", apiKey: "" })
@@ -62,6 +70,8 @@ export const DialogNewModel: Component<{
   const [picked, setPicked] = createStore<Record<string, boolean>>({})
   const [saving, setSaving] = createSignal(false)
   const [error, setError] = createSignal<string>()
+  const [managed, setManaged] = createSignal<LocalModelStatus>()
+  const [managedContext, setManagedContext] = createSignal<number>()
 
   const config = () =>
     serverSync().data.config as {
@@ -118,6 +128,16 @@ export const DialogNewModel: Component<{
         if (!abort.signal.aborted) setPresets(value)
       })
       .catch(() => undefined)
+    void localModelStatus(props.http, { directory: props.directory, signal: abort.signal })
+      .then((value) => {
+        if (!abort.signal.aborted) {
+          setManaged(value)
+          setManagedContext(value.context ?? value.recommendedContext)
+        }
+      })
+      .catch((cause) => {
+        if (!abort.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause))
+      })
     void ConfigLocalRuntime.sweep({
       probe: (localCandidate) =>
         providerProbe(props.http, {
@@ -272,27 +292,35 @@ export const DialogNewModel: Component<{
     setStep("choose")
   }
 
-  const add = async () => {
-    const ids = pickedIDs()
-    if (!ids.length || saving()) return
+  const saveProvider = async (input: {
+    providerID: string
+    name: string
+    baseURL: string
+    ids: readonly string[]
+    limits: Readonly<Record<string, { readonly context?: number; readonly output?: number }>>
+    apiKey?: string
+    apiPackage?: string
+    requestBody?: Readonly<Record<string, unknown>>
+  }) => {
+    if (!input.ids.length || saving()) return
     setSaving(true)
     setError(undefined)
     try {
-      const providerID = form.providerID.trim()
-      const key = form.apiKey.trim()
+      const providerID = input.providerID
+      const key = input.apiKey?.trim() ?? ""
       const disabled = (config().disabled_providers ?? []).filter((id) => id !== providerID)
       // Patch-merge semantics: only send what changed — the layered store folds this fragment
       // over any existing provider layer, so already-imported models and a previously saved key
       // survive without re-sending.
       const modelsObj: Record<
         string,
-        { name: string; limit: { context: number; output: number }; request?: { body: Record<string, number> } }
+        { name: string; limit: { context: number; output: number }; request?: { body: Record<string, unknown> } }
       > = {}
       // Models (d) — a recognized family lands with its recommended sampling pre-filled
       // (request.body is the same overlay the Configure dialog edits; unknown ids get none).
-      for (const id of ids) {
+      for (const id of input.ids) {
         const familyPreset = matchPreset(id)
-        const limits = discoveredLimits(id)
+        const limits = input.limits[id]
         modelsObj[id] = {
           name: id,
           // Keep every limit attached to its model: OpenRouter-style catalogs may serve a 32K
@@ -302,14 +330,16 @@ export const DialogNewModel: Component<{
             context: limits?.context ?? ModelV2.DEFAULT_LIMIT.context,
             output: limits?.output ?? ModelV2.DEFAULT_LIMIT.output,
           },
-          ...(familyPreset === undefined ? {} : { request: { body: familyPreset.body } }),
+          ...(familyPreset === undefined && input.requestBody === undefined
+            ? {}
+            : { request: { body: { ...(familyPreset?.body ?? {}), ...(input.requestBody ?? {}) } } }),
         }
       }
       await serverSync().updateConfig({
         providers: {
           [providerID]: {
-            api: { type: "aisdk", package: preset()?.api ?? OPENAI_COMPATIBLE, url: form.baseURL.trim() },
-            name: form.name.trim() || providerID,
+            api: { type: "aisdk", package: input.apiPackage ?? OPENAI_COMPATIBLE, url: input.baseURL },
+            name: input.name || providerID,
             models: modelsObj,
             // P0 key-gap fix: the key lives INLINE in the provider layer, where V2 resolution
             // reads it. Empty field = keep whatever is already stored (patch-merge never clears).
@@ -321,7 +351,7 @@ export const DialogNewModel: Component<{
       showToast({
         variant: "success",
         icon: "circle-check",
-        title: t("settings.models.new.toast.added", { count: ids.length }),
+        title: t("settings.models.new.toast.added", { count: input.ids.length }),
       })
       dialog.close()
     } catch (e) {
@@ -329,6 +359,68 @@ export const DialogNewModel: Component<{
     } finally {
       setSaving(false)
     }
+  }
+
+  const add = () =>
+    saveProvider({
+      providerID: form.providerID.trim(),
+      name: form.name.trim(),
+      baseURL: form.baseURL.trim(),
+      ids: pickedIDs(),
+      limits: result()?.limits ?? {},
+      apiKey: form.apiKey,
+      apiPackage: preset()?.api,
+    })
+
+  const useManaged = async (status: LocalModelStatus) => {
+    if (!status.baseURL || !status.modelID) return
+    const providerID = freeProviderID("local-qwen")
+    await saveProvider({
+      providerID,
+      name: "Local Qwen",
+      baseURL: status.baseURL,
+      ids: [status.modelID],
+      limits: {
+        [status.modelID]: { context: status.context, output: status.output },
+      },
+      // Qwen's thinking mode can consume the whole response budget before producing visible text.
+      // This laptop profile is the fast setup/repair model, so it defaults to direct answers; the
+      // user can still change the model body later through the ordinary config surface.
+      requestBody: { thinkingBudget: 0, chat_template_kwargs: { enable_thinking: false } },
+    })
+  }
+
+  let managedPoll: ReturnType<typeof setTimeout> | undefined
+  onCleanup(() => managedPoll && clearTimeout(managedPoll))
+  const refreshManaged = async (): Promise<void> => {
+    const status = await localModelStatus(props.http, { directory: props.directory }).catch((cause) => {
+      setError(cause instanceof Error ? cause.message : String(cause))
+      return undefined
+    })
+    if (!status) return
+    setManaged(status)
+    if (status.context !== undefined) setManagedContext(status.context)
+    if (status.stage === "ready") {
+      await useManaged(status)
+      return
+    }
+    if (status.stage === "error") return
+    managedPoll = setTimeout(() => void refreshManaged(), 750)
+  }
+  const installManaged = async (profileID: string) => {
+    setError(undefined)
+    const status = await localModelStart(props.http, {
+      directory: props.directory,
+      profileID,
+      context: managedContext(),
+    }).catch((cause) => {
+      setError(cause instanceof Error ? cause.message : String(cause))
+      return undefined
+    })
+    if (!status) return
+    setManaged(status)
+    if (status.stage === "ready") await useManaged(status)
+    else if (status.stage !== "error") managedPoll = setTimeout(() => void refreshManaged(), 500)
   }
 
   const Field = (p: { field: "baseURL" | "providerID" | "name" | "apiKey"; type?: string; placeholder?: string }) => (
@@ -368,6 +460,23 @@ export const DialogNewModel: Component<{
     </button>
   )
 
+  const managedBusy = () => {
+    const stage = managed()?.stage
+    return (
+      stage === "checking" ||
+      stage === "downloading-runtime" ||
+      stage === "installing-runtime" ||
+      stage === "downloading-model" ||
+      stage === "starting"
+    )
+  }
+  const bytesLabel = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(bytes < 10 * 1024 ** 3 ? 1 : 0)} GB`
+  const progress = () => {
+    const status = managed()
+    if (!status?.completed || !status.total) return undefined
+    return Math.min(100, Math.round((status.completed / status.total) * 100))
+  }
+
   return (
     <Dialog size="content">
       <div class="flex flex-col gap-4 px-7 py-7 min-w-[22rem] max-w-[32rem]">
@@ -375,10 +484,16 @@ export const DialogNewModel: Component<{
           <span class="text-[17px] font-semibold text-v2-text-text-base">
             {step() === "connect"
               ? t("settings.models.new.connect.title", { name: form.name || form.providerID || "…" })
-              : t("settings.models.new.title")}
+              : step() === "local"
+                ? t("settings.models.new.managed.title")
+                : t("settings.models.new.title")}
           </span>
           <span class="text-[13px] font-medium text-v2-text-text-muted">
-            {step() === "pick" ? t("settings.models.new.description") : t("settings.models.new.connect.description")}
+            {step() === "pick"
+              ? t("settings.models.new.description")
+              : step() === "local"
+                ? t("settings.models.new.managed.description")
+                : t("settings.models.new.connect.description")}
           </span>
         </div>
 
@@ -432,6 +547,26 @@ export const DialogNewModel: Component<{
               <span class="text-[11px] text-v2-text-text-faint">{t("settings.models.new.local.unavailable")}</span>
             </Show>
             <div class="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                data-action="new-model-local"
+                class="flex flex-col items-start gap-1.5 rounded-xl px-3.5 py-3 text-left ring-1 ring-v2-border-border-base hover:bg-v2-background-bg-layer-01 transition-colors"
+                onClick={() => {
+                  setError(undefined)
+                  setStep("local")
+                  if (!managed()) void refreshManaged()
+                }}
+              >
+                <span class="flex items-center gap-2">
+                  <Icon name="cpu" size="small" class="shrink-0 text-v2-icon-icon-accent" />
+                  <span class="text-[13px] font-semibold text-v2-text-text-base">
+                    {t("settings.models.new.managed.name")}
+                  </span>
+                </span>
+                <span class="text-[11px] leading-snug text-v2-text-text-faint">
+                  {t("settings.models.new.managed.card")}
+                </span>
+              </button>
               {/* Custom endpoint FIRST (owner, 2026-07-27). It used to trail every branded preset, which
                   had the priority backwards: NovaClaw's own story is "point it at your own model" — a local
                   vLLM / llama.cpp / LM Studio / Ollama endpoint — and that is also the path a user with no
@@ -473,6 +608,138 @@ export const DialogNewModel: Component<{
                 )}
               </For>
             </div>
+          </div>
+        </Show>
+
+        <Show when={step() === "local"}>
+          <div class="flex flex-col gap-3">
+            <BackButton to="pick" />
+            <Show
+              when={managed()}
+              fallback={
+                <span class="select-text text-[12px] text-v2-text-text-faint">
+                  {error() ?? t("settings.models.new.managed.checking")}
+                </span>
+              }
+            >
+              {(status) => (
+                <div class="flex flex-col gap-3">
+                  <Show when={!status().supported}>
+                    <div class="rounded-xl bg-v2-background-bg-layer-01 px-3.5 py-3 text-[12px] text-v2-text-text-danger ring-1 ring-v2-border-border-base">
+                      {t("settings.models.new.managed.unsupported", { platform: status().platform })}
+                    </div>
+                  </Show>
+                  <For each={status().profiles}>
+                    {(profile) => (
+                      <div class="flex flex-col gap-3 rounded-xl px-4 py-4 ring-1 ring-v2-border-border-base">
+                        <div class="flex items-start justify-between gap-3">
+                          <div class="flex min-w-0 flex-col gap-1">
+                            <span class="text-[14px] font-semibold text-v2-text-text-base">{profile.name}</span>
+                            <span class="text-[12px] leading-snug text-v2-text-text-muted">{profile.description}</span>
+                          </div>
+                          <span class="shrink-0 rounded-full bg-v2-background-bg-layer-02 px-2 py-1 text-[10px] font-medium text-v2-text-text-faint">
+                            {profile.quant}
+                          </span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-v2-text-text-faint">
+                          <span>
+                            {t("settings.models.new.managed.download", { size: bytesLabel(profile.downloadBytes) })}
+                          </span>
+                          <span>
+                            {t("settings.models.new.managed.memory", { size: bytesLabel(profile.minimumMemoryBytes) })}
+                          </span>
+                          <span>
+                            {t("settings.models.new.managed.context", {
+                              count: tokenLabel(managedContext() ?? status().recommendedContext),
+                            })}
+                          </span>
+                          <span>{profile.license}</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                          <span class="mr-1 text-[11px] text-v2-text-text-faint">
+                            {t("settings.models.new.managed.contextChoice")}
+                          </span>
+                          <For each={profile.contexts}>
+                            {(value) => (
+                              <button
+                                type="button"
+                                class="rounded-lg px-2.5 py-1 text-[11px] font-medium ring-1 transition-colors"
+                                classList={{
+                                  "bg-v2-background-bg-layer-02 text-v2-text-text-base ring-v2-text-text-accent":
+                                    managedContext() === value,
+                                  "text-v2-text-text-muted ring-v2-border-border-base hover:bg-v2-background-bg-layer-01":
+                                    managedContext() !== value,
+                                }}
+                                disabled={managedBusy()}
+                                aria-pressed={managedContext() === value}
+                                onClick={() => setManagedContext(value)}
+                              >
+                                {tokenLabel(value)}
+                              </button>
+                            )}
+                          </For>
+                          <Show when={managedContext() === status().recommendedContext}>
+                            <span class="text-[10px] text-v2-text-text-faint">
+                              {t("settings.models.new.managed.recommended")}
+                            </span>
+                          </Show>
+                        </div>
+                        <Show when={status().profileID === profile.id && status().message}>
+                          <div class="flex flex-col gap-1.5">
+                            <span class="select-text text-[12px] text-v2-text-text-muted">{status().message}</span>
+                            <Show when={progress() !== undefined}>
+                              <div class="h-1.5 overflow-hidden rounded-full bg-v2-background-bg-layer-02">
+                                <div
+                                  class="h-full rounded-full bg-v2-icon-icon-accent transition-[width]"
+                                  style={{ width: `${progress()}%` }}
+                                />
+                              </div>
+                              <span class="text-[10px] text-v2-text-text-faint">
+                                {t("settings.models.new.managed.progress", { percent: progress() ?? 0 })}
+                              </span>
+                            </Show>
+                          </div>
+                        </Show>
+                        <Show when={status().preflight?.issues.length}>
+                          <For each={status().preflight?.issues}>
+                            {(issue) => <span class="select-text text-[11px] text-v2-text-text-danger">{issue}</span>}
+                          </For>
+                        </Show>
+                        <Show when={status().stage === "error" && status().profileID === profile.id}>
+                          <span class="select-text whitespace-pre-wrap text-[11px] text-v2-text-text-danger">
+                            {status().detail ?? status().message}
+                          </span>
+                        </Show>
+                        <ButtonV2
+                          size="normal"
+                          variant="gold"
+                          disabled={
+                            !status().supported ||
+                            managedBusy() ||
+                            saving() ||
+                            (managedContext() === status().context && status().preflight?.ok === false)
+                          }
+                          onClick={() =>
+                            status().stage === "ready" && managedContext() === status().context
+                              ? void useManaged(status())
+                              : void installManaged(profile.id)
+                          }
+                        >
+                          {status().stage === "ready" && managedContext() === status().context
+                            ? t("settings.models.new.managed.use")
+                            : managedBusy()
+                              ? t("settings.models.new.managed.working")
+                              : t("settings.models.new.managed.install")}
+                        </ButtonV2>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              )}
+            </Show>
+            <Show when={managed() && error()}>
+              <span class="select-text text-[12px] text-v2-text-text-danger">{error()}</span>
+            </Show>
           </div>
         </Show>
 

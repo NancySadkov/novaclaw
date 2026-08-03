@@ -1,4 +1,5 @@
 import { Provider } from "@novaclaw/schema/provider"
+import { LocalModel } from "@novaclaw/schema/local-model"
 import { Location } from "@novaclaw/schema/location"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
@@ -18,6 +19,38 @@ export const ProviderGroup = HttpApiGroup.make("server.provider")
           identifier: "v2.provider.list",
           summary: "List providers",
           description: "Retrieve active AI providers so clients can show provider availability and configuration.",
+        }),
+      ),
+  )
+  .add(
+    HttpApiEndpoint.get("provider.localModels", "/api/provider/local-models", {
+      query: LocationQuery,
+      success: LocalModel.Status,
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.provider.localModels",
+          summary: "List managed local models",
+          description:
+            "List tested laptop-friendly models, live resource preflight, verified-download progress and managed llama.cpp status.",
+        }),
+      ),
+  )
+  .add(
+    HttpApiEndpoint.post("provider.startLocalModel", "/api/provider/local-models/:profileID/start", {
+      params: { profileID: Schema.String },
+      query: LocationQuery,
+      payload: Schema.Struct({ context: Schema.optional(Schema.Number) }),
+      success: LocalModel.Status,
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.provider.startLocalModel",
+          summary: "Install or start a managed local model",
+          description:
+            "Start a resumable verified background installation and launch the instance-owned llama.cpp server on loopback.",
         }),
       ),
   )

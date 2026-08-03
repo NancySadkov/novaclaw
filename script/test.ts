@@ -65,10 +65,12 @@ import { enforce } from "./lib/heavy-guard"
 import { readFailingNames, stripAnsi } from "./lib/test-output"
 import { typecheckUnits } from "./lib/typecheck-units"
 
-// Refuse to run alongside a build or another suite, or on a machine already short of memory. Both
-// mistakes produce the same thing: a wall-clock kill that looks exactly like a real test failure, plus
-// pagefile thrashing that wears the SSD. `--force` overrides; CI is exempt. See lib/heavy-guard.ts.
-enforce("the test suite")
+// Refuse to run alongside a build, local inference server or another suite, or on a machine already
+// short of memory. The test runner has no override and requires a real pressure measurement: tests are
+// evidence, so knowingly running one in conditions that can fabricate a timeout is never useful.
+const enforceTestMemory = (label: string) =>
+  enforce(label, process.argv, { allowOverride: false, requireMeasurement: true })
+enforceTestMemory("the test suite")
 
 const FULL = process.argv.includes("--full")
 const ONLY = process.argv.find((a) => a.startsWith("--only="))?.slice("--only=".length)
@@ -319,6 +321,10 @@ function reapOrphans(pid: number | undefined, label: string) {
  * and a package that changes its command does not have to change this file.
  */
 function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs: number) {
+  // Re-check BETWEEN EVERY UNIT, not only once at suite startup. A passed test can still leak a child
+  // or retain several GB; letting the next unit start is the cascading false-failure shape observed on
+  // 2026-07-27. This also catches a local model or build started while the suite was in progress.
+  enforceTestMemory(`${kind} unit ${name}`)
   process.stdout.write(`\n\x1b[1m▶ ${name}\x1b[0m\n`)
   const start = Date.now()
   const proc = spawnSync("bun", argv, {
@@ -370,6 +376,10 @@ function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs:
     skipped: kind === "test" ? readSkipCount(captured) : undefined,
     failing: kind === "test" ? readFailingNames(captured) : [],
   })
+
+  // A last unit has no "next" preflight, so check after it as well. If it left the host unsafe, the
+  // suite must not print green and normalize the leak as an acceptable test side effect.
+  enforceTestMemory(`the host after ${kind} unit ${name}`)
 }
 
 // novaclaw's integration tests must run isolated (see header). Enumerate its test/ subdirs that hold

@@ -67,6 +67,7 @@ export const SETTINGS_KEYS = [
   "quality",
   "web_search",
   "provider_presets",
+  "local_model_catalog",
   "experimental",
 ] as const satisfies readonly (keyof Config.Info)[]
 

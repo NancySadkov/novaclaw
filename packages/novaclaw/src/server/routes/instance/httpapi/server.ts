@@ -50,6 +50,7 @@ import { Database } from "@novaclaw/core/database/database"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { CalendarScheduler } from "@novaclaw/core/schedule/scheduler"
 import { RecipeBuiltin } from "@novaclaw/core/recipe-builtin"
+import { LocalModelRuntime } from "@/local-model/runtime"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { MessengerDrivers } from "@novaclaw/core/messenger/drivers"
 import { NovaclawExternalDriverSource } from "../../../../messenger/external-driver-source"
@@ -401,6 +402,9 @@ export function createRoutes(
 
     Layer.provideMerge(catalogSeedStartup),
     Layer.provideMerge(recipeSeedStartup),
+    // The instance owns its inference process: one scoped supervisor serves desktop, web and
+    // headless clients, relaunches the selected model after restart, and stops it with this scope.
+    Layer.provideMerge(LocalModelRuntime.layer),
     Layer.provide(LayerNode.compile(app)),
   )
 }

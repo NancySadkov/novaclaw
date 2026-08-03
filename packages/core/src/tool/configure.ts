@@ -244,6 +244,8 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   instances: "privileged",
   // `prompt` and `interjection` are text steered into a running session; `model` picks the judge.
   introspection: "privileged",
+  // Chooses the URL and expected digest of binaries/models Nova downloads and executes.
+  local_model_catalog: "privileged",
   // `mcp.servers` spawns a child process — ruling 4 names it as an execution surface.
   mcp: "privileged",
   // `memory.embedding.url` is the endpoint the user's own memories are POSTed to for embedding.

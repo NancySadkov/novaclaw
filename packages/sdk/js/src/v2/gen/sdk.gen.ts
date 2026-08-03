@@ -292,8 +292,12 @@ import type {
   V2ProviderGetResponses,
   V2ProviderListErrors,
   V2ProviderListResponses,
+  V2ProviderLocalModelsErrors,
+  V2ProviderLocalModelsResponses,
   V2ProviderRemoveErrors,
   V2ProviderRemoveResponses,
+  V2ProviderStartLocalModelErrors,
+  V2ProviderStartLocalModelResponses,
   V2PtyConnectErrors,
   V2PtyConnectResponses,
   V2PtyConnectTokenErrors,
@@ -5478,6 +5482,76 @@ export class Provider2 extends HeyApiClient {
       url: "/api/provider",
       ...options,
       ...params,
+    })
+  }
+
+  /**
+   * List managed local models
+   *
+   * List tested laptop-friendly models, live resource preflight, verified-download progress and managed llama.cpp status.
+   */
+  public localModels<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<
+      V2ProviderLocalModelsResponses,
+      V2ProviderLocalModelsErrors,
+      ThrowOnError
+    >({
+      url: "/api/provider/local-models",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Install or start a managed local model
+   *
+   * Start a resumable verified background installation and launch the instance-owned llama.cpp server on loopback.
+   */
+  public startLocalModel<ThrowOnError extends boolean = false>(
+    parameters: {
+      profileID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      context?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "profileID" },
+            { in: "query", key: "location" },
+            { in: "body", key: "context" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      V2ProviderStartLocalModelResponses,
+      V2ProviderStartLocalModelErrors,
+      ThrowOnError
+    >({
+      url: "/api/provider/local-models/{profileID}/start",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 

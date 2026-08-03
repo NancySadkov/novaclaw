@@ -285,4 +285,68 @@ describe("Download.toFile", () => {
     expect(await Bun.file(`${destination}.partial-${sha256}`).exists()).toBe(false)
     expect(await Bun.file(destination).exists()).toBe(false)
   })
+
+  test("a verified installer can preserve and resume its partial across cancellation", async () => {
+    await using tmp = await tmpdir()
+    const payload = bytes("resume after restart")
+    const sha256 = digest(payload)
+    const destination = path.join(tmp.path, "artifact.bin")
+    const requests: Array<string | undefined> = []
+    const first = HttpClient.make((request) => {
+      requests.push(request.headers.range)
+      return Effect.succeed(
+        HttpClientResponse.fromWeb(
+          request,
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.enqueue(payload.slice(0, 6))
+              },
+            }),
+            { headers: { "content-length": String(payload.byteLength) } },
+          ),
+        ),
+      )
+    })
+
+    await run(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fiber = yield* Download.toFile({
+            url: "https://download.example/artifact.bin",
+            destination,
+            integrity: { sha256 },
+            stallTimeout: "1 minute",
+            preservePartialOnInterrupt: true,
+          }).pipe(Effect.forkScoped)
+          yield* Effect.sleep("20 millis")
+          yield* Fiber.interrupt(fiber)
+        }),
+      ),
+      first,
+    )
+
+    expect(await Bun.file(`${destination}.partial-${sha256}`).exists()).toBe(true)
+    const second = HttpClient.make((request) => {
+      requests.push(request.headers.range)
+      return Effect.succeed(
+        response(request, payload.slice(6), {
+          status: 206,
+          headers: { "content-range": `bytes 6-${payload.byteLength - 1}/${payload.byteLength}` },
+        }),
+      )
+    })
+    await run(
+      Download.toFile({
+        url: "https://download.example/artifact.bin",
+        destination,
+        integrity: { sha256 },
+        preservePartialOnInterrupt: true,
+      }),
+      second,
+    )
+
+    expect(requests).toEqual([undefined, "bytes=6-"])
+    expect(new Uint8Array(await fs.readFile(destination))).toEqual(payload)
+  })
 })

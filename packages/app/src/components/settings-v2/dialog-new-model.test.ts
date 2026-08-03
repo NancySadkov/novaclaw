@@ -45,11 +45,12 @@ describe("Add-models — the local-runtime probe wiring", () => {
     const sweepAt = dialog.indexOf("ConfigLocalRuntime.sweep({")
     const componentAt = dialog.indexOf("export const DialogNewModel")
     expect(sweepAt).toBeGreaterThan(componentAt)
-    expect(dialog).toMatch(/onMount\(\(\) => \{[\s\S]{0,700}ConfigLocalRuntime\.sweep\(\{/)
+    expect(dialog).toMatch(/onMount\(\(\) => \{[\s\S]{0,1200}ConfigLocalRuntime\.sweep\(\{/)
     expect(code).not.toContain("createResource")
     expect(dialog).toContain("onCleanup(() => abort.abort())")
-    // No timer, no interval, no re-probe loop: opening the dialog is the whole trigger.
-    expect(code).not.toMatch(/setInterval|setTimeout\s*\(/)
+    // No interval: the external-runtime sweep remains one-shot. The managed install arm separately
+    // uses a bounded timeout chain while a real background job is running.
+    expect(code).not.toContain("setInterval")
   })
 
   test("the probe goes through the server-side endpoint, never a browser fetch to localhost", () => {
@@ -124,7 +125,7 @@ describe("Add-models — the module the dialog imports is browser-safe", () => {
 
 describe("Add-models — safe limits for discovered models", () => {
   test("persists each model's advertised limits and falls back field by field", () => {
-    expect(dialog).toContain("const limits = discoveredLimits(id)")
+    expect(dialog).toContain("const limits = input.limits[id]")
     expect(dialog).toContain("context: limits?.context ?? ModelV2.DEFAULT_LIMIT.context")
     expect(dialog).toContain("output: limits?.output ?? ModelV2.DEFAULT_LIMIT.output")
     expect(dialog).not.toContain("context: result()?.window")
@@ -135,5 +136,34 @@ describe("Add-models — safe limits for discovered models", () => {
     expect(dialog).toContain('t("settings.models.new.limits.outputOnly"')
     expect(dialog).toContain('t("settings.models.new.limits.unknown"')
     expect(dialog).toContain("{limitDescription(id)}")
+  })
+})
+
+describe("Add-models — managed local model", () => {
+  test("is a first-class Local Model choice, not a terminal instruction", () => {
+    expect(dialog).toContain('data-action="new-model-local"')
+    expect(dialog).toContain('setStep("local")')
+    expect(dialog).toContain("localModelStart(props.http")
+    expect(dialog).not.toMatch(/powershell|llama-server\.exe|huggingface\.co/)
+  })
+
+  test("keeps the user informed while the instance-owned job runs", () => {
+    expect(dialog).toContain("status().message")
+    expect(dialog).toContain("status().detail")
+    expect(dialog).toContain("status().preflight?.issues")
+    expect(dialog).toContain("progress()")
+    expect(dialog).toContain("localModelStatus(props.http")
+    expect(dialog).toContain("if (!managed()) void refreshManaged()")
+    expect(dialog).toContain('error() ?? t("settings.models.new.managed.checking")')
+    expect(dialog).toContain(
+      "if (!abort.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause))",
+    )
+  })
+
+  test("registers the ready sidecar as an ordinary configurable provider", () => {
+    expect(dialog).toContain('freeProviderID("local-qwen")')
+    expect(dialog).toContain("baseURL: status.baseURL")
+    expect(dialog).toContain("[status.modelID]: { context: status.context, output: status.output }")
+    expect(dialog).toContain("serverSync().updateConfig")
   })
 })

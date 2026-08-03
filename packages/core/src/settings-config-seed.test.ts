@@ -61,6 +61,7 @@ const VALID: Record<string, unknown> = {
   quality: { enabled: true, cadence: 3 },
   web_search: { timeoutMs: 8000 },
   provider_presets: {},
+  local_model_catalog: {},
   experimental: {},
 }
 

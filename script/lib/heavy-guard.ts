@@ -17,8 +17,8 @@
  *   2. a MEMORY FLOOR — commit charge is already high, whatever the cause (per pitfall #8b, commit vs
  *      limit is the number that matters; the box "works" at 99% commit for a day before dying).
  *
- * Escape hatch: `--force`, or NOVACLAW_SKIP_HEAVY_GUARD=1 for CI, which is not memory-starved and where
- * a refusal would be a false failure of its own.
+ * Builds retain an explicit escape hatch. The test runner deliberately disables it: an agent must not
+ * be able to turn a safety refusal into an OOM by adding `--force` to a test command.
  */
 import { spawnSync } from "node:child_process"
 import os from "node:os"
@@ -30,6 +30,24 @@ export interface Verdict {
   readonly ok: boolean
   readonly reason?: string
   readonly detail?: string
+}
+
+export interface Options {
+  /** Builds may opt out deliberately. Tests set this false so the memory invariant cannot be bypassed. */
+  readonly allowOverride?: boolean
+  /** A heavy test is unsafe when the host measurement itself is unavailable, so tests fail closed. */
+  readonly requireMeasurement?: boolean
+}
+
+export function bypassesGuard(
+  argv: readonly string[],
+  environment: Readonly<Record<string, string | undefined>>,
+  options: Options,
+): boolean {
+  return (
+    options.allowOverride !== false &&
+    (argv.includes("--force") || environment.NOVACLAW_SKIP_HEAVY_GUARD === "1" || environment.CI === "true")
+  )
 }
 
 /** Windows commit charge vs limit — the pair that actually predicts the crash. */
@@ -58,6 +76,7 @@ const HEAVY_PATTERNS: Array<{ label: string; match: RegExp }> = [
   { label: "a CLI binary build", match: /packages[\\/]novaclaw[\\/]script[\\/]build\.ts/i },
   { label: "another test suite run", match: /script[\\/]test\.ts/i },
   { label: "a typecheck (tsgo)", match: /tsgo/i },
+  { label: "a local llama.cpp model server", match: /llama-server/i },
 ]
 
 /**
@@ -65,13 +84,20 @@ const HEAVY_PATTERNS: Array<{ label: string; match: RegExp }> = [
  * immediately: a PowerShell one-liner that merely *mentioned* `tsgo` in its query string matched itself.
  * A guard that blocks the suite because someone grepped for a word is worse than no guard.
  */
-const HEAVY_EXECUTABLES = /^(bun|node|electron|app-builder|tsgo|tsgo-.*)\.exe$/i
+const HEAVY_EXECUTABLES = /^(bun|node|electron|app-builder|tsgo|tsgo-.*|llama-server)\.exe$/i
+
+/** Pure classifier kept public so adding a new inference/runtime process is pinned by a cheap test. */
+export function heavyJobLabels(name: string, commandLine: string): string[] {
+  if (!HEAVY_EXECUTABLES.test(name.trim())) return []
+  if (/heavy-guard|Get-CimInstance|Win32_Process/i.test(commandLine)) return []
+  return HEAVY_PATTERNS.filter((entry) => entry.match.test(commandLine)).map((entry) => entry.label)
+}
 
 /** Running processes that are genuinely one of our heavy jobs, excluding this process and its parent. */
 function windowsHeavyJobs(): string[] {
   const script =
     "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine } | " +
-    "ForEach-Object { \"$($_.ProcessId)`t$($_.Name)`t$($_.CommandLine)\" }"
+    'ForEach-Object { "$($_.ProcessId)`t$($_.Name)`t$($_.CommandLine)" }'
   const proc = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
     encoding: "utf8",
     timeout: 30_000,
@@ -85,17 +111,13 @@ function windowsHeavyJobs(): string[] {
     const pid = Number(pidText.trim())
     const cmd = rest.join("\t")
     if (!Number.isFinite(pid) || pid === process.pid || pid === process.ppid) continue
-    if (!HEAVY_EXECUTABLES.test(name.trim())) continue
-    // The guard's own probe, and any process merely talking ABOUT these tools, are not heavy jobs.
-    if (/heavy-guard|Get-CimInstance|Win32_Process/i.test(cmd)) continue
-    for (const { label, match } of HEAVY_PATTERNS) if (match.test(cmd)) found.add(`${label} (pid ${pid})`)
+    for (const label of heavyJobLabels(name, cmd)) found.add(`${label} (pid ${pid})`)
   }
   return [...found]
 }
 
-export function check(argv: readonly string[] = process.argv): Verdict {
-  if (argv.includes("--force") || process.env.NOVACLAW_SKIP_HEAVY_GUARD === "1" || process.env.CI === "true")
-    return { ok: true }
+export function check(argv: readonly string[] = process.argv, options: Options = {}): Verdict {
+  if (bypassesGuard(argv, process.env, options)) return { ok: true }
 
   if (process.platform === "win32") {
     const jobs = windowsHeavyJobs()
@@ -107,10 +129,20 @@ export function check(argv: readonly string[] = process.argv): Verdict {
           `Found: ${jobs.join(", ")}.\n` +
           `Running a build and the suite together drove commit charge to 58 GB of a 44.7 GB limit on\n` +
           `2026-07-27 and wall-clock-killed core at 150s — a FALSE failure, plus SSD wear from swapping.\n` +
-          `Wait for it to finish, then re-run. Use --force only if you know the box can take it.`,
+          `Stop the listed job (including NovaClaw's local model, if named), then re-run. ` +
+          `The test runner has no force override because a red test is better than an OOM.`,
       }
 
     const commit = windowsCommit()
+    if (!commit && options.requireMeasurement)
+      return {
+        ok: false,
+        reason: "Windows commit pressure could not be measured",
+        detail:
+          `NovaClaw could not read Win32_OperatingSystem.TotalVirtualMemorySize/FreeVirtualMemory.\n` +
+          `The test runner fails closed because running a memory-heavy test without the crash-predicting ` +
+          `measurement would only guess that the machine is safe.`,
+      }
     if (commit && commit.usedGb / commit.limitGb > COMMIT_CEILING)
       return {
         ok: false,
@@ -136,11 +168,9 @@ export function check(argv: readonly string[] = process.argv): Verdict {
 }
 
 /** Print the refusal and exit non-zero, or return quietly when it is safe to proceed. */
-export function enforce(label: string, argv: readonly string[] = process.argv): void {
-  const verdict = check(argv)
+export function enforce(label: string, argv: readonly string[] = process.argv, options: Options = {}): void {
+  const verdict = check(argv, options)
   if (verdict.ok) return
-  process.stderr.write(
-    `\n\x1b[31mRefusing to start ${label}: ${verdict.reason}.\x1b[0m\n${verdict.detail ?? ""}\n\n`,
-  )
+  process.stderr.write(`\n\x1b[31mRefusing to start ${label}: ${verdict.reason}.\x1b[0m\n${verdict.detail ?? ""}\n\n`)
   process.exit(2)
 }
