@@ -402,22 +402,26 @@ export const layer = Layer.effect(
     // the title is still a creation default, so a user rename is never clobbered and a failed
     // attempt simply retries at the next drain end. Seeds from the first REAL user message
     // (harness steers carry the 1N provenance prefix and never title a session).
-    // The UTILITY calls (auto-title · memory extraction · the KB-D link pass) ask for a short string or
-    // a JSON array — never for reasoning. Left to think, qwen3.6 frequently spends the ENTIRE token
-    // budget reasoning and returns EMPTY content, which parses to "nothing to record" and silently
+    // Utility calls ask for a short string or a JSON array — never for extended reasoning. Left
+    // unconstrained, reasoning models frequently spend the ENTIRE token
+    // budget reasoning and return EMPTY content, which parses to "nothing to record" and silently
     // no-ops the whole pass. MEASURED 2026-07-20 against the Spark with the shipped extraction prompt:
     //   max_tokens= 512 -> finish=stop,   completion= 348, content 132 chars (valid JSON)
     //   max_tokens=2048 -> finish=length, completion=2048, content 0 chars
     //   max_tokens=4096 -> finish=length, completion=4096, content 0 chars
-    // Note the INVERSION: a bigger budget is WORSE (a runaway thinking loop), so raising maxTokens is
-    // not the fix — turning thinking off is. Consistent with jh.md wave-20, which measured reasoning a
-    // net NEGATIVE on exactly this shape of task. This rides the per-request `http.body` overlay, which
-    // merges OVER the model's own body (route/model/request precedence in route/client.ts), so a
-    // model's sampling extras are preserved.
-    // ⚠️ PORTABILITY: `chat_template_kwargs` is a vLLM/Qwen-ism — our one test model per AGENTS.md. A
-    // provider that rejects unknown body keys would need this capability-gated; revisit when a
-    // non-vLLM backend is actually supported, and prefer a protocol-level "no reasoning" if one exists.
+    // Note the INVERSION: a bigger output limit is WORSE (a runaway thinking loop), so raising
+    // maxTokens is not the fix. Auto-title therefore uses the provider-neutral stages of the shared
+    // ReasoningBudget controller first: observe reasoning tokens, stop at checkpoints, and nudge the
+    // model toward its tiny answer. Its final mechanical backstop remains the best-effort
+    // `chat_template_kwargs` switch for providers that support it. The other utility passes still use
+    // that direct switch and should migrate through the same controller independently.
     const NO_THINKING = { chat_template_kwargs: { enable_thinking: false } } as const
+
+    // A title needs essentially no reasoning. Keep this deliberately far below an interactive turn's
+    // model-level budget; ReasoningBudget owns the bounded multi-request recovery when a reasoning
+    // model nevertheless opens a think stream. This is provider-neutral until the controller's final
+    // best-effort hard stop, unlike putting a Qwen-specific flag on the first request.
+    const TITLE_REASONING_BUDGET = 128
 
     // True unless the turn explicitly disabled reasoning via the `NO_THINKING` overlay above — the
     // thinking-budget controller only engages when the model is actually allowed to reason.
@@ -438,23 +442,23 @@ export const layer = Layer.effect(
       if (!text) return
       const model = yield* models.resolve(session)
       const chunks: string[] = []
-      yield* llm
-        .stream(
-          LLM.request({
-            model,
-            system: [SystemPart.make(SessionTitle.SYSTEM)],
-            messages: [Message.user(text)],
-            tools: [],
-            generation: { maxTokens: 512 },
-            http: { body: NO_THINKING }, // else the budget goes to reasoning and the reply is EMPTY
-          }),
-        )
-        .pipe(
-          Stream.runForEach((event) => {
-            if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
-            return Effect.void
-          }),
-        )
+      const request = LLM.request({
+        model,
+        system: [SystemPart.make(SessionTitle.SYSTEM)],
+        messages: [Message.user(text)],
+        tools: [],
+        generation: { maxTokens: 512 },
+      })
+      yield* ReasoningBudget.stream({
+        request,
+        stream: (next) => llm.stream(next),
+        budget: TITLE_REASONING_BUDGET,
+      }).pipe(
+        Stream.runForEach((event) => {
+          if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
+          return Effect.void
+        }),
+      )
       const raw = chunks.join("")
       // An EMPTY completion is a broken call, not "no title worth writing" — say so. Silence here is
       // exactly how this stayed dead across three shipped phases.

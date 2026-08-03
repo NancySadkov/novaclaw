@@ -116,6 +116,8 @@ const requests: LLMRequest[] = []
 let response: LLMEvent[] = []
 let responses: LLMEvent[][] | undefined
 let responseStream: Stream.Stream<LLMEvent, LLMError> | undefined
+let titleResponses: LLMEvent[][] | undefined
+const titleRequests: LLMRequest[] = []
 let streamGate: Deferred.Deferred<void> | undefined
 let streamStarted: Deferred.Deferred<void> | undefined
 let streamFailure: LLMError | undefined
@@ -129,10 +131,13 @@ const client = Layer.succeed(
   LLMClient.Service.of({
     prepare: () => Effect.die("unused"),
     stream: ((request: LLMRequest) => {
-      // The runner's post-drain auto-title probe (recognizable by its title-generator system
-      // prompt): answer out-of-band with an empty stream — it cleans to "no title", writes
-      // nothing, and leaves scripted turn responses + request assertions untouched.
-      if (JSON.stringify(request.system ?? []).includes("You are a title generator")) return Stream.empty
+      // The runner's post-drain auto-title probe is out-of-band so its requests do not disturb the
+      // scripted interactive responses. Tests may opt into title phase responses; the default empty
+      // stream retains the historical no-title fixture behaviour.
+      if (JSON.stringify(request.system ?? []).includes("You are a title generator")) {
+        titleRequests.push(request)
+        return Stream.fromIterable(titleResponses?.shift() ?? [])
+      }
       requests.push(request)
       if (responseStream) {
         const stream = responseStream
@@ -400,6 +405,8 @@ const setup = Effect.gen(function* () {
   responses = undefined
   streamFailure = undefined
   responseStream = undefined
+  titleResponses = undefined
+  titleRequests.length = 0
   streamGate = undefined
   streamStarted = undefined
   toolExecutionGate = undefined
@@ -627,6 +634,39 @@ const verifyPartialFlushOnInterruption = (kind: FragmentKind) =>
   })
 
 describe("SessionRunnerLLM", () => {
+  it.effect("auto-titles a reasoning model through the shared token-budget controller", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const { db } = yield* Database.Service
+      const session = yield* SessionV2.Service
+      yield* db
+        .update(SessionTable)
+        .set({ title: "New session" })
+        .where(eq(SessionTable.id, sessionID))
+        .run()
+        .pipe(Effect.orDie)
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Investigate parser failures" }), resume: false })
+
+      response = [LLMEvent.textDelta({ id: "answer", text: "I found the parser issue." })]
+      titleResponses = [
+        // The first utility request gets stuck reasoning. The controller cuts this oversized delta
+        // at its checkpoint instead of letting the 512-token completion end with no title.
+        [LLMEvent.reasoningDelta({ id: "title-reasoning", text: "r".repeat(1_000) })],
+        [
+          LLMEvent.textDelta({ id: "title", text: "Parser failure investigation" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+        ],
+      ]
+
+      yield* session.resume(sessionID)
+
+      expect((yield* session.get(sessionID)).title).toBe("Parser failure investigation")
+      expect(titleRequests).toHaveLength(2)
+      expect(JSON.stringify(titleRequests[0]?.system)).toContain("reasoning budget of about 128 tokens")
+      expect(titleRequests[1]?.http?.body?.["continue_final_message"]).toBe(true)
+    }),
+  )
+
   it.effect("advertises and executes a globally attached application tool", () =>
     Effect.gen(function* () {
       yield* setup
