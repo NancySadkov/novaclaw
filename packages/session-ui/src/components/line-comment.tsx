@@ -365,7 +365,17 @@ export const LineCommentEditor = (props: LineCommentEditorProps) => {
             submit()
           }}
         />
-        <Show when={open() && mention.flat().length > 0}>
+        <Show when={open() && mention.error()}>
+          <div data-slot="line-comment-mention-list">
+            <div class="flex items-center justify-between gap-2 px-2 py-1 text-12-regular text-text-weak">
+              <span>{i18n.t("ui.list.error")}</span>
+              <button type="button" data-slot="line-comment-mention-item" onClick={() => void mention.refetch()}>
+                {i18n.t("ui.list.retry")}
+              </button>
+            </div>
+          </div>
+        </Show>
+        <Show when={open() && !mention.error() && mention.flat().length > 0}>
           <div data-slot="line-comment-mention-list">
             <For each={mention.flat().slice(0, 10)}>
               {(item) => {

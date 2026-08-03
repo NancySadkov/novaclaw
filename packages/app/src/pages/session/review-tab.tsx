@@ -18,6 +18,7 @@ type ReviewDiff = SessionChangeDiff | VcsFileDiff
 
 export interface SessionReviewTabProps {
   title?: JSX.Element
+  revision?: string
   empty?: JSX.Element
   diffs: () => ReviewDiff[]
   view: () => ReturnType<ReturnType<typeof useLayout>["view"]>
@@ -53,12 +54,22 @@ export function SessionReviewTab(props: SessionReviewTabProps) {
   const layout = useLayout()
 
   const readFile = async (path: string) => {
+    const revision = props.revision
+    if (revision)
+      return sdk()
+        .client.v2.fs.snapshotRead({ snapshot: revision, path })
+        .then((result) => result.data?.data)
+        .catch((error) => {
+          console.debug("[session-review] failed to read snapshot file", { path, revision, error })
+          throw error
+        })
+
     return sdk()
       .client.file.read({ path })
       .then((x) => x.data)
       .catch((error) => {
         console.debug("[session-review] failed to read file", { path, error })
-        return undefined
+        throw error
       })
   }
 
@@ -83,7 +94,14 @@ export function SessionReviewTab(props: SessionReviewTabProps) {
     const maxY = Math.max(0, el.scrollHeight - el.clientHeight)
     const maxX = Math.max(0, el.scrollWidth - el.clientWidth)
 
-    const targetY = Math.min(s.y, maxY)
+    const anchor = s.anchor
+    const anchored = anchor
+      ? [...el.querySelectorAll<HTMLElement>('[data-slot="session-review-accordion-item"][data-file]')].find(
+          (node) => node.dataset.file === anchor.file,
+        )
+      : undefined
+    const semanticY = anchored && anchor ? anchored.offsetTop + anchor.offset : undefined
+    const targetY = Math.min(semanticY ?? s.y, maxY)
     const targetX = Math.min(s.x, maxX)
 
     if (el.scrollTop === targetY && el.scrollLeft === targetX) return
@@ -111,9 +129,18 @@ export function SessionReviewTab(props: SessionReviewTabProps) {
     if (!layout.ready()) return
     if (el.clientHeight === 0 || el.clientWidth === 0) return
 
+    const rows = [...el.querySelectorAll<HTMLElement>('[data-slot="session-review-accordion-item"][data-file]')]
+    const anchor = rows.reduce<HTMLElement | undefined>((current, row) => {
+      if (row.offsetTop > el.scrollTop) return current
+      return row
+    }, rows[0])
+
     props.view().setScroll("review", {
       x: el.scrollLeft,
       y: el.scrollTop,
+      ...(anchor?.dataset.file
+        ? { anchor: { file: anchor.dataset.file, offset: el.scrollTop - anchor.offsetTop } }
+        : {}),
     })
   }
 
@@ -132,6 +159,7 @@ export function SessionReviewTab(props: SessionReviewTabProps) {
   return (
     <SessionReview
       title={props.title}
+      revisionKey={props.revision}
       empty={props.empty}
       scrollRef={(el) => {
         scroll = el

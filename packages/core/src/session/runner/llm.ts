@@ -614,9 +614,9 @@ export const layer = Layer.effect(
     ) {
       const messages = yield* SessionMessageRead.list(db, { sessionID, order: "asc" })
       const { from, to } = SessionChanges.boundaries(messages)
-      if (!from || !to || from === to) return
-      const diff = yield* snapshots.diff({ from: Snapshot.ID.make(from), to: Snapshot.ID.make(to) })
-      const summary = SessionChanges.summary(diff)
+      if (!from || !to) return
+      const diff = from === to ? [] : yield* snapshots.diff({ from: Snapshot.ID.make(from), to: Snapshot.ID.make(to) })
+      const summary = SessionChanges.summary(diff, { from, to, complete: true })
       yield* SessionPatch.patchSessionRecord({ db, events }, sessionID, (info) =>
         SessionChanges.equal(info.summary, summary)
           ? undefined
@@ -624,6 +624,19 @@ export const layer = Layer.effect(
               ...info,
               summary,
               time: { ...info.time, updated: DateTime.makeUnsafe(Date.now()) },
+            }),
+      )
+    })
+
+    const markChangesIncomplete = Effect.fn("SessionRunner.markChangesIncomplete")(function* (
+      sessionID: SessionSchema.ID,
+    ) {
+      yield* SessionPatch.patchSessionRecord({ db, events }, sessionID, (info) =>
+        info.summary?.complete === false
+          ? undefined
+          : SessionSchema.Info.make({
+              ...info,
+              summary: SessionChanges.incomplete(info.summary),
             }),
       )
     })
@@ -2112,6 +2125,14 @@ export const layer = Layer.effect(
       } else {
         yield* failInterruptedTools(input.sessionID)
       }
+      yield* markChangesIncomplete(input.sessionID).pipe(
+        Effect.catchCause((cause) =>
+          Log.event("session.changes.refresh.failed", {
+            "session.id": input.sessionID,
+            "session.cause": Cause.pretty(cause),
+          }),
+        ),
+      )
       // B7 tier-1 / ruling 3 — the DRAIN-ENTRY derivation, placed after every early return so a wake
       // that does nothing reads nothing. It answers only the questions asked before any turn exists:
       // the Strict routing decision and the once-per-session quality-provision nudge. Each turn below

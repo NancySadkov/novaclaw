@@ -18,7 +18,7 @@ export const ID = Schema.String.pipe(Schema.brand("Snapshot.ID"))
 export type ID = typeof ID.Type
 
 export class Error extends Schema.TaggedErrorClass<Error>()("Snapshot.Error", {
-  operation: Schema.Literals(["capture", "files", "diff", "preview", "restore"]),
+  operation: Schema.Literals(["capture", "files", "diff", "read", "preview", "restore"]),
   message: Schema.String,
   cause: Schema.optional(Schema.Defect()),
 }) {}
@@ -52,6 +52,11 @@ export interface DiffInput extends CompareInput {
   readonly paths?: readonly RelativePath[]
 }
 
+export interface ReadInput {
+  readonly snapshot: ID
+  readonly path: RelativePath
+}
+
 export interface RestoreInput {
   /** Paths are relative to the project root. */
   readonly files: ReadonlyMap<RelativePath, ID>
@@ -80,6 +85,9 @@ export interface Interface {
    * controls unchanged lines around each unified diff hunk.
    */
   readonly diff: (input: DiffInput) => Effect.Effect<readonly File.Diff[], Error>
+
+  /** Read one project-relative file exactly as it existed in a captured tree. */
+  readonly read: (input: ReadInput) => Effect.Effect<{ readonly content: Uint8Array; readonly mime: string }, Error>
 
   /**
    * Preview the filesystem result of a selective restore without modifying the
@@ -243,6 +251,16 @@ export const layer = Layer.effect(
         .pipe(Effect.mapError((cause) => failure("diff", cause)))
     })
 
+    const read = Effect.fn("Snapshot.read")(function* (input: ReadInput) {
+      const repo = yield* repository().pipe(Effect.mapError((cause) => failure("read", cause)))
+      return {
+        content: yield* git.tree
+          .read({ repository: repo, tree: Git.TreeID.make(input.snapshot), path: input.path })
+          .pipe(Effect.mapError((cause) => failure("read", cause))),
+        mime: FSUtil.mimeType(input.path),
+      }
+    })
+
     const plan = Effect.fnUntraced(function* (operation: "preview" | "restore", input: RestoreInput) {
       const files = new Map<RelativePath, Git.TreeID>()
       for (const [file, snapshot] of input.files) {
@@ -291,7 +309,7 @@ export const layer = Layer.effect(
         .pipe(Effect.mapError((cause) => failure("restore", cause)))
     })
 
-    return Service.of({ capture, files, diff, preview, restore, checkout })
+    return Service.of({ capture, files, diff, read, preview, restore, checkout })
   }),
 )
 
@@ -309,6 +327,13 @@ export const noopLayer = Layer.succeed(
     capture: () => Effect.succeed(undefined),
     files: () => Effect.succeed([]),
     diff: () => Effect.succeed([]),
+    read: () =>
+      Effect.fail(
+        new Error({
+          operation: "read",
+          message: "Snapshots are unavailable",
+        }),
+      ),
     preview: () => Effect.succeed([]),
     restore: () => Effect.void,
     checkout: () => Effect.void,
@@ -328,6 +353,7 @@ function failure(operation: Error["operation"], cause: unknown) {
 export type LegacyFileDiff = {
   file?: string
   patch?: string
+  patchUnavailableReason?: "binary" | "too_large" | "metadata_only"
   additions: number
   deletions: number
   status?: "added" | "deleted" | "modified"

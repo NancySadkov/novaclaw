@@ -15090,6 +15090,100 @@
         ]
       }
     },
+    "/api/fs/snapshot/read": {
+      "get": {
+        "tags": ["filesystem"],
+        "operationId": "v2.fs.snapshotRead",
+        "parameters": [
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          },
+          {
+            "name": "snapshot",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "$ref": "#/components/schemas/LocationInfo"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/FileSystemSnapshotContent"
+                    }
+                  },
+                  "required": ["location", "data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Read one file exactly as it existed in a captured session revision.",
+        "summary": "Read snapshot file",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.fs.snapshotRead({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/fs/list": {
       "get": {
         "tags": ["filesystem"],
@@ -21390,6 +21484,10 @@
           "patch": {
             "type": "string"
           },
+          "patchUnavailableReason": {
+            "type": "string",
+            "enum": ["binary", "too_large", "metadata_only"]
+          },
           "additions": {
             "type": "number"
           },
@@ -23089,9 +23187,13 @@
           },
           "patch": {
             "type": "string"
+          },
+          "patchUnavailableReason": {
+            "type": "string",
+            "enum": ["binary", "too_large", "metadata_only"]
           }
         },
-        "required": ["path", "status", "additions", "deletions", "patch"],
+        "required": ["path", "status", "additions", "deletions"],
         "additionalProperties": false
       },
       "RevertState": {
@@ -23129,6 +23231,10 @@
           "patch": {
             "type": "string"
           },
+          "patchUnavailableReason": {
+            "type": "string",
+            "enum": ["binary", "too_large", "metadata_only"]
+          },
           "additions": {
             "type": "number"
           },
@@ -23160,6 +23266,15 @@
             "items": {
               "$ref": "#/components/schemas/SessionChangeDiff"
             }
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "complete": {
+            "type": "boolean"
           }
         },
         "required": ["additions", "deletions", "files"],
@@ -33849,6 +33964,27 @@
           }
         },
         "required": ["id", "origin", "action", "resource"],
+        "additionalProperties": false
+      },
+      "FileSystemSnapshotContent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["binary"]
+          },
+          "content": {
+            "type": "string"
+          },
+          "encoding": {
+            "type": "string",
+            "enum": ["base64"]
+          },
+          "mimeType": {
+            "type": "string"
+          }
+        },
+        "required": ["type", "content", "encoding"],
         "additionalProperties": false
       },
       "FileSystemEntry": {

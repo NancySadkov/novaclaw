@@ -18,7 +18,12 @@ type DiffOptions = {
 const emptyPatch = (file: string) => formatPatch(structuredPatch(file, file, "", "", "", "", { context: 0 }))
 
 const nums = (list: Git.Stat[]) =>
-  new Map(list.map((item) => [item.file, { additions: item.additions, deletions: item.deletions }] as const))
+  new Map(
+    list.map(
+      (item) =>
+        [item.file, { additions: item.additions, deletions: item.deletions, binary: item.binary }] as const,
+    ),
+  )
 
 const merge = (...lists: Git.Item[][]) => {
   const out = new Map<string, Git.Item>()
@@ -168,7 +173,7 @@ const files = Effect.fnUntraced(function* (
   cwd: string,
   ref: string | undefined,
   list: Git.Item[],
-  map: Map<string, { additions: number; deletions: number }>,
+  map: Map<string, { additions: number; deletions: number; binary?: boolean }>,
   batch: { patches: Map<string, string>; capped: boolean },
   options?: DiffOptions,
 ) {
@@ -189,7 +194,14 @@ const files = Effect.fnUntraced(function* (
     }
     next.push({
       file: item.file,
-      patch: result.patch,
+      patch: stat?.binary || result.capped || !result.patch ? undefined : result.patch,
+      patchUnavailableReason: stat?.binary
+        ? "binary"
+        : result.capped
+          ? "too_large"
+          : !result.patch
+            ? "metadata_only"
+            : undefined,
       additions: stat?.additions ?? 0,
       deletions: stat?.deletions ?? 0,
       status: item.status,
@@ -249,6 +261,7 @@ export const FileDiff = Schema.Struct({
   // populates patch, but loosening matches the sibling schema so a
   // future code path that omits it can't crash /instance/vcs/diff.
   patch: Schema.optional(Schema.String),
+  patchUnavailableReason: Schema.optional(Schema.Literals(["binary", "too_large", "metadata_only"])),
   additions: Schema.Finite,
   deletions: Schema.Finite,
   status: Schema.optional(Schema.Literals(["added", "deleted", "modified"])),

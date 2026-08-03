@@ -10,7 +10,8 @@ export const FileDiff = Schema.Struct({
   status: Schema.Literals(["added", "modified", "deleted"]),
   additions: NonNegativeInt,
   deletions: NonNegativeInt,
-  patch: Schema.String,
+  patch: Schema.String.pipe(optional),
+  patchUnavailableReason: Schema.Literals(["binary", "too_large", "metadata_only"]).pipe(optional),
 }).annotate({ identifier: "File.Diff" })
 export interface FileDiff extends Schema.Schema.Type<typeof FileDiff> {}
 

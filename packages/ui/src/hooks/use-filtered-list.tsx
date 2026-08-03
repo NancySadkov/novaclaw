@@ -121,6 +121,7 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
 
   return {
     grouped,
+    error: () => grouped.error as unknown,
     filter: () => store.filter,
     flat,
     reset,

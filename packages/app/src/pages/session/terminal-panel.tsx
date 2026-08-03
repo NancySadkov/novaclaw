@@ -11,6 +11,11 @@ import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 
 import { SortableTerminalTab } from "@/components/session"
 import { Terminal } from "@/components/terminal"
+import {
+  shouldCloneTerminal,
+  terminalConnectFailureMessage,
+  type TerminalConnectFailure,
+} from "@/components/terminal-connection"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
@@ -22,7 +27,6 @@ import { getTerminalHandoff, setTerminalHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
 
 export function TerminalPanel() {
-  const delays = [120, 240]
   const layout = useLayout()
   const terminal = useTerminal()
   const sdk = useSDK()
@@ -40,6 +44,7 @@ export function TerminalPanel() {
     autoCreated: false,
     activeDraggable: undefined as string | undefined,
     recovered: {} as Record<string, boolean>,
+    errors: {} as Record<string, string | undefined>,
     view: typeof window === "undefined" ? 1000 : (window.visualViewport?.height ?? window.innerHeight),
   })
 
@@ -79,36 +84,12 @@ export function TerminalPanel() {
     ),
   )
 
-  const focus = (id: string) => {
-    focusTerminalById(id)
-
-    const frame = requestAnimationFrame(() => {
-      if (!opened()) return
-      if (terminal.active() !== id) return
-      focusTerminalById(id)
-    })
-
-    const timers = delays.map((ms) =>
-      window.setTimeout(() => {
-        if (!opened()) return
-        if (terminal.active() !== id) return
-        focusTerminalById(id)
-      }, ms),
-    )
-
-    return () => {
-      cancelAnimationFrame(frame)
-      for (const timer of timers) clearTimeout(timer)
-    }
-  }
-
   createEffect(
     on(
       () => [opened(), terminal.active()] as const,
       ([next, id]) => {
         if (!next || !id) return
-        const stop = focus(id)
-        onCleanup(stop)
+        focusTerminalById(id)
       },
     ),
   )
@@ -151,7 +132,17 @@ export function TerminalPanel() {
   const recoverTerminal = (key: string, id: string, clone: (id: string) => Promise<void>) => {
     if (store.recovered[key]) return
     setStore("recovered", key, true)
-    void clone(id)
+    void clone(id).catch((error) => {
+      setStore("recovered", key, false)
+      setStore(
+        "errors",
+        id,
+        terminalConnectFailureMessage(
+          { kind: "unavailable", error },
+          language.t("terminal.connectionLost.description"),
+        ),
+      )
+    })
   }
 
   const terminalRecoveryKey = (pty: { id: string; title: string; titleNumber: number }) => {
@@ -160,7 +151,27 @@ export function TerminalPanel() {
 
   const markTerminalConnected = (key: string, id: string, trim: (id: string) => void) => {
     setStore("recovered", key, false)
+    setStore("errors", id, undefined)
     trim(id)
+    if (!opened() || terminal.active() !== id) return
+    focusTerminalById(id)
+  }
+
+  const handleConnectFailure = (
+    key: string,
+    id: string,
+    failure: TerminalConnectFailure,
+    clone: (id: string) => Promise<void>,
+  ) => {
+    if (shouldCloneTerminal(failure)) {
+      recoverTerminal(key, id, clone)
+      return
+    }
+    setStore("errors", id, terminalConnectFailureMessage(failure, language.t("terminal.connectionLost.description")))
+  }
+
+  const retryTerminal = (id: string) => {
+    setStore("errors", id, undefined)
   }
 
   const handleTerminalDragStart = (event: unknown) => {
@@ -186,10 +197,8 @@ export function TerminalPanel() {
 
     const activeId = terminal.active()
     if (!activeId) return
-    requestAnimationFrame(() => {
-      if (terminal.active() !== activeId) return
-      focusTerminalById(activeId)
-    })
+    if (terminal.active() !== activeId) return
+    focusTerminalById(activeId)
   }
 
   return (
@@ -296,13 +305,34 @@ export function TerminalPanel() {
                       <Show when={all().find((pty) => pty.id === id)}>
                         {(pty) => (
                           <div id={`terminal-wrapper-${id}`} class="absolute inset-0">
-                            <Terminal
-                              pty={pty()}
-                              autoFocus={opened()}
-                              onConnect={() => markTerminalConnected(terminalRecoveryKey(pty()), id, ops.trim)}
-                              onCleanup={ops.update}
-                              onConnectError={() => recoverTerminal(terminalRecoveryKey(pty()), id, ops.clone)}
-                            />
+                            <Show when={!store.errors[id]}>
+                              <Terminal
+                                pty={pty()}
+                                autoFocus={opened()}
+                                onConnect={() => markTerminalConnected(terminalRecoveryKey(pty()), id, ops.trim)}
+                                onCleanup={ops.update}
+                                onConnectError={(failure) =>
+                                  handleConnectFailure(terminalRecoveryKey(pty()), id, failure, ops.clone)
+                                }
+                              />
+                            </Show>
+                            <Show when={store.errors[id]} keyed>
+                              {(message) => (
+                                <div class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background-stronger px-6 text-center">
+                                  <div class="text-14-medium text-text-strong">
+                                    {language.t("terminal.connectionLost.title")}
+                                  </div>
+                                  <div class="max-w-md text-13-regular text-text-weak">{message}</div>
+                                  <button
+                                    type="button"
+                                    class="rounded-md bg-surface-raised-base px-3 py-1.5 text-13-medium text-text-strong hover:bg-surface-raised-base-hover"
+                                    onClick={() => retryTerminal(id)}
+                                  >
+                                    {language.t("terminal.connectionLost.retry")}
+                                  </button>
+                                </div>
+                              )}
+                            </Show>
                           </div>
                         )}
                       </Show>

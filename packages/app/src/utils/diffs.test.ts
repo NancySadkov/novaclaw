@@ -27,9 +27,20 @@ describe("diffs", () => {
     expect(
       diffs([
         item,
-        { file: "src/bad.ts", additions: 1, deletions: 1 },
+        { file: "src/bad.ts", additions: "1", deletions: 1 },
         { patch: item.patch, additions: 1, deletions: 1 },
       ]),
     ).toEqual([item])
+  })
+
+  test("preserves metadata-only entries without patch text", () => {
+    const metadataOnly = {
+      file: "assets/logo.png",
+      additions: 0,
+      deletions: 0,
+      status: "modified",
+      patchUnavailableReason: "binary",
+    } as const
+    expect(diffs([metadataOnly])).toEqual([metadataOnly])
   })
 })

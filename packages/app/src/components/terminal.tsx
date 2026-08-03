@@ -16,6 +16,7 @@ import type { LocalPTY } from "@/context/terminal"
 import { disposeIfDisposable, getHoveredLinkText, setOptionIfSupported } from "@/utils/runtime-adapters"
 import { terminalWriter } from "@/utils/terminal-writer"
 import { terminalWebSocketURL } from "@/utils/terminal-websocket-url"
+import type { TerminalConnectFailure } from "./terminal-connection"
 
 const TOGGLE_TERMINAL_ID = "terminal.toggle"
 const DEFAULT_TOGGLE_TERMINAL_KEYBIND = "ctrl+`"
@@ -25,7 +26,7 @@ export interface TerminalProps extends ComponentProps<"div"> {
   onSubmit?: () => void
   onCleanup?: (pty: Partial<LocalPTY> & { id: string }) => void
   onConnect?: () => void
-  onConnectError?: (error: unknown) => void
+  onConnectError?: (failure: TerminalConnectFailure) => void
 }
 
 let shared: Promise<{ mod: typeof import("ghostty-web"); ghostty: Ghostty }> | undefined
@@ -465,11 +466,11 @@ export const Terminal = (props: TerminalProps) => {
       const once = { value: false }
       const decoder = new TextDecoder()
 
-      const fail = (err: unknown) => {
+      const fail = (failure: TerminalConnectFailure) => {
         if (disposed) return
         if (once.value) return
         once.value = true
-        local.onConnectError?.(err)
+        local.onConnectError?.(failure)
       }
 
       const gone = () =>
@@ -512,7 +513,7 @@ export const Terminal = (props: TerminalProps) => {
           if (disposed) return
           if (await gone()) {
             if (disposed) return
-            fail(err)
+            fail({ kind: "gone", error: err })
             return
           }
           if (disposed) return
@@ -526,7 +527,7 @@ export const Terminal = (props: TerminalProps) => {
         drop?.()
 
         const ticket = await connectToken().catch((err) => {
-          fail(err)
+          fail({ kind: "blocked", error: err })
           return undefined
         })
         if (once.value) return
@@ -625,7 +626,7 @@ export const Terminal = (props: TerminalProps) => {
         title: language.t("terminal.connectionLost.title"),
         description: err instanceof Error ? err.message : language.t("terminal.connectionLost.description"),
       })
-      local.onConnectError?.(err)
+      local.onConnectError?.({ kind: "unavailable", error: err })
     })
   })
 

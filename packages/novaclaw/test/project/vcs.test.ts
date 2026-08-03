@@ -259,6 +259,31 @@ describe("Vcs diff", () => {
   )
 
   it.instance(
+    "keeps binary changes visible with an explicit unavailable reason",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const file = path.join(test.directory, "image.bin")
+        yield* Effect.promise(() => fs.writeFile(file, Uint8Array.of(0, 1, 2)))
+        yield* git(test.directory, ["add", "."])
+        yield* git(test.directory, ["commit", "--no-gpg-sign", "-m", "add binary"])
+        yield* Effect.promise(() => fs.writeFile(file, Uint8Array.of(0, 3, 4)))
+
+        const vcs = yield* init()
+        const changed = (yield* vcs.diff("git")).find((item) => item.file === "image.bin")
+
+        expect(changed).toMatchObject({
+          file: "image.bin",
+          additions: 0,
+          deletions: 0,
+          patchUnavailableReason: "binary",
+        })
+        expect(changed?.patch).toBeUndefined()
+      }),
+    { git: true },
+  )
+
+  it.instance(
     "diff('git') keeps batched patches aligned for type changes",
     () =>
       Effect.gen(function* () {

@@ -24,6 +24,8 @@ type PromptPopoverProps = {
   popover: "at" | "slash" | null
   setSlashPopoverRef: (el: HTMLDivElement) => void
   atFlat: AtOption[]
+  atError?: unknown
+  onAtRetry: () => void
   atActive?: string
   atKey: (item: AtOption) => string
   setAtActive: (id: string) => void
@@ -53,14 +55,44 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
         <Switch>
           <Match when={props.popover === "at"}>
             <Show
-              when={props.atFlat.length > 0}
-              fallback={<div class="px-2 py-1 text-v2-text-text-muted">{props.t("prompt.popover.emptyResults")}</div>}
+              when={!props.atError}
+              fallback={
+                <div class="flex items-center justify-between gap-3 px-2 py-1 text-v2-text-text-muted">
+                  <span>{props.t("prompt.popover.searchError")}</span>
+                  <button type="button" class="shrink-0 text-v2-text-text-base" onClick={props.onAtRetry}>
+                    {props.t("prompt.popover.searchRetry")}
+                  </button>
+                </div>
+              }
             >
-              <For each={props.atFlat.slice(0, 10)}>
-                {(item) => {
-                  const key = props.atKey(item)
+              <Show
+                when={props.atFlat.length > 0}
+                fallback={<div class="px-2 py-1 text-v2-text-text-muted">{props.t("prompt.popover.emptyResults")}</div>}
+              >
+                <For each={props.atFlat.slice(0, 10)}>
+                  {(item) => {
+                    const key = props.atKey(item)
 
-                  if (item.type === "agent") {
+                    if (item.type === "agent") {
+                      return (
+                        <button
+                          class="w-full flex items-center gap-x-2 px-2 py-0.5 rounded-[4px]"
+                          classList={{
+                            "bg-v2-overlay-simple-overlay-hover": props.atActive === key,
+                          }}
+                          onClick={() => props.onAtSelect(item)}
+                          onPointerMove={() => props.setAtActive(key)}
+                        >
+                          <Icon name="brain" size="small" class="text-icon-info-active shrink-0" />
+                          <span class={`whitespace-nowrap text-v2-text-text-base ${ROW_TEXT}`}>@{item.name}</span>
+                        </button>
+                      )
+                    }
+
+                    const isDirectory = item.path.endsWith("/")
+                    const directory = isDirectory ? item.path : getDirectory(item.path)
+                    const filename = isDirectory ? "" : getFilename(item.path)
+
                     return (
                       <button
                         class="w-full flex items-center gap-x-2 px-2 py-0.5 rounded-[4px]"
@@ -70,36 +102,18 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                         onClick={() => props.onAtSelect(item)}
                         onPointerMove={() => props.setAtActive(key)}
                       >
-                        <Icon name="brain" size="small" class="text-icon-info-active shrink-0" />
-                        <span class={`whitespace-nowrap text-v2-text-text-base ${ROW_TEXT}`}>@{item.name}</span>
+                        <FileIcon node={{ path: item.path, type: "file" }} class="shrink-0 size-4" />
+                        <div class={`flex items-center min-w-0 ${ROW_TEXT}`}>
+                          <span class="whitespace-nowrap truncate min-w-0 text-v2-text-text-muted">{directory}</span>
+                          <Show when={!isDirectory}>
+                            <span class="whitespace-nowrap text-v2-text-text-base">{filename}</span>
+                          </Show>
+                        </div>
                       </button>
                     )
-                  }
-
-                  const isDirectory = item.path.endsWith("/")
-                  const directory = isDirectory ? item.path : getDirectory(item.path)
-                  const filename = isDirectory ? "" : getFilename(item.path)
-
-                  return (
-                    <button
-                      class="w-full flex items-center gap-x-2 px-2 py-0.5 rounded-[4px]"
-                      classList={{
-                        "bg-v2-overlay-simple-overlay-hover": props.atActive === key,
-                      }}
-                      onClick={() => props.onAtSelect(item)}
-                      onPointerMove={() => props.setAtActive(key)}
-                    >
-                      <FileIcon node={{ path: item.path, type: "file" }} class="shrink-0 size-4" />
-                      <div class={`flex items-center min-w-0 ${ROW_TEXT}`}>
-                        <span class="whitespace-nowrap truncate min-w-0 text-v2-text-text-muted">{directory}</span>
-                        <Show when={!isDirectory}>
-                          <span class="whitespace-nowrap text-v2-text-text-base">{filename}</span>
-                        </Show>
-                      </div>
-                    </button>
-                  )
-                }}
-              </For>
+                  }}
+                </For>
+              </Show>
             </Show>
           </Match>
           <Match when={props.popover === "slash"}>

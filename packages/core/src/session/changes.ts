@@ -34,17 +34,35 @@ export const boundaries = (messages: readonly SessionMessage.Message[]): Boundar
 type Summary = Session.ChangesSummary
 
 /** Fold snapshot file diffs into the record's changes summary (counters + wire diffs). */
-export const summary = (diffs: readonly Revert.FileDiff[]): Summary => ({
+export const summary = (
+  diffs: readonly Revert.FileDiff[],
+  boundary?: { readonly from?: string; readonly to?: string; readonly complete?: boolean },
+): Summary => ({
   additions: diffs.reduce((sum, item) => sum + item.additions, 0),
   deletions: diffs.reduce((sum, item) => sum + item.deletions, 0),
   files: diffs.length,
   diffs: diffs.map((item) => ({
     file: item.path as string,
-    patch: item.patch,
+    ...(item.patch === undefined ? {} : { patch: item.patch }),
+    ...(item.patchUnavailableReason === undefined ? {} : { patchUnavailableReason: item.patchUnavailableReason }),
     additions: item.additions,
     deletions: item.deletions,
     status: item.status,
   })),
+  ...(boundary?.from === undefined ? {} : { from: boundary.from }),
+  ...(boundary?.to === undefined ? {} : { to: boundary.to }),
+  complete: boundary?.complete ?? true,
+})
+
+/** Mark the persisted recording stale before a drain can mutate the workspace. */
+export const incomplete = (current?: Summary): Summary => ({
+  additions: current?.additions ?? 0,
+  deletions: current?.deletions ?? 0,
+  files: current?.files ?? 0,
+  ...(current?.diffs === undefined ? {} : { diffs: current.diffs }),
+  ...(current?.from === undefined ? {} : { from: current.from }),
+  ...(current?.to === undefined ? {} : { to: current.to }),
+  complete: false,
 })
 
 /** Structural summary equality — the runner's dedup (skip the publish when nothing changed). */

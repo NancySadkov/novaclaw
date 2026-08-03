@@ -65,6 +65,7 @@ describe("SessionChanges.summary", () => {
     expect(summary.additions).toBe(5)
     expect(summary.deletions).toBe(1)
     expect(summary.files).toBe(2)
+    expect(summary.complete).toBe(true)
     expect(summary.diffs).toEqual([
       { file: "a.ts", patch: "--- a/a.ts", additions: 3, deletions: 1, status: "modified" },
       { file: "b.ts", patch: "--- a/b.ts", additions: 2, deletions: 0, status: "modified" },
@@ -73,7 +74,7 @@ describe("SessionChanges.summary", () => {
 
   test("empty diff folds to a zero summary that still compares equal to itself", () => {
     const summary = SessionChanges.summary([])
-    expect(summary).toEqual({ additions: 0, deletions: 0, files: 0, diffs: [] })
+    expect(summary).toEqual({ additions: 0, deletions: 0, files: 0, diffs: [], complete: true })
     expect(SessionChanges.equal(summary, SessionChanges.summary([]))).toBe(true)
   })
 
@@ -83,5 +84,15 @@ describe("SessionChanges.summary", () => {
     expect(SessionChanges.equal(a, undefined)).toBe(false)
     expect(SessionChanges.equal(a, SessionChanges.summary([diff("a.ts", 1, 0)]))).toBe(true)
     expect(SessionChanges.equal(a, SessionChanges.summary([diff("a.ts", 2, 0)]))).toBe(false)
+  })
+
+  test("records exact boundaries and marks an in-flight recording incomplete", () => {
+    const recorded = SessionChanges.summary([diff("a.ts", 1, 0)], {
+      from: "tree_1",
+      to: "tree_2",
+      complete: true,
+    })
+    expect(recorded).toMatchObject({ from: "tree_1", to: "tree_2", complete: true })
+    expect(SessionChanges.incomplete(recorded)).toEqual({ ...recorded, complete: false })
   })
 })

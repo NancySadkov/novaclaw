@@ -78,12 +78,12 @@ import { promptFromUserMessage } from "@/utils/prompt"
 import { formatServerError } from "@/utils/server-errors"
 import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/session-route"
 import { createSessionOwnership } from "./session/session-ownership"
+import { createReviewController, resolveReviewSource, type ChangeMode } from "./session/review-source"
 
 type FollowupItem = FollowupDraft & { id: string }
 type FollowupEdit = Pick<FollowupItem, "id" | "prompt" | "context">
 const emptyFollowups: FollowupItem[] = []
 
-type ChangeMode = "git" | "branch" | "turn"
 type VcsMode = "git" | "branch"
 
 const sessionViewState = () => ({
@@ -366,7 +366,6 @@ export default function Page() {
   // Native: the session-changes review reads the session record's summary diffs
   // (`info().summary.diffs`), not a per-user-message summary (native user messages carry none).
   const turnDiffs = createMemo(() => list(info()?.summary?.diffs))
-  const nogit = createMemo(() => !sync().data.vcs)
   const changesOptions = createMemo<ChangeMode[]>(() => {
     const list: ChangeMode[] = []
     const vcs = sync().data.vcs
@@ -382,8 +381,18 @@ export default function Page() {
       ? desktopFileTreeOpen() || (desktopReviewOpen() && activeTab() === "review")
       : store.mobileTab === "changes",
   )
+  const sessionStatus = () => sync().data.session_status[params.id ?? ""]?.type ?? "idle"
+  const reviewSource = createMemo(() =>
+    resolveReviewSource({
+      selected: store.changes,
+      status: sessionStatus(),
+      summaryComplete: info()?.summary?.complete,
+      hasVcs: !!sync().data.vcs,
+    }),
+  )
   const vcsMode = createMemo<VcsMode | undefined>(() => {
-    if (store.changes === "git" || store.changes === "branch") return store.changes
+    const mode = reviewSource().mode
+    if (mode === "git" || mode === "branch") return mode
   })
   const vcsKey = createMemo(
     () =>
@@ -401,26 +410,24 @@ export default function Page() {
             sdk()
               .client.vcs.diff({ mode })
               .then((result) => list(result.data))
-              .catch((error) => {
-                console.debug("[session-review] failed to load vcs diff", { mode, error })
-                return []
-              })
         : skipToken,
     }
   })
   const refreshVcs = debounce(() => void queryClient.invalidateQueries({ queryKey: vcsKey() }), 100)
-  const reviewDiffs = () => {
-    if (store.changes === "git" || store.changes === "branch")
-      // avoids suspense
-      return vcsQuery.isFetched ? (vcsQuery.data ?? []) : []
-    return turnDiffs()
-  }
-  const reviewCount = () => reviewDiffs().length
+  const review = createReviewController({
+    source: reviewSource,
+    recorded: turnDiffs,
+    recordedRevision: () => info()?.summary?.to,
+    vcs: () => vcsQuery.data,
+    vcsFetched: () => vcsQuery.isFetched,
+    vcsPending: () => vcsQuery.isPending,
+    vcsError: () => vcsQuery.error,
+  })
+  const reviewDiffs = review.diffs
+  const reviewCount = review.count
   const hasReview = () => reviewCount() > 0
-  const reviewReady = () => {
-    if (store.changes === "git" || store.changes === "branch") return !vcsQuery.isPending
-    return true
-  }
+  const reviewReady = review.ready
+  const reviewRevision = review.revision
 
   const newSessionWorktree = createMemo(() => {
     if (store.newSessionWorktree === "create") return "create"
@@ -785,19 +792,31 @@ export default function Page() {
     const label = (option: ChangeMode) => {
       if (option === "git") return language.t("ui.sessionReview.title.git")
       if (option === "branch") return language.t("ui.sessionReview.title.branch")
-      return language.t("ui.sessionReview.title.lastTurn")
+      return language.t("ui.sessionReview.title.chat")
+    }
+
+    const sourceLabel = () => {
+      const kind = reviewSource().kind
+      if (kind === "live") return language.t("session.review.source.live")
+      if (kind === "incomplete") return language.t("session.review.source.incomplete")
+      if (kind === "recorded") return language.t("session.review.source.recorded")
     }
 
     return (
-      <Select
-        options={changesOptions()}
-        current={store.changes}
-        label={label}
-        onSelect={(option) => option && setStore("changes", option)}
-        variant="ghost"
-        size="small"
-        valueClass="text-14-medium"
-      />
+      <div class="flex items-center gap-2">
+        <Select
+          options={changesOptions()}
+          current={store.changes}
+          label={label}
+          onSelect={(option) => option && setStore("changes", option)}
+          variant="ghost"
+          size="small"
+          valueClass="text-14-medium"
+        />
+        <Show when={store.changes === "turn" && sourceLabel()} keyed>
+          {(value) => <span class="text-11-regular text-text-weak">{value}</span>}
+        </Show>
+      </div>
     )
   }
 
@@ -807,31 +826,31 @@ export default function Page() {
     </div>
   )
 
-  const createGit = (input: { emptyClass: string }) => (
-    <div class={input.emptyClass}>
-      <div class="flex flex-col gap-3">
-        <div class="text-14-medium text-text-strong">{language.t("session.review.noVcs.createGit.title")}</div>
-        <div class="text-14-regular text-text-base max-w-md" style={{ "line-height": "var(--line-height-normal)" }}>
-          {language.t("session.review.noVcs.createGit.description")}
-        </div>
-      </div>
-    </div>
-  )
-
   const reviewEmptyText = createMemo(() => {
-    if (store.changes === "git") return language.t("session.review.noUncommittedChanges")
-    if (store.changes === "branch") return language.t("session.review.noBranchChanges")
+    if (reviewSource().kind === "live") return language.t("session.review.noLiveChanges")
+    if (reviewSource().mode === "git") return language.t("session.review.noUncommittedChanges")
+    if (reviewSource().mode === "branch") return language.t("session.review.noBranchChanges")
     return language.t("session.review.noChanges")
   })
 
   const reviewEmpty = (input: { loadingClass: string; emptyClass: string }) => {
-    if (store.changes === "git" || store.changes === "branch") {
+    if (reviewSource().mode === "git" || reviewSource().mode === "branch") {
       if (!reviewReady()) return <div class={input.loadingClass}>{language.t("session.review.loadingChanges")}</div>
+      if (vcsQuery.isError)
+        return (
+          <div class={input.emptyClass}>
+            <div class="flex max-w-72 flex-col items-center gap-3 text-center">
+              <div class="text-14-regular text-text-weak">{language.t("session.review.loadFailed")}</div>
+              <Button size="small" variant="secondary" onClick={() => void vcsQuery.refetch()}>
+                {language.t("session.review.retry")}
+              </Button>
+            </div>
+          </div>
+        )
       return empty(reviewEmptyText())
     }
 
     if (store.changes === "turn") {
-      if (nogit()) return createGit(input)
       return empty(reviewEmptyText())
     }
 
@@ -852,6 +871,7 @@ export default function Page() {
     <Show when={!store.deferRender}>
       <SessionReviewTab
         title={changesTitle()}
+        revision={reviewRevision()}
         empty={reviewEmpty(input)}
         diffs={reviewDiffs}
         view={view}

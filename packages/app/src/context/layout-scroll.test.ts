@@ -61,4 +61,27 @@ describe("createScrollPersistence", () => {
     expect(scroll.scroll("session", "review")).toEqual({ x: 12, y: 34 })
     scroll.dispose()
   })
+
+  test("preserves a semantic file anchor with the pixel fallback", () => {
+    const writes: Array<Record<string, { x: number; y: number; anchor?: { file: string; offset: number } }>> = []
+    const scroll = createScrollPersistence({
+      debounceMs: 0,
+      getSnapshot: () => undefined,
+      onFlush: (_session, next) => writes.push(next),
+    })
+
+    scroll.setScroll("session", "review", {
+      x: 0,
+      y: 480,
+      anchor: { file: "src/app.ts", offset: 24 },
+    })
+    scroll.flushAll()
+
+    expect(writes[0]?.review).toEqual({
+      x: 0,
+      y: 480,
+      anchor: { file: "src/app.ts", offset: 24 },
+    })
+    scroll.dispose()
+  })
 })

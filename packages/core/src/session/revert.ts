@@ -99,7 +99,7 @@ export const stage = Effect.fn("SessionRevert.stage")(function* (input: {
     messageID: input.messageID,
     snapshot: original,
     diff: files
-      .map((file) => file.patch)
+      .map((file) => file.patch ?? "")
       .join("")
       .trim(),
     files,

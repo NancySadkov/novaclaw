@@ -1,4 +1,5 @@
 import { useFile } from "@/context/file"
+import { useLanguage } from "@/context/language"
 import { encodeFilePath } from "@/context/file/path"
 import { Collapsible } from "@novaclaw/ui/collapsible"
 import { FileIcon } from "@novaclaw/ui/file-icon"
@@ -209,6 +210,7 @@ export default function FileTree(props: {
   _chain?: readonly string[]
 }) {
   const file = useFile()
+  const language = useLanguage()
   const level = props.level ?? 0
   const draggable = () => props.draggable ?? true
 
@@ -383,8 +385,34 @@ export default function FileTree(props: {
     return out
   })
 
+  const error = () => file.tree.state(props.path)?.error
+
   return (
     <div data-component="filetree" class={`flex flex-col gap-0.5 ${props.class ?? ""}`}>
+      <Show when={error()} keyed>
+        {(message) => (
+          <div
+            role="alert"
+            class="mx-1 flex items-start gap-2 rounded-md border border-border-weak-base bg-surface-base px-2 py-2 text-12-regular"
+            style={`margin-left: ${Math.max(4, 8 + level * 12)}px`}
+          >
+            <Icon name="warning" size="small" class="mt-0.5 shrink-0 text-icon-warning-base" />
+            <div class="min-w-0 flex-1">
+              <div class="text-text-strong">{language.t("fileTree.loadFailed")}</div>
+              <div class="truncate text-text-weak" title={message}>
+                {message}
+              </div>
+            </div>
+            <button
+              type="button"
+              class="shrink-0 rounded px-1.5 py-0.5 text-text-strong hover:bg-surface-raised-base-hover"
+              onClick={() => void file.tree.refresh(props.path)}
+            >
+              {language.t("fileTree.retry")}
+            </button>
+          </div>
+        )}
+      </Show>
       <For each={nodes()}>
         {(node) => {
           const expanded = () => file.tree.state(node.path)?.expanded ?? false

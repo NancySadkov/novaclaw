@@ -10,6 +10,7 @@ type LegacyDiff = {
   additions: number
   deletions: number
   status?: "added" | "deleted" | "modified"
+  patchUnavailableReason?: "binary" | "too_large" | "metadata_only"
 }
 
 type SnapshotDiff = SessionChangeDiff & { file: string }
@@ -22,6 +23,7 @@ export type ViewDiff = {
   deletions: number
   status?: "added" | "deleted" | "modified"
   fileDiff: FileDiffMetadata
+  patchUnavailableReason?: "binary" | "too_large" | "metadata_only"
 }
 
 const diffCacheLimit = 16
@@ -43,6 +45,14 @@ export function normalize(diff: ReviewDiff): ViewDiff {
     deletions: diff.deletions,
     status: diff.status,
     fileDiff: resolveFileDiff(diff),
+    patchUnavailableReason:
+      "patchUnavailableReason" in diff
+        ? diff.patchUnavailableReason
+        : diff.patch === undefined &&
+            (!("before" in diff) || diff.before === undefined) &&
+            (!("after" in diff) || diff.after === undefined)
+          ? "metadata_only"
+          : undefined,
   }
 }
 

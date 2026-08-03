@@ -53,6 +53,7 @@ export class OperationError extends Schema.TaggedErrorClass<OperationError>()("G
     "list_files",
     "diff",
     "restore",
+    "read",
   ]),
   message: Schema.String,
   directory: Schema.optional(AbsolutePath),
@@ -174,6 +175,11 @@ export interface Interface {
       context?: number
       paths?: readonly RelativePath[]
     }) => Effect.Effect<readonly File.Diff[], OperationError>
+    readonly read: (input: {
+      repository: Repository
+      tree: TreeID
+      path: RelativePath
+    }) => Effect.Effect<Uint8Array, OperationError>
     readonly preview: (input: {
       repository: Repository
       current: TreeID
@@ -398,7 +404,8 @@ export const layer = Layer.effect(
           ),
         )
       const text = result.stdout.toString("utf8")
-      if (result.exitCode === 0) return { text, stderr: result.stderr.toString("utf8") }
+      if (result.exitCode === 0)
+        return { text, content: new Uint8Array(result.stdout), stderr: result.stderr.toString("utf8") }
       return yield* new OperationError({
         operation: operationName,
         directory: repository.worktree,
@@ -545,10 +552,14 @@ export const layer = Layer.effect(
       if (!input.paths.length) return new Set<RelativePath>()
       const result = yield* proc
         .run(
-          ChildProcess.make(binary(), repositoryArgs(input.repository, ["check-ignore", "--no-index", "--stdin", "-z"]), {
-            cwd: input.repository.worktree,
-            extendEnv: true,
-          }),
+          ChildProcess.make(
+            binary(),
+            repositoryArgs(input.repository, ["check-ignore", "--no-index", "--stdin", "-z"]),
+            {
+              cwd: input.repository.worktree,
+              extendEnv: true,
+            },
+          ),
           { stdin: input.paths.join("\0") + "\0" },
         )
         .pipe(
@@ -614,6 +625,14 @@ export const layer = Layer.effect(
         .map((file) => RelativePath.make(file))
     })
 
+    const treeRead = Effect.fn("Git.tree.read")(function* (input: {
+      repository: Repository
+      tree: TreeID
+      path: RelativePath
+    }) {
+      return (yield* repositoryOperation("read", input.repository, ["show", `${input.tree}:${input.path}`])).content
+    })
+
     const treeDiff = Effect.fn("Git.tree.diff")(function* (input: {
       repository: Repository
       from: TreeID
@@ -663,7 +682,7 @@ export const layer = Layer.effect(
             status: "modified",
             additions: 0,
             deletions: 0,
-            patch: ChangesetBudget.omittedPatch(ChangesetBudget.exceededBy({ files: computed, bytes })),
+            patchUnavailableReason: "too_large",
           } satisfies File.Diff)
           continue
         }
@@ -672,7 +691,7 @@ export const layer = Layer.effect(
         const stats = statsByFile.get(file) ?? ["0", "0"]
         const binary = stats[0] === "-" || stats[1] === "-"
         const patch = binary
-          ? ""
+          ? undefined
           : (yield* repositoryOperation(
               "diff",
               input.repository,
@@ -681,15 +700,17 @@ export const layer = Layer.effect(
               // its patch capture at the changeset byte budget.
               { maxOutputBytes: ChangesetBudget.MAX_DIFF_BYTES },
             )).text
+        const patchUnavailableReason = binary ? "binary" : patch ? undefined : "metadata_only"
         diffs.push({
           path: file,
           status,
           additions: binary ? 0 : Number(stats[0] ?? 0),
           deletions: binary ? 0 : Number(stats[1] ?? 0),
           patch,
+          patchUnavailableReason,
         } satisfies File.Diff)
         computed++
-        bytes += Buffer.byteLength(patch, "utf8")
+        bytes += Buffer.byteLength(patch ?? "", "utf8")
       }
       if (computed < paths.length)
         yield* Log.event("git.tree.diff.truncated", {
@@ -1019,6 +1040,7 @@ export const layer = Layer.effect(
         write: writeTree,
         files: treeFiles,
         diff: treeDiff,
+        read: treeRead,
         preview,
         restore,
         checkout: checkoutTree,

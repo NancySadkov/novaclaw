@@ -22,6 +22,7 @@ export const Event = SessionEvent
 export const ChangeDiff = Schema.Struct({
   file: Schema.String.pipe(optional),
   patch: Schema.String.pipe(optional),
+  patchUnavailableReason: Schema.Literals(["binary", "too_large", "metadata_only"]).pipe(optional),
   additions: Schema.Finite,
   deletions: Schema.Finite,
   status: Schema.Literals(["added", "deleted", "modified"]).pipe(optional),
@@ -33,6 +34,9 @@ export const ChangesSummary = Schema.Struct({
   deletions: Schema.Finite,
   files: Schema.Finite,
   diffs: Schema.Array(ChangeDiff).pipe(optional),
+  from: Schema.String.pipe(optional),
+  to: Schema.String.pipe(optional),
+  complete: Schema.Boolean.pipe(optional),
 }).annotate({ identifier: "Session.ChangesSummary" })
 export interface ChangesSummary extends Schema.Schema.Type<typeof ChangesSummary> {}
 

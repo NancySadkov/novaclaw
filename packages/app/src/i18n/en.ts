@@ -175,6 +175,8 @@ export const dict = {
   "command.input.focus": "Focus input",
   "command.terminal.toggle": "Toggle terminal",
   "command.fileTree.toggle": "Toggle file tree",
+  "fileTree.loadFailed": "Could not load this folder",
+  "fileTree.retry": "Try again",
   "command.review.toggle": "Toggle review",
   "command.terminal.new": "New terminal",
   "command.terminal.new.description": "Create a new terminal tab",
@@ -376,6 +378,8 @@ export const dict = {
   "prompt.example.25": "How do environment variables work here?",
 
   "prompt.popover.emptyResults": "No matching results",
+  "prompt.popover.searchError": "Could not search files right now",
+  "prompt.popover.searchRetry": "Try again",
   "prompt.popover.emptyCommands": "No matching commands",
   "prompt.dropzone.label": "Drop images, PDFs, or text files here",
   "prompt.dropzone.file.label": "Drop to @mention file",
@@ -991,8 +995,14 @@ export const dict = {
   "session.review.noSnapshot":
     "Snapshot tracking is turned off, so per-session changes aren't available. Turn it on in settings to see them.",
   "session.review.noChanges": "No changes",
+  "session.review.noLiveChanges": "No live workspace changes yet",
   "session.review.noUncommittedChanges": "No uncommitted changes yet",
   "session.review.noBranchChanges": "No branch changes yet",
+  "session.review.source.live": "Live workspace",
+  "session.review.source.recorded": "Recorded",
+  "session.review.source.incomplete": "Recording incomplete",
+  "session.review.loadFailed": "Could not load these changes right now.",
+  "session.review.retry": "Try again",
 
   "session.files.selectToOpen": "Select a file to open",
   "session.files.all": "All files",
@@ -1115,6 +1125,7 @@ export const dict = {
   "terminal.connectionLost.abnormalClose": "Connection dropped unexpectedly (code {{code}})",
   "terminal.connectionLost.description":
     "The terminal connection was interrupted. This can happen when the server restarts.",
+  "terminal.connectionLost.retry": "Reconnect",
 
   "common.closeTab": "Close tab",
   "common.dismiss": "Dismiss",

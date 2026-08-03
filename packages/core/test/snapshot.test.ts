@@ -47,6 +47,12 @@ describe("Snapshot", () => {
               RelativePath.make("scope/added.txt"),
               RelativePath.make("scope/tracked.txt"),
             ])
+            const historical = yield* snapshot.read({
+              snapshot: before,
+              path: RelativePath.make("scope/tracked.txt"),
+            })
+            expect(new TextDecoder().decode(historical.content).replaceAll("\r\n", "\n")).toBe("one\n")
+            expect(historical.mime).toContain("text/plain")
             const plan = new Map([[RelativePath.make("scope/tracked.txt"), before]])
             const preview = yield* snapshot.preview({ files: plan, context: 1 })
             expect(preview).toHaveLength(1)

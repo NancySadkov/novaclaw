@@ -1381,6 +1381,7 @@ export type VcsFileStatus = {
 export type VcsFileDiff = {
   file: string
   patch?: string
+  patchUnavailableReason?: "binary" | "too_large" | "metadata_only"
   additions: number
   deletions: number
   status?: "added" | "deleted" | "modified"
@@ -1917,7 +1918,8 @@ export type FileDiff = {
   status: "added" | "modified" | "deleted"
   additions: number
   deletions: number
-  patch: string
+  patch?: string
+  patchUnavailableReason?: "binary" | "too_large" | "metadata_only"
 }
 
 export type RevertState = {
@@ -1931,6 +1933,7 @@ export type RevertState = {
 export type SessionChangeDiff = {
   file?: string
   patch?: string
+  patchUnavailableReason?: "binary" | "too_large" | "metadata_only"
   additions: number
   deletions: number
   status?: "added" | "deleted" | "modified"
@@ -1941,6 +1944,9 @@ export type SessionChangesSummary = {
   deletions: number
   files: number
   diffs?: Array<SessionChangeDiff>
+  from?: string
+  to?: string
+  complete?: boolean
 }
 
 export type SessionV2Info = {
@@ -5136,6 +5142,13 @@ export type PermissionSavedInfo = {
   action: string
   resource: string
   effect?: "allow" | "deny"
+}
+
+export type FileSystemSnapshotContent = {
+  type: "binary"
+  content: string
+  encoding: "base64"
+  mimeType?: string
 }
 
 export type FileSystemEntry = {
@@ -13521,6 +13534,45 @@ export type V2FsReadResponses = {
 }
 
 export type V2FsReadResponse = V2FsReadResponses[keyof V2FsReadResponses]
+
+export type V2FsSnapshotReadData = {
+  body?: never
+  path?: never
+  query: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+    snapshot: string
+    path: string
+  }
+  url: "/api/fs/snapshot/read"
+}
+
+export type V2FsSnapshotReadErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2FsSnapshotReadError = V2FsSnapshotReadErrors[keyof V2FsSnapshotReadErrors]
+
+export type V2FsSnapshotReadResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: FileSystemSnapshotContent
+  }
+}
+
+export type V2FsSnapshotReadResponse = V2FsSnapshotReadResponses[keyof V2FsSnapshotReadResponses]
 
 export type V2FsListData = {
   body?: never

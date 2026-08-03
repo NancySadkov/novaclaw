@@ -9,6 +9,10 @@ export const dict = {
   "ui.sessionReview.title.git": "Git changes",
   "ui.sessionReview.title.branch": "Branch changes",
   "ui.sessionReview.title.lastTurn": "Last turn changes",
+  "ui.sessionReview.title.chat": "Chat changes",
+  "ui.sessionReview.patchUnavailable.binary": "This binary file changed, but it has no text preview.",
+  "ui.sessionReview.patchUnavailable.too_large": "This change is too large to preview here.",
+  "ui.sessionReview.patchUnavailable.metadata_only": "This file changed without a text diff.",
   "ui.sessionReview.diffStyle.unified": "Unified",
   "ui.sessionReview.diffStyle.split": "Split",
   "ui.sessionReview.expandAll": "Expand all",
@@ -65,7 +69,8 @@ export const dict = {
     "Subscribe to NovaClaw Go for reliable access to the best open-source models, starting at $5/month.",
   "dialog.usageExceeded.freeTier.actionLabel": "Subscribe",
   "dialog.usageExceeded.accountRateLimit.title": "Go limit reached",
-  "dialog.usageExceeded.accountRateLimit.description": "You've reached your usage limit. To keep going now, turn on pay-as-you-go from your balance.",
+  "dialog.usageExceeded.accountRateLimit.description":
+    "You've reached your usage limit. To keep going now, turn on pay-as-you-go from your balance.",
   "dialog.usageExceeded.accountRateLimit.actionLabel": "Open settings",
 
   "ui.sessionTurn.status.delegating": "Delegating work",
@@ -96,6 +101,8 @@ export const dict = {
   "ui.messagePart.context.list.other": "{{count}} lists",
 
   "ui.list.loading": "Loading",
+  "ui.list.error": "Could not search right now",
+  "ui.list.retry": "Try again",
   "ui.list.empty": "No results",
   "ui.list.clearFilter": "Clear filter",
   "ui.list.emptyWithFilter.prefix": "No results for",
@@ -157,7 +164,8 @@ export const dict = {
   "ui.permission.denyOnce": "Deny",
   "ui.permission.denyFile": "Deny this file",
   "ui.permission.denyAlways": "Deny always",
-  "ui.permission.reason.placeholder": "Optional — tell the model why, or what to do instead. This note is sent only when you deny.",
+  "ui.permission.reason.placeholder":
+    "Optional — tell the model why, or what to do instead. This note is sent only when you deny.",
   "ui.permission.stopRun": "Stop the run",
 
   "ui.message.expand": "Expand message",

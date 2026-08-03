@@ -137,4 +137,29 @@ describe("sessionRow is fromRow's inverse", () => {
     expect(back.providerRecovery).toBeUndefined()
     expect(back.systemPromptOverride).toBeUndefined()
   })
+
+  test("changes recording boundaries and completeness survive persistence", () => {
+    const info = SessionSchema.Info.make({
+      ...populatedInfo(),
+      summary: {
+        additions: 2,
+        deletions: 1,
+        files: 1,
+        diffs: [
+          {
+            file: "assets/logo.png",
+            additions: 0,
+            deletions: 0,
+            status: "modified",
+            patchUnavailableReason: "binary",
+          },
+        ],
+        from: "tree_before",
+        to: "tree_after",
+        complete: false,
+      },
+    })
+    const back = fromRow(asRow(SessionProjector.sessionRow(info)))
+    expect(back.summary).toEqual(info.summary)
+  })
 })

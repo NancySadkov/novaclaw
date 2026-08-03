@@ -17,6 +17,12 @@ const FindQuery = Schema.Struct({
   limit: Schema.NumberFromString.pipe(Schema.decodeTo(PositiveInt), Schema.optional),
 })
 
+const SnapshotReadQuery = Schema.Struct({
+  ...LocationQuery.fields,
+  snapshot: Schema.String,
+  path: RelativePath,
+})
+
 export const FileSystemGroup = HttpApiGroup.make("server.fs")
   .add(
     HttpApiEndpoint.get("fs.read", "/api/fs/read/*", {
@@ -29,6 +35,20 @@ export const FileSystemGroup = HttpApiGroup.make("server.fs")
           identifier: "v2.fs.read",
           summary: "Read file",
           description: "Serve one file relative to the requested location.",
+        }),
+      ),
+  )
+  .add(
+    HttpApiEndpoint.get("fs.snapshotRead", "/api/fs/snapshot/read", {
+      query: SnapshotReadQuery,
+      success: Location.response(FileSystem.SnapshotContent),
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.fs.snapshotRead",
+          summary: "Read snapshot file",
+          description: "Read one file exactly as it existed in a captured session revision.",
         }),
       ),
   )

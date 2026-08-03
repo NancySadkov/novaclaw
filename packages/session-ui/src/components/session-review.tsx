@@ -13,7 +13,18 @@ import { useFileComponent } from "@novaclaw/ui/context/file"
 import { useI18n } from "@novaclaw/ui/context/i18n"
 import { getDirectory, getFilename } from "@novaclaw/core/util/path"
 import { checksum } from "@novaclaw/core/util/encode"
-import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch, untrack, type JSX } from "solid-js"
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Match,
+  onCleanup,
+  Show,
+  Switch,
+  untrack,
+  type JSX,
+} from "solid-js"
 import { createStore } from "solid-js/store"
 import { type FileContent, type SessionChangeDiff, type VcsFileDiff } from "@novaclaw/sdk/v2"
 import { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
@@ -94,6 +105,7 @@ function list(value: unknown): ReviewDiff[] {
 
 export interface SessionReviewProps {
   title?: JSX.Element
+  revisionKey?: string
   empty?: JSX.Element
   split?: boolean
   diffStyle?: SessionReviewDiffStyle
@@ -152,8 +164,8 @@ function ReviewCommentMenu(props: {
   )
 }
 
-function diffId(file: string): string | undefined {
-  const sum = checksum(file)
+function diffId(file: string, revision?: string): string | undefined {
+  const sum = checksum(`${revision ?? "workspace"}\0${file}`)
   if (!sum) return
   return `session-review-diff-${sum}`
 }
@@ -401,8 +413,15 @@ export const SessionReview = (props: SessionReviewProps) => {
                   {(file) => {
                     const diff = () => itemsMap()[file]
 
-                    // binary files have empty diffs that we can't render
-                    const diffCanRender = () => diff().additions !== 0 || diff().deletions !== 0
+                    const unavailable = () => diff().patchUnavailableReason
+                    const unavailableText = () => {
+                      const reason = unavailable()
+                      if (reason === "binary") return i18n.t("ui.sessionReview.patchUnavailable.binary")
+                      if (reason === "too_large") return i18n.t("ui.sessionReview.patchUnavailable.too_large")
+                      return i18n.t("ui.sessionReview.patchUnavailable.metadata_only")
+                    }
+                    const diffCanRender = () => !unavailable() && (diff().additions !== 0 || diff().deletions !== 0)
+                    const canExpand = () => diffCanRender() || !!mediaKind() || !!unavailable()
 
                     const expanded = createMemo(() => open().includes(file))
                     const mounted = createMemo(() => expanded() && (!!store.visible[file] || pinned(file)))
@@ -512,14 +531,14 @@ export const SessionReview = (props: SessionReviewProps) => {
 
                     return (
                       <Accordion.Item
-                        value={diffCanRender() ? file : null!}
-                        id={diffId(file)}
+                        value={canExpand() ? file : null!}
+                        id={diffId(file, props.revisionKey)}
                         data-file={file}
                         data-slot="session-review-accordion-item"
                         data-selected={props.focusedFile === file ? "" : undefined}
                       >
                         <StickyAccordionHeader>
-                          <Accordion.Trigger disabled={!diffCanRender()} class="cursor-default">
+                          <Accordion.Trigger disabled={!canExpand()} class="cursor-default">
                             <div data-slot="session-review-trigger-content">
                               <div data-slot="session-review-file-info">
                                 <FileIcon node={{ path: file, type: "file" }} />
@@ -528,7 +547,7 @@ export const SessionReview = (props: SessionReviewProps) => {
                                     <span data-slot="session-review-directory">{`\u202A${getDirectory(file)}\u202C`}</span>
                                   </Show>
                                   <span data-slot="session-review-filename">{getFilename(file)}</span>
-                                  <Show when={props.onViewFile && diffCanRender()}>
+                                  <Show when={props.onViewFile}>
                                     <Tooltip value={openFileLabel()} placement="top" gutter={4}>
                                       <button
                                         data-slot="session-review-view-button"
@@ -569,7 +588,7 @@ export const SessionReview = (props: SessionReviewProps) => {
                                     <DiffChanges changes={diff()} />
                                   </Match>
                                 </Switch>
-                                <Show when={diffCanRender()}>
+                                <Show when={canExpand()}>
                                   <span data-slot="session-review-diff-chevron">
                                     <Icon name="chevron-down" size="small" />
                                   </span>
@@ -589,6 +608,11 @@ export const SessionReview = (props: SessionReviewProps) => {
                           >
                             <Show when={expanded()}>
                               <Switch>
+                                <Match when={unavailable() && !mediaKind()}>
+                                  <div class="rounded-lg border border-border-weak-base bg-background-stronger/40 px-6 py-8 text-center text-14-regular text-text-weak">
+                                    {unavailableText()}
+                                  </div>
+                                </Match>
                                 <Match when={!mounted() && !tooLarge()}>
                                   <div
                                     data-slot="session-review-diff-placeholder"

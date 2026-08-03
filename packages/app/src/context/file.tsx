@@ -168,8 +168,9 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       const file = path.normalize(input)
       if (!file) return Promise.resolve()
 
+      const server = serverSDK().scope
       const directory = scope()
-      const key = `${directory}\n${file}`
+      const key = `${server}\0${directory}\0${file}`
       ensure(file)
 
       const current = store.file[file]
@@ -183,7 +184,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       const promise = sdk()
         .client.file.read({ path: file })
         .then((x) => {
-          if (scope() !== directory) return
+          if (serverSDK().scope !== server || scope() !== directory) return
           const content = x.data
           setLoaded(file, content)
 
@@ -192,7 +193,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
           evictContent(new Set([file]))
         })
         .catch((e) => {
-          if (scope() !== directory) return
+          if (serverSDK().scope !== server || scope() !== directory) return
           setLoadError(file, errorMessage(e, language.t("error.chain.unknown")))
         })
         .finally(() => {
@@ -206,10 +207,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
     const search = (query: string, dirs: "true" | "false") =>
       sdk()
         .client.find.files({ query, dirs })
-        .then(
-          (x) => (x.data ?? []).map(path.normalize),
-          () => [],
-        )
+        .then((x) => (x.data ?? []).map(path.normalize))
 
     const stop = sdk().event.listen((e) => {
       invalidateFromWatcher(e.details, {

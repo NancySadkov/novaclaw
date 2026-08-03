@@ -70,6 +70,9 @@ export function fromRow(row: typeof SessionTable.$inferSelect): SessionSchema.In
             deletions: row.summary_deletions ?? 0,
             files: row.summary_files ?? 0,
             diffs: row.summary_diffs ?? undefined,
+            from: row.summary_from ?? undefined,
+            to: row.summary_to ?? undefined,
+            complete: row.summary_complete ?? undefined,
           }
         : undefined,
     time: {

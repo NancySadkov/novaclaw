@@ -232,6 +232,8 @@ import type {
   V2FsListResponses,
   V2FsReadErrors,
   V2FsReadResponses,
+  V2FsSnapshotReadErrors,
+  V2FsSnapshotReadResponses,
   V2HealthGetErrors,
   V2HealthGetResponses,
   V2IntegrationAttemptCancelErrors,
@@ -6737,6 +6739,41 @@ export class Fs extends HeyApiClient {
     const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
     return (options?.client ?? this.client).get<V2FsReadResponses, V2FsReadErrors, ThrowOnError>({
       url: "/api/fs/read/*",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Read snapshot file
+   *
+   * Read one file exactly as it existed in a captured session revision.
+   */
+  public snapshotRead<ThrowOnError extends boolean = false>(
+    parameters: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      snapshot: string
+      path: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "location" },
+            { in: "query", key: "snapshot" },
+            { in: "query", key: "path" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2FsSnapshotReadResponses, V2FsSnapshotReadErrors, ThrowOnError>({
+      url: "/api/fs/snapshot/read",
       ...options,
       ...params,
     })

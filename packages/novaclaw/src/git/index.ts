@@ -45,6 +45,7 @@ export type Stat = {
   readonly file: string
   readonly additions: number
   readonly deletions: number
+  readonly binary?: boolean
 }
 
 export type Patch = {
@@ -255,6 +256,7 @@ export const layer = Layer.effect(
             file,
             additions: Number.isFinite(additions) ? additions : 0,
             deletions: Number.isFinite(deletions) ? deletions : 0,
+            binary: adds === "-" || dels === "-" || undefined,
           } satisfies Stat,
         ]
       })
@@ -316,6 +318,7 @@ export const layer = Layer.effect(
         file,
         additions: Number.isFinite(additions) ? additions : 0,
         deletions: Number.isFinite(deletions) ? deletions : 0,
+        binary: parts[0] === "-" || parts[1] === "-" || undefined,
       } satisfies Stat
     })
 

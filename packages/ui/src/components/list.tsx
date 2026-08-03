@@ -37,6 +37,8 @@ export interface ListProps<T> extends FilteredListProps<T> {
   children: (item: T) => JSX.Element
   emptyMessage?: string
   loadingMessage?: string
+  errorMessage?: string
+  retryMessage?: string
   onKeyEvent?: (event: KeyboardEvent, item: T | undefined) => void
   onMove?: (item: T | undefined) => void
   onFilter?: (value: string) => void
@@ -241,6 +243,16 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
   }
 
   const emptyMessage = () => {
+    if (grouped.error) {
+      return (
+        <div class="flex flex-col items-center gap-2 text-center">
+          <span>{props.errorMessage ?? i18n.t("ui.list.error")}</span>
+          <button type="button" class="rounded px-2 py-1 hover:bg-surface-base-hover" onClick={() => void refetch()}>
+            {props.retryMessage ?? i18n.t("ui.list.retry")}
+          </button>
+        </div>
+      )
+    }
     if (grouped.loading) return props.loadingMessage ?? i18n.t("ui.list.loading")
     if (props.emptyMessage) return props.emptyMessage
 
@@ -317,7 +329,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
       </Show>
       <div ref={setScrollRef} data-slot="list-scroll">
         <Show
-          when={flat().length > 0 || showAdd()}
+          when={!grouped.error && (flat().length > 0 || showAdd())}
           fallback={
             <div data-slot="list-empty-state">
               <div data-slot="list-message">{emptyMessage()}</div>

@@ -33,6 +33,14 @@ export const Match = Schema.Struct({
   submatches: Schema.Array(Submatch),
 }).annotate({ identifier: "FileSystem.Match" })
 
+export interface SnapshotContent extends Schema.Schema.Type<typeof SnapshotContent> {}
+export const SnapshotContent = Schema.Struct({
+  type: Schema.Literal("binary"),
+  content: Schema.String,
+  encoding: Schema.Literal("base64"),
+  mimeType: Schema.String.pipe(optional),
+}).annotate({ identifier: "FileSystem.SnapshotContent" })
+
 export class FindInput extends Schema.Class<FindInput>("FileSystem.FindInput")({
   query: Schema.String,
   type: Schema.Literals(["file", "directory"]).pipe(optional),

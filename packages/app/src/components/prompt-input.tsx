@@ -564,6 +564,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const {
     flat: atFlat,
+    error: atError,
+    refetch: retryAt,
     active: atActive,
     setActive: setAtActive,
     onInput: atOnInput,
@@ -1155,6 +1157,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         popover={store.popover}
         setSlashPopoverRef={(el) => (slashPopoverRef = el)}
         atFlat={atFlat()}
+        atError={atError()}
+        onAtRetry={() => void retryAt()}
         atActive={atActive() ?? undefined}
         atKey={atKey}
         setAtActive={setAtActive}
