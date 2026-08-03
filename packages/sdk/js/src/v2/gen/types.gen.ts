@@ -3604,7 +3604,6 @@ export type ConfigInfo = {
     [key: string]: ConfigV2Agent
   }
   snapshots?: boolean
-  paranoid?: boolean
   watcher?: ConfigV2Watcher
   /**
    * Enable built-in formatters or configure formatter overrides

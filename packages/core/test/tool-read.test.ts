@@ -196,7 +196,7 @@ describe("ReadTool", () => {
     }),
   )
 
-  it.effect("asks for external_directory approval before reading an external absolute path", () =>
+  it.effect("classifies an external absolute path as a read without requesting write access", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
       const external = path.join(path.parse(process.cwd()).root, "external-read", "notes.txt")

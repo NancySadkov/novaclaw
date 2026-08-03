@@ -254,8 +254,6 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // The airgap itself. Turning it off RELEASES the egress guard, which is the one switch that makes
   // every other egress possible.
   offline: "privileged",
-  // A permission posture: it decides whether reading outside the project folder asks first.
-  paranoid: "privileged",
   // The gate itself. Nothing else on this list is worth much if an agent can rewrite this one.
   permissions: "privileged",
   // Prepended to EVERY agent's system prompt. Ruling 4 names it.

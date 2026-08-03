@@ -28441,9 +28441,6 @@
           "snapshots": {
             "type": "boolean"
           },
-          "paranoid": {
-            "type": "boolean"
-          },
           "watcher": {
             "$ref": "#/components/schemas/ConfigV2Watcher"
           },

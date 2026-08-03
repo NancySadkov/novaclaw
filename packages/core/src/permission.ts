@@ -24,8 +24,6 @@ import {
   type PermissionMode,
 } from "./session/config-resolve"
 import { PermissionSaved } from "./permission/saved"
-import { SettingsConfigStore } from "./settings-config-store"
-import { TRUNCATION_RESOURCE } from "./tool/truncation-dir"
 
 /** Where an Analyze-mode session may still write its report: the app's own temp dir, which the agent
  *  baseline already whitelists for external read/write. Slashed to match `LocationMutation.resolve`. */
@@ -99,7 +97,7 @@ export class CorrectedError extends Schema.TaggedErrorClass<CorrectedError>()("P
 
 /**
  * Why a denial happened, when the plain rule list would mislead the model. `unattended-confined`
- * = the unattended confinement stance refused an out-of-folder create/modify/read
+ * = the unattended confinement stance refused an out-of-folder create/modify
  * (`config-resolve.ts` → `UNATTENDED_CONFINED_RULES`); the generic wording tells the model to "ask
  * the user to adjust permissions", which is exactly the advice that hangs an unattended run.
  *
@@ -159,7 +157,7 @@ export function denialMessage(error: unknown): string | undefined {
     if (error.reason === "unattended-confined")
       return (
         `Permission denied: this is an UNATTENDED session, confined to its own working folder. ` +
-        `Creating, modifying or reading anything outside that folder is refused outright (action '${actions}') — ` +
+        `Creating or modifying anything outside that folder is refused outright (action '${actions}') — ` +
         `no user is present to approve an exception, so waiting or retrying will change nothing. ` +
         `Do the work inside this session's folder instead: relative paths resolve there, and you may create ` +
         `whatever files and subfolders you need. If something outside is genuinely required, finish what you ` +
@@ -351,9 +349,9 @@ export function savedResources(
 //
 // ✅ THE CONSEQUENCE THIS INVERSION OPENED IS NOW CLOSED, in `evaluateInput`'s last arm. The gap,
 // recorded here while it was open: an UNATTENDED chain has nobody to answer a card, and the deny-fast
-// stance (`config-resolve.ts` §UNATTENDED CONFINEMENT) converts exactly TWO actions into an immediate
-// refusal — `external_directory_write`, plus `external_directory_read` under Paranoid — so everything
-// else PARKED. Before B4c the catch-all hid that for the newly-gated actions; after it, an unattended
+// stance (`config-resolve.ts` §UNATTENDED CONFINEMENT) converts external-directory WRITES into an
+// immediate refusal, so everything else PARKED. Before B4c the catch-all hid that for the newly-gated
+// actions; after it, an unattended
 // root whose model called `webfetch`, `spawn`, `skill`, `kb`, `js` or an MCP tool sat on a pending ask
 // — the measured pathology AGENTS.md records ("the run looking alive and doing nothing"). The fix is
 // the one the stance's own doctrine dictates (*an ask nobody is present to answer is a HANG, not a
@@ -491,7 +489,6 @@ export const layer = Layer.effect(
     const agents = yield* AgentV2.Service
     const sessions = yield* SessionStore.Service
     const saved = yield* PermissionSaved.Service
-    const settings = yield* SettingsConfigStore.Service
     const pending = new Map<ID, Pending>()
 
     // Asked/Replied must carry this service's location EXPLICITLY: publishes can run on fibers
@@ -592,13 +589,6 @@ export const layer = Layer.effect(
       return rules.filter((rule) => Wildcard.match(input.action, rule.action))
     }
 
-    // Read from the LIVE store, not a boot-frozen config snapshot, so toggling Paranoid in Settings takes
-    // effect on the very next tool call instead of after a restart.
-    const paranoid = EffectRuntime.fnUntraced(function* () {
-      const all = yield* settings.all().pipe(EffectRuntime.catch(() => EffectRuntime.succeed({})))
-      return (all as { paranoid?: unknown }).paranoid === true
-    })
-
     // The whole resolved config, not just the mode: the evaluator also needs the surgical-edits switch.
     const sessionConfig = EffectRuntime.fnUntraced(function* (sessionID: SessionV2.ID) {
       return yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, sessionID, (id) => sessions.get(id as SessionV2.ID))
@@ -627,7 +617,7 @@ export const layer = Layer.effect(
       // because Auto mode's cap is keyed on attendance. Moving the line is the whole ordering
       // change; every consumer of `mode` already sat below the attendance walk.
       // Deny-fast — the unattended confinement stance (config-resolve.ts §UNATTENDED CONFINEMENT).
-      // Under an UNATTENDED chain ROOT, an out-of-folder create/modify (and its read twin) is
+      // Under an UNATTENDED chain ROOT, an out-of-folder create/modify is
       // refused OUTRIGHT instead of being parked as an ask nobody can answer. Its own HARD arm,
       // checked FIRST, so neither a later mode rule, an agent-level allow-all, nor a saved
       // allow-always can soften it; and TAGGED, so the model gets the unattended wording instead
@@ -664,15 +654,8 @@ export const layer = Layer.effect(
         rootType,
         grant: chainGrant,
       })
-      // ...with ONE exemption: the managed tool-output store. A tool whose output is too large is spilled
-      // to `<data>/tool-output/` and the model is told to go read it — but that store sits outside every
-      // Location, so inspecting it classifies as an external-directory READ and the blanket deny above
-      // would cut an unattended agent off from its OWN output (the default allow rule for this store,
-      // installed in agent.ts, cannot help: the hard arm is checked before any allow is consulted).
-      // Appended AFTER the denies deliberately — `evaluate` resolves by findLast, so the narrower allow
-      // wins for this resource only. This exemption grants nothing the attended default did not already.
       // ⚠️ WHAT THIS STANCE DOES **NOT** COVER, and why it matters more since 2026-07-30. The rules
-      // it contributes are the two `external_directory_*` classes — the seam every tool whose
+      // it contributes are the `external_directory_write` class — the seam every mutating tool whose
       // resource is a PATH passes through. `bash` is not one of those: its resource is the command
       // STRING, and matching a command string is prompt-reduction, never containment (the boundary
       // note above `evaluate`). Until today that gap was closed for unattended chains one layer
@@ -689,15 +672,7 @@ export const layer = Layer.effect(
       // one) plus every path-gated tool below — and what closes it is a real Windows/macOS backend,
       // deferred to v0.3.0 with Auth. If you are here because you want a mechanical bound on
       // out-of-folder shell writes: it belongs in `agent-jail.ts`, not in this ruleset.
-      const isParanoid = yield* paranoid()
-      const stanceRules = unattendedStanceRules(rootType, mode, isParanoid)
-      const stance =
-        stanceRules.length === 0
-          ? stanceRules
-          : [
-              ...stanceRules,
-              { action: "external_directory_read", resource: TRUNCATION_RESOURCE, effect: "allow" as const },
-            ]
+      const stance = unattendedStanceRules(rootType, mode)
       const configuredRules = yield* configured(input.sessionID, input.agent)
       // The mode overlay, plus Analyze's one carve-out. "Analyze" (mode `plan`) is read-only EXCEPT that it
       // may still write its findings somewhere — a review that cannot save its own report is not much use.
@@ -725,31 +700,14 @@ export const layer = Layer.effect(
         // it used to be a second copy of it, with nothing but a comment claiming they agreed.
         ...(resolved.askBeforeChanges === true ? ASK_BEFORE_CHANGES_RULES : []),
       ]
-      // READ BASELINE. Reading outside the project folder is ordinary work — a toolchain, an SDK, a system
-      // header — so the default is ALLOW and it sits at the LOWEST precedence, where anything more specific
-      // overrides it. Writing outside is untouched here and keeps its own `ask` default: the risk this whole
-      // stack exists to answer is a destructive WRITE, not a read.
-      //
-      // Under Paranoid the same default flips to `ask`, but it cannot simply sit at the bottom: rules
-      // resolve by ORDER alone (findLast), and the agent baseline opens with a catch-all `* → allow` that
-      // would swallow it. So the Paranoid rule is appended AFTER the configured rules to beat catch-alls —
-      // yet skipped entirely when a rule SPECIFIC to this resource already governs it, because such a rule
-      // IS the explicit permission Paranoid is asking for. Saved "always allow" answers are applied later
-      // still, so answering the ask once ends it for that path.
-      const readAction = "external_directory_read"
-      const governedSpecifically = (resource: string) =>
-        configuredRules.some(
-          (rule) =>
-            rule.resource !== "*" && Wildcard.match(readAction, rule.action) && Wildcard.match(resource, rule.resource),
-        )
-      const readBaseline: Permission.Ruleset = isParanoid
-        ? []
-        : [{ action: readAction, resource: "*", effect: "allow" }]
-      const paranoidRead: Permission.Ruleset =
-        isParanoid && !input.resources.every(governedSpecifically)
-          ? [{ action: readAction, resource: "*", effect: "ask" }]
-          : []
-      const rules = [...readBaseline, ...configuredRules, ...paranoidRead, ...modeRules, ...featureRules, ...stance]
+      // READ BASELINE. Reading outside the project folder is ordinary work — a toolchain, an SDK,
+      // another checkout, or any other host-readable file. Every permission mode gets this same
+      // capability; only WRITES distinguish `yolo` from the other modes. It sits at the lowest
+      // precedence so an explicit user-authored permission rule can still narrow a particular path.
+      const readBaseline: Permission.Ruleset = [
+        { action: "external_directory_read", resource: "*", effect: "allow" },
+      ]
+      const rules = [...readBaseline, ...configuredRules, ...modeRules, ...featureRules, ...stance]
       if (denied(input, stance))
         return {
           effect: "deny" as const,
@@ -806,8 +764,8 @@ export const layer = Layer.effect(
       // ── AN ASK NOBODY CAN ANSWER IS A HANG, NOT A GATE — the B4c follow-up ────────────────────
       //
       // This is the LAST arm on purpose: everything that could legitimately answer for the action
-      // has already spoken — the read baseline, the agent's configured rules, Paranoid, the mode
-      // overlay, the Tuning switches, the stance and its exemption, and saved answers. Only after
+      // has already spoken — the read baseline, the agent's configured rules, the mode
+      // overlay, the Tuning switches, the stance, and saved answers. Only after
       // all of that resolves to `ask` do we know that NOBODY ruled on this action, which is exactly
       // the state B4c created by design: the compiled floor is an allowlist now
       // (`AMBIENT_SAFE_BASELINE`), so `js`, `spawn`, `skill`, `kb`, `webfetch`, `websearch`,
@@ -1049,5 +1007,5 @@ export const locationLayer = layer.pipe(Layer.provideMerge(AgentV2.locationLayer
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [EventV2.node, Location.node, AgentV2.node, SessionStore.node, PermissionSaved.node, SettingsConfigStore.node],
+  deps: [EventV2.node, Location.node, AgentV2.node, SessionStore.node, PermissionSaved.node],
 })

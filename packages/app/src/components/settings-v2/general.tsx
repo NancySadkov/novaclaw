@@ -386,18 +386,6 @@ export const SettingsGeneralV2: Component<{
         </SettingsRowV2>
 
         <SettingsRowV2
-          title={language.t("settings.general.row.paranoid.title")}
-          description={language.t("settings.general.row.paranoid.description")}
-        >
-          <div data-action="settings-paranoid">
-            <Switch
-              checked={(serverSync().data.config as { paranoid?: boolean }).paranoid === true}
-              onChange={(checked) => void serverSync().updateConfig({ paranoid: checked } as never)}
-            />
-          </div>
-        </SettingsRowV2>
-
-        <SettingsRowV2
           minLevel="advanced"
           title={language.t("settings.general.row.offline.title")}
           description={`${language.t("settings.general.row.offline.description")}${offlineLabel() ? ` — ${offlineLabel()}` : ""}`}

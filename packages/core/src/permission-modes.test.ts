@@ -18,7 +18,7 @@ import {
 // assertions below say `ask` for that reason and say so where they do.
 const agentDefaults = [
   ...PermissionV2.AMBIENT_SAFE_BASELINE,
-  { action: "external_directory_read", resource: "*", effect: "ask" as const },
+  { action: "external_directory_read", resource: "*", effect: "allow" as const },
   { action: "external_directory_write", resource: "*", effect: "ask" as const },
 ]
 
@@ -200,9 +200,11 @@ describe("MODE_RULES overlays (1K)", () => {
     expect(effect("bypass", "external_directory_write")).toBe("ask")
   })
 
-  test("yolo also opens the external classes", () => {
+  test("all modes read anywhere; only yolo silently opens external writes", () => {
+    for (const mode of ["plan", "ask", "surgical", "bypass", "yolo"] as const)
+      expect(effect(mode, "external_directory_read")).toBe("allow")
+    expect(effect("bypass", "external_directory_write")).toBe("ask")
     expect(effect("yolo", "external_directory_write")).toBe("allow")
-    expect(effect("yolo", "external_directory_read")).toBe("allow")
   })
 
   test("mode overlays never touch non-file agent gating (question stays denied)", () => {

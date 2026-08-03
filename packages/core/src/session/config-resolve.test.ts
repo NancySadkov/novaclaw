@@ -6,7 +6,6 @@ import {
   attendedRoot,
   moreRestrictive,
   narrowRootType,
-  PARANOID_READ_RULES,
   resolveConfig,
   resolveSessionConfig,
   rootAttendance,
@@ -576,26 +575,11 @@ describe("unattendedStanceRules — the unattended confinement stance", () => {
       for (const mode of [...BELOW_YOLO, "yolo" as const]) expect(unattendedStanceRules(type, mode)).toEqual([])
   })
 
-  // Owner call (2026-07-25): the fear these rules answer is a destructive WRITE, not a leaked read.
-  // Reading outside the folder is ordinary work (a toolchain, an SDK, a header), so it is confined only
-  // for a user who deliberately turns Paranoid on.
-  test("an UNATTENDED root below yolo hard-denies the WRITE class by default", () => {
+  // The stance answers destructive WRITES only. Reads are not a permission-mode capability.
+  test("an UNATTENDED root below yolo hard-denies only the WRITE class", () => {
     for (const type of UNATTENDED)
       for (const mode of BELOW_YOLO) expect(unattendedStanceRules(type, mode)).toEqual(UNATTENDED_CONFINED_RULES)
     expect(UNATTENDED_CONFINED_RULES).toEqual([{ action: "external_directory_write", resource: "*", effect: "deny" }])
-  })
-
-  test("PARANOID adds the read class on top — and only then", () => {
-    for (const type of UNATTENDED)
-      for (const mode of BELOW_YOLO) {
-        const rules = unattendedStanceRules(type, mode, true)
-        expect(rules).toEqual([...UNATTENDED_CONFINED_RULES, ...PARANOID_READ_RULES])
-        expect(rules.filter((rule) => rule.action === "external_directory_read")).toHaveLength(1)
-      }
-    // Paranoid never resurrects the stance for an attended root, nor past yolo.
-    for (const type of ATTENDED)
-      for (const mode of BELOW_YOLO) expect(unattendedStanceRules(type, mode, true)).toEqual([])
-    for (const type of UNATTENDED) expect(unattendedStanceRules(type, "yolo", true)).toEqual([])
   })
 
   test("the stance names NOTHING inside the folder — in-folder work is untouched", () => {
@@ -603,7 +587,7 @@ describe("unattendedStanceRules — the unattended confinement stance", () => {
     for (const action of ["read", "edit", "write", "create", "trash", "bash"]) expect(actions).not.toContain(action)
   })
 
-  test("yolo is the one way out (the mode that already ALLOWS the external classes)", () => {
+  test("yolo is the one way out of the external-write stance", () => {
     for (const type of UNATTENDED) expect(unattendedStanceRules(type, "yolo")).toEqual([])
   })
 

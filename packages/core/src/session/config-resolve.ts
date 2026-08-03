@@ -59,8 +59,9 @@ export const ASK_BEFORE_CHANGES_RULES: readonly PermissionRule[] = [
  * consent — the Settings copy promises "'Ask' checks with you first", and with the default
  * agent's allow-all baseline an identity overlay silently made Ask ≡ Bypass (issues.md P1);
  * saved allow-always decisions land AFTER the overlay, so granted trust still quiets the asks.
- * External-directory classes (1I) stay ask in every mode except yolo — bypass is "anything
- * INSIDE the project". Mode denies are HARD: they participate in the early deny check, so a
+ * External-directory WRITES stay ask in every mode except yolo — bypass is "anything
+ * INSIDE the project". External reads are mode-independent and allowed by the evaluator. Mode
+ * denies are HARD: they participate in the early deny check, so a
  * saved allow-always can never override plan/surgical.
  *
  * ⚠️ WHAT A MODE OVERLAY IS, AND WHAT NOW BACKS IT — read this before trusting a deny below. Every
@@ -148,7 +149,6 @@ export const MODE_RULES: Record<PermissionMode, readonly PermissionRule[]> = {
     { action: "create", resource: "*", effect: "allow" },
     { action: "trash", resource: "*", effect: "allow" },
     { action: "bash", resource: "*", effect: "allow" },
-    { action: "external_directory_read", resource: "*", effect: "allow" },
     { action: "external_directory_write", resource: "*", effect: "allow" },
   ],
 }
@@ -168,8 +168,8 @@ export const MODE_RULES: Record<PermissionMode, readonly PermissionRule[]> = {
 //      switchable per chat by the composer's Mode control, per schedule by the Calendar, and per
 //      spawn by `SessionSpawner`.
 //   2. The escape hatch is already a permission MODE: `yolo` is the ONE mode whose overlay ALLOWS
-//      the external classes outright (MODE_RULES above) — the documented "everything, incl.
-//      outside the project".
+//      external WRITES outright (MODE_RULES above) — the documented "everything, incl. outside
+//      the project". Reads are available in every mode and are not part of this stance.
 // So the stance is exactly "unattended root AND mode below yolo". No new mode, no new session
 // column, no new client vocabulary — and it COMPOSES with the narrowing invariant instead of
 // bypassing it: a spawned child can never reach `yolo` past a lower parent (`moreRestrictive`
@@ -254,15 +254,11 @@ export const attendedRoot = (rootType: RootType): boolean => {
 }
 
 /**
- * The rule overlay an unattended chain contributes. BOTH external classes are named:
- *   - `external_directory_write` is the requirement — every mutating tool (write/edit/create/
- *     apply-patch/trash/bash-workdir) asserts it BEFORE its own action whenever the resolved path
- *     leaves the Location (`LocationMutation.externalDirectoryPermission`), so denying it here
- *     denies out-of-folder create/modify at the one seam they all pass through;
- *   - `external_directory_read` is included because unattended it was never a CAPABILITY either —
- *     an unanswered ask yields no bytes, just a hang. Denying loses nothing and returns an error
- *     the model can act on. (It also matches what the Linux jail already enforces mechanically:
- *     a confined command's FS view is the worktree, so it cannot read outside it regardless.)
+ * The rule overlay an unattended chain contributes. `external_directory_write` is the requirement:
+ * every mutating tool (write/edit/create/apply-patch/trash/bash-workdir) asserts it BEFORE its own
+ * action whenever the resolved path leaves the Location (`LocationMutation.externalDirectoryPermission`),
+ * so denying it here denies out-of-folder create/modify at the one seam they all pass through.
+ * External reads are deliberately absent: they are host-wide in every permission mode.
  * Nothing INSIDE the folder appears here — no `read`/`edit`/`write`/`create`/`trash`/`bash` rule —
  * which is the whole point of the stance: work freely where you live.
  *
@@ -281,19 +277,6 @@ export const UNATTENDED_CONFINED_RULES: readonly PermissionRule[] = [
 ]
 
 /**
- * The read half of the confinement, added ONLY under the `paranoid` setting.
- *
- * Owner call (2026-07-25): reading outside the project folder is ordinary work — a toolchain, an SDK, a
- * system header — and denying it by default breaks real tasks (`C:\soft\w64devkit` to build an app). The
- * fear these rules exist to answer is a destructive WRITE (`rm -rf /`), not an exfiltrated `/etc/passwd`.
- * So writing outside stays confined unconditionally, while reading outside is confined only for a user who
- * has deliberately asked for that posture.
- */
-export const PARANOID_READ_RULES: readonly PermissionRule[] = [
-  { action: "external_directory_read", resource: "*", effect: "deny" },
-]
-
-/**
  * The stance's rules for a chain, or none when it does not apply. `rootType` is the CHAIN ROOT's
  * answer (`rootAttendance`), never the target session's own type — a child cannot declare itself
  * attended out of its root's stance. `mode` is the RESOLVED mode (already clamped by narrowing).
@@ -304,13 +287,8 @@ export const PARANOID_READ_RULES: readonly PermissionRule[] = [
 export const unattendedStanceRules = (
   rootType: RootType,
   mode: PermissionMode,
-  paranoid = false,
 ): readonly PermissionRule[] =>
-  attendedRoot(rootType) || mode === "yolo"
-    ? []
-    : paranoid
-      ? [...UNATTENDED_CONFINED_RULES, ...PARANOID_READ_RULES]
-      : UNATTENDED_CONFINED_RULES
+  attendedRoot(rootType) || mode === "yolo" ? [] : UNATTENDED_CONFINED_RULES
 
 export interface ModelRef {
   readonly providerID: string
@@ -381,9 +359,8 @@ export interface SessionConfig {
 //  · it is not a second attendance flag — an ATTENDED chain is unaffected in both positions. The
 //    "confine bash in EVERY non-YOLO mode, attended included" item (todo/jail.md) needs the MODE as
 //    an input to `decideBash`, which is a reshape, not this switch;
-//  · it is not `paranoid` — that one gates out-of-folder READS and is an instance-wide setting
-//    (`Config.Info.paranoid`, read live in permission.ts). Safe mode is per-session and gates host
-//    EXECUTION. Two different fears, two different surfaces;
+//  · it does not gate reads — host-readable files are available in every permission mode. Safe
+//    mode is per-session and gates host EXECUTION;
 //  · it can never LOOSEN anything. Every arm it reaches is a refusal, which is why it composes with
 //    the narrowing keystone without needing a clamp of its own (unlike `permissionMode`).
 //

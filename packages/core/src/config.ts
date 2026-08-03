@@ -86,10 +86,6 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   snapshots: Schema.Boolean.pipe(Schema.optional).annotate({
     description: "Enable snapshots used for undo and revert behavior",
   }),
-  paranoid: Schema.Boolean.pipe(Schema.optional).annotate({
-    description:
-      "Require explicit permission before an agent READS anything outside its project folder. Off by default: reading outside the folder is normal work (a compiler, an SDK, a system header). Writing outside is guarded regardless of this setting.",
-  }),
   watcher: ConfigWatcher.Info.pipe(Schema.optional).annotate({
     description: "Filesystem watcher configuration",
   }),

@@ -103,34 +103,15 @@ export const Plugin = define({
     const location = yield* Location.Service
     const worktree = location.directory
     const whitelistedDirs = [TRUNCATION_GLOB, path.join(Global.Path.tmp, "*")]
-    // 1I: external access is CLASSED — read grants never authorize writes. WRITING outside the folder
-    // defaults to ask here; the whitelisted scratch dirs (truncation, tmp) allow both.
-    //
-    // There is deliberately NO blanket `external_directory_read` rule in this baseline. That default is
-    // decided LIVE by the permission evaluator from the `paranoid` setting (permission.ts §READ BASELINE),
-    // because a rule baked in here freezes at plugin-build time and a Settings toggle would not take
-    // effect until restart. Anything more specific — the whitelists below, user config, saved answers —
-    // still layers on top and wins, since rules resolve last-match-first.
+    // 1I: external access is CLASSED — read grants never authorize writes. Reading any host-readable
+    // path is the evaluator's mode-independent baseline. WRITING outside the folder defaults to ask
+    // here; the whitelisted scratch dirs allow both because Nova owns those locations.
     const readonlyExternalDirectory: PermissionV2.Ruleset = [
       { action: "external_directory_write", resource: "*", effect: "ask" },
       ...whitelistedDirs.flatMap((resource): PermissionV2.Rule[] => [
         { action: "external_directory_read", resource, effect: "allow" },
         { action: "external_directory_write", resource, effect: "allow" },
       ]),
-    ]
-    /**
-     * The `.env` refinements — and they are a UNIT because they must always be the LAST word on
-     * `read` in whatever ruleset they land in. `evaluate` is findLast, so ANY later broad
-     * `{ read, *, allow }` hands the secrets straight back. That is not hypothetical: the `explore`
-     * subagent's own ruleset carried exactly such a rule after `defaults`, so the read-only search
-     * agent could read `.env` files that the default agent asks about — a shadowing bug of the same
-     * shape as the `explore`-action one below, found alongside it. Extracted so the re-append at
-     * that one site is the same three rules rather than a fourth copy.
-     */
-    const envRefinements: PermissionV2.Ruleset = [
-      { action: "read", resource: "*.env", effect: "ask" },
-      { action: "read", resource: "*.env.*", effect: "ask" },
-      { action: "read", resource: "*.env.example", effect: "allow" },
     ]
     const defaults: PermissionV2.Ruleset = [
       // v0.2.0 B4c: the compiled floor is an explicit ALLOWLIST of ambient-safe actions — never a
@@ -140,14 +121,11 @@ export const Plugin = define({
       // it live with the constant (`permission.ts` → AMBIENT_SAFE_BASELINE), so this list is never
       // a second place to keep in sync; `test/permission-baseline.test.ts` fails if a catch-all
       // allow reappears in ANY built-in agent's ruleset.
-      // ⚠️ It carries `read`, so the `.env` refinements below must stay AFTER it — `evaluate` is
-      // findLast, and moving them above would hand `.env` files back.
       ...PermissionV2.AMBIENT_SAFE_BASELINE,
       ...readonlyExternalDirectory,
       { action: "question", resource: "*", effect: "deny" },
       { action: "plan_enter", resource: "*", effect: "deny" },
       { action: "plan_exit", resource: "*", effect: "deny" },
-      ...envRefinements,
     ]
 
     yield* ctx.agent.transform((draft) => {
@@ -233,10 +211,6 @@ export const Plugin = define({
               { action: "webfetch", resource: "*", effect: "allow" },
               { action: "websearch", resource: "*", effect: "allow" },
               { action: "read", resource: "*", effect: "allow" },
-              // ...and the `.env` refinements come back LAST, because the broad `read` allow one
-              // line above shadowed the copy inside `defaults`. Without this the read-only search
-              // subagent could read secrets the default agent asks about.
-              ...envRefinements,
             ],
             readonlyExternalDirectory,
           ),

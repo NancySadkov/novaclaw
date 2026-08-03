@@ -16,6 +16,19 @@ const fixture = Effect.gen(function* () {
 })
 
 describe("ReadToolFileSystem", () => {
+  it.effect("reads a host-readable system file outside the test working directory", () =>
+    Effect.gen(function* () {
+      const { fs } = yield* fixture
+      const file =
+        process.platform === "win32" ? path.join(process.env.SystemRoot ?? "C:\\Windows", "win.ini") : "/etc/hosts"
+
+      const result = yield* ReadToolFileSystem.read(fs, file, file)
+
+      expect(result).toMatchObject({ encoding: "utf8" })
+      expect("content" in result && result.content.length).toBeGreaterThan(0)
+    }),
+  )
+
   it.effect("fails with a typed filesystem error when a resolved file disappears", () =>
     Effect.gen(function* () {
       const { fs, directory } = yield* fixture

@@ -1383,9 +1383,6 @@ export const dict = {
   "settings.general.row.telemetry.title": "Telemetry",
   "settings.general.row.telemetry.description":
     "Consent for future crash/usage reporting. Nothing is uploaded today — no telemetry system exists yet; this switch is the contract it will obey, and offline mode forces it off regardless.",
-  "settings.general.row.paranoid.title": "Ask before reading outside the project folder",
-  "settings.general.row.paranoid.description":
-    "Off by default: agents may freely READ files outside your project folder, which normal work needs — a compiler, an SDK, a system header. Turn this on to be asked first every time. Either way, agents never WRITE outside the folder without your permission.",
   "settings.general.row.offline.title": "Offline / airgap mode",
   "settings.general.row.offline.description":
     "Block all network access except your model providers, so nothing else can phone home (fail-closed: if in doubt, it's blocked). This stops package installs, usage/telemetry uploads, and any network calls the agent's shell tries to make. Restart the server to apply.",
@@ -2130,7 +2127,7 @@ export const dict = {
   "settings.permissions.tool.external_directory.description": "Access files outside the project directory",
   "settings.permissions.tool.external_directory_read.title": "Read External Directory",
   "settings.permissions.tool.external_directory_read.description":
-    "Read files outside the project directory (never grants writes there)",
+    "Read host-readable files outside the project directory; available in every permission mode and never grants writes there",
   "settings.permissions.tool.external_directory_write.title": "Write External Directory",
   "settings.permissions.tool.external_directory_write.description":
     "Modify, create, or delete files outside the project directory",

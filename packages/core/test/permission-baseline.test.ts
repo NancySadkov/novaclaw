@@ -44,8 +44,8 @@ const builtinAgents = Effect.gen(function* () {
 /**
  * The evaluator's own composition for the DEFAULT posture, reproduced in the order
  * `permission.ts`'s `evaluateInput` builds it: the live read baseline, then the agent's configured
- * rules, then the resolved mode's overlay. Attended + non-paranoid + no Tuning switches, so the
- * stance and feature arms are empty — the case a fresh install runs in.
+ * rules, then the resolved mode's overlay. Attended + no Tuning switches, so the stance and
+ * feature arms are empty — the case a fresh install runs in.
  */
 const effectFor = (agentRules: PermissionV2.Ruleset, action: string, resource = "src/x.ts") =>
   PermissionV2.evaluate(action, resource, [
@@ -147,9 +147,9 @@ describe("the built-in agents the plugin actually builds", () => {
     Effect.gen(function* () {
       const build = (yield* builtinAgents).get("build")!
       for (const action of ["read", "explore", "todowrite"]) expect(effectFor(build, action)).toBe("allow")
-      // The `.env` refinements still sit AFTER the floor, so the floor did not hand them back.
-      expect(effectFor(build, "read", "packages/core/.env")).toBe("ask")
-      expect(effectFor(build, "read", ".env.local")).toBe("ask")
+      // Filenames do not create hidden read prompts. Users can still author an explicit deny rule.
+      expect(effectFor(build, "read", "packages/core/.env")).toBe("allow")
+      expect(effectFor(build, "read", ".env.local")).toBe("allow")
       expect(effectFor(build, "read", ".env.example")).toBe("allow")
     }),
   )
@@ -337,34 +337,11 @@ describe("the explore subagent can actually glob and grep", () => {
     }),
   )
 
-  it.effect("the `.env` refinements survive the subagent's own broad `read` allow", () =>
-    Effect.gen(function* () {
-      // Found alongside the bug above and the same shape: `explore` adds `{ read, *, allow }` AFTER
-      // `defaults`, so the `.env` asks inside `defaults` were shadowed and the read-only search agent
-      // could read secrets the default agent asks about. They are re-appended last.
-      const explore = (yield* builtinAgents).get("explore")!
-      expect(effectFor(explore, "read", "packages/core/.env")).toBe("ask")
-      expect(effectFor(explore, "read", ".env.local")).toBe("ask")
-      expect(effectFor(explore, "read", ".env.example")).toBe("allow")
-      expect(effectFor(explore, "read", "src/x.ts")).toBe("allow")
-    }),
-  )
-
-  it.effect("NEGATIVE CONTROL: strip the re-appended refinements and `.env` is handed back", () =>
+  it.effect("the read-only explore agent can read host-readable files regardless of filename", () =>
     Effect.gen(function* () {
       const explore = (yield* builtinAgents).get("explore")!
-      // Keep only the FIRST occurrence of each refinement — i.e. the copy inside `defaults`, which is
-      // where they sat when the bug was live — and the broad `read` allow shadows them again.
-      const seen = new Set<string>()
-      const preFix = explore.filter((rule) => {
-        if (!rule.resource.includes(".env")) return true
-        const key = `${rule.action} ${rule.resource}`
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
-      })
-      expect(effectFor(preFix, "read", "packages/core/.env")).toBe("allow")
-      expect(effectFor(preFix, "read", ".env.local")).toBe("allow")
+      for (const resource of ["packages/core/.env", ".env.local", ".env.example", "src/x.ts"])
+        expect(effectFor(explore, "read", resource)).toBe("allow")
     }),
   )
 })

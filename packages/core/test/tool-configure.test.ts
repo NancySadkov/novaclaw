@@ -194,7 +194,6 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "memory",
       "models",
       "offline",
-      "paranoid",
       "permissions",
       "persona",
       "plugins",

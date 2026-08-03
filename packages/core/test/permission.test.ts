@@ -9,7 +9,6 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { Location } from "@novaclaw/core/location"
 import { PermissionV2 } from "@novaclaw/core/permission"
-import { TRUNCATION_RESOURCE } from "@novaclaw/core/tool/truncation-dir"
 import { PermissionTable } from "@novaclaw/core/permission/sql"
 import { PermissionSaved } from "@novaclaw/core/permission/saved"
 import { Project } from "@novaclaw/core/project"
@@ -19,7 +18,6 @@ import { ASK_BEFORE_CHANGES_RULES } from "@novaclaw/core/session/config-resolve"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { Global } from "@novaclaw/core/global"
 import { SessionStore } from "@novaclaw/core/session/store"
-import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import { eq } from "drizzle-orm"
@@ -39,7 +37,6 @@ const it = testEffect(
       PermissionSaved.node,
       AgentV2.node,
       PermissionV2.node,
-      SettingsConfigStore.node,
     ]),
     [[Location.node, current]],
   ),
@@ -740,9 +737,8 @@ describe("PermissionV2 — unattended confinement stance", () => {
   // A deliberately permissive stand-in, so these tests measure the CONFINEMENT STANCE and not the
   // baseline: the stance is checked in its own hard arm before any allow is consulted, so an
   // allow-everything ruleset is the strongest possible thing for it to have to override. There is
-  // deliberately no blanket external_directory_read rule here — that default is decided live by the
-  // evaluator from the `paranoid` setting, precisely so a rule like the write one below can still override
-  // it per path.
+  // deliberately no blanket external_directory_read rule here — the evaluator contributes that
+  // mode-independent baseline, while the write row below remains independently consent-gated.
   // ⚠️ This is NO LONGER the real build agent's baseline. v0.2.0 B4c replaced `plugin/agent.ts`'s
   // opening catch-all with `PermissionV2.AMBIENT_SAFE_BASELINE`; what the shipped baseline resolves to
   // is pinned in `test/permission-baseline.test.ts` against the agents the plugin actually builds.
@@ -873,120 +869,48 @@ describe("PermissionV2 — unattended confinement stance", () => {
     }),
   )
 
-  // Owner call (2026-07-25): READING outside the folder is ordinary work — a toolchain, an SDK, a system
-  // header (C:\soft\w64devkit to build an app). The fear these rules answer is a destructive WRITE, so an
-  // out-of-folder read is ALLOWED by default even unattended, and confined only under Paranoid.
-  it.effect("the out-of-folder READ class is ALLOWED by default, even unattended", () =>
+  // Reads are host-wide in every mode and for every thread type. This is intentionally a separate
+  // contract from writes: YOLO only removes the external-WRITE consent boundary.
+  it.effect("the out-of-folder READ class is allowed in every mode, attended or unattended", () =>
     Effect.gen(function* () {
-      yield* setup(buildAgentRules)
-      yield* insertSession({ id: "ses_cron", type: "auto-prompting", permissionMode: "bypass" })
+      yield* setup([{ action: "external_directory_write", resource: "*", effect: "ask" }])
       const service = yield* PermissionV2.Service
-      expect(
-        yield* service.ask(outside({ sessionID: SessionV2.ID.make("ses_cron"), action: "external_directory_read" })),
-      ).toMatchObject({ effect: "allow" })
-      // ...while the WRITE class stays denied outright in the very same session.
-      expect(yield* service.ask(outside({ sessionID: SessionV2.ID.make("ses_cron") }))).toMatchObject({
-        effect: "deny",
-      })
+      const cases = [
+        ["plan", "interactive"],
+        ["ask", "sub-agent"],
+        ["surgical", "auto-prompting"],
+        ["bypass", "goal-oriented"],
+        ["yolo", "goal-oriented"],
+      ] as const
+      for (const [permissionMode, type] of cases) {
+        const id = `ses_read_${permissionMode}`
+        yield* insertSession({ id, type, permissionMode })
+        expect(
+          yield* service.ask(
+            outside({ sessionID: SessionV2.ID.make(id), action: "external_directory_read" }),
+          ),
+        ).toMatchObject({ effect: "allow" })
+      }
     }),
   )
 
-  it.effect("PARANOID confines the read class: denied unattended, and it takes effect LIVE", () =>
-    Effect.gen(function* () {
-      yield* setup(buildAgentRules)
-      yield* insertSession({ id: "ses_cron", type: "auto-prompting", permissionMode: "bypass" })
-      const service = yield* PermissionV2.Service
-      const read = () =>
-        service.ask(outside({ sessionID: SessionV2.ID.make("ses_cron"), action: "external_directory_read" }))
-      expect(yield* read()).toMatchObject({ effect: "allow" })
-      // Flip the setting with the service ALREADY built — the evaluator reads the live store, so no restart.
-      yield* (yield* SettingsConfigStore.Service).set("paranoid", true)
-      expect(yield* read()).toMatchObject({ effect: "deny" })
-    }),
-  )
-
-  // The subtle half of Paranoid: it must beat the agent's catch-all `* → allow`, but a rule written for a
-  // SPECIFIC path is itself the explicit permission Paranoid demands, so it must still win. Otherwise a user
-  // who whitelisted their toolchain would be re-asked forever.
-  it.effect("PARANOID yields to a rule written for a specific path", () =>
+  it.effect("an explicit authored deny can still narrow a particular external read", () =>
     Effect.gen(function* () {
       yield* setup([
-        ...buildAgentRules,
-        { action: "external_directory_read", resource: "C:/soft/w64devkit/*", effect: "allow" },
+        { action: "external_directory_read", resource: "C:/private/*", effect: "deny" },
+        { action: "external_directory_write", resource: "*", effect: "ask" },
       ])
-      yield* insertSession({ id: "ses_chat", type: "interactive", permissionMode: "bypass" })
-      yield* (yield* SettingsConfigStore.Service).set("paranoid", true)
-      const service = yield* PermissionV2.Service
-      const ask = (resource: string) =>
-        service.ask(
-          assertion({
-            sessionID: SessionV2.ID.make("ses_chat"),
-            action: "external_directory_read",
-            resources: [resource],
-            save: [resource],
-          }),
-        )
-      // The whitelisted toolchain is read without a prompt...
-      expect(yield* ask("C:/soft/w64devkit/*")).toMatchObject({ effect: "allow" })
-      // ...while anything else outside the folder still asks.
-      expect(yield* ask("C:/elsewhere/*")).toMatchObject({ effect: "ask" })
-    }),
-  )
-
-  it.effect("PARANOID attended ASKS rather than denying — a human is there to answer", () =>
-    Effect.gen(function* () {
-      yield* setup(buildAgentRules)
-      yield* insertSession({ id: "ses_chat", type: "interactive", permissionMode: "bypass" })
-      yield* (yield* SettingsConfigStore.Service).set("paranoid", true)
-      const service = yield* PermissionV2.Service
-      expect(
-        yield* service.ask(outside({ sessionID: SessionV2.ID.make("ses_chat"), action: "external_directory_read" })),
-      ).toMatchObject({ effect: "ask" })
-    }),
-  )
-
-  // The managed tool-output store is the ONE exemption. A tool whose output is oversized spills to
-  // `<data>/tool-output/` and the model is told to read it back; that store is outside every Location, so
-  // without the exemption the blanket external-read deny cut an unattended agent off from its OWN output.
-  it.effect("an unattended session may still read its own spilled tool output", () =>
-    Effect.gen(function* () {
-      yield* setup(buildAgentRules)
-      yield* insertSession({ id: "ses_cron", type: "goal-oriented", permissionMode: "bypass" })
-      // Assert under PARANOID — the only posture where this exemption is load-bearing.
-      yield* (yield* SettingsConfigStore.Service).set("paranoid", true)
+      yield* insertSession({ id: "ses_chat", type: "interactive", permissionMode: "yolo" })
       const service = yield* PermissionV2.Service
       expect(
         yield* service.ask(
           assertion({
-            sessionID: SessionV2.ID.make("ses_cron"),
+            sessionID: SessionV2.ID.make("ses_chat"),
             action: "external_directory_read",
-            resources: [TRUNCATION_RESOURCE],
-            save: [TRUNCATION_RESOURCE],
+            resources: ["C:/private/*"],
           }),
         ),
-      ).toMatchObject({ effect: "allow" })
-    }),
-  )
-
-  it.effect("the exemption is narrow — another external read, and writing the store, stay denied", () =>
-    Effect.gen(function* () {
-      yield* setup(buildAgentRules)
-      yield* insertSession({ id: "ses_cron", type: "goal-oriented", permissionMode: "bypass" })
-      const service = yield* PermissionV2.Service
-      const deny = (action: string, resource: string) =>
-        service.ask(
-          assertion({
-            sessionID: SessionV2.ID.make("ses_cron"),
-            action,
-            resources: [resource],
-            save: [resource],
-          }),
-        )
-      // Under Paranoid the read class is confined — the exemption must not stretch to cover anything else.
-      yield* (yield* SettingsConfigStore.Service).set("paranoid", true)
-      expect(yield* deny("external_directory_read", "C:/elsewhere/*")).toMatchObject({ effect: "deny" })
-      // The store is readable, never writable.
-      expect(yield* deny("external_directory_write", TRUNCATION_RESOURCE)).toMatchObject({ effect: "deny" })
+      ).toMatchObject({ effect: "deny" })
     }),
   )
 
@@ -1295,7 +1219,7 @@ describe("PermissionV2 — an unattended ask denies FAST", () => {
       // Recorded as a decision, not discovered later. `unattendedStanceRules` and the attachment arm
       // both let `yolo` out, because both convert a GRANT into a refusal. This arm converts nothing:
       // reaching it means the action was never granted in ANY mode — `MODE_RULES.yolo` names only the
-      // mutation cluster and the two external classes — so an unattended `yolo` root calling
+      // mutation cluster and external writes — so an unattended `yolo` root calling
       // `webfetch` was hanging exactly like a `bypass` one. Exempting yolo would preserve the hang.
       yield* setup(b4cBaseline)
       yield* insertSession({ id: "ses_yolo", type: "goal-oriented", permissionMode: "yolo" })

@@ -38,7 +38,6 @@ const VALID: Record<string, unknown> = {
   username: "nancy",
   server: {},
   snapshots: false,
-  paranoid: true,
   watcher: {},
   formatter: {},
   attachments: {},
