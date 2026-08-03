@@ -663,7 +663,40 @@ async function run() {
     check(false, "session-create", `POST /api/session failed: ${String(error)}`)
   }
 
-  // ── 4. memory (the kb graph) is actually up ────────────────────────────────────────────────────
+  // ── 4. PTY runtime is genuinely packaged ───────────────────────────────────────────────────────
+  // Merely booting is insufficient now that PTY is correctly lazy. v0.1.55 initially omitted the
+  // generic @lydell/node-pty loader; an in-tree smoke found it in the workspace and passed, while a
+  // downloaded copy failed. Staging above closes the resolution leak; creating one PTY proves both
+  // the generic loader and the platform-native package made it into the artifact.
+  if (scratchDir) {
+    const location = `?location[directory]=${encodeURIComponent(scratchDir)}`
+    let ptyID: string | undefined
+    try {
+      const res = await request(credentials, "POST", `/api/pty${location}`, {
+        cwd: scratchDir,
+        title: "Artifact smoke",
+      })
+      ptyID = (res.json as { data?: { id?: string } } | undefined)?.data?.id
+      check(
+        res.status >= 200 && res.status < 300 && typeof ptyID === "string",
+        "pty-create",
+        `POST /api/pty answered ${res.status}: ${res.text.slice(0, 400)}`,
+      )
+    } catch (error) {
+      check(false, "pty-create", `POST /api/pty failed: ${String(error)}`)
+    } finally {
+      if (ptyID) {
+        const removed = await request(credentials, "DELETE", `/api/pty/${encodeURIComponent(ptyID)}${location}`).catch(
+          () => undefined,
+        )
+        check(removed?.status === 204, "pty-remove", `expected 204, got ${String(removed?.status)}`)
+      }
+    }
+  } else {
+    check(false, "pty-create", "scratchDir was unavailable, so the packaged PTY runtime could not be exercised")
+  }
+
+  // ── 5. memory (the kb graph) is actually up ────────────────────────────────────────────────────
   try {
     const res = await request(credentials, "GET", "/memory/stats")
     const stats = res.json as { total?: unknown; valid?: unknown } | undefined
