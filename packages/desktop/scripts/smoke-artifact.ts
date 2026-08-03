@@ -37,7 +37,7 @@
  */
 import { spawnSync } from "node:child_process"
 import { existsSync, readdirSync, statSync } from "node:fs"
-import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises"
+import { copyFile, cp, mkdir, mkdtemp, rm } from "node:fs/promises"
 import { createServer } from "node:net"
 import os from "node:os"
 import path from "node:path"
@@ -120,6 +120,31 @@ function expectedChannel(exe: string): Channel {
   if (name.endsWith("dev")) return "dev"
   if (name.endsWith("beta")) return "beta"
   return "prod"
+}
+
+/**
+ * Run the package outside the checkout. Node resolves a dependency missing from app.asar by walking
+ * parent directories; launching dist/win-unpacked in-tree therefore let the workspace node_modules
+ * mask a broken release. The v0.1.55 PTY omission passed the old smoke for exactly that reason.
+ */
+async function stageArtifact(exe: string, root: string): Promise<string> {
+  let packageRoot = path.dirname(exe)
+  if (process.platform === "darwin") {
+    let cursor = path.resolve(exe)
+    for (;;) {
+      if (cursor.toLowerCase().endsWith(".app")) {
+        packageRoot = cursor
+        break
+      }
+      const parent = path.dirname(cursor)
+      if (parent === cursor) throw new Error(`could not find the .app bundle containing ${exe}`)
+      cursor = parent
+    }
+  }
+
+  const stagedRoot = path.join(root, "artifact", path.basename(packageRoot))
+  await cp(packageRoot, stagedRoot, { recursive: true, force: false, errorOnExist: true })
+  return path.join(stagedRoot, path.relative(packageRoot, exe))
 }
 
 /**
@@ -460,14 +485,16 @@ process.on("exit", () => {
 })
 
 async function run() {
-  const exe = resolveExe(process.argv[2])
-  const channel = expectedChannel(exe)
+  const sourceExe = resolveExe(process.argv[2])
+  const channel = expectedChannel(sourceExe)
   const version = await canonicalVersion()
-  console.log(`artifact : ${exe}`)
+  console.log(`artifact : ${sourceExe}`)
   console.log(`channel  : ${channel} (expected)`)
   console.log(`version  : ${version} (canonical, from the root package.json)`)
 
   tempHome = await mkdtemp(path.join(os.tmpdir(), "novaclaw-smoke-"))
+  const exe = await stageArtifact(sourceExe, tempHome)
+  console.log(`staged   : ${exe} (isolated from workspace dependencies)`)
   const authSeed = process.env.NOVACLAW_SMOKE_AUTH_FILE
   const keySeed = process.env.NOVACLAW_SMOKE_CREDENTIAL_KEY
   if (!!authSeed !== !!keySeed)
