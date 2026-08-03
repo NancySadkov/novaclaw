@@ -37,7 +37,7 @@
  */
 import { spawnSync } from "node:child_process"
 import { existsSync, readdirSync, statSync } from "node:fs"
-import { mkdtemp, rm } from "node:fs/promises"
+import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises"
 import { createServer } from "node:net"
 import os from "node:os"
 import path from "node:path"
@@ -468,6 +468,17 @@ async function run() {
   console.log(`version  : ${version} (canonical, from the root package.json)`)
 
   tempHome = await mkdtemp(path.join(os.tmpdir(), "novaclaw-smoke-"))
+  const authSeed = process.env.NOVACLAW_SMOKE_AUTH_FILE
+  const keySeed = process.env.NOVACLAW_SMOKE_CREDENTIAL_KEY
+  if (!!authSeed !== !!keySeed)
+    throw new Error("NOVACLAW_SMOKE_AUTH_FILE and NOVACLAW_SMOKE_CREDENTIAL_KEY must be provided together")
+  if (authSeed && keySeed) {
+    await mkdir(path.join(tempHome, "data"), { recursive: true })
+    await mkdir(path.join(tempHome, "state"), { recursive: true })
+    await copyFile(authSeed, path.join(tempHome, "data", "auth.json"))
+    await copyFile(keySeed, path.join(tempHome, "state", "credential.key"))
+    console.log("seed     : encrypted auth + credential key (copied into throwaway home)")
+  }
   const devtoolsPort = await freePort()
   console.log(`home     : ${tempHome}`)
   console.log(`devtools : 127.0.0.1:${devtoolsPort}\n`)
