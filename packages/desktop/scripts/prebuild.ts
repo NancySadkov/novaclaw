@@ -4,10 +4,13 @@ import { $ } from "bun"
 import { enforce } from "../../../script/lib/heavy-guard"
 import { resolveChannel } from "./utils"
 
-// The guard has to bite from BOTH sides. prebuild is the first step of every desktop build
-// (build-desktop.bat / build-desktop-release.bat both start here), so refusing here is what stops a
-// build from piling onto a suite that is already running — the reverse of the case test.ts catches.
-enforce("a desktop build")
+// The guard has to bite from BOTH sides. prebuild is the first lifecycle step of every desktop build,
+// so refusing here stops a build from piling onto a suite already running. The desktop floor is
+// measured rather than inherited from the much larger test suite: on a 16 GB Windows machine the
+// production Vite stage completes under a 1.25 GB V8 old-space cap and electron-builder stayed below
+// 1 GB, sequentially. The 2.5 GB admission floor therefore protects the host without excluding the
+// laptops we ship for; the independent commit-charge ceiling still catches broader system pressure.
+enforce("a desktop build", process.argv, { minimumFreeBytes: 2.5 * 1024 ** 3 })
 
 const channel = resolveChannel()
 await $`bun ./scripts/copy-icons.ts ${channel}`

@@ -116,6 +116,8 @@ export interface Interface {
    *  same best-effort way as `tier`: it only decorates the system prompt, so an unresolvable model
    *  yields `undefined` rather than failing the turn. */
   readonly prePrompt: (session: SessionSchema.Info) => Effect.Effect<string | undefined>
+  /** Per-model total connection attempts. Undefined selects the runner's safe default. */
+  readonly retryAttempts: (session: SessionSchema.Info) => Effect.Effect<number | undefined>
   /**
    * The resolved catalog model's declared capabilities, for the runner's attachment gate. Read the
    * same best-effort way as `tier`/`prePrompt`: an unresolvable model yields `undefined` rather
@@ -142,7 +144,8 @@ export const layerWith = (
   prePrompt: Interface["prePrompt"] = () => Effect.succeed(undefined),
   capabilities: Interface["capabilities"] = () => Effect.succeed(undefined),
   ref: Interface["ref"] = () => Effect.succeed(undefined),
-) => Layer.succeed(Service, Service.of({ resolve, tier, prePrompt, capabilities, ref }))
+  retryAttempts: Interface["retryAttempts"] = () => Effect.succeed(undefined),
+) => Layer.succeed(Service, Service.of({ resolve, tier, prePrompt, retryAttempts, capabilities, ref }))
 
 const apiKey = (model: ModelV2.Info, credential?: Credential.Value) => {
   if (credential?.type === "key") return Auth.value(credential.key)
@@ -363,6 +366,9 @@ export const locationLayer = Layer.effect(
       // decorates the system prompt (never gates the turn), so an unresolvable model → undefined.
       prePrompt: Effect.fn("SessionRunnerModel.prePrompt")(function* (session) {
         return (yield* select(session).pipe(Effect.orElseSucceed(() => undefined)))?.prePrompt
+      }),
+      retryAttempts: Effect.fn("SessionRunnerModel.retryAttempts")(function* (session) {
+        return (yield* select(session).pipe(Effect.orElseSucceed(() => undefined)))?.retry?.attempts
       }),
       // The attachment gate's evidence, read exactly like `tier` above — no boot-latch wait, never
       // fails. An unresolved model returns undefined, which the gate reads as "no evidence" and

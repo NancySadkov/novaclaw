@@ -1134,6 +1134,17 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  "session.provider.response.broken": {
+    level: "warn",
+    message: "provider response ended before its final frame",
+    attributes: {
+      "session.id": "id",
+      "session.provider.reason": "id",
+      "session.provider.message": "fault",
+    },
+    content: "user",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.quality.check.errored": {
     level: "warn",
     message: "quality check errored",

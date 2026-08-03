@@ -1,5 +1,7 @@
 import * as http from "node:http"
 import * as tls from "node:tls"
+import { dirname, join } from "node:path"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { prepareSidecarEnv } from "./sidecar-env"
 
 type NodeHttpWithEnvProxy = typeof http & {
@@ -35,6 +37,18 @@ type Listener = {
   stop(close?: boolean): void | Promise<void>
 }
 
+type ServerModule = {
+  Server: {
+    listen(options: {
+      port: number
+      hostname: string
+      username: string
+      password: string
+      cors: string[]
+    }): Promise<Listener>
+  }
+}
+
 const parentPort = getParentPort()
 let listener: Listener | undefined
 
@@ -54,7 +68,10 @@ async function start(command: StartCommand) {
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
-    const { Server } = await import("virtual:novaclaw-server")
+    const serverURL = pathToFileURL(
+      join(dirname(fileURLToPath(import.meta.url)), "chunks", "novaclaw-server.js"),
+    ).href
+    const { Server } = (await import(/* @vite-ignore */ serverURL)) as ServerModule
 
     listener = await Server.listen({
       port: command.port,

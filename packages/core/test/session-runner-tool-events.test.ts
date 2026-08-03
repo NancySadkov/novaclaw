@@ -135,6 +135,20 @@ test("step finish records settlement without publishing step ended", async () =>
   expect(publisher.stepSettlement()).toMatchObject({ finish: "stop" })
 })
 
+test("a broken stream settles its partial assistant without publishing a fatal failure", async () => {
+  const { published, publisher } = capture()
+  await Effect.runPromise(publisher.publish(LLMEvent.textStart({ id: "partial" })))
+  await Effect.runPromise(publisher.publish(LLMEvent.textDelta({ id: "partial", text: "Useful partial answer" })))
+  await Effect.runPromise(publisher.breakAssistant())
+
+  expect(publisher.stepSettlement()).toMatchObject({
+    finish: "broken",
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+  })
+  expect(published.some((event) => event.type === "session.next.step.failed.1")).toBe(false)
+  expect(published.some((event) => event.type === "session.next.text.ended.1")).toBe(true)
+})
+
 test("stream checkpoints stay storage-linear and identify their offsets", async () => {
   const { published, publisher } = capture()
   const first = "a".repeat(600)

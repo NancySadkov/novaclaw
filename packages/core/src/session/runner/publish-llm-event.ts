@@ -314,6 +314,19 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     })
   })
 
+  /**
+   * Settle a partially readable provider reply without turning it into a fatal assistant error.
+   * The durable `broken` finish marker is lowered into the next model context, while zero usage is
+   * honest: a severed stream often omits the provider's final usage frame.
+   */
+  const breakAssistant = Effect.fnUntraced(function* () {
+    if (stepSettlement) return
+    yield* flush()
+    yield* startAssistant()
+    assistantActive = false
+    stepSettlement = { finish: "broken", tokens: tokens(undefined) }
+  })
+
   const failUnsettledTools = Effect.fn("SessionRunner.failUnsettledTools")(function* (
     fault: Fault,
     hostedOnly = false,
@@ -522,6 +535,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     publish,
     flush,
     failAssistant,
+    breakAssistant,
     failUnsettledTools,
     hasActiveAssistant: () => assistantActive,
     hasAssistantStarted: () => assistantMessageID !== undefined,

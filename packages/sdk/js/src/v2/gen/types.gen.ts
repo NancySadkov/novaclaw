@@ -3489,6 +3489,10 @@ export type ConfigV2ModelCost = {
   cache?: ConfigV2ModelCostCache
 }
 
+export type ConfigV2ModelRetry = {
+  attempts: number
+}
+
 export type ConfigV2ModelLimit = {
   context?: number
   input?: number
@@ -3541,6 +3545,7 @@ export type ConfigV2Model = {
   cost?: ConfigV2ModelCost | Array<ConfigV2ModelCost>
   tier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
   prePrompt?: string
+  retry?: ConfigV2ModelRetry
   disabled?: boolean
   limit?: ConfigV2ModelLimit
 }
@@ -3602,6 +3607,7 @@ export type ConfigV2ModelEntry = {
   cost?: ConfigV2ModelCost | Array<ConfigV2ModelCost>
   tier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
   prePrompt?: string
+  retry?: ConfigV2ModelRetry
   disabled?: boolean
   limit?: ConfigV2ModelLimit
 }
@@ -3836,6 +3842,9 @@ export type ModelV2Info = {
   family?: string
   tier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
   prePrompt?: string
+  retry?: {
+    attempts: number
+  }
   name: string
   api: ModelApi
   capabilities: ModelCapabilities

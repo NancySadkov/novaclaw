@@ -1,17 +1,26 @@
 import { describe, expect, test } from "bun:test"
+import { Schema } from "effect"
+import { ConfigProvider } from "../../config/provider"
+import { ModelV2 } from "../../model"
+import { ProviderV2 } from "../../provider"
 import {
   LLMError,
   AuthenticationReason,
   InvalidRequestReason,
+  InvalidProviderOutputReason,
   ProviderInternalReason,
   QuotaExceededReason,
   RateLimitReason,
   TransportReason,
 } from "@novaclaw/llm"
 import {
+  DEFAULT_PROVIDER_ATTEMPTS,
   MAX_PROVIDER_ATTEMPTS,
   MAX_RETRY_DELAY_MS,
   isTransientProviderFailure,
+  isRetryableBeforeOutput,
+  isBrokenResponse,
+  maxAttempts,
   retryDelayMs,
   statusCode,
   statusMessage,
@@ -41,6 +50,12 @@ describe("isTransientProviderFailure (1D taxonomy)", () => {
   test("a non-LLMError is never retried", () => {
     expect(isTransientProviderFailure(new Error("random"))).toBe(false)
     expect(isTransientProviderFailure(undefined)).toBe(false)
+  })
+  test("InvalidProviderOutput retries only at the pre-output boundary", () => {
+    const error = llmError(new InvalidProviderOutputReason({ message: "truncated SSE" }))
+    expect(isTransientProviderFailure(error)).toBe(false)
+    expect(isRetryableBeforeOutput(error)).toBe(true)
+    expect(isBrokenResponse(error)).toBe(true)
   })
   test("OFF-A: Transport with kind InvalidUrlError (offline-policy block) is FATAL", () =>
     expect(
@@ -88,6 +103,19 @@ describe("visible retry status", () => {
 // rendered a retry, so nothing needed its status code. Do not restore this block without a surface.
 
 describe("cap", () => {
-  test("the per-turn attempt cap is small — a dead endpoint fails in seconds", () =>
-    expect(MAX_PROVIDER_ATTEMPTS).toBeLessThanOrEqual(3))
+  test("defaults to three and clamps per-model settings to 1–10", () => {
+    expect(maxAttempts(undefined)).toBe(DEFAULT_PROVIDER_ATTEMPTS)
+    expect(maxAttempts(Number.NaN)).toBe(DEFAULT_PROVIDER_ATTEMPTS)
+    expect(maxAttempts(0)).toBe(1)
+    expect(maxAttempts(5.9)).toBe(5)
+    expect(maxAttempts(99)).toBe(MAX_PROVIDER_ATTEMPTS)
+  })
+
+  test("the per-model setting survives config decode and new catalog models default to three", () => {
+    const decoded = Schema.decodeUnknownSync(ConfigProvider.Info)({
+      models: { deepseek: { retry: { attempts: 5 } } },
+    })
+    expect(decoded.models?.deepseek?.retry?.attempts).toBe(5)
+    expect(ModelV2.Info.empty(ProviderV2.ID.make("provider"), ModelV2.ID.make("model")).retry?.attempts).toBe(3)
+  })
 })

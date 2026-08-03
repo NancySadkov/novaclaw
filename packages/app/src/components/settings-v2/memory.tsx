@@ -20,6 +20,7 @@ import {
   type MemoryRow,
 } from "@/utils/memory-api"
 import { buildMemoryBundle, importScope, parseMemoryBundle } from "./memory-bundle"
+import { SettingsProfileSection } from "./profile"
 import "./settings-v2.css"
 
 // The Memory tab (notes/kb-graph-plan.md §5) — the lay-first home for "what NovaClaw remembers".
@@ -291,6 +292,8 @@ export const SettingsMemoryV2: Component<{ sessionID?: string }> = (props) => {
       </div>
 
       <div class="settings-v2-tab-body">
+        <SettingsProfileSection />
+
         <div class="settings-v2-section">
           <SettingsListV2>
             <SettingsRowV2

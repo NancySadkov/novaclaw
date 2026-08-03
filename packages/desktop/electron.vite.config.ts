@@ -1,6 +1,6 @@
 import { defineConfig } from "electron-vite"
 import appPlugin from "@novaclaw/app/vite"
-import * as fs from "node:fs/promises"
+import { copyFile, mkdir, readdir } from "node:fs/promises"
 
 import { resolveChannel } from "../../script/lib/channel"
 
@@ -46,18 +46,17 @@ export default defineConfig({
         },
       },
       {
-        name: "novaclaw:virtual-server-module",
-        enforce: "pre",
-        resolveId(id) {
-          if (id === "virtual:novaclaw-server") return this.resolve(`${NOVACLAW_SERVER_DIST}/node.js`)
-        },
-      },
-      {
         name: "novaclaw:copy-server-assets",
         async writeBundle() {
-          for (const l of await fs.readdir(NOVACLAW_SERVER_DIST)) {
-            if (!l.endsWith(".wasm")) continue
-            await fs.writeFile(`./out/main/chunks/${l}`, await fs.readFile(`${NOVACLAW_SERVER_DIST}/${l}`))
+          const output = "./out/main/chunks"
+          await mkdir(output, { recursive: true })
+          for (const name of await readdir(NOVACLAW_SERVER_DIST)) {
+            if (name !== "node.js" && !name.endsWith(".wasm")) continue
+            // The server is already a complete Bun bundle. Treat it like the WASM payload: copy it
+            // verbatim instead of making Rollup parse and re-emit 23 MB of generated JavaScript.
+            // Parsing that bundle was the desktop build's dominant avoidable RAM spike.
+            const packagedName = name === "node.js" ? "novaclaw-server.js" : name
+            await copyFile(`${NOVACLAW_SERVER_DIST}/${name}`, `${output}/${packagedName}`)
           }
         },
       },
@@ -79,7 +78,9 @@ export default defineConfig({
     publicDir: "../../../app/public",
     root: "src/renderer",
     build: {
-      sourcemap: true,
+      // Production crash reporting is symbolized from named log events, not renderer source maps.
+      // Avoid building and packaging a large map on the low-memory Windows machines NovaClaw targets.
+      sourcemap: channel !== "prod",
       rollupOptions: {
         input: {
           main: "src/renderer/index.html",

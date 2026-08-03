@@ -35,6 +35,11 @@ class Limit extends Schema.Class<Limit>("ConfigV2.Model.Limit")({
   output: Schema.Int.pipe(Schema.optional),
 }) {}
 
+class Retry extends Schema.Class<Retry>("ConfigV2.Model.Retry")({
+  /** Total connection attempts, including the first request. The runner clamps this to a safe range. */
+  attempts: Schema.Int,
+}) {}
+
 const ModelApi = Schema.Union([
   Schema.Struct({
     id: ModelV2.ID.pipe(Schema.optional),
@@ -68,6 +73,7 @@ class Model extends Schema.Class<Model>("ConfigV2.Model")({
   // known behaviour, prepended to the system context. Declared beside `tier`, and carried onto
   // ModelV2.Info by the catalog plugin the same way. Optional ⇒ no on-read migration, no DB break.
   prePrompt: Schema.String.pipe(Schema.optional),
+  retry: Retry.pipe(Schema.optional),
   disabled: Schema.Boolean.pipe(Schema.optional),
   limit: Limit.pipe(Schema.optional),
 }) {}
@@ -105,6 +111,7 @@ export class ModelEntry extends Schema.Class<ModelEntry>("ConfigV2.ModelEntry")(
   // See the nested `Model.prePrompt` above — the flat models-primary entry carries the same optional
   // field, so a config authored either way (nested `providers` or flat `models`) reaches the catalog.
   prePrompt: Schema.String.pipe(Schema.optional),
+  retry: Retry.pipe(Schema.optional),
   disabled: Schema.Boolean.pipe(Schema.optional),
   limit: Limit.pipe(Schema.optional),
 }) {}

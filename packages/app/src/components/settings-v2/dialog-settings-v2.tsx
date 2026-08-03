@@ -10,7 +10,6 @@ import { ServerSyncProvider } from "@/context/server-sync"
 import { useExpertise } from "@/context/expertise"
 import type { ExpertiseLevel } from "@/context/settings"
 import { SettingsGeneralV2 } from "./general"
-import { SettingsProfileV2 } from "./profile"
 import { SettingsMemoryV2 } from "./memory"
 import { SettingsAboutV2 } from "./about"
 import { SettingsStorageV2 } from "./storage"
@@ -31,7 +30,7 @@ import { SettingsWebSearchV2 } from "./web-search"
 import { SettingsTunesV2 } from "./tunes"
 
 // Tabs above Normal are hidden until unlocked (uix.md §6.4). Bootstrap/manage/reset stay universal:
-// General, Appearance, Shortcuts, Instances, Models, Recovery carry no entry (= Normal).
+// General, Memory, Appearance, Shortcuts, Instances, Models, Storage and Recovery carry no entry (= Normal).
 const TAB_LEVELS: Record<string, ExpertiseLevel> = {
   "system-prompt": "advanced",
   tunes: "advanced",
@@ -40,9 +39,6 @@ const TAB_LEVELS: Record<string, ExpertiseLevel> = {
   // Web search "just works" for a normal user via the built-in; the override (own SearXNG) +
   // per-engine toggles are a power-user surface → Advanced (and therefore Developer too).
   "web-search": "advanced",
-  // Where the instance keeps its files. A power-user/diagnostic surface, not something a normal
-  // user needs — Advanced, which Developer also satisfies.
-  storage: "advanced",
   introspection: "developer",
   affective: "developer",
   quality: "developer",
@@ -108,14 +104,8 @@ export const DialogSettings: Component<{
                             <Icon name="sliders" />
                             {language.t("settings.tab.general")}
                           </TabsV2.Trigger>
-                          {/* Profile sits high — it's a friendly, normal-level "tell the assistant about you"
-                        surface, gated to a tool by the user's own consent switch. */}
-                          <TabsV2.Trigger value="profile">
-                            <Icon name="user" />
-                            {language.t("settings.tab.profile")}
-                          </TabsV2.Trigger>
-                          {/* Memory sits by Profile — both are lay "my data" surfaces. What NovaClaw remembers,
-                        with Export/Import/Clear (kb-graph P5). Normal level (everyone). */}
+                          {/* Profile lives inside Memory: both are one lay "what Nova knows about me"
+                        surface, with consent plus Export/Import/Clear. Normal level (everyone). */}
                           <TabsV2.Trigger value="memory">
                             <Icon name="archive" />
                             {language.t("settings.memory.title")}
@@ -198,12 +188,10 @@ export const DialogSettings: Component<{
                       <div class="flex flex-col gap-1.5">
                         <TabsV2.SectionTitle>{language.t("settings.section.safety")}</TabsV2.SectionTitle>
                         <div class="flex flex-col gap-1.5 w-full">
-                          <Show when={tabVisible("storage")}>
-                            <TabsV2.Trigger value="storage">
-                              <Icon name="folder" />
-                              {language.t("settings.tab.storage")}
-                            </TabsV2.Trigger>
-                          </Show>
+                          <TabsV2.Trigger value="storage">
+                            <Icon name="folder" />
+                            {language.t("settings.tab.storage")}
+                          </TabsV2.Trigger>
                           <TabsV2.Trigger value="recovery">
                             <Icon name="reset" />
                             {language.t("settings.tab.recovery")}
@@ -220,9 +208,6 @@ export const DialogSettings: Component<{
               </TabsV2.List>
               <TabsV2.Content value="general" class="settings-v2-panel">
                 <SettingsGeneralV2 sessionID={props.sessionID} />
-              </TabsV2.Content>
-              <TabsV2.Content value="profile" class="settings-v2-panel">
-                <SettingsProfileV2 />
               </TabsV2.Content>
               <TabsV2.Content value="memory" class="settings-v2-panel">
                 <SettingsMemoryV2 sessionID={props.sessionID} />
@@ -282,11 +267,9 @@ export const DialogSettings: Component<{
                   <SettingsQualityV2 />
                 </TabsV2.Content>
               </Show>
-              <Show when={tabVisible("storage")}>
-                <TabsV2.Content value="storage" class="settings-v2-panel">
-                  <SettingsStorageV2 />
-                </TabsV2.Content>
-              </Show>
+              <TabsV2.Content value="storage" class="settings-v2-panel">
+                <SettingsStorageV2 />
+              </TabsV2.Content>
               <TabsV2.Content value="recovery" class="settings-v2-panel">
                 <SettingsRecoveryV2 />
               </TabsV2.Content>

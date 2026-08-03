@@ -12,7 +12,7 @@ describe("Instance resource visibility", () => {
 
   test("offers an explicit unload control and never guesses missing measurements", () => {
     expect(source).toContain("localModelStop")
-    expect(source).toContain("settings.instances.resources.stop")
-    expect(source).toContain("settings.instances.resources.unknown")
+    expect(source).toContain("settings.storage.resources.stop")
+    expect(source).toContain("settings.storage.resources.unknown")
   })
 })

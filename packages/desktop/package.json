@@ -1,7 +1,7 @@
 {
   "name": "@novaclaw/desktop",
   "private": true,
-  "version": "0.1.5",
+  "version": "0.1.55",
   "type": "module",
   "license": "SEE LICENSE IN LICENSE",
   "description": "NovaClaw — a local-first AI agent OS",
@@ -34,6 +34,7 @@
     "electron-store": "11.0.2",
     "electron-updater": "6.8.9",
     "electron-window-state": "^5.0.3",
+    "jsonc-parser": "3.3.1",
     "marked": "^15"
   },
   "devDependencies": {

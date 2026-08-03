@@ -374,6 +374,24 @@
   background: color-mix(in oklab, var(--v2-state-fg-danger) 40%, transparent);
 }
 
+[data-slot="native-broken-reply"] {
+  margin-top: 8px;
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+  line-height: 1.45;
+}
+
+[data-slot="native-broken-reply"] summary {
+  cursor: pointer;
+  user-select: text;
+}
+
+[data-slot="native-broken-reply"] > div {
+  margin-top: 5px;
+  padding-left: 14px;
+  user-select: text;
+}
+
 /* error */
 [data-slot="native-error"] {
   padding: 0.5rem 0.75rem;

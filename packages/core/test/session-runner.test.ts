@@ -5,6 +5,7 @@ import {
   LLMEvent,
   Model,
   TransportReason,
+  InvalidProviderOutputReason,
   InvalidRequestReason,
   type LLMClientShape,
   type LLMRequest,
@@ -3120,6 +3121,50 @@ describe("SessionRunnerLLM", () => {
       expect(yield* session.context(sessionID)).toMatchObject([
         { type: "user", text: "Fail raw stream durably" },
         { type: "assistant", finish: "error", error: { type: "unknown", message: "Provider unavailable" } },
+      ])
+    }),
+  )
+
+  it.effect("accepts a malformed stream tail as broken context and continues without replaying the request", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Survive a broken reply" }), resume: false })
+      requests.length = 0
+      const failure = new LLMError({
+        module: "test",
+        method: "stream",
+        reason: new InvalidProviderOutputReason({ message: "truncated SSE frame" }),
+      })
+      responseStream = Stream.concat(
+        Stream.fromIterable([
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-broken" }),
+          LLMEvent.textDelta({ id: "text-broken", text: "Usable partial" }),
+        ]),
+        Stream.fail(failure),
+      )
+      response = [
+        LLMEvent.stepStart({ index: 0 }),
+        LLMEvent.textStart({ id: "text-recovered" }),
+        LLMEvent.textDelta({ id: "text-recovered", text: "Recovered" }),
+        LLMEvent.textEnd({ id: "text-recovered" }),
+        LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+        LLMEvent.finish({ reason: "stop" }),
+      ]
+
+      yield* session.resume(sessionID)
+
+      expect(requests).toHaveLength(2)
+      expect(requests[1]?.messages.at(-1)?.content).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: "text", text: expect.stringContaining("previous provider reply ended") }),
+        ]),
+      )
+      expect(yield* session.context(sessionID)).toMatchObject([
+        { type: "user", text: "Survive a broken reply" },
+        { type: "assistant", finish: "broken", content: [{ type: "text", text: "Usable partial" }] },
+        { type: "assistant", finish: "stop", content: [{ type: "text", text: "Recovered" }] },
       ])
     }),
   )

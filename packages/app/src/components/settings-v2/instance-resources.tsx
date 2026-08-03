@@ -40,9 +40,9 @@ export const InstanceResources: Component = () => {
   }
   const hostMemory = createMemo(() => {
     const memory = usage()?.memory
-    if (!memory) return language.t("settings.instances.resources.loading")
+    if (!memory) return language.t("settings.storage.resources.loading")
     if (!memory.known) return memory.reason
-    return language.t("settings.instances.resources.memoryValue", {
+    return language.t("settings.storage.resources.memoryValue", {
       used: formatResourceBytes(memory.usedBytes),
       total: formatResourceBytes(memory.limitBytes),
     })
@@ -55,11 +55,11 @@ export const InstanceResources: Component = () => {
   return (
     <section class="flex flex-col gap-2" data-slot="instance-resources">
       <div>
-        <h3 class="settings-v2-section-title">{language.t("settings.instances.resources.title")}</h3>
-        <p class="settings-v2-tab-description">{language.t("settings.instances.resources.description")}</p>
+        <h3 class="settings-v2-section-title">{language.t("settings.storage.resources.title")}</h3>
+        <p class="settings-v2-tab-description">{language.t("settings.storage.resources.description")}</p>
       </div>
       <SettingsListV2>
-        <SettingsRowV2 title={language.t("settings.instances.resources.hostMemory")} description={hostMemory()}>
+        <SettingsRowV2 title={language.t("settings.storage.resources.hostMemory")} description={hostMemory()}>
           <span class="select-text text-[12px] text-v2-text-text-muted">{usage()?.level ?? "…"}</span>
         </SettingsRowV2>
         <For each={usage()?.ram ?? []}>
@@ -67,7 +67,7 @@ export const InstanceResources: Component = () => {
             <SettingsRowV2 title={item.label} description={item.detail ?? item.state ?? ""}>
               <span class="select-text text-[12px] text-v2-text-text-muted">
                 {item.bytes === undefined
-                  ? (item.state ?? language.t("settings.instances.resources.unknown"))
+                  ? (item.state ?? language.t("settings.storage.resources.unknown"))
                   : formatResourceBytes(item.bytes)}
               </span>
             </SettingsRowV2>
@@ -76,7 +76,7 @@ export const InstanceResources: Component = () => {
       </SettingsListV2>
 
       <div class="pt-1">
-        <h3 class="settings-v2-section-title">{language.t("settings.instances.resources.disk")}</h3>
+        <h3 class="settings-v2-section-title">{language.t("settings.storage.resources.disk")}</h3>
       </div>
       <SettingsListV2>
         <For each={usage()?.disk ?? []}>
@@ -84,7 +84,7 @@ export const InstanceResources: Component = () => {
             <SettingsRowV2 title={item.label} description={item.path ?? item.detail ?? item.state ?? ""}>
               <span class="select-text text-[12px] text-v2-text-text-muted">
                 {item.bytes === undefined
-                  ? language.t("settings.instances.resources.unknown")
+                  ? language.t("settings.storage.resources.unknown")
                   : formatResourceBytes(item.bytes)}
               </span>
             </SettingsRowV2>
@@ -96,14 +96,14 @@ export const InstanceResources: Component = () => {
         <div class="flex items-center justify-between gap-3 rounded-lg bg-v2-surface-surface-sunken px-3 py-2">
           <div class="min-w-0">
             <div class="text-[12px] font-medium text-v2-text-text-strong">
-              {language.t("settings.instances.resources.localModel")}
+              {language.t("settings.storage.resources.localModel")}
             </div>
             <div class="select-text text-[11px] text-v2-text-text-muted">
               {usage()?.localModel.message ?? usage()?.localModel.stage}
             </div>
           </div>
           <ButtonV2 size="small" variant="neutral" disabled={!canStop()} onClick={() => void stop()}>
-            {language.t("settings.instances.resources.stop")}
+            {language.t("settings.storage.resources.stop")}
           </ButtonV2>
         </div>
       </Show>

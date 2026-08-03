@@ -81,6 +81,10 @@ export const Info = Schema.Struct({
   // being corrected belongs to the weights, so it travels with the model, not the agent. Absent =
   // inert (the composition rides the runner's `.filter(non-empty)`, so undefined changes nothing).
   prePrompt: Schema.String.pipe(optional),
+  /** Per-model connection recovery policy. Attempts includes the original request. */
+  retry: Schema.Struct({
+    attempts: Schema.Int,
+  }).pipe(optional),
   name: Schema.String,
   api: Api,
   capabilities: Capabilities,
@@ -120,6 +124,7 @@ export const Info = Schema.Struct({
           cost: [],
           status: "active",
           enabled: true,
+          retry: { attempts: 3 },
           limit: { ...DEFAULT_LIMIT },
         }),
     })),

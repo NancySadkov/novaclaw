@@ -22,6 +22,7 @@ type ModelConfig = {
   reasoning?: boolean
   tool_call?: boolean
   limit?: { context?: number; output?: number }
+  retry?: { attempts?: number }
   modalities?: { input?: string[]; output?: string[] }
   options?: Record<string, unknown>
   // Optional per-model PRE-PROMPT (owner 2026-07-29): a user-authored correction for THIS model's
@@ -33,7 +34,7 @@ type ModelConfig = {
 
 const MODALITIES = ["text", "image", "audio"] as const
 const SAMPLING = ["temperature", "top_p", "top_k", "min_p", "repetition_penalty", "presence_penalty", "frequency_penalty"] as const
-type FieldKey = (typeof SAMPLING)[number] | "context" | "maxTokens" | "thinkingBudget"
+type FieldKey = (typeof SAMPLING)[number] | "context" | "maxTokens" | "thinkingBudget" | "retryAttempts"
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 // MindControl thinking budget is stored in request.body (the free-form record the runtime reads),
@@ -66,6 +67,7 @@ const PRESETS: Record<FieldKey, RawPreset[]> = {
   // value to 0 (`defaultThinkingBudget` clamps with Math.max(0, …)) and the runner gates on `> 0`, so the
   // sentinel needs no schema, migration or protocol change. Blank still means "derive the default".
   thinkingBudget: [{}, { word: "disabled", num: -1 }, { size: "2K", num: 2048 }, { size: "4K", num: 4096 }, { size: "6K", num: 6144 }, { size: "8K", num: 8192 }, { size: "16K", num: 16384 }, { size: "32K", num: 32768 }],
+  retryAttempts: [{ size: "1", num: 1 }, { size: "3", num: 3 }, { size: "5", num: 5 }, { size: "10", num: 10 }],
 }
 
 type Opt = { id: string; num: number | undefined; label: string }
@@ -104,6 +106,7 @@ export const DialogModelConfig: Component<{
     context: nstr(init.limit?.context ?? d.limit?.context),
     maxTokens: nstr(init.limit?.output ?? d.limit?.output),
     thinkingBudget: nstr(bodyBudget(init) ?? bodyBudget(d)),
+    retryAttempts: nstr(init.retry?.attempts ?? d.retry?.attempts ?? 3),
     reasoning: init.reasoning ?? d.reasoning ?? false,
     tool_call: init.tool_call ?? d.tool_call ?? true,
     prePrompt: init.prePrompt ?? "",
@@ -163,6 +166,7 @@ export const DialogModelConfig: Component<{
       modalities: { input, output },
       options,
       request: { ...(savedRequest ?? {}), body },
+      retry: { attempts: Math.min(10, Math.max(1, Math.floor(num(form.retryAttempts) ?? 3))) },
     }
     // Per-model pre-prompt: persist the trimmed correction; an empty field clears it. Use an empty
     // STRING (not delete) to clear a previously-saved value, since the patch-merge cannot drop a key
@@ -289,7 +293,7 @@ export const DialogModelConfig: Component<{
     </SettingsRowV2>
   )
 
-  const section = (key: "corrections" | "sampling" | "limits" | "capabilities" | "modalities") => (
+  const section = (key: "corrections" | "sampling" | "limits" | "reliability" | "capabilities" | "modalities") => (
     <h3 class="settings-v2-section-title mt-1">{language.t(`settings.models.config.section.${key}`)}</h3>
   )
 
@@ -331,6 +335,9 @@ export const DialogModelConfig: Component<{
             {paramRow("maxTokens")}
             {paramRow("thinkingBudget")}
           </SettingsListV2>
+
+          {section("reliability")}
+          <SettingsListV2>{paramRow("retryAttempts")}</SettingsListV2>
 
           {section("capabilities")}
           <SettingsListV2>

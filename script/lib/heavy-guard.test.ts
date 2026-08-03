@@ -36,5 +36,7 @@ describe("heavy job classification", () => {
   test("refuses a heavy job before immediately available RAM falls into the paging danger zone", () => {
     expect(hasEnoughFreeMemory(6 * 1024 ** 3 - 1)).toBe(false)
     expect(hasEnoughFreeMemory(6 * 1024 ** 3)).toBe(true)
+    expect(hasEnoughFreeMemory(2.5 * 1024 ** 3 - 1, 2.5 * 1024 ** 3)).toBe(false)
+    expect(hasEnoughFreeMemory(2.5 * 1024 ** 3, 2.5 * 1024 ** 3)).toBe(true)
   })
 })

@@ -69,6 +69,7 @@ export const Plugin = define({
                 if (config.family !== undefined) model.family = config.family
                 if (config.tier !== undefined) model.tier = config.tier
                 if (config.prePrompt !== undefined) model.prePrompt = config.prePrompt
+                if (config.retry !== undefined) Object.assign(model, { retry: { attempts: config.retry.attempts } })
                 if (config.name !== undefined) model.name = config.name
                 if (config.api !== undefined) model.api = { ...model.api, ...config.api }
                 if (config.capabilities !== undefined) {

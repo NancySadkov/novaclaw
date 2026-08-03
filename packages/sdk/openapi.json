@@ -30567,6 +30567,16 @@
         "required": ["input", "output"],
         "additionalProperties": false
       },
+      "ConfigV2ModelRetry": {
+        "type": "object",
+        "properties": {
+          "attempts": {
+            "type": "integer"
+          }
+        },
+        "required": ["attempts"],
+        "additionalProperties": false
+      },
       "ConfigV2ModelLimit": {
         "type": "object",
         "properties": {
@@ -30710,6 +30720,9 @@
           },
           "prePrompt": {
             "type": "string"
+          },
+          "retry": {
+            "$ref": "#/components/schemas/ConfigV2ModelRetry"
           },
           "disabled": {
             "type": "boolean"
@@ -30878,6 +30891,9 @@
           },
           "prePrompt": {
             "type": "string"
+          },
+          "retry": {
+            "$ref": "#/components/schemas/ConfigV2ModelRetry"
           },
           "disabled": {
             "type": "boolean"
@@ -31604,6 +31620,16 @@
           },
           "prePrompt": {
             "type": "string"
+          },
+          "retry": {
+            "type": "object",
+            "properties": {
+              "attempts": {
+                "type": "integer"
+              }
+            },
+            "required": ["attempts"],
+            "additionalProperties": false
           },
           "name": {
             "type": "string"

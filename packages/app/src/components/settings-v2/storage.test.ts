@@ -1,22 +1,27 @@
 import { describe, expect, test } from "bun:test"
+import fs from "node:fs"
 
 import { STORAGE_ENTRIES } from "./storage"
 import { dict as en } from "@/i18n/en"
 
+const storageSource = fs.readFileSync(new URL("./storage.tsx", import.meta.url), "utf8")
+const serversSource = fs.readFileSync(new URL("./servers.tsx", import.meta.url), "utf8")
+const dialogSource = fs.readFileSync(new URL("./dialog-settings-v2.tsx", import.meta.url), "utf8")
+
 // The Storage tab lists WHERE an instance keeps its files (owner ask 2026-07-27). Two things are easy to
 // get silently wrong and neither shows up as a crash, so they are asserted here rather than by driving
-// the settings dialog: the Advanced-vs-Developer split, and a row whose label is a missing i18n key
+// the settings dialog: the Normal-vs-Developer split, and a row whose label is a missing i18n key
 // (which renders as the raw key — visible nonsense, not an error).
 
 describe("Storage tab entries", () => {
-  test("the locations a user needs to back up or move an instance are Advanced, not Developer", () => {
-    const advanced = STORAGE_ENTRIES.filter((e) => e.level === undefined).map((e) => e.key)
+  test("the locations a user needs to back up or move an instance are visible at Normal", () => {
+    const normal = STORAGE_ENTRIES.filter((e) => e.level === undefined).map((e) => e.key)
     // The database above all: "which file do I copy?" is the question this tab exists to answer.
-    expect(advanced).toContain("db")
-    expect(advanced).toContain("config")
-    expect(advanced).toContain("data")
-    expect(advanced).toContain("scratchDir")
-    expect(advanced).toContain("log")
+    expect(normal).toContain("db")
+    expect(normal).toContain("config")
+    expect(normal).toContain("data")
+    expect(normal).toContain("scratchDir")
+    expect(normal).toContain("log")
   })
 
   test("internal plumbing is Developer-only", () => {
@@ -43,6 +48,8 @@ describe("Storage tab entries", () => {
       "settings.tab.storage",
       "settings.storage.title",
       "settings.storage.description",
+      "settings.storage.locations.title",
+      "settings.storage.locations.description",
       "settings.storage.copy",
       "settings.storage.open",
       "settings.storage.copied",
@@ -57,5 +64,11 @@ describe("Storage tab entries", () => {
   test("keys are unique and none is listed twice", () => {
     const keys = STORAGE_ENTRIES.map((e) => e.key)
     expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  test("Storage is a normal Safety tab and owns the live resource panel", () => {
+    expect(dialogSource).not.toContain('storage: "advanced"')
+    expect(storageSource).toContain("<InstanceResources />")
+    expect(serversSource).not.toContain("<InstanceResources />")
   })
 })

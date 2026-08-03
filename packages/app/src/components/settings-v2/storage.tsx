@@ -7,9 +7,10 @@ import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { InstanceResources } from "./instance-resources"
 import "./settings-v2.css"
 
-// The Storage tab — WHERE this instance keeps things. Advanced+ (owner ask 2026-07-27).
+// The Storage tab — what this instance costs in RAM/on disk, and WHERE it keeps things.
 //
 // Why it exists: none of these locations was discoverable from the UI. "Where is the database?" had no
 // answer you could reach without reading source, which matters the moment someone wants to back up an
@@ -37,10 +38,10 @@ interface PathInfo {
 }
 
 /**
- * One displayed location. `level` omitted means Advanced (the tab's own floor); `"developer"` hides the
+ * One displayed location. `level` omitted means Normal; `"developer"` hides the
  * row below Developer.
  *
- * Exported as pure data so the Advanced-vs-Developer split is unit-testable — the split is the part
+ * Exported as pure data so the Normal-vs-Developer split is unit-testable — the split is the part
  * that is easy to get silently wrong, and asserting it here is more durable than driving the dialog.
  * `i18n` is the suffix under `settings.storage.*`, kept explicit because it does not always match `key`
  * (`scratchDir` → `scratch`).
@@ -96,6 +97,13 @@ export const SettingsStorageV2: Component = () => {
       <div class="settings-v2-tab-header">
         <h2 class="settings-v2-tab-title">{language.t("settings.storage.title")}</h2>
         <p class="settings-v2-tab-description">{language.t("settings.storage.description")}</p>
+      </div>
+
+      <InstanceResources />
+
+      <div>
+        <h3 class="settings-v2-section-title">{language.t("settings.storage.locations.title")}</h3>
+        <p class="settings-v2-tab-description">{language.t("settings.storage.locations.description")}</p>
       </div>
 
       {/* Only shown when the instance was pinned with --home: it changes what every row below means

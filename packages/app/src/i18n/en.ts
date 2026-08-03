@@ -1209,7 +1209,6 @@ export const dict = {
   "settings.section.server": "Server",
   "settings.section.safety": "Safety",
   "settings.tab.general": "General",
-  "settings.tab.profile": "Profile",
   "settings.tab.appearance": "Appearance",
   "settings.tab.instances": "Instances",
   "settings.tab.shortcuts": "Shortcuts",
@@ -1250,11 +1249,13 @@ export const dict = {
   "settings.tunes.category.tool_output": "Tool output",
   "settings.tunes.category.tool_output.description": "Evidence returned by files, commands, browsers, and other tools.",
 
-  // The Storage tab (Advanced+): where this instance keeps its files. Read-only — these are chosen at
-  // startup by --home/NOVACLAW_HOME and the XDG environment, so an editable field would be a lie.
-  "settings.storage.title": "Storage locations",
+  // The Storage tab: what the instance costs in RAM/on disk and where its files live.
+  "settings.storage.title": "Storage and resources",
   "settings.storage.description":
-    "Where this instance keeps its files on disk. Useful for backing it up, inspecting it, or moving it to another machine. These are set when NovaClaw starts, so they are shown here rather than edited.",
+    "See what this instance uses in memory and on disk, where its files live, and unload a local model when you need the space.",
+  "settings.storage.locations.title": "Where files live",
+  "settings.storage.locations.description":
+    "Useful for backing up, inspecting, or moving this instance. These locations are chosen when NovaClaw starts, so they are shown here rather than edited.",
   "settings.storage.copy": "Copy path",
   "settings.storage.open": "Open folder",
   "settings.storage.copied": "Path copied",
@@ -1328,16 +1329,16 @@ export const dict = {
   "settings.instances.discovered.title": "Discovered on your network",
   "settings.instances.discovered.rescan": "Scan again",
   "settings.instances.discovered.add": "Add this instance",
-  "settings.instances.resources.title": "This instance's resources",
-  "settings.instances.resources.description":
+  "settings.storage.resources.title": "This instance's resources",
+  "settings.storage.resources.description":
     "Live memory pressure and disk use on the machine running this instance. RAM figures are resident memory; SQLite and the vector knowledge base share NovaClaw's process, so Nova reports that honestly instead of inventing a split.",
-  "settings.instances.resources.loading": "Measuring this instance…",
-  "settings.instances.resources.hostMemory": "Host memory pressure",
-  "settings.instances.resources.memoryValue": "{{used}} committed of {{total}} commit limit",
-  "settings.instances.resources.disk": "Disk use",
-  "settings.instances.resources.unknown": "not measurable",
-  "settings.instances.resources.localModel": "Managed local model",
-  "settings.instances.resources.stop": "Stop and unload",
+  "settings.storage.resources.loading": "Measuring this instance…",
+  "settings.storage.resources.hostMemory": "Host memory pressure",
+  "settings.storage.resources.memoryValue": "{{used}} committed of {{total}} commit limit",
+  "settings.storage.resources.disk": "Disk use",
+  "settings.storage.resources.unknown": "not measurable",
+  "settings.storage.resources.localModel": "Managed local model",
+  "settings.storage.resources.stop": "Stop and unload",
   "settings.general.row.language.title": "Language",
   "settings.general.row.language.description": "Change the language NovaClaw is shown in.",
   "settings.general.row.shell.title": "Terminal Shell",
@@ -1670,6 +1671,7 @@ export const dict = {
   "settings.models.config.defaultPlaceholder": "default",
   "settings.models.config.section.sampling": "Sampling",
   "settings.models.config.section.limits": "Limits",
+  "settings.models.config.section.reliability": "Connection recovery",
   "settings.models.config.section.capabilities": "Capabilities",
   "settings.models.config.section.modalities": "What it handles",
   "settings.models.config.section.corrections": "Behaviour corrections",
@@ -1705,6 +1707,9 @@ export const dict = {
   "settings.models.config.thinkingBudget.name": "Thinking budget",
   "settings.models.config.thinkingBudget.desc":
     "Soft cap on the model's reasoning per turn. When it's reached, the harness nudges the model to wrap up and answer — curbing runaway thinking in smaller models. Blank uses the default (¼ of the context).",
+  "settings.models.config.retryAttempts.name": "Connection attempts",
+  "settings.models.config.retryAttempts.desc":
+    "How many times NovaClaw may reconnect when this model sends no reply or an incomplete reply. Includes the first attempt; 1–10.",
   "settings.models.config.reasoning.name": "Thinking",
   "settings.models.config.reasoning.desc":
     "Let the model think privately before answering. Turn on only if the model supports reasoning.",

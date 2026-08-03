@@ -25,11 +25,14 @@ import os from "node:os"
 
 /** Commit charge above this fraction of the limit means: do not add a second heavy job. */
 const COMMIT_CEILING = 0.75
-/** A heavy job needs enough immediately available RAM to avoid forcing the host into sustained paging. */
-const MIN_FREE_BYTES = 6 * 1024 ** 3
+/** The full test suite is the largest guarded job and retains the conservative incident-derived floor. */
+const DEFAULT_MIN_FREE_BYTES = 6 * 1024 ** 3
 
-export function hasEnoughFreeMemory(freeBytes: number): boolean {
-  return Number.isFinite(freeBytes) && freeBytes >= MIN_FREE_BYTES
+export function hasEnoughFreeMemory(
+  freeBytes: number,
+  minimumFreeBytes: number = DEFAULT_MIN_FREE_BYTES,
+): boolean {
+  return Number.isFinite(freeBytes) && freeBytes >= minimumFreeBytes
 }
 
 export interface Verdict {
@@ -43,6 +46,8 @@ export interface Options {
   readonly allowOverride?: boolean
   /** A heavy test is unsafe when the host measurement itself is unavailable, so tests fail closed. */
   readonly requireMeasurement?: boolean
+  /** A measured stage-specific floor; omitted for the conservative full-suite default. */
+  readonly minimumFreeBytes?: number
 }
 
 export function bypassesGuard(
@@ -160,13 +165,14 @@ export function check(argv: readonly string[] = process.argv, options: Options =
           `re-run. Starting now risks a wall-clock kill that looks like a real test failure.`,
       }
     const freeBytes = os.freemem()
-    if (!hasEnoughFreeMemory(freeBytes))
+    const minimumFreeBytes = options.minimumFreeBytes ?? DEFAULT_MIN_FREE_BYTES
+    if (!hasEnoughFreeMemory(freeBytes, minimumFreeBytes))
       return {
         ok: false,
         reason: "the machine does not have enough immediately available RAM",
         detail:
           `Only ${(freeBytes / 1024 ** 3).toFixed(1)} GB RAM is available; a guarded build or test needs ` +
-          `at least ${(MIN_FREE_BYTES / 1024 ** 3).toFixed(0)} GB before it starts.\n` +
+          `at least ${(minimumFreeBytes / 1024 ** 3).toFixed(1)} GB before it starts.\n` +
           `Close memory-heavy applications or stop an unused local model, then re-run. The guard refuses ` +
           `before Windows is forced into sustained paging.`,
       }

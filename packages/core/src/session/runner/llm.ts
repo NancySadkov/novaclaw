@@ -777,6 +777,7 @@ export const layer = Layer.effect(
         ))
       const modelSession = { ...session, model: config.model as typeof session.model }
       const model = yield* models.resolve(modelSession).pipe(Effect.tapError(surfacePreTurnFailure))
+      const maxProviderAttempts = ProviderRetry.maxAttempts(yield* models.retryAttempts(modelSession))
       // Catalog identity, not the provider wire id: a model may deliberately route API requests
       // under `api.id` while users and live config know it by a different stable catalog id.
       const modelRef = yield* models.ref(modelSession)
@@ -1013,10 +1014,11 @@ export const layer = Layer.effect(
       const publish = (event: LLMEvent, outputPaths: ReadonlyArray<string> = []) =>
         withPublication(publisher.publish(event, outputPaths))
       let overflowFailure: ProviderErrorEvent | undefined
-      // 1D: an attempt that produced ANY event is never retried (a retry would duplicate
-      // partially-streamed output) — only pure pre-stream failures (connection refused,
-      // an HTTP error before the first SSE event) are transparently retried below.
-      let sawProviderEvent = false
+      // 1D: an attempt that produced durable ASSISTANT output is never replayed (that could
+      // duplicate text or tool side effects). Protocol bookkeeping such as `step-start` alone
+      // is safe to discard, so failures before the assistant begins reconnect in-place below.
+      let brokenResponse = false
+      let handledResponseFailure = false
       // MindControl thinking budget (reasoning-budget.ts): when the model carries a budget and this
       // isn't the tool-less final step, run the turn through the budget controller — it monitors the
       // reasoning stream and, only if the model runs past the budget still thinking, stops and
@@ -1054,7 +1056,6 @@ export const layer = Layer.effect(
         Stream.takeUntil(() => steerInterrupt),
         Stream.runForEach((event) =>
           Effect.gen(function* () {
-            sawProviderEvent = true
             if (event.type === "tool-call") sawToolCall = true
             if (
               shouldCheckForSteer({
@@ -1164,22 +1165,20 @@ export const layer = Layer.effect(
       }
       const generation = Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
-          // 1D — the forgiving loop: a TRANSIENT provider failure (local server down or
-          // restarting, 5xx, 429) that produced no events is retried with backoff, bounded
-          // by a hard per-turn attempt cap so a dead endpoint fails in seconds, not forever.
-          // Fatal classes (auth, invalid request, …) and mid-stream failures keep today's
-          // behavior; context overflow has its own recovery below.
+          // 1D — transient failures and malformed replies which produced no durable assistant
+          // output reconnect in-place. A malformed tail AFTER output is accepted below as a
+          // `broken` turn and continued as a new request, so tool side effects are never replayed.
           let attempt = 1
           let stream = yield* restore(providerStream).pipe(Effect.exit)
           while (stream._tag === "Failure" && !Cause.hasInterrupts(stream.cause)) {
-            if (sawProviderEvent || attempt >= ProviderRetry.MAX_PROVIDER_ATTEMPTS) break
+            if (publisher.hasAssistantStarted() || attempt >= maxProviderAttempts) break
             const transient = Option.getOrUndefined(Cause.findErrorOption(stream.cause))
-            if (!ProviderRetry.isTransientProviderFailure(transient)) break
+            if (!ProviderRetry.isRetryableBeforeOutput(transient)) break
             const delay = ProviderRetry.retryDelayMs(attempt, transient.retryAfterMs)
             yield* Log.event("session.provider.attempt.retry", {
               "session.id": session.id,
               attempt,
-              "session.attempts.max": ProviderRetry.MAX_PROVIDER_ATTEMPTS,
+              "session.attempts.max": maxProviderAttempts,
               "session.provider.reason": transient.reason._tag,
               "session.provider.message": transient.message,
             })
@@ -1198,7 +1197,6 @@ export const layer = Layer.effect(
               .pipe(Effect.ignore)
             yield* restore(Effect.sleep(Duration.millis(delay)))
             attempt++
-            sawProviderEvent = false
             yield* events
               .publish(SessionStatusEvent.Status, { sessionID: session.id, status: { type: "busy" } })
               .pipe(Effect.ignore)
@@ -1218,7 +1216,38 @@ export const layer = Layer.effect(
             return yield* Effect.die(continueAfterOverflowCompaction(currentStep))
           if (overflowFailure) yield* publish(overflowFailure)
           const llmFailure = failure instanceof LLMError ? failure : undefined
-          if (llmFailure && !publisher.hasProviderError()) {
+          if (
+            llmFailure &&
+            !publisher.hasProviderError() &&
+            publisher.stepSettlement() !== undefined &&
+            ProviderRetry.isBrokenResponse(llmFailure)
+          ) {
+            // Some compatible servers send a valid finish_reason and then sever the SSE body before
+            // `[DONE]`. The semantic reply is already complete; the damaged transport epilogue is not
+            // allowed to retroactively turn it into an error or provoke an unnecessary continuation.
+            handledResponseFailure = true
+            yield* Log.event("session.provider.response.broken", {
+              "session.id": session.id,
+              "session.provider.reason": llmFailure.reason._tag,
+              "session.provider.message": llmFailure.reason.message,
+            })
+          } else if (
+            llmFailure &&
+            !publisher.hasProviderError() &&
+            publisher.hasAssistantStarted() &&
+            publisher.stepSettlement() === undefined &&
+            ProviderRetry.isBrokenResponse(llmFailure)
+          ) {
+            brokenResponse = true
+            handledResponseFailure = true
+            needsContinuation = true
+            yield* Log.event("session.provider.response.broken", {
+              "session.id": session.id,
+              "session.provider.reason": llmFailure.reason._tag,
+              "session.provider.message": llmFailure.reason.message,
+            })
+            yield* withPublication(publisher.breakAssistant())
+          } else if (llmFailure && !publisher.hasProviderError()) {
             yield* withPublication(
               publisher.failUnsettledTools(
                 { message: "Provider did not return a tool result", _tag: "ToolFailure" },
@@ -1281,6 +1310,13 @@ export const layer = Layer.effect(
               publisher.failUnsettledTools({ message: `Tool execution failed: ${message}`, _tag: "ToolFailure" }),
             )
           }
+          if (brokenResponse)
+            yield* withPublication(
+              publisher.failUnsettledTools({
+                message: "The model reply ended before this tool call was complete",
+                _tag: "ToolFailure",
+              }),
+            )
           const stepSettlement = publisher.stepSettlement()
           if (stepSettlement && !publisher.hasProviderError()) {
             const endSnapshot = yield* snapshots.capture()
@@ -1349,7 +1385,7 @@ export const layer = Layer.effect(
                 true,
               ),
             )
-          if (stream._tag === "Failure") return yield* Effect.failCause(stream.cause)
+          if (stream._tag === "Failure" && !handledResponseFailure) return yield* Effect.failCause(stream.cause)
           if (settled._tag === "Failure" && Cause.hasInterrupts(settled.cause))
             return yield* Effect.failCause(settled.cause)
           // F2: the settled provider finish reason travels out with the turn. It is the only
@@ -1362,6 +1398,8 @@ export const layer = Layer.effect(
             needsContinuation: !publisher.hasProviderError() && needsContinuation,
             step: currentStep,
             finish: stepSettlement?.finish,
+            brokenResponse,
+            maxProviderAttempts,
             offeredTools: toolMaterialization?.definitions.map((definition) => definition.name) ?? [],
           }
         }),
@@ -1405,6 +1443,8 @@ export const layer = Layer.effect(
         readonly needsContinuation: boolean
         readonly step: number
         readonly finish: string | undefined
+        readonly brokenResponse: boolean
+        readonly maxProviderAttempts: number
         readonly offeredTools: readonly string[]
       },
       RunError
@@ -2232,6 +2272,7 @@ export const layer = Layer.effect(
       while (shouldRun) {
         let needsContinuation = true
         let step = 1
+        let brokenResponseAttempts = 0
         while (needsContinuation) {
           // ⚠️ THE per-turn read (B7 tier-1 / ruling 3). One `config.entries()` per turn, threaded
           // through everything this turn does — the system prompt, the compactor, the sampling
@@ -2262,6 +2303,40 @@ export const layer = Layer.effect(
               break
             }
           }
+          // A malformed stream tail is a damaged transport frame, not a fatal conversation. The
+          // partial assistant turn is already durable with finish=`broken`; reconnect as a NEW turn
+          // so its content and completed tool results ground the model without replaying actions.
+          if (result.brokenResponse) {
+            brokenResponseAttempts++
+            if (brokenResponseAttempts < result.maxProviderAttempts) {
+              const delay = ProviderRetry.retryDelayMs(brokenResponseAttempts)
+              yield* events
+                .publish(SessionStatusEvent.Status, {
+                  sessionID: input.sessionID,
+                  status: {
+                    type: "retry",
+                    attempt: brokenResponseAttempts + 1,
+                    message: "The model reply ended early. NovaClaw kept the usable part and is reconnecting…",
+                    next: Date.now() + delay,
+                  },
+                })
+                .pipe(Effect.ignore)
+              yield* Effect.sleep(Duration.millis(delay))
+              needsContinuation = true
+              continue
+            }
+            yield* events
+              .publish(SessionEvent.Synthetic, {
+                sessionID: input.sessionID,
+                messageID: SessionMessage.ID.create(),
+                timestamp: yield* DateTime.now,
+                text: `The model connection ended early ${result.maxProviderAttempts} times. NovaClaw kept every usable part and stopped reconnecting for now. You can try again, reduce the response length, or check the model server's logs and timeout settings.`,
+              })
+              .pipe(Effect.ignore)
+            needsContinuation = false
+            break
+          }
+          brokenResponseAttempts = 0
           // F2 — the provider stopped this turn at its OUTPUT-TOKEN LIMIT (finish=length) and the
           // drain is not already continuing: the answer is truncated, not finished. This runs
           // BEFORE the heuristic nudge chain below and short-circuits it on purpose — those

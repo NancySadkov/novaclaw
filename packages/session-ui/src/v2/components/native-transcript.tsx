@@ -358,6 +358,14 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
           </Show>
         )}
       </Show>
+      <Show when={props.message.finish === "broken"}>
+        <details data-slot="native-broken-reply">
+          <summary>Reply ended early</summary>
+          <div>
+            NovaClaw kept the usable part and used it to reconnect safely. Completed tool actions were not replayed.
+          </div>
+        </details>
+      </Show>
       <Show when={props.message.time.completed && copyableText()}>
         <div data-slot="native-msg-actions">
           <button

@@ -424,7 +424,9 @@ const assistant = (
 ) => {
   const sameModel =
     String(message.model.providerID) === String(model.provider) && String(message.model.id) === String(model.id)
-  const reuseProviderMetadata = sameModel && message.error === undefined
+  // A broken stream may leave provider-native continuation handles half-written. Keep the human-readable
+  // text/reasoning, but make the next request re-ground from portable history rather than reusing them.
+  const reuseProviderMetadata = sameModel && message.error === undefined && message.finish !== "broken"
   const content = message.content.flatMap((item): ContentPart[] => {
     if (item.type === "text") return [{ type: "text", text: item.text }]
     if (item.type === "reasoning")
@@ -457,6 +459,12 @@ const assistant = (
   // (e.g. recovered/online) turn can read it and reason about the failure.
   if (message.error) {
     content.push({ type: "text", text: `[Previous turn failed before completing: ${message.error.message}]` })
+  }
+  if (message.finish === "broken") {
+    content.push({
+      type: "text",
+      text: "[The previous provider reply ended unexpectedly. Its content above is usable but incomplete. Re-ground yourself in the conversation and current tool state, then continue without repeating completed actions.]",
+    })
   }
   const meaningful = content.filter((part) => {
     if (part.type === "text") return part.text !== ""

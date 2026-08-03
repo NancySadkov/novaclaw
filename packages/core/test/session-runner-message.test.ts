@@ -452,6 +452,38 @@ Recent work
     ])
   })
 
+  test("preserves a broken reply with an explicit re-grounding marker and drops native continuation metadata", () => {
+    const messages = toLLMMessages(
+      [
+        SessionMessage.Assistant.make({
+          id: id("assistant-broken"),
+          type: "assistant",
+          agent: "build",
+          model: { id: ModelV2.ID.make("model"), providerID: ProviderV2.ID.make("provider") },
+          content: [
+            SessionMessage.AssistantReasoning.make({
+              type: "reasoning",
+              id: "reasoning-broken",
+              text: "Useful partial thought",
+              providerMetadata: { openai: { itemId: "half_written" } },
+            }),
+          ],
+          finish: "broken",
+          time: { created, completed: created },
+        }),
+      ],
+      model,
+    )
+
+    expect(messages[0]?.content).toEqual([
+      { type: "reasoning", text: "Useful partial thought", providerMetadata: undefined },
+      {
+        type: "text",
+        text: "[The previous provider reply ended unexpectedly. Its content above is usable but incomplete. Re-ground yourself in the conversation and current tool state, then continue without repeating completed actions.]",
+      },
+    ])
+  })
+
   test("drops provider-native continuation metadata after a model switch", () => {
     const messages = toLLMMessages(
       [
