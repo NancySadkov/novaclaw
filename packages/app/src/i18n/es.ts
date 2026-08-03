@@ -562,7 +562,6 @@ export const dict = {
   "session.share.copy.copied": "Copiado",
   "session.share.copy.copyLink": "Copiar enlace",
 
-
   "prompt.loading": "Cargando prompt...",
   "terminal.loading": "Cargando terminal...",
   "terminal.title": "Terminal",
@@ -924,6 +923,8 @@ export const dict = {
   "session.error.quotaExceeded": "Esta cuenta se ha quedado sin cuota con el proveedor del modelo.",
   "session.error.contentPolicy": "El proveedor del modelo rechazó esta solicitud por su política de contenido.",
   "session.error.providerInternal": "El servidor del modelo tuvo un error interno.",
+  "session.error.gatewayTimeout":
+    "La puerta de enlace alcanzó el servidor del modelo, pero dejó de esperar antes de que respondiera (HTTP {{status}}).",
   "session.error.invalidProviderOutput": "No se pudo leer la respuesta del modelo.",
   "session.error.unknownProvider": "El proveedor del modelo devolvió un error.",
   "session.error.toolFailure": "Una herramienta falló.",

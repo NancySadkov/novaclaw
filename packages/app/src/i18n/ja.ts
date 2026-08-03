@@ -826,8 +826,10 @@ export const dict = {
     "モデルサーバーに接続できません。電源が入っていないか、起動中か、別のネットワークにある可能性があります。",
   "session.error.transportEndpoint":
     "{{endpoint}} のモデルサーバーに接続できません。電源が入っていないか、起動中か、別のネットワークにある可能性があります。",
-  "session.error.offlineBlocked": "オフラインモードがこのリクエストをブロックしました。リクエストはこのコンピューターから外に出ていません。",
-  "session.error.offlineBlockedEndpoint": "オフラインモードが {{endpoint}} へのリクエストをブロックしました。リクエストはこのコンピューターから外に出ていません。",
+  "session.error.offlineBlocked":
+    "オフラインモードがこのリクエストをブロックしました。リクエストはこのコンピューターから外に出ていません。",
+  "session.error.offlineBlockedEndpoint":
+    "オフラインモードが {{endpoint}} へのリクエストをブロックしました。リクエストはこのコンピューターから外に出ていません。",
   "session.error.invalidRequest": "モデルがこのリクエストを拒否しました。",
   "session.error.noRoute": "このモデルにはルートが設定されていません。",
   "session.error.authentication": "モデルプロバイダーがこのモデルの認証情報を拒否しました。",
@@ -836,6 +838,8 @@ export const dict = {
   "session.error.quotaExceeded": "このアカウントはモデルプロバイダーのクォータを使い切りました。",
   "session.error.contentPolicy": "モデルプロバイダーがコンテンツポリシーに基づいてこのリクエストを拒否しました。",
   "session.error.providerInternal": "モデルサーバーで内部エラーが発生しました。",
+  "session.error.gatewayTimeout":
+    "ゲートウェイはモデルサーバーに到達しましたが、応答前に待機を終了しました（HTTP {{status}}）。",
   "session.error.invalidProviderOutput": "モデルの応答を読み取れませんでした。",
   "session.error.unknownProvider": "モデルプロバイダーがエラーを返しました。",
   "session.error.toolFailure": "ツールが失敗しました。",

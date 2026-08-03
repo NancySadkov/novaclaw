@@ -62,6 +62,7 @@ export interface ProbeResult {
   readonly status: "ok" | "unreachable" | "auth" | "model-missing" | "no-url" | "error"
   readonly latencyMs?: number
   readonly window?: number
+  readonly limits?: Readonly<Record<string, { readonly context?: number; readonly output?: number }>>
   readonly detail?: string
   readonly models?: readonly string[]
 }

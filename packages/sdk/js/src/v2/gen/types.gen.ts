@@ -2190,6 +2190,7 @@ export type SessionErrorUnknown = {
   message: string
   _tag?: string
   retryable?: boolean
+  status?: number
 }
 
 export type SessionMessageToolStateError = {
@@ -3374,6 +3375,10 @@ export type ConfigV2Context = {
   todo_reminder?: ConfigV2ContextTodoReminder
 }
 
+export type ConfigV2ProviderConnection = {
+  stall_timeout_ms?: number
+}
+
 export type ConfigV2Command = {
   template: string
   description?: string
@@ -3616,6 +3621,7 @@ export type ConfigInfo = {
   mcp?: ConfigV2Mcp
   compaction?: ConfigV2Compaction
   context?: ConfigV2Context
+  provider_connection?: ConfigV2ProviderConnection
   persona?: {
     enabled?: boolean
     name?: string
@@ -9836,6 +9842,12 @@ export type ProviderProbeResponses = {
     status: "ok" | "unreachable" | "auth" | "model-missing" | "no-url" | "error"
     latencyMs?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     window?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    limits?: {
+      [key: string]: {
+        context?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        output?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }
+    }
     detail?: string
     models?: Array<string>
   }

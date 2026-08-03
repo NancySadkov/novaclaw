@@ -149,6 +149,31 @@ export const DialogNewModel: Component<{
   const canDiscover = () => !!form.baseURL.trim() && validID() && !probing()
   const pickedIDs = () => models().filter((id) => picked[id])
   const visiblePresets = () => Object.entries(presets()).filter(([, entry]) => entry.hidden !== true)
+  const discoveredLimits = (id: string) => result()?.limits?.[id]
+  const tokenLabel = (tokens: number) =>
+    tokens >= 1024 && tokens % 1024 === 0 ? `${tokens / 1024}K` : tokens.toLocaleString()
+  const limitDescription = (id: string) => {
+    const limits = discoveredLimits(id)
+    if (limits?.context !== undefined && limits.output !== undefined)
+      return t("settings.models.new.limits.reported", {
+        context: tokenLabel(limits.context),
+        output: tokenLabel(limits.output),
+      })
+    if (limits?.context !== undefined)
+      return t("settings.models.new.limits.contextOnly", {
+        context: tokenLabel(limits.context),
+        output: tokenLabel(ModelV2.DEFAULT_LIMIT.output),
+      })
+    if (limits?.output !== undefined)
+      return t("settings.models.new.limits.outputOnly", {
+        context: tokenLabel(ModelV2.DEFAULT_LIMIT.context),
+        output: tokenLabel(limits.output),
+      })
+    return t("settings.models.new.limits.unknown", {
+      context: tokenLabel(ModelV2.DEFAULT_LIMIT.context),
+      output: tokenLabel(ModelV2.DEFAULT_LIMIT.output),
+    })
+  }
 
   const statusMessage = (r: ProbeResult): string => {
     switch (r.status) {
@@ -210,7 +235,11 @@ export const DialogNewModel: Component<{
     if (outcome.kind === "found") {
       // The sweep already carries the model list — probing the same endpoint twice to learn the
       // same answer would be a second wait for nothing.
-      setResult({ status: "ok", models: outcome.models })
+      setResult({
+        status: "ok",
+        models: outcome.models,
+        ...(outcome.limits === undefined ? {} : { limits: outcome.limits }),
+      })
       for (const id of outcome.models) setPicked(id, true)
       setStep("choose")
       return
@@ -263,14 +292,15 @@ export const DialogNewModel: Component<{
       // (request.body is the same overlay the Configure dialog edits; unknown ids get none).
       for (const id of ids) {
         const familyPreset = matchPreset(id)
+        const limits = discoveredLimits(id)
         modelsObj[id] = {
           name: id,
-            // A discovery response may carry one shared server window (vLLM max_model_len,
-            // llama.cpp meta.n_ctx). Unknown fields retain Nova's 64K default. Persist both
+          // Keep every limit attached to its model: OpenRouter-style catalogs may serve a 32K
+          // model beside a 256K one. Unknown fields retain Nova's visible product defaults. Persist both
           // limits so the request stays bounded after restart rather than relying on probe memory.
           limit: {
-            context: result()?.window ?? ModelV2.DEFAULT_LIMIT.context,
-            output: ModelV2.DEFAULT_LIMIT.output,
+            context: limits?.context ?? ModelV2.DEFAULT_LIMIT.context,
+            output: limits?.output ?? ModelV2.DEFAULT_LIMIT.output,
           },
           ...(familyPreset === undefined ? {} : { request: { body: familyPreset.body } }),
         }
@@ -504,7 +534,10 @@ export const DialogNewModel: Component<{
                     aria-pressed={!!picked[id]}
                     onClick={() => setPicked(id, !picked[id])}
                   >
-                    <span class="truncate">{id}</span>
+                    <span class="min-w-0 flex flex-col gap-0.5">
+                      <span class="truncate">{id}</span>
+                      <span class="text-[10px] leading-snug text-v2-text-text-faint">{limitDescription(id)}</span>
+                    </span>
                     <span class="ml-auto flex shrink-0 items-center gap-2">
                       <Show when={matchPreset(id)}>
                         {(familyPreset) => (

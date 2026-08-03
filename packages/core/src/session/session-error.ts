@@ -54,6 +54,7 @@ export type SessionErrorLike = {
   readonly message?: string | null
   readonly _tag?: string | null
   readonly retryable?: boolean | null
+  readonly status?: number | null
   /**
    * The wire discriminant. Nothing here reads it — every session error is `"unknown"` today — but the
    * real decoded value carries it, so leaving it off made this type reject the very shape it describes
@@ -83,6 +84,8 @@ export const SESSION_ERROR_TEXT = {
   "session.error.quotaExceeded": "This account is out of quota with the model provider.",
   "session.error.contentPolicy": "The model provider refused this request under its content policy.",
   "session.error.providerInternal": "The model server hit an internal error.",
+  "session.error.gatewayTimeout":
+    "The gateway reached the model server, but stopped waiting before it replied (HTTP {{status}}).",
   "session.error.transport":
     "Can't reach the model server. It may be turned off, still starting, or on another network.",
   "session.error.transportEndpoint":
@@ -99,7 +102,7 @@ export const SESSION_ERROR_TEXT = {
 /** The closed key set, as a literal union — what a key-typed translator needs to accept. */
 export type SessionErrorKey = keyof typeof SESSION_ERROR_TEXT
 
-export type SessionErrorParams = { readonly endpoint?: string }
+export type SessionErrorParams = { readonly endpoint?: string; readonly status?: string }
 
 export type SessionErrorDisplay = {
   /** `interrupted` = the user stopped it; render a divider, not an alert. */
@@ -135,7 +138,10 @@ export type SessionErrorDisplay = {
  */
 function render(template: string, params?: SessionErrorParams): string {
   if (params === undefined) return template
-  const values: Record<string, string> = params.endpoint === undefined ? {} : { endpoint: params.endpoint }
+  const values: Record<string, string> = {
+    ...(params.endpoint === undefined ? {} : { endpoint: params.endpoint }),
+    ...(params.status === undefined ? {} : { status: params.status }),
+  }
   return template.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, name: string) => values[name.trim()] ?? "")
 }
 
@@ -293,6 +299,7 @@ export function sessionErrorDisplay(error: SessionErrorLike | undefined | null):
   const raw = typeof error?.message === "string" ? error.message : ""
   const tag = typeof error?._tag === "string" && error._tag.length > 0 ? error._tag : undefined
   const retryable = typeof error?.retryable === "boolean" ? error.retryable : undefined
+  const status = typeof error?.status === "number" && Number.isFinite(error.status) ? error.status : undefined
 
   // A stop is not a fault. The tag answers it structurally; the phrase match is the fallback for
   // rows written before the tag existed (the runner's own wording — see `runner/llm.ts`).
@@ -308,6 +315,21 @@ export function sessionErrorDisplay(error: SessionErrorLike | undefined | null):
   const arm = tag === undefined ? undefined : (ARMS as Record<string, SessionErrorKey>)[tag]
   const prose = proseOf(raw)
   const canRetry = retryable ?? (tag !== undefined && RETRYABLE_BY_DEFAULT.has(tag))
+
+  // Cloudflare 524 is not an opaque provider crash: the gateway reached the origin model server,
+  // then gave up before the origin produced its HTTP reply. Keep that exact, actionable distinction.
+  if (tag === "ProviderInternal" && status === 524) {
+    const params = { status: String(status) }
+    return {
+      kind: "fault",
+      key: "session.error.gatewayTimeout",
+      params,
+      headline: sessionErrorEnglish("session.error.gatewayTimeout", params),
+      ...(prose === undefined ? {} : { detail: prose }),
+      retryable,
+      canRetry,
+    }
+  }
 
   // An offline/airgap block is a DECISION this instance made, not an outage. It is filed apart
   // from Transport so `canRetry` is false by construction rather than by prose-sniffing, and so
@@ -438,6 +460,21 @@ export function sessionErrorLines(error: SessionErrorLike | undefined | null): R
 }
 
 /**
+ * Copyable technical detail for the transcript's explicitly folded disclosure. Unlike the calm
+ * headline this deliberately preserves the provider's diagnostic text; it is never shown until a
+ * person expands or copies it, and the request executor has already redacted credentials.
+ */
+export function sessionErrorDiagnostic(error: SessionErrorLike | undefined | null): string {
+  const raw = typeof error?.message === "string" ? error.message.trim() : ""
+  return [
+    `Type: ${typeof error?._tag === "string" ? error._tag : "Unknown"}`,
+    ...(typeof error?.status === "number" ? [`HTTP status: ${error.status}`] : []),
+    `Retryable: ${typeof error?.retryable === "boolean" ? (error.retryable ? "yes" : "no") : "not specified"}`,
+    `Details: ${raw || "No additional provider details were supplied."}`,
+  ].join("\n")
+}
+
+/**
  * The headline, TRANSLATED — the one function every surface with a translator calls.
  *
  * ⚠️ **`display.headline` is the English fallback, not the answer.** It exists for surfaces that
@@ -457,8 +494,12 @@ export function sessionErrorHeadline(
 ): string {
   // No key = the headline is the provider's own words. Nothing could translate those.
   if (display.key === undefined) return display.headline
-  const endpoint = display.params?.endpoint
-  return translate(display.key, endpoint === undefined ? {} : { endpoint }) ?? display.headline
+  return (
+    translate(display.key, {
+      ...(display.params?.endpoint === undefined ? {} : { endpoint: display.params.endpoint }),
+      ...(display.params?.status === undefined ? {} : { status: display.params.status }),
+    }) ?? display.headline
+  )
 }
 
 /**
@@ -493,5 +534,6 @@ export function sessionErrorLike(value: unknown): SessionErrorLike | undefined {
     message,
     ...(typeof record["_tag"] === "string" ? { _tag: record["_tag"] as string } : {}),
     ...(typeof record["retryable"] === "boolean" ? { retryable: record["retryable"] as boolean } : {}),
+    ...(typeof record["status"] === "number" ? { status: record["status"] as number } : {}),
   }
 }

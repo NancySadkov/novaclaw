@@ -26,6 +26,15 @@ export const ProbeResult = Schema.Struct({
   ]),
   latencyMs: Schema.optional(Schema.Number),
   window: Schema.optional(Schema.Number),
+  limits: Schema.optional(
+    Schema.Record(
+      Schema.String,
+      Schema.Struct({
+        context: Schema.optional(Schema.Number),
+        output: Schema.optional(Schema.Number),
+      }),
+    ),
+  ),
   detail: Schema.optional(Schema.String),
   models: Schema.optional(Schema.Array(Schema.String)),
 })

@@ -548,7 +548,6 @@ export const dict = {
   "session.share.copy.copied": "已複製",
   "session.share.copy.copyLink": "複製連結",
 
-
   "prompt.loading": "正在載入提示...",
   "terminal.loading": "正在載入終端機...",
   "terminal.title": "終端機",
@@ -896,6 +895,7 @@ export const dict = {
   "session.error.quotaExceeded": "此帳戶在模型提供者的配額已用完。",
   "session.error.contentPolicy": "模型提供者依其內容政策拒絕了此請求。",
   "session.error.providerInternal": "模型伺服器發生內部錯誤。",
+  "session.error.gatewayTimeout": "閘道已連線到模型伺服器，但在伺服器回覆前停止了等待（HTTP {{status}}）。",
   "session.error.invalidProviderOutput": "無法讀取模型的回覆。",
   "session.error.unknownProvider": "模型提供者傳回了一個錯誤。",
   "session.error.toolFailure": "工具執行失敗。",

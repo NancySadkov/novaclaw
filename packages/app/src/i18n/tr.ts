@@ -561,7 +561,6 @@ export const dict = {
   "session.share.copy.copied": "Kopyalandı",
   "session.share.copy.copyLink": "Bağlantı kopyala",
 
-
   "prompt.loading": "Komut yükleniyor...",
   "terminal.loading": "Terminal yükleniyor...",
   "terminal.title": "Terminal",
@@ -921,6 +920,8 @@ export const dict = {
   "session.error.quotaExceeded": "Bu hesabın model sağlayıcısındaki kotası doldu.",
   "session.error.contentPolicy": "Model sağlayıcısı bu isteği içerik politikası gereği reddetti.",
   "session.error.providerInternal": "Model sunucusunda bir iç hata oluştu.",
+  "session.error.gatewayTimeout":
+    "Ağ geçidi model sunucusuna ulaştı, ancak sunucu yanıt vermeden beklemeyi bıraktı (HTTP {{status}}).",
   "session.error.invalidProviderOutput": "Modelin yanıtı okunamadı.",
   "session.error.unknownProvider": "Model sağlayıcısı bir hata döndürdü.",
   "session.error.toolFailure": "Bir araç başarısız oldu.",

@@ -8,7 +8,14 @@ import {
   RateLimitReason,
   TransportReason,
 } from "@novaclaw/llm"
-import { MAX_PROVIDER_ATTEMPTS, MAX_RETRY_DELAY_MS, isTransientProviderFailure, retryDelayMs } from "./provider-retry"
+import {
+  MAX_PROVIDER_ATTEMPTS,
+  MAX_RETRY_DELAY_MS,
+  isTransientProviderFailure,
+  retryDelayMs,
+  statusCode,
+  statusMessage,
+} from "./provider-retry"
 
 const llmError = (reason: LLMError["reason"]) => new LLMError({ module: "test", method: "stream", reason })
 
@@ -56,6 +63,23 @@ describe("retryDelayMs", () => {
   test("nonsense retry-after falls back to backoff", () => {
     expect(retryDelayMs(2, Number.NaN)).toBe(3_000)
     expect(retryDelayMs(2, -5)).toBe(3_000)
+  })
+})
+
+describe("visible retry status", () => {
+  test("names the fault class without exposing transport noise", () => {
+    expect(statusMessage(llmError(new TransportReason({ message: "fetch failed" })))).toBe(
+      "Connection to the model server was lost — retrying…",
+    )
+    expect(statusMessage(llmError(new ProviderInternalReason({ message: "gateway", status: 524 })))).toBe(
+      "The model server had a temporary problem — retrying…",
+    )
+    expect(statusMessage(llmError(new RateLimitReason({ message: "slow down" })))).toContain("asked NovaClaw to wait")
+  })
+
+  test("keeps the provider's HTTP status as structure", () => {
+    expect(statusCode(llmError(new ProviderInternalReason({ message: "gateway", status: 524 })))).toBe(524)
+    expect(statusCode(llmError(new TransportReason({ message: "timeout" })))).toBeUndefined()
   })
 })
 

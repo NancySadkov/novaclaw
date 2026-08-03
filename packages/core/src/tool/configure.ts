@@ -174,6 +174,10 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // Closed percentages governing what the agent sends to its own model; no text, endpoint,
   // execution, egress, or destructive store action. Like compaction, this is self-repairable policy.
   context: "operational",
+  // A bounded numeric liveness limit for the agent's own provider connection. It changes no
+  // endpoint, prompt, permission or host state, and is the self-healing escape hatch for a slow
+  // local model whose first event legitimately takes longer than the compiled default.
+  provider_connection: "operational",
   // Pins in the directory picker's rail. Grepped 2026-07-31: the only consumers are
   // `dialog-select-directory-v2.tsx` and `pages/files.tsx` — presentation, granting no access, and
   // `config.ts` already documents the key as agent-editable for self-healing.
@@ -403,12 +407,10 @@ export const unknownKeyMessage = (unknown: readonly string[], known: readonly st
 
 const ReadOp = Schema.Struct({
   op: Schema.Literal("read"),
-  keys: Schema.Array(Schema.String)
-    .pipe(Schema.optional)
-    .annotate({
-      description:
-        'Configuration keys to show in full, e.g. ["providers","model"]. Omit to survey every key (values abbreviated).',
-    }),
+  keys: Schema.Array(Schema.String).pipe(Schema.optional).annotate({
+    description:
+      'Configuration keys to show in full, e.g. ["providers","model"]. Omit to survey every key (values abbreviated).',
+  }),
 })
 
 const SetOp = Schema.Struct({
@@ -541,114 +543,116 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.withDeferred(Tool.make({
-          description,
-          input: Input,
-          output: Output,
-          toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
-          execute: (input, context) =>
-            Effect.gen(function* () {
-              const known = configKeys()
+        [name]: Tool.withDeferred(
+          Tool.make({
+            description,
+            input: Input,
+            output: Output,
+            toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
+            execute: (input, context) =>
+              Effect.gen(function* () {
+                const known = configKeys()
 
-              if (input.op === "read") {
-                // An empty (or all-blank) `keys` array means "no filter" rather than "show nothing":
-                // rendering zero lines under a "Requested configuration keys:" header would be a
-                // report that describes itself falsely.
-                const trimmed = input.keys?.map((key) => key.trim()).filter((key) => key.length > 0)
-                const requested = trimmed !== undefined && trimmed.length > 0 ? trimmed : undefined
-                if (requested !== undefined) {
-                  const unknown = requested.filter((key) => !known.includes(key))
-                  if (unknown.length > 0) return yield* failure(unknownKeyMessage(unknown, known))
+                if (input.op === "read") {
+                  // An empty (or all-blank) `keys` array means "no filter" rather than "show nothing":
+                  // rendering zero lines under a "Requested configuration keys:" header would be a
+                  // report that describes itself falsely.
+                  const trimmed = input.keys?.map((key) => key.trim()).filter((key) => key.length > 0)
+                  const requested = trimmed !== undefined && trimmed.length > 0 ? trimmed : undefined
+                  if (requested !== undefined) {
+                    const unknown = requested.filter((key) => !known.includes(key))
+                    if (unknown.length > 0) return yield* failure(unknownKeyMessage(unknown, known))
+                  }
+                  const stored = yield* ConfigStoreWrite.overlay({}).pipe(Effect.provide(stores))
+                  // Redact BEFORE anything can be rendered: `overlay` returns `server.password` and
+                  // every peer token verbatim, and a model that has seen one has put it in a
+                  // transcript. See the ⚠️ in this file's header.
+                  const values = redactSecrets(stored) as Record<string, unknown>
+                  return {
+                    op: "read" as const,
+                    message: formatRead({
+                      keys: requested ?? known,
+                      values,
+                      filtered: requested !== undefined,
+                    }),
+                  }
                 }
-                const stored = yield* ConfigStoreWrite.overlay({}).pipe(Effect.provide(stores))
-                // Redact BEFORE anything can be rendered: `overlay` returns `server.password` and
-                // every peer token verbatim, and a model that has seen one has put it in a
-                // transcript. See the ⚠️ in this file's header.
-                const values = redactSecrets(stored) as Record<string, unknown>
-                return {
-                  op: "read" as const,
-                  message: formatRead({
-                    keys: requested ?? known,
-                    values,
-                    filtered: requested !== undefined,
-                  }),
+
+                const requested = Object.keys(input.config).filter((key) => input.config[key] !== undefined)
+                if (requested.length === 0)
+                  return yield* failure(
+                    'Nothing was written: `config` was empty. Name at least one key, e.g. {"op":"set","config":{"shell":"bash"}}.',
+                  )
+                // Refuse an undeclared key BY NAME before anything else runs. The schema decode below
+                // would silently drop it (`onExcessProperty: "ignore"`), which is precisely the ruling-2
+                // violation the wire path closed with `rejectUnknownConfigKeys`.
+                const unknown = requested.filter((key) => !known.includes(key))
+                if (unknown.length > 0) return yield* failure(unknownKeyMessage(unknown, known))
+
+                const patch = yield* decodePatch(input.config)
+
+                // One assert per GATED tier, carrying only that tier's keys — so the card names what it
+                // is really about, and a saved "always" is scoped to those keys and that tier's action.
+                //
+                // ⚠️ BOTH cards are answered BEFORE anything is written, which is the only arrangement
+                // that matches `apply`'s all-or-nothing transaction: approving the consequential card
+                // and refusing the privileged one writes NEITHER, rather than half the patch. A refused
+                // second card leaves the store exactly as it was.
+                //
+                // ⚠️ And a `configure_privileged -> deny` rule does NOT withdraw the tool: the horizon
+                // filter (`registry.ts` `whollyDisabled`) resolves the REGISTERED name, so it keys on
+                // `configure`. That is the behaviour we want — denying privileged writes must leave
+                // `read` and the operational tier working, since that is the half a locked-down
+                // instance still needs. Denying `configure` itself withdraws the whole tool.
+                const source = {
+                  type: "tool" as const,
+                  messageID: context.assistantMessageID,
+                  callID: context.toolCallID,
                 }
-              }
+                for (const tier of ["consequential", "privileged"] as const) {
+                  const keys = requested.filter((key) => tierOf(key) === tier)
+                  if (keys.length === 0) continue
+                  yield* permission.assert({
+                    action: TIER_ACTION[tier],
+                    resources: keys,
+                    save: keys,
+                    // The values are not in `resources` on purpose: `resources` doubles as the saved
+                    // rule pattern, so a value there would make every "always" answer a dead rule that
+                    // matches one exact string. They ride `metadata`, the channel the attachment
+                    // protection already uses for "why is this being asked".
+                    metadata: { tier, values: Object.fromEntries(keys.map((key) => [key, input.config[key]])) },
+                    sessionID: context.sessionID,
+                    agent: context.agent,
+                    source,
+                  })
+                }
 
-              const requested = Object.keys(input.config).filter((key) => input.config[key] !== undefined)
-              if (requested.length === 0)
-                return yield* failure(
-                  'Nothing was written: `config` was empty. Name at least one key, e.g. {"op":"set","config":{"shell":"bash"}}.',
-                )
-              // Refuse an undeclared key BY NAME before anything else runs. The schema decode below
-              // would silently drop it (`onExcessProperty: "ignore"`), which is precisely the ruling-2
-              // violation the wire path closed with `rejectUnknownConfigKeys`.
-              const unknown = requested.filter((key) => !known.includes(key))
-              if (unknown.length > 0) return yield* failure(unknownKeyMessage(unknown, known))
-
-              const patch = yield* decodePatch(input.config)
-
-              // One assert per GATED tier, carrying only that tier's keys — so the card names what it
-              // is really about, and a saved "always" is scoped to those keys and that tier's action.
-              //
-              // ⚠️ BOTH cards are answered BEFORE anything is written, which is the only arrangement
-              // that matches `apply`'s all-or-nothing transaction: approving the consequential card
-              // and refusing the privileged one writes NEITHER, rather than half the patch. A refused
-              // second card leaves the store exactly as it was.
-              //
-              // ⚠️ And a `configure_privileged -> deny` rule does NOT withdraw the tool: the horizon
-              // filter (`registry.ts` `whollyDisabled`) resolves the REGISTERED name, so it keys on
-              // `configure`. That is the behaviour we want — denying privileged writes must leave
-              // `read` and the operational tier working, since that is the half a locked-down
-              // instance still needs. Denying `configure` itself withdraws the whole tool.
-              const source = {
-                type: "tool" as const,
-                messageID: context.assistantMessageID,
-                callID: context.toolCallID,
-              }
-              for (const tier of ["consequential", "privileged"] as const) {
-                const keys = requested.filter((key) => tierOf(key) === tier)
-                if (keys.length === 0) continue
-                yield* permission.assert({
-                  action: TIER_ACTION[tier],
-                  resources: keys,
-                  save: keys,
-                  // The values are not in `resources` on purpose: `resources` doubles as the saved
-                  // rule pattern, so a value there would make every "always" answer a dead rule that
-                  // matches one exact string. They ride `metadata`, the channel the attachment
-                  // protection already uses for "why is this being asked".
-                  metadata: { tier, values: Object.fromEntries(keys.map((key) => [key, input.config[key]])) },
-                  sessionID: context.sessionID,
-                  agent: context.agent,
-                  source,
-                })
-              }
-
-              const exit = yield* ConfigStoreWrite.apply(patch).pipe(Effect.provide(stores), Effect.exit)
-              if (Exit.isFailure(exit)) {
-                // ⚠️ Ruling 2 IN BOTH DIRECTIONS, which is why this does not paraphrase. `apply` can
-                // fault two ways and they have opposite outcomes: an unrouted key rolls the whole
-                // write back, while a domain that could not re-materialise leaves the write COMMITTED
-                // and merely not live. Both messages are written for exactly this reader and both say
-                // which case they are, so the tool passes them through under a prefix that claims
-                // neither. Calling the second one "failed" would send the model to re-send a write
-                // that already landed.
-                return yield* failure(
-                  `The configure write did not finish cleanly. The kernel reported: ${decodeReason(exit.cause)}`,
-                )
-              }
-              return { op: "set" as const, message: formatWrite({ requested, consumed: exit.value }) }
-            }).pipe(
-              Effect.mapError((error) => {
-                if (error instanceof ToolFailure) return error
-                // A denial keeps its identity — including the unattended deny-fast wording, which is
-                // the one an unattended repair run actually needs to read.
-                const denial = PermissionV2.denialMessage(error)
-                if (denial) return failure(`Nothing was written. ${denial}`)
-                return failure(`configure failed: ${error instanceof Error ? error.message : String(error)}`)
-              }),
-            ),
-        })),
+                const exit = yield* ConfigStoreWrite.apply(patch).pipe(Effect.provide(stores), Effect.exit)
+                if (Exit.isFailure(exit)) {
+                  // ⚠️ Ruling 2 IN BOTH DIRECTIONS, which is why this does not paraphrase. `apply` can
+                  // fault two ways and they have opposite outcomes: an unrouted key rolls the whole
+                  // write back, while a domain that could not re-materialise leaves the write COMMITTED
+                  // and merely not live. Both messages are written for exactly this reader and both say
+                  // which case they are, so the tool passes them through under a prefix that claims
+                  // neither. Calling the second one "failed" would send the model to re-send a write
+                  // that already landed.
+                  return yield* failure(
+                    `The configure write did not finish cleanly. The kernel reported: ${decodeReason(exit.cause)}`,
+                  )
+                }
+                return { op: "set" as const, message: formatWrite({ requested, consumed: exit.value }) }
+              }).pipe(
+                Effect.mapError((error) => {
+                  if (error instanceof ToolFailure) return error
+                  // A denial keeps its identity — including the unattended deny-fast wording, which is
+                  // the one an unattended repair run actually needs to read.
+                  const denial = PermissionV2.denialMessage(error)
+                  if (denial) return failure(`Nothing was written. ${denial}`)
+                  return failure(`configure failed: ${error instanceof Error ? error.message : String(error)}`)
+                }),
+              ),
+          }),
+        ),
       })
       .pipe(Effect.orDie)
   }),

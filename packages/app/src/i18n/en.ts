@@ -863,6 +863,8 @@ export const dict = {
   "session.error.quotaExceeded": "This account is out of quota with the model provider.",
   "session.error.contentPolicy": "The model provider refused this request under its content policy.",
   "session.error.providerInternal": "The model server hit an internal error.",
+  "session.error.gatewayTimeout":
+    "The gateway reached the model server, but stopped waiting before it replied (HTTP {{status}}).",
   "session.error.invalidProviderOutput": "The model's reply could not be read.",
   "session.error.unknownProvider": "The model provider returned an error.",
   "session.error.toolFailure": "A tool failed.",
@@ -1753,6 +1755,13 @@ export const dict = {
   "settings.models.new.noModels": "Connected, but this endpoint didn't list any models.",
   "settings.models.new.pick": "Pick models to add — {{count}} found",
   "settings.models.new.preset": "{{family}} defaults",
+  "settings.models.new.limits.reported": "Server-reported: {{context}} context · {{output}} max response",
+  "settings.models.new.limits.contextOnly":
+    "Server reports {{context}} context, but no response limit. Nova will start at {{output}}; review it in Configure.",
+  "settings.models.new.limits.outputOnly":
+    "Server reports {{output}} max response, but no context limit. Nova will start at {{context}}; review it in Configure.",
+  "settings.models.new.limits.unknown":
+    "Limits not reported. Nova will start at {{context}} context and {{output}} response; review them in Configure before long tasks.",
   "settings.models.new.add": "Add selected",
   "settings.models.new.toast.added": "Models added",
   // S0 — the local-runtime probe. A model server the user ALREADY runs is the shortest path out of

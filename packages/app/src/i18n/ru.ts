@@ -927,6 +927,8 @@ export const dict = {
   "session.error.quotaExceeded": "У этого аккаунта закончилась квота у провайдера модели.",
   "session.error.contentPolicy": "Провайдер модели отклонил этот запрос по своей политике контента.",
   "session.error.providerInternal": "На сервере модели произошла внутренняя ошибка.",
+  "session.error.gatewayTimeout":
+    "Шлюз связался с сервером модели, но перестал ждать до получения ответа (HTTP {{status}}).",
   "session.error.invalidProviderOutput": "Не удалось прочитать ответ модели.",
   "session.error.unknownProvider": "Провайдер модели вернул ошибку.",
   "session.error.toolFailure": "Инструмент завершился с ошибкой.",

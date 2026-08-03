@@ -55,8 +55,12 @@ function sessionErrorKeysIn(dict: Record<string, unknown>) {
 
 const sorted = (values: Iterable<string>) => [...values].sort()
 
-/** The two arms whose text names the endpoint. Adding a third is a deliberate act, hence the list. */
-const INTERPOLATING = ["session.error.offlineBlockedEndpoint", "session.error.transportEndpoint"]
+/** Every templated arm and the exact structured parameter its producer must supply. */
+const INTERPOLATING = {
+  "session.error.gatewayTimeout": ["status"],
+  "session.error.offlineBlockedEndpoint": ["endpoint"],
+  "session.error.transportEndpoint": ["endpoint"],
+} as const
 
 describe("session error taxonomy ↔ i18n", () => {
   test("every key the taxonomy returns exists in en.ts, and en.ts holds no orphan", () => {
@@ -79,14 +83,12 @@ describe("session error taxonomy ↔ i18n", () => {
     expect(taxonomyKeysAreHostKeys).toBe(true)
   })
 
-  test("only the endpoint arms interpolate, and only `{{endpoint}}`", () => {
-    // `SessionErrorParams` declares exactly one field. A key that interpolates anything else
-    // renders EMPTY at the user, because no caller has that value to pass.
+  test("only declared arms interpolate, with their exact structured parameter", () => {
     for (const key of sessionErrorKeysIn(en)) {
-      const expected = INTERPOLATING.includes(key) ? ["endpoint"] : []
+      const expected = key in INTERPOLATING ? [...INTERPOLATING[key as keyof typeof INTERPOLATING]] : []
       expect(placeholders(en[key as keyof typeof en]), key).toEqual(expected)
     }
     // …and the list above is not stale: every arm named here really is in the dictionary.
-    for (const key of INTERPOLATING) expect(sessionErrorKeysIn(en).has(key), key).toBe(true)
+    for (const key of Object.keys(INTERPOLATING)) expect(sessionErrorKeysIn(en).has(key), key).toBe(true)
   })
 })

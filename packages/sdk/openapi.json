@@ -6631,6 +6631,61 @@
                         }
                       ]
                     },
+                    "limits": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "context": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
+                          },
+                          "output": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
                     "detail": {
                       "type": "string"
                     },
@@ -23947,6 +24002,10 @@
           },
           "retryable": {
             "type": "boolean"
+          },
+          "status": {
+            "type": "integer",
+            "exclusiveMinimum": 0
           }
         },
         "required": ["type", "message"],
@@ -27755,6 +27814,17 @@
         },
         "additionalProperties": false
       },
+      "ConfigV2ProviderConnection": {
+        "type": "object",
+        "properties": {
+          "stall_timeout_ms": {
+            "type": "integer",
+            "minimum": 30000,
+            "maximum": 1800000
+          }
+        },
+        "additionalProperties": false
+      },
       "ConfigV2Command": {
         "type": "object",
         "properties": {
@@ -28411,6 +28481,9 @@
           },
           "context": {
             "$ref": "#/components/schemas/ConfigV2Context"
+          },
+          "provider_connection": {
+            "$ref": "#/components/schemas/ConfigV2ProviderConnection"
           },
           "persona": {
             "type": "object",

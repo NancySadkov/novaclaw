@@ -839,6 +839,8 @@ export const dict = {
   "session.error.quotaExceeded": "To konto wyczerpało limit u dostawcy modelu.",
   "session.error.contentPolicy": "Dostawca modelu odrzucił to żądanie zgodnie ze swoją polityką treści.",
   "session.error.providerInternal": "Serwer modelu napotkał błąd wewnętrzny.",
+  "session.error.gatewayTimeout":
+    "Brama połączyła się z serwerem modelu, ale przestała czekać, zanim odpowiedział (HTTP {{status}}).",
   "session.error.invalidProviderOutput": "Nie udało się odczytać odpowiedzi modelu.",
   "session.error.unknownProvider": "Dostawca modelu zwrócił błąd.",
   "session.error.toolFailure": "Narzędzie zakończyło się niepowodzeniem.",

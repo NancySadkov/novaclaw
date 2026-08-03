@@ -6,6 +6,7 @@ import {
   isMachineDetail,
   sessionErrorArms,
   sessionErrorDisplay,
+  sessionErrorDiagnostic,
   sessionErrorEnglish,
   sessionErrorHeadline,
   sessionErrorLike,
@@ -120,6 +121,24 @@ describe("sessionErrorDisplay — the one formatter", () => {
     expect(shown.retryable).toBe(true)
   })
 
+  test("HTTP 524 explains the gateway timeout instead of claiming an internal error", () => {
+    const error = {
+      type: "unknown",
+      message: "Provider request failed with HTTP 524: origin timed out",
+      _tag: "ProviderInternal",
+      status: 524,
+      retryable: true,
+    }
+    const shown = sessionErrorDisplay(error)
+    expect(shown.key).toBe("session.error.gatewayTimeout")
+    expect(shown.headline).toBe(
+      "The gateway reached the model server, but stopped waiting before it replied (HTTP 524).",
+    )
+    expect(shown.canRetry).toBe(true)
+    expect(sessionErrorDiagnostic(error)).toContain("HTTP status: 524")
+    expect(sessionErrorDiagnostic(error)).toContain("Details: Provider request failed with HTTP 524")
+  })
+
   test("a stop is a stop, structurally — no phrase sniffing needed once the tag is there", () => {
     const tagged = sessionErrorDisplay({ type: "unknown", message: "Tool execution interrupted", _tag: "Interrupted" })
     expect(tagged.kind).toBe("interrupted")
@@ -139,7 +158,9 @@ describe("sessionErrorDisplay — the one formatter", () => {
     expect(sessionErrorDisplay({ type: "unknown", message: "Provider did not return a tool result" }).headline).toBe(
       "Provider did not return a tool result",
     )
-    expect(sessionErrorDisplay({ type: "unknown", message: "Provider did not return a tool result" }).key).toBeUndefined()
+    expect(
+      sessionErrorDisplay({ type: "unknown", message: "Provider did not return a tool result" }).key,
+    ).toBeUndefined()
     // …and an untagged STOP still gets the divider, via the phrase fallback kept for exactly this.
     expect(sessionErrorDisplay({ type: "unknown", message: "Provider turn interrupted" }).kind).toBe("interrupted")
     // …while an untagged transport fault gets the calm treatment a new row does. This is the one
@@ -209,7 +230,11 @@ describe("the offline/airgap block is its own verdict, not an outage", () => {
   })
 
   test("with no recoverable endpoint it still says what happened", () => {
-    const shown = sessionErrorDisplay({ type: "unknown", message: "Offline mode blocked this request.", _tag: "OfflineBlocked" })
+    const shown = sessionErrorDisplay({
+      type: "unknown",
+      message: "Offline mode blocked this request.",
+      _tag: "OfflineBlocked",
+    })
     expect(shown.key).toBe("session.error.offlineBlocked")
     expect(shown.headline).toBe("Offline mode blocked this request, so it never left your computer.")
     expect(shown.params).toBeUndefined()
@@ -241,18 +266,27 @@ describe("the English text table is the module's own fallback", () => {
     }
   })
 
-  test("only the two endpoint arms interpolate, and only `{{endpoint}}`", () => {
+  test("only endpoint and gateway arms interpolate their declared parameter", () => {
     // `SessionErrorParams` declares exactly one field. A template that interpolates anything else
     // renders EMPTY at the user, because no caller has that value to pass.
     const interpolating = Object.entries(SESSION_ERROR_TEXT)
       .filter(([, text]) => text.includes("{{"))
       .map(([key]) => key)
       .sort()
-    expect(interpolating).toEqual(["session.error.offlineBlockedEndpoint", "session.error.transportEndpoint"])
-    for (const key of interpolating)
-      expect([...SESSION_ERROR_TEXT[key as keyof typeof SESSION_ERROR_TEXT].matchAll(/\{\{\s*([^}]+?)\s*\}\}/g)].map(
+    expect(interpolating).toEqual([
+      "session.error.gatewayTimeout",
+      "session.error.offlineBlockedEndpoint",
+      "session.error.transportEndpoint",
+    ])
+    expect(
+      [...SESSION_ERROR_TEXT["session.error.gatewayTimeout"].matchAll(/\{\{\s*([^}]+?)\s*\}\}/g)].map(
         (match) => match[1],
-      )).toEqual(["endpoint"])
+      ),
+    ).toEqual(["status"])
+    for (const key of ["session.error.offlineBlockedEndpoint", "session.error.transportEndpoint"] as const)
+      expect([...SESSION_ERROR_TEXT[key].matchAll(/\{\{\s*([^}]+?)\s*\}\}/g)].map((match) => match[1])).toEqual([
+        "endpoint",
+      ])
   })
 
   test("rendering substitutes the endpoint and leaves nothing templated behind", () => {
@@ -349,9 +383,12 @@ describe("sessionErrorHeadline — the translated headline", () => {
       _tag: "Transport",
     })
     expect(sessionErrorHeadline(shown, translate)).toBe("MODELLSERVER 127.0.0.1:1 NICHT ERREICHBAR")
-    expect(sessionErrorHeadline(sessionErrorDisplay({ type: "unknown", message: "slow down", _tag: "RateLimit" }), translate)).toBe(
-      "ZU VIELE ANFRAGEN",
-    )
+    expect(
+      sessionErrorHeadline(
+        sessionErrorDisplay({ type: "unknown", message: "slow down", _tag: "RateLimit" }),
+        translate,
+      ),
+    ).toBe("ZU VIELE ANFRAGEN")
   })
 
   test("a MISSING translation falls back to English rather than rendering empty", () => {

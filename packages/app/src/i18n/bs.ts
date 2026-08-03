@@ -559,7 +559,6 @@ export const dict = {
   "session.share.copy.copied": "Kopirano",
   "session.share.copy.copyLink": "Kopiraj link",
 
-
   "prompt.loading": "Učitavanje upita...",
   "terminal.loading": "Učitavanje terminala...",
   "terminal.title": "Terminal",
@@ -916,6 +915,8 @@ export const dict = {
   "session.error.quotaExceeded": "Ovaj račun je potrošio kvotu kod provajdera modela.",
   "session.error.contentPolicy": "Provajder modela je odbio ovaj zahtjev prema svojoj politici sadržaja.",
   "session.error.providerInternal": "Na serveru modela došlo je do interne greške.",
+  "session.error.gatewayTimeout":
+    "Mrežni prolaz je dosegao server modela, ali je prestao čekati prije odgovora (HTTP {{status}}).",
   "session.error.invalidProviderOutput": "Odgovor modela nije bilo moguće pročitati.",
   "session.error.unknownProvider": "Provajder modela je vratio grešku.",
   "session.error.toolFailure": "Alat nije uspio.",

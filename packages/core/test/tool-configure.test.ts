@@ -148,7 +148,7 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
         .map(([key]) => key)
         .sort()
 
-    // SIX operational keys, and the shortness is the measurement rather than an oversight: the config
+    // Seven operational keys, and the shortness is the measurement rather than an oversight: the config
     // surface really is mostly execution surfaces, prompt text and endpoint URLs (review finding S2).
     expect(of("operational")).toEqual([
       "$schema",
@@ -156,6 +156,7 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "compaction",
       "context",
       "folder_bookmarks",
+      "provider_connection",
       "tool_output",
     ])
 
@@ -634,9 +635,7 @@ describe("formatWrite", () => {
     expect(message).toContain("$schema")
     // NEGATIVE CONTROL: with nothing discarded the line is absent, so its presence above is a
     // report of the router's answer rather than boilerplate printed either way.
-    expect(ConfigureTool.formatWrite({ requested: ["shell"], consumed: new Set(["shell"]) })).not.toContain(
-      "DISCARDED",
-    )
+    expect(ConfigureTool.formatWrite({ requested: ["shell"], consumed: new Set(["shell"]) })).not.toContain("DISCARDED")
     // And a write that stored nothing says so instead of claiming a save.
     expect(ConfigureTool.formatWrite({ requested: ["$schema"], consumed: new Set() })).toContain("Nothing was stored")
   })

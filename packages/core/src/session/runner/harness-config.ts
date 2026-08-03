@@ -30,6 +30,7 @@ export * as HarnessConfig from "./harness-config"
 // not a fix. The runner therefore threads one `Derived` through the whole turn.
 
 import { Config } from "../../config"
+import { ConfigProviderConnection } from "../../config/provider-connection"
 import { Persona } from "../../persona"
 import { Introspection } from "./introspection"
 import { Quality } from "./quality"
@@ -84,6 +85,7 @@ export interface Derived {
   readonly introspection: Introspection.Resolved
   readonly context: Config.Info["context"]
   readonly toolRouting: Config.Info["tool_routing"]
+  readonly providerStallTimeoutMs: number
 }
 
 const fallbackShell = (options: Options): string =>
@@ -115,5 +117,6 @@ export const derive = (entries: readonly Config.Entry[], options: Options = {}):
     introspection: Introspection.resolve(Config.latest(entries, "introspection")),
     context: Config.latest(entries, "context"),
     toolRouting: Config.latest(entries, "tool_routing"),
+    providerStallTimeoutMs: ConfigProviderConnection.stallTimeoutMs(Config.latest(entries, "provider_connection")),
   }
 }

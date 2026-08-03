@@ -44,29 +44,37 @@ const toolFailed = (error: unknown) => ({
 })
 
 describe("Session.Error.Unknown carries the taxonomy across the wire", () => {
-  test("a tagged error survives decode with _tag and retryable intact", () => {
+  test("a tagged error survives decode with taxonomy, retry verdict and HTTP status intact", () => {
     const decoded = Schema.decodeUnknownSync(SessionEvent.Step.Failed)(
       stepFailed({
         type: "unknown",
         message: "HTTP transport failed: fetch failed | cause: connect ECONNREFUSED 192.168.178.40:8000",
         _tag: "Transport",
         retryable: true,
+        status: 524,
       }),
     )
     expect(decoded.data.error._tag).toBe("Transport")
     expect(decoded.data.error.retryable).toBe(true)
+    expect(decoded.data.error.status).toBe(524)
     // The message is ADDITIONAL structure's companion, never replaced — the model reads it back.
     expect(decoded.data.error.message).toContain("ECONNREFUSED")
   })
 
   test("the encode leg carries them too, so a replayed durable row is not lossy", () => {
     const decoded = Schema.decodeUnknownSync(SessionEvent.Step.Failed)(
-      stepFailed({ type: "unknown", message: "boom", _tag: "RateLimit", retryable: true }),
+      stepFailed({ type: "unknown", message: "boom", _tag: "RateLimit", retryable: true, status: 429 }),
     )
     const encoded = Schema.encodeUnknownSync(SessionEvent.Step.Failed)(decoded) as {
       data: { error: Record<string, unknown> }
     }
-    expect(encoded.data.error).toEqual({ type: "unknown", message: "boom", _tag: "RateLimit", retryable: true })
+    expect(encoded.data.error).toEqual({
+      type: "unknown",
+      message: "boom",
+      _tag: "RateLimit",
+      retryable: true,
+      status: 429,
+    })
   })
 
   test("the same widening applies to a tool failure, which shares the shape", () => {
@@ -75,6 +83,7 @@ describe("Session.Error.Unknown carries the taxonomy across the wire", () => {
     )
     expect(decoded.data.error._tag).toBe("Interrupted")
     expect(decoded.data.error.retryable).toBeUndefined()
+    expect(decoded.data.error.status).toBeUndefined()
   })
 
   test("OLD ROWS: a pre-change error decodes unchanged, with the new fields simply absent", () => {

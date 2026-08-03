@@ -6,7 +6,7 @@ import type { PromptInputState } from "@/components/prompt-input"
 import { useSync } from "@/context/sync"
 import { getSessionHandoff, setSessionHandoff } from "@/pages/session/handoff"
 import type { SessionComposerController } from "./session-composer-state"
-import type { SessionProviderRecovery } from "./session-provider-recovery-dock"
+import type { SessionProviderRecovery } from "./session-provider-recovery"
 
 export type SessionComposerFollowupDock = {
   items: { id: string; text: string }[]

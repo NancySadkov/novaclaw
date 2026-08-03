@@ -31,6 +31,7 @@ export const HOST_I18N_KEYS = [
   "session.error.quotaExceeded",
   "session.error.contentPolicy",
   "session.error.providerInternal",
+  "session.error.gatewayTimeout",
   "session.error.transport",
   "session.error.transportEndpoint",
   "session.error.offlineBlocked",

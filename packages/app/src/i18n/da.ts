@@ -556,7 +556,6 @@ export const dict = {
   "session.share.copy.copied": "Kopieret",
   "session.share.copy.copyLink": "Kopier link",
 
-
   "prompt.loading": "Indlæser prompt...",
   "terminal.loading": "Indlæser terminal...",
   "terminal.title": "Terminal",
@@ -912,6 +911,8 @@ export const dict = {
   "session.error.quotaExceeded": "Denne konto har ikke mere kvote hos modeludbyderen.",
   "session.error.contentPolicy": "Modeludbyderen afviste denne anmodning i henhold til sin indholdspolitik.",
   "session.error.providerInternal": "Modelserveren stødte på en intern fejl.",
+  "session.error.gatewayTimeout":
+    "Gatewayen nåede modelserveren, men holdt op med at vente, før den svarede (HTTP {{status}}).",
   "session.error.invalidProviderOutput": "Modellens svar kunne ikke læses.",
   "session.error.unknownProvider": "Modeludbyderen returnerede en fejl.",
   "session.error.toolFailure": "Et værktøj fejlede.",

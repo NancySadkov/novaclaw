@@ -84,7 +84,6 @@ export const dict = {
   "command.mcp.toggle": "切换 MCPs",
   "command.mcp.toggle.description": "切换 MCPs",
 
-
   "command.model.variant.cycle": "切换思考强度",
   "command.model.variant.cycle.description": "切换到下一个强度等级",
 
@@ -292,7 +291,6 @@ export const dict = {
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "已启用 {{enabled}} / {{total}}",
   "dialog.mcp.empty": "未配置 MCPs",
-
 
   "dialog.plugins.empty": "在 novaclaw.json 中配置的插件",
 
@@ -561,7 +559,6 @@ export const dict = {
   "session.share.action.view": "查看",
   "session.share.copy.copied": "已复制",
   "session.share.copy.copyLink": "复制链接",
-
 
   "prompt.loading": "正在加载提示...",
 
@@ -913,6 +910,7 @@ export const dict = {
   "session.error.quotaExceeded": "此账户在模型提供商处的配额已用完。",
   "session.error.contentPolicy": "模型提供商依据其内容政策拒绝了此请求。",
   "session.error.providerInternal": "模型服务器发生了内部错误。",
+  "session.error.gatewayTimeout": "网关已连接到模型服务器，但在服务器回复前停止了等待（HTTP {{status}}）。",
   "session.error.invalidProviderOutput": "无法读取模型的回复。",
   "session.error.unknownProvider": "模型提供商返回了一个错误。",
   "session.error.toolFailure": "工具执行失败。",

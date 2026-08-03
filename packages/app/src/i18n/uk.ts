@@ -613,7 +613,6 @@ export const dict = {
   "session.share.copy.copied": "Скопійовано",
   "session.share.copy.copyLink": "Копіювати посилання",
 
-
   "prompt.loading": "Завантаження запиту...",
   "terminal.loading": "Завантаження термінала...",
   "terminal.title": "Термінал",
@@ -950,6 +949,8 @@ export const dict = {
   "session.error.quotaExceeded": "У цього облікового запису закінчилася квота у провайдера моделі.",
   "session.error.contentPolicy": "Провайдер моделі відхилив цей запит згідно зі своєю політикою вмісту.",
   "session.error.providerInternal": "На сервері моделі сталася внутрішня помилка.",
+  "session.error.gatewayTimeout":
+    "Шлюз зв’язався із сервером моделі, але припинив чекати до отримання відповіді (HTTP {{status}}).",
   "session.error.invalidProviderOutput": "Не вдалося прочитати відповідь моделі.",
   "session.error.unknownProvider": "Провайдер моделі повернув помилку.",
   "session.error.toolFailure": "Інструмент завершився помилкою.",

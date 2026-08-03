@@ -554,7 +554,6 @@ export const dict = {
   "session.share.copy.copied": "คัดลอกแล้ว",
   "session.share.copy.copyLink": "คัดลอกลิงก์",
 
-
   "prompt.loading": "กำลังโหลดพร้อมท์...",
   "terminal.loading": "กำลังโหลดเทอร์มินัล...",
   "terminal.title": "เทอร์มินัล",
@@ -894,8 +893,10 @@ export const dict = {
   "error.childStore.storeCreateFailed": "ไม่สามารถสร้างที่เก็บ",
   "terminal.connectionLost.abnormalClose": "WebSocket ปิดอย่างผิดปกติ: {{code}}",
   "session.error.interrupted": "หยุดแล้ว",
-  "session.error.transport": "ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์โมเดล อาจถูกปิดอยู่ กำลังเริ่มทำงาน หรืออยู่บนเครือข่ายอื่น",
-  "session.error.transportEndpoint": "ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์โมเดลที่ {{endpoint}} อาจถูกปิดอยู่ กำลังเริ่มทำงาน หรืออยู่บนเครือข่ายอื่น",
+  "session.error.transport":
+    "ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์โมเดล อาจถูกปิดอยู่ กำลังเริ่มทำงาน หรืออยู่บนเครือข่ายอื่น",
+  "session.error.transportEndpoint":
+    "ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์โมเดลที่ {{endpoint}} อาจถูกปิดอยู่ กำลังเริ่มทำงาน หรืออยู่บนเครือข่ายอื่น",
   "session.error.offlineBlocked": "โหมดออฟไลน์บล็อกคำขอนี้ จึงไม่มีอะไรออกจากคอมพิวเตอร์ของคุณ",
   "session.error.offlineBlockedEndpoint":
     "โหมดออฟไลน์บล็อกคำขอนี้ไปยัง {{endpoint}} จึงไม่มีอะไรออกจากคอมพิวเตอร์ของคุณ",
@@ -906,6 +907,8 @@ export const dict = {
   "session.error.quotaExceeded": "บัญชีนี้ใช้โควตากับผู้ให้บริการโมเดลหมดแล้ว",
   "session.error.contentPolicy": "ผู้ให้บริการโมเดลปฏิเสธคำขอนี้ตามนโยบายเนื้อหา",
   "session.error.providerInternal": "เซิร์ฟเวอร์โมเดลเกิดข้อผิดพลาดภายใน",
+  "session.error.gatewayTimeout":
+    "เกตเวย์เชื่อมต่อถึงเซิร์ฟเวอร์โมเดลแล้ว แต่หยุดรอก่อนที่เซิร์ฟเวอร์จะตอบกลับ (HTTP {{status}})",
   "session.error.invalidProviderOutput": "ไม่สามารถอ่านคำตอบของโมเดลได้",
   "session.error.unknownProvider": "ผู้ให้บริการโมเดลส่งคืนข้อผิดพลาด",
   "session.error.toolFailure": "เครื่องมือทำงานล้มเหลว",

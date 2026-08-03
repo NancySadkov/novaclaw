@@ -54,6 +54,7 @@ export const SETTINGS_KEYS = [
   "mcp",
   "compaction",
   "context",
+  "provider_connection",
   "permissions",
   "persona",
   "user_profile",

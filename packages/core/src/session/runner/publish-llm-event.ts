@@ -36,6 +36,7 @@ type Fault = {
   readonly message: string
   readonly _tag?: SessionMessage.ErrorTag
   readonly retryable?: boolean
+  readonly status?: number
 }
 
 /** Omit the optional keys rather than writing `undefined`: an absent field re-encodes byte-identical. */
@@ -44,6 +45,7 @@ const wireError = (fault: Fault) => ({
   message: fault.message,
   ...(fault._tag === undefined ? {} : { _tag: fault._tag }),
   ...(fault.retryable === undefined ? {} : { retryable: fault.retryable }),
+  ...(fault.status === undefined ? {} : { status: fault.status }),
 })
 
 const safe = (value: number | undefined) => Math.max(0, Number.isFinite(value) ? (value ?? 0) : 0)

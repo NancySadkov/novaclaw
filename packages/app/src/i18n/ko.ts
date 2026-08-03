@@ -822,7 +822,8 @@ export const dict = {
   "session.error.transportEndpoint":
     "{{endpoint}}의 모델 서버에 연결할 수 없습니다. 꺼져 있거나, 아직 시작 중이거나, 다른 네트워크에 있을 수 있습니다.",
   "session.error.offlineBlocked": "오프라인 모드가 이 요셈을 차단했습니다. 요셈은 이 컴퓨턼를 떠나지 않았습니다.",
-  "session.error.offlineBlockedEndpoint": "오프라인 모드가 {{endpoint}}(으)로 향하는 요셈을 차단했습니다. 요셈은 이 컴퓨턼를 떠나지 않았습니다.",
+  "session.error.offlineBlockedEndpoint":
+    "오프라인 모드가 {{endpoint}}(으)로 향하는 요셈을 차단했습니다. 요셈은 이 컴퓨턼를 떠나지 않았습니다.",
   "session.error.invalidRequest": "모델이 이 요청을 거부했습니다.",
   "session.error.noRoute": "이 모델에 대해 구성된 경로가 없습니다.",
   "session.error.authentication": "모델 공급자가 이 모델의 자격 증명을 거부했습니다.",
@@ -830,6 +831,8 @@ export const dict = {
   "session.error.quotaExceeded": "이 계정은 모델 공급자의 할당량을 모두 사용했습니다.",
   "session.error.contentPolicy": "모델 공급자가 콘텐츠 정책에 따라 이 요청을 거부했습니다.",
   "session.error.providerInternal": "모델 서버에서 내부 오류가 발생했습니다.",
+  "session.error.gatewayTimeout":
+    "게이트웨이가 모델 서버에 도달했지만 서버가 응답하기 전에 대기를 중단했습니다(HTTP {{status}}).",
   "session.error.invalidProviderOutput": "모델의 응답을 읽을 수 없습니다.",
   "session.error.unknownProvider": "모델 공급자가 오류를 반환했습니다.",
   "session.error.toolFailure": "도구가 실패했습니다.",

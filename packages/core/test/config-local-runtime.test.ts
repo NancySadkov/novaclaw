@@ -22,8 +22,16 @@ import { Offline } from "@novaclaw/core/offline"
 // `globalThis.fetch` with a throwing stub, so a future edit that reaches for the network inside this
 // module fails here instead of turning the core suite flaky (or making it egress).
 
-const { CANDIDATES, classify, classifyFailure, sweep, isLoopbackURL, sameEndpoint, excludeConfigured, uniqueProviderID } =
-  ConfigLocalRuntime
+const {
+  CANDIDATES,
+  classify,
+  classifyFailure,
+  sweep,
+  isLoopbackURL,
+  sameEndpoint,
+  excludeConfigured,
+  uniqueProviderID,
+} = ConfigLocalRuntime
 
 const candidate = (over: Partial<ConfigLocalRuntime.Candidate> = {}): ConfigLocalRuntime.Candidate => ({
   id: "test",
@@ -65,7 +73,17 @@ describe("ConfigLocalRuntime — loopback, and the offline policy", () => {
   it("`isLoopbackURL` agrees with the offline policy's own `isLoopbackHost`", () => {
     // The predicate is duplicated (offline.ts cannot be imported into the browser bundle — it pulls
     // fs/path/effect/sqlite). This is the drift guard that makes the duplication safe.
-    const hosts = ["localhost", "LOCALHOST", "127.0.0.1", "127.9.9.9", "::1", "0.0.0.0", "192.168.178.40", "example.com", "localhost.evil.com"]
+    const hosts = [
+      "localhost",
+      "LOCALHOST",
+      "127.0.0.1",
+      "127.9.9.9",
+      "::1",
+      "0.0.0.0",
+      "192.168.178.40",
+      "example.com",
+      "localhost.evil.com",
+    ]
     for (const host of hosts) {
       const url = host === "::1" ? `http://[${host}]:8000/v1` : `http://${host}:8000/v1`
       expect(isLoopbackURL(url), host).toBe(Offline.isLoopbackHost(host))
@@ -89,8 +107,14 @@ describe("ConfigLocalRuntime — loopback, and the offline policy", () => {
 
 describe("ConfigLocalRuntime — classify", () => {
   it("a model list with at least one id is the ONLY thing that claims a runtime", () => {
-    const out = classify(candidate(), { status: "ok", models: ["qwen3", "gemma"], latencyMs: 12 })
+    const out = classify(candidate(), {
+      status: "ok",
+      models: ["qwen3", "gemma"],
+      limits: { qwen3: { context: 65_536, output: 16_384 } },
+      latencyMs: 12,
+    })
     expect(out.kind).toBe("found")
+    if (out.kind === "found") expect(out.limits?.qwen3).toEqual({ context: 65_536, output: 16_384 })
     expect(out.kind === "found" && out.models).toEqual(["qwen3", "gemma"])
     expect(out.kind === "found" && out.latencyMs).toBe(12)
   })

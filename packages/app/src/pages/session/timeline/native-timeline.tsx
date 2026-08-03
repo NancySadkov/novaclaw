@@ -28,6 +28,15 @@ const REASONING_FOLD: Record<string, ReasoningFoldMode> = {
 export function NativeTimeline(props: {
   sessionID: string
   onRevert?: (messageID: string) => void
+  onRetry?: (messageID: string) => void | Promise<void>
+  onChooseModel?: () => void
+  errorLabels?: {
+    retry: string
+    chooseModel: string
+    technicalDetails: string
+    copyDetails: string
+    working: string
+  }
   /**
    * The staged-revert boundary (`session.revert.messageID`). The boundary message and everything
    * after it leave the transcript — a staged revert is a reversible HIDE, so the rows stay in the
@@ -133,7 +142,9 @@ export function NativeTimeline(props: {
     }
     const working = serverSync().session.data.session_working(sid)
     if (prevWorking?.sid === sid && prevWorking.working && !working) {
-      void serverSync().nativeMessages.load(sid).catch(() => {})
+      void serverSync()
+        .nativeMessages.load(sid)
+        .catch(() => {})
     }
     prevWorking = { sid, working }
   })
@@ -172,6 +183,10 @@ export function NativeTimeline(props: {
             toolFold={toolFold()}
             pending={pending()}
             onRevert={props.onRevert}
+            onRetry={props.onRetry}
+            onChooseModel={props.onChooseModel}
+            errorLabels={props.errorLabels}
+            status={serverSync().session.data.session_status[props.sessionID]}
           />
         </div>
       </div>

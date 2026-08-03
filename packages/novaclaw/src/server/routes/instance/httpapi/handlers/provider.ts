@@ -126,12 +126,37 @@ export const probeEndpoint = (
 
 /** Context-window spellings emitted by the OpenAI-compatible servers we support. */
 export function modelContextWindow(model: Record<string, unknown>): number | undefined {
-  const direct = model.max_model_len ?? model.context_length
-  if (typeof direct === "number" && Number.isSafeInteger(direct) && direct > 0) return direct
+  const direct = positiveInteger(
+    model.max_model_len ?? model.context_length ?? model.max_context_length ?? model.context_window,
+  )
+  if (direct !== undefined) return direct
   const meta = model.meta
   if (typeof meta !== "object" || meta === null) return undefined
-  const nested = (meta as Record<string, unknown>).n_ctx
-  return typeof nested === "number" && Number.isSafeInteger(nested) && nested > 0 ? nested : undefined
+  return positiveInteger((meta as Record<string, unknown>).n_ctx)
+}
+
+/** Output-limit spellings used by OpenRouter-style catalogs and compatible model servers. */
+export function modelOutputLimit(model: Record<string, unknown>): number | undefined {
+  return positiveInteger(
+    model.max_completion_tokens ?? model.max_output_tokens ?? model.output_token_limit ?? model.outputTokenLimit,
+  )
+}
+
+/** Keep limits attached to their model id; one endpoint may serve models with different capacities. */
+export function discoveredModelLimits(
+  models: ReadonlyArray<Record<string, unknown>>,
+): Record<string, { context?: number; output?: number }> {
+  return Object.fromEntries(
+    models.flatMap((model) => {
+      if (typeof model.id !== "string") return []
+      const context = modelContextWindow(model)
+      const output = modelOutputLimit(model)
+      if (context === undefined && output === undefined) return []
+      return [
+        [model.id, { ...(context === undefined ? {} : { context }), ...(output === undefined ? {} : { output }) }],
+      ]
+    }),
+  )
 }
 
 /** Discovery may safely expose one window only when every listed model declares the same one. */
@@ -140,6 +165,11 @@ export function sharedContextWindow(models: ReadonlyArray<Record<string, unknown
   const windows = models.map(modelContextWindow)
   const first = windows[0]
   return first !== undefined && windows.every((window) => window === first) ? first : undefined
+}
+
+function positiveInteger(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) return undefined
+  return value
 }
 
 export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider", (handlers) =>
@@ -244,7 +274,11 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
         typeof body === "object" && body !== null && Array.isArray((body as { data?: unknown }).data)
           ? ((body as { data: unknown[] }).data as Array<Record<string, unknown>>)
           : []
-      const models = data.flatMap((item) => (typeof item.id === "string" ? [item.id] : [])).slice(0, 50)
+      const listed = data
+        .filter((item): item is Record<string, unknown> & { id: string } => typeof item.id === "string")
+        .slice(0, 50)
+      const models = listed.map((item) => item.id)
+      const limits = discoveredModelLimits(listed)
       const found = ctx.payload.modelID ? data.find((item) => item.id === ctx.payload.modelID) : undefined
       if (ctx.payload.modelID && !found)
         return {
@@ -260,7 +294,13 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       // the saved provider id would poison the runtime override.
       if (window !== undefined && ctx.payload.modelID !== undefined && ctx.payload.baseURL === undefined)
         ProbeWindow.remember(ctx.params.providerID, ctx.payload.modelID, window)
-      return { status: "ok" as const, latencyMs, models, ...(window === undefined ? {} : { window }) }
+      return {
+        status: "ok" as const,
+        latencyMs,
+        models,
+        ...(Object.keys(limits).length === 0 ? {} : { limits }),
+        ...(window === undefined ? {} : { window }),
+      }
     })
 
     return handlers.handle("list", list).handle("probe", probe).handle("presets", presets)

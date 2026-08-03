@@ -828,6 +828,8 @@ export const dict = {
   "session.error.quotaExceeded": "نفدت حصة هذا الحساب لدى موفر النموذج.",
   "session.error.contentPolicy": "رفض موفر النموذج هذا الطلب وفقًا لسياسة المحتوى الخاصة به.",
   "session.error.providerInternal": "واجه خادم النموذج خطأً داخليًا.",
+  "session.error.gatewayTimeout":
+    "وصلت البوابة إلى خادم النموذج، لكنها توقفت عن الانتظار قبل أن يرد (HTTP {{status}}).",
   "session.error.invalidProviderOutput": "تعذّرت قراءة رد النموذج.",
   "session.error.unknownProvider": "أعاد موفر النموذج خطأً.",
   "session.error.toolFailure": "فشلت إحدى الأدوات.",

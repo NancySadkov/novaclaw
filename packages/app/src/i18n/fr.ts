@@ -852,6 +852,8 @@ export const dict = {
   "session.error.quotaExceeded": "Ce compte n'a plus de quota chez le fournisseur du modèle.",
   "session.error.contentPolicy": "Le fournisseur du modèle a refusé cette requête au titre de sa politique de contenu.",
   "session.error.providerInternal": "Le serveur de modèles a rencontré une erreur interne.",
+  "session.error.gatewayTimeout":
+    "La passerelle a joint le serveur de modèles, mais a cessé d’attendre avant sa réponse (HTTP {{status}}).",
   "session.error.invalidProviderOutput": "La réponse du modèle n'a pas pu être lue.",
   "session.error.unknownProvider": "Le fournisseur du modèle a renvoyé une erreur.",
   "session.error.toolFailure": "Un outil a échoué.",

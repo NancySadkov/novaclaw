@@ -46,6 +46,7 @@ import { SessionStore } from "../store"
 import { SessionTitle } from "../title"
 import { SessionTodo } from "../todo"
 import { Log } from "@novaclaw/schema/log"
+import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 
 import {
   resolveSessionConfig,
@@ -102,6 +103,7 @@ import { Introspection } from "./introspection"
 import { MAX_STEPS_PROMPT } from "./max-steps"
 import { ReasoningBudget } from "./reasoning-budget"
 import { ProviderRetry } from "./provider-retry"
+import { ProviderStreamLiveness } from "./provider-stream-liveness"
 import { Quality } from "./quality"
 import { QualityProvision } from "./quality-provision"
 import { Snapshot } from "../../snapshot"
@@ -1045,7 +1047,10 @@ export const layer = Layer.effect(
       let steerInterrupt = false
       let sawToolCall = false
       let lastSteerCheck = Date.now()
-      const providerStream = budgetedSource.pipe(
+      const providerStream = ProviderStreamLiveness.withStallTimeout(
+        budgetedSource,
+        harness.providerStallTimeoutMs,
+      ).pipe(
         Stream.takeUntil(() => steerInterrupt),
         Stream.runForEach((event) =>
           Effect.gen(function* () {
@@ -1170,12 +1175,7 @@ export const layer = Layer.effect(
             if (sawProviderEvent || attempt >= ProviderRetry.MAX_PROVIDER_ATTEMPTS) break
             const transient = Option.getOrUndefined(Cause.findErrorOption(stream.cause))
             if (!ProviderRetry.isTransientProviderFailure(transient)) break
-            // A retry is DIAGNOSTIC, not a transcript event. It used to publish a durable
-            // `session.next.retried` row per attempt; nothing has rendered that since the retry card was
-            // deleted (2026-07-29), and the projector/updater/fold arms were all no-ops, so the event and
-            // every arm of it went with the card. The user-visible half is unchanged: a retry that
-            // SUCCEEDS is silent by design (the turn completed), and a retry that runs out of attempts
-            // still surfaces as the assistant failure below, carrying the runner's own `retryable` verdict.
+            const delay = ProviderRetry.retryDelayMs(attempt, transient.retryAfterMs)
             yield* Log.event("session.provider.attempt.retry", {
               "session.id": session.id,
               attempt,
@@ -1183,9 +1183,25 @@ export const layer = Layer.effect(
               "session.provider.reason": transient.reason._tag,
               "session.provider.message": transient.message,
             })
-            yield* restore(Effect.sleep(Duration.millis(ProviderRetry.retryDelayMs(attempt, transient.retryAfterMs))))
+            // Retry state is durable UI feedback, not a debug log. It is published before the sleep
+            // so even a pre-stream failure (no assistant row yet) tells the user what Nova is doing.
+            yield* events
+              .publish(SessionStatusEvent.Status, {
+                sessionID: session.id,
+                status: {
+                  type: "retry",
+                  attempt: attempt + 1,
+                  message: ProviderRetry.statusMessage(transient),
+                  next: Date.now() + delay,
+                },
+              })
+              .pipe(Effect.ignore)
+            yield* restore(Effect.sleep(Duration.millis(delay)))
             attempt++
             sawProviderEvent = false
+            yield* events
+              .publish(SessionStatusEvent.Status, { sessionID: session.id, status: { type: "busy" } })
+              .pipe(Effect.ignore)
             stream = yield* restore(providerStream).pipe(Effect.exit)
           }
           // Generation is over (success or not): free the device slot before tool
@@ -1218,6 +1234,9 @@ export const layer = Layer.effect(
                 message: llmFailure.reason.message,
                 _tag: llmFailure.reason._tag,
                 retryable: ProviderRetry.isTransientProviderFailure(llmFailure),
+                ...(ProviderRetry.statusCode(llmFailure) === undefined
+                  ? {}
+                  : { status: ProviderRetry.statusCode(llmFailure) }),
               }),
             )
           }

@@ -6,6 +6,7 @@ import { Effect } from "effect"
 import { Config } from "@novaclaw/core/config"
 import { ConfigContext } from "@novaclaw/core/config/context"
 import { ConfigToolRouting } from "@novaclaw/core/config/tool-routing"
+import { ConfigProviderConnection } from "@novaclaw/core/config/provider-connection"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Location } from "@novaclaw/core/location"
@@ -67,6 +68,7 @@ describe("HarnessConfig.derive", () => {
     expect(derived.affective).toBeUndefined()
     expect(derived.introspection.enabled).toBe(false)
     expect(derived.introspection.cadence).toBe(3)
+    expect(derived.providerStallTimeoutMs).toBe(ConfigProviderConnection.DEFAULT_STALL_TIMEOUT_MS)
   })
 
   test("every key is picked up, and later documents win (the `latest` fold)", () => {
@@ -87,6 +89,7 @@ describe("HarnessConfig.derive", () => {
           tool_routing: new ConfigToolRouting.Info({
             rules: [new ConfigToolRouting.Rule({ model: "qwen", tools: { write: false } })],
           }),
+          provider_connection: new ConfigProviderConnection.Info({ stall_timeout_ms: 420_000 }),
         }),
       ],
       { platform: "linux", notesDir: "/home/u/notes" },
@@ -102,10 +105,13 @@ describe("HarnessConfig.derive", () => {
     expect(derived.introspection).toMatchObject({ enabled: true, cadence: 5, model: { providerID: "prov", id: "mod" } })
     expect(derived.context?.todo_reminder).toMatchObject({ enabled: true, cadence: 9, max_tokens: 320 })
     expect(derived.toolRouting?.rules[0]?.tools).toEqual({ write: false })
+    expect(derived.providerStallTimeoutMs).toBe(420_000)
   })
 
   test("`persona: { enabled: false }` still turns the baseline off", () => {
-    expect(HarnessConfig.derive([document({ persona: { enabled: false } })], { notesDir: "/n" }).persona).toBeUndefined()
+    expect(
+      HarnessConfig.derive([document({ persona: { enabled: false } })], { notesDir: "/n" }).persona,
+    ).toBeUndefined()
   })
 
   test("the shell fallback is platform-shaped, and the RAW value stays undefined for the host gate", () => {
@@ -302,7 +308,10 @@ describe("runner/llm.ts derives the harness per TURN, never at layer scope", () 
     // body has dozens of declarations and must contain the derivation home and the service handles.
     expect(declarations.length, "layer-scope declaration scan found nothing — the parser is broken").toBeGreaterThan(20)
     for (const name of [DERIVATION_HOME, "run", "runTurn", "runTurnAttempt", "runStrictDrain"])
-      expect(declarations.map((entry) => entry.name), `layer-scope declaration \`${name}\` not found`).toContain(name)
+      expect(
+        declarations.map((entry) => entry.name),
+        `layer-scope declaration \`${name}\` not found`,
+      ).toContain(name)
   })
 
   test("no layer-scope declaration derives a runtime-editable value", () => {

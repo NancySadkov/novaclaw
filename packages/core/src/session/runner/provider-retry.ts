@@ -52,6 +52,19 @@ export function retryDelayMs(attempt: number, retryAfterMs?: number): number {
   return BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length) - 1] ?? BACKOFF_MS[BACKOFF_MS.length - 1]
 }
 
+/** Calm, user-facing status while the bounded automatic retry sleeps. */
+export function statusMessage(error: LLMError): string {
+  if (error.reason._tag === "RateLimit") return "The model provider asked NovaClaw to wait — retrying…"
+  if (error.reason._tag === "ProviderInternal") return "The model server had a temporary problem — retrying…"
+  return "Connection to the model server was lost — retrying…"
+}
+
+/** Preserve the HTTP verdict for the transcript's precise explanation and diagnostics disclosure. */
+export function statusCode(error: LLMError): number | undefined {
+  if ("status" in error.reason && typeof error.reason.status === "number") return error.reason.status
+  return "http" in error.reason ? error.reason.http?.response?.status : undefined
+}
+
 // ⚠️ `retryErrorPayload` lived here and was deleted 2026-07-29 with the `session.next.retried` event it
 // built the payload for — it had no other caller. The runner now logs the failed attempt instead
 // (`runner/llm.ts`), so the status-code extraction it did is no longer needed by anything.

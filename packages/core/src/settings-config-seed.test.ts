@@ -48,6 +48,7 @@ const VALID: Record<string, unknown> = {
   mcp: {},
   compaction: {},
   context: { enabled: true },
+  provider_connection: { stall_timeout_ms: 300_000 },
   permissions: [{ action: "bash", resource: "*", effect: "ask" }],
   persona: {},
   user_profile: { enabled: true, name: "Nancy" },

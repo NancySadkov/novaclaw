@@ -123,8 +123,17 @@ describe("Add-models — the module the dialog imports is browser-safe", () => {
 })
 
 describe("Add-models — safe limits for discovered models", () => {
-  test("persists the advertised context window and a bounded response limit", () => {
-    expect(dialog).toContain("context: result()?.window ?? ModelV2.DEFAULT_LIMIT.context")
-    expect(dialog).toContain("output: ModelV2.DEFAULT_LIMIT.output")
+  test("persists each model's advertised limits and falls back field by field", () => {
+    expect(dialog).toContain("const limits = discoveredLimits(id)")
+    expect(dialog).toContain("context: limits?.context ?? ModelV2.DEFAULT_LIMIT.context")
+    expect(dialog).toContain("output: limits?.output ?? ModelV2.DEFAULT_LIMIT.output")
+    expect(dialog).not.toContain("context: result()?.window")
+  })
+
+  test("tells the user when either limit was not reported", () => {
+    expect(dialog).toContain('t("settings.models.new.limits.contextOnly"')
+    expect(dialog).toContain('t("settings.models.new.limits.outputOnly"')
+    expect(dialog).toContain('t("settings.models.new.limits.unknown"')
+    expect(dialog).toContain("{limitDescription(id)}")
   })
 })

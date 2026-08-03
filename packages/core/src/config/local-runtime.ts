@@ -59,13 +59,20 @@ export const CANDIDATES: readonly Candidate[] = [
   { id: "ollama", label: "Ollama", usually: "Ollama", port: 11434, baseURL: "http://localhost:11434/v1" },
   { id: "lmstudio", label: "LM Studio", usually: "LM Studio", port: 1234, baseURL: "http://localhost:1234/v1" },
   { id: "vllm", label: "vLLM", usually: "vLLM", port: 8000, baseURL: "http://localhost:8000/v1" },
-  { id: "llamacpp", label: "llama.cpp", usually: "llama.cpp (llama-server)", port: 8080, baseURL: "http://localhost:8080/v1" },
+  {
+    id: "llamacpp",
+    label: "llama.cpp",
+    usually: "llama.cpp (llama-server)",
+    port: 8080,
+    baseURL: "http://localhost:8080/v1",
+  },
 ]
 
 /** The `/provider/:id/probe` result shape, restated structurally so this module imports nothing. */
 export interface ProbeLike {
   readonly status: "ok" | "unreachable" | "auth" | "model-missing" | "no-url" | "error"
   readonly models?: readonly string[] | undefined
+  readonly limits?: Readonly<Record<string, { readonly context?: number; readonly output?: number }>> | undefined
   readonly detail?: string | undefined
   readonly latencyMs?: number | undefined
 }
@@ -78,7 +85,13 @@ export interface ProbeLike {
  */
 export type Outcome =
   /** A `/v1/models` answer carrying at least one model id. The only arm that claims a runtime. */
-  | { readonly kind: "found"; readonly candidate: Candidate; readonly models: readonly string[]; readonly latencyMs?: number }
+  | {
+      readonly kind: "found"
+      readonly candidate: Candidate
+      readonly models: readonly string[]
+      readonly limits?: Readonly<Record<string, { readonly context?: number; readonly output?: number }>>
+      readonly latencyMs?: number
+    }
   /** Something is listening and demands credentials (401/403). Adoptable, but the user needs a key. */
   | { readonly kind: "needs-key"; readonly candidate: Candidate; readonly detail?: string }
   /**
@@ -113,7 +126,10 @@ const CONCLUSIVE: readonly Outcome["kind"][] = ["found", "needs-key", "unidentif
 export function isLoopbackURL(url: string): boolean {
   let host: string
   try {
-    host = new URL(url).hostname.trim().toLowerCase().replace(/^\[|\]$/g, "")
+    host = new URL(url).hostname
+      .trim()
+      .toLowerCase()
+      .replace(/^\[|\]$/g, "")
   } catch {
     return false
   }
@@ -136,7 +152,13 @@ export function classify(candidate: Candidate, probe: ProbeLike): Outcome {
   if (probe.status === "ok" || probe.status === "model-missing") {
     const models = (probe.models ?? []).filter((id) => typeof id === "string" && id.length > 0)
     if (models.length > 0)
-      return { kind: "found", candidate, models, ...(probe.latencyMs === undefined ? {} : { latencyMs: probe.latencyMs }) }
+      return {
+        kind: "found",
+        candidate,
+        models,
+        ...(probe.limits === undefined ? {} : { limits: probe.limits }),
+        ...(probe.latencyMs === undefined ? {} : { latencyMs: probe.latencyMs }),
+      }
     return {
       kind: "unidentified",
       candidate,

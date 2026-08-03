@@ -558,7 +558,6 @@ export const dict = {
   "session.share.copy.copied": "Kopiert",
   "session.share.copy.copyLink": "Kopier lenke",
 
-
   "prompt.loading": "Laster prompt...",
   "terminal.loading": "Laster terminal...",
   "terminal.title": "Terminal",
@@ -918,6 +917,8 @@ export const dict = {
   "session.error.contentPolicy":
     "Modelleverandøren avslo denne forespørselen i henhold til retningslinjene sine for innhold.",
   "session.error.providerInternal": "Modellserveren fikk en intern feil.",
+  "session.error.gatewayTimeout":
+    "Gatewayen nådde modellserveren, men sluttet å vente før den svarte (HTTP {{status}}).",
   "session.error.invalidProviderOutput": "Modellens svar kunne ikke leses.",
   "session.error.unknownProvider": "Modelleverandøren returnerte en feil.",
   "session.error.toolFailure": "Et verktøy mislyktes.",

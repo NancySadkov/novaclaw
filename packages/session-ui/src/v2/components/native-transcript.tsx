@@ -20,6 +20,7 @@ import { BasicToolV2 } from "./basic-tool-v2"
 import { ToolErrorCardV2 } from "./tool-error-card-v2"
 import {
   sessionErrorDisplay,
+  sessionErrorDiagnostic,
   sessionErrorHeadline,
   type SessionErrorDisplay,
 } from "@novaclaw/core/session/session-error"
@@ -52,7 +53,18 @@ function useFaultText() {
 // Per-message actions the host app can wire into the transcript (e.g. "revert to this prompt").
 // Injected via context so `session-ui` stays decoupled from the app's SDK/dialog layer: the app
 // passes a callback and owns confirmation + the actual revert mutation. Absent callback = no button.
-type TranscriptActions = { onRevert?: (messageID: string) => void }
+type TranscriptActions = {
+  onRevert?: (messageID: string) => void
+  onRetry?: (messageID: string) => void | Promise<void>
+  onChooseModel?: () => void
+  labels?: {
+    retry: string
+    chooseModel: string
+    technicalDetails: string
+    copyDetails: string
+    working: string
+  }
+}
 const TranscriptActionsContext = createContext<Accessor<TranscriptActions>>(() => ({}))
 
 /**
@@ -79,6 +91,10 @@ export function NativeTranscript(props: {
   toolFold?: ReasoningFoldMode
   /** Wire a per-user-message "revert to this prompt" action; omit to hide the button. */
   onRevert?: (messageID: string) => void
+  onRetry?: (messageID: string) => void | Promise<void>
+  onChooseModel?: () => void
+  errorLabels?: TranscriptActions["labels"]
+  status?: { type: string; message?: string }
   /**
    * Prompts the user has SENT that the agent has not read yet (`GET /api/session/:id/pending`).
    * They are durable and already accepted, but have no transcript row until the runner promotes them —
@@ -97,6 +113,9 @@ export function NativeTranscript(props: {
     if (firstReal <= 0) return messages as SessionMessage[]
     return (messages as SessionMessage[]).filter((m, i) => i >= firstReal || !isSwitchMarker(m))
   })
+  const hasOpenAssistant = createMemo(() =>
+    visible().some((message) => message.type === "assistant" && !message.time.completed),
+  )
   return (
     <ReasoningFoldContext.Provider
       value={() => ({
@@ -106,10 +125,31 @@ export function NativeTranscript(props: {
         tool: props.toolFold ?? props.reasoningFold ?? "collapsed",
       })}
     >
-      <TranscriptActionsContext.Provider value={() => ({ onRevert: props.onRevert })}>
+      <TranscriptActionsContext.Provider
+        value={() => ({
+          onRevert: props.onRevert,
+          onRetry: props.onRetry,
+          onChooseModel: props.onChooseModel,
+          labels: props.errorLabels,
+        })}
+      >
         <div data-component="native-transcript" class={props.class}>
           <For each={visible()}>{(message) => <NativeMessage message={message} />}</For>
           <For each={props.pending ?? []}>{(item) => <QueuedMessage text={item.text} />}</For>
+          <Show when={props.status?.type === "busy" && !hasOpenAssistant()}>
+            <div data-slot="native-provider-status" role="status" aria-live="polite">
+              <span data-slot="native-working-dot" aria-hidden="true" />
+              <span>{props.errorLabels?.working ?? "Working…"}</span>
+            </div>
+          </Show>
+          <Show when={props.status?.type === "retry" && props.status.message}>
+            {(message) => (
+              <div data-slot="native-provider-status" role="status" aria-live="polite">
+                <span data-slot="native-working-dot" aria-hidden="true" />
+                <span>{message()}</span>
+              </div>
+            )}
+          </Show>
         </div>
       </TranscriptActionsContext.Provider>
     </ReasoningFoldContext.Provider>
@@ -196,9 +236,7 @@ function UserMessage(props: { message: SessionMessageUser }) {
             <For each={props.message.files ?? []}>
               {(file) => <span data-slot="native-chip">{file.name ?? file.mime ?? "file"}</span>}
             </For>
-            <For each={props.message.agents ?? []}>
-              {(agent) => <span data-slot="native-chip">@{agent.name}</span>}
-            </For>
+            <For each={props.message.agents ?? []}>{(agent) => <span data-slot="native-chip">@{agent.name}</span>}</For>
           </div>
         </Show>
       </div>
@@ -264,6 +302,7 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
   )
   const reasoningTokens = () => (reasoningParts() === 1 ? props.message.tokens?.reasoning : undefined)
   const faultText = useFaultText()
+  const actions = useContext(TranscriptActionsContext)
   return (
     <div data-slot="native-assistant">
       <For each={props.message.content}>
@@ -309,14 +348,13 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
               </div>
             }
           >
-            {/* Block-level children on purpose: the box has no flex/grid rule, so a `div` per
-                line stacks without needing a CSS change. The headline is the translatable
-                sentence; `detail` is the provider's own words, already stripped of machine
-                noise, and is simply absent when there were none. */}
-            <div data-slot="native-error" role="alert">
-              <div data-slot="native-error-headline">{faultText(fault())}</div>
-              <Show when={fault().detail}>{(detail) => <div data-slot="native-error-detail">{detail()}</div>}</Show>
-            </div>
+            <FaultCard
+              messageID={props.message.id}
+              error={props.message.error!}
+              fault={fault()}
+              headline={faultText(fault())}
+              actions={actions()}
+            />
           </Show>
         )}
       </Show>
@@ -332,6 +370,57 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
           </button>
         </div>
       </Show>
+    </div>
+  )
+}
+
+function FaultCard(props: {
+  messageID: string
+  error: NonNullable<SessionMessageAssistant["error"]>
+  fault: SessionErrorDisplay
+  headline: string
+  actions: TranscriptActions
+}) {
+  const [retrying, setRetrying] = createSignal(false)
+  const labels = () =>
+    props.actions.labels ?? {
+      retry: "Try again",
+      chooseModel: "Choose another model",
+      technicalDetails: "Technical details",
+      copyDetails: "Copy details",
+      working: "Working…",
+    }
+  const diagnostic = () => sessionErrorDiagnostic(props.error)
+  const retry = async () => {
+    if (retrying() || !props.actions.onRetry) return
+    setRetrying(true)
+    await Promise.resolve(props.actions.onRetry(props.messageID))
+      .catch(() => undefined)
+      .finally(() => setRetrying(false))
+  }
+  return (
+    <div data-slot="native-error" role="alert">
+      <div data-slot="native-error-headline">{props.headline}</div>
+      <Show when={props.fault.detail}>{(detail) => <div data-slot="native-error-detail">{detail()}</div>}</Show>
+      <details data-slot="native-error-details">
+        <summary>{labels().technicalDetails}</summary>
+        <pre>{diagnostic()}</pre>
+      </details>
+      <div data-slot="native-error-actions">
+        <Show when={props.fault.canRetry && props.actions.onRetry}>
+          <button type="button" disabled={retrying()} onClick={() => void retry()}>
+            {labels().retry}
+          </button>
+        </Show>
+        <Show when={props.actions.onChooseModel}>
+          <button type="button" onClick={() => props.actions.onChooseModel?.()}>
+            {labels().chooseModel}
+          </button>
+        </Show>
+        <button type="button" onClick={() => void navigator.clipboard?.writeText(diagnostic())}>
+          {labels().copyDetails}
+        </button>
+      </div>
     </div>
   )
 }
@@ -384,7 +473,6 @@ function ReasoningPart(props: { part: SessionMessageAssistantReasoning; tokens?:
     </details>
   )
 }
-
 
 function ToolPart(props: { part: SessionMessageAssistantTool }) {
   const meta = () => toolMeta(props.part)
@@ -591,9 +679,7 @@ function NoticeMessage(props: { kind: "system" | "synthetic"; text: string }) {
 function CompactionMessage(props: { message: SessionMessageCompaction }) {
   return (
     <div data-slot="native-compaction">
-      <div data-slot="native-compaction-divider">
-        Compacted{props.message.reason === "manual" ? " (manual)" : ""}
-      </div>
+      <div data-slot="native-compaction-divider">Compacted{props.message.reason === "manual" ? " (manual)" : ""}</div>
       <details data-slot="native-notice">
         <summary>Summary</summary>
         <div data-slot="native-notice-body">

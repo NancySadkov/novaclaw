@@ -3,11 +3,7 @@ import { Show, createSignal } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { showToast } from "@/utils/toast"
-
-export type SessionProviderRecovery = {
-  attemptID: string
-  toolProtocol: boolean
-}
+import type { SessionProviderRecovery } from "./session-provider-recovery"
 
 export function SessionProviderRecoveryDock(props: {
   sessionID: string

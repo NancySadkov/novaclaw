@@ -850,6 +850,8 @@ export const dict = {
   "session.error.quotaExceeded": "Das Kontingent dieses Kontos beim Modellanbieter ist aufgebraucht.",
   "session.error.contentPolicy": "Der Modellanbieter hat diese Anfrage aufgrund seiner Inhaltsrichtlinien abgelehnt.",
   "session.error.providerInternal": "Im Modellserver ist ein interner Fehler aufgetreten.",
+  "session.error.gatewayTimeout":
+    "Das Gateway erreichte den Modellserver, wartete aber nicht lange genug auf seine Antwort (HTTP {{status}}).",
   "session.error.invalidProviderOutput": "Die Antwort des Modells konnte nicht gelesen werden.",
   "session.error.unknownProvider": "Der Modellanbieter hat einen Fehler zurückgegeben.",
   "session.error.toolFailure": "Ein Werkzeug ist fehlgeschlagen.",

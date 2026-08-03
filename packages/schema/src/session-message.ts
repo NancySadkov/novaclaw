@@ -73,6 +73,8 @@ export type ErrorTag = (typeof ErrorTags)[number]
  * `Transport` on purpose (see `session/runner/provider-retry.ts`: a local vLLM that is down or
  * restarting is the common case and IS worth retrying). A producer must fill this from the
  * runner's `ProviderRetry.isTransientProviderFailure` verdict, not from `LLMError.retryable`.
+ * `status` preserves an HTTP verdict such as Cloudflare 524 so the UI can explain the actual
+ * failure rather than collapsing every upstream gateway timeout into "internal error".
  */
 export interface UnknownError extends Schema.Schema.Type<typeof UnknownError> {}
 export const UnknownError = Schema.Struct({
@@ -80,6 +82,7 @@ export const UnknownError = Schema.Struct({
   message: Schema.String,
   _tag: Schema.String.pipe(optional),
   retryable: Schema.Boolean.pipe(optional),
+  status: PositiveInt.pipe(optional),
 }).annotate({ identifier: "Session.Error.Unknown" })
 
 const Base = {

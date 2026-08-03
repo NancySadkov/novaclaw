@@ -79,6 +79,7 @@ import { formatServerError } from "@/utils/server-errors"
 import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/session-route"
 import { createSessionOwnership } from "./session/session-ownership"
 import { createReviewController, resolveReviewSource, type ChangeMode } from "./session/review-source"
+import { visibleProviderRecovery } from "./session/composer/session-provider-recovery"
 
 type FollowupItem = FollowupDraft & { id: string }
 type FollowupEdit = Pick<FollowupItem, "id" | "prompt" | "context">
@@ -1279,6 +1280,29 @@ export default function Page() {
     })
   }
 
+  const retryFailedTurn = async (_messageID: string) => {
+    const sessionID = params.id
+    if (!sessionID) return
+    try {
+      await sdk().client.v2.session.prompt({
+        sessionID,
+        prompt: {
+          text: "Retry the failed turn. First inspect the conversation and workspace state, then continue without repeating any action that already completed.",
+        },
+      })
+    } catch (error) {
+      fail(error)
+      throw error
+    }
+  }
+
+  const chooseAnotherModel = () => {
+    const trigger = document.querySelector<HTMLButtonElement>('[data-action="prompt-model"]')
+    if (!trigger) return
+    trigger.click()
+    trigger.focus()
+  }
+
   const merge = (next: NonNullable<ReturnType<typeof info>>, target = sync()) => target.session.remember(next)
 
   const roll = (sessionID: string, next: NonNullable<ReturnType<typeof info>>["revert"], target = sync()) => {
@@ -1743,8 +1767,13 @@ export default function Page() {
           : undefined,
       providerRecovery: () => {
         const session = info()
-        const recovery = session?.providerRecovery
-        if (!session || !recovery || recoveryDismissed() === recovery.attemptID) return
+        if (!session) return
+        const recovery = visibleProviderRecovery({
+          recovery: session.providerRecovery,
+          working: busy(session.id),
+          dismissedAttemptID: recoveryDismissed(),
+        })
+        if (!recovery) return
         return {
           sessionID: session.id,
           recovery,
@@ -1828,6 +1857,15 @@ export default function Page() {
                         sessionID={_id}
                         directory={sdk().directory}
                         onRevert={revertToPrompt}
+                        onRetry={retryFailedTurn}
+                        onChooseModel={chooseAnotherModel}
+                        errorLabels={{
+                          retry: language.t("session.review.retry"),
+                          chooseModel: language.t("command.model.choose"),
+                          technicalDetails: language.t("error.page.details.show"),
+                          copyDetails: language.t("ui.toolErrorCard.copyError"),
+                          working: language.t("processes.status.working"),
+                        }}
                         revertMessageID={revertMessageID()}
                       />
                     )}
