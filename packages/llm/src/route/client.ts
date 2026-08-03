@@ -168,8 +168,18 @@ const resolveRequestOptions = (request: LLMRequest) => {
   const routeDefaults = request.model.route.defaults
   const modelDefaults = request.model.defaults
   const generation = mergeGenerationOptions(routeDefaults.generation, modelDefaults?.generation, request.generation)
+  const modelOutputLimit = modelDefaults?.limits?.output
+  const outputLimit =
+    modelOutputLimit !== undefined && modelOutputLimit > 0 ? modelOutputLimit : routeDefaults.limits?.output
   return LLMRequest.update(request, {
-    generation: generation ?? new GenerationOptions({}),
+    // `limits.output` is the model's configured maximum response length, not merely context-pack
+    // metadata. Anthropic already reads it in its protocol body; OpenAI Chat/Responses did not, so
+    // a model configured through Settings could still leave max_tokens absent on the wire. Use the
+    // positive limit as the final fallback while preserving every explicit generation default.
+    generation:
+      generation?.maxTokens !== undefined || outputLimit === undefined || outputLimit <= 0
+        ? (generation ?? new GenerationOptions({}))
+        : GenerationOptions.make({ ...generation, maxTokens: outputLimit }),
     providerOptions: mergeProviderOptions(
       routeDefaults.providerOptions,
       modelDefaults?.providerOptions,

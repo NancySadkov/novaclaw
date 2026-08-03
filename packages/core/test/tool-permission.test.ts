@@ -12,7 +12,7 @@ import { PermissionTool } from "@novaclaw/core/tool/permission"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
 import { testEffect } from "./lib/effect"
-import { toolIdentity, executeTool, toolDefinitions } from "./lib/tool"
+import { toolIdentity, executeTool } from "./lib/tool"
 
 // Auto mode's TOOL. The ceiling algebra is pinned by `auto-mode-algebra.test.ts` and the live
 // evaluator by `permission-auto-mode.test.ts`; this file proves the tool gathers the right state,
@@ -120,7 +120,9 @@ describe("the `permission` tool (Auto mode)", () => {
       // `Tool.validateRegistration` REFUSES a tool whose declared action equals its registration
       // key, so a `Tool.withPermission(tool, "permission")` wrap would have died at registration.
       // Reaching this line at all is the check; the name is what the model actually sees.
-      expect((yield* toolDefinitions(registry)).map((tool) => tool.name)).toEqual([PermissionTool.name])
+      const materialized = yield* registry.materialize()
+      expect(materialized.definitions).toEqual([])
+      expect(materialized.deferred.map((source) => source.definition.name)).toEqual([PermissionTool.name])
       // The second action it spends is a DIFFERENT word, or the split buys nothing.
       expect(PermissionTool.PRIVILEGED_ACTION).not.toBe(PermissionTool.name)
     }),

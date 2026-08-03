@@ -51,7 +51,7 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.make({
+        [name]: Tool.withDeferred(Tool.make({
           description:
             "Patch bytes in a BINARY file at a byte offset (in place — the rest of the file is untouched; writing at the file size appends; a missing file is created only at offset 0). `data` is hex text — canonical input example:\n" +
             "  4d 5a 90 00 03 00 00 00 ; first 8 bytes\n" +
@@ -115,7 +115,7 @@ export const layer = Layer.effectDiscard(
                 })
               }),
             ),
-        }),
+        })),
       })
       .pipe(Effect.orDie)
   }),

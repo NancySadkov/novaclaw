@@ -12,6 +12,7 @@ import { showToast } from "@/utils/toast"
 import { providerPresets, providerProbe, type ProbeResult, type ProviderPreset } from "@/utils/fs-api"
 import { matchPreset } from "@/utils/model-presets"
 import { ConfigLocalRuntime } from "@novaclaw/core/config/local-runtime"
+import { ModelV2 } from "@novaclaw/core/model"
 import type { ServerConnection } from "@/context/server"
 
 // "Add models" — the provider-import flow. Three steps in one dialog:
@@ -254,12 +255,25 @@ export const DialogNewModel: Component<{
       // Patch-merge semantics: only send what changed — the layered store folds this fragment
       // over any existing provider layer, so already-imported models and a previously saved key
       // survive without re-sending.
-      const modelsObj: Record<string, { name: string; request?: { body: Record<string, number> } }> = {}
+      const modelsObj: Record<
+        string,
+        { name: string; limit: { context: number; output: number }; request?: { body: Record<string, number> } }
+      > = {}
       // Models (d) — a recognized family lands with its recommended sampling pre-filled
       // (request.body is the same overlay the Configure dialog edits; unknown ids get none).
       for (const id of ids) {
         const familyPreset = matchPreset(id)
-        modelsObj[id] = { name: id, ...(familyPreset === undefined ? {} : { request: { body: familyPreset.body } }) }
+        modelsObj[id] = {
+          name: id,
+          // A discovery response may carry one shared server window (vLLM max_model_len,
+          // llama.cpp meta.n_ctx). Unknown fields retain Nova's supported 32K floor. Persist both
+          // limits so the request stays bounded after restart rather than relying on probe memory.
+          limit: {
+            context: result()?.window ?? ModelV2.DEFAULT_LIMIT.context,
+            output: ModelV2.DEFAULT_LIMIT.output,
+          },
+          ...(familyPreset === undefined ? {} : { request: { body: familyPreset.body } }),
+        }
       }
       await serverSync().updateConfig({
         providers: {

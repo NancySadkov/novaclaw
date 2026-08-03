@@ -121,3 +121,10 @@ describe("Add-models — the module the dialog imports is browser-safe", () => {
     expect(source).not.toMatch(/^import .*/m)
   })
 })
+
+describe("Add-models — safe limits for discovered models", () => {
+  test("persists the advertised context window and a bounded response limit", () => {
+    expect(dialog).toContain("context: result()?.window ?? ModelV2.DEFAULT_LIMIT.context")
+    expect(dialog).toContain("output: ModelV2.DEFAULT_LIMIT.output")
+  })
+})

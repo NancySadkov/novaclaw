@@ -19,7 +19,6 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
 import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
-import { toolDefinitions } from "./lib/tool"
 import { FSUtil } from "../src/fs-util"
 import { Credential } from "../src/credential"
 import { Database } from "../src/database/database"
@@ -44,6 +43,46 @@ const it = testEffect(
     ]),
   ),
 )
+
+const residentTools = [
+  "application_context",
+  "apply_patch",
+  "bash",
+  "define_tool",
+  "edit",
+  "exit",
+  "glob",
+  "grep",
+  "js",
+  "question",
+  "read",
+  "skill",
+  "spawn",
+  "todowrite",
+  "tool_call",
+  "tool_manual",
+  "tool_search",
+  "wait",
+  "webfetch",
+  "websearch",
+  "write",
+].sort()
+
+const deferredCoreTools = [
+  "configure",
+  "kb",
+  "messenger",
+  "permission",
+  "profile",
+  "quality_provision",
+  "read-hex",
+  "recipe",
+  "reconfigure",
+  "register-app",
+  "revert",
+  "trash",
+  "write-hex",
+]
 
 describe("LocationServiceMap", () => {
   it.live("reuses cached services for constructed and decoded location refs", () =>
@@ -99,9 +138,11 @@ describe("LocationServiceMap", () => {
               yield* Reference.Service
               const catalog = yield* Catalog.Service
               yield* catalog.transform((editor) => editor.provider.update(ProviderV2.ID.make("test"), () => {}))
+              const materialized = yield* (yield* ToolRegistry.Service).materialize()
               return {
                 providers: yield* catalog.provider.all(),
-                tools: yield* toolDefinitions(yield* ToolRegistry.Service),
+                tools: materialized.definitions,
+                deferred: materialized.deferred,
               }
             }).pipe(
               Effect.scoped,
@@ -112,105 +153,16 @@ describe("LocationServiceMap", () => {
 
           const blockedState = yield* update(blocked.path)
           expect(blockedState.providers.some((provider) => provider.id === ProviderV2.ID.make("test"))).toBe(false)
-          expect(blockedState.tools.map((tool) => tool.name).sort()).toEqual([
-            "application_context",
-            "apply_patch",
-            "bash",
-            "configure",
-            "define_tool",
-            "edit",
-            "exit",
-            "glob",
-            "grep",
-            "js",
-            "kb",
-            "messenger",
-            // Auto mode's self-management tool (`tool/permission.ts`, 2026-07-31). It is advertised
-            // to every agent because LOWERING is always permitted; the ceiling is what bounds it, not
-            // the horizon. A user who wants the mode pinned denies the `permission` action, which
-            // withdraws it here through `whollyDisabled` like any other tool.
-            "permission",
-            // ⚠️ `profile` joined this list on 2026-07-31 and that is a DELIBERATE behaviour change, not
-            // drift. It used to skip `tools.register` at layer scope unless the profile was enabled AND
-            // non-empty; B7 tier-2 made the switch a live per-turn availability predicate and dropped the
-            // emptiness half as a gate (an empty profile is a tool whose OUTPUT is empty, and conflating
-            // the two made "the user forbade this" and "the user has not typed anything yet" the same
-            // observation). So a fresh instance now advertises it. If this line ever needs removing again,
-            // that is a real regression in the availability predicate — check it before editing the list.
-            "profile",
-            "quality_provision",
-            "question",
-            "read",
-            "read-hex",
-            "recipe",
-            "reconfigure",
-            "register-app",
-            "revert",
-            "skill",
-            "spawn",
-            "todowrite",
-            "tool_call",
-            "tool_manual",
-            "tool_search",
-            "trash",
-            "wait",
-            "webfetch",
-            "websearch",
-            "write",
-            "write-hex",
-          ])
+          expect(blockedState.tools.map((tool) => tool.name).sort()).toEqual(residentTools)
+          expect(blockedState.deferred.map((source) => source.definition.name)).toEqual(deferredCoreTools)
+          expect(Buffer.byteLength(JSON.stringify(blockedState.tools))).toBeLessThan(32_000)
           // The second location boots AFTER the policy is gone — its boot snapshot allows the
           // provider, and the first location's catalog transform never leaked into it.
           yield* settings.remove("experimental")
           const allowedState = yield* update(allowed.path)
           expect(allowedState.providers.some((provider) => provider.id === ProviderV2.ID.make("test"))).toBe(true)
-          expect(allowedState.tools.map((tool) => tool.name).sort()).toEqual([
-            "application_context",
-            "apply_patch",
-            "bash",
-            "configure",
-            "define_tool",
-            "edit",
-            "exit",
-            "glob",
-            "grep",
-            "js",
-            "kb",
-            "messenger",
-            // Auto mode's self-management tool (`tool/permission.ts`, 2026-07-31). It is advertised
-            // to every agent because LOWERING is always permitted; the ceiling is what bounds it, not
-            // the horizon. A user who wants the mode pinned denies the `permission` action, which
-            // withdraws it here through `whollyDisabled` like any other tool.
-            "permission",
-            // ⚠️ `profile` joined this list on 2026-07-31 and that is a DELIBERATE behaviour change, not
-            // drift. It used to skip `tools.register` at layer scope unless the profile was enabled AND
-            // non-empty; B7 tier-2 made the switch a live per-turn availability predicate and dropped the
-            // emptiness half as a gate (an empty profile is a tool whose OUTPUT is empty, and conflating
-            // the two made "the user forbade this" and "the user has not typed anything yet" the same
-            // observation). So a fresh instance now advertises it. If this line ever needs removing again,
-            // that is a real regression in the availability predicate — check it before editing the list.
-            "profile",
-            "quality_provision",
-            "question",
-            "read",
-            "read-hex",
-            "recipe",
-            "reconfigure",
-            "register-app",
-            "revert",
-            "skill",
-            "spawn",
-            "todowrite",
-            "tool_call",
-            "tool_manual",
-            "tool_search",
-            "trash",
-            "wait",
-            "webfetch",
-            "websearch",
-            "write",
-            "write-hex",
-          ])
+          expect(allowedState.tools.map((tool) => tool.name).sort()).toEqual(residentTools)
+          expect(allowedState.deferred.map((source) => source.definition.name)).toEqual(deferredCoreTools)
         }),
       ),
     ),

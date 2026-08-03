@@ -234,6 +234,37 @@ describe("ToolRegistry settlement of an unadvertised name", () => {
       )
     }),
   )
+
+  it.effect("keeps a deferred Core schema out of the resident array and dispatches it after discovery", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      yield* service.register({
+        tool_call: deferredDispatcher(),
+        read: echo(),
+        rare: Tool.withDeferred(echo()),
+      })
+      const before = yield* service.materialize()
+
+      expect(before.definitions.map((definition) => definition.name)).toEqual(["tool_call", "read"])
+      expect(before.deferred.map((source) => [source.definition.name, source.server])).toEqual([["rare", "core"]])
+      expect(message(yield* before.settle(call("rare")))).toContain("schema has not been disclosed")
+
+      const after = yield* service.materialize([], () => true, new Set(["rare"]))
+      const settled = yield* after.settle({
+        sessionID,
+        ...identity,
+        call: {
+          type: "tool-call",
+          id: "call-tool_call-rare",
+          name: "tool_call",
+          input: { name: "rare", input: {} },
+        },
+      })
+
+      expect(after.definitions.map((definition) => definition.name)).toEqual(["tool_call", "read"])
+      expect(settled.result).toEqual({ type: "json", value: { ok: true } })
+    }),
+  )
 })
 
 /**

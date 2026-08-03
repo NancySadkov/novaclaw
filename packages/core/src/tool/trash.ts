@@ -43,7 +43,7 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.make({
+        [name]: Tool.withDeferred(Tool.make({
           description:
             "Safely delete a file or directory: moves it into a dated Trash store (restorable for ~2 days) instead of destroying it. ALWAYS prefer this over `rm`/`del` in bash — the user can restore trashed items, and so can you if a deletion turns out wrong. Returns the trash id needed to restore.",
           input: Input,
@@ -87,7 +87,7 @@ export const layer = Layer.effectDiscard(
                 })
               }),
             ),
-        }),
+        })),
       })
       .pipe(Effect.orDie)
   }),

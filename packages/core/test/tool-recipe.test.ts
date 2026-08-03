@@ -14,7 +14,7 @@ import { RecipeTool } from "@novaclaw/core/tool/recipe"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { tmpdir } from "./fixture/tmpdir"
 import { it } from "./lib/effect"
-import { executeTool, toolDefinitions, toolIdentity } from "./lib/tool"
+import { executeTool, toolIdentity } from "./lib/tool"
 
 /**
  * The `recipe` tool — an agent authoring the artifact AGENTS.md calls *source code for the AI era*.
@@ -218,7 +218,9 @@ describe("ruling 14: a recipe states what it NEEDS and never what it GETS", () =
   it.live("the tool offers NO field for posture, permission, model or strictness — only `needs`", () =>
     withTool(recording([]), ({ registry }) =>
       Effect.gen(function* () {
-        const definition = (yield* toolDefinitions(registry)).find((tool) => tool.name === "recipe")
+        const definition = (yield* registry.catalogue())
+          .map((source) => source.definition)
+          .find((tool) => tool.name === "recipe")
         expect(definition).toBeDefined()
         const fields = [...propertyNames(definition!.inputSchema, new Set<string>())].sort()
 

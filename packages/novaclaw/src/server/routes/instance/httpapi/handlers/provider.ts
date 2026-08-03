@@ -124,6 +124,24 @@ export const probeEndpoint = (
     }),
   )
 
+/** Context-window spellings emitted by the OpenAI-compatible servers we support. */
+export function modelContextWindow(model: Record<string, unknown>): number | undefined {
+  const direct = model.max_model_len ?? model.context_length
+  if (typeof direct === "number" && Number.isSafeInteger(direct) && direct > 0) return direct
+  const meta = model.meta
+  if (typeof meta !== "object" || meta === null) return undefined
+  const nested = (meta as Record<string, unknown>).n_ctx
+  return typeof nested === "number" && Number.isSafeInteger(nested) && nested > 0 ? nested : undefined
+}
+
+/** Discovery may safely expose one window only when every listed model declares the same one. */
+export function sharedContextWindow(models: ReadonlyArray<Record<string, unknown>>): number | undefined {
+  if (models.length === 0) return undefined
+  const windows = models.map(modelContextWindow)
+  const first = windows[0]
+  return first !== undefined && windows.every((window) => window === first) ? first : undefined
+}
+
 export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider", (handlers) =>
   Effect.gen(function* () {
     const cfg = yield* Config.Service
@@ -235,7 +253,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
           models,
           detail: `Model "${ctx.payload.modelID}" is not in the server's /models list.`,
         }
-      const window = found && typeof found.max_model_len === "number" ? found.max_model_len : undefined
+      const window = found ? modelContextWindow(found) : sharedContextWindow(data)
       // T3 — remember the honored window so model resolution sizes the 1M context pack from
       // live truth, but only when this probed the SAVED provider endpoint: a payload baseURL
       // is the New-Model discovery flow probing an UNSAVED endpoint, and caching that against

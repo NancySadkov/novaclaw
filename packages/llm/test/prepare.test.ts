@@ -175,4 +175,34 @@ describe("request option precedence", () => {
       expect(withMaxTokens.body.max_tokens).toBe(32)
     }),
   )
+
+  it.effect("sends a configured output limit through OpenAI-compatible chat", () =>
+    Effect.gen(function* () {
+      const route = OpenAIChat.route.with({
+        endpoint: { baseURL: "https://compatible.test/v1/" },
+        auth: Auth.bearer("test"),
+        limits: { output: 512 },
+      })
+      const withoutOverride = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
+        LLM.request({ model: route.model({ id: "reasoning-model" }), prompt: "hi" }),
+      )
+      const withOverride = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
+        LLM.request({
+          model: route.model({ id: "reasoning-model" }),
+          prompt: "hi",
+          generation: { maxTokens: 128 },
+        }),
+      )
+      const withUnknownModelLimit = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
+        LLM.request({
+          model: route.model({ id: "unknown-limit", defaults: { limits: { output: 0 } } }),
+          prompt: "hi",
+        }),
+      )
+
+      expect(withoutOverride.body.max_tokens).toBe(512)
+      expect(withOverride.body.max_tokens).toBe(128)
+      expect(withUnknownModelLimit.body.max_tokens).toBe(512)
+    }),
+  )
 })

@@ -46,7 +46,12 @@ const withLocation = <A, E, R>(body: (location: Location.Ref) => Effect.Effect<A
 
 /** The tool names the model would actually be offered right now, from ONE registry instance. */
 const horizon = (registry: ToolRegistry.Interface) =>
-  registry.materialize().pipe(Effect.map((materialized) => materialized.definitions.map(({ name }) => name)))
+  registry.materialize().pipe(
+    Effect.map((materialized) => [
+      ...materialized.definitions.map(({ name }) => name),
+      ...materialized.deferred.map((source) => source.definition.name),
+    ]),
+  )
 
 /** A minimal tool value; only its presence on the horizon is ever inspected. */
 const probeTool = () =>

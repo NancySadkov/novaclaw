@@ -102,7 +102,7 @@ export const layer = Layer.effectDiscard(
     yield* tools
       .register({
         [name]: ToolRegistry.withAvailability(
-          Tool.make({
+          Tool.withDeferred(Tool.make({
             description,
             input: Input,
             output: Output,
@@ -120,7 +120,7 @@ export const layer = Layer.effectDiscard(
                 }),
                 Effect.mapError(() => new ToolFailure({ message: "Unable to read the user profile" })),
               ),
-          }),
+          })),
           sharingEnabled,
         ),
       })

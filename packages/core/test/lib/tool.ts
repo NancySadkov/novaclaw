@@ -17,4 +17,9 @@ export const settleTool = (registry: ToolRegistry.Interface, input: ToolRegistry
   registry.materialize().pipe(Effect.flatMap((materialized) => materialized.settle(input)))
 
 export const executeTool = (registry: ToolRegistry.Interface, input: ToolRegistry.ExecuteInput) =>
-  settleTool(registry, input).pipe(Effect.map((settlement) => settlement.result))
+  // Unit tests target the executor, not provider disclosure. Mark the named tool discovered so the
+  // same helper exercises resident and deferred registrations; horizon tests use `settleTool` or
+  // inspect `materialize()` directly when disclosure itself is the subject.
+  registry
+    .materialize([], () => true, new Set([input.call.name]))
+    .pipe(Effect.flatMap((materialized) => materialized.settle(input)), Effect.map((settlement) => settlement.result))

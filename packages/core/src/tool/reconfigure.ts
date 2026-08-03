@@ -80,7 +80,7 @@ export const layer = Layer.effectDiscard(
     const { db } = yield* Database.Service
     yield* tools
       .register({
-        [name]: Tool.make({
+        [name]: Tool.withDeferred(Tool.make({
           description:
             "Edit YOUR OWN standing instructions: replace this session's system-prompt override layer " +
             "(it composes on top of your base prompt and persists across turns; sub-sessions inherit it). " +
@@ -122,7 +122,7 @@ export const layer = Layer.effectDiscard(
                   )
               return summary
             }),
-        }),
+        })),
       })
       .pipe(Effect.orDie)
   }),

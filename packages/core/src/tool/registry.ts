@@ -20,6 +20,7 @@ import { ApplicationTools } from "./application-tools"
 import { ExternalToolSource } from "./external-tool-source"
 import {
   definition,
+  isDeferred,
   outputPreview,
   permission,
   settle,
@@ -54,7 +55,7 @@ export interface Interface {
 
 export interface Materialization {
   readonly definitions: ReadonlyArray<ToolDefinition>
-  /** Filtered external schemas intentionally absent from `definitions`. */
+  /** Filtered schemas intentionally absent from `definitions` until discovered. */
   readonly deferred: ReadonlyArray<ToolCatalogue.Source>
   readonly settle: (input: ExecuteInput) => Effect.Effect<Settlement, ToolOutputStore.Error>
 }
@@ -244,13 +245,16 @@ const registryLayer = Layer.effect(
         offered = () => true,
         discovered = new Set<string>(),
       ) {
-        type MaterializedRegistration = Registration & { readonly external: boolean }
+        type MaterializedRegistration = Registration & { readonly server: string; readonly deferred: boolean }
         const registrations = new Map<string, MaterializedRegistration>()
-        for (const [name, entry] of applications.entries()) registrations.set(name, { ...entry, external: false })
-        for (const [name, entry] of yield* external.entries()) registrations.set(name, { ...entry, external: true })
+        for (const [name, entry] of applications.entries())
+          registrations.set(name, { ...entry, server: "application", deferred: false })
+        for (const [name, entry] of yield* external.entries())
+          registrations.set(name, { ...entry, server: ToolCatalogue.externalServer(name), deferred: true })
         for (const [name, entries] of local) {
           const registration = entries.at(-1)?.registration
-          if (registration) registrations.set(name, { ...registration, external: false })
+          if (registration)
+            registrations.set(name, { ...registration, server: "core", deferred: isDeferred(registration.tool) })
         }
         // Three withdrawals, one seam. Permission decides first and permanently removes a denied
         // registration. Routing runs only over survivors, so a `true` route decision can undo an
@@ -268,11 +272,11 @@ const registryLayer = Layer.effect(
           const available = availabilityOf.get(registration.tool)
           if (available !== undefined && !(yield* available)) registrations.delete(name)
         }
-        const resident = new Map([...registrations].filter(([, registration]) => !registration.external))
+        const resident = new Map([...registrations].filter(([, registration]) => !registration.deferred))
         const deferred = [...registrations]
-          .filter(([, registration]) => registration.external)
+          .filter(([, registration]) => registration.deferred)
           .map(([name, registration]) => ({
-            server: ToolCatalogue.externalServer(name),
+            server: registration.server,
             definition: definition(name, registration.tool),
           }))
           .toSorted((a, b) => a.definition.name.localeCompare(b.definition.name))

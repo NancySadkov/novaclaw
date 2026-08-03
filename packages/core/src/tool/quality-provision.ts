@@ -130,7 +130,7 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.make({
+        [name]: Tool.withDeferred(Tool.make({
           description,
           input: Input,
           output: Output,
@@ -272,7 +272,7 @@ export const layer = Layer.effectDiscard(
                 })
               }),
             ),
-        }),
+        })),
       })
       .pipe(Effect.orDie)
   }),

@@ -53,7 +53,7 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.make({
+        [name]: Tool.withDeferred(Tool.make({
           description:
             "Register (or update) an app tile on the user's home screen. An app is a LAUNCHER manifest: it opens an in-app route, an external URL, or a new chat pre-filled with a prompt — use open_type 'prompt' to turn a repeatable request into a one-tap app. Reusing an id updates that app.",
           input: Input,
@@ -101,7 +101,7 @@ export const layer = Layer.effectDiscard(
                 })
               }),
             ),
-        }),
+        })),
       })
       .pipe(Effect.orDie)
   }),

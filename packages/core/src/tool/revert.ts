@@ -88,7 +88,7 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.make({
+        [name]: Tool.withDeferred(Tool.make({
           description:
             "UNDO file changes by restoring files to an earlier snapshot (git-backed, captured every step). Default undoes your last file-changing step; `steps: N` undoes the last N; `steps: 0` undoes only the current step's changes so far. Restores file EDITS — deletions are restored from the Trash instead. Use when an edit made things worse and you want a known-good state back.",
           input: Input,
@@ -171,7 +171,7 @@ export const layer = Layer.effectDiscard(
                 })
               }),
             ),
-        }),
+        })),
       })
       .pipe(Effect.orDie)
   }),

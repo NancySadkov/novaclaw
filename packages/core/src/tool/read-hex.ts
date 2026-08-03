@@ -54,7 +54,7 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.make({
+        [name]: Tool.withDeferred(Tool.make({
           description:
             "Inspect a BINARY file as a hex dump: 16 hex bytes per line, `;` starts a comment carrying the line's offset and ascii gloss. Reads a window of `length` bytes at `offset` — it pages, so it works on multi-GB images. The output format is exactly what `write-hex` accepts, so you can edit a dump and write it back. Use this (not `read`) for .bin/.iso/.o/object files/images and any non-text file.",
           input: Input,
@@ -108,7 +108,7 @@ export const layer = Layer.effectDiscard(
                 })
               }),
             ),
-        }),
+        })),
       })
       .pipe(Effect.orDie)
   }),

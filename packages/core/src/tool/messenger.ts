@@ -553,7 +553,7 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.make({
+        [name]: Tool.withDeferred(Tool.make({
           description:
             "Read and send the user's real messages AND EMAILS through their connected accounts — chat " +
             "apps (Telegram, Discord, IRC) AND email mailboxes (Gmail, Outlook, any IMAP account). THIS " +
@@ -957,7 +957,7 @@ export const layer = Layer.effectDiscard(
                 return new ToolFailure({ message: `messenger failed: ${error instanceof Error ? error.message : String(error)}` })
               }),
             ),
-        }),
+        })),
       })
       .pipe(Effect.orDie)
   }),

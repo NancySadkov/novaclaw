@@ -135,7 +135,7 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.make({
+        [name]: Tool.withDeferred(Tool.make({
           description:
             "The agent's long-term memory — a knowledge GRAPH. Ops: search (find things you've remembered, " +
             "by keyword) · remember (save a fact; returns its id — default durably across all chats) · relate " +
@@ -333,7 +333,7 @@ export const layer = Layer.effectDiscard(
                 }
               }
             }),
-        }),
+        })),
       })
       .pipe(Effect.orDie)
   }),

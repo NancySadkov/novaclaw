@@ -16,7 +16,7 @@ import { PermissionV2 } from "@novaclaw/core/permission"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
-import { toolIdentity, executeTool, toolDefinitions } from "./lib/tool"
+import { toolIdentity, executeTool } from "./lib/tool"
 
 // The memory `kb` tool end to end: decode → MemoryClient → linearized text. Backed by the in-memory
 // `stub` (the WASM engine itself is covered by kb-graph-wasm-engine.smoke.ts). The repair-loop
@@ -73,7 +73,9 @@ describe("KbTool (memory)", () => {
   it.effect("registers; remember → search finds it", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
-      expect((yield* toolDefinitions(registry)).map((t) => t.name)).toContain(KbTool.name)
+      const materialized = yield* registry.materialize()
+      expect(materialized.definitions.map((tool) => tool.name)).not.toContain(KbTool.name)
+      expect(materialized.deferred.map((source) => source.definition.name)).toContain(KbTool.name)
 
       const saved = text(yield* executeTool(registry, call({ op: "remember", text: "The user prefers strict typing", name: "prefs" })))
       expect(saved).toContain("Remembered (mem_")
