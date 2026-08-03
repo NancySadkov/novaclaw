@@ -19,6 +19,7 @@ import { QualityProvisionTool } from "./quality-provision"
 import { QuestionTool } from "./question"
 import { ReadTool } from "./read"
 import { ReconfigureTool } from "./reconfigure"
+import { ResourceStatusTool } from "./resource-status"
 import { ReadHexTool } from "./read-hex"
 import { ReadToolFileSystem } from "./read-filesystem"
 import { RecipeTool } from "./recipe"
@@ -87,6 +88,7 @@ export const locationLayer = Layer.mergeAll(
   // gating nothing). `recipe.ts` asserts the `recipe` action itself, on `save` only.
   RecipeTool.layer,
   ReconfigureTool.layer,
+  ResourceStatusTool.layer,
   RegisterAppTool.layer,
   RevertTool.layer,
   SkillTool.layer,
@@ -126,6 +128,7 @@ export const node = makeLocationNode({
     ReadHexTool.node,
     RecipeTool.node,
     ReconfigureTool.node,
+    ResourceStatusTool.node,
     RegisterAppTool.node,
     RevertTool.node,
     SkillTool.node,

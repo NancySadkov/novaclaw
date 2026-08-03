@@ -56,12 +56,15 @@ const itWithInstructions = testEffect(
     [Global.node, Global.layerWith({ config: "/global" })],
   ]),
 )
-let resourceLines: ReadonlyArray<string> = ["Resource pressure: ok."]
+let resourceLines: ReadonlyArray<string> = []
 const resourcePressureNode = makeGlobalNode({
   service: ResourcePressureContext.Service,
   layer: Layer.succeed(
     ResourcePressureContext.Service,
-    ResourcePressureContext.Service.of({ lines: () => Effect.sync(() => resourceLines) }),
+    ResourcePressureContext.Service.of({
+      lines: () => Effect.sync(() => resourceLines),
+      inspect: () => Effect.succeed(["Resource pressure: ok."]),
+    }),
   ),
   deps: [],
 })
@@ -90,7 +93,6 @@ describe("SystemContextBuiltIns", () => {
           `  Platform: ${process.platform}`,
           `  Shell: ${Shell.agentDefault()}`,
           ...(Shell.bashFallbackNote() ? [`  ${Shell.bashFallbackNote()}`] : []),
-          "  Resource headroom: unavailable in this runtime.",
           "</env>",
           "",
           `Today's date: ${localDate(timestamp)}`,
@@ -101,18 +103,18 @@ describe("SystemContextBuiltIns", () => {
 
   itWithResourcePressure.effect("reconciles live resource headroom without rebuilding the location", () =>
     Effect.gen(function* () {
-      resourceLines = ["Resource pressure: ok.", "Memory headroom: 12.0 GiB free."]
+      resourceLines = []
       const context = yield* SystemContextRegistry.Service
       const initialized = yield* SystemContext.initialize(yield* context.load())
 
-      resourceLines = ["Resource pressure: warning — plan conservatively.", "Memory headroom: 1.0 GiB free."]
+      resourceLines = ["Memory headroom is low. Use resource_status for live detail."]
       const refreshed = yield* SystemContext.reconcile(yield* context.load(), initialized.snapshot)
 
       expect(refreshed).toMatchObject({ _tag: "Updated" })
       if (refreshed._tag !== "Updated") return
       expect(refreshed.text).toContain("The environment you are running in is now:")
-      expect(refreshed.text).toContain("  Resource pressure: warning — plan conservatively.")
-      expect(refreshed.text).toContain("  Memory headroom: 1.0 GiB free.")
+      expect(refreshed.text).toContain("  Memory headroom is low. Use resource_status for live detail.")
+      expect(refreshed.text).not.toContain("Resource pressure: ok")
     }),
   )
 
@@ -158,7 +160,6 @@ describe("SystemContextBuiltIns", () => {
           `  Platform: ${process.platform}`,
           `  Shell: ${Shell.agentDefault()}`,
           ...(Shell.bashFallbackNote() ? [`  ${Shell.bashFallbackNote()}`] : []),
-          "  Resource headroom: unavailable in this runtime.",
           "</env>",
           "",
           `Today's date: ${localDate(timestamp)}`,

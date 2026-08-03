@@ -332,6 +332,9 @@ export function savedResources(
 //                  is ruling 4's fourth test — *no text that reaches a FUTURE session's prompt* —
 //                  and it is precisely what keeps `define_tool` (whose manual IS saved for later
 //                  turns to read) on the other side of the line.
+//  · `resource_status` — reads the instance's existing Storage pressure probe. No mutation, egress or
+//                  durable effect; it is the on-demand replacement for spending healthy RAM/disk lines
+//                  in every turn's system context, so asking permission to verify recovery would defeat it.
 //
 // ⚠️ WHAT IS DELIBERATELY ABSENT, so the shortness is not read as an oversight. The mutation/exec
 // cluster (`edit`/`write`/`create`/`trash`/`bash`) is NOT here and does not need to be: the default
@@ -365,6 +368,7 @@ export const AMBIENT_SAFE_BASELINE: Permission.Ruleset = [
   { action: "read", resource: "*", effect: "allow" },
   { action: "explore", resource: "*", effect: "allow" },
   { action: "todowrite", resource: "*", effect: "allow" },
+  { action: "resource_status", resource: "*", effect: "allow" },
 ]
 
 /**

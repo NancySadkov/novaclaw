@@ -10,7 +10,31 @@ const GIB = 1024 ** 3
 const thresholds: Pressure.Thresholds = Pressure.DEFAULT_THRESHOLDS
 
 describe("StorageResourcePressureContext", () => {
-  test("renders actionable memory and lowest-volume disk headroom", () => {
+  test("keeps healthy measurements out of ambient context and exposes them on demand", () => {
+    const report: Pressure.Report = {
+      memory: {
+        known: true,
+        source: "windows-commit",
+        crosscheck: "Get-CimInstance Win32_OperatingSystem",
+        usedBytes: 10 * GIB,
+        limitBytes: 40 * GIB,
+      },
+      disks: [{ known: true, path: "C:/data", measuredPath: "C:/", freeBytes: 50 * GIB, totalBytes: 100 * GIB }],
+      thresholds,
+      thresholdsSource: "default",
+      level: "ok",
+      unavailable: [],
+    }
+
+    expect(StorageResourcePressureContext.lines(report)).toEqual([])
+    expect(StorageResourcePressureContext.details(report)).toEqual([
+      "Resource pressure: ok.",
+      "Memory headroom: 30.0 GiB free of 40.0 GiB commit.",
+      "Disk headroom: 50.0 GiB free of 100.0 GiB on the lowest-free instance volume (C:/).",
+    ])
+  })
+
+  test("ambient context names only the resource that is actually low", () => {
     const report: Pressure.Report = {
       memory: {
         known: true,
@@ -30,9 +54,44 @@ describe("StorageResourcePressureContext", () => {
     }
 
     expect(StorageResourcePressureContext.lines(report)).toEqual([
+      "Memory headroom is low; avoid memory-intensive work.",
+      "Use tool_search for resource status, then resource_status to inspect and confirm recovery.",
+    ])
+    expect(
+      StorageResourcePressureContext.lines({
+        ...report,
+        memory: { ...(report.memory as Pressure.MemoryKnown), usedBytes: 31 * GIB },
+      }),
+    ).toEqual(StorageResourcePressureContext.lines(report))
+    expect(StorageResourcePressureContext.details(report)).toEqual([
       "Resource pressure: warning — plan memory- and disk-intensive work conservatively.",
       "Memory headroom: 10.0 GiB free of 40.0 GiB commit.",
       "Disk headroom: 5.0 GiB free of 20.0 GiB on the lowest-free instance volume (D:/).",
+    ])
+  })
+
+  test("a low disk emits one stable exception line without normal memory detail", () => {
+    const report: Pressure.Report = {
+      memory: {
+        known: true,
+        source: "windows-commit",
+        crosscheck: "Get-CimInstance Win32_OperatingSystem",
+        usedBytes: 10 * GIB,
+        limitBytes: 40 * GIB,
+      },
+      disks: [
+        { known: true, path: "C:/data", measuredPath: "C:/", freeBytes: 1 * GIB, totalBytes: 100 * GIB },
+        { known: true, path: "C:/cache", measuredPath: "C:/", freeBytes: 900 * 1024 ** 2, totalBytes: 100 * GIB },
+      ],
+      thresholds,
+      thresholdsSource: "default",
+      level: "warning",
+      unavailable: [],
+    }
+
+    expect(StorageResourcePressureContext.lines(report)).toEqual([
+      "Disk space is low on C:/; avoid large writes.",
+      "Use tool_search for resource status, then resource_status to inspect and confirm recovery.",
     ])
   })
 
@@ -50,7 +109,8 @@ describe("StorageResourcePressureContext", () => {
       unavailable: [memoryReason, diskReason, configNotice],
     }
 
-    const rendered = StorageResourcePressureContext.lines(report)
+    expect(StorageResourcePressureContext.lines(report)).toEqual([])
+    const rendered = StorageResourcePressureContext.details(report)
     expect(rendered).toEqual([
       "Resource pressure: unknown.",
       `Memory headroom: unavailable — ${memoryReason}`,
@@ -75,7 +135,7 @@ describe("StorageResourcePressureContext", () => {
       ),
     )
 
-    expect(rendered).toEqual(["Resource headroom: unavailable — the host measurement failed."])
+    expect(rendered).toEqual([])
     expect(logLines).toHaveLength(1)
     expect(logLines[0]).toContain("level=WARN")
     expect(logLines[0]).toContain("event=resource.headroom.measure.failed")

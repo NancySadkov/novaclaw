@@ -79,6 +79,7 @@ const deferredCoreTools = [
   "recipe",
   "reconfigure",
   "register-app",
+  "resource_status",
   "revert",
   "trash",
   "write-hex",

@@ -5,7 +5,7 @@ import { ResourcePressureContext } from "@novaclaw/core/resource-pressure-contex
 import { makeGlobalNode } from "@novaclaw/core/effect/app-node"
 import { Log } from "@novaclaw/schema/log"
 import { Storage } from "./storage"
-import type { Pressure } from "./pressure"
+import { Pressure } from "./pressure"
 
 const GIB = 1024 ** 3
 const MIB = 1024 ** 2
@@ -21,8 +21,8 @@ const levelLine = (level: Pressure.Level): string => {
   return `Resource pressure: ${level}.`
 }
 
-/** Render Storage's structured report into the compact, plain-language `<env>` block. */
-export function lines(report: Pressure.Report): ReadonlyArray<string> {
+/** Full, point-in-time detail returned only when the model explicitly asks through resource_status. */
+export function details(report: Pressure.Report): ReadonlyArray<string> {
   const result = [levelLine(report.level)]
   const accounted = new Set<string>()
 
@@ -59,17 +59,55 @@ export function lines(report: Pressure.Report): ReadonlyArray<string> {
   return result
 }
 
+const urgency = (level: Pressure.Level) => (level === "floor" ? "critically low" : "low")
+
+/**
+ * Exception-only ambient context. Healthy and unmeasurable probes say nothing: normal headroom is the
+ * default, while measurement diagnostics remain available through resource_status and Instance settings.
+ * Lines are deliberately stable inside a severity band so fluctuating byte counts do not regenerate the
+ * system environment every turn.
+ */
+export function lines(report: Pressure.Report): ReadonlyArray<string> {
+  const result: string[] = []
+  const memoryLevel = Pressure.memoryLevel(report.memory, report.thresholds)
+  if (report.memory.known && (memoryLevel === "warning" || memoryLevel === "floor"))
+    result.push(`Memory headroom is ${urgency(memoryLevel)}; avoid memory-intensive work.`)
+
+  const disks = new Map<string, Pressure.Level>()
+  for (const disk of report.disks) {
+    const diskLevel = Pressure.diskLevel(disk, report.thresholds)
+    if (!disk.known || (diskLevel !== "warning" && diskLevel !== "floor")) continue
+    const previous = disks.get(disk.measuredPath)
+    if (previous !== "floor") disks.set(disk.measuredPath, diskLevel)
+  }
+  for (const [measuredPath, diskLevel] of disks)
+    result.push(`Disk space is ${urgency(diskLevel)} on ${measuredPath}; avoid large writes.`)
+  if (result.length > 0)
+    result.push("Use tool_search for resource status, then resource_status to inspect and confirm recovery.")
+  return result
+}
+
 export const layer = Layer.effect(
   ResourcePressureContext.Service,
   Effect.gen(function* () {
     const storage = yield* Storage.Service
+    const measure = storage.pressure()
     return ResourcePressureContext.Service.of({
       lines: () =>
-        storage.pressure().pipe(
+        measure.pipe(
           Effect.map(lines),
           Effect.catchCause((cause) =>
             Log.event("resource.headroom.measure.failed", { "resource.cause": Cause.pretty(cause) }).pipe(
-              Effect.as(["Resource headroom: unavailable — the host measurement failed."]),
+              Effect.as([]),
+            ),
+          ),
+        ),
+      inspect: () =>
+        measure.pipe(
+          Effect.map(details),
+          Effect.catchCause((cause) =>
+            Log.event("resource.headroom.measure.failed", { "resource.cause": Cause.pretty(cause) }).pipe(
+              Effect.as(["Resource headroom is unavailable because the host measurement failed."]),
             ),
           ),
         ),

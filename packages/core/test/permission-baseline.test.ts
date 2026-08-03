@@ -94,7 +94,12 @@ describe("AMBIENT_SAFE_BASELINE — the compiled floor (B4c)", () => {
     // be a deliberate edit rather than something a refactor can do quietly. Every entry has to pass
     // the three tests written above the constant: cannot mutate the host, cannot egress, cannot
     // change what a later turn or session runs.
-    expect(PermissionV2.AMBIENT_SAFE_BASELINE.map((rule) => rule.action)).toEqual(["read", "explore", "todowrite"])
+    expect(PermissionV2.AMBIENT_SAFE_BASELINE.map((rule) => rule.action)).toEqual([
+      "read",
+      "explore",
+      "todowrite",
+      "resource_status",
+    ])
     // Every rule is an unconditional allow on `*` — the floor is a floor, not a pattern game.
     expect(PermissionV2.AMBIENT_SAFE_BASELINE.every((rule) => rule.resource === "*" && rule.effect === "allow")).toBe(
       true,
@@ -146,7 +151,8 @@ describe("the built-in agents the plugin actually builds", () => {
   it.effect("the ambient-safe floor is present and effective on the default agent", () =>
     Effect.gen(function* () {
       const build = (yield* builtinAgents).get("build")!
-      for (const action of ["read", "explore", "todowrite"]) expect(effectFor(build, action)).toBe("allow")
+      for (const action of ["read", "explore", "todowrite", "resource_status"])
+        expect(effectFor(build, action)).toBe("allow")
       // Filenames do not create hidden read prompts. Users can still author an explicit deny rule.
       expect(effectFor(build, "read", "packages/core/.env")).toBe("allow")
       expect(effectFor(build, "read", ".env.local")).toBe("allow")

@@ -121,7 +121,7 @@ const decodeConfigured = Schema.decodeUnknownOption(ResourcePressure.Info)
  * `invalid` exists so a malformed setting is REPORTED rather than silently swallowed: falling back to
  * the defaults is the safe behaviour, but doing it quietly would leave a user certain they had set a
  * floor they do not have — a failed mutation reporting success (ruling 2). The operator surface and the
- * `<env>` line are expected to say so.
+ * on-demand resource detail report it; healthy ambient model context remains exception-only.
  */
 export type ThresholdsSource = "default" | "config" | "invalid"
 
