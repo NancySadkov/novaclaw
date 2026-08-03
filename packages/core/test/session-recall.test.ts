@@ -49,6 +49,26 @@ describe("SessionRecall", () => {
     expect(lines).toContain("- Nadia: Nadia prefers dark mode")
     expect(lines).toContain("- Berlin-based")
   })
+
+  test("finds recalled memories that cite an exact Windows path", () => {
+    const stale = hit("The file C:\\Users\\Nangl\\work\\pi.c already implements the program.")
+    const other = { ...hit("Use C:\\Users\\Nangl\\work\\other.c instead."), id: "mem_2" }
+    expect(SessionRecall.memoriesMentioningPath([stale, other], ["C:/users/nangl/work/pi.c"]).map((row) => row.id)).toEqual([
+      "mem_1",
+    ])
+  })
+
+  test("does not confuse a missing path with a nearby filename or a path fragment", () => {
+    const backup = hit("C:\\Users\\nangl\\work\\pi.c.bak exists.")
+    const nested = { ...hit("See D:\\archive\\C:\\Users\\nangl\\work\\pi.c"), id: "mem_2" }
+    expect(SessionRecall.memoriesMentioningPath([backup, nested], ["C:\\Users\\nangl\\work\\pi.c"])).toEqual([])
+  })
+
+  test("keeps POSIX path matching case-sensitive", () => {
+    const upper = hit("The source is at /home/nangl/Pi.c.")
+    expect(SessionRecall.memoriesMentioningPath([upper], ["/home/nangl/pi.c"])).toEqual([])
+    expect(SessionRecall.memoriesMentioningPath([upper], ["/home/nangl/Pi.c"])).toEqual([upper])
+  })
 })
 
 describe("recallPoolSize", () => {

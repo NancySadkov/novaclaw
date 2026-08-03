@@ -64,6 +64,7 @@ import { SessionRunnerModel } from "./model"
 import { SystemCompose } from "./system-compose"
 import { TierScaffold } from "./tier-scaffold"
 import { SessionRecall } from "./recall"
+import { MemoryCorrection } from "./memory-correction"
 import { SessionExtract } from "./extract"
 import { Memory } from "../../kb-graph/memory"
 import { KbEmbedder } from "../../kb-graph/embedder"
@@ -856,6 +857,9 @@ export const layer = Layer.effect(
       // off/unavailable → no block, the turn proceeds. Budgeted DOWN for weak models (the JH floor).
       const recallQuery = SessionRecall.recallQuery(context)
       let memoryRecall: string | undefined
+      // Kept for the duration of this provider step so a failed `read` can correct the exact
+      // remembered file claim that was actually put on the model's horizon.
+      let recalledMemories: ReadonlyArray<MemoryClient.SearchHit> = []
       if (recallQuery !== undefined && MemorySetting.memoryEnabled()) {
         // The VECTOR leg: one short embedding of the recall query lets the engine fuse vector KNN with
         // FTS (measured 85% vs 77% keyword-only). Bounded + degrading — no device, unreachable, or slow
@@ -890,7 +894,8 @@ export const layer = Layer.effect(
           const order = MemoryRerank.parseRerankOrder(reply, recallCandidates.length)
           if (order) ordered = order.map((index) => recallCandidates[index]!)
         }
-        memoryRecall = SessionRecall.formatRecall(ordered.slice(0, budget))
+        recalledMemories = ordered.slice(0, budget)
+        memoryRecall = SessionRecall.formatRecall(recalledMemories)
       }
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
       const toolMaterialization = isLastStep
@@ -1110,15 +1115,44 @@ export const layer = Layer.effect(
                 }),
               ).pipe(
                 Effect.flatMap((settlement) =>
-                  publish(
-                    LLMEvent.toolResult({
-                      id: event.id,
-                      name: event.name,
-                      result: settlement.result,
-                      output: settlement.output,
-                    }),
-                    settlement.outputPaths ?? [],
-                  ),
+                  Effect.gen(function* () {
+                    // A missing file is authoritative negative evidence. If recalled memory led this
+                    // exact step to that path, invalidate the claim before the next step recalls again.
+                    // Re-stat instead of parsing the generic tool error: permission, binary, size, and
+                    // transient I/O failures must never erase a valid memory.
+                    if (
+                      event.name === "read" &&
+                      settlement.result.type === "error" &&
+                      typeof event.input === "object" &&
+                      event.input !== null &&
+                      "path" in event.input &&
+                      typeof event.input.path === "string"
+                    ) {
+                      const requested = event.input.path.trim()
+                      if (requested !== "") {
+                        const count = yield* MemoryCorrection.correctMissingRead({
+                          memory,
+                          recalled: recalledMemories,
+                          requested,
+                          resolved: path.resolve(location.directory, requested),
+                        })
+                        if (count > 0)
+                          yield* Log.event("session.memory.stale-file.invalidated", {
+                            "session.id": session.id,
+                            "session.memory.invalidated": count,
+                          })
+                      }
+                    }
+                    yield* publish(
+                      LLMEvent.toolResult({
+                        id: event.id,
+                        name: event.name,
+                        result: settlement.result,
+                        output: settlement.output,
+                      }),
+                      settlement.outputPaths ?? [],
+                    )
+                  }),
                 ),
               ),
             ).pipe(FiberSet.run(toolFibers))

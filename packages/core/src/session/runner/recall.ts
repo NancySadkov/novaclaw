@@ -43,6 +43,45 @@ export const recallBudget = (tier: ModelV2.Tier | undefined): number => {
  *  Never returns fewer candidates than the budget — you cannot show more than you retrieved. */
 export const recallPoolSize = (budget: number): number => Math.max(Math.min(Math.max(budget * 3, 16), 40), budget)
 
+const slashPathText = (value: string): string => value.replaceAll("\\", "/")
+
+const pathBoundary = (value: string | undefined): boolean =>
+  value === undefined || /[\s"'`()\[\]{},;:!?]/.test(value)
+
+const mentionsExactPath = (text: string, target: string): boolean => {
+  const normalizedTarget = slashPathText(target.trim())
+  // Windows paths are case-insensitive in the environments Nova supports. Keep POSIX paths
+  // case-sensitive: `/home/A` and `/home/a` may genuinely be different files. The decision belongs
+  // to the TARGET, not the whole memory sentence containing it.
+  const windows = /^[a-z]:\//i.test(normalizedTarget) || normalizedTarget.startsWith("//")
+  const haystack = windows ? slashPathText(text).toLowerCase() : slashPathText(text)
+  const needle = windows ? normalizedTarget.toLowerCase() : normalizedTarget
+  if (needle === "") return false
+  let offset = haystack.indexOf(needle)
+  while (offset >= 0) {
+    const before = offset === 0 ? undefined : haystack[offset - 1]
+    const after = offset + needle.length >= haystack.length ? undefined : haystack[offset + needle.length]
+    const afterBoundary =
+      pathBoundary(after) ||
+      (after === "." && pathBoundary(haystack[offset + needle.length + 1]))
+    if (pathBoundary(before) && afterBoundary) return true
+    offset = haystack.indexOf(needle, offset + 1)
+  }
+  return false
+}
+
+/** Recalled facts that cite an exact filesystem target. This is the provenance gate for automatic
+ * correction: a failed read may invalidate a remembered file claim only when that memory actually
+ * led the current turn to the missing path. Nearby names (`pi.c.bak`) deliberately do not match. */
+export const memoriesMentioningPath = (
+  hits: ReadonlyArray<MemoryClient.SearchHit>,
+  targets: ReadonlyArray<string>,
+): ReadonlyArray<MemoryClient.SearchHit> => {
+  const uniqueTargets = [...new Set(targets.map((target) => target.trim()).filter(Boolean))]
+  if (uniqueTargets.length === 0) return []
+  return hits.filter((hit) => uniqueTargets.some((target) => mentionsExactPath(hit.text, target)))
+}
+
 /** Render recalled memories as a system-prompt block (undefined if none). Linearized; the model is
  *  told to USE it silently, not echo the list. */
 export const formatRecall = (hits: ReadonlyArray<MemoryClient.SearchHit>): string | undefined => {

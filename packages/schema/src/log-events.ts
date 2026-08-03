@@ -1113,6 +1113,13 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  "session.memory.stale-file.invalidated": {
+    level: "info",
+    message: "invalidated recalled file memories after a confirmed missing-path read",
+    attributes: { "session.id": "id", "session.memory.invalidated": "count" },
+    content: "none",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   /** A stored session message could not be decoded for an API response. */
   "session.message.decode.failed": {
     level: "error",
