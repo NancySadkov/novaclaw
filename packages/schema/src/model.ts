@@ -21,11 +21,12 @@ export interface Ref extends Schema.Schema.Type<typeof Ref> {}
 export const Family = Schema.String.pipe(Schema.brand("Family"))
 export type Family = typeof Family.Type
 
-// The safe floor for a hand-added model whose catalogue entry has not declared limits yet.
-// Nova supports 32K+ models; keeping the unknown case at zero made context packing inert and,
+// The safe default for a hand-added model whose catalogue entry has not declared limits yet.
+// Nova supports 32K+ models, but an unknown model starts at the roomier product default; keeping
+// the unknown case at zero made context packing inert and,
 // more seriously, omitted max_tokens on OpenAI-compatible requests. Slow reasoning models then
 // inherited the server's arbitrary generation default and could occupy a device for minutes.
-export const DEFAULT_LIMIT = { context: 32_768, output: 512 } as const
+export const DEFAULT_LIMIT = { context: 65_536, output: 16_384 } as const
 
 // Models-primary capability tier (notes/models-primary-plan.md): scaffolds the harness harder for
 // weaker models (Micro..Frontier). Distinct from the COST context-tier on `Cost.tier`. "guess"

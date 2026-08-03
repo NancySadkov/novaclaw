@@ -265,8 +265,8 @@ export const DialogNewModel: Component<{
         const familyPreset = matchPreset(id)
         modelsObj[id] = {
           name: id,
-          // A discovery response may carry one shared server window (vLLM max_model_len,
-          // llama.cpp meta.n_ctx). Unknown fields retain Nova's supported 32K floor. Persist both
+            // A discovery response may carry one shared server window (vLLM max_model_len,
+            // llama.cpp meta.n_ctx). Unknown fields retain Nova's 64K default. Persist both
           // limits so the request stays bounded after restart rather than relying on probe memory.
           limit: {
             context: result()?.window ?? ModelV2.DEFAULT_LIMIT.context,
