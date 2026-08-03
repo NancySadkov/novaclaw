@@ -5,16 +5,10 @@ import { produce, reconcile, type SetStoreFunction } from "solid-js/store"
 import type { createServerSdkContext } from "./server-sdk"
 import type { createServerSyncContextInner } from "./server-sync"
 import type { State } from "./global-sync/types"
+import { withRequestDeadline } from "@/utils/request-deadline"
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
-const sessionFields = new Set([
-  "session_status",
-  "session_working",
-  "session_diff",
-  "todo",
-  "permission",
-  "question",
-])
+const sessionFields = new Set(["session_status", "session_working", "session_diff", "todo", "permission", "question"])
 
 export const createDirSyncContext = (
   directory: string,
@@ -85,7 +79,10 @@ export const createDirSyncContext = (
       fetch: async (count = 10) => {
         const [store, setStore] = current()
         setStore("limit", (value) => value + count)
-        const response = await client.v2.session.list()
+        const response = await withRequestDeadline({
+          label: "Loading more sessions",
+          run: (signal) => client.v2.session.list(undefined, { signal }),
+        })
         const sessions = [...(response.data?.data ?? [])]
           .filter((session) => !!session?.id)
           .sort((a, b) => cmp(a.id, b.id))

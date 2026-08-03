@@ -90,6 +90,8 @@ import type {
   GlobalEventResponses,
   GlobalHealthErrors,
   GlobalHealthResponses,
+  GlobalResourcesErrors,
+  GlobalResourcesResponses,
   InstanceDisposeErrors,
   InstanceDisposeResponses,
   InstanceSchedulerErrors,
@@ -290,14 +292,16 @@ import type {
   V2PermissionSavedRemoveResponses,
   V2ProviderGetErrors,
   V2ProviderGetResponses,
+  V2ProviderInstallLocalModelErrors,
+  V2ProviderInstallLocalModelResponses,
   V2ProviderListErrors,
   V2ProviderListResponses,
   V2ProviderLocalModelsErrors,
   V2ProviderLocalModelsResponses,
   V2ProviderRemoveErrors,
   V2ProviderRemoveResponses,
-  V2ProviderStartLocalModelErrors,
-  V2ProviderStartLocalModelResponses,
+  V2ProviderStopLocalModelErrors,
+  V2ProviderStopLocalModelResponses,
   V2PtyConnectErrors,
   V2PtyConnectResponses,
   V2PtyConnectTokenErrors,
@@ -1177,6 +1181,18 @@ export class Global extends HeyApiClient {
   public discovery<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<GlobalDiscoveryResponses, GlobalDiscoveryErrors, ThrowOnError>({
       url: "/global/discovery",
+      ...options,
+    })
+  }
+
+  /**
+   * Get instance resource usage
+   *
+   * Report host memory pressure plus attributable NovaClaw, SQLite, vector knowledge-base and managed local-model RAM/disk use.
+   */
+  public resources<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<GlobalResourcesResponses, GlobalResourcesErrors, ThrowOnError>({
+      url: "/global/resources",
       ...options,
     })
   }
@@ -5512,11 +5528,11 @@ export class Provider2 extends HeyApiClient {
   }
 
   /**
-   * Install or start a managed local model
+   * Install a managed local model
    *
-   * Start a resumable verified background installation and launch the instance-owned llama.cpp server on loopback.
+   * Start a resumable verified background installation. The instance-owned llama.cpp server remains stopped until this model receives a prompt.
    */
-  public startLocalModel<ThrowOnError extends boolean = false>(
+  public installLocalModel<ThrowOnError extends boolean = false>(
     parameters: {
       profileID: string
       location?: {
@@ -5540,11 +5556,11 @@ export class Provider2 extends HeyApiClient {
       ],
     )
     return (options?.client ?? this.client).post<
-      V2ProviderStartLocalModelResponses,
-      V2ProviderStartLocalModelErrors,
+      V2ProviderInstallLocalModelResponses,
+      V2ProviderInstallLocalModelErrors,
       ThrowOnError
     >({
-      url: "/api/provider/local-models/{profileID}/start",
+      url: "/api/provider/local-models/{profileID}/install",
       ...options,
       ...params,
       headers: {
@@ -5552,6 +5568,32 @@ export class Provider2 extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Stop managed local inference
+   *
+   * Unload the instance-owned llama.cpp model and release its memory.
+   */
+  public stopLocalModel<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).post<
+      V2ProviderStopLocalModelResponses,
+      V2ProviderStopLocalModelErrors,
+      ThrowOnError
+    >({
+      url: "/api/provider/local-models/stop",
+      ...options,
+      ...params,
     })
   }
 

@@ -42,6 +42,7 @@ import { persisted } from "@/utils/persist"
 import { toggleMcp } from "./global-sync/mcp"
 import { createServerSession } from "./server-session"
 import { createNativeMessageStore } from "./global-sync/message-v2-store"
+import { withRequestDeadline } from "@/utils/request-deadline"
 
 type GlobalStore = {
   ready: boolean
@@ -244,8 +245,10 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
           loadRootSessionsWithFallback({
             directory,
             limit,
-            list: (query) =>
-              serverSDK.client.v2.session.list(query).then((r) => ({ data: r.data?.data ? [...r.data.data] : undefined })),
+            list: (query, options) =>
+              serverSDK.client.v2.session
+                .list(query, options)
+                .then((r) => ({ data: r.data?.data ? [...r.data.data] : undefined })),
           })
             .then((x) => {
               const nonArchived = (x.data ?? [])
@@ -303,7 +306,10 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     children.pin(key)
     try {
       const [, setStore] = children.child(directory, { bootstrap: false })
-      const response = await serverSDK.client.v2.session.list({ directory, limit: options?.limit ?? 200 })
+      const response = await withRequestDeadline({
+        label: "Loading child sessions",
+        run: (signal) => serverSDK.client.v2.session.list({ directory, limit: options?.limit ?? 200 }, { signal }),
+      })
       const result = { data: response.data?.data ? [...response.data.data] : undefined }
       const nonRoot = (result.data ?? []).filter((s) => !!s?.id && !!s.parentID && !s.time?.archived)
       if (nonRoot.length) {
@@ -496,7 +502,11 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
         void serverSDK.event.start()
       }, 0)
     }
-    if (typeof requestAnimationFrame === "function" && typeof document !== "undefined" && document.visibilityState === "visible") {
+    if (
+      typeof requestAnimationFrame === "function" &&
+      typeof document !== "undefined" &&
+      document.visibilityState === "visible"
+    ) {
       eventFrame = requestAnimationFrame(() => {
         eventFrame = undefined
         begin()

@@ -8,6 +8,10 @@ import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { MDNS } from "@/server/mdns"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
+import { LocalModelManager } from "@novaclaw/core/local-model-manager"
+import type { ConfigLocalModelCatalog } from "@novaclaw/core/config/local-model-catalog"
+import { Storage } from "@/storage/storage"
+import { ResourceUsage } from "@/storage/resource-usage"
 import { Effect, Queue, Schema } from "effect"
 import * as Stream from "effect/Stream"
 import { HttpServerResponse } from "effect/unstable/http"
@@ -64,6 +68,8 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
   Effect.gen(function* () {
     const config = yield* Config.Service
     const identity = yield* InstanceIdentityStore.Service
+    const localModels = yield* LocalModelManager.Service
+    const storage = yield* Storage.Service
     const bridge = yield* EffectBridge.make()
 
     const health = Effect.fn("GlobalHttpApi.health")(function* () {
@@ -82,6 +88,16 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
           self: instance.instanceID === self,
         })),
       }
+    })
+
+    const resources = Effect.fn("GlobalHttpApi.resources")(function* () {
+      const base = (yield* config.getGlobal()) as Record<string, unknown>
+      const merged = (yield* ConfigStoreWrite.overlay(base)) as { local_model_catalog?: ConfigLocalModelCatalog.Info }
+      const [pressure, localModel] = yield* Effect.all(
+        [storage.pressure(), localModels.status(merged.local_model_catalog)],
+        { concurrency: "unbounded" },
+      )
+      return yield* Effect.promise(() => ResourceUsage.collect({ pressure, localModel }))
     })
 
     const event = Effect.fn("GlobalHttpApi.event")(function* () {
@@ -135,5 +151,6 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       .handle("configUpdate", configUpdate)
       .handle("dispose", dispose)
       .handle("discovery", discovery)
+      .handle("resources", resources)
   }),
 )

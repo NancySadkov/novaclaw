@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { bypassesGuard, heavyJobLabels } from "./heavy-guard"
+import { bypassesGuard, hasEnoughFreeMemory, heavyJobLabels } from "./heavy-guard"
 
 describe("heavy job classification", () => {
   test("treats a managed llama.cpp server as incompatible with the test suite", () => {
@@ -31,5 +31,10 @@ describe("heavy job classification", () => {
     const environment = { NOVACLAW_SKIP_HEAVY_GUARD: "1", CI: "true" }
     expect(bypassesGuard(["bun", "test", "--force"], environment, { allowOverride: false })).toBe(false)
     expect(bypassesGuard(["bun", "build", "--force"], {}, { allowOverride: true })).toBe(true)
+  })
+
+  test("refuses a heavy job before immediately available RAM falls into the paging danger zone", () => {
+    expect(hasEnoughFreeMemory(6 * 1024 ** 3 - 1)).toBe(false)
+    expect(hasEnoughFreeMemory(6 * 1024 ** 3)).toBe(true)
   })
 })

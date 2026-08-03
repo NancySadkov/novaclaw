@@ -10,7 +10,7 @@ import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import {
-  localModelStart,
+  localModelInstall,
   localModelStatus,
   providerPresets,
   providerProbe,
@@ -400,7 +400,7 @@ export const DialogNewModel: Component<{
     if (!status) return
     setManaged(status)
     if (status.context !== undefined) setManagedContext(status.context)
-    if (status.stage === "ready") {
+    if (status.stage === "installed" || status.stage === "ready") {
       await useManaged(status)
       return
     }
@@ -409,7 +409,7 @@ export const DialogNewModel: Component<{
   }
   const installManaged = async (profileID: string) => {
     setError(undefined)
-    const status = await localModelStart(props.http, {
+    const status = await localModelInstall(props.http, {
       directory: props.directory,
       profileID,
       context: managedContext(),
@@ -419,7 +419,7 @@ export const DialogNewModel: Component<{
     })
     if (!status) return
     setManaged(status)
-    if (status.stage === "ready") await useManaged(status)
+    if (status.stage === "installed" || status.stage === "ready") await useManaged(status)
     else if (status.stage !== "error") managedPoll = setTimeout(() => void refreshManaged(), 500)
   }
 
@@ -720,12 +720,14 @@ export const DialogNewModel: Component<{
                             (managedContext() === status().context && status().preflight?.ok === false)
                           }
                           onClick={() =>
-                            status().stage === "ready" && managedContext() === status().context
+                            (status().stage === "installed" || status().stage === "ready") &&
+                            managedContext() === status().context
                               ? void useManaged(status())
                               : void installManaged(profile.id)
                           }
                         >
-                          {status().stage === "ready" && managedContext() === status().context
+                          {(status().stage === "installed" || status().stage === "ready") &&
+                          managedContext() === status().context
                             ? t("settings.models.new.managed.use")
                             : managedBusy()
                               ? t("settings.models.new.managed.working")

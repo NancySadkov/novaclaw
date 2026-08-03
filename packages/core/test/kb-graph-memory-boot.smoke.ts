@@ -1,8 +1,8 @@
 // Boot smoke — proves the graph DB starts AS PART OF THE INSTANCE, now via the in-process WASM engine
 // (§2.0). Builds the real boot layer (Memory.layerFromConfig, the same one Memory.node uses), which
-// opens the engine in-process in a background fiber, then resolves MemoryClient.Service and round-trips
-// a memory. Asserts the safety properties: NON-BLOCKING (the client is live before the engine finishes
-// opening — we poll health) and an unconfigured instance still boots (disabled client).
+// resolves a lightweight MemoryClient.Service, then opens the engine on its first operation and
+// round-trips a memory. Asserts the safety properties: UNUSED INSTANCES STAY UNLOADED and an
+// unconfigured instance still boots (disabled client).
 //
 // Runs under the Bun suite (WASM, no native addon) — this could fold into the hermetic suite, but it
 // opens a real graph + writes temp files, so it's kept a `.smoke.ts`:
@@ -14,6 +14,14 @@ import { join } from "node:path"
 import { Effect } from "effect"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
+import { enforce } from "../../../script/lib/heavy-guard"
+
+// Opening the real WASM graph engine consumes roughly 2 GiB on Windows. This smoke is deliberately
+// outside the normal suite, so it must carry the same non-bypassable admission check itself.
+enforce("the graph-memory smoke test", process.argv, {
+  allowOverride: false,
+  requireMeasurement: true,
+})
 
 let dir: string
 
@@ -37,9 +45,16 @@ describe("graph memory boots as part of the instance (in-process WASM)", () => {
     const layer = Memory.layerFromConfig({ enabled: true, dim: 8, dbDir: join(dir, "graph") })
     const program = Effect.gen(function* () {
       const mem = yield* MemoryClient.Service
-      // Non-blocking boot — the engine opens in the background; wait for it.
+      expect(Memory.runtimeStatus().stage).toBe("not-loaded")
       expect(yield* waitHealthy(mem)).toBe(true)
-      yield* mem.addMemory({ id: "u1", kind: "entity", name: "Nadia", text: "Nadia prefers dark mode", scope: "global" })
+      expect(Memory.runtimeStatus().stage).toBe("ready")
+      yield* mem.addMemory({
+        id: "u1",
+        kind: "entity",
+        name: "Nadia",
+        text: "Nadia prefers dark mode",
+        scope: "global",
+      })
       const hits = yield* mem.search({ query: "dark mode", k: 5 })
       expect(hits.some((h) => h.id === "u1")).toBe(true)
     })
@@ -48,11 +63,22 @@ describe("graph memory boots as part of the instance (in-process WASM)", () => {
 
   test("the background consolidation fiber promotes a session fact to global (cross-session)", async () => {
     // A short interval so the fiber fires during the test instead of the 5-min default.
-    const layer = Memory.layerFromConfig({ enabled: true, dim: 8, dbDir: join(dir, "consolidate"), consolidateEveryMs: 300 })
+    const layer = Memory.layerFromConfig({
+      enabled: true,
+      dim: 8,
+      dbDir: join(dir, "consolidate"),
+      consolidateEveryMs: 300,
+    })
     const program = Effect.gen(function* () {
       const mem = yield* MemoryClient.Service
       expect(yield* waitHealthy(mem)).toBe(true)
-      yield* mem.addMemory({ id: "sess1", kind: "episode", text: "The user drives a Saab", scope: "session:demo", source: "auto-extract" })
+      yield* mem.addMemory({
+        id: "sess1",
+        kind: "episode",
+        text: "The user drives a Saab",
+        scope: "session:demo",
+        source: "auto-extract",
+      })
       // Not global yet.
       expect(yield* mem.search({ query: "Saab", scopes: ["global"] })).toHaveLength(0)
       // Wait for the background consolidation pass to promote it.

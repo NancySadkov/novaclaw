@@ -9,6 +9,8 @@ import { Download } from "@novaclaw/core/download"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Global } from "@novaclaw/core/global"
 import { LocalModelManager } from "@novaclaw/core/local-model-manager"
+import { makeGlobalNode } from "@novaclaw/core/effect/app-node"
+import { httpClient } from "@novaclaw/core/effect/app-node-platform"
 import { Pressure } from "@/storage/pressure"
 import { Process } from "@/util/process"
 import {
@@ -21,6 +23,7 @@ import {
   QWEN_PROFILE,
   recommendedContext,
   RUNTIME_ARTIFACT,
+  supportedContext,
 } from "./catalog"
 
 const PORT = 11_343
@@ -32,8 +35,10 @@ export type Stage =
   | "downloading-runtime"
   | "installing-runtime"
   | "downloading-model"
+  | "installed"
   | "starting"
   | "ready"
+  | "stopping"
   | "error"
 
 export interface Status {
@@ -50,6 +55,8 @@ export interface Status {
   readonly modelID?: string
   readonly context?: number
   readonly output?: number
+  readonly pid?: number
+  readonly ramBytes?: number
   readonly preflight?: Preflight
   readonly recommendedContext: number
 }
@@ -117,6 +124,18 @@ function baseStatus(profile: Profile): Pick<Status, "supported" | "platform" | "
   }
 }
 
+export function isManagedEndpoint(value: string | undefined): boolean {
+  if (!value || !URL.canParse(value)) return false
+  const url = new URL(value)
+  const host = url.hostname === "localhost" ? HOST : url.hostname
+  return (
+    url.protocol === "http:" &&
+    host === HOST &&
+    Number(url.port || "80") === PORT &&
+    url.pathname.replace(/\/+$/, "") === "/v1"
+  )
+}
+
 async function waitUntilReady(child: Process.Child, expectedModel: string, timeoutMs = 180_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -145,7 +164,8 @@ export const layer = Layer.effect(
     let state: Status = { ...baseStatus(acquisition.profile), stage: "idle" }
     let job: Fiber.Fiber<void, never> | undefined
     let child: Process.Child | undefined
-    let stopping = false
+    let shuttingDown = false
+    let expectedStop = false
     let recentLog = ""
     let selectedContext = recommendedContext(os.totalmem())
     let pressureTimer: ReturnType<typeof setInterval> | undefined
@@ -157,7 +177,7 @@ export const layer = Layer.effect(
       recentLog = `${recentLog}${String(chunk)}`.slice(-8_000)
     }
 
-    const launch = (gpu: boolean) =>
+    const launch = (gpu: boolean, signal?: AbortSignal) =>
       Effect.promise(async () => {
         set({
           stage: "starting",
@@ -186,9 +206,10 @@ export const layer = Layer.effect(
             "--jinja",
             "--no-webui",
           ],
-          { stdout: "pipe", stderr: "pipe" },
+          { stdout: "pipe", stderr: "pipe", abort: signal },
         )
         child = next
+        set({ pid: next.pid, ramBytes: undefined })
         next.stdout?.on("data", log)
         next.stderr?.on("data", log)
         try {
@@ -208,19 +229,42 @@ export const layer = Layer.effect(
           if (child === next) child = undefined
           throw error
         }
+        set({
+          stage: "ready",
+          message: "Qwen3.5 4B is loaded and ready.",
+          detail: undefined,
+          baseURL: `http://${HOST}:${PORT}/v1`,
+          modelID: QWEN_PROFILE.modelID,
+          context: selectedContext,
+          output: outputForContext(selectedContext),
+          pid: next.pid,
+        })
+        let monitor: ReturnType<typeof setInterval> | undefined
         void next.exited.then((code) => {
-          if (pressureTimer) clearInterval(pressureTimer)
-          pressureTimer = undefined
+          if (monitor) clearInterval(monitor)
+          if (pressureTimer === monitor) pressureTimer = undefined
           if (child === next) child = undefined
-          if (!stopping && state.stage === "ready")
+          const wasExpected = expectedStop
+          expectedStop = false
+          if (!shuttingDown && !wasExpected && state.stage === "ready")
             set({
               stage: "error",
               message: "The local model stopped.",
               detail: `${recentLog.trim().slice(-2_000) || `llama.cpp exited with code ${code}.`} Try starting it again.`,
+              pid: undefined,
+              ramBytes: undefined,
+            })
+          else if (!shuttingDown && wasExpected)
+            set({
+              stage: "installed",
+              message: "The local model is stopped. It will load again when you prompt it.",
+              pid: undefined,
+              ramBytes: undefined,
             })
         })
-        pressureTimer = setInterval(() => {
-          void Pressure.memory().then((memory) => {
+        monitor = setInterval(() => {
+          void Promise.all([Pressure.memory(), Pressure.processMemory(next.pid)]).then(([memory, processMemory]) => {
+            if (child === next && processMemory.known) set({ ramBytes: processMemory.rssBytes })
             if (child !== next || Pressure.memoryLevel(memory, Pressure.DEFAULT_THRESHOLDS) !== "floor") return
             const detail = memory.known
               ? `Committed memory reached ${(memory.usedBytes / 1024 ** 3).toFixed(1)} GB of ` +
@@ -231,6 +275,7 @@ export const layer = Layer.effect(
             void Process.stop(next).catch(() => undefined)
           })
         }, 5_000)
+        pressureTimer = monitor
         pressureTimer.unref?.()
       })
 
@@ -300,13 +345,6 @@ export const layer = Layer.effect(
         })
       }
 
-      if (child) yield* Effect.promise(() => Process.stop(child!).catch(() => undefined))
-      yield* launch(true).pipe(
-        Effect.catch((gpuError) => {
-          set({ detail: `Graphics acceleration was unavailable (${errorText(gpuError)}). Retrying on the CPU.` })
-          return launch(false)
-        }),
-      )
       yield* Effect.promise(async () => {
         await fs.mkdir(paths.root, { recursive: true })
         await fs.writeFile(
@@ -316,8 +354,8 @@ export const layer = Layer.effect(
         )
       })
       set({
-        stage: "ready",
-        message: "Qwen3.5 4B is ready on this instance.",
+        stage: "installed",
+        message: "Qwen3.5 4B is installed. It will load when you send it a prompt.",
         detail: undefined,
         completed: undefined,
         total: undefined,
@@ -332,14 +370,14 @@ export const layer = Layer.effect(
           const message = errorText(Cause.squash(cause))
           set({
             stage: "error",
-            message: "The local model could not be started.",
+            message: "The local model could not be installed.",
             detail: `${message}${recentLog.trim() ? `\n\nllama.cpp: ${recentLog.trim().slice(-2_000)}` : ""}`,
           })
         }),
       ),
     )
 
-    const start = (profileID: string, context?: number, overrides?: ConfigLocalModelCatalog.Info) =>
+    const installModel = (profileID: string, context?: number, overrides?: ConfigLocalModelCatalog.Info) =>
       Effect.sync(() => {
         if (!state.supported) {
           set({
@@ -380,13 +418,129 @@ export const layer = Layer.effect(
           output: outputForContext(selectedContext),
           message: "Checking this computer…",
         })
-        job = runtime(install)
+        job = runtime(
+          Effect.gen(function* () {
+            if (child) {
+              expectedStop = true
+              yield* Effect.promise(() => Process.stop(child!).catch(() => undefined))
+              Pressure.resetMemoryCache()
+            }
+            yield* install
+          }),
+        )
+        return state
+      })
+
+    let loading: Promise<void> | undefined
+    let loadAbort: AbortController | undefined
+
+    const loadModel = (signal: AbortSignal) =>
+      Effect.gen(function* () {
+        // One managed engine owns one loaded model. Release the previous context/model BEFORE the
+        // admission check; otherwise its own RAM makes the replacement look impossible to load.
+        if (child) {
+          expectedStop = true
+          yield* Effect.promise(() => Process.stop(child!).catch(() => undefined))
+          Pressure.resetMemoryCache()
+        }
+        const check = yield* Effect.promise(() => preflight(paths, selectedContext, acquisition.profile))
+        set({ preflight: check })
+        if (!check.ok) return yield* Effect.fail(new Error(check.issues.join(" ")))
+        if (!(yield* Effect.promise(() => exists(paths.server))) || !(yield* Effect.promise(() => exists(paths.model))))
+          return yield* Effect.fail(
+            new Error("This local model is not installed. Open Settings → Models → Add model → Local Model first."),
+          )
+        yield* launch(true, signal).pipe(
+          Effect.catch((gpuError) =>
+            Effect.gen(function* () {
+              const retryCheck = yield* Effect.promise(() => preflight(paths, selectedContext, acquisition.profile))
+              if (!retryCheck.ok) return yield* Effect.fail(gpuError)
+              set({ detail: `Graphics acceleration was unavailable (${errorText(gpuError)}). Retrying on the CPU.` })
+              return yield* launch(false, signal)
+            }),
+          ),
+        )
+      })
+
+    const ensure = (request: LocalModelManager.ModelRequest, overrides?: ConfigLocalModelCatalog.Info) => {
+      if (!isManagedEndpoint(request.baseURL) || request.apiModelID !== QWEN_PROFILE.modelID) return Effect.void
+      return Effect.tryPromise({
+        try: async () => {
+          if (!state.supported)
+            throw new Error(`Managed local models are not available on ${process.platform}-${process.arch} yet.`)
+          acquisition = effective(overrides)
+          const requestedContext = request.context
+          if (requestedContext !== undefined && supportedContext(requestedContext)) selectedContext = requestedContext
+          if (state.stage === "ready" && child && state.context === selectedContext) return
+          if (!loading) {
+            loadAbort = new AbortController()
+            const controller = loadAbort
+            loading = Effect.runPromise(loadModel(controller.signal))
+              .catch((cause) => {
+                const detail = errorText(cause)
+                if (!controller.signal.aborted)
+                  set({
+                    stage: "error",
+                    message: "The local model could not be loaded.",
+                    detail: `${detail}${recentLog.trim() ? `\n\nllama.cpp: ${recentLog.trim().slice(-2_000)}` : ""}`,
+                    pid: undefined,
+                    ramBytes: undefined,
+                  })
+                throw cause
+              })
+              .finally(() => {
+                if (loadAbort === controller) loadAbort = undefined
+                loading = undefined
+              })
+          }
+          await loading
+        },
+        catch: (cause) =>
+          new LocalModelManager.UnavailableError({
+            message:
+              `The managed local model could not be loaded: ${errorText(cause)} ` +
+              "Open Settings → Instances for memory details and controls, or pick another model.",
+          }),
+      })
+    }
+
+    const stop = () =>
+      Effect.promise(async () => {
+        if (!child && !loading) {
+          if ((await exists(paths.server)) && (await exists(paths.model)))
+            set({
+              stage: "installed",
+              message: "The local model is stopped. It will load again when you prompt it.",
+              detail: undefined,
+              pid: undefined,
+              ramBytes: undefined,
+            })
+          return state
+        }
+        set({ stage: "stopping", message: "Stopping the local model…" })
+        expectedStop = true
+        loadAbort?.abort(new Error("The local model was stopped from Instance settings."))
+        const current = child
+        if (current) await Process.stop(current).catch(() => undefined)
+        await loading?.catch(() => undefined)
+        if (!child)
+          set({
+            stage: "installed",
+            message: "The local model is stopped. It will load again when you prompt it.",
+            pid: undefined,
+            ramBytes: undefined,
+          })
         return state
       })
 
     const status = (overrides?: ConfigLocalModelCatalog.Info) =>
       Effect.promise(async () => {
-        if (state.stage === "idle" || state.stage === "ready" || state.stage === "error") {
+        if (
+          state.stage === "idle" ||
+          state.stage === "installed" ||
+          state.stage === "ready" ||
+          state.stage === "error"
+        ) {
           acquisition = effective(overrides)
           set({
             ...baseStatus(acquisition.profile),
@@ -399,7 +553,8 @@ export const layer = Layer.effect(
 
     yield* Effect.addFinalizer(() =>
       Effect.promise(async () => {
-        stopping = true
+        shuttingDown = true
+        loadAbort?.abort()
         if (pressureTimer) clearInterval(pressureTimer)
         if (job) await Effect.runPromise(Fiber.interrupt(job)).catch(() => undefined)
         if (child) await Process.stop(child).catch(() => undefined)
@@ -413,14 +568,40 @@ export const layer = Layer.effect(
           .then((text) => JSON.parse(text) as { context?: unknown })
           .catch((): { context?: unknown } => ({})),
       )
-      if (typeof saved.context === "number" && QWEN_PROFILE.contexts.includes(saved.context))
-        selectedContext = saved.context
-      job = yield* Effect.forkScoped(install)
+      if (typeof saved.context === "number" && supportedContext(saved.context)) selectedContext = saved.context
+      const complete =
+        (yield* Effect.promise(() => exists(paths.server))) && (yield* Effect.promise(() => exists(paths.model)))
+      if (complete) {
+        set({
+          stage: "installed",
+          profileID: QWEN_PROFILE.id,
+          message: "Qwen3.5 4B is installed. It will load when you send it a prompt.",
+          baseURL: `http://${HOST}:${PORT}/v1`,
+          modelID: QWEN_PROFILE.modelID,
+          context: selectedContext,
+          output: outputForContext(selectedContext),
+        })
+      } else {
+        set({
+          stage: "error",
+          profileID: QWEN_PROFILE.id,
+          message: "The local model installation is incomplete. Install it again to repair the missing files.",
+          context: selectedContext,
+          output: outputForContext(selectedContext),
+          detail: "One or more local model files are missing.",
+        })
+      }
     }
 
-    return LocalModelManager.Service.of({ status, start })
+    return LocalModelManager.Service.of({ status, install: installModel, ensure, stop })
   }),
 )
+
+export const node = makeGlobalNode({
+  service: LocalModelManager.Service,
+  layer,
+  deps: [Global.node, FSUtil.node, httpClient],
+})
 
 export * as LocalModelRuntime from "./runtime"
 export { QWEN_PROFILE_ID } from "./catalog"

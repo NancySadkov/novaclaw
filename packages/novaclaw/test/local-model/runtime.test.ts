@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Config } from "@novaclaw/core/config"
 import { Schema } from "effect"
+import fs from "node:fs"
 import {
   effective,
   evaluatePreflight,
@@ -9,7 +10,9 @@ import {
   QWEN_PROFILE,
   recommendedContext,
   RUNTIME_ARTIFACT,
+  supportedContext,
 } from "@/local-model/catalog"
+import { isManagedEndpoint } from "@/local-model/runtime"
 
 const GIB = 1024 ** 3
 
@@ -50,6 +53,22 @@ describe("managed local-model catalog", () => {
     expect(catalog.model.sha256).toBe("b".repeat(64))
     expect(catalog.profile.sourceURL).toBe("https://mirror.example/model-card")
     expect(catalog.profile.downloadBytes).toBe(1234)
+  })
+})
+
+describe("managed local-model lifecycle", () => {
+  test("recognizes only NovaClaw's own loopback endpoint", () => {
+    expect(isManagedEndpoint("http://127.0.0.1:11343/v1")).toBe(true)
+    expect(isManagedEndpoint("http://localhost:11343/v1/")).toBe(true)
+    expect(isManagedEndpoint("http://127.0.0.1:8000/v1")).toBe(false)
+    expect(isManagedEndpoint("https://127.0.0.1:11343/v1")).toBe(false)
+  })
+
+  test("restores an installed selection as stopped instead of loading it at boot", () => {
+    const source = fs.readFileSync(new URL("../../src/local-model/runtime.ts", import.meta.url), "utf8")
+    expect(source).not.toContain("forkScoped(install)")
+    expect(source).toContain('stage: "installed"')
+    expect(source).toContain("It will load when you send it a prompt")
   })
 })
 
@@ -130,5 +149,7 @@ describe("managed local-model preflight", () => {
     expect(recommendedContext(15.7 * GIB)).toBe(65_536)
     expect(outputForContext(32_768)).toBe(8_192)
     expect(outputForContext(65_536)).toBe(16_384)
+    expect(supportedContext(98_304)).toBe(true)
+    expect(supportedContext(300_000)).toBe(false)
   })
 })

@@ -61,6 +61,22 @@ describe("loadRootSessionsWithFallback", () => {
       { directory: "dir", roots: true },
     ])
   })
+
+  test("times out a dead connection once instead of hanging or retrying a larger query", async () => {
+    let calls = 0
+    const pending = loadRootSessionsWithFallback({
+      directory: "dir",
+      limit: 25,
+      timeoutMs: 5,
+      list: async () => {
+        calls++
+        return new Promise<never>(() => undefined)
+      },
+    })
+
+    await expect(pending).rejects.toThrow("Loading sessions timed out")
+    expect(calls).toBe(1)
+  })
 })
 
 describe("estimateRootSessionTotal", () => {

@@ -38,7 +38,7 @@ export const ProviderGroup = HttpApiGroup.make("server.provider")
       ),
   )
   .add(
-    HttpApiEndpoint.post("provider.startLocalModel", "/api/provider/local-models/:profileID/start", {
+    HttpApiEndpoint.post("provider.installLocalModel", "/api/provider/local-models/:profileID/install", {
       params: { profileID: Schema.String },
       query: LocationQuery,
       payload: Schema.Struct({ context: Schema.optional(Schema.Number) }),
@@ -47,10 +47,24 @@ export const ProviderGroup = HttpApiGroup.make("server.provider")
       .annotateMerge(locationQueryOpenApi)
       .annotateMerge(
         OpenApi.annotations({
-          identifier: "v2.provider.startLocalModel",
-          summary: "Install or start a managed local model",
+          identifier: "v2.provider.installLocalModel",
+          summary: "Install a managed local model",
           description:
-            "Start a resumable verified background installation and launch the instance-owned llama.cpp server on loopback.",
+            "Start a resumable verified background installation. The instance-owned llama.cpp server remains stopped until this model receives a prompt.",
+        }),
+      ),
+  )
+  .add(
+    HttpApiEndpoint.post("provider.stopLocalModel", "/api/provider/local-models/stop", {
+      query: LocationQuery,
+      success: LocalModel.Status,
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.provider.stopLocalModel",
+          summary: "Stop managed local inference",
+          description: "Unload the instance-owned llama.cpp model and release its memory.",
         }),
       ),
   )

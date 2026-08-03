@@ -11,8 +11,10 @@ import { Auth, type AnyRoute } from "@novaclaw/llm/route"
 import { Context, Effect, Layer, Schema } from "effect"
 import { produce } from "immer"
 import { Catalog } from "../../catalog"
+import { Config } from "../../config"
 import { Credential } from "../../credential"
 import { Integration } from "../../integration"
+import { LocalModelManager } from "../../local-model-manager"
 import { ModelV2 } from "../../model"
 import { PluginV2 } from "../../plugin"
 import { ProbeWindow } from "../../probe-window"
@@ -102,6 +104,7 @@ export type Error =
   | VariantUnavailableError
   | UnsupportedApiError
   | ModelInputUnsupportedError
+  | LocalModelManager.UnavailableError
   | Integration.AuthorizationError
 
 export interface Interface {
@@ -285,12 +288,30 @@ export const supported = (model: ModelV2.Info) =>
     model.api.package === "@ai-sdk/anthropic" ||
     (model.api.package === "@ai-sdk/openai-compatible" && model.api.url !== undefined))
 
+export const ensureManagedModel = (
+  manager: LocalModelManager.Interface,
+  selected: ModelV2.Info,
+  overrides?: Parameters<LocalModelManager.Interface["ensure"]>[1],
+) =>
+  manager.ensure(
+    {
+      providerID: selected.providerID,
+      modelID: selected.id,
+      apiModelID: selected.api.id,
+      baseURL: selected.api.url,
+      context: selected.limit.context,
+    },
+    overrides,
+  )
+
 /** Resolves models from the catalog belonging to the current Location runtime. */
 export const locationLayer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const catalog = yield* Catalog.Service
+    const config = yield* Config.Service
     const integrations = yield* Integration.Service
+    const localModels = yield* LocalModelManager.Service
     const plugins = yield* PluginV2.Service
 
     const select = Effect.fnUntraced(function* (session: SessionSchema.Info) {
@@ -313,9 +334,7 @@ export const locationLayer = Layer.effect(
         // again before failing. The healthy path pays nothing.
         let selected = yield* select(session)
         if (!selected) {
-          yield* plugins.ready.pipe(
-            Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.void }),
-          )
+          yield* plugins.ready.pipe(Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.void }))
           selected = yield* select(session)
         }
         if (!selected && session.model)
@@ -324,6 +343,7 @@ export const locationLayer = Layer.effect(
             modelID: session.model.id,
           })
         if (!selected) return yield* new ModelNotSelectedError({ sessionID: session.id })
+        yield* ensureManagedModel(localModels, selected, Config.latest(yield* config.entries(), "local_model_catalog"))
         const provider = yield* catalog.provider.get(selected.providerID)
         const connection = yield* integrations.connection.active(
           provider?.integrationID ?? Integration.ID.make(selected.providerID),
@@ -361,5 +381,5 @@ export const locationLayer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer: locationLayer,
-  deps: [Catalog.node, Integration.node, PluginV2.node],
+  deps: [Catalog.node, Config.node, Integration.node, LocalModelManager.node, PluginV2.node],
 })

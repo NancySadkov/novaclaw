@@ -17,8 +17,8 @@ import { WasmMemory } from "./wasm-engine"
 // and provides `MemoryClient.Service` to the kb tool + recall hooks. One engine per instance = the
 // single-writer (§4.1); GLOBAL (per-instance) node — config rides an env flag like the global DB path.
 // Safe in the boot path:
-//   • NON-BLOCKING — opening happens in a background fiber; the client is provided immediately and ops
-//     degrade until the engine is ready. Boot never waits on the DB.
+//   • LAZY — boot provides a lightweight client; the first memory operation opens the engine and
+//     concurrent operations share that one open. Instances that never use memory allocate no WASM graph.
 //   • NEVER A HARD DEPENDENCY — disabled, or the engine fails to open → a `disabled` client, so the
 //     instance still boots (the "never breaks" vision).
 // The graph is persisted (MEMFS + snapshot) under the instance data dir; deleting instance data
@@ -37,6 +37,15 @@ export interface MemoryConfig {
   readonly globalStagedCap?: number
 }
 
+export type RuntimeStage = "disabled" | "not-loaded" | "loading" | "ready" | "error"
+export interface RuntimeStatus {
+  readonly stage: RuntimeStage
+  readonly detail?: string
+}
+
+let currentRuntimeStatus: RuntimeStatus = { stage: "not-loaded" }
+export const runtimeStatus = (): RuntimeStatus => currentRuntimeStatus
+
 const DEFAULT_GLOBAL_STAGED_CAP = 5000
 // Backfill batch per idle pass — bounded so the drain never monopolises the engine lock or the device.
 const EMBED_DRAIN_BATCH = 64
@@ -47,32 +56,59 @@ export const configFromFlags = (): MemoryConfig => ({
   ...(Flag.NOVACLAW_KB_MEMORY_DIM ? { dim: Number(Flag.NOVACLAW_KB_MEMORY_DIM) } : {}),
 })
 
-/** Build the memory layer from an explicit config. Opens the WASM engine in a background fiber so boot
- *  is non-blocking; the finalizer flushes + closes it on instance shutdown. Disabled / open-failure →
- *  a disabled client so the instance still boots. */
+/** Build the memory layer from an explicit config. The WASM engine opens on first use; the finalizer
+ * flushes + closes it on instance shutdown. Disabled / open-failure never prevents instance boot. */
 export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Service> =>
   Layer.effect(
     MemoryClient.Service,
     Effect.gen(function* () {
-      if (!cfg.enabled) return MemoryClient.disabled("memory is disabled (NOVACLAW_KB_MEMORY off)")
+      if (!cfg.enabled) {
+        currentRuntimeStatus = { stage: "disabled" }
+        return MemoryClient.disabled("memory is disabled (NOVACLAW_KB_MEMORY off)")
+      }
       const dbDir = cfg.dbDir ?? join(Global.Path.data, "memory", "graph")
-      // Non-blocking open: the client is handed over immediately as a proxy that degrades to a
-      // disabled delegate until the engine finishes opening in a background fiber, then swaps to the
-      // live in-process client. Open failure stays degraded (never a hard boot dependency).
+      currentRuntimeStatus = { stage: "not-loaded" }
       let engine: WasmMemory | undefined
-      let delegate: MemoryClient.Interface = MemoryClient.disabled("memory engine still opening")
-      yield* Effect.forkScoped(
-        Effect.tryPromise(() => WasmMemory.open(dbDir, cfg.dim === undefined ? {} : { dim: cfg.dim })).pipe(
-          Effect.tap((opened) =>
-            Effect.sync(() => {
-              engine = opened
-              delegate = MemoryClient.fromEngine(opened)
-            }),
-          ),
-          Effect.tapError((cause) => Log.event("kb.memory.open.failed", { "kb.cause": String(cause) })),
-          Effect.ignore, // open failure stays degraded — never a hard boot dependency
-        ),
-      )
+      let opening: Promise<MemoryClient.Interface> | undefined
+      const open = () => {
+        if (engine) return Promise.resolve(MemoryClient.fromEngine(engine))
+        if (opening) return opening
+        currentRuntimeStatus = { stage: "loading" }
+        opening = WasmMemory.open(dbDir, cfg.dim === undefined ? {} : { dim: cfg.dim })
+          .then((opened) => {
+            engine = opened
+            currentRuntimeStatus = { stage: "ready" }
+            return MemoryClient.fromEngine(opened)
+          })
+          .catch((cause) => {
+            currentRuntimeStatus = { stage: "error", detail: String(cause).slice(0, 300) }
+            Effect.runFork(Log.event("kb.memory.open.failed", { "kb.cause": String(cause) }))
+            throw cause
+          })
+          .finally(() => {
+            opening = undefined
+          })
+        return opening
+      }
+      const client = <A>(run: (live: MemoryClient.Interface) => Effect.Effect<A, MemoryClient.MemoryError>) =>
+        Effect.tryPromise({
+          try: open,
+          catch: (cause) => new MemoryClient.MemoryError({ reason: String(cause).slice(0, 300) }),
+        }).pipe(Effect.flatMap(run))
+      const lazyClient: MemoryClient.Interface = {
+        health: () => client((live) => live.health()).pipe(Effect.orElseSucceed(() => false)),
+        addMemory: (input) => client((live) => live.addMemory(input)),
+        addEdge: (input) => client((live) => live.addEdge(input)),
+        search: (input) => client((live) => live.search(input)),
+        neighbors: (id, opts) => client((live) => live.neighbors(id, opts)),
+        path: (from, to, maxHops) => client((live) => live.path(from, to, maxHops)),
+        invalidate: (id, at) => client((live) => live.invalidate(id, at)),
+        purge: (id) => client((live) => live.purge(id)),
+        clearScope: (scope) => client((live) => live.clearScope(scope)),
+        stats: () => client((live) => live.stats()),
+        list: (input) => client((live) => live.list(input)),
+        graph: (input) => client((live) => live.graph(input)),
+      }
       // Background consolidation (§1.3.4): periodically promote this instance's session memories to
       // global so auto-extracted facts become cross-session. Best-effort; a no-op until the engine is
       // live. Runs off the turn hot-path (a forked fiber, stopped on scope close).
@@ -110,7 +146,7 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
       )
       // Flush + close the engine on instance shutdown (best-effort; the snapshot persists the graph).
       yield* Effect.addFinalizer(() => Effect.promise(async () => engine && (await engine.close())))
-      return MemoryClient.proxy(() => delegate)
+      return lazyClient
     }),
   )
 

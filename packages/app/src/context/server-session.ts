@@ -18,6 +18,7 @@ import { rootSession } from "@/utils/session-route"
 import { applyControlPatch, controlPatch } from "./global-sync/control-fold"
 import * as LiveRate from "./global-sync/live-rate"
 import { dropSessionCaches, pickSessionCacheEvictions, SESSION_CACHE_LIMIT } from "./global-sync/session-cache"
+import { withRequestDeadline } from "@/utils/request-deadline"
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 const sessionInfoLimit = 2_048
@@ -32,8 +33,11 @@ function runInflight(map: Map<string, Promise<void>>, key: string, task: () => P
   return promise
 }
 
-export function createServerSession(client: NovaclawClient, options?: { retry?: typeof retry }) {
-  void options
+export function createServerSession(
+  client: NovaclawClient,
+  settings?: { retry?: typeof retry; requestTimeoutMs?: number },
+) {
+  const retryRequest = settings?.retry ?? retry
   // Live generation telemetry (Chats ps row): per-session delta accumulation lives OUTSIDE the
   // reactive store (deltas arrive at token-chunk frequency); a throttled version signal wakes
   // readers ≤ ~1.5x/sec. Cleared when the session's status settles (idle/exited).
@@ -152,7 +156,11 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
     const pending = requests.get(sessionID)
     if (pending) return pending
     const active = generation(sessionID)
-    const request = client.v2.session.get({ sessionID }).then((result) => {
+    const request = withRequestDeadline({
+      label: "Loading this session",
+      timeoutMs: settings?.requestTimeoutMs,
+      run: (signal) => client.v2.session.get({ sessionID }, { signal }),
+    }).then((result) => {
       const info = result.data?.data
       if (!info) throw new Error(`Session not found: ${sessionID}`)
       if (generations.get(sessionID) !== active) return info
@@ -408,7 +416,7 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
 
   // Bootstrap the instance-wide tag map (live updates arrive via `session.tags.updated`).
   const loadTags = () =>
-    retry(() => client.v2.session.tags.all())
+    retryRequest(() => client.v2.session.tags.all())
       .then((result) => {
         setData("tag", reconcile((result.data?.data ?? {}) as Record<string, string[]>))
       })
@@ -438,10 +446,14 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
       if (data.session_diff[sessionID] !== undefined && !options?.force) return Promise.resolve()
       return runInflight(inflightDiff, sessionID, () => {
         const active = generation(sessionID)
-        return retry(() => client.v2.session.get({ sessionID })).then((result) => {
+        return retryRequest(() => client.v2.session.get({ sessionID })).then((result) => {
           if (generations.get(sessionID) !== active) return
           // V1-nuke slice C: the drain-end changes summary rides the native record (Session.Info.summary).
-          setData("session_diff", sessionID, reconcile(cleanDiffs([...(result.data?.data?.summary?.diffs ?? [])]), { key: "file" }))
+          setData(
+            "session_diff",
+            sessionID,
+            reconcile(cleanDiffs([...(result.data?.data?.summary?.diffs ?? [])]), { key: "file" }),
+          )
         })
       })
     },
@@ -450,7 +462,7 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
       if (data.todo[sessionID] !== undefined && !options?.force) return Promise.resolve()
       return runInflight(inflightTodo, sessionID, () => {
         const active = generation(sessionID)
-        return retry(() => client.v2.session.todo({ sessionID })).then((result) => {
+        return retryRequest(() => client.v2.session.todo({ sessionID })).then((result) => {
           if (generations.get(sessionID) !== active) return
           setData("todo", sessionID, reconcile([...(result.data?.data ?? [])], { key: "id" }))
         })

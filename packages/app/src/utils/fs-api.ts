@@ -138,8 +138,10 @@ export interface LocalModelStatus {
     | "downloading-runtime"
     | "installing-runtime"
     | "downloading-model"
+    | "installed"
     | "starting"
     | "ready"
+    | "stopping"
     | "error"
   readonly profileID?: string
   readonly completed?: number
@@ -150,6 +152,8 @@ export interface LocalModelStatus {
   readonly modelID?: string
   readonly context?: number
   readonly output?: number
+  readonly pid?: number
+  readonly ramBytes?: number
   readonly preflight?: {
     readonly ok: boolean
     readonly issues: readonly string[]
@@ -170,17 +174,21 @@ export function localModelStatus(
   })
 }
 
-export function localModelStart(
+export function localModelInstall(
   server: ServerConnection.HttpBase,
   input: { directory: string; profileID: string; context?: number },
 ) {
   return call<LocalModelStatus>(
     server,
     "POST",
-    `api/provider/local-models/${encodeURIComponent(input.profileID)}/start`,
+    `api/provider/local-models/${encodeURIComponent(input.profileID)}/install`,
     input.directory,
     { ...(input.context === undefined ? {} : { context: input.context }) },
   )
+}
+
+export function localModelStop(server: ServerConnection.HttpBase, input: { directory: string }) {
+  return call<LocalModelStatus>(server, "POST", "api/provider/local-models/stop", input.directory)
 }
 
 // B11 — the bundled-shell substrate (status + provisioner). Provisioning downloads

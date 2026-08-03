@@ -32,8 +32,10 @@ export const Stage = Schema.Literals([
   "downloading-runtime",
   "installing-runtime",
   "downloading-model",
+  "installed",
   "starting",
   "ready",
+  "stopping",
   "error",
 ])
 export type Stage = Schema.Schema.Type<typeof Stage>
@@ -52,6 +54,8 @@ export const Status = Schema.Struct({
   modelID: Schema.optional(Schema.String),
   context: Schema.optional(Schema.Number),
   output: Schema.optional(Schema.Number),
+  pid: Schema.optional(Schema.Number),
+  ramBytes: Schema.optional(Schema.Number),
   preflight: Schema.optional(Preflight),
   recommendedContext: Schema.Number,
 })

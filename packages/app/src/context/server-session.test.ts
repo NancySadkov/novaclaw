@@ -51,6 +51,25 @@ describe("server session", () => {
     expect(ctx.store.get("root")?.id).toBe("root")
   })
 
+  test("a dead session request times out and does not poison the retry slot", async () => {
+    let calls = 0
+    const client = {
+      v2: {
+        session: {
+          get: () => {
+            calls++
+            return new Promise<never>(() => undefined)
+          },
+        },
+      },
+    } as unknown as NovaclawClient
+    const store = createServerSession(client, { requestTimeoutMs: 5 })
+
+    await expect(store.resolve("stuck")).rejects.toThrow("Loading this session timed out")
+    await expect(store.resolve("stuck")).rejects.toThrow("Loading this session timed out")
+    expect(calls).toBe(2)
+  })
+
   test("does not re-fetch cached session info", async () => {
     const ctx = setup({ root: session("root") })
 

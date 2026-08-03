@@ -31,6 +31,16 @@ describe("ServeChildCommand", () => {
     ).toEqual(["/opt/novaclaw", "serve", "--port", "4096", "--no-supervise"])
   })
 
+  test("recognizes Bun's current Linux bunfs virtual entry", () => {
+    expect(
+      ServeChildCommand.make({
+        execPath: "/opt/novaclaw",
+        execArgv: ["--user-agent=novaclaw/0.1.5", "--use-system-ca", "--"],
+        argv: ["bun", "/$bunfs/root/novaclaw", "serve", "--port", "4096"],
+      }),
+    ).toEqual(["/opt/novaclaw", "serve", "--port", "4096", "--no-supervise"])
+  })
+
   test("drops the attached cwd spelling too", () => {
     expect(
       ServeChildCommand.make({

@@ -5,6 +5,7 @@ import { DateTime, Effect } from "effect"
 import { Headers } from "effect/unstable/http"
 import { Credential } from "@novaclaw/core/credential"
 import { Integration } from "@novaclaw/core/integration"
+import { LocalModelManager } from "@novaclaw/core/local-model-manager"
 import { ModelV2 } from "@novaclaw/core/model"
 import { ProbeWindow } from "@novaclaw/core/probe-window"
 import { ProviderV2 } from "@novaclaw/core/provider"
@@ -43,6 +44,35 @@ const model = (api: Api, variants: ModelV2.Info["variants"] = []) =>
   })
 
 describe("SessionRunnerModel", () => {
+  it.effect("asks the managed runtime to prepare the selected model before the provider request", () =>
+    Effect.gen(function* () {
+      const calls: LocalModelManager.ModelRequest[] = []
+      const manager: LocalModelManager.Interface = {
+        status: () => Effect.die("unused"),
+        install: () => Effect.die("unused"),
+        stop: () => Effect.die("unused"),
+        ensure: (request) => Effect.sync(() => calls.push(request)),
+      }
+      const selected = model({
+        type: "aisdk",
+        package: "@ai-sdk/openai-compatible",
+        url: "http://127.0.0.1:11343/v1",
+      })
+
+      yield* SessionRunnerModel.ensureManagedModel(manager, selected)
+
+      expect(calls).toEqual([
+        {
+          providerID: "test-provider",
+          modelID: "test-model",
+          apiModelID: "api-test-model",
+          baseURL: "http://127.0.0.1:11343/v1",
+          context: 100,
+        },
+      ])
+    }),
+  )
+
   it.effect("maps catalog OpenAI AI SDK models into native Responses routes", () =>
     Effect.gen(function* () {
       const resolved = yield* SessionRunnerModel.fromCatalogModel(

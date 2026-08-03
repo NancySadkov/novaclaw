@@ -80,14 +80,15 @@ export function evaluatePreflight(input: {
   // Consumer "16 GB" and "8 GB" machines report less after firmware reservations (this 16 GB
   // laptop reports 15.7 GiB). Compare against a nominal-tier floor while keeping the message in the
   // capacity users bought; an exact 16 * GiB comparison incorrectly demoted every ordinary 16 GB PC.
-  const memoryMinimum = input.context >= 65_536 ? 16 * GIB : QWEN_PROFILE.minimumMemoryBytes
-  const physicalFloor = input.context >= 65_536 ? 15 * GIB : 7.5 * GIB
+  const extraContextChunks = Math.max(0, input.context - 32_768) / 32_768
+  const workingMemory = QWEN_PROFILE.workingMemoryBytes + extraContextChunks * 4 * GIB
+  const memoryMinimum = input.context >= 65_536 ? Math.max(16 * GIB, workingMemory) : QWEN_PROFILE.minimumMemoryBytes
+  const physicalFloor = input.context >= 65_536 ? Math.max(15 * GIB, workingMemory + 3 * GIB) : 7.5 * GIB
   // This is COMMIT headroom, not the GGUF file size. Vulkan's unified-memory reservation, KV cache,
   // model mapping and ordinary Nova/test processes all vote in the same Windows commit budget. The
   // first live 32K run triggered RADAR_PRE_LEAK_64 while tests were running beside it; reserving only
   // 5/7 GiB let that unsafe combination through. Keep enough room for the sidecar without crossing the
   // host's 75% warning line, then supervise the measured post-launch pressure in runtime.ts.
-  const workingMemory = input.context >= 65_536 ? 12 * GIB : QWEN_PROFILE.workingMemoryBytes
   const requiredBytes = (modelPresent ? 0 : profile.downloadBytes) + (runtimePresent ? 0 : 512 * 1024 * 1024) + GIB
   const issues: string[] = []
   const warnings: string[] = []
@@ -120,6 +121,11 @@ export function recommendedContext(physicalMemoryBytes: number): number {
 
 export function outputForContext(context: number): number {
   return context >= 65_536 ? 16_384 : 8_192
+}
+
+/** Qwen3.5 supports long custom windows; the catalog offers safe presets but Settings may tune one. */
+export function supportedContext(context: number): boolean {
+  return Number.isSafeInteger(context) && context >= 4_096 && context <= 262_144
 }
 
 function defined<T extends object>(value: T | undefined): Partial<T> {

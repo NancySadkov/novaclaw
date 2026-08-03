@@ -143,7 +143,7 @@ describe("Add-models — managed local model", () => {
   test("is a first-class Local Model choice, not a terminal instruction", () => {
     expect(dialog).toContain('data-action="new-model-local"')
     expect(dialog).toContain('setStep("local")')
-    expect(dialog).toContain("localModelStart(props.http")
+    expect(dialog).toContain("localModelInstall(props.http")
     expect(dialog).not.toMatch(/powershell|llama-server\.exe|huggingface\.co/)
   })
 
@@ -160,7 +160,8 @@ describe("Add-models — managed local model", () => {
     )
   })
 
-  test("registers the ready sidecar as an ordinary configurable provider", () => {
+  test("registers the installed model without requiring the sidecar to stay loaded", () => {
+    expect(dialog).toContain('status.stage === "installed" || status.stage === "ready"')
     expect(dialog).toContain('freeProviderID("local-qwen")')
     expect(dialog).toContain("baseURL: status.baseURL")
     expect(dialog).toContain("[status.modelID]: { context: status.context, output: status.output }")

@@ -7481,6 +7481,129 @@ export type GlobalDiscoveryResponses = {
 
 export type GlobalDiscoveryResponse = GlobalDiscoveryResponses[keyof GlobalDiscoveryResponses]
 
+export type GlobalResourcesData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/global/resources"
+}
+
+export type GlobalResourcesErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type GlobalResourcesError = GlobalResourcesErrors[keyof GlobalResourcesErrors]
+
+export type GlobalResourcesResponses = {
+  /**
+   * Live instance RAM and disk usage
+   */
+  200: {
+    measuredAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    memory:
+      | {
+          known: true
+          source: string
+          crosscheck: string
+          usedBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          limitBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        }
+      | {
+          known: false
+          reason: string
+        }
+    disks: Array<
+      | {
+          known: true
+          path: string
+          measuredPath: string
+          freeBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          totalBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        }
+      | {
+          known: false
+          path: string
+          reason: string
+        }
+    >
+    level: string
+    ram: Array<{
+      id: string
+      label: string
+      bytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      state?: string
+      detail?: string
+      path?: string
+    }>
+    disk: Array<{
+      id: string
+      label: string
+      bytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      state?: string
+      detail?: string
+      path?: string
+    }>
+    localModel: {
+      supported: boolean
+      platform: string
+      profiles: Array<{
+        id: string
+        name: string
+        description: string
+        modelID: string
+        quant: string
+        license: string
+        sourceURL: string
+        downloadBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        minimumMemoryBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        workingMemoryBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        contexts: Array<number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN">
+      }>
+      stage:
+        | "idle"
+        | "checking"
+        | "downloading-runtime"
+        | "installing-runtime"
+        | "downloading-model"
+        | "installed"
+        | "starting"
+        | "ready"
+        | "stopping"
+        | "error"
+      profileID?: string
+      completed?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      total?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      message?: string
+      detail?: string
+      baseURL?: string
+      modelID?: string
+      context?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      output?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      pid?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      ramBytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      preflight?: {
+        ok: boolean
+        issues: Array<string>
+        warnings: Array<string>
+        memory?: {
+          freeBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          limitBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        }
+        disk?: {
+          freeBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          requiredBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        }
+      }
+      recommendedContext: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }
+  }
+}
+
+export type GlobalResourcesResponse = GlobalResourcesResponses[keyof GlobalResourcesResponses]
+
 export type EventSubscribeData = {
   body?: never
   path?: never
@@ -12067,8 +12190,10 @@ export type V2ProviderLocalModelsResponses = {
       | "downloading-runtime"
       | "installing-runtime"
       | "downloading-model"
+      | "installed"
       | "starting"
       | "ready"
+      | "stopping"
       | "error"
     profileID?: string
     completed?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
@@ -12079,6 +12204,8 @@ export type V2ProviderLocalModelsResponses = {
     modelID?: string
     context?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     output?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    pid?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    ramBytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     preflight?: {
       ok: boolean
       issues: Array<string>
@@ -12098,7 +12225,7 @@ export type V2ProviderLocalModelsResponses = {
 
 export type V2ProviderLocalModelsResponse = V2ProviderLocalModelsResponses[keyof V2ProviderLocalModelsResponses]
 
-export type V2ProviderStartLocalModelData = {
+export type V2ProviderInstallLocalModelData = {
   body: {
     context?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   }
@@ -12111,10 +12238,10 @@ export type V2ProviderStartLocalModelData = {
       workspace?: string
     }
   }
-  url: "/api/provider/local-models/{profileID}/start"
+  url: "/api/provider/local-models/{profileID}/install"
 }
 
-export type V2ProviderStartLocalModelErrors = {
+export type V2ProviderInstallLocalModelErrors = {
   /**
    * InvalidRequestError
    */
@@ -12125,9 +12252,10 @@ export type V2ProviderStartLocalModelErrors = {
   401: UnauthorizedError
 }
 
-export type V2ProviderStartLocalModelError = V2ProviderStartLocalModelErrors[keyof V2ProviderStartLocalModelErrors]
+export type V2ProviderInstallLocalModelError =
+  V2ProviderInstallLocalModelErrors[keyof V2ProviderInstallLocalModelErrors]
 
-export type V2ProviderStartLocalModelResponses = {
+export type V2ProviderInstallLocalModelResponses = {
   /**
    * Success
    */
@@ -12153,8 +12281,10 @@ export type V2ProviderStartLocalModelResponses = {
       | "downloading-runtime"
       | "installing-runtime"
       | "downloading-model"
+      | "installed"
       | "starting"
       | "ready"
+      | "stopping"
       | "error"
     profileID?: string
     completed?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
@@ -12165,6 +12295,8 @@ export type V2ProviderStartLocalModelResponses = {
     modelID?: string
     context?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     output?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    pid?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    ramBytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     preflight?: {
       ok: boolean
       issues: Array<string>
@@ -12182,8 +12314,95 @@ export type V2ProviderStartLocalModelResponses = {
   }
 }
 
-export type V2ProviderStartLocalModelResponse =
-  V2ProviderStartLocalModelResponses[keyof V2ProviderStartLocalModelResponses]
+export type V2ProviderInstallLocalModelResponse =
+  V2ProviderInstallLocalModelResponses[keyof V2ProviderInstallLocalModelResponses]
+
+export type V2ProviderStopLocalModelData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/provider/local-models/stop"
+}
+
+export type V2ProviderStopLocalModelErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2ProviderStopLocalModelError = V2ProviderStopLocalModelErrors[keyof V2ProviderStopLocalModelErrors]
+
+export type V2ProviderStopLocalModelResponses = {
+  /**
+   * Success
+   */
+  200: {
+    supported: boolean
+    platform: string
+    profiles: Array<{
+      id: string
+      name: string
+      description: string
+      modelID: string
+      quant: string
+      license: string
+      sourceURL: string
+      downloadBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      minimumMemoryBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      workingMemoryBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      contexts: Array<number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN">
+    }>
+    stage:
+      | "idle"
+      | "checking"
+      | "downloading-runtime"
+      | "installing-runtime"
+      | "downloading-model"
+      | "installed"
+      | "starting"
+      | "ready"
+      | "stopping"
+      | "error"
+    profileID?: string
+    completed?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    total?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    message?: string
+    detail?: string
+    baseURL?: string
+    modelID?: string
+    context?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    output?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    pid?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    ramBytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    preflight?: {
+      ok: boolean
+      issues: Array<string>
+      warnings: Array<string>
+      memory?: {
+        freeBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        limitBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }
+      disk?: {
+        freeBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        requiredBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }
+    }
+    recommendedContext: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type V2ProviderStopLocalModelResponse =
+  V2ProviderStopLocalModelResponses[keyof V2ProviderStopLocalModelResponses]
 
 export type V2ProviderRemoveData = {
   body?: never

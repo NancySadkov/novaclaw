@@ -255,6 +255,9 @@ const app = LayerNode.group([
   Git.node,
   Ripgrep.node,
   Storage.node,
+  // Demand-loaded local inference. The same global node is injected into every location's model
+  // resolver and serves the Instance controls, so there is exactly one llama.cpp child per instance.
+  LocalModelRuntime.node,
   Snapshot.node,
   ModelsDev.node,
   Agent.node,
@@ -402,9 +405,6 @@ export function createRoutes(
 
     Layer.provideMerge(catalogSeedStartup),
     Layer.provideMerge(recipeSeedStartup),
-    // The instance owns its inference process: one scoped supervisor serves desktop, web and
-    // headless clients, relaunches the selected model after restart, and stops it with this scope.
-    Layer.provideMerge(LocalModelRuntime.layer),
     Layer.provide(LayerNode.compile(app)),
   )
 }

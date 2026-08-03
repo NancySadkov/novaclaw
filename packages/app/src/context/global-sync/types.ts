@@ -110,7 +110,11 @@ export type DisposeCheck = {
 export type RootLoadArgs = {
   directory: string
   limit: number
-  list: (query: { directory: string; roots: true; limit?: number }) => Promise<{ data?: Session[] }>
+  timeoutMs?: number
+  list: (
+    query: { directory: string; roots: true; limit?: number },
+    options: { signal: AbortSignal },
+  ) => Promise<{ data?: Session[] }>
 }
 
 export type RootLoadResult = {

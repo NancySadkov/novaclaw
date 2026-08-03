@@ -27,15 +27,22 @@ export const ProviderHandler = HttpApiBuilder.group(Api, "server.provider", (han
         }),
       )
       .handle(
-        "provider.startLocalModel",
+        "provider.installLocalModel",
         Effect.fn(function* (ctx) {
           const config = yield* Config.Service
           const manager = yield* LocalModelManager.Service
-          return yield* manager.start(
+          return yield* manager.install(
             ctx.params.profileID,
             ctx.payload.context,
             Config.latest(yield* config.entries(), "local_model_catalog"),
           )
+        }),
+      )
+      .handle(
+        "provider.stopLocalModel",
+        Effect.fn(function* () {
+          const manager = yield* LocalModelManager.Service
+          return yield* manager.stop()
         }),
       )
       .handle(

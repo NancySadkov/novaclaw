@@ -2,6 +2,7 @@ import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { EventV2 } from "@novaclaw/core/event"
 import { EventManifest } from "@/event-manifest"
 import { InstanceDisposed } from "@/server/event"
+import { LocalModel } from "@novaclaw/schema/local-model"
 import "@/server/event"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
@@ -27,6 +28,44 @@ const GlobalDiscovery = Schema.Struct({
       self: Schema.Boolean,
     }),
   ),
+})
+
+const UsageItem = Schema.Struct({
+  id: Schema.String,
+  label: Schema.String,
+  bytes: Schema.optional(Schema.Number),
+  state: Schema.optional(Schema.String),
+  detail: Schema.optional(Schema.String),
+  path: Schema.optional(Schema.String),
+})
+const MemoryReading = Schema.Union([
+  Schema.Struct({
+    known: Schema.Literal(true),
+    source: Schema.String,
+    crosscheck: Schema.String,
+    usedBytes: Schema.Number,
+    limitBytes: Schema.Number,
+  }),
+  Schema.Struct({ known: Schema.Literal(false), reason: Schema.String }),
+])
+const DiskReading = Schema.Union([
+  Schema.Struct({
+    known: Schema.Literal(true),
+    path: Schema.String,
+    measuredPath: Schema.String,
+    freeBytes: Schema.Number,
+    totalBytes: Schema.Number,
+  }),
+  Schema.Struct({ known: Schema.Literal(false), path: Schema.String, reason: Schema.String }),
+])
+const GlobalResources = Schema.Struct({
+  measuredAt: Schema.Number,
+  memory: MemoryReading,
+  disks: Schema.Array(DiskReading),
+  level: Schema.String,
+  ram: Schema.Array(UsageItem),
+  disk: Schema.Array(UsageItem),
+  localModel: LocalModel.Status,
 })
 
 const SyncEventSchemas = EventManifest.Latest.values()
@@ -69,6 +108,7 @@ export const GlobalPaths = {
   config: "/global/config",
   dispose: "/global/dispose",
   discovery: "/global/discovery",
+  resources: "/global/resources",
 } as const
 
 export const GlobalApi = HttpApi.make("global").add(
@@ -128,6 +168,16 @@ export const GlobalApi = HttpApi.make("global").add(
           identifier: "global.discovery",
           summary: "Discover LAN instances",
           description: "Scan the local network (mDNS) for NovaClaw instances advertising themselves via serve --mdns.",
+        }),
+      ),
+      HttpApiEndpoint.get("resources", GlobalPaths.resources, {
+        success: described(GlobalResources, "Live instance RAM and disk usage"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "global.resources",
+          summary: "Get instance resource usage",
+          description:
+            "Report host memory pressure plus attributable NovaClaw, SQLite, vector knowledge-base and managed local-model RAM/disk use.",
         }),
       ),
     )

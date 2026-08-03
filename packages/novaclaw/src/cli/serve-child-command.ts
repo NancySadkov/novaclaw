@@ -18,12 +18,15 @@ export interface ProcessArguments {
  */
 export function make(input: ProcessArguments): string[] {
   const rest = input.argv.slice(1)
-  // Bun exposes a compiled entry as a virtual `B:/~BUN/root/index.js` argv item. Older/current
-  // targets may instead repeat the executable. Neither is a real script argument for the child.
+  // Bun exposes a compiled entry through its virtual filesystem. Older builds used
+  // `B:/~BUN/root/index.js`; current Linux builds use `/$bunfs/root/<binary>`. Targets may instead
+  // repeat the executable. None of those entries is a real script argument for the child.
   const compiledEntry = rest[0]?.replaceAll("\\", "/")
+  const virtualEntry = compiledEntry?.toLowerCase()
   const compiled =
     compiledEntry !== undefined &&
-    (compiledEntry.toLowerCase().includes("/~bun/root/") ||
+    (virtualEntry?.includes("/~bun/root/") === true ||
+      virtualEntry?.includes("/$bunfs/root/") === true ||
       path.resolve(compiledEntry) === path.resolve(input.execPath))
   if (compiled) rest.shift()
 

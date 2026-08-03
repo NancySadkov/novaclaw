@@ -7,8 +7,10 @@ import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { MoveSession } from "@novaclaw/core/control-plane/move-session"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
+import { LocalModelManager } from "@novaclaw/core/local-model-manager"
 import { Auth } from "../../src/auth"
 import { Config } from "../../src/config/config"
+import { Storage } from "../../src/storage/storage"
 import { ServerAuth } from "../../src/server/auth"
 import { RootHttpApi } from "../../src/server/routes/instance/httpapi/api"
 import { controlHandlers } from "../../src/server/routes/instance/httpapi/handlers/control"
@@ -39,6 +41,8 @@ const apiLayer = HttpRouter.serve(
   Layer.provide(Layer.mock(Auth.Service)({})),
   Layer.provide(Layer.mock(InstanceIdentityStore.Service)({ get: () => Effect.succeed("ins_test") })),
   Layer.provide(Layer.mock(Config.Service)({})),
+  Layer.provide(Layer.mock(LocalModelManager.Service)({})),
+  Layer.provide(Layer.mock(Storage.Service)({})),
   Layer.provide(
     Layer.mock(MoveSession.Service)({
       moveSession: (value) => Ref.set(called, value),

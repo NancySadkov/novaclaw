@@ -54,6 +54,13 @@ export interface Unavailable {
 }
 export type MemoryReading = MemoryKnown | Unavailable
 
+export interface ProcessMemoryKnown {
+  readonly known: true
+  readonly rssBytes: number
+  readonly crosscheck: string
+}
+export type ProcessMemoryReading = ProcessMemoryKnown | Unavailable
+
 export interface DiskKnown {
   readonly known: true
   /** The instance path we were asked about. */
@@ -163,7 +170,7 @@ export const WINDOWS_COMMIT_SCRIPT =
   "Write-Output (($os.TotalVirtualMemorySize - $os.FreeVirtualMemory)); Write-Output $os.TotalVirtualMemorySize"
 
 const WINDOWS_CROSSCHECK =
-  "powershell -NoProfile -Command \"$os = Get-CimInstance Win32_OperatingSystem; " +
+  'powershell -NoProfile -Command "$os = Get-CimInstance Win32_OperatingSystem; ' +
   '($os.TotalVirtualMemorySize - $os.FreeVirtualMemory), $os.TotalVirtualMemorySize"'
 
 /**
@@ -383,7 +390,7 @@ export const MEMORY_CACHE_MS = 3_000
 let cached: { readonly at: number; readonly value: MemoryReading } | undefined
 let inflight: Promise<MemoryReading> | undefined
 
-/** Drop the cache. Tests only — a stale reading across cases is a false pass. */
+/** Drop the cache after a known large allocation/free (and between tests) so admission sees reality. */
 export function resetMemoryCache(): void {
   cached = undefined
   inflight = undefined
@@ -420,6 +427,65 @@ export function memory(now: () => number = Date.now): Promise<MemoryReading> {
       return value
     })
   return inflight
+}
+
+/** Resident RAM for one process. This is deliberately RSS/working set, not host commit charge. */
+export function processMemory(pid: number | undefined): Promise<ProcessMemoryReading> {
+  if (!Number.isSafeInteger(pid) || !pid || pid <= 0)
+    return Promise.resolve({
+      known: false,
+      reason: "Process memory is unavailable: no running process id was reported.",
+    })
+  if (pid === process.pid)
+    return Promise.resolve({
+      known: true,
+      rssBytes: process.memoryUsage().rss,
+      crosscheck: process.platform === "linux" ? `grep VmRSS /proc/${pid}/status` : `Get-Process -Id ${pid}`,
+    })
+  if (process.platform === "linux") {
+    return Promise.resolve().then(() => {
+      const text = readFileOrUndefined(`/proc/${pid}/status`)
+      const match = /^VmRSS:\s+(\d+)\s+kB$/m.exec(text ?? "")
+      const kib = Number(match?.[1])
+      return Number.isFinite(kib) && kib >= 0
+        ? { known: true as const, rssBytes: kib * 1024, crosscheck: `grep VmRSS /proc/${pid}/status` }
+        : { known: false as const, reason: `Process memory for pid ${pid} is unavailable from /proc.` }
+    })
+  }
+  if (process.platform !== "win32")
+    return Promise.resolve({ known: false, reason: `Process memory is not measured on ${process.platform}.` })
+
+  return new Promise((resolve) => {
+    let stdout = ""
+    let settled = false
+    const child = spawn(
+      "powershell",
+      ["-NoProfile", "-NonInteractive", "-Command", `(Get-Process -Id ${pid} -ErrorAction Stop).WorkingSet64`],
+      { stdio: ["ignore", "pipe", "ignore"] },
+    )
+    const finish = (value: ProcessMemoryReading) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(value)
+    }
+    const timer = setTimeout(() => {
+      child.kill()
+      finish({ known: false, reason: `Process memory for pid ${pid} did not answer within 5 seconds.` })
+    }, 5_000)
+    timer.unref?.()
+    child.stdout.setEncoding("utf8")
+    child.stdout.on("data", (chunk: string) => (stdout += chunk))
+    child.on("error", () => finish({ known: false, reason: `Process memory for pid ${pid} could not be measured.` }))
+    child.on("close", (code) => {
+      const bytes = Number(stdout.trim())
+      finish(
+        code === 0 && Number.isFinite(bytes) && bytes >= 0
+          ? { known: true, rssBytes: bytes, crosscheck: `Get-Process -Id ${pid} | Select-Object WorkingSet64` }
+          : { known: false, reason: `Process memory for pid ${pid} is unavailable because the process stopped.` },
+      )
+    })
+  })
 }
 
 // ── disk ────────────────────────────────────────────────────────────────────────────────────────
