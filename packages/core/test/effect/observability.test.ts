@@ -40,8 +40,7 @@ describe("resource", () => {
 
   test("keeps built-in attributes when env values conflict", () => {
     process.env.NOVACLAW_CLIENT = "cli"
-    process.env.OTEL_RESOURCE_ATTRIBUTES =
-      "novaclaw.client=web,service.instance.id=override,service.namespace=acme"
+    process.env.OTEL_RESOURCE_ATTRIBUTES = "novaclaw.client=web,service.instance.id=override,service.namespace=acme"
 
     expect(resource().attributes).toMatchObject({
       "novaclaw.client": "cli",

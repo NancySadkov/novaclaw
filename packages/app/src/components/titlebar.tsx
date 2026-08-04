@@ -155,192 +155,191 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
           unconditional now. It stays an IIFE so its local hooks/resources keep their own
           scope instead of colliding with the outer component's bindings. */}
       {(() => {
-            const layout = useLayout()
-            const global = useGlobal()
+        const layout = useLayout()
+        const global = useGlobal()
 
-            const tabs = useTabs()
-            const tabsStore = tabs.store
-            const tabsStoreActions = tabs
-            const [session] = createResource(
-              () => {
-                const route = layout.route()
-                if (route.type !== "session") return undefined
-                const conn = global.servers
-                  .list()
-                  .find((item) => ServerConnection.key(item) === (route.server ?? server.key))
-                return conn ? { route, sdk: global.ensureServerCtx(conn).sdk } : undefined
-              },
-              ({ route, sdk }) =>
-                sdk.client.v2.session
-                  .get({ sessionID: route.sessionId })
-                  .then((x) => x.data?.data)
-                  .catch(() => {}),
+        const tabs = useTabs()
+        const tabsStore = tabs.store
+        const tabsStoreActions = tabs
+        const [session] = createResource(
+          () => {
+            const route = layout.route()
+            if (route.type !== "session") return undefined
+            const conn = global.servers
+              .list()
+              .find((item) => ServerConnection.key(item) === (route.server ?? server.key))
+            return conn ? { route, sdk: global.ensureServerCtx(conn).sdk } : undefined
+          },
+          ({ route, sdk }) =>
+            sdk.client.v2.session
+              .get({ sessionID: route.sessionId })
+              .then((x) => x.data?.data)
+              .catch(() => {}),
+        )
+
+        const matchRoute = (route: LayoutRoute) => {
+          if (route.type === "home") return
+          if (route.type === "draft") {
+            return tabsStore.find((item) => item.type === "draft" && item.draftID === route.draftID)
+          }
+          if (route.type === "session") {
+            const main = tabsStore.find(
+              (item) => item.type === "session" && item.server === route.server && item.sessionId === route.sessionId,
             )
-
-            const matchRoute = (route: LayoutRoute) => {
-              if (route.type === "home") return
-              if (route.type === "draft") {
-                return tabsStore.find((item) => item.type === "draft" && item.draftID === route.draftID)
-              }
-              if (route.type === "session") {
-                const main = tabsStore.find(
-                  (item) =>
-                    item.type === "session" && item.server === route.server && item.sessionId === route.sessionId,
-                )
-                if (main) return main
-                const s = session()
-                if (s?.parentID) {
-                  const parentID = s.parentID
-                  const parent = tabsStore.find(
-                    (item) => item.type === "session" && item.server === route.server && item.sessionId === parentID,
-                  )
-                  if (parent) return parent
-                }
-              }
+            if (main) return main
+            const s = session()
+            if (s?.parentID) {
+              const parentID = s.parentID
+              const parent = tabsStore.find(
+                (item) => item.type === "session" && item.server === route.server && item.sessionId === parentID,
+              )
+              if (parent) return parent
             }
+          }
+        }
 
-            const currentTab = () => matchRoute(layout.route())
+        const currentTab = () => matchRoute(layout.route())
 
-            createEffect(() => {
-              const route = layout.route()
-              if (!tabs.ready()) return
-              const tab = currentTab()
-              if (tab) {
-                tabs.remember(tab)
-                return
-              }
+        createEffect(() => {
+          const route = layout.route()
+          if (!tabs.ready()) return
+          const tab = currentTab()
+          if (tab) {
+            tabs.remember(tab)
+            return
+          }
 
-              if (route.type === "session") {
-                const s = session()
-                if (!s) return
-                const sessionId = s.parentID ?? s.id
-                const next = { server: route.server ?? server.key, sessionId }
-                tabsStoreActions.addSessionTab(next)
-              }
-            })
+          if (route.type === "session") {
+            const s = session()
+            if (!s) return
+            const sessionId = s.parentID ?? s.id
+            const next = { server: route.server ?? server.key, sessionId }
+            tabsStoreActions.addSessionTab(next)
+          }
+        })
 
-            makeEventListener(window, SESSION_TABS_REMOVED_EVENT, (event) => {
-              const detail = readSessionTabsRemovedDetail(event)
-              if (!detail) return
-              tabsStoreActions.removeSessions(detail)
-            })
+        makeEventListener(window, SESSION_TABS_REMOVED_EVENT, (event) => {
+          const detail = readSessionTabsRemovedDetail(event)
+          if (!detail) return
+          tabsStoreActions.removeSessions(detail)
+        })
 
-            // The legacy new-tab "+" (draft tabs, mod+t) is RETIRED (owner 2026-07-22): chat
-            // creation lives in the launcher bar and the Chats page's New Session button.
-            const toggleHome = () => tabs.toggleHome({ home: layout.route().type === "home", current: currentTab() })
+        // The legacy new-tab "+" (draft tabs, mod+t) is RETIRED (owner 2026-07-22): chat
+        // creation lives in the launcher bar and the Chats page's New Session button.
+        const toggleHome = () => tabs.toggleHome({ home: layout.route().type === "home", current: currentTab() })
 
-            command.register("titlebar-home", () => [
-              {
-                id: "home.toggle",
-                title: language.t("home.title"),
-                category: language.t("command.category.view"),
-                keybind: "mod+b",
-                hidden: true,
-                onSelect: toggleHome,
+        command.register("titlebar-home", () => [
+          {
+            id: "home.toggle",
+            title: language.t("home.title"),
+            category: language.t("command.category.view"),
+            keybind: "mod+b",
+            hidden: true,
+            onSelect: toggleHome,
+          },
+        ])
+
+        command.register("tabs", () => {
+          const current = currentTab()
+
+          return [
+            current && {
+              id: "tab.close",
+              category: "tab",
+              title: language.t("command.tab.close"),
+              keybind: "mod+w",
+              hidden: true,
+              onSelect: () => {
+                tabsStoreActions.removeTab(tabsStore.findIndex((tab) => current === tab))
               },
-            ])
+            },
+            {
+              id: `tab.prev`,
+              category: "tab",
+              title: "",
+              keybind: `mod+option+ArrowLeft,ctrl+shift+tab`,
+              hidden: true,
+              onSelect: () => {
+                let index = tabsStore.findIndex((tab) => tab === currentTab())
+                if (index === -1) return
 
-            command.register("tabs", () => {
-              const current = currentTab()
+                index -= 1
+                if (index === -1) index = tabsStore.length - 1
 
-              return [
-                current && {
-                  id: "tab.close",
-                  category: "tab",
-                  title: language.t("command.tab.close"),
-                  keybind: "mod+w",
-                  hidden: true,
-                  onSelect: () => {
-                    tabsStoreActions.removeTab(tabsStore.findIndex((tab) => current === tab))
-                  },
-                },
-                {
-                  id: `tab.prev`,
-                  category: "tab",
-                  title: "",
-                  keybind: `mod+option+ArrowLeft,ctrl+shift+tab`,
-                  hidden: true,
-                  onSelect: () => {
-                    let index = tabsStore.findIndex((tab) => tab === currentTab())
-                    if (index === -1) return
+                const next = tabsStore[index]
+                if (next) tabs.select(next)
+              },
+            },
+            {
+              id: `tab.next`,
+              category: "tab",
+              title: "",
+              keybind: `mod+option+ArrowRight,ctrl+tab`,
+              hidden: true,
+              onSelect: () => {
+                let index = tabsStore.findIndex((tab) => tab === currentTab())
+                if (index === -1) return
 
-                    index -= 1
-                    if (index === -1) index = tabsStore.length - 1
+                index += 1
+                if (index === tabsStore.length) index = 0
 
-                    const next = tabsStore[index]
-                    if (next) tabs.select(next)
-                  },
-                },
-                {
-                  id: `tab.next`,
-                  category: "tab",
-                  title: "",
-                  keybind: `mod+option+ArrowRight,ctrl+tab`,
-                  hidden: true,
-                  onSelect: () => {
-                    let index = tabsStore.findIndex((tab) => tab === currentTab())
-                    if (index === -1) return
+                const next = tabsStore[index]
+                if (next) tabs.select(next)
+              },
+            },
+          ].filter((v) => v !== undefined)
+        })
 
-                    index += 1
-                    if (index === tabsStore.length) index = 0
+        const [tabsAreOverflowing, setTabsAreOverflowing] = createSignal(false)
 
-                    const next = tabsStore[index]
-                    if (next) tabs.select(next)
-                  },
-                },
-              ].filter((v) => v !== undefined)
-            })
-
-            const [tabsAreOverflowing, setTabsAreOverflowing] = createSignal(false)
-
-            return (
-              <div
-                class="h-full flex-1 overflow-hidden flex flex-row items-center gap-1.5 px-2 md:pr-3"
-                classList={{
-                  "pt-2": !bottom(),
-                  "pb-2": bottom(),
-                  "md:pl-2": mac(),
-                  "md:pl-4": !mac(),
-                }}
-              >
-                <BrandBadge />
-                {/* Session-nav (Chats) is hidden on the launcher ("/") — you launch
+        return (
+          <div
+            class="h-full flex-1 overflow-hidden flex flex-row items-center gap-1.5 px-2 md:pr-3"
+            classList={{
+              "pt-2": !bottom(),
+              "pb-2": bottom(),
+              "md:pl-2": mac(),
+              "md:pl-4": !mac(),
+            }}
+          >
+            <BrandBadge />
+            {/* Session-nav (Chats) is hidden on the launcher ("/") — you launch
                     apps from the tiles there; the nav returns inside a chat/session. */}
-                {/* Home lives on the brand badge now (Start-button style) — no separate Home button. */}
-                <Show when={location.pathname !== "/"}>
-                  <TooltipV2 placement="bottom" value={language.t("nav.chats")} class="shrink-0">
-                    <IconButtonV2
-                      type="button"
-                      variant="ghost-muted"
-                      size="large"
-                      class="!w-9 shrink-0"
-                      icon={<IconV2 name="tab" />}
-                      onClick={() => navigate("/chats")}
-                      aria-label={language.t("nav.chats")}
-                    />
-                  </TooltipV2>
-                </Show>
-
-                <TitlebarTabStrip
-                  tabs={tabsStore}
-                  currentTab={currentTab}
-                  activeServerKey={server.key}
-                  forceTruncate={tabsAreOverflowing()}
-                  onOverflowChange={setTabsAreOverflowing}
-                  onNavigate={(tab, el) => {
-                    tabs.select(tab)
-                    el?.scrollIntoView({ behavior: "instant" })
-                  }}
-                  onClose={(tab) => {
-                    const index = tabsStore.findIndex((item) => tabKey(item) === tabKey(tab))
-                    if (index !== -1) tabsStoreActions.removeTab(index)
-                  }}
-                  onReorder={(keys) => tabsStoreActions.reorder(keys)}
+            {/* Home lives on the brand badge now (Start-button style) — no separate Home button. */}
+            <Show when={location.pathname !== "/"}>
+              <TooltipV2 placement="bottom" value={language.t("nav.chats")} class="shrink-0">
+                <IconButtonV2
+                  type="button"
+                  variant="ghost-muted"
+                  size="large"
+                  class="!w-9 shrink-0"
+                  icon={<IconV2 name="tab" />}
+                  onClick={() => navigate("/chats")}
+                  aria-label={language.t("nav.chats")}
                 />
-                <div class="flex-1" />
-                <TitlebarV2Right state={v2RightState()} />
-              </div>
-            )
+              </TooltipV2>
+            </Show>
+
+            <TitlebarTabStrip
+              tabs={tabsStore}
+              currentTab={currentTab}
+              activeServerKey={server.key}
+              forceTruncate={tabsAreOverflowing()}
+              onOverflowChange={setTabsAreOverflowing}
+              onNavigate={(tab, el) => {
+                tabs.select(tab)
+                el?.scrollIntoView({ behavior: "instant" })
+              }}
+              onClose={(tab) => {
+                const index = tabsStore.findIndex((item) => tabKey(item) === tabKey(tab))
+                if (index !== -1) tabsStoreActions.removeTab(index)
+              }}
+              onReorder={(keys) => tabsStoreActions.reorder(keys)}
+            />
+            <div class="flex-1" />
+            <TitlebarV2Right state={v2RightState()} />
+          </div>
+        )
       })()}
     </header>
   )

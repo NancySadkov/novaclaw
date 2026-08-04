@@ -146,7 +146,10 @@ function reachableFrom(file: string): string[] {
   const exported = exportedLinks()
   for (const m of source.matchAll(/import\s*\{([^}]*)\}\s*from\s*["']@\/constants\/links["']/g)) {
     for (const raw of m[1]!.split(",")) {
-      const name = raw.trim().split(/\s+as\s+/)[0]?.trim()
+      const name = raw
+        .trim()
+        .split(/\s+as\s+/)[0]
+        ?.trim()
       const url = name ? exported.get(name) : undefined
       if (url) urls.add(url)
     }

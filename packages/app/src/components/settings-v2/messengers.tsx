@@ -114,7 +114,8 @@ export const SettingsMessengersV2: Component = () => {
         drivers={drivers.latest}
         onCreated={(account, driver) => {
           void refetch()
-          if (driver.auth === "login") dialog.push(() => <DialogMessengerLogin account={account} driver={driver} onDone={() => void refetch()} />)
+          if (driver.auth === "login")
+            dialog.push(() => <DialogMessengerLogin account={account} driver={driver} onDone={() => void refetch()} />)
         }}
       />
     ))
@@ -155,7 +156,9 @@ export const SettingsMessengersV2: Component = () => {
             account. Shown once there is an account to use it with. */}
         <Show when={accounts.latest.length > 0}>
           <div class="flex w-full min-w-0 flex-col gap-1">
-            <p class="settings-v2-field-description">{language.t("settings.messengers.consoleHint", { address: consoleAddress() })}</p>
+            <p class="settings-v2-field-description">
+              {language.t("settings.messengers.consoleHint", { address: consoleAddress() })}
+            </p>
             <p class="settings-v2-field-description">{language.t("settings.messengers.consoleHintWhy")}</p>
           </div>
         </Show>
@@ -195,7 +198,11 @@ export const SettingsMessengersV2: Component = () => {
                     <ButtonV2 variant="neutral" size="small" onClick={() => void remove(row)}>
                       {language.t("settings.messengers.remove.confirm.action")}
                     </ButtonV2>
-                    <Switch checked={row.account.enabled} onChange={(checked) => void setEnabled(row, checked)} hideLabel>
+                    <Switch
+                      checked={row.account.enabled}
+                      onChange={(checked) => void setEnabled(row, checked)}
+                      hideLabel
+                    >
                       {language.t("settings.messengers.enabled")}
                     </Switch>
                   </div>
@@ -213,12 +220,17 @@ export const SettingsMessengersV2: Component = () => {
 
 const DialogAddMessengerAccount: Component<{
   drivers: readonly DriverMeta[]
-  onCreated: (account: { id: string; driverID: string; label: string; enabled: boolean; settings: Record<string, string> }, driver: DriverMeta) => void
+  onCreated: (
+    account: { id: string; driverID: string; label: string; enabled: boolean; settings: Record<string, string> },
+    driver: DriverMeta,
+  ) => void
 }> = (props) => {
   const dialog = useDialog()
   const language = useLanguage()
   const sdk = useServerSDK()
-  const [driver, setDriver] = createSignal<DriverMeta | undefined>(props.drivers.length === 1 ? props.drivers[0] : undefined)
+  const [driver, setDriver] = createSignal<DriverMeta | undefined>(
+    props.drivers.length === 1 ? props.drivers[0] : undefined,
+  )
   const [label, setLabel] = createSignal("")
   const [secret, setSecret] = createSignal("")
   const [fields, setFields] = createSignal<Record<string, string>>({})
@@ -274,16 +286,16 @@ const DialogAddMessengerAccount: Component<{
           >
             {(chosen) => (
               <>
-                <p class="settings-v2-field-description">
-                  {language.t(`settings.messengers.auth.${chosen().auth}`)}
-                </p>
+                <p class="settings-v2-field-description">{language.t(`settings.messengers.auth.${chosen().auth}`)}</p>
                 {/* The credential recipe, right where the empty field is. A Discord bot takes a
                     trip through a developer portal with switches that fail silently when missed —
                     nobody should need a blog post to set up a support desk. */}
                 <Show when={chosen().setup}>
                   {(setup) => (
                     <div class="flex w-full min-w-0 flex-col gap-2 rounded-md bg-v2-background-bg-layer-02 p-3">
-                      <span class="settings-v2-server-dialog-label">{language.t("settings.messengers.setup.title")}</span>
+                      <span class="settings-v2-server-dialog-label">
+                        {language.t("settings.messengers.setup.title")}
+                      </span>
                       <ol class="settings-v2-field-description flex list-decimal flex-col gap-1 pl-4">
                         <For each={setup().steps}>{(step) => <li>{step}</li>}</For>
                       </ol>
@@ -571,7 +583,9 @@ const DialogMessengerLogin: Component<{
           when={attempt()}
           fallback={
             <ButtonV2 variant="contrast" disabled={busy()} onClick={() => void begin()}>
-              {busy() ? language.t("settings.messengers.login.sending") : language.t("settings.messengers.login.sendCode")}
+              {busy()
+                ? language.t("settings.messengers.login.sending")
+                : language.t("settings.messengers.login.sendCode")}
             </ButtonV2>
           }
         >
@@ -584,8 +598,14 @@ const DialogMessengerLogin: Component<{
               </ButtonV2>
             }
           >
-            <ButtonV2 variant="contrast" disabled={busy() || code().trim().length === 0} onClick={() => void complete()}>
-              {busy() ? language.t("settings.messengers.login.checking") : language.t("settings.messengers.login.finish")}
+            <ButtonV2
+              variant="contrast"
+              disabled={busy() || code().trim().length === 0}
+              onClick={() => void complete()}
+            >
+              {busy()
+                ? language.t("settings.messengers.login.checking")
+                : language.t("settings.messengers.login.finish")}
             </ButtonV2>
           </Show>
         </Show>
@@ -662,7 +682,9 @@ const DialogMessengerSpeed: Component<{
   const language = useLanguage()
   const sdk = useServerSDK()
   const initial = Number(props.account.settings[PACE_KEY] ?? "")
-  const [cps, setCps] = createSignal(Number.isFinite(initial) && initial > 0 ? String(Math.round(initial)) : String(PACE_DEFAULT))
+  const [cps, setCps] = createSignal(
+    Number.isFinite(initial) && initial > 0 ? String(Math.round(initial)) : String(PACE_DEFAULT),
+  )
   const [busy, setBusy] = createSignal(false)
   const [error, setError] = createSignal<string>()
   const value = () => {

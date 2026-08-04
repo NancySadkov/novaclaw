@@ -71,9 +71,10 @@ const decodes = (value: unknown) =>
 describe("ResponseFormat is a CLOSED set and every member is reachable (ruling 10)", () => {
   test("the pinned member set — adding one fails here until it has a lowering", () => {
     // The ratchet's own reader must see something, or this file is a guard-shaped no-op.
-    expect(declaredMembers(SOURCE).length, "could not read the ResponseFormat union out of messages.ts").toBeGreaterThan(
-      0,
-    )
+    expect(
+      declaredMembers(SOURCE).length,
+      "could not read the ResponseFormat union out of messages.ts",
+    ).toBeGreaterThan(0)
     expect(declaredMembers(SOURCE).sort()).toEqual(["json", "text"])
     // …and the sample table must cover the set exactly, so claim 2 below can never skip a member.
     expect(Object.keys(SAMPLES).sort()).toEqual(declaredMembers(SOURCE).sort())
@@ -88,7 +89,7 @@ describe("ResponseFormat is a CLOSED set and every member is reachable (ruling 1
     expect(declaredMembers(synthetic)).toEqual(["text", "json", "tool"])
     // …and a source that does not declare the union at all yields nothing, which the first test
     // treats as a failure rather than as "no members, therefore fine".
-    expect(declaredMembers("const Something = Schema.Literal(\"text\")")).toEqual([])
+    expect(declaredMembers('const Something = Schema.Literal("text")')).toEqual([])
   })
 
   test("every pinned member REACHES the wire — declared is not reachable", () => {

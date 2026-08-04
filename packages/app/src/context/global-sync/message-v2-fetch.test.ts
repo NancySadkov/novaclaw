@@ -24,11 +24,15 @@ describe("fetchNativeMessages", () => {
 
   test("passes sessionID + pagination options through to the client", async () => {
     let seen: unknown
-    await fetchNativeMessages(fakeClient({ data: [] }, (p) => (seen = p)), "s_1", {
-      limit: 50,
-      order: "desc",
-      cursor: "c1",
-    })
+    await fetchNativeMessages(
+      fakeClient({ data: [] }, (p) => (seen = p)),
+      "s_1",
+      {
+        limit: 50,
+        order: "desc",
+        cursor: "c1",
+      },
+    )
     expect(seen).toEqual({ sessionID: "s_1", limit: 50, order: "desc", cursor: "c1" })
   })
 

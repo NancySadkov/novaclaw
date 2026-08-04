@@ -14,7 +14,7 @@ import { produce, reconcile, type SetStoreFunction, type Store } from "solid-js/
 import type { State, VcsCache } from "./types"
 import type { ServerSession } from "../server-session"
 import { cmp, normalizeAgentList, normalizeProviderList } from "./utils"
-import { formatServerError } from "@/utils/server-errors"
+import { formatServerError, isMissingDirectoryError } from "@/utils/server-errors"
 import type { Translator } from "@/context/language"
 import { CancelledError, QueryClient, queryOptions } from "@tanstack/solid-query"
 import { loadMcpQuery } from "../server-sync"
@@ -196,7 +196,9 @@ export async function bootstrapDirectory(input: {
   }
   queryClient: QueryClient
   session?: ServerSession
+  onDirectoryMissing?: (directory: string) => void
 }) {
+  const wasMissing = input.store.status === "missing"
   const loading = input.store.status !== "complete"
   const seededPath = input.global.path.directory === input.directory ? input.global.path : undefined
   // Seed the QUERY cache, never the store: `State.path` is a getter over the per-directory
@@ -212,12 +214,44 @@ export async function bootstrapDirectory(input: {
   if (Object.keys(input.store.config).length === 0 && Object.keys(input.global.config).length > 0) {
     input.setStore("config", reconcile(input.global.config, { merge: false }))
   }
-  if (loading) input.setStore("status", "partial")
+  if (loading && !wasMissing) input.setStore("status", "partial")
 
   const revKey = ScopedKey.from(input.scope, input.directory)
   const rev = (providerRev.get(revKey) ?? 0) + 1
   providerRev.set(revKey, rev)
-  ;(async () => {
+  void (async () => {
+    if (!seededPath) {
+      try {
+        const response = await input.sdk.path.get()
+        const path = response.data
+        if (path) input.queryClient.setQueryData(loadPathQuery(input.scope, input.directory, input.sdk).queryKey, path)
+        if (wasMissing) input.setStore("status", "partial")
+      } catch (error) {
+        if (isCancelledError(error)) return
+        if (isMissingDirectoryError(error)) {
+          input.setStore("status", "missing")
+          if (!wasMissing) {
+            if (input.onDirectoryMissing) input.onDirectoryMissing(input.directory)
+            if (!input.onDirectoryMissing)
+              showToast({
+                title: input.translate("toast.project.directoryMissing.title"),
+                description: input.translate("toast.project.directoryMissing.description", {
+                  directory: input.directory,
+                }),
+              })
+          }
+          return
+        }
+        console.error("Failed to check project directory", error)
+        showToast({
+          variant: "error",
+          title: input.translate("toast.project.reloadFailed.title", { project: getFilename(input.directory) }),
+          description: formatServerError(error, input.translate),
+        })
+        return
+      }
+    }
+
     const slow = [
       () => Promise.resolve(input.loadSessions(input.directory)),
       () =>
@@ -253,7 +287,6 @@ export async function bootstrapDirectory(input: {
             if (!input.session) input.setStore("session_status", statuses)
           }),
         ),
-      !seededPath && (() => input.queryClient.ensureQueryData(loadPathQuery(input.scope, input.directory, input.sdk))),
       () =>
         retry(() =>
           input.sdk.vcs.get().then((x) => {
@@ -326,18 +359,8 @@ export async function bootstrapDirectory(input: {
             )
           }),
         ),
-      () => Promise.resolve(input.loadSessions(input.directory)),
       input.mcp && (() => input.queryClient.fetchQuery(loadMcpQuery(input.scope, input.directory, input.sdk))),
-      () =>
-        input.queryClient.fetchQuery(loadProvidersQuery(input.scope, input.directory, input.sdk)).catch((err) => {
-          if (isCancelledError(err)) return
-          const project = getFilename(input.directory)
-          showToast({
-            variant: "error",
-            title: input.translate("toast.project.reloadFailed.title", { project }),
-            description: formatServerError(err, input.translate),
-          })
-        }),
+      () => input.queryClient.fetchQuery(loadProvidersQuery(input.scope, input.directory, input.sdk)),
     ].filter(Boolean) as (() => Promise<any>)[]
 
     await waitForPaint()

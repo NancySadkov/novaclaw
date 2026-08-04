@@ -16,7 +16,9 @@ export interface ExtractFailure {
   readonly cause?: string // a likely-cause hint the model can act on (truncation / bad escape / …)
 }
 
-export type ExtractResult = { readonly ok: true; readonly value: unknown } | { readonly ok: false; readonly failure: ExtractFailure }
+export type ExtractResult =
+  | { readonly ok: true; readonly value: unknown }
+  | { readonly ok: false; readonly failure: ExtractFailure }
 
 interface ScanResult {
   readonly objects: ReadonlyArray<string>
@@ -153,7 +155,9 @@ export function extractJsonObject(text: string): ExtractResult {
     if (objects.length > 0) {
       const candidate = objects[objects.length - 1]!
       const parsed = tryParse(candidate)
-      return parsed.ok ? { ok: true, value: parsed.value } : { ok: false, failure: invalidJsonFailure(candidate, parsed.error) }
+      return parsed.ok
+        ? { ok: true, value: parsed.value }
+        : { ok: false, failure: invalidJsonFailure(candidate, parsed.error) }
     }
   }
 
@@ -162,7 +166,9 @@ export function extractJsonObject(text: string): ExtractResult {
   if (scan.objects.length > 0) {
     const candidate = scan.objects[scan.objects.length - 1]!
     const parsed = tryParse(candidate)
-    return parsed.ok ? { ok: true, value: parsed.value } : { ok: false, failure: invalidJsonFailure(candidate, parsed.error) }
+    return parsed.ok
+      ? { ok: true, value: parsed.value }
+      : { ok: false, failure: invalidJsonFailure(candidate, parsed.error) }
   }
 
   if (scan.sawOpenBrace) {
@@ -173,9 +179,17 @@ export function extractJsonObject(text: string): ExtractResult {
         detail: "found an opening brace but no balanced object",
         position: scan.lastOpenIndex >= 0 ? scan.lastOpenIndex : undefined,
         snippet: snippetAround(text, text.length, 120), // the tail — where a truncated reply cut off
-        cause: "the reply may be TRUNCATED — emit a SHORTER plan (fewer, higher-level steps), and make sure every { has a matching }",
+        cause:
+          "the reply may be TRUNCATED — emit a SHORTER plan (fewer, higher-level steps), and make sure every { has a matching }",
       },
     }
   }
-  return { ok: false, failure: { reason: "no_json", detail: "no JSON object found in model output", cause: "emit exactly ONE fenced ```json { … } ``` object and nothing after it" } }
+  return {
+    ok: false,
+    failure: {
+      reason: "no_json",
+      detail: "no JSON object found in model output",
+      cause: "emit exactly ONE fenced ```json { … } ``` object and nothing after it",
+    },
+  }
 }

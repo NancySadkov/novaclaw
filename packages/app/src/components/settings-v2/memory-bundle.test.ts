@@ -22,7 +22,12 @@ const row = (over: Partial<MemoryRow>): MemoryRow => ({
 
 describe("buildMemoryBundle", () => {
   test("carries the facts (kind/text/name/scope), drops ids + provenance + timestamps", () => {
-    const doc = JSON.parse(buildMemoryBundle([row({ name: "Haskell" }), row({ id: "mem_2", scope: "session:s1", text: "lives in Kyoto" })], "2026-07-19T00:00:00Z"))
+    const doc = JSON.parse(
+      buildMemoryBundle(
+        [row({ name: "Haskell" }), row({ id: "mem_2", scope: "session:s1", text: "lives in Kyoto" })],
+        "2026-07-19T00:00:00Z",
+      ),
+    )
     expect(doc.$type).toBe(MEMORY_BUNDLE_TYPE)
     expect(doc.version).toBe(MEMORY_BUNDLE_VERSION)
     expect(doc.exportedAt).toBe("2026-07-19T00:00:00Z")
@@ -36,7 +41,8 @@ describe("buildMemoryBundle", () => {
     const text = buildMemoryBundle([row({})], "2026-07-19T00:00:00Z")
     const result = parseMemoryBundle(text)
     expect(result.ok).toBe(true)
-    if (result.ok) expect(result.memories).toEqual([{ kind: "entity", text: "the user likes Haskell", scope: "global" }])
+    if (result.ok)
+      expect(result.memories).toEqual([{ kind: "entity", text: "the user likes Haskell", scope: "global" }])
   })
 })
 
@@ -46,7 +52,10 @@ describe("parseMemoryBundle", () => {
   })
 
   test("rejects a foreign document", () => {
-    expect(parseMemoryBundle(JSON.stringify({ $type: "something-else", memories: [] }))).toEqual({ ok: false, error: "invalid" })
+    expect(parseMemoryBundle(JSON.stringify({ $type: "something-else", memories: [] }))).toEqual({
+      ok: false,
+      error: "invalid",
+    })
     expect(parseMemoryBundle(JSON.stringify({ memories: [] }))).toEqual({ ok: false, error: "invalid" })
   })
 

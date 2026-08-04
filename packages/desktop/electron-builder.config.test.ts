@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test"
 import type { Configuration } from "electron-builder"
 
-
 const channels = [
   { channel: "dev", appId: "app.novaclaw.desktop.dev", packageName: "novaclaw-dev" },
   { channel: "beta", appId: "app.novaclaw.desktop.beta", packageName: "novaclaw-beta" },
@@ -41,3 +40,14 @@ for (const channel of channels) {
   })
 }
 
+test("embeds the prepared w64devkit tree in Windows packages", async () => {
+  const module = await import(`./electron-builder.config.ts?resource=${Date.now()}`)
+  const config = module.default as Configuration
+  if (process.platform !== "win32")
+    return expect(config.extraResources).not.toContainEqual(expect.objectContaining({ to: "third-party/w64devkit/" }))
+  expect(config.extraResources).toContainEqual({
+    from: "resources/third-party/w64devkit/",
+    to: "third-party/w64devkit/",
+  })
+  expect(config.files).toContain("!resources/third-party/**")
+})

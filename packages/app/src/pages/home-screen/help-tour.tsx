@@ -80,7 +80,10 @@ export const HelpTour: Component = () => {
             {(_, d) => (
               <div
                 class="size-1.5 rounded-full transition-all"
-                classList={{ "bg-v2-text-text-accent scale-125": d() === i(), "bg-v2-border-border-strong": d() !== i() }}
+                classList={{
+                  "bg-v2-text-text-accent scale-125": d() === i(),
+                  "bg-v2-border-border-strong": d() !== i(),
+                }}
               />
             )}
           </For>

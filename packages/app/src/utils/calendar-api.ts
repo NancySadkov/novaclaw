@@ -59,7 +59,7 @@ export interface CreateScheduleInput {
   readonly enabled?: boolean
 }
 
-const call = <T,>(server: ServerConnection.HttpBase, method: string, route: string, body?: unknown): Promise<T> =>
+const call = <T>(server: ServerConnection.HttpBase, method: string, route: string, body?: unknown): Promise<T> =>
   instanceFetch<T>(server, { method, route, body })
 
 export const listSchedules = (server: ServerConnection.HttpBase) =>
@@ -80,14 +80,10 @@ export interface UpdateScheduleInput {
   readonly enabled?: boolean
 }
 
-export const updateSchedule = (
-  server: ServerConnection.HttpBase,
-  id: string,
-  patch: UpdateScheduleInput,
-) => call<Schedule>(server, "PATCH", `api/calendar/schedule/${encodeURIComponent(id)}`, patch)
+export const updateSchedule = (server: ServerConnection.HttpBase, id: string, patch: UpdateScheduleInput) =>
+  call<Schedule>(server, "PATCH", `api/calendar/schedule/${encodeURIComponent(id)}`, patch)
 
 export const removeSchedule = (server: ServerConnection.HttpBase, id: string) =>
   call<void>(server, "DELETE", `api/calendar/schedule/${encodeURIComponent(id)}`)
 
-export const listFires = (server: ServerConnection.HttpBase) =>
-  call<Fire[]>(server, "GET", "api/calendar/fires")
+export const listFires = (server: ServerConnection.HttpBase) => call<Fire[]>(server, "GET", "api/calendar/fires")

@@ -37,11 +37,11 @@ for what the script does.
 
 ## 1. What you need
 
-| | |
-|---|---|
-| **Bun 1.3.14** | The pinned toolchain — the repo's `packageManager`. Runs everything except the Vite steps. |
+|                                     |                                                                                                                                                                                         |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Bun 1.3.14**                      | The pinned toolchain — the repo's `packageManager`. Runs everything except the Vite steps.                                                                                              |
 | **Node.js 20.19+** (24 recommended) | Vite 7 runs under Node, and the web-UI and desktop builds shell out to it. Node 18 fails with `crypto.hash is not a function`. Not needed if you only build the server binary — see §4. |
-| **git, curl, unzip** | Source, and the Bun installer. |
+| **git, curl, unzip**                | Source, and the Bun installer.                                                                                                                                                          |
 
 ```bash
 curl -fsSL https://bun.sh/install | bash -s "bun-v1.3.14"
@@ -58,12 +58,12 @@ sudo tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1
 
 **Optional, depending on what you plan to do:**
 
-| You want to | Install |
-|---|---|
-| Run a built `.AppImage` | `libfuse2t64` (Ubuntu 24.04) or `libfuse2` (older) |
-| Build an `.rpm` | `rpm` (provides `rpmbuild`) |
-| Let unattended agent sessions run shell commands | `bubblewrap` — see §8 |
-| Run the desktop app | A graphical session, plus the libraries the built `.deb` declares: `libgtk-3-0`, `libnotify4`, `libnss3`, `libxss1`, `libxtst6`, `xdg-utils`, `libatspi2.0-0`, `libuuid1`, `libsecret-1-0`. Any normal desktop install already has them. |
+| You want to                                      | Install                                                                                                                                                                                                                                  |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Run a built `.AppImage`                          | `libfuse2t64` (Ubuntu 24.04) or `libfuse2` (older)                                                                                                                                                                                       |
+| Build an `.rpm`                                  | `rpm` (provides `rpmbuild`)                                                                                                                                                                                                              |
+| Let unattended agent sessions run shell commands | `bubblewrap` — see §8                                                                                                                                                                                                                    |
+| Run the desktop app                              | A graphical session, plus the libraries the built `.deb` declares: `libgtk-3-0`, `libnotify4`, `libnss3`, `libxss1`, `libxtst6`, `xdg-utils`, `libatspi2.0-0`, `libuuid1`, `libsecret-1-0`. Any normal desktop install already has them. |
 
 Building a `.deb` needs no extra tools — electron-builder brings its own `fpm` — but it does need a
 maintainer field (§5).
@@ -119,7 +119,7 @@ LAN too). In dev it looks for the server on `localhost:4096` — hence the port 
 bun run dev:desktop
 ```
 
-Electron + Vite with hot reload. Needs a graphical session (X11 or Wayland) — *not verified here*,
+Electron + Vite with hot reload. Needs a graphical session (X11 or Wayland) — _not verified here_,
 the test machine has no display.
 
 ## 4. Build one self-contained binary
@@ -193,10 +193,10 @@ bunx electron-builder --linux deb --config electron-builder.config.ts --publish 
 That produced a 126 MB `.deb`. No `fakeroot` needed.
 
 **`.rpm`** — the same maintainer rule, plus `rpmbuild` on the machine (`sudo apt-get install rpm`);
-without it the packaging step fails with *Need executable 'rpmbuild' to convert dir to rpm*.
+without it the packaging step fails with _Need executable 'rpmbuild' to convert dir to rpm_.
 
 The build targets your host architecture. Cross-building (an arm64 package on an x64 host, or the
-reverse) is *not verified here*.
+reverse) is _not verified here_.
 
 Two harmless lines you will see in the log: `file source doesn't exist … packages/desktop/native`
 (a macOS-only helper that is not built on Linux) and a bun dependency-tree note.
@@ -227,7 +227,7 @@ you bring one.
 On Linux, NovaClaw confines the `bash` tool inside a bubblewrap sandbox — one writable bind (the
 session's folder), everything else read-only or masked, and no network — whenever the session has
 no human watching it (an auto-prompting or goal-oriented chain). If no working sandbox exists,
-those sessions are *denied* raw shell access instead. Interactive sessions you are watching are
+those sessions are _denied_ raw shell access instead. Interactive sessions you are watching are
 unaffected either way.
 
 Check whether this host can enforce it — this is the exact probe NovaClaw runs:
@@ -278,16 +278,16 @@ on memory; `--force` overrides that.
 
 ## 10. Troubleshooting
 
-| Symptom | Cause and fix |
-|---|---|
-| `crypto.hash is not a function` during a Vite build | Node older than 20.19. §1. |
-| `error: preload not found "@opentui/solid/preload"` | An older checkout: `packages/novaclaw/bunfig.toml` preloaded a package that is no longer a dependency. It survives on machines with stale `node_modules` and breaks every fresh Linux install — including the desktop build. Delete the `preload` line. |
-| `dlopen(): error loading libfuse.so.2` when running an AppImage | Install `libfuse2t64`, or run it as `./novaclaw-desktop-linux-<arch>.AppImage --appimage-extract-and-run`. |
-| `It is required to set Linux .deb package maintainer` | Pass `-c.linux.maintainer="Name <email>"`. §5. |
-| `Need executable 'rpmbuild' to convert dir to rpm` | `sudo apt-get install rpm`. |
-| `kb-memory failed to open` in the server log | The graph-memory engine is a dependency of the desktop app, so the standalone server cannot resolve it. Memory is disabled; everything else works. |
-| The port is taken | The supervisor retries with backoff and gives up after five fast exits rather than fighting whatever holds the port. Free it, or pass a different `--port`. |
-| `bun run test` reports `core` failing | Expected on Linux today — see §9 for the baseline. Compare against a stashed clean checkout before assuming your change caused it. |
+| Symptom                                                         | Cause and fix                                                                                                                                                                                                                                           |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `crypto.hash is not a function` during a Vite build             | Node older than 20.19. §1.                                                                                                                                                                                                                              |
+| `error: preload not found "@opentui/solid/preload"`             | An older checkout: `packages/novaclaw/bunfig.toml` preloaded a package that is no longer a dependency. It survives on machines with stale `node_modules` and breaks every fresh Linux install — including the desktop build. Delete the `preload` line. |
+| `dlopen(): error loading libfuse.so.2` when running an AppImage | Install `libfuse2t64`, or run it as `./novaclaw-desktop-linux-<arch>.AppImage --appimage-extract-and-run`.                                                                                                                                              |
+| `It is required to set Linux .deb package maintainer`           | Pass `-c.linux.maintainer="Name <email>"`. §5.                                                                                                                                                                                                          |
+| `Need executable 'rpmbuild' to convert dir to rpm`              | `sudo apt-get install rpm`.                                                                                                                                                                                                                             |
+| `kb-memory failed to open` in the server log                    | The graph-memory engine is a dependency of the desktop app, so the standalone server cannot resolve it. Memory is disabled; everything else works.                                                                                                      |
+| The port is taken                                               | The supervisor retries with backoff and gives up after five fast exits rather than fighting whatever holds the port. Free it, or pass a different `--port`.                                                                                             |
+| `bun run test` reports `core` failing                           | Expected on Linux today — see §9 for the baseline. Compare against a stashed clean checkout before assuming your change caused it.                                                                                                                      |
 
 ## What was and was not verified
 

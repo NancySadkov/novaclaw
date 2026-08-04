@@ -2,9 +2,11 @@ import { describe, expect, test } from "bun:test"
 import {
   BACKOFF_RESET_ALIVE_MS,
   FAST_CRASH_GIVEUP,
+  LIVENESS_FAILURE_LIMIT,
   RESTART_BACKOFF_CAP_MS,
   RESTART_BACKOFF_START_MS,
   initialSuperviseState,
+  livenessDecision,
   superviseDecision,
   type SuperviseState,
 } from "./supervise"
@@ -86,5 +88,18 @@ describe("superviseDecision", () => {
       for (const exit of scenarios)
         expect(DesktopMirror.superviseDecision(state, exit)).toEqual(superviseDecision(state, exit))
     expect(DesktopMirror.initialSuperviseState).toEqual(initialSuperviseState)
+    expect(DesktopMirror.LIVENESS_FAILURE_LIMIT).toBe(LIVENESS_FAILURE_LIMIT)
+    for (const failures of [0, 1, LIVENESS_FAILURE_LIMIT - 1, LIVENESS_FAILURE_LIMIT])
+      for (const healthy of [true, false])
+        expect(DesktopMirror.livenessDecision(failures, healthy)).toEqual(livenessDecision(failures, healthy))
+  })
+})
+
+describe("livenessDecision", () => {
+  test("restarts only after consecutive misses and a success fully re-arms it", () => {
+    expect(livenessDecision(0, false)).toEqual({ action: "continue", failures: 1 })
+    expect(livenessDecision(1, false)).toEqual({ action: "continue", failures: 2 })
+    expect(livenessDecision(2, false)).toEqual({ action: "restart", failures: 3 })
+    expect(livenessDecision(2, true)).toEqual({ action: "continue", failures: 0 })
   })
 })

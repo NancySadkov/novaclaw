@@ -58,31 +58,27 @@ const offlineBuildsFor = async <A, E>(layer: Layer.Layer<A, E, never>) => {
 afterAll(() => Offline.resetPolicy())
 
 describe("shell/offline HttpApi", () => {
-  test(
-    "the serve graph holds exactly one Offline service",
-    async () => {
-      // The whole instance HTTP app: the compiled `app` node graph (Offline.node → httpClient),
-      // the messenger stack, the location map, the routes. One airgap guard for all of it.
-      const one = await offlineBuildsFor(httpApiLayer)
-      expect(Exit.isSuccess(one.exit)).toBe(true)
-      expect(one.cost).toBe(1)
+  test("the serve graph holds exactly one Offline service", async () => {
+    // The whole instance HTTP app: the compiled `app` node graph (Offline.node → httpClient),
+    // the messenger stack, the location map, the routes. One airgap guard for all of it.
+    const one = await offlineBuildsFor(httpApiLayer)
+    expect(Exit.isSuccess(one.exit)).toBe(true)
+    expect(one.cost).toBe(1)
 
-      // NEGATIVE CONTROL for the instrument AND for the invariant: a second Offline built from a
-      // different layer object — what any consumer that constructs its own instead of depending on
-      // `Offline.node` produces. It counts two, so `toBe(1)` above is not vacuous, and a future
-      // second construction in the composition root cannot slip through green.
-      const two = await offlineBuildsFor(
-        Layer.mergeAll(
-          httpApiLayer,
-          Offline.layerWith({ configDir: tmpConfigDir(), env: {}, dbFile: path.join(os.tmpdir(), "no-such", "x.db") }),
-        ),
-      )
-      expect(Exit.isSuccess(two.exit)).toBe(true)
-      expect(two.cost).toBe(2)
-      Offline.resetPolicy()
-    },
-    60_000,
-  )
+    // NEGATIVE CONTROL for the instrument AND for the invariant: a second Offline built from a
+    // different layer object — what any consumer that constructs its own instead of depending on
+    // `Offline.node` produces. It counts two, so `toBe(1)` above is not vacuous, and a future
+    // second construction in the composition root cannot slip through green.
+    const two = await offlineBuildsFor(
+      Layer.mergeAll(
+        httpApiLayer,
+        Offline.layerWith({ configDir: tmpConfigDir(), env: {}, dbFile: path.join(os.tmpdir(), "no-such", "x.db") }),
+      ),
+    )
+    expect(Exit.isSuccess(two.exit)).toBe(true)
+    expect(two.cost).toBe(2)
+    Offline.resetPolicy()
+  }, 60_000)
 
   it.instance(`GET ${OFFLINE_PATH} reads the live policy ref, not the policy sources`, () =>
     Effect.gen(function* () {

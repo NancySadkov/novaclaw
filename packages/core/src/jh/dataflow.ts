@@ -24,7 +24,10 @@ export interface Issue {
  * sibling → WARNING (it may be a task output — the harness can't decide locally). A compound child's
  * produces are its own declared produces (its own attach re-validates internally).
  */
-export function validate(children: ReadonlyArray<JhStep.StepDraft>, available: ReadonlySet<string>): ReadonlyArray<Issue> {
+export function validate(
+  children: ReadonlyArray<JhStep.StepDraft>,
+  available: ReadonlySet<string>,
+): ReadonlyArray<Issue> {
   const issues: Issue[] = []
   const producedByEarlier = new Map<string, number>() // artifact id → first earlier sibling index
 

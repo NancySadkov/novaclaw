@@ -105,7 +105,12 @@ function signalGroup(pid: number, signal: NodeJS.Signals): boolean {
 function ppidFromStat(stat: string): number | undefined {
   const close = stat.lastIndexOf(")")
   if (close < 0) return undefined
-  const ppid = Number(stat.slice(close + 1).trim().split(/\s+/)[1])
+  const ppid = Number(
+    stat
+      .slice(close + 1)
+      .trim()
+      .split(/\s+/)[1],
+  )
   return Number.isInteger(ppid) ? ppid : undefined
 }
 

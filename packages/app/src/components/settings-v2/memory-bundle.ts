@@ -43,7 +43,9 @@ export function buildMemoryBundle(rows: readonly MemoryRow[], exportedAt: string
   return JSON.stringify(bundle, null, 2) + "\n"
 }
 
-export type ParseResult = { readonly ok: true; readonly memories: readonly BundleMemory[] } | { readonly ok: false; readonly error: "invalid" | "version" }
+export type ParseResult =
+  | { readonly ok: true; readonly memories: readonly BundleMemory[] }
+  | { readonly ok: false; readonly error: "invalid" | "version" }
 
 /** Validate + parse an imported backup document. Rejects a non-memory file (`invalid`) and a
  *  bundle from a newer format this build can't read (`version`). Skips malformed rows, keeps the

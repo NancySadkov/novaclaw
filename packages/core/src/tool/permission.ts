@@ -218,14 +218,15 @@ export const decide = (input: {
   // Lowering is always permitted and never asks (`plan` is rank 0, so no target below the floor
   // exists to refuse). Only a raise meets a ceiling.
   if (op === "raise" && targetRank > modeRank(state.ceiling)) {
-    const reason = !state.attended && targetRank > modeRank(AUTO_UNATTENDED_CEILING)
-      ? `this chain is UNATTENDED (or its root could not be read), and an unattended session may never grant ` +
-        `itself more than ${named(AUTO_UNATTENDED_CEILING)} — nobody is present to say no, so the cap is not ` +
-        `negotiable and no approval prompt can lift it.`
-      : targetRank > modeRank(state.resolvedMode)
-        ? `the user set this chat to ${named(state.resolvedMode)}, and you may never grant yourself more than the ` +
-          `user picked. Ask the user to change the chat's permission mode if you genuinely need more.`
-        : `a session above you in this chain lowered itself, and a child can never out-rank its chain.`
+    const reason =
+      !state.attended && targetRank > modeRank(AUTO_UNATTENDED_CEILING)
+        ? `this chain is UNATTENDED (or its root could not be read), and an unattended session may never grant ` +
+          `itself more than ${named(AUTO_UNATTENDED_CEILING)} — nobody is present to say no, so the cap is not ` +
+          `negotiable and no approval prompt can lift it.`
+        : targetRank > modeRank(state.resolvedMode)
+          ? `the user set this chat to ${named(state.resolvedMode)}, and you may never grant yourself more than the ` +
+            `user picked. Ask the user to change the chat's permission mode if you genuinely need more.`
+          : `a session above you in this chain lowered itself, and a child can never out-rank its chain.`
     return {
       kind: "refused",
       message:
@@ -252,7 +253,9 @@ export const grantedMessage = (input: {
       `${named(input.target)} for this chat. You now own this level: ${MODE_MEANING[input.target]}.`,
     `You wrote: "${input.justification.trim()}"`,
     `The most this chat may grant itself is ${named(input.state.ceiling)}` +
-      (input.state.attended ? "" : ` (this chain is unattended, so ${named(AUTO_UNATTENDED_CEILING)} is the hard cap)`) +
+      (input.state.attended
+        ? ""
+        : ` (this chain is unattended, so ${named(AUTO_UNATTENDED_CEILING)} is the hard cap)`) +
       `. Sessions you spawn from here can never out-rank you.`,
     // Ruling 2, in the direction that costs us something: never let the model believe it made a
     // durable change it did not make.
@@ -315,131 +318,133 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.withDeferred(Tool.make({
-          description,
-          input: Input,
-          output: Output,
-          structured: StructuredOutput,
-          toStructuredOutput: ({ output }) => ({
-            changed: output.changed,
-            mode: output.mode,
-            previous: output.previous,
-            ceiling: output.ceiling,
-          }),
-          toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
-          execute: (input, context) =>
-            Effect.gen(function* () {
-              const sessionID = String(context.sessionID)
-              // `PermissionV2` refuses a missing session row before any allow; do the same here
-              // rather than resolving a phantom chain to the global defaults and reporting a level
-              // for a session that does not exist.
-              const row = yield* sessions.get(context.sessionID)
-              if (row === undefined)
-                return yield* failure("Nothing changed: this session has no record, so it has no permission level.")
+        [name]: Tool.withDeferred(
+          Tool.make({
+            description,
+            input: Input,
+            output: Output,
+            structured: StructuredOutput,
+            toStructuredOutput: ({ output }) => ({
+              changed: output.changed,
+              mode: output.mode,
+              previous: output.previous,
+              ceiling: output.ceiling,
+            }),
+            toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
+            execute: (input, context) =>
+              Effect.gen(function* () {
+                const sessionID = String(context.sessionID)
+                // `PermissionV2` refuses a missing session row before any allow; do the same here
+                // rather than resolving a phantom chain to the global defaults and reporting a level
+                // for a session that does not exist.
+                const row = yield* sessions.get(context.sessionID)
+                if (row === undefined)
+                  return yield* failure("Nothing changed: this session has no record, so it has no permission level.")
 
-              const resolved = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, sessionID, get)
-              const rootType = yield* rootAttendance(sessionID, get)
-              // ANCESTORS only — this session's own grant is not part of its own ceiling, or a
-              // lowering would be one-way. Starting the walk at the PARENT is what excludes it, and
-              // it is one walk rather than two.
-              const ancestorGrant =
-                row.parentID === undefined
-                  ? undefined
-                  : yield* chainAutoGrant(String(row.parentID), get, PermissionV2.autoGrantMode)
-              const ownGrant = PermissionV2.autoGrantMode(sessionID)
-              const chainGrant =
-                ownGrant === undefined
-                  ? ancestorGrant
-                  : ancestorGrant === undefined
-                    ? ownGrant
-                    : moreRestrictive(ownGrant, ancestorGrant)
+                const resolved = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, sessionID, get)
+                const rootType = yield* rootAttendance(sessionID, get)
+                // ANCESTORS only — this session's own grant is not part of its own ceiling, or a
+                // lowering would be one-way. Starting the walk at the PARENT is what excludes it, and
+                // it is one walk rather than two.
+                const ancestorGrant =
+                  row.parentID === undefined
+                    ? undefined
+                    : yield* chainAutoGrant(String(row.parentID), get, PermissionV2.autoGrantMode)
+                const ownGrant = PermissionV2.autoGrantMode(sessionID)
+                const chainGrant =
+                  ownGrant === undefined
+                    ? ancestorGrant
+                    : ancestorGrant === undefined
+                      ? ownGrant
+                      : moreRestrictive(ownGrant, ancestorGrant)
 
-              const state: State = {
-                resolvedMode: resolved.permissionMode,
-                attended: attendedRoot(rootType),
-                ceiling: autoCeiling({ resolvedMode: resolved.permissionMode, rootType, ancestorGrant }),
-                current: autoResolvedMode({
+                const state: State = {
                   resolvedMode: resolved.permissionMode,
-                  rootType,
-                  grant: chainGrant,
-                }),
-              }
+                  attended: attendedRoot(rootType),
+                  ceiling: autoCeiling({ resolvedMode: resolved.permissionMode, rootType, ancestorGrant }),
+                  current: autoResolvedMode({
+                    resolvedMode: resolved.permissionMode,
+                    rootType,
+                    grant: chainGrant,
+                  }),
+                }
 
-              const decision = decide({
-                op: input.op,
-                target: input.mode,
-                justification: input.justification,
-                state,
-              })
-              const unchanged = {
-                changed: false,
-                mode: state.current,
-                previous: state.current,
-                ceiling: state.ceiling,
-              }
-              // A refusal is a ToolFailure (the model's error channel), an "already there" is a
-              // normal result — they are different facts and collapsing them would tell a model it
-              // failed when it simply had nothing to do.
-              if (decision.kind === "refused") return yield* failure(decision.message)
-              if (decision.kind === "unchanged") return { ...unchanged, message: decision.message }
-
-              // The ONE consent path, and it is the existing one. `save` is scoped to the target
-              // mode, never `*`: an "always" answer means "this agent may return to yolo", not "this
-              // agent may do anything to its own permissions" (`configure.ts`'s per-key `save`).
-              if (decision.approval)
-                yield* permission.assert({
-                  action: PRIVILEGED_ACTION,
-                  resources: [input.mode],
-                  save: [input.mode],
-                  metadata: {
-                    from: state.current,
-                    ceiling: state.ceiling,
-                    justification: input.justification.trim(),
-                  },
-                  sessionID: context.sessionID,
-                  agent: context.agent,
-                  source: {
-                    type: "tool" as const,
-                    messageID: context.assistantMessageID,
-                    callID: context.toolCallID,
-                  },
-                })
-
-              // Only now — a refused card must leave the level exactly as it was.
-              PermissionV2.setAutoGrant(sessionID, {
-                mode: input.mode,
-                justification: input.justification.trim(),
-                at: Date.now(),
-              })
-              return {
-                changed: true,
-                mode: input.mode,
-                previous: state.current,
-                ceiling: state.ceiling,
-                message: grantedMessage({
+                const decision = decide({
                   op: input.op,
                   target: input.mode,
-                  previous: state.current,
                   justification: input.justification,
                   state,
+                })
+                const unchanged = {
+                  changed: false,
+                  mode: state.current,
+                  previous: state.current,
+                  ceiling: state.ceiling,
+                }
+                // A refusal is a ToolFailure (the model's error channel), an "already there" is a
+                // normal result — they are different facts and collapsing them would tell a model it
+                // failed when it simply had nothing to do.
+                if (decision.kind === "refused") return yield* failure(decision.message)
+                if (decision.kind === "unchanged") return { ...unchanged, message: decision.message }
+
+                // The ONE consent path, and it is the existing one. `save` is scoped to the target
+                // mode, never `*`: an "always" answer means "this agent may return to yolo", not "this
+                // agent may do anything to its own permissions" (`configure.ts`'s per-key `save`).
+                if (decision.approval)
+                  yield* permission.assert({
+                    action: PRIVILEGED_ACTION,
+                    resources: [input.mode],
+                    save: [input.mode],
+                    metadata: {
+                      from: state.current,
+                      ceiling: state.ceiling,
+                      justification: input.justification.trim(),
+                    },
+                    sessionID: context.sessionID,
+                    agent: context.agent,
+                    source: {
+                      type: "tool" as const,
+                      messageID: context.assistantMessageID,
+                      callID: context.toolCallID,
+                    },
+                  })
+
+                // Only now — a refused card must leave the level exactly as it was.
+                PermissionV2.setAutoGrant(sessionID, {
+                  mode: input.mode,
+                  justification: input.justification.trim(),
+                  at: Date.now(),
+                })
+                return {
+                  changed: true,
+                  mode: input.mode,
+                  previous: state.current,
+                  ceiling: state.ceiling,
+                  message: grantedMessage({
+                    op: input.op,
+                    target: input.mode,
+                    previous: state.current,
+                    justification: input.justification,
+                    state,
+                  }),
+                }
+              }).pipe(
+                Effect.mapError((error) => {
+                  if (error instanceof ToolFailure) return error
+                  // A denial keeps its identity — including the unattended deny-fast wording, which is
+                  // the one an unattended run actually needs to read. Prefixed with the fact that
+                  // matters most to the model: nothing moved.
+                  const denial = PermissionV2.denialMessage(error)
+                  if (denial) return failure(`Your permission level is unchanged. ${denial}`)
+                  return failure(
+                    `Your permission level is unchanged. ${name} failed: ${
+                      error instanceof Error ? error.message : String(error)
+                    }`,
+                  )
                 }),
-              }
-            }).pipe(
-              Effect.mapError((error) => {
-                if (error instanceof ToolFailure) return error
-                // A denial keeps its identity — including the unattended deny-fast wording, which is
-                // the one an unattended run actually needs to read. Prefixed with the fact that
-                // matters most to the model: nothing moved.
-                const denial = PermissionV2.denialMessage(error)
-                if (denial) return failure(`Your permission level is unchanged. ${denial}`)
-                return failure(
-                  `Your permission level is unchanged. ${name} failed: ${
-                    error instanceof Error ? error.message : String(error)
-                  }`,
-                )
-              }),
-            ),
-        })),
+              ),
+          }),
+        ),
       })
       .pipe(Effect.orDie)
   }),

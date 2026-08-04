@@ -1,6 +1,7 @@
 import { Pty } from "@novaclaw/schema/pty"
 import { PtyTicket } from "@novaclaw/schema/pty-ticket"
 import { Location } from "@novaclaw/schema/location"
+import { NonNegativeInt } from "@novaclaw/schema/schema"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { ForbiddenError, PtyNotFoundError } from "../errors"
@@ -10,7 +11,25 @@ export const PTY_CONNECT_TICKET_QUERY = "ticket"
 export const PTY_CONNECT_TOKEN_HEADER = "x-novaclaw-ticket"
 export const PTY_CONNECT_TOKEN_HEADER_VALUE = "1"
 
+export const PtyShell = Schema.Struct({
+  path: Schema.String,
+  name: Schema.String,
+  acceptable: Schema.Boolean,
+})
+
 const PTY_CONNECT_PATH = /^\/api\/pty\/[^/]+\/connect$/
+
+export const PtyPaths = {
+  shells: "/api/pty/shells",
+  list: "/api/pty",
+  create: "/api/pty",
+  removeAll: "/api/pty",
+  get: "/api/pty/:ptyID",
+  update: "/api/pty/:ptyID",
+  remove: "/api/pty/:ptyID",
+  connectToken: "/api/pty/:ptyID/connect-token",
+  connect: "/api/pty/:ptyID/connect",
+} as const
 
 // Authorization middleware skips credential checks when this matches; the PTY connect handler
 // is then responsible for consuming and validating the ticket.
@@ -20,7 +39,18 @@ export function hasPtyConnectTicketURL(url: URL) {
 
 export const PtyGroup = HttpApiGroup.make("server.pty")
   .add(
-    HttpApiEndpoint.get("pty.list", "/api/pty", {
+    HttpApiEndpoint.get("pty.shells", PtyPaths.shells, {
+      success: Schema.Array(PtyShell),
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.pty.shells",
+        summary: "List available shells",
+        description: "List shells available for human terminal sessions on this NovaClaw instance.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("pty.list", PtyPaths.list, {
       query: LocationQuery,
       success: Location.response(Schema.Array(Pty.Info)),
     })
@@ -34,7 +64,7 @@ export const PtyGroup = HttpApiGroup.make("server.pty")
       ),
   )
   .add(
-    HttpApiEndpoint.post("pty.create", "/api/pty", {
+    HttpApiEndpoint.post("pty.create", PtyPaths.create, {
       query: LocationQuery,
       payload: Pty.CreateInput,
       success: Location.response(Pty.Info),
@@ -49,7 +79,7 @@ export const PtyGroup = HttpApiGroup.make("server.pty")
       ),
   )
   .add(
-    HttpApiEndpoint.get("pty.get", "/api/pty/:ptyID", {
+    HttpApiEndpoint.get("pty.get", PtyPaths.get, {
       params: { ptyID: Pty.ID },
       query: LocationQuery,
       success: Location.response(Pty.Info),
@@ -65,7 +95,7 @@ export const PtyGroup = HttpApiGroup.make("server.pty")
       ),
   )
   .add(
-    HttpApiEndpoint.put("pty.update", "/api/pty/:ptyID", {
+    HttpApiEndpoint.put("pty.update", PtyPaths.update, {
       params: { ptyID: Pty.ID },
       query: LocationQuery,
       payload: Pty.UpdateInput,
@@ -82,7 +112,21 @@ export const PtyGroup = HttpApiGroup.make("server.pty")
       ),
   )
   .add(
-    HttpApiEndpoint.delete("pty.remove", "/api/pty/:ptyID", {
+    HttpApiEndpoint.delete("pty.removeAll", PtyPaths.removeAll, {
+      query: LocationQuery,
+      success: Location.response(NonNegativeInt),
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.pty.removeAll",
+          summary: "Stop all PTY sessions",
+          description: "Terminate and remove every PTY session for a location.",
+        }),
+      ),
+  )
+  .add(
+    HttpApiEndpoint.delete("pty.remove", PtyPaths.remove, {
       params: { ptyID: Pty.ID },
       query: LocationQuery,
       success: HttpApiSchema.NoContent,
@@ -98,7 +142,7 @@ export const PtyGroup = HttpApiGroup.make("server.pty")
       ),
   )
   .add(
-    HttpApiEndpoint.post("pty.connectToken", "/api/pty/:ptyID/connect-token", {
+    HttpApiEndpoint.post("pty.connectToken", PtyPaths.connectToken, {
       params: { ptyID: Pty.ID },
       query: LocationQuery,
       success: Location.response(PtyTicket.ConnectToken),
@@ -116,7 +160,7 @@ export const PtyGroup = HttpApiGroup.make("server.pty")
   .add(
     // Query fields are decoded in the raw handler after the existence check so a missing
     // session responds with an empty 404 before any upgrade work.
-    HttpApiEndpoint.get("pty.connect", "/api/pty/:ptyID/connect", {
+    HttpApiEndpoint.get("pty.connect", PtyPaths.connect, {
       params: { ptyID: Pty.ID },
       success: Schema.Boolean,
       error: [ForbiddenError, PtyNotFoundError],

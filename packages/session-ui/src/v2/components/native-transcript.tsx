@@ -724,6 +724,8 @@ function toolMeta(part: SessionMessageAssistantTool): ToolMeta {
       return { title: "Fetch", subtitle: str(input.url) }
     case "websearch":
       return { title: "Web search", subtitle: str(input.query) }
+    case "js":
+      return { title: "Computing" }
     case "task":
       return {
         title: str(input.subagent_type) ? cap(str(input.subagent_type)!) : "Task",

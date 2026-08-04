@@ -61,7 +61,9 @@ export function normalizeRecipe(input: Recipe): Recipe {
   const manual = input.manual?.trim()
   if (!manual) throw new Error("Tool manual must not be empty")
   if (manual.length > MAX_MANUAL_CHARS)
-    throw new Error(`Tool manual too long (${manual.length} > ${MAX_MANUAL_CHARS} chars) — keep it to the API shape and 1-2 examples`)
+    throw new Error(
+      `Tool manual too long (${manual.length} > ${MAX_MANUAL_CHARS} chars) — keep it to the API shape and 1-2 examples`,
+    )
   return { name, description, manual, ...(input.enabled === undefined ? {} : { enabled: input.enabled }) }
 }
 
@@ -74,9 +76,7 @@ export function normalizeRecipe(input: Recipe): Recipe {
 export function mergeRecipes(...layers: ReadonlyArray<ReadonlyArray<Recipe> | undefined>): Recipe[] {
   const byName = new Map<string, Recipe>()
   for (const layer of layers) for (const recipe of layer ?? []) byName.set(recipe.name, recipe)
-  return [...byName.values()]
-    .filter((recipe) => recipe.enabled !== false)
-    .sort((a, b) => a.name.localeCompare(b.name))
+  return [...byName.values()].filter((recipe) => recipe.enabled !== false).sort((a, b) => a.name.localeCompare(b.name))
 }
 
 const sessionFile = (sessionID: string, options?: Options) => {

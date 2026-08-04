@@ -51,12 +51,11 @@ describe("MODE_RULES overlays (1K)", () => {
     // Proves the assertions above bite because of MODE_RULES.plan and nothing else. If someone
     // deletes the bash/js denies, the test above goes red — and this one stays green, naming why.
     const preFix = MODE_RULES.plan.filter((rule) => rule.action !== "bash" && rule.action !== "js")
-    // ⚠️ Post-B4c this is `ask`, not `allow` — the baseline no longer answers for an unnamed action.
-    // The rules are still load-bearing and this control still bites: `ask` is a PROMPT, which a
-    // user can answer allow-always and which the hard arm below never trips on, so a mode whose UI
-    // copy reads "Read only" would be offering to run `rm -rf` rather than refusing it.
+    // Bash remains unnamed and falls through to ask. JavaScript is a deliberate default grant, so
+    // removing Analyze's hard deny would permit it outright. Either result proves these mode rules
+    // are what make the UI's “Read only” promise true.
     expect(PermissionV2.evaluate("bash", "rm -rf /", [...agentDefaults, ...preFix]).effect).toBe("ask")
-    expect(PermissionV2.evaluate("js", "1+1", [...agentDefaults, ...preFix]).effect).toBe("ask")
+    expect(PermissionV2.evaluate("js", "1+1", [...agentDefaults, ...preFix]).effect).toBe("allow")
     // ...and the hard arm never trips either, so there was nothing to soften in the first place.
     expect(PermissionV2.evaluate("bash", "rm -rf /", preFix).effect).not.toBe("deny")
   })

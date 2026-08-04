@@ -22,9 +22,7 @@ describe("AppRegistry.normalize", () => {
 
   test("rejects traversal-shaped and invalid ids", () => {
     for (const id of ["../evil", "a/b", "UPPER", ".hidden"]) {
-      expect(() =>
-        AppRegistry.normalize({ id, title: "T", open: { type: "route", value: "/x" } }, opts()),
-      ).toThrow()
+      expect(() => AppRegistry.normalize({ id, title: "T", open: { type: "route", value: "/x" } }, opts())).toThrow()
     }
     // An EMPTY id is not invalid — it means "derive from the title".
     const m = AppRegistry.normalize({ id: "", title: "My App", open: { type: "route", value: "/x" } }, opts())
@@ -42,12 +40,8 @@ describe("AppRegistry.normalize", () => {
       AppRegistry.normalize({ title: "T", open: { type: "url", value: "javascript:alert(1)" } }, opts()),
     ).toThrow(/http/)
     expect(() => AppRegistry.normalize({ title: "T", open: { type: "route", value: "x" } }, opts())).toThrow(/\//)
-    expect(() =>
-      AppRegistry.normalize({ title: "T", open: { type: "nope" as never, value: "x" } }, opts()),
-    ).toThrow()
-    expect(() => AppRegistry.normalize({ title: "T", open: { type: "prompt", value: "  " } }, opts())).toThrow(
-      /empty/,
-    )
+    expect(() => AppRegistry.normalize({ title: "T", open: { type: "nope" as never, value: "x" } }, opts())).toThrow()
+    expect(() => AppRegistry.normalize({ title: "T", open: { type: "prompt", value: "  " } }, opts())).toThrow(/empty/)
   })
 })
 

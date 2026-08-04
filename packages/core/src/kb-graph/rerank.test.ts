@@ -53,8 +53,16 @@ describe("buildRerankPrompt", () => {
     const { system, user } = buildRerankPrompt(
       "remote policy?",
       [
-        hit("a", { text: "Official policy: three days in office", validAt: new Date(NOW - 400 * 86_400_000).toISOString(), relation: "core" }),
-        hit("b", { text: "I think nobody checks anymore", validAt: new Date(NOW - 3 * 86_400_000).toISOString(), source: "auto-extract" }),
+        hit("a", {
+          text: "Official policy: three days in office",
+          validAt: new Date(NOW - 400 * 86_400_000).toISOString(),
+          relation: "core",
+        }),
+        hit("b", {
+          text: "I think nobody checks anymore",
+          validAt: new Date(NOW - 3 * 86_400_000).toISOString(),
+          source: "auto-extract",
+        }),
       ],
       NOW,
     )

@@ -43,9 +43,7 @@ const master = path.resolve(positional[0] ?? path.join(repo, "..", "logo.png"))
 if (!(await Bun.file(master).exists())) throw new Error(`master logo not found: ${master}`)
 console.log("master lockup:", master)
 
-const glyphCandidate = positional[1]
-  ? path.resolve(positional[1])
-  : path.join(path.dirname(master), "logo-icon.png")
+const glyphCandidate = positional[1] ? path.resolve(positional[1]) : path.join(path.dirname(master), "logo-icon.png")
 const glyphMaster = (await Bun.file(glyphCandidate).exists()) ? glyphCandidate : undefined
 if (positional[1] && !glyphMaster) throw new Error(`glyph master not found: ${glyphCandidate}`)
 // No glyph and no --crop: stop rather than guess. See the ⚠️ at the top of this file.

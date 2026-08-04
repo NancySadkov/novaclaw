@@ -597,7 +597,7 @@ describe("filesystem", () => {
       const target = path.join(tmp.path, "real")
       await fs.mkdir(target)
       const link = path.join(tmp.path, "link")
-      await fs.symlink(target, link)
+      await fs.symlink(target, link, process.platform === "win32" ? "junction" : "dir")
       expect(Filesystem.resolve(link)).toBe(Filesystem.resolve(target))
     })
 
@@ -612,8 +612,8 @@ describe("filesystem", () => {
       await using tmp = await tmpdir()
       const a = path.join(tmp.path, "a")
       const b = path.join(tmp.path, "b")
-      await fs.symlink(b, a)
-      await fs.symlink(a, b)
+      await fs.symlink(b, a, process.platform === "win32" ? "junction" : "dir")
+      await fs.symlink(a, b, process.platform === "win32" ? "junction" : "dir")
       expect(() => Filesystem.resolve(a)).toThrow()
     })
 

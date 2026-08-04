@@ -11,13 +11,10 @@ import {
   FindFileQuery,
   FindTextQuery,
 } from "../../src/server/routes/instance/httpapi/groups/file"
-import {
-  ExperimentalPaths,
-  ToolListQuery,
-} from "../../src/server/routes/instance/httpapi/groups/experimental"
+import { ExperimentalPaths, ToolListQuery } from "../../src/server/routes/instance/httpapi/groups/experimental"
 import { InstancePaths, VcsDiffQuery } from "../../src/server/routes/instance/httpapi/groups/instance"
 import { WorkspacePaths } from "../../src/server/routes/instance/httpapi/groups/workspace"
-import { PtyPaths } from "../../src/server/routes/instance/httpapi/groups/pty"
+import { PtyPaths } from "@novaclaw/protocol/groups/pty"
 import { SessionMessagesQuery } from "@novaclaw/protocol/groups/message"
 import { QueryBoolean, QueryBooleanOpenApi } from "../../src/server/routes/instance/httpapi/groups/query"
 import { resetDatabase } from "../fixture/db"

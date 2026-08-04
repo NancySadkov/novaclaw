@@ -40,7 +40,7 @@ export const SettingsIntrospectionV2: Component = () => {
   const serverSync = useServerSync()
 
   const current = (): IntrospectionConfig =>
-    ((serverSync().data.config as { introspection?: IntrospectionConfig }).introspection ?? {})
+    (serverSync().data.config as { introspection?: IntrospectionConfig }).introspection ?? {}
 
   async function persist(patch: Partial<IntrospectionConfig>) {
     // updateGlobal patch-MERGES (a key can never be removed over the wire — undefined doesn't

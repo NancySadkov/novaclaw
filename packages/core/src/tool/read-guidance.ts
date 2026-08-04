@@ -42,7 +42,12 @@ export function guidance(stats: ReadStats): string | undefined {
 }
 
 // Convenience for the read tool: derive line/byte stats from the returned text.
-export function forText(input: { text: string; truncated: boolean; offset: number; next?: number }): string | undefined {
+export function forText(input: {
+  text: string
+  truncated: boolean
+  offset: number
+  next?: number
+}): string | undefined {
   return guidance({
     truncated: input.truncated,
     offset: input.offset,

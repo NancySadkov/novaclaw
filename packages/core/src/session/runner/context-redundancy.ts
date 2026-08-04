@@ -219,7 +219,12 @@ export const redundancyVerdict = (candidate: ReadonlySet<number>, cover: Readonl
   const overlap = coverage(candidate, cover)
   const uniqueLost = candidate.size - intersectionSize(candidate, cover)
   const matched = similarity >= SIMILARITY_THRESHOLD || overlap >= COVERAGE_THRESHOLD
-  return { redundant: matched && uniqueLost <= MAX_UNIQUE_SHINGLES_LOST, jaccard: similarity, coverage: overlap, uniqueLost }
+  return {
+    redundant: matched && uniqueLost <= MAX_UNIQUE_SHINGLES_LOST,
+    jaccard: similarity,
+    coverage: overlap,
+    uniqueLost,
+  }
 }
 
 /** `redundancyVerdict(...).redundant` — see there for the routes and the veto. */

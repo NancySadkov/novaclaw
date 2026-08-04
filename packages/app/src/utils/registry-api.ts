@@ -22,7 +22,7 @@ export interface RegistryPage {
   readonly rows: readonly RegistryRow[]
 }
 
-const call = <T,>(
+const call = <T>(
   server: ServerConnection.HttpBase,
   method: "GET" | "POST",
   route: string,

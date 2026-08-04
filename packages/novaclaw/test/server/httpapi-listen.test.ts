@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import net from "node:net"
 import { Flag } from "@novaclaw/core/flag/flag"
 import { Server } from "../../src/server/server"
-import { PtyPaths } from "../../src/server/routes/instance/httpapi/groups/pty"
+import { PtyPaths } from "@novaclaw/protocol/groups/pty"
 import { withTimeout } from "../../src/util/timeout"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, tmpdir } from "../fixture/fixture"
@@ -50,7 +50,7 @@ function authorization() {
 function socketURL(listener: Awaited<ReturnType<typeof startListener>>, id: string, dir: string, ticket?: string) {
   const url = new URL(PtyPaths.connect.replace(":ptyID", id), listener.url)
   url.protocol = "ws:"
-  url.searchParams.set("directory", dir)
+  url.searchParams.set("location[directory]", dir)
   url.searchParams.set("cursor", "-1")
   if (ticket) url.searchParams.set("ticket", ticket)
   return url
@@ -78,7 +78,7 @@ async function requestTicket(
 async function connectTicket(listener: Awaited<ReturnType<typeof startListener>>, id: string, dir: string) {
   const response = await requestTicket(listener, id, dir)
   expect(response.status).toBe(200)
-  return (await response.json()) as { ticket: string; expires_in: number }
+  return ((await response.json()) as { data: { ticket: string; expires_in: number } }).data
 }
 
 async function createCat(listener: Awaited<ReturnType<typeof startListener>>, dir: string) {
@@ -92,7 +92,7 @@ async function createCat(listener: Awaited<ReturnType<typeof startListener>>, di
     body: JSON.stringify({ command: "/bin/cat", title: "listen-smoke" }),
   })
   expect(response.status).toBe(200)
-  return (await response.json()) as { id: string }
+  return ((await response.json()) as { data: { id: string } }).data
 }
 
 async function openSocket(url: URL) {
@@ -347,7 +347,7 @@ describe("HttpApi Server.listen", () => {
 
       const directoryScoped = await fetch(
         new URL(
-          `${PtyPaths.connectToken.replace(":ptyID", info.id)}?directory=${encodeURIComponent(tmp.path)}`,
+          `${PtyPaths.connectToken.replace(":ptyID", info.id)}?location%5Bdirectory%5D=${encodeURIComponent(tmp.path)}`,
           listener.url,
         ),
         {
@@ -356,8 +356,8 @@ describe("HttpApi Server.listen", () => {
         },
       )
       expect(directoryScoped.status).toBe(200)
-      const mint = (await directoryScoped.json()) as { ticket: string }
-      const scopedWs = await openSocket(socketURL(listener, info.id, tmp.path, mint.ticket))
+      const mint = (await directoryScoped.json()) as { data: { ticket: string } }
+      const scopedWs = await openSocket(socketURL(listener, info.id, tmp.path, mint.data.ticket))
       scopedWs.close(1000)
 
       await expectSocketRejected(socketURL(listener, info.id, tmp.path, "not-a-ticket"))

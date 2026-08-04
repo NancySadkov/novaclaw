@@ -143,7 +143,7 @@ export const toInbound = (message: TgMessageType, selfID: number | undefined): I
       name: senderName(message.from),
       isSelf: selfID !== undefined && message.from?.id === selfID,
     },
-    ...(message.text ?? message.caption ? { text: message.text ?? message.caption } : {}),
+    ...((message.text ?? message.caption) ? { text: message.text ?? message.caption } : {}),
     ...(attachments ? { attachments } : {}),
     ...(message.reply_to_message ? { replyTo: String(message.reply_to_message.message_id) } : {}),
     at: message.date * 1000,
@@ -213,11 +213,17 @@ export const make = (fetchImpl: FetchLike): Driver => ({
             // sendDocument is multipart (the file bytes ride the form); text rides as the caption.
             const form = new FormData()
             form.set("chat_id", chatID)
-            form.set("document", new Blob([message.file.data as BlobPart], { type: message.file.mime }), message.file.name)
+            form.set(
+              "document",
+              new Blob([message.file.data as BlobPart], { type: message.file.mime }),
+              message.file.name,
+            )
             if (message.text !== undefined && message.text.length > 0) form.set("caption", message.text.slice(0, 1024))
             const raw = yield* Effect.tryPromise({
-              try: () => fetchImpl(`${API_BASE}/bot${token}/sendDocument`, { method: "POST", body: form }).then((r) => r.json()),
-              catch: (error) => new SendError({ reason: `Telegram sendDocument failed: ${String(error)}`, retryable: true }),
+              try: () =>
+                fetchImpl(`${API_BASE}/bot${token}/sendDocument`, { method: "POST", body: form }).then((r) => r.json()),
+              catch: (error) =>
+                new SendError({ reason: `Telegram sendDocument failed: ${String(error)}`, retryable: true }),
             })
             const decoded = decodeMessage(raw)
             if (decoded._tag === "Some" && decoded.value.ok === false)
@@ -225,11 +231,14 @@ export const make = (fetchImpl: FetchLike): Driver => ({
                 new SendError({ reason: decoded.value.description ?? "sendDocument rejected", retryable: false }),
               )
             return {
-              messageID: decoded._tag === "Some" && decoded.value.result ? String(decoded.value.result.message_id) : "0",
+              messageID:
+                decoded._tag === "Some" && decoded.value.result ? String(decoded.value.result.message_id) : "0",
             }
           }
           if (message.text === undefined || message.text.length === 0) return { messageID: "0" }
-          const chunks = MessengerFormat.chunk(MessengerFormat.downgrade(message.text, "html"), { maxChars: CAPS.maxChars })
+          const chunks = MessengerFormat.chunk(MessengerFormat.downgrade(message.text, "html"), {
+            maxChars: CAPS.maxChars,
+          })
           let lastID = "0"
           for (const [index, chunk] of chunks.entries()) {
             const raw = yield* call("sendMessage", {
@@ -267,7 +276,9 @@ export const make = (fetchImpl: FetchLike): Driver => ({
             // edge #16): end the connection instead of spinning silently; the gateway's backoff +
             // reconnect owns recovery, and the reconnect's getMe gate surfaces the legible reason.
             return yield* Effect.fail(
-              new ConnectError({ reason: `Telegram getUpdates refused: ${decoded.value.description ?? "unknown error"}` }),
+              new ConnectError({
+                reason: `Telegram getUpdates refused: ${decoded.value.description ?? "unknown error"}`,
+              }),
             )
           }
           const batch = decoded.value.result ?? []
@@ -287,11 +298,7 @@ export const make = (fetchImpl: FetchLike): Driver => ({
         }
       })
 
-      yield* Effect.forkScoped(
-        pump.pipe(
-          Effect.catchCause(() => Queue.shutdown(queue)),
-        ),
-      )
+      yield* Effect.forkScoped(pump.pipe(Effect.catchCause(() => Queue.shutdown(queue))))
 
       // getFile → file_path → the file endpoint (a separate URL space from method calls).
       const downloadFile = (ref: FileRef) =>

@@ -65,7 +65,9 @@ describe("CatalogStore remove + clearDefault", () => {
 
       // Valid JSON, invalid shape — what a Registry hand-edit or a schema skew actually produces.
       yield* db
-        .run(sql`INSERT INTO catalog_provider (id, layers, time_created, time_updated) VALUES ('broken', '"nope"', 0, 0)`)
+        .run(
+          sql`INSERT INTO catalog_provider (id, layers, time_created, time_updated) VALUES ('broken', '"nope"', 0, 0)`,
+        )
         .pipe(Effect.orDie)
 
       const { value: providers, warnings } = yield* withWarnings(store.providers())

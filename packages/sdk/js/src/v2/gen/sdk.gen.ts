@@ -62,6 +62,8 @@ import type {
   FileMkdirResponses,
   FileReadErrors,
   FileReadResponses,
+  FileRenameErrors,
+  FileRenameResponses,
   FileStatusErrors,
   FileStatusResponses,
   FileTrashErrors,
@@ -150,22 +152,6 @@ import type {
   ProviderPresetsResponses,
   ProviderProbeErrors,
   ProviderProbeResponses,
-  PtyConnectErrors,
-  PtyConnectResponses,
-  PtyConnectTokenErrors,
-  PtyConnectTokenResponses,
-  PtyCreateErrors,
-  PtyCreateResponses,
-  PtyGetErrors,
-  PtyGetResponses,
-  PtyListErrors,
-  PtyListResponses,
-  PtyRemoveErrors,
-  PtyRemoveResponses,
-  PtyShellsErrors,
-  PtyShellsResponses,
-  PtyUpdateErrors,
-  PtyUpdateResponses,
   QuestionAnswer,
   QuestionListErrors,
   QuestionListResponses,
@@ -312,8 +298,12 @@ import type {
   V2PtyGetResponses,
   V2PtyListErrors,
   V2PtyListResponses,
+  V2PtyRemoveAllErrors,
+  V2PtyRemoveAllResponses,
   V2PtyRemoveErrors,
   V2PtyRemoveResponses,
+  V2PtyShellsErrors,
+  V2PtyShellsResponses,
   V2PtyUpdateErrors,
   V2PtyUpdateResponses,
   V2QuestionRequestListErrors,
@@ -348,6 +338,10 @@ import type {
   V2SessionCreateResponses,
   V2SessionEventsErrors,
   V2SessionEventsResponses,
+  V2SessionExecutionListErrors,
+  V2SessionExecutionListResponses,
+  V2SessionExecutionRetryErrors,
+  V2SessionExecutionRetryResponses,
   V2SessionExportMarkdownErrors,
   V2SessionExportMarkdownResponses,
   V2SessionForkErrors,
@@ -1930,6 +1924,7 @@ export class File extends HeyApiClient {
       directory?: string
       workspace?: string
       path?: string
+      exclusive?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1941,12 +1936,52 @@ export class File extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "path" },
+            { in: "body", key: "exclusive" },
           ],
         },
       ],
     )
     return (options?.client ?? this.client).post<FileMkdirResponses, FileMkdirErrors, ThrowOnError>({
       url: "/file/mkdir",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Rename file or directory
+   *
+   * Rename one entry under the routed directory without replacing an existing destination.
+   */
+  public rename<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      path?: string
+      name?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "path" },
+            { in: "body", key: "name" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<FileRenameResponses, FileRenameErrors, ThrowOnError>({
+      url: "/file/rename",
       ...options,
       ...params,
       headers: {
@@ -3027,291 +3062,6 @@ export class Memory extends HeyApiClient {
   }
 }
 
-export class Pty extends HeyApiClient {
-  /**
-   * List available shells
-   *
-   * Get a list of available shells on the system.
-   */
-  public shells<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<PtyShellsResponses, PtyShellsErrors, ThrowOnError>({
-      url: "/pty/shells",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * List PTY sessions
-   *
-   * Get a list of all active pseudo-terminal (PTY) sessions managed by NovaClaw.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<PtyListResponses, PtyListErrors, ThrowOnError>({
-      url: "/pty",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Create PTY session
-   *
-   * Create a new pseudo-terminal (PTY) session for running shell commands and processes.
-   */
-  public create<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      command?: string
-      args?: Array<string>
-      cwd?: string
-      title?: string
-      env?: {
-        [key: string]: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "command" },
-            { in: "body", key: "args" },
-            { in: "body", key: "cwd" },
-            { in: "body", key: "title" },
-            { in: "body", key: "env" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<PtyCreateResponses, PtyCreateErrors, ThrowOnError>({
-      url: "/pty",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Remove PTY session
-   *
-   * Remove and terminate a specific pseudo-terminal (PTY) session.
-   */
-  public remove<ThrowOnError extends boolean = false>(
-    parameters: {
-      ptyID: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "ptyID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).delete<PtyRemoveResponses, PtyRemoveErrors, ThrowOnError>({
-      url: "/pty/{ptyID}",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Get PTY session
-   *
-   * Retrieve detailed information about a specific pseudo-terminal (PTY) session.
-   */
-  public get<ThrowOnError extends boolean = false>(
-    parameters: {
-      ptyID: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "ptyID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<PtyGetResponses, PtyGetErrors, ThrowOnError>({
-      url: "/pty/{ptyID}",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Update PTY session
-   *
-   * Update properties of an existing pseudo-terminal (PTY) session.
-   */
-  public update<ThrowOnError extends boolean = false>(
-    parameters: {
-      ptyID: string
-      directory?: string
-      workspace?: string
-      title?: string
-      size?: {
-        rows: number
-        cols: number
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "ptyID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "title" },
-            { in: "body", key: "size" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).put<PtyUpdateResponses, PtyUpdateErrors, ThrowOnError>({
-      url: "/pty/{ptyID}",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Create PTY WebSocket token
-   *
-   * Create a short-lived ticket for opening a PTY WebSocket connection.
-   */
-  public connectToken<ThrowOnError extends boolean = false>(
-    parameters: {
-      ptyID: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "ptyID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<PtyConnectTokenResponses, PtyConnectTokenErrors, ThrowOnError>({
-      url: "/pty/{ptyID}/connect-token",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Connect to PTY session
-   *
-   * Establish a WebSocket connection to interact with a pseudo-terminal (PTY) session in real-time.
-   */
-  public connect<ThrowOnError extends boolean = false>(
-    parameters: {
-      ptyID: string
-      directory?: string
-      workspace?: string
-      cursor?: string
-      ticket?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "ptyID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "query", key: "cursor" },
-            { in: "query", key: "ticket" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<PtyConnectResponses, PtyConnectErrors, ThrowOnError>({
-      url: "/pty/{ptyID}/connect",
-      ...options,
-      ...params,
-    })
-  }
-}
-
 export class Question extends HeyApiClient {
   /**
    * List pending questions
@@ -4115,6 +3865,44 @@ export class Tags extends HeyApiClient {
     return (options?.client ?? this.client).get<V2SessionTagsAllResponses, V2SessionTagsAllErrors, ThrowOnError>({
       url: "/api/tag",
       ...options,
+    })
+  }
+}
+
+export class Execution extends HeyApiClient {
+  /**
+   * Inspect durable session execution
+   *
+   * List durable execution and recovery state, including paused failures and their human-readable details.
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      V2SessionExecutionListResponses,
+      V2SessionExecutionListErrors,
+      ThrowOnError
+    >({ url: "/api/session/execution", ...options })
+  }
+
+  /**
+   * Retry paused session execution
+   *
+   * Record explicit operator authority, reset the recovery circuit breaker, and resume queued work without requiring a model response.
+   */
+  public retry<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).post<
+      V2SessionExecutionRetryResponses,
+      V2SessionExecutionRetryErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/execution/retry",
+      ...options,
+      ...params,
     })
   }
 }
@@ -5436,6 +5224,11 @@ export class Session extends HeyApiClient {
   private _tags?: Tags
   get tags(): Tags {
     return (this._tags ??= new Tags({ client: this.client }))
+  }
+
+  private _execution?: Execution
+  get execution(): Execution {
+    return (this._execution ??= new Execution({ client: this.client }))
   }
 
   private _revert?: Revert
@@ -7061,7 +6854,41 @@ export class Event2 extends HeyApiClient {
   }
 }
 
-export class Pty2 extends HeyApiClient {
+export class Pty extends HeyApiClient {
+  /**
+   * List available shells
+   *
+   * List shells available for human terminal sessions on this NovaClaw instance.
+   */
+  public shells<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<V2PtyShellsResponses, V2PtyShellsErrors, ThrowOnError>({
+      url: "/api/pty/shells",
+      ...options,
+    })
+  }
+
+  /**
+   * Stop all PTY sessions
+   *
+   * Terminate and remove every PTY session for a location.
+   */
+  public removeAll<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).delete<V2PtyRemoveAllResponses, V2PtyRemoveAllErrors, ThrowOnError>({
+      url: "/api/pty",
+      ...options,
+      ...params,
+    })
+  }
+
   /**
    * List PTY sessions
    *
@@ -7486,9 +7313,9 @@ export class V2 extends HeyApiClient {
     return (this._event ??= new Event2({ client: this.client }))
   }
 
-  private _pty?: Pty2
-  get pty(): Pty2 {
-    return (this._pty ??= new Pty2({ client: this.client }))
+  private _pty?: Pty
+  get pty(): Pty {
+    return (this._pty ??= new Pty({ client: this.client }))
   }
 
   private _question?: Question3
@@ -7598,11 +7425,6 @@ export class NovaclawClient extends HeyApiClient {
   private _memory?: Memory
   get memory(): Memory {
     return (this._memory ??= new Memory({ client: this.client }))
-  }
-
-  private _pty?: Pty
-  get pty(): Pty {
-    return (this._pty ??= new Pty({ client: this.client }))
   }
 
   private _question?: Question

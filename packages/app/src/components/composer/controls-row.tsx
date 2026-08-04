@@ -3,10 +3,7 @@
 // composer builds — no controller context reaches in here.
 import { Show } from "solid-js"
 import { ComposerModelControl, type ComposerModelControlState } from "./model-control"
-import {
-  ComposerPermissionModeControl,
-  type ComposerPermissionModeControlState,
-} from "./permission-mode-control"
+import { ComposerPermissionModeControl, type ComposerPermissionModeControlState } from "./permission-mode-control"
 import { ComposerStrictControl, type ComposerStrictControlState } from "./strict-control"
 import { ComposerFeaturesControl, type ComposerFeaturesControlState } from "./features-control"
 import { ComposerFolderControl, type ComposerFolderControlState } from "./folder-control"

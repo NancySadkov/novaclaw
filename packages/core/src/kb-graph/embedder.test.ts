@@ -19,8 +19,17 @@ describe("parseEmbeddings", () => {
   const reply = (rows: unknown[]) => ({ data: rows })
 
   test("returns vectors ordered by index, not arrival order", () => {
-    const out = parseEmbeddings(reply([{ index: 1, embedding: [3, 4] }, { index: 0, embedding: [1, 2] }]), 2)
-    expect(out).toEqual([[1, 2], [3, 4]])
+    const out = parseEmbeddings(
+      reply([
+        { index: 1, embedding: [3, 4] },
+        { index: 0, embedding: [1, 2] },
+      ]),
+      2,
+    )
+    expect(out).toEqual([
+      [1, 2],
+      [3, 4],
+    ])
   })
 
   test("degrades to undefined when the count doesn't match what we asked for", () => {

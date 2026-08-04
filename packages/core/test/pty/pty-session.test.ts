@@ -128,6 +128,23 @@ describe("pty", () => {
     }),
   )
 
+  ptyTest("stops and removes every session atomically", () =>
+    Effect.gen(function* () {
+      const pty = yield* Pty.Service
+      const events = yield* subscribePtyEvents()
+      const first = yield* createPty("cat")
+      const second = yield* createPty("cat")
+      yield* waitForEvents(events, first.id, 1)
+      yield* waitForEvents(events, second.id, 1)
+
+      expect(yield* pty.removeAll()).toBe(2)
+      expect(yield* pty.list()).toEqual([])
+      expect(yield* waitForEvents(events, first.id, 1)).toEqual(["deleted"])
+      expect(yield* waitForEvents(events, second.id, 1)).toEqual(["deleted"])
+      expect(yield* pty.removeAll()).toBe(0)
+    }),
+  )
+
   ptyTest("replays buffered output and streams live output to attachments", () =>
     Effect.gen(function* () {
       const pty = yield* Pty.Service

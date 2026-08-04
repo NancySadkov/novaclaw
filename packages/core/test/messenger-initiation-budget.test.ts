@@ -213,7 +213,11 @@ describe("MessengerStore.chargeInitiation", () => {
         // …and tomorrow is still tomorrow: durability must not also freeze the counter.
         expect((yield* store.chargeInitiation({ at: NOON + DAY, cap: CAP })).kind).toBe("charged")
       }).pipe(Effect.scoped, Effect.provide(overFile(file)))
-    }).pipe(Effect.ensuring(Effect.sync(() => discardDb(nodePath.join(os.tmpdir(), `novaclaw-initiation-${process.pid}.db`))))),
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => discardDb(nodePath.join(os.tmpdir(), `novaclaw-initiation-${process.pid}.db`))),
+      ),
+    ),
   )
 
   it.live("concurrent charges never oversell the day", () =>
@@ -259,7 +263,8 @@ const implementation = (name: string): string => {
 }
 
 /** Every `db.<verb>(` the implementation issues. One means one statement. */
-const statements = (source: string): string[] => [...source.matchAll(/\bdb\s*\.\s*(select|insert|update|delete|run|all|get)\b/g)].map((match) => match[1]!)
+const statements = (source: string): string[] =>
+  [...source.matchAll(/\bdb\s*\.\s*(select|insert|update|delete|run|all|get)\b/g)].map((match) => match[1]!)
 
 describe("charging the daily budget is ONE statement", () => {
   const body = implementation("chargeInitiation")

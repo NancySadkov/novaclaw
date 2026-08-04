@@ -335,13 +335,19 @@ export function savedResources(
 //  · `resource_status` — reads the instance's existing Storage pressure probe. No mutation, egress or
 //                  durable effect; it is the on-demand replacement for spending healthy RAM/disk lines
 //                  in every turn's system context, so asking permission to verify recovery would defeat it.
+//  · `webfetch`  — deliberate product default (owner, 2026-08-04): models may read public URLs without
+//                  stopping for a consent card. OFF-C/airgap policy, SSRF checks, response limits and the
+//                  traffic governor remain independent hard boundaries around the request.
+//  · `js`        — deliberate product default (owner, 2026-08-04): inline computation is part of the
+//                  normal reasoning surface. Analyze mode still hard-denies execution, while Build and
+//                  more permissive modes can compute without prompting on every fresh install.
 //
 // ⚠️ WHAT IS DELIBERATELY ABSENT, so the shortness is not read as an oversight. The mutation/exec
 // cluster (`edit`/`write`/`create`/`trash`/`bash`) is NOT here and does not need to be: the default
 // permission mode is `bypass`, whose overlay allows all five on `*` (`MODE_RULES`), so a default
 // install behaves as it did. What changed is that those five are now granted by THE POSTURE THE
 // USER PICKED rather than by a catch-all — which is what finally makes picking `ask` or `plan` mean
-// something for everything else too. `js`, `spawn`, `kb`, `skill`, `webfetch`, `revert`,
+// something for everything else too. `spawn`, `kb`, `skill`, `revert`,
 // `provision`, `define_tool`, `register-app`, `messenger.*`, MCP tools and ad-hoc tools each fail at
 // least one of the three tests above and now ASK on first use; the answer is saveable
 // (allow-always), so the cost is one card per capability per install, not one per call.
@@ -369,6 +375,8 @@ export const AMBIENT_SAFE_BASELINE: Permission.Ruleset = [
   { action: "explore", resource: "*", effect: "allow" },
   { action: "todowrite", resource: "*", effect: "allow" },
   { action: "resource_status", resource: "*", effect: "allow" },
+  { action: "webfetch", resource: "*", effect: "allow" },
+  { action: "js", resource: "*", effect: "allow" },
 ]
 
 /**
@@ -708,9 +716,7 @@ export const layer = Layer.effect(
       // another checkout, or any other host-readable file. Every permission mode gets this same
       // capability; only WRITES distinguish `yolo` from the other modes. It sits at the lowest
       // precedence so an explicit user-authored permission rule can still narrow a particular path.
-      const readBaseline: Permission.Ruleset = [
-        { action: "external_directory_read", resource: "*", effect: "allow" },
-      ]
+      const readBaseline: Permission.Ruleset = [{ action: "external_directory_read", resource: "*", effect: "allow" }]
       const rules = [...readBaseline, ...configuredRules, ...modeRules, ...featureRules, ...stance]
       if (denied(input, stance))
         return {

@@ -2,6 +2,7 @@ import { Pty } from "@novaclaw/core/pty"
 import { PtyProtocol } from "@novaclaw/core/pty/protocol"
 import { PtyTicket } from "@novaclaw/core/pty/ticket"
 import { Location } from "@novaclaw/core/location"
+import { Shell } from "@novaclaw/core/shell"
 import { Effect, Queue } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
@@ -27,6 +28,12 @@ export const PtyHandler = HttpApiBuilder.group(Api, "server.pty", (handlers) =>
     const cors = yield* CorsConfig
 
     return handlers
+      .handle(
+        "pty.shells",
+        Effect.fn(function* () {
+          return yield* Effect.promise(() => Shell.list())
+        }),
+      )
       .handle(
         "pty.list",
         Effect.fn(function* () {
@@ -93,6 +100,13 @@ export const PtyHandler = HttpApiBuilder.group(Api, "server.pty", (handlers) =>
                 ),
               ),
           )
+        }),
+      )
+      .handle(
+        "pty.removeAll",
+        Effect.fn(function* () {
+          const pty = yield* Pty.Service
+          return yield* response(pty.removeAll())
         }),
       )
       .handle(

@@ -5,12 +5,11 @@ export const AgentCommand = effectCmd({
   command: "agent <name>",
   describe: "show agent configuration details",
   builder: (yargs) =>
-    yargs
-      .positional("name", {
-        type: "string",
-        demandOption: true,
-        description: "Agent name",
-      }),
+    yargs.positional("name", {
+      type: "string",
+      demandOption: true,
+      description: "Agent name",
+    }),
   handler: (args) =>
     Effect.gen(function* () {
       const { debugAgent } = yield* Effect.promise(() => import("./agent.handler"))

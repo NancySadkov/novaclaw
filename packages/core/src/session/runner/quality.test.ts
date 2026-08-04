@@ -36,7 +36,10 @@ describe("Quality (QE-B pure)", () => {
   test("resolve: defaults off, cadence/testTimeout floors", () => {
     expect(resolve(undefined)).toMatchObject({ enabled: false, cadence: 2, testTimeout: 300_000 })
     expect(resolve({ enabled: true, cadence: 0, testTimeout: 5 })).toMatchObject({ cadence: 2, testTimeout: 300_000 })
-    expect(resolve({ enabled: true, cadence: 3, testTimeout: 60_000 })).toMatchObject({ cadence: 3, testTimeout: 60_000 })
+    expect(resolve({ enabled: true, cadence: 3, testTimeout: 60_000 })).toMatchObject({
+      cadence: 3,
+      testTimeout: 60_000,
+    })
   })
 
   test("writeTargets: newest assistant turn, write-class + completed only, deduped", () => {

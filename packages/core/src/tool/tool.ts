@@ -43,6 +43,7 @@ export interface Definition<Input extends SchemaType<any>, Output extends Schema
 }
 
 export type AnyTool = Definition<any, any>
+export type SideEffectClass = "read" | "idempotent-write" | "non-idempotent" | "external-unknown"
 export const Failure = ToolFailure
 export type Failure = ToolFailure
 
@@ -60,6 +61,8 @@ type Config<
   Output extends SchemaType<any>,
   Structured extends SchemaType<any> = Output,
 > = {
+  /** Recovery semantics declared by the adapter. Omitted tools fail closed as external-unknown. */
+  readonly sideEffect?: SideEffectClass
   readonly description: string
   readonly input: Input
   readonly output: Output
@@ -80,6 +83,7 @@ type Config<
 }
 
 type Runtime = {
+  readonly sideEffect: SideEffectClass
   readonly permission?: string
   readonly deferred?: boolean
   readonly outputPreview?: ToolTruncation.PreviewPolicy
@@ -97,6 +101,7 @@ export function make<
   const tool = Object.freeze({}) as Definition<Input, Structured>
   const definitions = new Map<string, ToolDefinition>()
   runtimes.set(tool, {
+    sideEffect: config.sideEffect ?? "external-unknown",
     outputPreview: config.outputPreview,
     definition: (name) => {
       const cached = definitions.get(name)
@@ -173,6 +178,7 @@ export function make<
  * and fails if this option comes back.
  */
 export function makeExternal(config: {
+  readonly sideEffect?: SideEffectClass
   readonly description: string
   readonly inputSchema: JsonSchema.JsonSchema
   readonly outputSchema?: JsonSchema.JsonSchema
@@ -184,6 +190,7 @@ export function makeExternal(config: {
   const tool = Object.freeze({}) as AnyTool
   const definitions = new Map<string, ToolDefinition>()
   runtimes.set(tool, {
+    sideEffect: config.sideEffect ?? "external-unknown",
     definition: (name) => {
       const cached = definitions.get(name)
       if (cached) return cached
@@ -337,6 +344,7 @@ export const withDeferred = <Input extends SchemaType<any>, Output extends Schem
 export const permission = (tool: AnyTool, name: string) => runtimeOf(tool).permission ?? name
 export const isDeferred = (tool: AnyTool) => runtimeOf(tool).deferred === true
 export const definition = (name: string, tool: AnyTool) => runtimeOf(tool).definition(name)
+export const sideEffect = (tool: AnyTool) => runtimeOf(tool).sideEffect
 export const outputPreview = (tool: AnyTool) => runtimeOf(tool).outputPreview ?? "balanced"
 export const settle = (tool: AnyTool, call: ToolCall, context: Context) => {
   // 1O/A4: a truncated-args sentinel (the decoder's stand-in for a call whose streamed JSON the

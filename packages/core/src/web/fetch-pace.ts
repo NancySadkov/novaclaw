@@ -98,8 +98,7 @@ export const decide = (state: HostState | undefined, now: number, limits?: Limit
   const today = dayOf(now)
   const current = state ?? initialState(now, limits)
   // A new UTC day resets the count AND hands back a full burst.
-  const rolled: HostState =
-    current.day === today ? current : { day: today, count: 0, tokens: burst, updatedAt: now }
+  const rolled: HostState = current.day === today ? current : { day: today, count: 0, tokens: burst, updatedAt: now }
 
   if (rolled.count >= dailyLimit)
     return {

@@ -50,7 +50,8 @@ describe("home tile labels", () => {
           const shipped = (en as Record<string, string>)[key]
           const fallback = BUILTIN_APP_LABELS[id][field]
           if (shipped === undefined) wrong.push(`${key} missing from en`)
-          else if (shipped !== fallback) wrong.push(`${key}: en ${JSON.stringify(shipped)} !== fallback ${JSON.stringify(fallback)}`)
+          else if (shipped !== fallback)
+            wrong.push(`${key}: en ${JSON.stringify(shipped)} !== fallback ${JSON.stringify(fallback)}`)
         }
       }
       expect(wrong).toEqual([])
@@ -84,13 +85,17 @@ describe("home tile labels", () => {
     test("a locale that has not translated the tile falls back to English, not to a key", () => {
       const { t } = translator(merged({}))
       expect(appName(t, "chats", BUILTIN_APP_LABELS.chats.name)).toBe("Chats")
-      expect(appSubtitle(t, "memory-graph", BUILTIN_APP_LABELS["memory-graph"].subtitle)).toBe("Explore what NovaClaw remembers, as a graph")
+      expect(appSubtitle(t, "memory-graph", BUILTIN_APP_LABELS["memory-graph"].subtitle)).toBe(
+        "Explore what NovaClaw remembers, as a graph",
+      )
     })
 
     test("a blank translation does not blank the tile", () => {
       const { t } = translator(merged({ "home.app.trash.name": "   ", "home.app.trash.subtitle": "" }))
       expect(appName(t, "trash", "Trash")).toBe("Trash")
-      expect(appSubtitle(t, "trash", "Restore anything deleted in the last 2 days")).toBe("Restore anything deleted in the last 2 days")
+      expect(appSubtitle(t, "trash", "Restore anything deleted in the last 2 days")).toBe(
+        "Restore anything deleted in the last 2 days",
+      )
     })
   })
 

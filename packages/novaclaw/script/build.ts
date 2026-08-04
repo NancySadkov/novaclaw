@@ -173,7 +173,8 @@ async function smokeServer(binaryPath: string) {
     const html = await fetchSmoke(url).then((response) => response.text())
     if (!html.includes("<title>NovaClaw</title>")) throw new Error("Compiled server did not serve the embedded UI")
     const memory = await fetchSmoke(`${url}/memory/stats`).then((response) => response.json())
-    if (memory.total !== 0 || memory.valid !== 0) throw new Error("Compiled server memory smoke returned unexpected data")
+    if (memory.total !== 0 || memory.valid !== 0)
+      throw new Error("Compiled server memory smoke returned unexpected data")
   } finally {
     // By TREE (pitfall #8): `serve` can spawn MCP children, and a bare kill leaves them holding GBs.
     await Shell.killTree(server.pid).catch(() => undefined)

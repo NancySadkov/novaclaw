@@ -63,8 +63,7 @@ Your output must be:
 // machine noise to a lay user — the list already shows relative time). The older ISO-suffixed
 // forms (`New session - <ISO>`, legacy V1 `Child session - <ISO>`) still count so sessions
 // created before the change keep auto-titling away.
-const DEFAULT_TITLE_REGEX =
-  /^(New session|Child session)( - \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)?$/
+const DEFAULT_TITLE_REGEX = /^(New session|Child session)( - \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)?$/
 
 /** True while the title is still a creation default — the only state auto-title may replace. */
 export function isDefault(title: string): boolean {

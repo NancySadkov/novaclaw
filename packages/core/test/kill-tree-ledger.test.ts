@@ -295,7 +295,9 @@ describe("the guard actually bites (negative control)", () => {
     // `ripgrep` contains the letters of pgrep and must not trip the descendant probe.
     expect(shapesIn(`const files = yield* ripgrep.find({ cwd })`)).toEqual([])
     // …and a file that only TALKS about the old kill is code-clean, because comments are stripped.
-    expect(shapesIn(stripComments(`// this used to run taskkill /T /F and process.kill(-pid)\nconst x = 1`))).toEqual([])
+    expect(shapesIn(stripComments(`// this used to run taskkill /T /F and process.kill(-pid)\nconst x = 1`))).toEqual(
+      [],
+    )
   })
 
   test("an unledgered offender is what the sweep reports", () => {

@@ -221,8 +221,7 @@ describe("AggregateExternalToolSource", () => {
             inputSchema: { type: "object" },
             execute: (raw, context) => {
               const input = raw as { name: string; input: Record<string, unknown> }
-              if (!context.invokeDeferred)
-                return Effect.fail(new Tool.Failure({ message: "dispatcher unavailable" }))
+              if (!context.invokeDeferred) return Effect.fail(new Tool.Failure({ message: "dispatcher unavailable" }))
               return context.invokeDeferred(input.name, input.input).pipe(
                 Effect.map((output) => ({
                   structured: output.structured,

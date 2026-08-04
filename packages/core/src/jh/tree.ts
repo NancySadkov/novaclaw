@@ -102,7 +102,12 @@ export function attach(
  *  with an additional node"). The parent becomes/stays "expanded" — so a COMMITTED node reopens when it
  *  gains a fresh child (used to extend a task whose goal-check failed with one more fix step). The new
  *  child id is `${parentID}.${children.length + 1}` (stable — never reuses a prior index). */
-export function appendChild(tree: Tree, parentID: JhStep.StepID, draft: JhStep.StepDraft, maxDepth: number): Tree | AttachError {
+export function appendChild(
+  tree: Tree,
+  parentID: JhStep.StepID,
+  draft: JhStep.StepDraft,
+  maxDepth: number,
+): Tree | AttachError {
   const parent = tree.nodes.get(parentID)
   if (!parent) return new AttachError("unknown_parent", parentID)
   const childID = asID(`${parentID}.${parent.children.length + 1}`)

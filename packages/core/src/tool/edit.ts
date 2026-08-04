@@ -96,6 +96,7 @@ export const layer = Layer.effectDiscard(
     yield* tools
       .register({
         [name]: Tool.make({
+          sideEffect: "idempotent-write",
           description:
             "Replace text in one file. Prefer this over `write` for any change short of a full rewrite — make the minimal change instead of regenerating the file. Exact or Unicode-punctuation matches cost 0; trailing-whitespace-only drift costs 1 and may auto-apply. Indentation-stripped or similarity matches are reported with their cost but refused, so re-read and retry with the shown candidate. If a safe tier matches more than once, add surrounding context or set replaceAll. Relative paths resolve within the active Location. Absolute paths inside the Location are accepted. Explicit external absolute paths require external_directory approval before edit approval.",
           input: Input,

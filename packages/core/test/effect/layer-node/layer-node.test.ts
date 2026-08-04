@@ -348,7 +348,11 @@ describe("layer node", () => {
     const tags = LayerNode.tags({ location: ["global"], global: [] })
     const global = tags.make("global")
     const location = tags.make("location")
-    const database = global({ service: Database, layer: Layer.succeed(Database, Database.of({ name: "real" })), deps: [] })
+    const database = global({
+      service: Database,
+      layer: Layer.succeed(Database, Database.of({ name: "real" })),
+      deps: [],
+    })
     const users = global({
       service: Users,
       layer: Layer.effect(

@@ -52,9 +52,7 @@ describe("confinement surface", () => {
     // loop above walks, or the loop is checking a stale copy of the union.
     for (const platform of PLATFORMS)
       for (const run of [() => 0, () => 1, () => undefined])
-        expect(AgentJail.BACKEND_KINDS as readonly string[]).toContain(
-          AgentJail.detectBackend(platform, run).kind,
-        )
+        expect(AgentJail.BACKEND_KINDS as readonly string[]).toContain(AgentJail.detectBackend(platform, run).kind)
   })
 
   test("every confinement reason the kernel can produce has a verdict AND an explanation", () => {
@@ -112,7 +110,15 @@ describe("confinement surface", () => {
   // ── the state machine ───────────────────────────────────────────────────────────────────────────
 
   const shell = (platform: string, jail?: ShellStatusWithJail["jail"]): ShellStatusWithJail =>
-    ({ platform, agentShell: "", bash: null, git: null, bundle: null, provisionSupported: false, jail }) as ShellStatusWithJail
+    ({
+      platform,
+      agentShell: "",
+      bash: null,
+      git: null,
+      bundle: null,
+      provisionSupported: false,
+      jail,
+    }) as ShellStatusWithJail
 
   test("no status at all says UNKNOWN — never 'you are unprotected'", () => {
     const state = confinementState(undefined)

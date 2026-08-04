@@ -40,8 +40,7 @@ export function ComposerModelControl(props: { state: ComposerModelControlState }
             style: props.state.style,
             // Narrower cap than before (no provider icon prefix either): the full name is one
             // tap away in the picker, so the chip stays compact and phone-friendly.
-            class:
-              "min-w-0 max-w-[130px] justify-start text-[13px] font-[440] leading-5 text-v2-text-text-faint group",
+            class: "min-w-0 max-w-[130px] justify-start text-[13px] font-[440] leading-5 text-v2-text-text-faint group",
             classList: { "animate-in fade-in": props.state.shouldAnimate },
             "data-action": "prompt-model",
           }}

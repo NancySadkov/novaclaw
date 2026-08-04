@@ -126,16 +126,14 @@ function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
     setAccount(entry)
     setStage("chat")
     setChats({ loading: true, ok: true, list: [] })
-    void props.remote
-      .loadChats(entry.id)
-      .then((result) =>
-        setChats({
-          loading: false,
-          ok: result.ok,
-          list: result.chats,
-          ...(result.reason ? { reason: result.reason } : {}),
-        }),
-      )
+    void props.remote.loadChats(entry.id).then((result) =>
+      setChats({
+        loading: false,
+        ok: result.ok,
+        list: result.chats,
+        ...(result.reason ? { reason: result.reason } : {}),
+      }),
+    )
   }
 
   const finish = (trust: ComposerRemoteTrust, steal?: boolean) => {

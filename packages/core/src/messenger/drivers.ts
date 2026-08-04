@@ -34,7 +34,12 @@ import { TelegramUserMtcute } from "./driver/telegram-user-mtcute"
 const builtin: readonly Driver[] = [
   TelegramUserDriver.make(TelegramUserMtcute.factory),
   EmailDriver.make(EmailImapSmtp.factory, EmailOAuth.factory),
-  EmailGmailDriver.make(EmailImapSmtp.factory, EmailOAuthGoogle.factory, OAuthLoopback.startLoopback, OAuthLoopback.openBrowser),
+  EmailGmailDriver.make(
+    EmailImapSmtp.factory,
+    EmailOAuthGoogle.factory,
+    OAuthLoopback.startLoopback,
+    OAuthLoopback.openBrowser,
+  ),
   TelegramDriver.driver,
   DiscordDriver.driver,
   IrcDriver.driver,

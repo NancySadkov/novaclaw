@@ -205,7 +205,9 @@ describe("host execution goes through ONE gate", () => {
     // describing one. `session/runner/llm.ts` must show BOTH.
     const file = sources.find((item) => item.name === "session/runner/llm.ts")
     expect(file, "session/runner/llm.ts missing from the sweep").toBeDefined()
-    expect(file!.text, "the Strict drain no longer passes the host-exec context").toMatch(/HostExec\.chainHasHostileBinding/)
+    expect(file!.text, "the Strict drain no longer passes the host-exec context").toMatch(
+      /HostExec\.chainHasHostileBinding/,
+    )
     expect(file!.text, "runQualityCheck no longer spawns ungated — drop the ledger entry").toMatch(
       UNGATED_LEDGER.get("session/runner/llm.ts")!.residue!,
     )

@@ -149,9 +149,7 @@ describe("MessengerLogin", () => {
   it.live("begin failures are legible: unknown account, non-login driver, driver refusal", () =>
     Effect.gen(function* () {
       const login = yield* MessengerLogin.Service
-      const unknown = yield* login
-        .begin({ accountID: "msa_nope" as never, inputs: {} })
-        .pipe(Effect.flip)
+      const unknown = yield* login.begin({ accountID: "msa_nope" as never, inputs: {} }).pipe(Effect.flip)
       expect(unknown.message).toContain("Unknown")
 
       const account = yield* createAccount

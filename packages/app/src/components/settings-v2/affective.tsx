@@ -26,13 +26,11 @@ export const SettingsAffectiveV2: Component = () => {
   const language = useLanguage()
   const serverSync = useServerSync()
 
-  const current = (): AffectiveConfig =>
-    ((serverSync().data.config as { affective?: AffectiveConfig }).affective ?? {})
+  const current = (): AffectiveConfig => (serverSync().data.config as { affective?: AffectiveConfig }).affective ?? {}
 
   async function persist(patch: Partial<AffectiveConfig>) {
     const next = { ...current(), ...patch }
-    for (const key of Object.keys(next) as Array<keyof AffectiveConfig>)
-      if (next[key] === undefined) delete next[key]
+    for (const key of Object.keys(next) as Array<keyof AffectiveConfig>) if (next[key] === undefined) delete next[key]
     await serverSync()
       .updateConfig({ affective: next } as never)
       .catch((error: unknown) => {

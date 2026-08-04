@@ -24,10 +24,12 @@ export const FileSystemHandler = HttpApiBuilder.group(Api, "server.fs", (handler
       .handle("fs.snapshotRead", (ctx) =>
         response(
           Effect.gen(function* () {
-            const result = yield* (yield* Snapshot.Service).read({
-              snapshot: Snapshot.ID.make(ctx.query.snapshot),
-              path: RelativePath.make(ctx.query.path),
-            }).pipe(Effect.mapError((error) => new InvalidRequestError({ message: error.message })))
+            const result = yield* (yield* Snapshot.Service)
+              .read({
+                snapshot: Snapshot.ID.make(ctx.query.snapshot),
+                path: RelativePath.make(ctx.query.path),
+              })
+              .pipe(Effect.mapError((error) => new InvalidRequestError({ message: error.message })))
             return {
               type: "binary" as const,
               content: Buffer.from(result.content).toString("base64"),

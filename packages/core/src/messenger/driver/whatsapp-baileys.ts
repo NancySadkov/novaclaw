@@ -224,7 +224,10 @@ const linkProgress = (link: WALink) => ({
 
 export const make = (factory: WAClientFactory): Driver => {
   const acquire = (config: WAClientConfig) =>
-    Effect.acquireRelease(tryClient(() => factory(config)), (client) => Effect.promise(() => client.close().catch(() => undefined)))
+    Effect.acquireRelease(
+      tryClient(() => factory(config)),
+      (client) => Effect.promise(() => client.close().catch(() => undefined)),
+    )
 
   const login: LoginSupport = {
     begin: ({ account, inputs }) =>
@@ -239,31 +242,37 @@ export const make = (factory: WAClientFactory): Driver => {
         // terminal. Same shape as the Gmail browser flow (the wizard renders a waiting/auto-poll step).
         const result = yield* Deferred.make<string, LoginCodeError | ChallengeError>()
         yield* Effect.forkScoped(
-          tryClient(() => client.waitForOpen())
-            .pipe(
-              Effect.flatMap(() =>
-                Effect.tryPromise({
-                  try: () => client.exportAuth(),
-                  catch: (error) => new LoginCodeError({ reason: `Could not save the WhatsApp session: ${String(error)}`, retryable: false }),
-                }),
-              ),
-              Effect.mapError((error) =>
-                error._tag === "MessengerDriver.ConnectError"
-                  ? new LoginCodeError({ reason: error.reason, retryable: false })
-                  : (error as ChallengeError | LoginCodeError),
-              ),
-              Effect.matchCauseEffect({
-                onFailure: (cause) => Deferred.failCause(result, cause),
-                onSuccess: (session) => Deferred.succeed(result, session),
+          tryClient(() => client.waitForOpen()).pipe(
+            Effect.flatMap(() =>
+              Effect.tryPromise({
+                try: () => client.exportAuth(),
+                catch: (error) =>
+                  new LoginCodeError({
+                    reason: `Could not save the WhatsApp session: ${String(error)}`,
+                    retryable: false,
+                  }),
               }),
             ),
+            Effect.mapError((error) =>
+              error._tag === "MessengerDriver.ConnectError"
+                ? new LoginCodeError({ reason: error.reason, retryable: false })
+                : (error as ChallengeError | LoginCodeError),
+            ),
+            Effect.matchCauseEffect({
+              onFailure: (cause) => Deferred.failCause(result, cause),
+              onSuccess: (session) => Deferred.succeed(result, session),
+            }),
+          ),
         )
 
         const complete: LoginPending["complete"] = () =>
           Effect.gen(function* () {
             if (!(yield* Deferred.isDone(result)))
               return yield* Effect.fail(
-                new LoginCodeError({ reason: "Still waiting for you to link this device in WhatsApp…", retryable: true }),
+                new LoginCodeError({
+                  reason: "Still waiting for you to link this device in WhatsApp…",
+                  retryable: true,
+                }),
               )
             return { session: yield* Deferred.await(result) }
           })
@@ -305,7 +314,9 @@ export const make = (factory: WAClientFactory): Driver => {
         const session = ctx.secret
         if (session === undefined || session.length === 0)
           return yield* Effect.fail(
-            new ConnectError({ reason: "This WhatsApp account isn't linked yet — finish linking in Settings → Messengers." }),
+            new ConnectError({
+              reason: "This WhatsApp account isn't linked yet — finish linking in Settings → Messengers.",
+            }),
           )
         const client = yield* acquire({ session })
         // A logged-out session must PARK (challenge), not backoff-spin: me() is the first call to hit it.
@@ -340,7 +351,9 @@ export const make = (factory: WAClientFactory): Driver => {
                   ...(message.outgoing && !sentByUs ? { owner: true } : {}),
                 },
                 ...(message.text !== undefined && message.text.length > 0 ? { text: message.text } : {}),
-                ...(message.attachments !== undefined && message.attachments.length > 0 ? { attachments: message.attachments } : {}),
+                ...(message.attachments !== undefined && message.attachments.length > 0
+                  ? { attachments: message.attachments }
+                  : {}),
                 ...(message.replyTo !== undefined ? { replyTo: message.replyTo } : {}),
                 at: message.at,
               })
@@ -359,15 +372,23 @@ export const make = (factory: WAClientFactory): Driver => {
           Effect.gen(function* () {
             if (message.file !== undefined) {
               // A file rides with the text as its caption (WhatsApp semantics); no chunking.
-              const result = yield* Effect.tryPromise({ try: () => client.sendFile(chatID, message.file!, message.text), catch: mapSendError })
+              const result = yield* Effect.tryPromise({
+                try: () => client.sendFile(chatID, message.file!, message.text),
+                catch: mapSendError,
+              })
               sent.add(chatID, result.messageID)
               return { messageID: result.messageID }
             }
             if (message.text === undefined || message.text.length === 0) return { messageID: "0" }
-            const chunks = MessengerFormat.chunk(MessengerFormat.downgrade(message.text, "plain"), { maxChars: CAPS.maxChars })
+            const chunks = MessengerFormat.chunk(MessengerFormat.downgrade(message.text, "plain"), {
+              maxChars: CAPS.maxChars,
+            })
             let lastID = "0"
             for (const chunk of chunks) {
-              const result = yield* Effect.tryPromise({ try: () => client.sendText(chatID, chunk), catch: mapSendError })
+              const result = yield* Effect.tryPromise({
+                try: () => client.sendText(chatID, chunk),
+                catch: mapSendError,
+              })
               sent.add(chatID, result.messageID)
               lastID = result.messageID
             }
@@ -375,7 +396,11 @@ export const make = (factory: WAClientFactory): Driver => {
           })
 
         const demoteChallenge = <A>(effect: Effect.Effect<A, ConnectError | ChallengeError>) =>
-          effect.pipe(Effect.mapError((error) => (error._tag === "MessengerDriver.ChallengeError" ? new ConnectError({ reason: error.message }) : error)))
+          effect.pipe(
+            Effect.mapError((error) =>
+              error._tag === "MessengerDriver.ChallengeError" ? new ConnectError({ reason: error.message }) : error,
+            ),
+          )
 
         return {
           inbound: Stream.fromQueue(queue),
@@ -383,11 +408,20 @@ export const make = (factory: WAClientFactory): Driver => {
           downloadFile: (ref) =>
             Effect.tryPromise({
               try: () => client.downloadFile(ref.id),
-              catch: (error) => new FileError({ reason: error instanceof WAClientError ? failureText(error.failure) : String(error) }),
+              catch: (error) =>
+                new FileError({ reason: error instanceof WAClientError ? failureText(error.failure) : String(error) }),
             }),
           listChats: () =>
             demoteChallenge(
-              tryClient(() => client.chats(100).then((chats) => chats.map((chat) => (chat.chatID === me.id ? { ...chat, self: true, title: "Message Yourself" } : chat)))),
+              tryClient(() =>
+                client
+                  .chats(100)
+                  .then((chats) =>
+                    chats.map((chat) =>
+                      chat.chatID === me.id ? { ...chat, self: true, title: "Message Yourself" } : chat,
+                    ),
+                  ),
+              ),
             ),
           history: (chatID, limit) =>
             demoteChallenge(

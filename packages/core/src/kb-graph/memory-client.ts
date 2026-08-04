@@ -246,14 +246,17 @@ export const stub = (): Interface => {
           valid: true,
         })
       }),
-    addEdge: (input) => Effect.sync(() => void edges.push({ from: input.from, to: input.to, type: input.type, scope: input.scope })),
+    addEdge: (input) =>
+      Effect.sync(() => void edges.push({ from: input.from, to: input.to, type: input.type, scope: input.scope })),
     search: (input) =>
       ok(
         [...mems.values()]
           .filter((m) => m.valid)
           .filter((m) => (input.scopes ? input.scopes.includes(m.scope) : true))
           .filter((m) => (input.kinds ? input.kinds.includes(m.kind) : true))
-          .filter((m) => (input.query ? `${m.text} ${m.name ?? ""}`.toLowerCase().includes(input.query.toLowerCase()) : true))
+          .filter((m) =>
+            input.query ? `${m.text} ${m.name ?? ""}`.toLowerCase().includes(input.query.toLowerCase()) : true,
+          )
           .slice(0, input.k ?? 10)
           .map((m, i) => ({ ...stripValid(m), score: 1 / (i + 1) })),
       ),

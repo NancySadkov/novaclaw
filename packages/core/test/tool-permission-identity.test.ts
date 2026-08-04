@@ -400,7 +400,7 @@ const LEDGER = new Map<string, string>([
     "packages/core/src/tool/glob.ts",
     "Registered as `glob`, it answers to `explore` — the action its own `permission.assert` spends. " +
       "Listing and searching are ONE grant class, so one rule must reach both search tools. Added " +
-      "2026-07-30: without it `explore: \"deny\"` refused every search while both tools stayed " +
+      '2026-07-30: without it `explore: "deny"` refused every search while both tools stayed ' +
       'advertised, and `glob: "deny"` withdrew glob while grep went on working.',
   ],
   [
@@ -553,13 +553,7 @@ describe("makeExternal declares nothing", () => {
       "  ) => Effect.Effect<{ readonly structured: unknown; readonly content: ReadonlyArray<Content> }, ToolFailure>",
       "}): AnyTool {",
     ].join("\n")
-    expect(makeExternalOptions(before)).toEqual([
-      "description",
-      "inputSchema",
-      "outputSchema",
-      "permission",
-      "execute",
-    ])
+    expect(makeExternalOptions(before)).toEqual(["description", "inputSchema", "outputSchema", "permission", "execute"])
     // Nested `readonly` members of the `execute` signature are NOT options — the indentation rule
     // above is what keeps `structured`/`content` out of the list, and it is load-bearing.
     expect(makeExternalOptions(before)).not.toContain("structured")

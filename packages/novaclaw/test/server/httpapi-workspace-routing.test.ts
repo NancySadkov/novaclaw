@@ -167,21 +167,12 @@ const createLocalWorkspace = (input: { projectID: string; type: string; director
     adapter: localAdapter(input.directory),
   })
 
-const insertRemoteWorkspaceWithoutSync = (input: {
-  dir: string
-  projectID: string
-  type: string
-  url: string
-}) =>
+const insertRemoteWorkspaceWithoutSync = (input: { dir: string; projectID: string; type: string; url: string }) =>
   Effect.gen(function* () {
     const id = WorkspaceV2.ID.ascending()
     registerAdapter(input.projectID, input.type, remoteAdapter(path.join(input.dir, `.${input.type}`), input.url))
     const { db } = yield* Database.Service
-    yield* db
-      .insert(WorkspaceTable)
-      .values({ id, type: input.type, origin: input.projectID })
-      .run()
-      .pipe(Effect.orDie)
+    yield* db.insert(WorkspaceTable).values({ id, type: input.type, origin: input.projectID }).run().pipe(Effect.orDie)
     return id
   })
 
@@ -384,7 +375,7 @@ describe("HttpApi workspace routing middleware", () => {
         Layer.provide(probeHandlers),
         Layer.provide(workspaceRoutingTestLayer),
         Layer.provide(Layer.succeed(Workspace.Service, workspace)),
-              HttpRouter.serve,
+        HttpRouter.serve,
         Layer.build,
       )
 

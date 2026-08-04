@@ -17,27 +17,32 @@ export interface PromptPair {
 }
 
 const TOOL_ARGS: Record<string, string> = {
-  write_file: "write_file{path, content} — CREATE a file that does not exist yet (OVERWRITES the whole file). Use it ONLY for the first creation of a file; to change or extend an EXISTING file use edit_file. Rewriting an existing file with write_file discards work you already verified and reintroduces bugs.",
+  write_file:
+    "write_file{path, content} — CREATE a file that does not exist yet (OVERWRITES the whole file). Use it ONLY for the first creation of a file; to change or extend an EXISTING file use edit_file. Rewriting an existing file with write_file discards work you already verified and reintroduces bugs.",
   // improve17 L2: the beat-run primitive — bulk artifacts grow in verified increments instead of
   // being regenerated whole.
-  append_file: "append_file{path, content} — ADD content to the END of a file (creates it if missing; a blank line separates increments). The RIGHT tool for growing a long document section by section — never re-send text the file already contains.",
-  edit_file: "edit_file{path, old_string, new_string} — replace ONE exact occurrence of old_string with new_string (old_string must appear EXACTLY ONCE in the file). This is the DEFAULT way to change an existing file: add a function, fix a line — surgical, fast, and it cannot corrupt the untouched rest of the file.",
+  append_file:
+    "append_file{path, content} — ADD content to the END of a file (creates it if missing; a blank line separates increments). The RIGHT tool for growing a long document section by section — never re-send text the file already contains.",
+  edit_file:
+    "edit_file{path, old_string, new_string} — replace ONE exact occurrence of old_string with new_string (old_string must appear EXACTLY ONCE in the file). This is the DEFAULT way to change an existing file: add a function, fix a line — surgical, fast, and it cannot corrupt the untouched rest of the file.",
   // improve16/17 anatomy: replace_lines previously had NO entry here, so its schema rendered as
   // "replace_lines{...}" and the model learned the arg shape only from rejections (8-17 arg-shape
   // fails per wall-55 run). The schema belongs in the table.
-  replace_lines: "replace_lines{path, first_line, last_line, new_content} — replace the line RANGE first_line..last_line (1-based, inclusive, from the `N→` numbers in the workspace view) with new_content. The reliable way to fix specific lines: you do NOT reproduce the old text, the numbered lines are ground truth.",
+  replace_lines:
+    "replace_lines{path, first_line, last_line, new_content} — replace the line RANGE first_line..last_line (1-based, inclusive, from the `N→` numbers in the workspace view) with new_content. The reliable way to fix specific lines: you do NOT reproduce the old text, the numbered lines are ground truth.",
   read_file: "read_file{path}",
   run: "run{command} — execute a shell command (compile, run a program, etc.)",
   note: "note{text}",
-  git_revert: "git_revert{path?} — roll a file (or the whole tree if no path) back to the last VERIFIED checkpoint. Use when an edit_file made the file worse and you cannot repair it — revert, then try a different edit.",
+  git_revert:
+    "git_revert{path?} — roll a file (or the whole tree if no path) back to the last VERIFIED checkpoint. Use when an edit_file made the file worse and you cannot repair it — revert, then try a different edit.",
 }
 
 function modeLine(allowDecomposition: boolean, mustDecompose: boolean, lazyPlan: boolean): string {
   // improve3 P3a: LAZY planning asks for the immediate TOP-LEVEL phases ONLY (no up-front nesting) — a smaller
   // reply (harder to malform, attacking I3) that also defers depth. Each phase re-plans itself when reached.
   const howMany = lazyPlan
-    ? 'it into its immediate TOP-LEVEL phases ONLY: 3–7 substeps, each ONE sentence of goal (plus its check when obvious). Do NOT nest sub-substeps inside them — each phase is planned in detail WHEN IT IS REACHED, with everything already built available as context'
-    : 'it into 2–8 substeps'
+    ? "it into its immediate TOP-LEVEL phases ONLY: 3–7 substeps, each ONE sentence of goal (plus its check when obvious). Do NOT nest sub-substeps inside them — each phase is planned in detail WHEN IT IS REACHED, with everything already built available as context"
+    : "it into 2–8 substeps"
   if (mustDecompose) {
     return `This step is too complex to be atomic — you MUST decompose ${howMany}. Set size to "needs_decomposition", fill \`substeps\`, and emit NO tool/args on this step.`
   }
@@ -69,12 +74,12 @@ export function introspectPrompt(input: {
     "",
     "Step schema fields:",
     "  - goal: one sentence — what THIS step achieves.",
-    "  - size: \"atomic\" (one tool call) or \"needs_decomposition\" (a list of substeps).",
+    '  - size: "atomic" (one tool call) or "needs_decomposition" (a list of substeps).',
     "  - tool + args: for an atomic step only — the single tool and its arguments.",
     '  - consumes / produces: typed artifact handles this step READS / WRITES. Each is an OBJECT {"id": "add.c", "type": "file"} — NOT a bare string. type is one of: file | text | note | command_output. Every consumed id must be produced by an EARLIER substep or already exist, or the harness REJECTS the plan.',
     "  - success: one short sentence — what 'done' means. Include it on EVERY step, atomic AND compound.",
     "  - check: the machine-runnable gate (see below).",
-    "  - difficulty_prior: your guess — \"trivial\" | \"moderate\" | \"hard\" (a hint only; the harness measures the real difficulty).",
+    '  - difficulty_prior: your guess — "trivial" | "moderate" | "hard" (a hint only; the harness measures the real difficulty).',
     "  - assumptions: what you are taking for granted.",
     "  - substeps: child steps (present only when decomposing).",
     "",
@@ -160,7 +165,10 @@ export function boundPlan(text: string): string {
   return cleaned.slice(0, PLAN_MAX_LINES).join("\n").slice(0, 1500)
 }
 
-export function parseReply(text: string, opts?: { readonly fallbackGoal?: string }): { readonly ok: true; readonly draft: JhStep.StepDraft } | { readonly ok: false; readonly issue: string } {
+export function parseReply(
+  text: string,
+  opts?: { readonly fallbackGoal?: string },
+): { readonly ok: true; readonly draft: JhStep.StepDraft } | { readonly ok: false; readonly issue: string } {
   const extracted = JhExtract.extractJsonObject(text)
   if (!extracted.ok) {
     // improve3 P2b: surface the LOCATED failure (position + snippet + likely cause) so the retry reminder is
@@ -173,7 +181,9 @@ export function parseReply(text: string, opts?: { readonly fallbackGoal?: string
     return { ok: false, issue: parts.join(" — ") }
   }
   try {
-    const draft = Schema.decodeUnknownSync(JhStep.StepDraft)(JhStep.coerceDraftShape(extracted.value, opts?.fallbackGoal))
+    const draft = Schema.decodeUnknownSync(JhStep.StepDraft)(
+      JhStep.coerceDraftShape(extracted.value, opts?.fallbackGoal),
+    )
     return { ok: true, draft }
   } catch (e) {
     // The SchemaError message names the failing field on an `at ["field"]` line — collapse it to one
@@ -194,7 +204,11 @@ export function stepJsonSchema(): object {
  *  judges whether the step's GOAL was ACTUALLY achieved given the current workspace — a write_file that
  *  passed `artifact_present` did NOT compile+run+verify. Catches the "false done". Reply is a tiny JSON
  *  `{"achieved": bool, "missing": "…"}`. */
-export function goalCheckPrompt(input: { readonly goal: string; readonly workspace: string; readonly lastOutput?: string }): PromptPair {
+export function goalCheckPrompt(input: {
+  readonly goal: string
+  readonly workspace: string
+  readonly lastOutput?: string
+}): PromptPair {
   const system = [
     "You are the completion checker of a deterministic execution harness.",
     "Given ONE step's GOAL, the CURRENT working-directory files, and the most recent program OUTPUT, judge whether THIS STEP's OWN goal is objectively achieved. Judge ONLY what this goal asks for — no more, no less:",
@@ -204,14 +218,22 @@ export function goalCheckPrompt(input: { readonly goal: string; readonly workspa
     "Do NOT demand steps this goal does not ask for — a 'compile' goal does NOT require also running. But do NOT accept a mere source file when the goal asks for a built or correct artifact, and do NOT accept an empty/absent output when the goal asks for a computed result.",
     'Output EXACTLY ONE ```json object: {"achieved": true|false, "missing": "one short phrase — what THIS goal still needs, empty if achieved", "evidence": "when achieved is true, a VERBATIM quote copied EXACTLY from the working-directory files or the program output shown above that proves it — the literal text, not a paraphrase or a claim"}. Nothing else.',
   ].join("\n")
-  const outputBlock = input.lastOutput !== undefined ? `\n\n# Most recent program output (stdout)\n\`\`\`\n${input.lastOutput.length > 4000 ? input.lastOutput.slice(0, 4000) + "\n…[truncated]…" : input.lastOutput || "(no output captured)"}\n\`\`\`` : ""
+  const outputBlock =
+    input.lastOutput !== undefined
+      ? `\n\n# Most recent program output (stdout)\n\`\`\`\n${input.lastOutput.length > 4000 ? input.lastOutput.slice(0, 4000) + "\n…[truncated]…" : input.lastOutput || "(no output captured)"}\n\`\`\``
+      : ""
   const user = `# Goal\n${input.goal}\n\n# Working directory\n${input.workspace}${outputBlock}\n\nIs the goal fully achieved? Output one json object.`
   return { system, user }
 }
 
-export function parseGoalCheck(text: string): { readonly achieved: boolean; readonly missing: string; readonly evidence?: string } {
+export function parseGoalCheck(text: string): {
+  readonly achieved: boolean
+  readonly missing: string
+  readonly evidence?: string
+} {
   const extracted = JhExtract.extractJsonObject(text)
-  if (!extracted.ok || typeof extracted.value !== "object" || extracted.value === null) return { achieved: false, missing: "unparseable goal check" }
+  if (!extracted.ok || typeof extracted.value !== "object" || extracted.value === null)
+    return { achieved: false, missing: "unparseable goal check" }
   const v = extracted.value as Record<string, unknown>
   return {
     achieved: v.achieved === true,

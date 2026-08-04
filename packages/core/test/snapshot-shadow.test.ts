@@ -63,10 +63,7 @@ describe("Snapshot shadow repo (non-git project)", () => {
             expect(gone).toBe(true)
             const restored = yield* Effect.promise(() => fs.readFile(path.join(dir.path, "keep.txt"), "utf8"))
             expect(restored).toBe("original\n")
-          }).pipe(
-            Effect.scoped,
-            Effect.provide(LocationServiceMap.Service.get(Location.Ref.make({ directory }))),
-          )
+          }).pipe(Effect.scoped, Effect.provide(LocationServiceMap.Service.get(Location.Ref.make({ directory }))))
         }),
       ),
     ),

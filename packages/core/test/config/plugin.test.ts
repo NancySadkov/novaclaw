@@ -195,11 +195,9 @@ describe("ConfigExternalPlugin", () => {
         (record) => (record[0] as { event?: string } | undefined)?.event === "plugin.external.load.failed",
       )
       expect(reported).toHaveLength(2)
-      expect(
-        reported
-          .map((record) => (record[2] as { "plugin.package": string })["plugin.package"])
-          .sort(),
-      ).toEqual([fixture("invalid-plugin.ts"), fixture("missing-plugin.ts")].sort())
+      expect(reported.map((record) => (record[2] as { "plugin.package": string })["plugin.package"]).sort()).toEqual(
+        [fixture("invalid-plugin.ts"), fixture("missing-plugin.ts")].sort(),
+      )
       for (const record of reported) {
         expect(record).toEqual([
           { event: "plugin.external.load.failed" },

@@ -192,120 +192,120 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.withDeferred(Tool.make({
-          description,
-          input: Input,
-          output: Output,
-          toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
-          execute: (input, context) =>
-            Effect.gen(function* () {
-              switch (input.op) {
-                case "list": {
-                  const recipes = yield* Effect.tryPromise({
-                    try: () => Recipe.list({ ...options, builtinSlugs: RecipeBuiltin.BUILTIN_SLUGS }),
-                    catch: (error) => failure(`Unable to list recipes: ${String(error)}`),
-                  })
-                  return { op: "list" as const, message: formatList(recipes) }
-                }
-
-                case "read": {
-                  const slug = input.slug.trim()
-                  const recipe = yield* Effect.tryPromise({
-                    try: () => Recipe.read(slug, { ...options, builtinSlugs: RecipeBuiltin.BUILTIN_SLUGS }),
-                    catch: (error) => failure(`Unable to read recipe "${slug}": ${String(error)}`),
-                  })
-                  if (!recipe) {
-                    const known = yield* Effect.tryPromise({
-                      try: () => Recipe.list(options),
-                      catch: () => failure(`No recipe named "${slug}".`),
+        [name]: Tool.withDeferred(
+          Tool.make({
+            description,
+            input: Input,
+            output: Output,
+            toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
+            execute: (input, context) =>
+              Effect.gen(function* () {
+                switch (input.op) {
+                  case "list": {
+                    const recipes = yield* Effect.tryPromise({
+                      try: () => Recipe.list({ ...options, builtinSlugs: RecipeBuiltin.BUILTIN_SLUGS }),
+                      catch: (error) => failure(`Unable to list recipes: ${String(error)}`),
                     })
-                    return yield* failure(
-                      `No recipe named "${slug}". Available: ${known.map((one) => one.slug).join(", ") || "(none)"}`,
-                    )
+                    return { op: "list" as const, message: formatList(recipes) }
                   }
-                  // `recipe.slug`, not the model's `slug`: the store already validated the one it
-                  // resolved, so the path we hand back can never be built from unvalidated input.
-                  return {
-                    op: "read" as const,
-                    slug: recipe.slug,
-                    message: formatOne(recipe, path.join(root, recipe.slug)),
+
+                  case "read": {
+                    const slug = input.slug.trim()
+                    const recipe = yield* Effect.tryPromise({
+                      try: () => Recipe.read(slug, { ...options, builtinSlugs: RecipeBuiltin.BUILTIN_SLUGS }),
+                      catch: (error) => failure(`Unable to read recipe "${slug}": ${String(error)}`),
+                    })
+                    if (!recipe) {
+                      const known = yield* Effect.tryPromise({
+                        try: () => Recipe.list(options),
+                        catch: () => failure(`No recipe named "${slug}".`),
+                      })
+                      return yield* failure(
+                        `No recipe named "${slug}". Available: ${known.map((one) => one.slug).join(", ") || "(none)"}`,
+                      )
+                    }
+                    // `recipe.slug`, not the model's `slug`: the store already validated the one it
+                    // resolved, so the path we hand back can never be built from unvalidated input.
+                    return {
+                      op: "read" as const,
+                      slug: recipe.slug,
+                      message: formatOne(recipe, path.join(root, recipe.slug)),
+                    }
+                  }
+
+                  case "save": {
+                    const title = input.name.trim()
+                    const requested = input.slug?.trim()
+                    const slug = requested || Recipe.slugify(title)
+                    // Validate the folder name BEFORE the consent card, so the user is never asked to
+                    // approve a write that was going to be refused anyway.
+                    if (!Recipe.isValidSlug(slug))
+                      return yield* failure(
+                        requested
+                          ? `"${requested}" is not a usable recipe folder name: lowercase letters, numbers, ` +
+                              `- and _ only, starting with a letter or number.`
+                          : `"${title}" does not reduce to a usable folder name. Give it a title with some ` +
+                              `letters or numbers in it, or pass an explicit slug.`,
+                      )
+                    const existing = yield* Effect.tryPromise({
+                      try: () => Recipe.read(slug, options),
+                      catch: (error) => failure(`Unable to check for an existing recipe: ${String(error)}`),
+                    })
+                    // No slug given means CREATE. Overwriting then requires the model to name the folder it
+                    // is replacing AND the user to approve a card carrying that name — two locks on the one
+                    // move that can quietly destroy the user's own work (or the install's health check).
+                    if (existing && !requested) return yield* failure(collisionMessage(title, slug))
+
+                    yield* permission.assert({
+                      action: name,
+                      resources: [slug],
+                      save: [slug],
+                      sessionID: context.sessionID,
+                      agent: context.agent,
+                      source: {
+                        type: "tool" as const,
+                        messageID: context.assistantMessageID,
+                        callID: context.toolCallID,
+                      },
+                    })
+
+                    const saved = yield* Effect.tryPromise({
+                      try: () =>
+                        Recipe.save(
+                          {
+                            slug,
+                            name: title,
+                            ...(input.description ? { description: input.description } : {}),
+                            ...(input.needs ? { needs: input.needs } : {}),
+                            prompt: input.prompt,
+                          },
+                          options,
+                        ),
+                      // `Recipe.save` throws model-legible validation messages ("A recipe needs a prompt —
+                      // that is the whole recipe") and also throws when it cannot read the file back after
+                      // writing. Both must surface as a FAILURE: ruling 2 — a failed mutation never reports
+                      // success, and this one's success text would otherwise tell the model where to put
+                      // assets for a folder that is not there.
+                      catch: (error) =>
+                        failure(`The recipe was NOT saved: ${error instanceof Error ? error.message : String(error)}`),
+                    })
+                    return {
+                      op: "save" as const,
+                      slug: saved.slug,
+                      message: savedMessage(saved, path.join(root, saved.slug), existing !== undefined),
+                    }
                   }
                 }
-
-                case "save": {
-                  const title = input.name.trim()
-                  const requested = input.slug?.trim()
-                  const slug = requested || Recipe.slugify(title)
-                  // Validate the folder name BEFORE the consent card, so the user is never asked to
-                  // approve a write that was going to be refused anyway.
-                  if (!Recipe.isValidSlug(slug))
-                    return yield* failure(
-                      requested
-                        ? `"${requested}" is not a usable recipe folder name: lowercase letters, numbers, ` +
-                          `- and _ only, starting with a letter or number.`
-                        : `"${title}" does not reduce to a usable folder name. Give it a title with some ` +
-                          `letters or numbers in it, or pass an explicit slug.`,
-                    )
-                  const existing = yield* Effect.tryPromise({
-                    try: () => Recipe.read(slug, options),
-                    catch: (error) => failure(`Unable to check for an existing recipe: ${String(error)}`),
-                  })
-                  // No slug given means CREATE. Overwriting then requires the model to name the folder it
-                  // is replacing AND the user to approve a card carrying that name — two locks on the one
-                  // move that can quietly destroy the user's own work (or the install's health check).
-                  if (existing && !requested) return yield* failure(collisionMessage(title, slug))
-
-                  yield* permission.assert({
-                    action: name,
-                    resources: [slug],
-                    save: [slug],
-                    sessionID: context.sessionID,
-                    agent: context.agent,
-                    source: {
-                      type: "tool" as const,
-                      messageID: context.assistantMessageID,
-                      callID: context.toolCallID,
-                    },
-                  })
-
-                  const saved = yield* Effect.tryPromise({
-                    try: () =>
-                      Recipe.save(
-                        {
-                          slug,
-                          name: title,
-                          ...(input.description ? { description: input.description } : {}),
-                          ...(input.needs ? { needs: input.needs } : {}),
-                          prompt: input.prompt,
-                        },
-                        options,
-                      ),
-                    // `Recipe.save` throws model-legible validation messages ("A recipe needs a prompt —
-                    // that is the whole recipe") and also throws when it cannot read the file back after
-                    // writing. Both must surface as a FAILURE: ruling 2 — a failed mutation never reports
-                    // success, and this one's success text would otherwise tell the model where to put
-                    // assets for a folder that is not there.
-                    catch: (error) =>
-                      failure(
-                        `The recipe was NOT saved: ${error instanceof Error ? error.message : String(error)}`,
-                      ),
-                  })
-                  return {
-                    op: "save" as const,
-                    slug: saved.slug,
-                    message: savedMessage(saved, path.join(root, saved.slug), existing !== undefined),
-                  }
-                }
-              }
-            }).pipe(
-              Effect.mapError((error) => {
-                if (error instanceof ToolFailure) return error
-                const denial = PermissionV2.denialMessage(error)
-                if (denial) return failure(denial)
-                return failure(`Recipe tool failed: ${error instanceof Error ? error.message : String(error)}`)
-              }),
-            ),
-        })),
+              }).pipe(
+                Effect.mapError((error) => {
+                  if (error instanceof ToolFailure) return error
+                  const denial = PermissionV2.denialMessage(error)
+                  if (denial) return failure(denial)
+                  return failure(`Recipe tool failed: ${error instanceof Error ? error.message : String(error)}`)
+                }),
+              ),
+          }),
+        ),
       })
       .pipe(Effect.orDie)
   }),

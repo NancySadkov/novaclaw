@@ -40,7 +40,11 @@ function hash01(id: string): number {
  * Deterministically lay out a graph. Returns a position for every id in `nodeIds`. Connected nodes are
  * pulled together, all nodes repel, and the result is clamped into `[0,width]×[0,height]`.
  */
-export function layoutGraph(nodeIds: readonly string[], edges: readonly LayoutEdge[], opts: LayoutOptions = {}): Record<string, Vec> {
+export function layoutGraph(
+  nodeIds: readonly string[],
+  edges: readonly LayoutEdge[],
+  opts: LayoutOptions = {},
+): Record<string, Vec> {
   const width = opts.width ?? 1000
   const height = opts.height ?? 700
   const iterations = opts.iterations ?? 300

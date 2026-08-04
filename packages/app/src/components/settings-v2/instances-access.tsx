@@ -46,7 +46,10 @@ export const InstancesAccess: Component = () => {
   const addPeer = () => {
     const value = draft()
     if (!value.name.trim() || !value.url.trim()) return
-    savePeers([...peers().filter((peer) => peer.name !== value.name.trim()), { ...value, name: value.name.trim(), url: value.url.trim() }])
+    savePeers([
+      ...peers().filter((peer) => peer.name !== value.name.trim()),
+      { ...value, name: value.name.trim(), url: value.url.trim() },
+    ])
     setDraft({ name: "", url: "", token: "" })
   }
 
@@ -71,12 +74,22 @@ export const InstancesAccess: Component = () => {
               data-slot="instances-access-token"
             />
             <Show when={tokenDirty()}>
-              <ButtonV2 size="small" variant="contrast" data-action="instances-access-save" onClick={() => saveToken(tokenValue())}>
+              <ButtonV2
+                size="small"
+                variant="contrast"
+                data-action="instances-access-save"
+                onClick={() => saveToken(tokenValue())}
+              >
                 {language.t("common.save")}
               </ButtonV2>
             </Show>
             <Show when={!tokenDirty() && tokenSaved().length > 0}>
-              <ButtonV2 size="small" variant="neutral" data-action="instances-access-clear" onClick={() => saveToken("")}>
+              <ButtonV2
+                size="small"
+                variant="neutral"
+                data-action="instances-access-clear"
+                onClick={() => saveToken("")}
+              >
                 {language.t("common.clear")}
               </ButtonV2>
             </Show>

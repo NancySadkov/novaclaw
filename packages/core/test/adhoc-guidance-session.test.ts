@@ -27,10 +27,7 @@ const recipe = (name: string, description: string) => ({
  * XDG resolution, so an env-var override would race every other file in the run.
  */
 const withGuidance = <A, E, R>(
-  body: (input: {
-    root: string
-    guidance: AdhocGuidance.Interface
-  }) => Effect.Effect<A, E, R>,
+  body: (input: { root: string; guidance: AdhocGuidance.Interface }) => Effect.Effect<A, E, R>,
   configured?: ReadonlyArray<{ name: string; description: string; manual: string }>,
 ) =>
   Effect.acquireUseRelease(
@@ -61,7 +58,10 @@ const withGuidance = <A, E, R>(
   )
 
 const baselineFor = (guidance: AdhocGuidance.Interface, sessionID: Session.ID) =>
-  guidance.load(sessionID).pipe(Effect.flatMap(SystemContext.initialize), Effect.map((it) => it.baseline))
+  guidance.load(sessionID).pipe(
+    Effect.flatMap(SystemContext.initialize),
+    Effect.map((it) => it.baseline),
+  )
 
 describe("AdhocGuidance session scope", () => {
   // The defect this file exists for: `copySessionRecipes` hands a spawned child the parent's

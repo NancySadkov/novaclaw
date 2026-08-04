@@ -5,10 +5,12 @@ import { useParams } from "@solidjs/router"
 import { useSDK, type DirectorySDK } from "./sdk"
 import type { Platform } from "./platform"
 import { useServerSDK } from "./server-sdk"
+import { useLanguage } from "./language"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { defaultTitle, titleNumber } from "./terminal-title"
 import { Persist, persisted, removePersisted } from "@/utils/persist"
 import { ScopedKey, ServerScope, type ServerScope as ServerScopeValue } from "@/utils/server-scope"
+import { showToast } from "@/utils/toast"
 
 export type LocalPTY = {
   id: string
@@ -143,10 +145,21 @@ export function clearWorkspaceTerminals(
   }
 }
 
+export async function stopAllWorkspaceTerminals(client: DirectorySDK["client"], directory: string, clear: () => void) {
+  const result = await client.v2.pty.removeAll({ location: { directory } })
+  clear()
+  return result.data?.data ?? 0
+}
+
+export async function stopWorkspaceTerminal(client: DirectorySDK["client"], directory: string, id: string) {
+  await client.v2.pty.remove({ ptyID: id, location: { directory } })
+}
+
 function createWorkspaceTerminalSession(
   sdk: DirectorySDK,
   dir: string,
   scope: ServerScopeValue,
+  reportCloseError: (error: unknown) => void,
   legacySessionID?: string,
 ) {
   const legacy = scope === ServerScope.local ? getLegacyTerminalStorageKeys(dir, legacySessionID) : []
@@ -203,47 +216,48 @@ function createWorkspaceTerminalSession(
   })
   onCleanup(unsub)
 
-  const update = (client: DirectorySDK["client"], pty: Partial<LocalPTY> & { id: string }) => {
+  const update = (client: DirectorySDK["client"], directory: string, pty: Partial<LocalPTY> & { id: string }) => {
     const index = store.all.findIndex((x) => x.id === pty.id)
-    const previous = index >= 0 ? store.all[index] : undefined
-    if (index >= 0) {
-      setStore("all", index, (item) => ({ ...item, ...pty }))
-    }
-    client.pty
+    // Closing a tab removes its server PTY before Solid unmounts the terminal view. Its cleanup
+    // snapshot is stale at that point and must not recreate/update a session that is already gone.
+    if (index === -1) return
+    const previous = store.all[index]
+    setStore("all", index, (item) => ({ ...item, ...pty }))
+    client.v2.pty
       .update({
         ptyID: pty.id,
+        location: { directory },
         title: pty.title,
         size: pty.cols && pty.rows ? { rows: pty.rows, cols: pty.cols } : undefined,
       })
       .catch((error: unknown) => {
-        if (previous) {
-          const currentIndex = store.all.findIndex((item) => item.id === pty.id)
-          if (currentIndex >= 0) setStore("all", currentIndex, previous)
-        }
+        const currentIndex = store.all.findIndex((item) => item.id === pty.id)
+        if (currentIndex >= 0) setStore("all", currentIndex, previous)
         console.error("Failed to update terminal", error)
       })
   }
 
-  const clone = async (client: DirectorySDK["client"], id: string) => {
+  const clone = async (client: DirectorySDK["client"], directory: string, id: string) => {
     const index = store.all.findIndex((x) => x.id === id)
     const pty = store.all[index]
     if (!pty) return
-    const next = await client.pty
+    const next = await client.v2.pty
       .create({
+        location: { directory },
         title: pty.title,
       })
       .catch((error: unknown) => {
         console.error("Failed to clone terminal", error)
         return undefined
       })
-    if (!next?.data) return
+    if (!next?.data?.data) return
 
     const active = store.active === pty.id
 
     batch(() => {
       setStore("all", index, {
-        id: next.data.id,
-        title: next.data.title ?? pty.title,
+        id: next.data.data.id,
+        title: next.data.data.title ?? pty.title,
         titleNumber: pty.titleNumber,
         buffer: undefined,
         cursor: undefined,
@@ -252,7 +266,7 @@ function createWorkspaceTerminalSession(
         cols: undefined,
       })
       if (active) {
-        setStore("active", next.data.id)
+        setStore("active", next.data.data.id)
       }
     })
   }
@@ -270,14 +284,14 @@ function createWorkspaceTerminalSession(
     new() {
       const nextNumber = pickNextTerminalNumber()
 
-      sdk.client.pty
-        .create({ title: defaultTitle(nextNumber) })
-        .then((pty: { data?: { id?: string; title?: string } }) => {
-          const id = pty.data?.id
+      sdk.client.v2.pty
+        .create({ location: { directory: sdk.directory }, title: defaultTitle(nextNumber) })
+        .then((pty) => {
+          const id = pty.data?.data.id
           if (!id) return
           const newTerminal = {
             id,
-            title: pty.data?.title ?? defaultTitle(nextNumber),
+            title: pty.data?.data.title ?? defaultTitle(nextNumber),
             titleNumber: nextNumber,
           }
           setStore("all", store.all.length, newTerminal)
@@ -288,7 +302,7 @@ function createWorkspaceTerminalSession(
         })
     },
     update(pty: Partial<LocalPTY> & { id: string }) {
-      update(sdk.client, pty)
+      update(sdk.client, sdk.directory, pty)
     },
     trim(id: string) {
       const index = store.all.findIndex((x) => x.id === id)
@@ -303,7 +317,7 @@ function createWorkspaceTerminalSession(
       })
     },
     async clone(id: string) {
-      await clone(sdk.client, id)
+      await clone(sdk.client, sdk.directory, id)
     },
     bind() {
       const client = sdk.client
@@ -314,10 +328,10 @@ function createWorkspaceTerminalSession(
           setStore("all", index, (pty) => trimTerminal(pty))
         },
         update(pty: Partial<LocalPTY> & { id: string }) {
-          update(client, pty)
+          update(client, sdk.directory, pty)
         },
         async clone(id: string) {
-          await clone(client, id)
+          await clone(client, sdk.directory, id)
         },
       }
     },
@@ -337,6 +351,16 @@ function createWorkspaceTerminalSession(
       setStore("active", store.all[prevIndex]?.id)
     },
     async close(id: string) {
+      try {
+        await stopWorkspaceTerminal(sdk.client, sdk.directory, id)
+      } catch (error) {
+        // Keep the tab visible: hiding it would strand a possibly-running process with no recovery
+        // handle. The connection banner can still establish that a server-confirmed 404 is gone.
+        console.error("Failed to close terminal", error)
+        reportCloseError(error)
+        return
+      }
+
       const index = store.all.findIndex((f) => f.id === id)
       if (index !== -1) {
         batch(() => {
@@ -352,9 +376,13 @@ function createWorkspaceTerminalSession(
           )
         })
       }
-
-      await sdk.client.pty.remove({ ptyID: id }).catch((error: unknown) => {
-        console.error("Failed to close terminal", error)
+    },
+    async stopAll() {
+      return stopAllWorkspaceTerminals(sdk.client, sdk.directory, () => {
+        batch(() => {
+          setStore("active", undefined)
+          setStore("all", [])
+        })
       })
     },
     move(id: string, to: number) {
@@ -376,6 +404,7 @@ export const { use: useTerminal, provider: TerminalProvider } = createSimpleCont
   init: () => {
     const sdk = useSDK()
     const serverSDK = useServerSDK()
+    const language = useLanguage()
     const params = useParams()
     const cache = new Map<string, TerminalCacheEntry>()
     const scope = () => serverSDK().scope
@@ -414,7 +443,18 @@ export const { use: useTerminal, provider: TerminalProvider } = createSimpleCont
       }
 
       const entry = createRoot((dispose) => ({
-        value: createWorkspaceTerminalSession(sdk(), dir, serverScope, legacySessionID),
+        value: createWorkspaceTerminalSession(
+          sdk(),
+          dir,
+          serverScope,
+          (error) =>
+            showToast({
+              variant: "error",
+              title: language.t("terminal.closeFailed"),
+              description: String(error),
+            }),
+          legacySessionID,
+        ),
         dispose,
       }))
 
@@ -450,6 +490,7 @@ export const { use: useTerminal, provider: TerminalProvider } = createSimpleCont
       bind: () => workspace(),
       open: (id: string) => workspace().open(id),
       close: (id: string) => workspace().close(id),
+      stopAll: () => workspace().stopAll(),
       move: (id: string, to: number) => workspace().move(id, to),
       next: () => workspace().next(),
       previous: () => workspace().previous(),

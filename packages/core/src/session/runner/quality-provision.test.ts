@@ -122,9 +122,9 @@ describe("QE-A manifest scan", () => {
     // No wrapper committed → the installed CLI, and a missing one is dropped honestly at rung 1.
     expect(scan({ files: ["build.gradle"], read: () => undefined }).commands.lint).toBe("gradle check -x test")
     expect(scan({ files: ["settings.gradle"], read: () => undefined }).commands.test).toBe("gradle test")
-    expect(scan({ files: ["pom.xml", "mvnw", "mvnw.cmd"], read: () => undefined, shell: "posix" }).commands).toMatchObject(
-      { typecheck: "./mvnw -q compile", test: "./mvnw -q test" },
-    )
+    expect(
+      scan({ files: ["pom.xml", "mvnw", "mvnw.cmd"], read: () => undefined, shell: "posix" }).commands,
+    ).toMatchObject({ typecheck: "./mvnw -q compile", test: "./mvnw -q test" })
     expect(scan({ files: ["pom.xml"], read: () => undefined, shell: "cmd" }).commands.test).toBe("mvn -q test")
   })
 

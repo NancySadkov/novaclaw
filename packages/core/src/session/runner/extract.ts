@@ -144,7 +144,11 @@ const resolveName = (raw: unknown, names: ReadonlyArray<string>): string | undef
  *  pair is never lost to a bad label. */
 const linkType = (raw: unknown): string => {
   if (typeof raw !== "string") return "related_to"
-  const cleaned = raw.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")
+  const cleaned = raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
   return cleaned.length === 0 ? "related_to" : cleaned.slice(0, 40)
 }
 

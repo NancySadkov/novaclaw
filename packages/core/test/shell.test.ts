@@ -123,13 +123,13 @@ describe("shell", () => {
       expect(Shell.name(bash!)).toBe("bash")
     })
 
-    test("an agent shell that is not bash is reported, never silent", () => {
-      const isBash = Shell.agentShellIsBash()
-      expect(isBash).toBe(Shell.name(Shell.agentDefault()) === "bash")
+    test("an agent shell that is not POSIX-compatible is reported, never silent", () => {
+      const isPosix = Shell.agentShellIsPosix()
+      expect(isPosix).toBe(Shell.posix(Shell.agentDefault()))
       // The note exists exactly when the fallback fired — that is what the system prompt appends so
       // the model stops writing POSIX at a shell that cannot run it.
-      const note = Shell.bashFallbackNote()
-      if (isBash) expect(note).toBeUndefined()
+      const note = Shell.shellFallbackNote()
+      if (isPosix) expect(note).toBeUndefined()
       else expect(note).toContain(Shell.agentDefault())
     })
   }

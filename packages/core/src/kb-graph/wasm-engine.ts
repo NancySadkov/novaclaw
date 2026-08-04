@@ -759,8 +759,11 @@ export class WasmMemory {
       for (const row of rows) {
         const text = String(row.text ?? "")
         if (!text) continue
-        const gid = "mem_g" + createHash("sha256").update(`global\n${text.trim().toLowerCase()}`).digest("hex").slice(0, 24)
-        const existing = await this.rows(`MATCH (g:Memory {id: $gid}) WHERE g.t_invalid IS NULL RETURN g.id AS id`, { gid })
+        const gid =
+          "mem_g" + createHash("sha256").update(`global\n${text.trim().toLowerCase()}`).digest("hex").slice(0, 24)
+        const existing = await this.rows(`MATCH (g:Memory {id: $gid}) WHERE g.t_invalid IS NULL RETURN g.id AS id`, {
+          gid,
+        })
         if (existing.length === 0) {
           await this.q(
             `CREATE (:Memory {
@@ -815,7 +818,13 @@ export class WasmMemory {
             `MATCH (a:Memory {id: $from}), (b:Memory {id: $to})
              CREATE (a)-[:Rel { type: $type, scope: 'global', source: $source, confidence: $confidence,
                                 t_valid: current_timestamp(), t_created: current_timestamp() }]->(b)`,
-            { from, to, type, source: (edge.source as string | null) ?? null, confidence: (edge.confidence as number | null) ?? null },
+            {
+              from,
+              to,
+              type,
+              source: (edge.source as string | null) ?? null,
+              confidence: (edge.confidence as number | null) ?? null,
+            },
           )
           edgesCarried++
         }

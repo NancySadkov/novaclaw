@@ -133,17 +133,37 @@ describe("KB-G retrieval eval", () => {
       source: "auto-extract",
     })
     // Not yet global.
-    expect((await mem.search({ query: "dark mode preference", scopes: ["global"], k: K })).some((r) => r.text.includes("dark mode"))).toBe(false)
+    expect(
+      (await mem.search({ query: "dark mode preference", scopes: ["global"], k: K })).some((r) =>
+        r.text.includes("dark mode"),
+      ),
+    ).toBe(false)
     await mem.consolidate()
     // Now a fresh chat (global scope) recalls it.
-    expect((await mem.search({ query: "dark mode preference", scopes: ["global"], k: K })).some((r) => r.text.includes("dark mode"))).toBe(true)
+    expect(
+      (await mem.search({ query: "dark mode preference", scopes: ["global"], k: K })).some((r) =>
+        r.text.includes("dark mode"),
+      ),
+    ).toBe(true)
   })
 
   test("conflict resolution — a corrected fact supersedes the old, which drops from search", async () => {
-    await mem.addMemory({ id: "loc_old", kind: "episode", text: "The user lives in Berlin", scope: "global", source: "auto-extract" })
+    await mem.addMemory({
+      id: "loc_old",
+      kind: "episode",
+      text: "The user lives in Berlin",
+      scope: "global",
+      source: "auto-extract",
+    })
     expect((await mem.search({ query: "where the user lives", k: K })).some((r) => r.id === "loc_old")).toBe(true)
     await mem.invalidate("loc_old") // superseded (bitemporal — kept in history, dropped from search)
-    await mem.addMemory({ id: "loc_new", kind: "episode", text: "The user lives in Osaka now", scope: "global", source: "auto-extract" })
+    await mem.addMemory({
+      id: "loc_new",
+      kind: "episode",
+      text: "The user lives in Osaka now",
+      scope: "global",
+      source: "auto-extract",
+    })
     const hits = await mem.search({ query: "where the user lives", k: K })
     expect(hits.some((r) => r.id === "loc_old")).toBe(false) // old is gone from retrieval
     expect(hits.some((r) => r.id === "loc_new")).toBe(true) // corrected one is live

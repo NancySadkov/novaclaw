@@ -53,17 +53,28 @@ const makeFakeReddit = () => {
     const form =
       typeof init?.body === "string" ? Object.fromEntries(new URLSearchParams(init.body).entries()) : undefined
     const headers = (init?.headers ?? {}) as Record<string, string>
-    state.calls.push({ url, method, ...(form === undefined ? {} : { form }), ...(headers["User-Agent"] === undefined ? {} : { agent: headers["User-Agent"] }) })
-    const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
+    state.calls.push({
+      url,
+      method,
+      ...(form === undefined ? {} : { form }),
+      ...(headers["User-Agent"] === undefined ? {} : { agent: headers["User-Agent"] }),
+    })
+    const json = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
     if (url.includes("/api/v1/access_token")) {
       if (state.refreshFails !== undefined) return json({ error: state.refreshFails }, 400)
       return json({ access_token: "at-1", expires_in: 3600, refresh_token: "rt-new" })
     }
     if (url.includes("/api/v1/me")) return json({ name: "novaclaw-bot" })
-    if (url.includes("/about/modqueue")) return json(state.queueStatus === 200 ? { data: { children: state.queue } } : { message: "Forbidden" }, state.queueStatus)
+    if (url.includes("/about/modqueue"))
+      return json(
+        state.queueStatus === 200 ? { data: { children: state.queue } } : { message: "Forbidden" },
+        state.queueStatus,
+      )
     if (url.includes("/r/novaclaw/new")) return json({ data: { children: state.posts } })
-    if (url.includes("/r/novaclaw/comments/")) return json([{ data: { children: state.posts } }, { data: { children: state.comments } }])
+    if (url.includes("/r/novaclaw/comments/"))
+      return json([{ data: { children: state.posts } }, { data: { children: state.comments } }])
     if (url.includes("/r/novaclaw/comments")) return json({ data: { children: state.comments } })
     if (url.includes("/api/comment")) return json(state.commentReply)
     return json({ json: { errors: [] } })
@@ -74,11 +85,17 @@ const makeFakeReddit = () => {
 // The fake echoes back whatever redirectUri the driver asked for — so a test can prove the driver
 // advertises the SAME string it told the user to register (Reddit matches it exactly).
 const loopback = (params?: { redirectUri?: string }) =>
-  Effect.succeed({ redirectUri: params?.redirectUri ?? "http://127.0.0.1:9999/", waitForCode: Promise.resolve("code-1") })
+  Effect.succeed({
+    redirectUri: params?.redirectUri ?? "http://127.0.0.1:9999/",
+    waitForCode: Promise.resolve("code-1"),
+  })
 // `version` is pinned to a FIXTURE value, not left to the driver's default: what the UA assertion
 // below is about is the required FORMAT, so a product version bump must not break this test.
 const connect = (fake: ReturnType<typeof makeFakeReddit>, cursor?: unknown, onCursor?: (value: unknown) => void) =>
-  RedditDriver.make(fake.fetchImpl, loopback as never, () => Effect.void, { pollIntervalMs: 50, version: "9.9.9" }).connect({
+  RedditDriver.make(fake.fetchImpl, loopback as never, () => Effect.void, {
+    pollIntervalMs: 50,
+    version: "9.9.9",
+  }).connect({
     account: ACCOUNT,
     secret: JSON.stringify({ refreshToken: "rt-1" }),
     cursor: { get: () => Effect.succeed(cursor), set: (value) => Effect.sync(() => onCursor?.(value)) },
@@ -86,9 +103,13 @@ const connect = (fake: ReturnType<typeof makeFakeReddit>, cursor?: unknown, onCu
 
 describe("RedditDriver pure helpers", () => {
   test("the User-Agent follows Reddit's required format (generic agents get throttled)", () => {
-    expect(RedditDriver.userAgent("novaclaw-bot", "0.0.1")).toBe("novaclaw:app.novaclaw.messenger:v0.0.1 (by /u/novaclaw-bot)")
+    expect(RedditDriver.userAgent("novaclaw-bot", "0.0.1")).toBe(
+      "novaclaw:app.novaclaw.messenger:v0.0.1 (by /u/novaclaw-bot)",
+    )
     // Tolerates what a person actually types into the settings field.
-    expect(RedditDriver.userAgent("u/novaclaw-bot", "1.2.3")).toBe("novaclaw:app.novaclaw.messenger:v1.2.3 (by /u/novaclaw-bot)")
+    expect(RedditDriver.userAgent("u/novaclaw-bot", "1.2.3")).toBe(
+      "novaclaw:app.novaclaw.messenger:v1.2.3 (by /u/novaclaw-bot)",
+    )
   })
 
   test("subreddit names survive however they were pasted", () => {
@@ -106,34 +127,52 @@ describe("RedditDriver pure helpers", () => {
   // Reddit answers a throttled write with HTTP 200 and the error in the BODY — a driver that only
   // reads status codes drops the reply and reports success.
   test("the RATELIMIT hidden inside a 200 body is found, with its delay", () => {
-    const body = { json: { errors: [["RATELIMIT", "you are doing that too much. try again in 7 minutes.", "ratelimit"]] } }
+    const body = {
+      json: { errors: [["RATELIMIT", "you are doing that too much. try again in 7 minutes.", "ratelimit"]] },
+    }
     expect(RedditDriver.parseRateLimit(body)).toEqual({ retryAfterMs: 7 * 60_000 })
-    expect(RedditDriver.parseRateLimit({ json: { errors: [["RATELIMIT", "try again in 30 seconds."]] } })).toEqual({ retryAfterMs: 30_000 })
+    expect(RedditDriver.parseRateLimit({ json: { errors: [["RATELIMIT", "try again in 30 seconds."]] } })).toEqual({
+      retryAfterMs: 30_000,
+    })
     // No unit parsed → still a throttle, just a conservative wait.
-    expect(RedditDriver.parseRateLimit({ json: { errors: [["RATELIMIT", "slow down"]] } })).toEqual({ retryAfterMs: 60_000 })
+    expect(RedditDriver.parseRateLimit({ json: { errors: [["RATELIMIT", "slow down"]] } })).toEqual({
+      retryAfterMs: 60_000,
+    })
     expect(RedditDriver.parseRateLimit({ json: { errors: [] } })).toBeUndefined()
     expect(RedditDriver.parseRateLimit({ json: { errors: [["NO_TEXT", "we need something here"]] } })).toBeUndefined()
   })
 
   test("other API errors surface with their reason", () => {
-    expect(RedditDriver.parseApiError({ json: { errors: [["SUBREDDIT_NOTALLOWED", "you aren't allowed to post there"]] } })).toBe(
-      "SUBREDDIT_NOTALLOWED: you aren't allowed to post there",
-    )
+    expect(
+      RedditDriver.parseApiError({ json: { errors: [["SUBREDDIT_NOTALLOWED", "you aren't allowed to post there"]] } }),
+    ).toBe("SUBREDDIT_NOTALLOWED: you aren't allowed to post there")
     expect(RedditDriver.parseApiError({ json: { errors: [] } })).toBeUndefined()
   })
 
   test("every moderation act maps to the right endpoint, and the two Reddit lacks refuse legibly", () => {
-    const req = (act: Parameters<typeof RedditDriver.moderationRequest>[2]) => RedditDriver.moderationRequest("novaclaw", "t3_aaa", act)
-    expect(req({ act: "delete", messageID: "t1_x" })).toEqual({ path: "/api/remove", form: { id: "t1_x", spam: "false" } })
+    const req = (act: Parameters<typeof RedditDriver.moderationRequest>[2]) =>
+      RedditDriver.moderationRequest("novaclaw", "t3_aaa", act)
+    expect(req({ act: "delete", messageID: "t1_x" })).toEqual({
+      path: "/api/remove",
+      form: { id: "t1_x", spam: "false" },
+    })
     expect(req({ act: "approve", messageID: "t1_x" })).toEqual({ path: "/api/approve", form: { id: "t1_x" } })
-    expect(req({ act: "ban", userID: "spammer" })).toMatchObject({ path: "/r/novaclaw/api/friend", form: { type: "banned", name: "spammer" } })
-    expect(req({ act: "mute", userID: "loud" })).toMatchObject({ path: "/r/novaclaw/api/friend", form: { type: "muted", name: "loud" } })
+    expect(req({ act: "ban", userID: "spammer" })).toMatchObject({
+      path: "/r/novaclaw/api/friend",
+      form: { type: "banned", name: "spammer" },
+    })
+    expect(req({ act: "mute", userID: "loud" })).toMatchObject({
+      path: "/r/novaclaw/api/friend",
+      form: { type: "muted", name: "loud" },
+    })
     // A post is stickied to the subreddit; a comment is distinguished+stickied in its thread.
     expect(req({ act: "pin", messageID: "t3_aaa" })).toMatchObject({ path: "/api/set_subreddit_sticky" })
     expect(req({ act: "pin", messageID: "t1_x" })).toMatchObject({ path: "/api/distinguish", form: { sticky: "true" } })
     expect(req({ act: "lock" })).toEqual({ path: "/api/lock", form: { id: "t3_aaa" } })
     // Locking the SUBREDDIT chat is meaningless — say which target is wanted.
-    expect(RedditDriver.moderationRequest("novaclaw", "r/novaclaw", { act: "lock" })).toMatchObject({ refusal: expect.stringContaining("post") })
+    expect(RedditDriver.moderationRequest("novaclaw", "r/novaclaw", { act: "lock" })).toMatchObject({
+      refusal: expect.stringContaining("post"),
+    })
     expect(req({ act: "kick", userID: "x" })).toMatchObject({ refusal: expect.stringContaining("ban") })
   })
 
@@ -157,7 +196,10 @@ describe("RedditDriver pure helpers", () => {
   test("the seen-set stays bounded so a busy subreddit can't grow it forever", () => {
     let cursor: RedditDriver.ListingCursor = { seen: [] }
     for (let round = 0; round < 40; round++)
-      cursor = RedditDriver.advanceCursor(cursor, Array.from({ length: 20 }, (_, i) => `t3_${round}_${i}`)).cursor
+      cursor = RedditDriver.advanceCursor(
+        cursor,
+        Array.from({ length: 20 }, (_, i) => `t3_${round}_${i}`),
+      ).cursor
     expect(cursor.seen.length).toBeLessThanOrEqual(301)
     expect(cursor.seen.at(-1)).toBe("t3_39_19")
   })
@@ -168,7 +210,11 @@ describe("RedditDriver pure helpers", () => {
       comments: { seen: [] },
       modqueue: { seen: [] },
     })
-    expect(RedditDriver.readCursor("junk")).toEqual({ posts: { seen: [] }, comments: { seen: [] }, modqueue: { seen: [] } })
+    expect(RedditDriver.readCursor("junk")).toEqual({
+      posts: { seen: [] },
+      comments: { seen: [] },
+      modqueue: { seen: [] },
+    })
   })
 
   // The queue is the actual job of moderating: a report can land on a week-old comment that no
@@ -176,7 +222,15 @@ describe("RedditDriver pure helpers", () => {
   test("a queued item says WHY it is queued, and keeps the id moderation takes", () => {
     const event = RedditDriver.modqueueInbound(
       "novaclaw",
-      { name: "t1_x", author: "spammer", body: "buy my thing", link_title: "Crash on save", num_reports: 2, user_reports: [["spam", 2]], created_utc: 1_700_000_000 },
+      {
+        name: "t1_x",
+        author: "spammer",
+        body: "buy my thing",
+        link_title: "Crash on save",
+        num_reports: 2,
+        user_reports: [["spam", 2]],
+        created_utc: 1_700_000_000,
+      },
       "novaclaw-bot",
     )
     if (event?.kind !== "message") throw new Error("expected a message")
@@ -198,7 +252,11 @@ describe("RedditDriver pure helpers", () => {
   })
 
   test("a post becomes a thread parented to the subreddit — the shape one binding needs", () => {
-    const event = RedditDriver.postInbound("novaclaw", post("aaa", "dave", "Crash on save", "it dies").data, "novaclaw-bot")
+    const event = RedditDriver.postInbound(
+      "novaclaw",
+      post("aaa", "dave", "Crash on save", "it dies").data,
+      "novaclaw-bot",
+    )
     if (event?.kind !== "message") throw new Error("expected a message")
     expect(event.chat).toEqual({
       chatID: "t3_aaa",
@@ -214,7 +272,11 @@ describe("RedditDriver pure helpers", () => {
   })
 
   test("a comment lands in its POST's thread, not a chat of its own", () => {
-    const event = RedditDriver.commentInbound("novaclaw", comment("c1", "dave", "still broken", "t3_aaa", "t1_c0").data, "novaclaw-bot")
+    const event = RedditDriver.commentInbound(
+      "novaclaw",
+      comment("c1", "dave", "still broken", "t3_aaa", "t1_c0").data,
+      "novaclaw-bot",
+    )
     if (event?.kind !== "message") throw new Error("expected a message")
     expect(event.chat.chatID).toBe("t3_aaa")
     expect(event.chat.parentID).toBe("r/novaclaw")
@@ -223,7 +285,11 @@ describe("RedditDriver pure helpers", () => {
   })
 
   test("our own comments are marked self so the gateway drops the echo", () => {
-    const own = RedditDriver.commentInbound("novaclaw", comment("c2", "NovaClaw-Bot", "on it", "t3_aaa").data, "novaclaw-bot")
+    const own = RedditDriver.commentInbound(
+      "novaclaw",
+      comment("c2", "NovaClaw-Bot", "on it", "t3_aaa").data,
+      "novaclaw-bot",
+    )
     expect(own?.kind === "message" && own.sender.isSelf).toBe(true)
   })
 })
@@ -260,7 +326,9 @@ describe("RedditDriver connection", () => {
       const apiCalls = fake.state.calls.filter((call) => call.url.startsWith("https://oauth.reddit.com"))
       // raw_json=1 or every <, > and & comes back HTML-escaped — silent corruption of what the agent reads.
       expect(apiCalls.every((call) => call.url.includes("raw_json=1"))).toBe(true)
-      expect(apiCalls.every((call) => call.agent === "novaclaw:app.novaclaw.messenger:v9.9.9 (by /u/novaclaw-bot)")).toBe(true)
+      expect(
+        apiCalls.every((call) => call.agent === "novaclaw:app.novaclaw.messenger:v9.9.9 (by /u/novaclaw-bot)"),
+      ).toBe(true)
     }),
   )
 
@@ -294,7 +362,9 @@ describe("RedditDriver connection", () => {
   it.live("a throttled send comes back retryable — even though Reddit answered HTTP 200", () =>
     Effect.gen(function* () {
       const fake = makeFakeReddit()
-      fake.state.commentReply = { json: { errors: [["RATELIMIT", "you are doing that too much. try again in 3 minutes.", "ratelimit"]] } }
+      fake.state.commentReply = {
+        json: { errors: [["RATELIMIT", "you are doing that too much. try again in 3 minutes.", "ratelimit"]] },
+      }
       const error = yield* Effect.scoped(
         Effect.gen(function* () {
           const connection = yield* connect(fake)
@@ -358,7 +428,9 @@ describe("RedditDriver connection", () => {
         loopbackParams.push(params)
         return loopback(params)
       }
-      const driver = RedditDriver.make(fake.fetchImpl, capturingLoopback as never, (url) => Effect.sync(() => void opened.push(url)))
+      const driver = RedditDriver.make(fake.fetchImpl, capturingLoopback as never, (url) =>
+        Effect.sync(() => void opened.push(url)),
+      )
       const session = yield* Effect.scoped(
         Effect.gen(function* () {
           const pending = yield* driver.login!.begin({ account: ACCOUNT, inputs: {} })
@@ -386,7 +458,11 @@ describe("RedditDriver connection", () => {
       expect(loopbackParams[0]?.redirectUri).toBe(RedditDriver.REDIRECT_URI)
       expect(url.searchParams.get("redirect_uri")).toBe(RedditDriver.REDIRECT_URI)
       const exchange = fake.state.calls.find((call) => call.url.includes("access_token"))
-      expect(exchange?.form).toMatchObject({ grant_type: "authorization_code", code: "code-1", redirect_uri: RedditDriver.REDIRECT_URI })
+      expect(exchange?.form).toMatchObject({
+        grant_type: "authorization_code",
+        code: "code-1",
+        redirect_uri: RedditDriver.REDIRECT_URI,
+      })
     }),
   )
 
@@ -394,7 +470,12 @@ describe("RedditDriver connection", () => {
     Effect.gen(function* () {
       const fake = makeFakeReddit()
       fake.state.posts = []
-      fake.state.queue = [{ kind: "t1", data: { name: "t1_old", author: "spammer", body: "buy my thing", num_reports: 3, created_utc: 1_600_000_000 } }]
+      fake.state.queue = [
+        {
+          kind: "t1",
+          data: { name: "t1_old", author: "spammer", body: "buy my thing", num_reports: 3, created_utc: 1_600_000_000 },
+        },
+      ]
       const received: InboundEvent[] = []
       yield* Effect.scoped(
         Effect.gen(function* () {

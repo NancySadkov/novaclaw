@@ -22,7 +22,9 @@ function decode(tools: string[], events: ReadonlyArray<Record<string, unknown>>)
 const text = (content: string) => ({ choices: [{ delta: { content }, finish_reason: null }] })
 const stop = { choices: [{ delta: {}, finish_reason: "stop" }] }
 const structuredCall = (name: string, args: string) => ({
-  choices: [{ delta: { tool_calls: [{ index: 0, id: "call_1", function: { name, arguments: args } }] }, finish_reason: null }],
+  choices: [
+    { delta: { tool_calls: [{ index: 0, id: "call_1", function: { name, arguments: args } }] }, finish_reason: null },
+  ],
 })
 
 const toolCalls = (events: LLMEvent[]) => events.filter(LLMEvent.is.toolCall)

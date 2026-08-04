@@ -24,6 +24,7 @@ import { SessionFeature } from "@novaclaw/schema/session-feature"
 import { SessionStrict } from "@novaclaw/schema/session-strict"
 import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { SessionTodo } from "@novaclaw/schema/session-todo"
+import { SessionExecution } from "@novaclaw/schema/session-execution"
 
 const SessionsQueryFields = {
   workspace: Workspace.ID.pipe(Schema.optional),
@@ -144,9 +145,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           agent: Agent.ID.pipe(Schema.optional),
           model: Model.Ref.pipe(Schema.optional),
           systemPromptOverride: Schema.String.pipe(Schema.optional),
-          type: Schema.Literals(["interactive", "sub-agent", "auto-prompting", "goal-oriented"]).pipe(
-            Schema.optional,
-          ),
+          type: Schema.Literals(["interactive", "sub-agent", "auto-prompting", "goal-oriented"]).pipe(Schema.optional),
           priority: Schema.Finite.pipe(Schema.optional),
           permissionMode: Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"]).pipe(Schema.optional),
           location: Location.Ref.pipe(Schema.optional),
@@ -207,7 +206,8 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           OpenApi.annotations({
             identifier: "v2.session.tags.set",
             summary: "Set session tags",
-            description: "Replace the chat's tag set — tags organize chat processes; tag a root to organize its thread tree.",
+            description:
+              "Replace the chat's tag set — tags organize chat processes; tag a root to organize its thread tree.",
           }),
         ),
     )
@@ -231,6 +231,18 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           summary: "List active sessions",
           description:
             "Retrieve foreground Session drains currently owned by this NovaClaw process. Sessions absent from the result are inactive.",
+        }),
+      ),
+    )
+    .add(
+      HttpApiEndpoint.get("session.execution.list", "/api/session/execution", {
+        success: Schema.Struct({ data: Schema.Array(SessionExecution.Info) }),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.session.execution.list",
+          summary: "Inspect durable session execution",
+          description:
+            "List durable execution and recovery state, including paused failures and their human-readable details.",
         }),
       ),
     )
@@ -462,7 +474,8 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         .annotateMerge(
           OpenApi.annotations({
             identifier: "v2.session.switchFeature",
-            summary: "Set a per-session harness-feature override (introspection · quality · affective · thinkingBudget)",
+            summary:
+              "Set a per-session harness-feature override (introspection · quality · affective · thinkingBudget)",
             description:
               "Enable/disable one harness feature for this session; null clears the override back to inherit (parent chain, then global config). Applies from the next turn.",
           }),
@@ -702,6 +715,22 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
             identifier: "v2.session.interrupt",
             summary: "Interrupt session execution",
             description: "Interrupt active execution owned by this NovaClaw process. Idle interruption is a no-op.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.post("session.execution.retry", "/api/session/:sessionID/execution/retry", {
+        params: { sessionID: Session.ID },
+        success: HttpApiSchema.NoContent,
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.execution.retry",
+            summary: "Retry paused session execution",
+            description:
+              "Record explicit operator authority, reset the recovery circuit breaker, and resume queued work without requiring a model response.",
           }),
         ),
     )

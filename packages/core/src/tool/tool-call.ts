@@ -62,7 +62,5 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({ name: "tool/tool-call", layer, deps: [ToolRegistry.node] })
 
 function record(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
 }

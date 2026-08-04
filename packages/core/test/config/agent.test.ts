@@ -284,7 +284,7 @@ Use native v2 fields.`,
 
           yield* ConfigAgentPlugin.Plugin.effect(host({ agent: agentHost(agents) })).pipe(
             Effect.provideService(Config.Service, config),
-        Effect.provideService(AgentConfigStore.Service, memoryStore()),
+            Effect.provideService(AgentConfigStore.Service, memoryStore()),
           )
 
           expect(yield* agents.get(AgentV2.ID.make("reviewer"))).toMatchObject({

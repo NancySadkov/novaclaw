@@ -10,6 +10,7 @@ import { LocationServiceMap } from "@novaclaw/core/location-service-map"
 import type { LocationError, LocationServices } from "@novaclaw/core/location-services"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionExecution } from "@novaclaw/core/session/execution"
+import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { SessionExecutionLocal } from "@novaclaw/core/session/execution/local"
 import { SessionRunner } from "@novaclaw/core/session/runner/index"
 import { SessionSchema } from "@novaclaw/core/session/schema"
@@ -39,13 +40,10 @@ const harness = (input: {
     let result: string | undefined
     const record = () => ({ id: sessionID, location: ref, result }) as unknown as SessionSchema.Info
 
-    const storeLayer = Layer.succeed(
-      SessionStore.Service,
-      {
-        get: () => Effect.succeed(record()),
-        children: (id: SessionSchema.ID) => Effect.succeed(input.children?.[id] ?? []),
-      } as unknown as SessionStore.Interface,
-    )
+    const storeLayer = Layer.succeed(SessionStore.Service, {
+      get: () => Effect.succeed(record()),
+      children: (id: SessionSchema.ID) => Effect.succeed(input.children?.[id] ?? []),
+    } as unknown as SessionStore.Interface)
     const locatedLayer = Layer.mergeAll(
       Layer.succeed(
         SessionRunner.Service,
@@ -53,9 +51,29 @@ const harness = (input: {
       ),
       Layer.succeed(Location.Service, Location.Service.of(location(ref))),
     ) as unknown as Layer.Layer<LocationServices, LocationError>
-    const mapLayer = Layer.succeed(
-      LocationServiceMap.Service,
-      { get: () => locatedLayer } as unknown as LayerMap.LayerMap<Location.Ref, LocationServices, LocationError>,
+    const mapLayer = Layer.succeed(LocationServiceMap.Service, {
+      get: () => locatedLayer,
+    } as unknown as LayerMap.LayerMap<Location.Ref, LocationServices, LocationError>)
+    const attemptLayer = Layer.succeed(
+      SessionExecutionAttempt.Service,
+      SessionExecutionAttempt.Service.of({
+        start: (id, ownerID) => Effect.succeed({ sessionID: id, ownerID, attemptID: "exe_test", generation: 1 }),
+        heartbeat: () => Effect.void,
+        advance: () => Effect.void,
+        toolDispatched: () => Effect.void,
+        toolSettled: () => Effect.void,
+        providerStarted: () => Effect.void,
+        providerToolProtocol: () => Effect.void,
+        providerSettled: () => Effect.void,
+        providerRecovery: () => Effect.succeed(undefined),
+        settle: () => Effect.void,
+        recoverFailure: () => Effect.succeed(undefined),
+        get: () => Effect.succeed(undefined),
+        list: () => Effect.succeed([]),
+        authorizeRetry: () => Effect.void,
+        owns: () => Effect.succeed(true),
+        recoverStale: () => Effect.succeed([]),
+      }),
     )
 
     const events = yield* EventV2.Service
@@ -72,6 +90,7 @@ const harness = (input: {
     const execLayer = SessionExecutionLocal.layer.pipe(
       Layer.provide(storeLayer),
       Layer.provide(mapLayer),
+      Layer.provide(attemptLayer),
       Layer.provide(Layer.succeed(EventV2.Service, events)),
     )
     const ctx = yield* Layer.build(execLayer)
@@ -87,20 +106,18 @@ describe("SessionExecutionLocal status lifecycle", () => {
       const grandchild = SessionSchema.ID.make("ses_store_grandchild")
       yield* db
         .insert(SessionTable)
-        .values(
-          [
-            { id: parent, slug: "parent", directory: "/project", title: "parent", version: "test" },
-            { id: child, slug: "child", directory: "/project", title: "child", version: "test", parent_id: parent },
-            {
-              id: grandchild,
-              slug: "grandchild",
-              directory: "/project",
-              title: "grandchild",
-              version: "test",
-              parent_id: child,
-            },
-          ],
-        )
+        .values([
+          { id: parent, slug: "parent", directory: "/project", title: "parent", version: "test" },
+          { id: child, slug: "child", directory: "/project", title: "child", version: "test", parent_id: parent },
+          {
+            id: grandchild,
+            slug: "grandchild",
+            directory: "/project",
+            title: "grandchild",
+            version: "test",
+            parent_id: child,
+          },
+        ])
         .run()
         .pipe(Effect.orDie)
 

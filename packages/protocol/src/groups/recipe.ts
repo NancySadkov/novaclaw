@@ -47,9 +47,7 @@ export const RecipeGroup = HttpApiGroup.make("server.recipe")
       params: { slug: Schema.String },
       success: Recipe,
       error: InvalidRequestError,
-    }).annotateMerge(
-      OpenApi.annotations({ identifier: "v2.recipe.get", summary: "Read one recipe" }),
-    ),
+    }).annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.get", summary: "Read one recipe" })),
   )
   .add(
     HttpApiEndpoint.post("recipe.save", "/api/recipe", {
@@ -74,7 +72,8 @@ export const RecipeGroup = HttpApiGroup.make("server.recipe")
       OpenApi.annotations({
         identifier: "v2.recipe.duplicate",
         summary: "Copy a recipe",
-        description: "Copies the folder and its assets under a free slug — the 'make it mine' move for a shipped recipe.",
+        description:
+          "Copies the folder and its assets under a free slug — the 'make it mine' move for a shipped recipe.",
       }),
     ),
   )

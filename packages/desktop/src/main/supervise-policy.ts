@@ -7,6 +7,7 @@ export const RESTART_BACKOFF_CAP_MS = 30_000
 export const BACKOFF_RESET_ALIVE_MS = 60_000
 export const FAST_CRASH_MS = 10_000
 export const FAST_CRASH_GIVEUP = 5
+export const LIVENESS_FAILURE_LIMIT = 3
 
 export interface SuperviseState {
   readonly fastCrashes: number
@@ -19,6 +20,17 @@ export type SuperviseDecision =
   | { readonly action: "stop-clean" }
   | { readonly action: "giveup" }
   | { readonly action: "restart"; readonly delayMs: number; readonly next: SuperviseState }
+
+export type LivenessDecision = {
+  readonly action: "continue" | "restart"
+  readonly failures: number
+}
+
+export function livenessDecision(failures: number, healthy: boolean): LivenessDecision {
+  if (healthy) return { action: "continue", failures: 0 }
+  const next = failures + 1
+  return { action: next >= LIVENESS_FAILURE_LIMIT ? "restart" : "continue", failures: next }
+}
 
 /** One child exit → what the supervisor does next. Exit 0 stops (an intentional shutdown must not
  *  be fought); a fast crash climbs toward giveup; a long-lived child earns a backoff reset. */

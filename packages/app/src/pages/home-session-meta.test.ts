@@ -38,11 +38,7 @@ describe("subtreeRows", () => {
       s("a1", "a", 6),
       s("other", "elsewhere", 9),
     ]
-    expect(subtreeRows(sessions, "root").map((row) => `${row.session.id}@${row.depth}`)).toEqual([
-      "b@1",
-      "a@1",
-      "a1@2",
-    ])
+    expect(subtreeRows(sessions, "root").map((row) => `${row.session.id}@${row.depth}`)).toEqual(["b@1", "a@1", "a1@2"])
   })
 
   test("skips archived children and tolerates cycles", () => {

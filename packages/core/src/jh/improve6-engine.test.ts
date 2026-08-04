@@ -25,7 +25,11 @@ function buildWorld(opts: { initial: Record<string, string>; programs: Record<st
   const files = new Map(Object.entries(opts.initial))
   let checkpoint = new Map(files)
 
-  const base = (p: string): string => (p.replace(/^\.[/\\]/, "").split(/[/\\]/).pop() ?? p)
+  const base = (p: string): string =>
+    p
+      .replace(/^\.[/\\]/, "")
+      .split(/[/\\]/)
+      .pop() ?? p
 
   const execProgram = (command: string): { code: number; output: string } => {
     const parts = command.split("&&").map((s) => s.trim())
@@ -68,7 +72,11 @@ function buildWorld(opts: { initial: Record<string, string>; programs: Record<st
         const next = cur.split(String(args.old_string)).join(String(args.new_string))
         const ok = next !== cur
         if (ok) files.set(p, next)
-        return Effect.succeed({ ok, output: ok ? "edited" : `old_string not found in ${p}`, artifacts: new Map<string, string>() })
+        return Effect.succeed({
+          ok,
+          output: ok ? "edited" : `old_string not found in ${p}`,
+          artifacts: new Map<string, string>(),
+        })
       }
       const r = execProgram(String(args.command))
       return Effect.succeed({ ok: r.code === 0, output: r.output, artifacts: new Map<string, string>() })
@@ -81,12 +89,29 @@ function buildWorld(opts: { initial: Record<string, string>; programs: Record<st
       for (const [k, v] of checkpoint) files.set(k, v)
       return { ok: true as const, detail: "restored" }
     })
-  const doCheckpoint = () => Effect.sync(() => { checkpoint = new Map(files) })
+  const doCheckpoint = () =>
+    Effect.sync(() => {
+      checkpoint = new Map(files)
+    })
   return { files, runner, executor, listFiles, revertWorkspace, doCheckpoint }
 }
 
-const compound = (goals: string[]) => JSON.stringify({ goal: "root", size: "needs_decomposition", success: "ok", substeps: goals.map((goal) => ({ goal, size: "atomic", tool: "note", args: { text: "x" }, check: { type: "artifact_present" }, produces: [] })) })
-const atom = (over: Record<string, unknown>) => JSON.stringify({ goal: "step", size: "atomic", success: "ok", produces: [], ...over })
+const compound = (goals: string[]) =>
+  JSON.stringify({
+    goal: "root",
+    size: "needs_decomposition",
+    success: "ok",
+    substeps: goals.map((goal) => ({
+      goal,
+      size: "atomic",
+      tool: "note",
+      args: { text: "x" },
+      check: { type: "artifact_present" },
+      produces: [],
+    })),
+  })
+const atom = (over: Record<string, unknown>) =>
+  JSON.stringify({ goal: "step", size: "atomic", success: "ok", produces: [], ...over })
 
 function harness(opts: {
   world: ReturnType<typeof buildWorld>
@@ -104,7 +129,9 @@ function harness(opts: {
   const deps: JhEngine.Deps = {
     introspect: (p) => {
       opts.onPrompt?.(p.user)
-      return p.user.includes("Is the goal fully achieved?") ? Effect.succeed(`{"achieved": false}`) : Effect.succeed(replies[i++] ?? idle)
+      return p.user.includes("Is the goal fully achieved?")
+        ? Effect.succeed(`{"achieved": false}`)
+        : Effect.succeed(replies[i++] ?? idle)
     },
     correct: () => Effect.fail({ message: "x" }),
     executor: opts.world.executor,
@@ -128,14 +155,25 @@ function harness(opts: {
 
 const run = (deps: JhEngine.Deps) => Effect.runPromise(JhEngine.runTask(deps, { goal: "compute Pi to 100 digits" }))
 const log = (r: JhEngine.Report, t: string) => r.state.log.filter((e) => e.type === t)
-const verifDetails = (r: JhEngine.Report) => r.state.log.filter((e) => e.type === "verification").map((e) => String((e as { detail?: unknown }).detail ?? ""))
+const verifDetails = (r: JhEngine.Report) =>
+  r.state.log.filter((e) => e.type === "verification").map((e) => String((e as { detail?: unknown }).detail ?? ""))
 
 // ---- the run104 world: a COMPOUND builds bigint.o + t_add.exe and runs the test; the test passes iff
 // bigint.c still contains MAGIC; the compile only fails on BUILDERR. ----
-const COMPOUND = "set PATH=C:/w64devkit/bin;%PATH% && gcc -c bigint.c -o bigint.o && gcc t_add.c bigint.o -o t_add.exe && ./t_add.exe"
-const tAddProgram: Program = (f) => ((f.get("bigint.c") ?? "").includes("MAGIC") ? { code: 0, output: "PASS15" } : { code: 1, output: "FAIL: expected=4294967295 actual=99\nPASSED=13 FAILED=2" })
-const SETUP = atom({ goal: "build and test add", tool: "run", args: { command: COMPOUND }, check: { type: "run", command: COMPOUND, expect: "PASS15" } })
-const world104 = () => buildWorld({ initial: { "bigint.c": "lib MAGIC v1", "t_add.c": "test-src" }, programs: { "t_add.exe": tAddProgram } })
+const COMPOUND =
+  "set PATH=C:/w64devkit/bin;%PATH% && gcc -c bigint.c -o bigint.o && gcc t_add.c bigint.o -o t_add.exe && ./t_add.exe"
+const tAddProgram: Program = (f) =>
+  (f.get("bigint.c") ?? "").includes("MAGIC")
+    ? { code: 0, output: "PASS15" }
+    : { code: 1, output: "FAIL: expected=4294967295 actual=99\nPASSED=13 FAILED=2" }
+const SETUP = atom({
+  goal: "build and test add",
+  tool: "run",
+  args: { command: COMPOUND },
+  check: { type: "run", command: COMPOUND, expect: "PASS15" },
+})
+const world104 = () =>
+  buildWorld({ initial: { "bigint.c": "lib MAGIC v1", "t_add.c": "test-src" }, programs: { "t_add.exe": tAddProgram } })
 
 describe("jh-improve6 P1 — gate surgery", () => {
   test("run104 fixture: an edit that COMPILES but fails the test LANDS (no edit_rejected) and reports an honest fresh REGRESSION", async () => {
@@ -145,7 +183,12 @@ describe("jh-improve6 P1 — gate surgery", () => {
       replies: [
         compound(["build & test add", "improve the formula"]),
         SETUP,
-        atom({ goal: "improve", tool: "edit_file", args: { path: "bigint.c", old_string: "MAGIC", new_string: "NOMATCH" }, check: { type: "compile", command: "gcc -c bigint.c -o bigint.o" } }),
+        atom({
+          goal: "improve",
+          tool: "edit_file",
+          args: { path: "bigint.c", old_string: "MAGIC", new_string: "NOMATCH" },
+          check: { type: "compile", command: "gcc -c bigint.c -o bigint.o" },
+        }),
       ],
     })
     const r = await run(deps)
@@ -164,7 +207,12 @@ describe("jh-improve6 P1 — gate surgery", () => {
       replies: [
         compound(["build & test add", "improve the formula"]),
         SETUP,
-        atom({ goal: "improve", tool: "edit_file", args: { path: "bigint.c", old_string: "v1", new_string: "BUILDERR v1" }, check: { type: "compile", command: "gcc -c bigint.c -o bigint.o" } }),
+        atom({
+          goal: "improve",
+          tool: "edit_file",
+          args: { path: "bigint.c", old_string: "v1", new_string: "BUILDERR v1" },
+          check: { type: "compile", command: "gcc -c bigint.c -o bigint.o" },
+        }),
       ],
     })
     const r = await run(deps)
@@ -177,7 +225,12 @@ describe("jh-improve6 P1 — gate surgery", () => {
 
   test("the gate YIELDS after 3 consecutive rejections (across grown fix siblings) — one-shot-perfect is impossible", async () => {
     const world = world104()
-    const breaking = atom({ goal: "fix", tool: "edit_file", args: { path: "bigint.c", old_string: "v1", new_string: "BUILDERR v1" }, check: { type: "compile", command: "gcc -c bigint.c -o bigint.o" } })
+    const breaking = atom({
+      goal: "fix",
+      tool: "edit_file",
+      args: { path: "bigint.c", old_string: "v1", new_string: "BUILDERR v1" },
+      check: { type: "compile", command: "gcc -c bigint.c -o bigint.o" },
+    })
     const deps = harness({
       world,
       replies: [compound(["build & test add", "improve the formula"]), SETUP, breaking],
@@ -196,10 +249,22 @@ describe("jh-improve6 P1 — gate surgery", () => {
 describe("jh-improve6 P2 — gradient-aware damage", () => {
   test("a STILL-failing suite round is 'REGRESSION SUITE:' (progress-neutral) and never triggers the revert machinery", async () => {
     const world = world104()
-    const edit = (from: string, to: string) => atom({ goal: "improve", tool: "edit_file", args: { path: "bigint.c", old_string: from, new_string: to }, check: { type: "compile", command: "gcc -c bigint.c -o bigint.o" } })
+    const edit = (from: string, to: string) =>
+      atom({
+        goal: "improve",
+        tool: "edit_file",
+        args: { path: "bigint.c", old_string: from, new_string: to },
+        check: { type: "compile", command: "gcc -c bigint.c -o bigint.o" },
+      })
     const deps = harness({
       world,
-      replies: [compound(["build & test add", "improve the formula"]), SETUP, edit("MAGIC", "NOMATCH"), edit("v1", "v2"), edit("v2", "v3")],
+      replies: [
+        compound(["build & test add", "improve the formula"]),
+        SETUP,
+        edit("MAGIC", "NOMATCH"),
+        edit("v1", "v2"),
+        edit("v2", "v3"),
+      ],
     })
     const r = await run(deps)
     const details = verifDetails(r)
@@ -212,7 +277,12 @@ describe("jh-improve6 P2 — gradient-aware damage", () => {
 describe("jh-improve6 P3 — suspect tests (tests are code too)", () => {
   const editSeq = ["MAGIC→NOMATCH", "v1→v2", "v2→v3", "v3→v4", "v4→v5"].map((s) => {
     const [from, to] = s.split("→") as [string, string]
-    return atom({ goal: "improve", tool: "edit_file", args: { path: "bigint.c", old_string: from, new_string: to }, check: { type: "compile", command: "gcc -c bigint.c -o bigint.o" } })
+    return atom({
+      goal: "improve",
+      tool: "edit_file",
+      args: { path: "bigint.c", old_string: from, new_string: to },
+      check: { type: "compile", command: "gcc -c bigint.c -o bigint.o" },
+    })
   })
 
   test("a test red for SUSPECT_AFTER rounds (score non-regressing) becomes SUSPECT: fix node grown once, veto gone", async () => {
@@ -231,7 +301,9 @@ describe("jh-improve6 P3 — suspect tests (tests are code too)", () => {
     expect(prompts.some((u) => u.includes("Re-derive the TEST"))).toBe(true) // the one-time test-fix node
     // after suspicion, the suite never again vetoes on this test:
     const afterSeq = suspects[0]!.seq
-    const laterRegressions = (r.state.log.filter((e) => e.type === "verification" && e.seq > afterSeq) as Array<{ detail?: string }>).filter((e) => String(e.detail ?? "").startsWith("REGRESSION"))
+    const laterRegressions = (
+      r.state.log.filter((e) => e.type === "verification" && e.seq > afterSeq) as Array<{ detail?: string }>
+    ).filter((e) => String(e.detail ?? "").startsWith("REGRESSION"))
     expect(laterRegressions.length).toBe(0)
   })
 
@@ -252,7 +324,10 @@ describe("jh-improve6 P3 — suspect tests (tests are code too)", () => {
     // two tests: t_shared references only shared sources; t_only additionally references its own t_only.c.
     const world = buildWorld({
       initial: { "bigint.c": "lib MAGIC v1", "t_shared.c": "shared-test", "t_only.c": "only-test" },
-      programs: { "t_shared.exe": () => ({ code: 0, output: "OK-SHARED" }), "t_only.exe": () => ({ code: 0, output: "OK-ONLY" }) },
+      programs: {
+        "t_shared.exe": () => ({ code: 0, output: "OK-SHARED" }),
+        "t_only.exe": () => ({ code: 0, output: "OK-ONLY" }),
+      },
     })
     const SHARED = "gcc t_shared.c bigint.c -o t_shared.exe && ./t_shared.exe"
     const ONLY = "gcc t_only.c bigint.c -o t_only.exe && ./t_only.exe"
@@ -260,9 +335,24 @@ describe("jh-improve6 P3 — suspect tests (tests are code too)", () => {
       world,
       replies: [
         compound(["shared test", "own test", "break the test file"]),
-        atom({ goal: "shared", tool: "run", args: { command: SHARED }, check: { type: "run", command: SHARED, expect: "OK-SHARED" } }),
-        atom({ goal: "own", tool: "run", args: { command: ONLY }, check: { type: "run", command: ONLY, expect: "OK-ONLY" } }),
-        atom({ goal: "edit", tool: "edit_file", args: { path: "t_only.c", old_string: "only-test", new_string: "only BUILDERR" }, check: { type: "compile", command: "gcc -c bigint.c -o bigint.o" } }),
+        atom({
+          goal: "shared",
+          tool: "run",
+          args: { command: SHARED },
+          check: { type: "run", command: SHARED, expect: "OK-SHARED" },
+        }),
+        atom({
+          goal: "own",
+          tool: "run",
+          args: { command: ONLY },
+          check: { type: "run", command: ONLY, expect: "OK-ONLY" },
+        }),
+        atom({
+          goal: "edit",
+          tool: "edit_file",
+          args: { path: "t_only.c", old_string: "only-test", new_string: "only BUILDERR" },
+          check: { type: "compile", command: "gcc -c bigint.c -o bigint.o" },
+        }),
       ],
       limits: { maxDepth: 3, maxTotalSteps: 32 },
     })
@@ -276,10 +366,21 @@ describe("jh-improve6 P3 — suspect tests (tests are code too)", () => {
   test("an UNSANITIZED test (passed with implicit-declaration warnings) goes suspect on its FIRST failure", async () => {
     const world = buildWorld({
       initial: { "bigint.c": "lib MAGIC v1", "t_w.c": "warn-test" },
-      programs: { "t_w.exe": (f) => ((f.get("bigint.c") ?? "").includes("MAGIC") ? { code: 0, output: "PASS (implicit declaration of function 'bigint_cmp')" } : { code: 1, output: "FAIL" }) },
+      programs: {
+        "t_w.exe": (f) =>
+          (f.get("bigint.c") ?? "").includes("MAGIC")
+            ? { code: 0, output: "PASS (implicit declaration of function 'bigint_cmp')" }
+            : { code: 1, output: "FAIL" },
+      },
     })
     const W = "gcc t_w.c bigint.c -o t_w.exe && ./t_w.exe"
-    const edit = (from: string, to: string) => atom({ goal: "improve", tool: "edit_file", args: { path: "bigint.c", old_string: from, new_string: to }, check: { type: "compile", command: "gcc -c bigint.c -o bigint.o" } })
+    const edit = (from: string, to: string) =>
+      atom({
+        goal: "improve",
+        tool: "edit_file",
+        args: { path: "bigint.c", old_string: from, new_string: to },
+        check: { type: "compile", command: "gcc -c bigint.c -o bigint.o" },
+      })
     const deps = harness({
       world,
       replies: [
@@ -301,7 +402,12 @@ describe("jh-improve6 P5 — targeted numerics", () => {
   test("a score plateau with a green build injects the caller's hint into the NEXT introspection (never unprompted)", async () => {
     const world = buildWorld({ initial: { "s.c": "src" }, programs: { "s.exe": () => ({ code: 0, output: "OK" }) } })
     const RUN = "gcc s.c -o s.exe && ./s.exe"
-    const step = atom({ goal: "run it", tool: "run", args: { command: RUN }, check: { type: "run", command: RUN, expect: "OK" } })
+    const step = atom({
+      goal: "run it",
+      tool: "run",
+      args: { command: RUN },
+      check: { type: "run", command: RUN, expect: "OK" },
+    })
     const prompts: string[] = []
     const deps = harness({
       world,

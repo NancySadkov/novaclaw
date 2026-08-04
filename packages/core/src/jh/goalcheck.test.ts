@@ -8,7 +8,17 @@ import { JhEngine } from "./engine"
 // R2 (jh-improve1 P2) engine tests: the goal-check CACHE + EVIDENCE rule. A single atomic-root leaf with a
 // weak (artifact_present) check under verifyGoal fires the weak-leaf goal-check; the harness distinguishes a
 // goal-check LLM call from a step introspect by the prompt text, and counts them.
-const atom = (over: Record<string, unknown> = {}) => JSON.stringify({ goal: "leaf", size: "atomic", tool: "note", args: { text: "x" }, success: "ok", check: { type: "artifact_present" }, produces: [], ...over })
+const atom = (over: Record<string, unknown> = {}) =>
+  JSON.stringify({
+    goal: "leaf",
+    size: "atomic",
+    tool: "note",
+    args: { text: "x" },
+    success: "ok",
+    check: { type: "artifact_present" },
+    produces: [],
+    ...over,
+  })
 
 function gcHarness(opts: {
   step: string | (() => string)
@@ -47,16 +57,36 @@ function gcHarness(opts: {
   return { deps, goalCheckCalls: () => goalCheckCalls, stepCalls: () => stepCalls }
 }
 const run = (h: ReturnType<typeof gcHarness>) => Effect.runPromise(JhEngine.runTask(h.deps, { goal: "the task" }))
-const detailIncludes = (r: JhEngine.Report, s: string) => r.state.log.filter((e) => e.type === "verification" && String((e as { detail?: unknown }).detail).includes(s)).length
+const detailIncludes = (r: JhEngine.Report, s: string) =>
+  r.state.log.filter((e) => e.type === "verification" && String((e as { detail?: unknown }).detail).includes(s)).length
 
 // The evidence rule applies ONLY at the ROOT whole-task goal-check. This harness forces the root to
 // decompose into one child with a STRONG (run) check — so the child commits with NO weak-leaf goal-check —
 // then the root-completion gate runs the (evidence-gated) LLM goal-check. No taskComplete, so the LLM
 // fallback fires. The single goal-check reply is unambiguously the root's.
-function rootGcHarness(opts: { rootGoalCheck: string; files: () => Array<{ name: string; content: string }>; evidence?: boolean }) {
+function rootGcHarness(opts: {
+  rootGoalCheck: string
+  files: () => Array<{ name: string; content: string }>
+  evidence?: boolean
+}) {
   const steps = [
     atom({ goal: "whole task", produces: [] }), // root atomic → triggers the soft-decompose
-    JSON.stringify({ goal: "root", size: "needs_decomposition", success: "ok", substeps: [{ goal: "run it", size: "atomic", tool: "run", args: { command: "x" }, success: "ok", check: { type: "run", command: "x" }, produces: [] }] }),
+    JSON.stringify({
+      goal: "root",
+      size: "needs_decomposition",
+      success: "ok",
+      substeps: [
+        {
+          goal: "run it",
+          size: "atomic",
+          tool: "run",
+          args: { command: "x" },
+          success: "ok",
+          check: { type: "run", command: "x" },
+          produces: [],
+        },
+      ],
+    }),
     atom({ goal: "run it", tool: "run", args: { command: "x" }, check: { type: "run", command: "x" }, produces: [] }), // child introspect
   ]
   let i = 0
@@ -85,12 +115,18 @@ function rootGcHarness(opts: { rootGoalCheck: string; files: () => Array<{ name:
   }
   return { deps, rootGcCalls: () => rootGc }
 }
-const runRoot = (h: ReturnType<typeof rootGcHarness>) => Effect.runPromise(JhEngine.runTask(h.deps, { goal: "the task" }))
+const runRoot = (h: ReturnType<typeof rootGcHarness>) =>
+  Effect.runPromise(JhEngine.runTask(h.deps, { goal: "the task" }))
 
 describe("R2 goal-check evidence rule (root-only)", () => {
   test("the WEAK-LEAF never applies evidence: achieved:true with no quote commits even when evidence is ON", async () => {
     // a weak model can't verbatim-quote per step; the per-step goal-check must NOT demand it (run42/43 fix)
-    const h = gcHarness({ step: atom(), goalCheck: `{"achieved": true, "missing": ""}`, files: () => [{ name: "a", content: "x" }], evidence: true })
+    const h = gcHarness({
+      step: atom(),
+      goalCheck: `{"achieved": true, "missing": ""}`,
+      files: () => [{ name: "a", content: "x" }],
+      evidence: true,
+    })
     expect((await run(h)).status).toBe("done")
   })
 
@@ -115,7 +151,11 @@ describe("R2 goal-check evidence rule (root-only)", () => {
   })
 
   test("ROOT evidence OFF: achieved:true with no quote is accepted (pre-R2 behavior)", async () => {
-    const h = rootGcHarness({ rootGoalCheck: `{"achieved": true, "missing": ""}`, files: () => [{ name: "a", content: "x" }], evidence: false })
+    const h = rootGcHarness({
+      rootGoalCheck: `{"achieved": true, "missing": ""}`,
+      files: () => [{ name: "a", content: "x" }],
+      evidence: false,
+    })
     expect((await runRoot(h)).status).toBe("done")
   })
 })
@@ -138,7 +178,10 @@ describe("R2 goal-check cache", () => {
   test("a state change INVALIDATES the cache — a fresh goal-check per changed workspace", async () => {
     let tick = 0
     const h = gcHarness({
-      step: () => { tick++; return atom() }, // each iteration mutates the workspace
+      step: () => {
+        tick++
+        return atom()
+      }, // each iteration mutates the workspace
       goalCheck: `{"achieved": false, "missing": "no"}`,
       files: () => [{ name: "a", content: `state ${tick}` }],
       goalCheckCache: true,

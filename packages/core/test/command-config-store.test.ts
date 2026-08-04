@@ -63,7 +63,9 @@ describe("CommandConfigStore", () => {
 
       // Valid JSON, invalid shape — what a Registry hand-edit or a schema skew actually produces.
       yield* db
-        .run(sql`INSERT INTO command_config (name, layers, time_created, time_updated) VALUES ('broken', '"nope"', 0, 0)`)
+        .run(
+          sql`INSERT INTO command_config (name, layers, time_created, time_updated) VALUES ('broken', '"nope"', 0, 0)`,
+        )
         .pipe(Effect.orDie)
 
       const { value: commands, warnings } = yield* withWarnings(store.commands())
@@ -99,7 +101,10 @@ describe("CommandConfigStore", () => {
 
       yield* CommandConfigSeed.seedFromDirectory(globalDir)
       const first = yield* store.commands()
-      expect(first.review).toEqual([decodeCommand({ template: "global review" }), decodeCommand({ template: "project review" })])
+      expect(first.review).toEqual([
+        decodeCommand({ template: "global review" }),
+        decodeCommand({ template: "project review" }),
+      ])
       expect(first.docs).toEqual([decodeCommand({ template: "write docs" })])
 
       // A user edit after seeding must survive a re-seed (the isEmpty idempotence gate).

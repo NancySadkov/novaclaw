@@ -75,10 +75,7 @@ export const layer = Layer.effect(
       yield* publish(sessionID)
     })
 
-    const set = Effect.fn("SessionTags.set")(function* (
-      sessionID: SessionSchema.ID,
-      tags: ReadonlyArray<string>,
-    ) {
+    const set = Effect.fn("SessionTags.set")(function* (sessionID: SessionSchema.ID, tags: ReadonlyArray<string>) {
       const values = [...new Set(tags.map(normalizeTag).filter((tag): tag is string => tag !== undefined))].sort()
       yield* db
         .transaction((tx) =>

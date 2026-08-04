@@ -25,7 +25,11 @@ function buildWorld(opts: { initial: Record<string, string>; programs: Record<st
   const files = new Map(Object.entries(opts.initial))
   let checkpoint = new Map(files)
 
-  const base = (p: string): string => (p.replace(/^\.[/\\]/, "").split(/[/\\]/).pop() ?? p)
+  const base = (p: string): string =>
+    p
+      .replace(/^\.[/\\]/, "")
+      .split(/[/\\]/)
+      .pop() ?? p
 
   const execProgram = (command: string): { code: number; output: string } => {
     const parts = command.split("&&").map((s) => s.trim())
@@ -68,20 +72,35 @@ function buildWorld(opts: { initial: Record<string, string>; programs: Record<st
         const next = cur.split(String(args.old_string)).join(String(args.new_string))
         const ok = next !== cur
         if (ok) files.set(p, next)
-        return Effect.succeed({ ok, output: ok ? "edited" : `old_string not found in ${p} — the file's ACTUAL current content is shown in the context above`, artifacts: new Map<string, string>() })
+        return Effect.succeed({
+          ok,
+          output: ok
+            ? "edited"
+            : `old_string not found in ${p} — the file's ACTUAL current content is shown in the context above`,
+          artifacts: new Map<string, string>(),
+        })
       }
       if (tool === "replace_lines") {
         const p = base(String(args.path))
         const cur = files.get(p)
-        if (cur === undefined) return Effect.succeed({ ok: false, output: `file not found: ${p}`, artifacts: new Map<string, string>() })
+        if (cur === undefined)
+          return Effect.succeed({ ok: false, output: `file not found: ${p}`, artifacts: new Map<string, string>() })
         const lines = cur.split("\n")
         const first = Number(args.first_line)
         const last = Number(args.last_line)
         if (!Number.isInteger(first) || !Number.isInteger(last) || first < 1 || last > lines.length || first > last)
-          return Effect.succeed({ ok: false, output: `line range ${first}-${last} out of range`, artifacts: new Map<string, string>() })
+          return Effect.succeed({
+            ok: false,
+            output: `line range ${first}-${last} out of range`,
+            artifacts: new Map<string, string>(),
+          })
         lines.splice(first - 1, last - first + 1, ...String(args.new_content).split("\n"))
         files.set(p, lines.join("\n"))
-        return Effect.succeed({ ok: true, output: `replaced lines ${first}-${last} of ${p}`, artifacts: new Map<string, string>() })
+        return Effect.succeed({
+          ok: true,
+          output: `replaced lines ${first}-${last} of ${p}`,
+          artifacts: new Map<string, string>(),
+        })
       }
       const r = execProgram(String(args.command))
       return Effect.succeed({ ok: r.code === 0, output: r.output, artifacts: new Map<string, string>() })
@@ -94,12 +113,29 @@ function buildWorld(opts: { initial: Record<string, string>; programs: Record<st
       for (const [k, v] of checkpoint) files.set(k, v)
       return { ok: true as const, detail: "restored" }
     })
-  const doCheckpoint = () => Effect.sync(() => { checkpoint = new Map(files) })
+  const doCheckpoint = () =>
+    Effect.sync(() => {
+      checkpoint = new Map(files)
+    })
   return { files, runner, executor, listFiles, revertWorkspace, doCheckpoint }
 }
 
-const compound = (goals: string[]) => JSON.stringify({ goal: "root", size: "needs_decomposition", success: "ok", substeps: goals.map((goal) => ({ goal, size: "atomic", tool: "note", args: { text: "x" }, check: { type: "artifact_present" }, produces: [] })) })
-const atom = (over: Record<string, unknown>) => JSON.stringify({ goal: "step", size: "atomic", success: "ok", produces: [], ...over })
+const compound = (goals: string[]) =>
+  JSON.stringify({
+    goal: "root",
+    size: "needs_decomposition",
+    success: "ok",
+    substeps: goals.map((goal) => ({
+      goal,
+      size: "atomic",
+      tool: "note",
+      args: { text: "x" },
+      check: { type: "artifact_present" },
+      produces: [],
+    })),
+  })
+const atom = (over: Record<string, unknown>) =>
+  JSON.stringify({ goal: "step", size: "atomic", success: "ok", produces: [], ...over })
 
 function harness(opts: {
   world: ReturnType<typeof buildWorld>
@@ -121,7 +157,9 @@ function harness(opts: {
   const deps: JhEngine.Deps = {
     introspect: (p) => {
       opts.onPrompt?.(p.user)
-      return p.user.includes("Is the goal fully achieved?") ? Effect.succeed(`{"achieved": false}`) : Effect.succeed(replies[i++] ?? idle)
+      return p.user.includes("Is the goal fully achieved?")
+        ? Effect.succeed(`{"achieved": false}`)
+        : Effect.succeed(replies[i++] ?? idle)
     },
     correct: () => Effect.fail({ message: "x" }),
     executor: opts.world.executor,
@@ -149,8 +187,10 @@ function harness(opts: {
 
 const run = (deps: JhEngine.Deps) => Effect.runPromise(JhEngine.runTask(deps, { goal: "compute the value" }))
 const log = (r: JhEngine.Report, t: string) => r.state.log.filter((e) => e.type === t)
-const restores = (r: JhEngine.Report, reason: string) => (log(r, "restored_best") as Array<{ reason: string }>).filter((e) => e.reason === reason)
-const verifDetails = (r: JhEngine.Report) => r.state.log.filter((e) => e.type === "verification").map((e) => String((e as { detail?: unknown }).detail ?? ""))
+const restores = (r: JhEngine.Report, reason: string) =>
+  (log(r, "restored_best") as Array<{ reason: string }>).filter((e) => e.reason === reason)
+const verifDetails = (r: JhEngine.Report) =>
+  r.state.log.filter((e) => e.type === "verification").map((e) => String((e as { detail?: unknown }).detail ?? ""))
 
 // ---- the run112 world: s.exe reports a score derived from s.c; the graded oracle reads it off the last
 // output. GOOD source → 0.8, anything else → 0.2. ----
@@ -165,8 +205,18 @@ const scoreOracle: JhEngine.Deps["taskComplete"] = ({ lastOutput }) => ({
   detail: "not done",
   score: lastOutput.includes("SCORE:8") ? 0.8 : lastOutput.includes("SCORE:2") ? 0.2 : 0,
 })
-const RUN_STEP = atom({ goal: "run it", tool: "run", args: { command: RUN }, check: { type: "run", command: RUN, expect: "SCORE" } })
-const WORSEN = atom({ goal: "worsen", tool: "edit_file", args: { path: "s.c", old_string: "GOOD", new_string: "BAD" }, check: { type: "compile", command: "gcc -c s.c -o s.o" } })
+const RUN_STEP = atom({
+  goal: "run it",
+  tool: "run",
+  args: { command: RUN },
+  check: { type: "run", command: RUN, expect: "SCORE" },
+})
+const WORSEN = atom({
+  goal: "worsen",
+  tool: "edit_file",
+  args: { path: "s.c", old_string: "GOOD", new_string: "BAD" },
+  check: { type: "compile", command: "gcc -c s.c -o s.o" },
+})
 
 describe("jh-improve7 P1 — K5 restore-on-drop", () => {
   test("run112 fixture: two consecutive below-best samples restore the best snapshot mid-run (reason: drop)", async () => {
@@ -199,9 +249,15 @@ describe("jh-improve7 P1 — K5 restore-on-drop", () => {
   test("a best below RESTORE_FLOOR never drop-restores (restoring a 0.03 state is churn)", async () => {
     const world = buildWorld({
       initial: { "s.c": "prog GOOD v1" },
-      programs: { "s.exe": (f) => ({ code: 0, output: (f.get("s.c") ?? "").includes("GOOD") ? "SCORE:8" : "SCORE:2" }) },
+      programs: {
+        "s.exe": (f) => ({ code: 0, output: (f.get("s.c") ?? "").includes("GOOD") ? "SCORE:8" : "SCORE:2" }),
+      },
     })
-    const tinyOracle: JhEngine.Deps["taskComplete"] = ({ lastOutput }) => ({ done: false, detail: "nd", score: lastOutput.includes("SCORE:8") ? 0.08 : 0.02 })
+    const tinyOracle: JhEngine.Deps["taskComplete"] = ({ lastOutput }) => ({
+      done: false,
+      detail: "nd",
+      score: lastOutput.includes("SCORE:8") ? 0.08 : 0.02,
+    })
     const deps = harness({
       world,
       replies: [compound(["run", "worsen", "run", "run"]), RUN_STEP, WORSEN, RUN_STEP, RUN_STEP],
@@ -247,7 +303,11 @@ describe("jh-improve7 P1 — K5 terminal restore + wall-stop", () => {
 
   test("a clean DONE at the best score does not restore (nothing to un-do)", async () => {
     const world = scoreWorld()
-    const doneOracle: JhEngine.Deps["taskComplete"] = ({ lastOutput }) => ({ done: lastOutput.includes("SCORE:8"), detail: "d", score: lastOutput.includes("SCORE:8") ? 0.8 : 0.2 })
+    const doneOracle: JhEngine.Deps["taskComplete"] = ({ lastOutput }) => ({
+      done: lastOutput.includes("SCORE:8"),
+      detail: "d",
+      score: lastOutput.includes("SCORE:8") ? 0.8 : 0.2,
+    })
     const deps = harness({
       world,
       replies: [compound(["run"]), RUN_STEP],
@@ -268,7 +328,12 @@ describe("jh-improve7 P1 — K5 terminal restore + wall-stop", () => {
     // mid-rut, inside the endless leaf.
     let clock = 0
     let afterWorsen = 0
-    const MISS_FOREVER = atom({ goal: "fix", tool: "edit_file", args: { path: "s.c", old_string: "NO-SUCH", new_string: "y" }, check: { type: "artifact_present" } })
+    const MISS_FOREVER = atom({
+      goal: "fix",
+      tool: "edit_file",
+      args: { path: "s.c", old_string: "NO-SUCH", new_string: "y" },
+      check: { type: "artifact_present" },
+    })
     const deps = harness({
       world,
       // run → worsen → run (the regression gets MEASURED — a restore is score-keyed) → the endless rut.
@@ -277,7 +342,11 @@ describe("jh-improve7 P1 — K5 terminal restore + wall-stop", () => {
       taskComplete: scoreOracle,
       restoreOnDrop: false,
       coordMode: false, // keep the rut pure edit-miss (coord interception has its own tests)
-      budget: { startedAt: 0, wallMs: 1_000_000, now: () => ((world.files.get("s.c") ?? "").includes("BAD") && ++afterWorsen > 6 ? 2_000_000 : (clock += 1)) },
+      budget: {
+        startedAt: 0,
+        wallMs: 1_000_000,
+        now: () => ((world.files.get("s.c") ?? "").includes("BAD") && ++afterWorsen > 6 ? 2_000_000 : (clock += 1)),
+      },
       budgetAware: false,
       limits: { maxDepth: 3, maxTotalSteps: 64 },
     })
@@ -298,7 +367,11 @@ describe("jh-improve7 P1 — K5 terminal restore + wall-stop", () => {
       replies: [compound(["run", "worsen", "run"]), RUN_STEP, WORSEN, RUN_STEP],
       taskComplete: scoreOracle,
       restoreOnDrop: false,
-      budget: { startedAt: 0, wallMs: 1_000_000, now: () => ((world.files.get("s.c") ?? "").includes("BAD") && ++afterWorsen > 12 ? 2_000_000 : (clock += 1)) },
+      budget: {
+        startedAt: 0,
+        wallMs: 1_000_000,
+        now: () => ((world.files.get("s.c") ?? "").includes("BAD") && ++afterWorsen > 12 ? 2_000_000 : (clock += 1)),
+      },
       budgetAware: false, // isolate the wall-stop from the 50%/75% steers (their own tests exist)
       limits: { maxDepth: 3, maxTotalSteps: 64 },
     })
@@ -363,7 +436,12 @@ describe("jh-improve7 P1 — Report.keptBest tells the truth about the fallback"
 })
 
 // ---- the run111 world: the model keeps mis-quoting lib.c. ----
-const MISS = atom({ goal: "fix lib", tool: "edit_file", args: { path: "lib.c", old_string: "NO-SUCH-TEXT", new_string: "y" }, check: { type: "artifact_present" } })
+const MISS = atom({
+  goal: "fix lib",
+  tool: "edit_file",
+  args: { path: "lib.c", old_string: "NO-SUCH-TEXT", new_string: "y" },
+  check: { type: "artifact_present" },
+})
 
 describe("jh-improve7 P2 — C7 coord-mode", () => {
   test("run111 fixture: after 3 consecutive misses the file locks to coordinates (edit_file intercepted)", async () => {
@@ -388,7 +466,12 @@ describe("jh-improve7 P2 — C7 coord-mode", () => {
 
   test("a successful edit resets the miss count (2 misses + hit + 2 misses = no lock)", async () => {
     const world = buildWorld({ initial: { "lib.c": "line1\nline2\nline3" }, programs: {} })
-    const HIT = atom({ goal: "fix lib", tool: "edit_file", args: { path: "lib.c", old_string: "line2", new_string: "line2fixed" }, check: { type: "artifact_present" } })
+    const HIT = atom({
+      goal: "fix lib",
+      tool: "edit_file",
+      args: { path: "lib.c", old_string: "line2", new_string: "line2fixed" },
+      check: { type: "artifact_present" },
+    })
     const deps = harness({
       world,
       replies: [compound(["m", "m", "h", "m", "m"]), MISS, MISS, HIT, MISS, MISS],
@@ -400,7 +483,12 @@ describe("jh-improve7 P2 — C7 coord-mode", () => {
 
   test("a successful replace_lines UNLOCKS the file (edit_file executes again)", async () => {
     const world = buildWorld({ initial: { "lib.c": "line1\nline2\nline3" }, programs: {} })
-    const COORD = atom({ goal: "fix lib", tool: "replace_lines", args: { path: "lib.c", first_line: 2, last_line: 2, new_content: "line2fixed" }, check: { type: "artifact_present" } })
+    const COORD = atom({
+      goal: "fix lib",
+      tool: "replace_lines",
+      args: { path: "lib.c", first_line: 2, last_line: 2, new_content: "line2fixed" },
+      check: { type: "artifact_present" },
+    })
     const deps = harness({
       world,
       replies: [compound(["m", "m", "m", "coord", "m"]), MISS, MISS, MISS, COORD, MISS],
@@ -435,13 +523,19 @@ describe("jh-improve7 P3 — K4 numericsHintFor", () => {
   test("the caller-formatted directive is preferred over the static text and carries the measured score", async () => {
     const world = buildWorld({ initial: { "s.c": "src" }, programs: { "s.exe": () => ({ code: 0, output: "OK" }) } })
     const R = "gcc s.c -o s.exe && ./s.exe"
-    const step = atom({ goal: "run it", tool: "run", args: { command: R }, check: { type: "run", command: R, expect: "OK" } })
+    const step = atom({
+      goal: "run it",
+      tool: "run",
+      args: { command: R },
+      check: { type: "run", command: R, expect: "OK" },
+    })
     const prompts: string[] = []
     const deps = harness({
       world,
       replies: [compound(["a", "b", "c", "d", "e"]), step, step, step, step, step],
       numericsHint: "STATIC-HINT",
-      numericsHintFor: ({ bestScore }) => `PRECISE-HINT: correct to ~${Math.round(bestScore * 100)} digits — raise terms and guard digits`,
+      numericsHintFor: ({ bestScore }) =>
+        `PRECISE-HINT: correct to ~${Math.round(bestScore * 100)} digits — raise terms and guard digits`,
       taskComplete: () => ({ done: false, detail: "not done", score: 0.42 }),
       onPrompt: (u) => prompts.push(u),
       limits: { maxDepth: 3, maxTotalSteps: 32 },

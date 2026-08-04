@@ -7,14 +7,7 @@ import { useServer } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
 import { showToast } from "@/utils/toast"
 import { sessionHref } from "@/utils/session-route"
-import {
-  duplicateRecipe,
-  listRecipes,
-  removeRecipe,
-  runRecipe,
-  saveRecipe,
-  type Recipe,
-} from "@/utils/recipe-api"
+import { duplicateRecipe, listRecipes, removeRecipe, runRecipe, saveRecipe, type Recipe } from "@/utils/recipe-api"
 
 // The Recipes app (AGENTS.md → *Recipes are source code for the AI era*). A recipe is a folder of prompt +
 // assets; this page is where a normal person reads, edits, copies and COOKS one.
@@ -239,8 +232,8 @@ export function RecipesPage() {
             when={creating() || current()}
             fallback={
               <div class="text-sm text-v2-text-text-muted">
-                Pick a recipe on the left, or make a new one. Running a recipe copies it into a work folder and
-                starts a chat there — the recipe itself is never changed, so you can cook it again any time.
+                Pick a recipe on the left, or make a new one. Running a recipe copies it into a work folder and starts a
+                chat there — the recipe itself is never changed, so you can cook it again any time.
               </div>
             }
           >

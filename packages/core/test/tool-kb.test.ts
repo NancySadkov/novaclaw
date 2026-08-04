@@ -32,7 +32,10 @@ const stub = MemoryClient.stub()
 // `ingest` reads a real file through LocationMutation, so the tool now needs a Location to resolve
 // relative paths against.
 const workdir = fs.mkdtempSync(nodePath.join(os.tmpdir(), "kb-tool-"))
-const locationLayer = Layer.succeed(Location.Service, Location.Service.of(location({ directory: AbsolutePath.make(workdir) })))
+const locationLayer = Layer.succeed(
+  Location.Service,
+  Location.Service.of(location({ directory: AbsolutePath.make(workdir) })),
+)
 
 // Ingest reads a real file, so it must ride the permission gate like any other read. Record the
 // assertions so the test can PROVE the gate fires rather than assuming it.
@@ -77,7 +80,9 @@ describe("KbTool (memory)", () => {
       expect(materialized.definitions.map((tool) => tool.name)).not.toContain(KbTool.name)
       expect(materialized.deferred.map((source) => source.definition.name)).toContain(KbTool.name)
 
-      const saved = text(yield* executeTool(registry, call({ op: "remember", text: "The user prefers strict typing", name: "prefs" })))
+      const saved = text(
+        yield* executeTool(registry, call({ op: "remember", text: "The user prefers strict typing", name: "prefs" })),
+      )
       expect(saved).toContain("Remembered (mem_")
 
       const found = text(yield* executeTool(registry, call({ op: "search", query: "strict" })))
@@ -99,8 +104,12 @@ describe("KbTool (memory)", () => {
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
       yield* executeTool(registry, call({ op: "remember", text: "note about kangaroos", scope: "session" }))
-      expect(text(yield* executeTool(registry, call({ op: "search", query: "kangaroos", scope: "global" })))).toContain("No memories match")
-      expect(text(yield* executeTool(registry, call({ op: "search", query: "kangaroos", scope: "session" })))).toContain("kangaroos")
+      expect(text(yield* executeTool(registry, call({ op: "search", query: "kangaroos", scope: "global" })))).toContain(
+        "No memories match",
+      )
+      expect(
+        text(yield* executeTool(registry, call({ op: "search", query: "kangaroos", scope: "session" }))),
+      ).toContain("kangaroos")
     }),
   )
 
@@ -111,7 +120,9 @@ describe("KbTool (memory)", () => {
       const id = saved.match(/mem_[A-Za-z0-9]+/)?.[0] ?? ""
       expect(id).not.toBe("")
       yield* executeTool(registry, call({ op: "forget", id }))
-      expect(text(yield* executeTool(registry, call({ op: "search", query: "zorblatt" })))).toContain("No memories match")
+      expect(text(yield* executeTool(registry, call({ op: "search", query: "zorblatt" })))).toContain(
+        "No memories match",
+      )
     }),
   )
 
@@ -120,7 +131,9 @@ describe("KbTool (memory)", () => {
       const registry = yield* ToolRegistry.Service
       const idOf = (out: string) => out.match(/mem_[A-Za-z0-9]+/)?.[0] ?? ""
       const a = idOf(text(yield* executeTool(registry, call({ op: "remember", text: "Ada Lovelace", name: "Ada" }))))
-      const b = idOf(text(yield* executeTool(registry, call({ op: "remember", text: "the Analytical Engine notes", name: "Note" }))))
+      const b = idOf(
+        text(yield* executeTool(registry, call({ op: "remember", text: "the Analytical Engine notes", name: "Note" }))),
+      )
       expect(a).not.toBe("")
       expect(b).not.toBe("")
       // The relationship label is normalized to a clean predicate token.
@@ -136,7 +149,10 @@ describe("KbTool (memory)", () => {
   it.effect("neighbors of an unlinked memory points at relate", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
-      const lonely = text(yield* executeTool(registry, call({ op: "remember", text: "an unconnected note about narwhals" }))).match(/mem_[A-Za-z0-9]+/)?.[0] ?? ""
+      const lonely =
+        text(yield* executeTool(registry, call({ op: "remember", text: "an unconnected note about narwhals" }))).match(
+          /mem_[A-Za-z0-9]+/,
+        )?.[0] ?? ""
       const nb = text(yield* executeTool(registry, call({ op: "neighbors", id: lonely })))
       expect(nb).toContain("relate")
     }),
@@ -147,7 +163,13 @@ describe("KbTool (memory)", () => {
       const registry = yield* ToolRegistry.Service
       fs.writeFileSync(
         nodePath.join(workdir, "manual.txt"),
-        ["D20 ATTACK", "1. Miss and actor gains Disadvantage", "", "BRACED", "Spend 10 XP (5 if CLEVER) to gain BRACED."].join(String.fromCharCode(10)),
+        [
+          "D20 ATTACK",
+          "1. Miss and actor gains Disadvantage",
+          "",
+          "BRACED",
+          "Spend 10 XP (5 if CLEVER) to gain BRACED.",
+        ].join(String.fromCharCode(10)),
       )
       permissionAsserts.length = 0
       const first = text(yield* executeTool(registry, call({ op: "ingest", path: "manual.txt" })))

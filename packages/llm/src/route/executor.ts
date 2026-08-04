@@ -309,86 +309,93 @@ const statusError =
 const toHttpError =
   (redactedNames: ReadonlyArray<string | RegExp>, outgoing: HttpClientRequest.HttpClientRequest) =>
   (error: unknown) => {
-  const transportError = (input: {
-    readonly message: string
-    readonly kind?: string | undefined
-    readonly request?: HttpClientRequest.HttpClientRequest | undefined
-  }) =>
-    new LLMError({
-      module: "RequestExecutor",
-      method: "execute",
-      reason: new TransportReason({
-        message: input.message,
-        kind: input.kind,
-        url: input.request ? redactUrl(input.request.url) : undefined,
-        http: input.request ? new HttpContext({ request: requestDetails(input.request, redactedNames) }) : undefined,
-      }),
-    })
+    const transportError = (input: {
+      readonly message: string
+      readonly kind?: string | undefined
+      readonly request?: HttpClientRequest.HttpClientRequest | undefined
+    }) =>
+      new LLMError({
+        module: "RequestExecutor",
+        method: "execute",
+        reason: new TransportReason({
+          message: input.message,
+          kind: input.kind,
+          url: input.request ? redactUrl(input.request.url) : undefined,
+          http: input.request ? new HttpContext({ request: requestDetails(input.request, redactedNames) }) : undefined,
+        }),
+      })
 
-  if (Cause.isTimeoutError(error)) {
-    return transportError({ message: `${error.message} (target ${redactUrl(outgoing.url)})`, kind: "Timeout", request: outgoing })
-  }
-  if (!HttpClientError.isHttpClientError(error)) {
-    // Surface the underlying failure instead of a catch-all. The bare
-    // "HTTP transport failed" hides the real cause (ECONNREFUSED / ENOTFOUND /
-    // TLS / proxy / runtime), which makes transport bugs (esp. cross-runtime,
-    // e.g. the Electron sidecar vs bun) far harder to diagnose.
-    const detail =
-      error instanceof Error
-        ? error.message +
-          (error.cause !== undefined
-            ? ` | cause: ${String((error.cause as { message?: unknown })?.message ?? error.cause)}`
-            : "")
-        : String(error)
-    // Always name the target host:port — the #1 diagnostic lead, so a user (or an
-    // online model reading the transcript) can tell a dead/misconfigured endpoint
-    // from a real outage without rebuilding the app with extra logging.
-    return transportError({ message: `HTTP transport failed: ${detail} (target ${redactUrl(outgoing.url)})`, request: outgoing })
-  }
-  const request = ("request" in error ? error.request : undefined) ?? outgoing
-  // A LOCAL egress policy refused this request — it never left the machine. That is a DECISION,
-  // not an outage, so it gets its own reason instead of being flattened into Transport: filing
-  // both under one tag made a deliberate airgap block and a dead vLLM box indistinguishable
-  // downstream, forced `provider-retry.ts` to special-case a `kind` string to stop retrying a
-  // verdict, and forced the display layer to parse this function's own prose back apart. Ruling 2
-  // — a fault is never described falsely.
-  const blocked = "cause" in error.reason ? error.reason.cause : undefined
-  if (isEgressBlocked(blocked)) {
-    return new LLMError({
-      module: "RequestExecutor",
-      method: "execute",
-      reason: new OfflineBlockedReason({
-        // The policy's own words stay verbatim — they carry the remedy ("add the provider …,
-        // extend NOVACLAW_OFFLINE_ALLOW …, or turn offline mode off"), which no i18n key could —
-        // and the `(target …)` suffix is what lets a display recover the host for its headline.
-        message: `${blocked.reason} (target ${redactUrl(request.url)})`,
-        host: blocked.host,
-        url: redactUrl(request.url),
-        http: new HttpContext({ request: requestDetails(request, redactedNames) }),
-      }),
-    })
-  }
-  if (error.reason._tag === "TransportError") {
+    if (Cause.isTimeoutError(error)) {
+      return transportError({
+        message: `${error.message} (target ${redactUrl(outgoing.url)})`,
+        kind: "Timeout",
+        request: outgoing,
+      })
+    }
+    if (!HttpClientError.isHttpClientError(error)) {
+      // Surface the underlying failure instead of a catch-all. The bare
+      // "HTTP transport failed" hides the real cause (ECONNREFUSED / ENOTFOUND /
+      // TLS / proxy / runtime), which makes transport bugs (esp. cross-runtime,
+      // e.g. the Electron sidecar vs bun) far harder to diagnose.
+      const detail =
+        error instanceof Error
+          ? error.message +
+            (error.cause !== undefined
+              ? ` | cause: ${String((error.cause as { message?: unknown })?.message ?? error.cause)}`
+              : "")
+          : String(error)
+      // Always name the target host:port — the #1 diagnostic lead, so a user (or an
+      // online model reading the transcript) can tell a dead/misconfigured endpoint
+      // from a real outage without rebuilding the app with extra logging.
+      return transportError({
+        message: `HTTP transport failed: ${detail} (target ${redactUrl(outgoing.url)})`,
+        request: outgoing,
+      })
+    }
+    const request = ("request" in error ? error.request : undefined) ?? outgoing
+    // A LOCAL egress policy refused this request — it never left the machine. That is a DECISION,
+    // not an outage, so it gets its own reason instead of being flattened into Transport: filing
+    // both under one tag made a deliberate airgap block and a dead vLLM box indistinguishable
+    // downstream, forced `provider-retry.ts` to special-case a `kind` string to stop retrying a
+    // verdict, and forced the display layer to parse this function's own prose back apart. Ruling 2
+    // — a fault is never described falsely.
+    const blocked = "cause" in error.reason ? error.reason.cause : undefined
+    if (isEgressBlocked(blocked)) {
+      return new LLMError({
+        module: "RequestExecutor",
+        method: "execute",
+        reason: new OfflineBlockedReason({
+          // The policy's own words stay verbatim — they carry the remedy ("add the provider …,
+          // extend NOVACLAW_OFFLINE_ALLOW …, or turn offline mode off"), which no i18n key could —
+          // and the `(target …)` suffix is what lets a display recover the host for its headline.
+          message: `${blocked.reason} (target ${redactUrl(request.url)})`,
+          host: blocked.host,
+          url: redactUrl(request.url),
+          http: new HttpContext({ request: requestDetails(request, redactedNames) }),
+        }),
+      })
+    }
+    if (error.reason._tag === "TransportError") {
+      return transportError({
+        message: error.reason.description ?? "HTTP transport failed",
+        kind: error.reason._tag,
+        request,
+      })
+    }
+    // Keep the reason's own description when it has one. ⚠️ The offline chokepoint used to be the
+    // motivating case and is now handled above by type; what still lands here is the residual
+    // `HttpClientError` set (`EncodeError`, `DecodeError`, `EmptyBodyError`, and the platform's own
+    // malformed-URL `InvalidUrlError`), where the description is the only accurate text there is.
+    // Giving each of those a typed arm is the next step, not this one.
+    const described = "description" in error.reason && error.reason.description
     return transportError({
-      message: error.reason.description ?? "HTTP transport failed",
+      message: described
+        ? `HTTP transport failed: ${error.reason._tag} — ${error.reason.description}`
+        : `HTTP transport failed: ${error.reason._tag}`,
       kind: error.reason._tag,
       request,
     })
   }
-  // Keep the reason's own description when it has one. ⚠️ The offline chokepoint used to be the
-  // motivating case and is now handled above by type; what still lands here is the residual
-  // `HttpClientError` set (`EncodeError`, `DecodeError`, `EmptyBodyError`, and the platform's own
-  // malformed-URL `InvalidUrlError`), where the description is the only accurate text there is.
-  // Giving each of those a typed arm is the next step, not this one.
-  const described = "description" in error.reason && error.reason.description
-  return transportError({
-    message: described
-      ? `HTTP transport failed: ${error.reason._tag} — ${error.reason.description}`
-      : `HTTP transport failed: ${error.reason._tag}`,
-    kind: error.reason._tag,
-    request,
-  })
-}
 
 const retryDelay = (error: LLMError, attempt: number) => {
   if (error.retryAfterMs !== undefined) return Effect.succeed(Math.min(error.retryAfterMs, MAX_DELAY_MS))
@@ -420,7 +427,10 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient> = Layer.e
         const redactedNames = yield* Headers.CurrentRedactedNames
         return yield* http
           .execute(request)
-          .pipe(Effect.mapError(toHttpError(redactedNames, request)), Effect.flatMap(statusError(request, redactedNames)))
+          .pipe(
+            Effect.mapError(toHttpError(redactedNames, request)),
+            Effect.flatMap(statusError(request, redactedNames)),
+          )
       })
     return Service.of({
       execute: (request) => retryStatusFailures(executeOnce(request)),

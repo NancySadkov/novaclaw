@@ -35,7 +35,7 @@ const KEPT_WITHOUT_IMPORTS: Record<string, Record<string, string>> = {
     typescript: "toolchain binary (tsc), never imported",
     "@typescript/native-preview": "toolchain binary (tsgo) — this package's `typecheck` script",
     tailwindcss:
-      "zero imports and probably redundant (@tailwindcss/vite pins tailwindcss@4.1.11 itself, and the only CSS `@import \"tailwindcss/*\"` lives in packages/ui). NOT removed: unprovable without a real `vite build`. Verify, then delete this line and the dependency.",
+      'zero imports and probably redundant (@tailwindcss/vite pins tailwindcss@4.1.11 itself, and the only CSS `@import "tailwindcss/*"` lives in packages/ui). NOT removed: unprovable without a real `vite build`. Verify, then delete this line and the dependency.',
   },
   ui: {
     typescript: "toolchain binary (tsc) — this package's `build` script",
@@ -77,8 +77,23 @@ const SOURCE_EXT = /\.(?:m|c)?[jt]sx?$|\.css$/
 
 // Node builtins that appear WITHOUT the `node:` prefix. Never a manifest entry.
 const NODE_BUILTINS = new Set([
-  "assert", "buffer", "child_process", "crypto", "events", "fs", "http", "https", "module", "os",
-  "path", "process", "stream", "url", "util", "worker_threads", "zlib",
+  "assert",
+  "buffer",
+  "child_process",
+  "crypto",
+  "events",
+  "fs",
+  "http",
+  "https",
+  "module",
+  "os",
+  "path",
+  "process",
+  "stream",
+  "url",
+  "util",
+  "worker_threads",
+  "zlib",
 ])
 
 /**

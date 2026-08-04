@@ -3,10 +3,7 @@ import { Effect, Layer, Schema } from "effect"
 import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { Database } from "@novaclaw/core/database/database"
 
-import {
-  UNKNOWN_CONFIG_KEY_KIND,
-  unknownConfigKeys,
-} from "../../src/server/routes/instance/httpapi/groups/config"
+import { UNKNOWN_CONFIG_KEY_KIND, unknownConfigKeys } from "../../src/server/routes/instance/httpapi/groups/config"
 import { GlobalPaths } from "../../src/server/routes/instance/httpapi/groups/global"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"

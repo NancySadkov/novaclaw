@@ -14,7 +14,11 @@
 //
 // Usage:  bun script/kb/nova-query-eval.ts --n 24 --facts rockfacts.jsonl --out nova-eval.json
 
-interface Triple { s: string; p: string; o: string }
+interface Triple {
+  s: string
+  p: string
+  o: string
+}
 
 const args = new Map<string, string>()
 for (let i = 2; i < Bun.argv.length; i += 2) {
@@ -28,10 +32,13 @@ const MODEL = args.get("model") ?? "qwen3.6-35b"
 async function loadFacts(): Promise<Triple[]> {
   const file = args.get("facts")!
   const text = await Bun.file(file).text()
-  return text.trim().split("\n").map((l) => {
-    const f = JSON.parse(l) as { subject: string; predicate: string; object: string }
-    return { s: f.subject, p: f.predicate, o: f.object }
-  })
+  return text
+    .trim()
+    .split("\n")
+    .map((l) => {
+      const f = JSON.parse(l) as { subject: string; predicate: string; object: string }
+      return { s: f.subject, p: f.predicate, o: f.object }
+    })
 }
 
 const triples = await loadFacts()
@@ -46,7 +53,10 @@ for (const t of triples) {
 // This is the trick that hides the name->slug indirection the model shouldn't have to author.
 function toSubject(value: string): string {
   if (slugSet.has(value)) return value
-  const bySlug = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+  const bySlug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
   if (slugSet.has(bySlug)) return bySlug
   return nameToSlug.get(value.toLowerCase()) ?? value
 }
@@ -124,8 +134,12 @@ function execNova(q: NovaQuery): string[] {
     case "neighbors": {
       const dir = q.direction ?? "out"
       if (dir === "in")
-        return triples.filter((t) => t.p === q.predicate && toSubject(t.o) === toSubject(q.entity ?? "")).map((t) => t.s)
-      return factsOf(q.entity ?? "").filter((t) => !q.predicate || t.p === q.predicate).map((t) => t.o)
+        return triples
+          .filter((t) => t.p === q.predicate && toSubject(t.o) === toSubject(q.entity ?? ""))
+          .map((t) => t.s)
+      return factsOf(q.entity ?? "")
+        .filter((t) => !q.predicate || t.p === q.predicate)
+        .map((t) => t.o)
     }
     case "count":
       return [String(new Set(runMatch(q.where ?? [], q.find ?? [], 100000)).size)]
@@ -152,7 +166,11 @@ const NOVA_SCHEMA = {
 }
 
 // ── question generation (same schema as query-eval.ts: 1-hop + 2-hop name->slug joins) ──────
-interface Question { text: string; answers: string[]; hops: 1 | 2 }
+interface Question {
+  text: string
+  answers: string[]
+  hops: 1 | 2
+}
 function buildQuestions(): Question[] {
   const get = (s: string, p: string) => byS.get(s)?.find((t) => t.p === p)?.o
   const musicians = triples.filter((t) => t.p === "type" && t.o === "musician").map((t) => t.s)
@@ -212,9 +230,7 @@ function parseSparql(query: string): { patterns: Pattern[]; select: string[] } {
     if (toks.length === 3) patterns.push([spTerm(toks[0]!), spTerm(toks[1]!), spTerm(toks[2]!)])
   }
   const select =
-    projected === "*"
-      ? [...new Set(patterns.flat().filter(isVar))]
-      : (projected.match(/\?(\w+)/g) ?? []).map((v) => v)
+    projected === "*" ? [...new Set(patterns.flat().filter(isVar))] : (projected.match(/\?(\w+)/g) ?? []).map((v) => v)
   return { patterns, select }
 }
 function tokenizeTriple(stmt: string): string[] {
@@ -266,7 +282,9 @@ async function authorNova(question: string, guided: boolean): Promise<{ query: s
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
-  }).then((r) => r.json()).catch(() => undefined)
+  })
+    .then((r) => r.json())
+    .catch(() => undefined)
   return { query: (res as any)?.choices?.[0]?.message?.content ?? "" }
 }
 async function authorSparql(question: string): Promise<string> {
@@ -280,7 +298,9 @@ async function authorSparql(question: string): Promise<string> {
       chat_template_kwargs: NO_THINK,
       messages: [{ role: "user", content: PROMPTS.sparql(question) }],
     }),
-  }).then((r) => r.json()).catch(() => undefined)
+  })
+    .then((r) => r.json())
+    .catch(() => undefined)
   const text = (res as any)?.choices?.[0]?.message?.content ?? ""
   const fence = /```(?:sparql)?\s*([\s\S]*?)```/i.exec(text)
   return (fence ? fence[1]! : text).trim()
@@ -306,7 +326,11 @@ const correct = (got: string[], answers: string[]) => {
 }
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────
-if (!(await fetch(`${VLLM}/models`).then((r) => r.ok).catch(() => false))) {
+if (
+  !(await fetch(`${VLLM}/models`)
+    .then((r) => r.ok)
+    .catch(() => false))
+) {
   console.error("model backend not reachable at " + VLLM)
   process.exit(1)
 }
@@ -314,12 +338,18 @@ console.log(`loaded ${triples.length} triples`)
 const all = buildQuestions()
 const oneHop = all.filter((q) => q.hops === 1)
 const twoHop = all.filter((q) => q.hops === 2)
-const pick = <T>(xs: T[], k: number) => (xs.length <= k ? xs : xs.filter((_, i) => i % Math.floor(xs.length / k) === 0).slice(0, k))
+const pick = <T>(xs: T[], k: number) =>
+  xs.length <= k ? xs : xs.filter((_, i) => i % Math.floor(xs.length / k) === 0).slice(0, k)
 const questions = [...pick(oneHop, Math.ceil(N * 0.6)), ...pick(twoHop, Math.floor(N * 0.4))]
-console.log(`evaluating ${questions.length} questions (${questions.filter((q) => q.hops === 1).length} 1-hop, ${questions.filter((q) => q.hops === 2).length} 2-hop) × 3 arms\n`)
+console.log(
+  `evaluating ${questions.length} questions (${questions.filter((q) => q.hops === 1).length} 1-hop, ${questions.filter((q) => q.hops === 2).length} 2-hop) × 3 arms\n`,
+)
 
 const arms = ["nova", "nova-guided", "sparql"] as const
-const score: Record<string, { ok: number; total: number; ok1: number; t1: number; ok2: number; t2: number; err: number }> = {}
+const score: Record<
+  string,
+  { ok: number; total: number; ok1: number; t1: number; ok2: number; t2: number; err: number }
+> = {}
 for (const a of arms) score[a] = { ok: 0, total: 0, ok1: 0, t1: 0, ok2: 0, t2: 0, err: 0 }
 const samples: any[] = []
 
@@ -368,7 +398,9 @@ const pct = (n: number, d: number) => (d === 0 ? "  n/a" : `${((100 * n) / d).to
 console.log("arm           overall     1-hop     2-hop   parse-errors")
 for (const arm of arms) {
   const s = score[arm]!
-  console.log(`${arm.padEnd(12)}  ${pct(s.ok, s.total)} (${s.ok}/${s.total})   ${pct(s.ok1, s.t1)}   ${pct(s.ok2, s.t2)}   ${s.err}`)
+  console.log(
+    `${arm.padEnd(12)}  ${pct(s.ok, s.total)} (${s.ok}/${s.total})   ${pct(s.ok1, s.t1)}   ${pct(s.ok2, s.t2)}   ${s.err}`,
+  )
 }
 
 const out = args.get("out")

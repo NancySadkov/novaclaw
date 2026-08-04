@@ -31,17 +31,10 @@ const MINUTE = 60_000
 const MAX_SCAN_DAYS = 800 // covers `yearly` (incl. a Feb-29 gap) with headroom
 
 /** Days in a 1-based month of a given year (handles leap Feb). */
-export const daysInMonth = (year: number, month1: number): number =>
-  new Date(Date.UTC(year, month1, 0)).getUTCDate()
+export const daysInMonth = (year: number, month1: number): number => new Date(Date.UTC(year, month1, 0)).getUTCDate()
 
 /** Does the recurrence fire on this wall-clock calendar day? (time-of-day is applied by the caller.) */
-const matchesDay = (
-  rec: Recurrence,
-  year: number,
-  month1: number,
-  day: number,
-  weekday: Weekday,
-): boolean => {
+const matchesDay = (rec: Recurrence, year: number, month1: number, day: number, weekday: Weekday): boolean => {
   switch (rec.kind) {
     case "once":
       return false // handled directly in nextFire

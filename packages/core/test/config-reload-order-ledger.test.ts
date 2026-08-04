@@ -56,7 +56,11 @@ describe("reload domain order", () => {
 
   test("staleDomains preserves RELOAD_DOMAINS order for a multi-key write", () => {
     const domains = ConfigStoreWrite.staleDomains(new Set(["mcp", "agents", "formatter", "providers"]))
-    expect(domains).toEqual([...domains].sort((a, b) => ConfigStoreWrite.RELOAD_DOMAINS.indexOf(a) - ConfigStoreWrite.RELOAD_DOMAINS.indexOf(b)))
+    expect(domains).toEqual(
+      [...domains].sort(
+        (a, b) => ConfigStoreWrite.RELOAD_DOMAINS.indexOf(a) - ConfigStoreWrite.RELOAD_DOMAINS.indexOf(b),
+      ),
+    )
     expect(domains[0]).toBe("instance_config")
   })
 

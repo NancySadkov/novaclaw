@@ -25,12 +25,14 @@ import { LocalModelRuntime } from "@/local-model/runtime"
 // builds it once. Do NOT call buildLocationServiceMap again elsewhere in the server, and do NOT
 // use core's plain `locationServiceMapLayer` inside the server graph (headless CLI debug
 // commands in their own process are the only legitimate consumers of the plain layer).
-export const layer: Layer.Layer<LocationServiceMap.Service> = buildLocationServiceMap([
+export const replacements: LayerNode.Replacements = [
   [ExternalToolSource.node, AggregateExternalToolSource.node],
   [ExternalCommandSource.node, McpExternalCommandSource.node],
   [ResourcePressureContext.node, StorageResourcePressureContext.node],
   [LocalModelManager.node, LocalModelRuntime.node],
-])
+]
+
+export const layer: Layer.Layer<LocationServiceMap.Service> = buildLocationServiceMap(replacements)
 
 export const node = LayerNode.make({
   service: LocationServiceMap.Service,

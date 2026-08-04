@@ -72,14 +72,6 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/project/bootstrap.ts :: Effect.logInfo(\"bootstrapping\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/project/bootstrap.ts :: Effect.logWarning(\"init failed\")",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/server/global-lifecycle.ts :: Effect.logWarning(\"global disposal failed\")",
     "count": 1
   },

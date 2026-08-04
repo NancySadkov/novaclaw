@@ -211,7 +211,9 @@ const renderedFeatures = (): string[] => {
 
 const featureCopyKeys = (): Set<string> => {
   const source = read(EN)
-  return new Set([...source.matchAll(/"prompt\.features\.([A-Za-z]+)\.(title|description)"/g)].map((m) => `${m[1]}.${m[2]}`))
+  return new Set(
+    [...source.matchAll(/"prompt\.features\.([A-Za-z]+)\.(title|description)"/g)].map((m) => `${m[1]}.${m[2]}`),
+  )
 }
 
 describe("safe mode — the control the deny message promises actually exists", () => {
@@ -224,7 +226,9 @@ describe("safe mode — the control the deny message promises actually exists", 
 
   test("`safeMode` is on the Tuning panel", () => {
     // Anti-obscurantist UI (standing decision): a per-session toggle is a VISIBLE composer control.
-    expect(renderedFeatures(), "the product tells the user to turn off a switch that is not there").toContain("safeMode")
+    expect(renderedFeatures(), "the product tells the user to turn off a switch that is not there").toContain(
+      "safeMode",
+    )
   })
 
   test("every feature the panel renders is a kernel feature name", () => {
@@ -238,7 +242,9 @@ describe("safe mode — the control the deny message promises actually exists", 
   test("every kernel feature name has readable words in `en`", () => {
     const copy = featureCopyKeys()
     const missing = SessionFeature.Name.literals.flatMap((name) =>
-      ["title", "description"].filter((part) => !copy.has(`${name}.${part}`)).map((part) => `prompt.features.${name}.${part}`),
+      ["title", "description"]
+        .filter((part) => !copy.has(`${name}.${part}`))
+        .map((part) => `prompt.features.${name}.${part}`),
     )
     expect(missing.join("\n"), "add these to packages/app/src/i18n/en.ts").toBe("")
   })

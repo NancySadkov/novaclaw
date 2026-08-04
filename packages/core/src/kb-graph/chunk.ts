@@ -23,8 +23,14 @@ export const CHUNK_CHARS = 900
  *  Keyed on (source label + passage text): the same passage from the same document always lands on the
  *  same id, and the engine's primary key rejects the duplicate. */
 export const passageID = (label: string, text: string) =>
-  "mem_p" + createHash("sha256").update(`${label}
-${text}`).digest("hex").slice(0, 24)
+  "mem_p" +
+  createHash("sha256")
+    .update(
+      `${label}
+${text}`,
+    )
+    .digest("hex")
+    .slice(0, 24)
 
 /** Strip Project Gutenberg boilerplate when present; a no-op for other sources. */
 export const stripGutenberg = (raw: string): string => {

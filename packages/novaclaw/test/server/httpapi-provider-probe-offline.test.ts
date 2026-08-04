@@ -121,7 +121,10 @@ describe("the provider probe rides the guarded HttpClient", () => {
       const url = `${candidate.baseURL}/models`
       const { result, seen } = await probe(AIRGAP, url)
       expect(result.kind, candidate.id).toBe("ok")
-      expect(seen.map((entry) => entry.url), candidate.id).toEqual([url])
+      expect(
+        seen.map((entry) => entry.url),
+        candidate.id,
+      ).toEqual([url])
     }
     expect(ConfigLocalRuntime.CANDIDATES.length).toBeGreaterThan(0)
   })
@@ -155,11 +158,19 @@ describe("ruling 2 — a refusal and an outage are different facts", () => {
   })
 
   test("an HTTP error and an auth failure keep their own arms", async () => {
-    const notFound = await probe(OPEN, WAN, recording(() => new Response("nope", { status: 404 })))
+    const notFound = await probe(
+      OPEN,
+      WAN,
+      recording(() => new Response("nope", { status: 404 })),
+    )
     expect(notFound.result.kind).toBe("http")
     expect(notFound.result.kind === "http" && notFound.result.status).toBe("error")
 
-    const unauthorized = await probe(OPEN, WAN, recording(() => new Response("nope", { status: 401 })))
+    const unauthorized = await probe(
+      OPEN,
+      WAN,
+      recording(() => new Response("nope", { status: 401 })),
+    )
     expect(unauthorized.result.kind).toBe("auth")
   })
 })

@@ -39,8 +39,7 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
   // load-time truth; the draft signal is what the user is editing. Saving posts the switch route
   // (the same durable event the agent-side `reconfigure` tool publishes) — it applies from the
   // session's next turn, and children/forks inherit through the config walk.
-  const recordOverride = () =>
-    (props.session as Session & { systemPromptOverride?: string }).systemPromptOverride ?? ""
+  const recordOverride = () => (props.session as Session & { systemPromptOverride?: string }).systemPromptOverride ?? ""
   const [promptDraft, setPromptDraft] = createSignal<string | undefined>(undefined)
   const [promptSaved, setPromptSaved] = createSignal(recordOverride())
   const promptValue = () => promptDraft() ?? promptSaved()
@@ -75,9 +74,7 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
   }
   const removeTag = (tag: string) => saveTags(tags().filter((item) => item !== tag))
   const number = createMemo(() => new Intl.NumberFormat(language.intl()))
-  const when = createMemo(
-    () => new Intl.DateTimeFormat(language.intl(), { dateStyle: "medium", timeStyle: "short" }),
-  )
+  const when = createMemo(() => new Intl.DateTimeFormat(language.intl(), { dateStyle: "medium", timeStyle: "short" }))
 
   const threads = createMemo(() => {
     const [childStore] = serverSync().child(props.session.location.directory, { bootstrap: false })
@@ -266,7 +263,9 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
                   {(recipe) => (
                     <div class="flex flex-col gap-1 py-1.5" data-slot="session-info-adhoc-recipe">
                       <div class="flex items-center gap-2">
-                        <span class="font-mono text-[12px] text-v2-text-text-base [font-weight:470]">{recipe.name}</span>
+                        <span class="font-mono text-[12px] text-v2-text-text-base [font-weight:470]">
+                          {recipe.name}
+                        </span>
                         <span class="min-w-0 flex-1 truncate text-[12px] text-v2-text-text-faint">
                           {recipe.description}
                         </span>
@@ -298,7 +297,9 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
                       </div>
                       <details class="text-[12px] text-v2-text-text-faint">
                         <summary class="cursor-pointer select-none">{language.t("session.info.adhoc.manual")}</summary>
-                        <pre class="mt-1 whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-v2-text-text-base">{recipe.manual}</pre>
+                        <pre class="mt-1 whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-v2-text-text-base">
+                          {recipe.manual}
+                        </pre>
                       </details>
                     </div>
                   )}

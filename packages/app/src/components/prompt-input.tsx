@@ -14,14 +14,7 @@ import {
 import { createStore } from "solid-js/store"
 import type { PermissionMode, useLocal } from "@/context/local"
 import { selectionFromLines, type SelectedLineRange, useFile } from "@/context/file"
-import {
-  ContentPart,
-  DEFAULT_PROMPT,
-  isPromptEqual,
-  Prompt,
-  usePrompt,
-  ImageAttachmentPart,
-} from "@/context/prompt"
+import { ContentPart, DEFAULT_PROMPT, isPromptEqual, Prompt, usePrompt, ImageAttachmentPart } from "@/context/prompt"
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
@@ -1192,30 +1185,30 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               }}
             >
               <ComposerEditorSurface
-              state={{
-                mode: store.mode,
-                ariaLabel: designPlaceholder(),
-                placeholder: designPlaceholder(),
-                placeholderComponent: newSession() ? "session-new-design-text" : "session-composer-text",
-                dirty: prompt.dirty(),
-                scrollClass: "relative max-h-[180px] overflow-y-auto no-scrollbar",
-                editorClass:
-                  "min-h-[52px] w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap leading-5 text-[13px] font-[440] text-v2-text-text-base",
-                placeholderClass:
-                  "absolute top-0 inset-x-0 px-4 pt-4 pointer-events-none whitespace-nowrap truncate leading-5 text-[13px] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]",
-                setScrollRef: (el) => (scrollRef = el),
-                setEditorRef: (el) => {
-                  editorRef = el
-                  props.ref?.(el)
-                },
-                onInput: handleInput,
-                onPaste: handlePaste,
-                onCompositionStart: handleCompositionStart,
-                onCompositionEnd: handleCompositionEnd,
-                onBlur: handleBlur,
-                onKeyDown: handleKeyDown,
-              }}
-            />
+                state={{
+                  mode: store.mode,
+                  ariaLabel: designPlaceholder(),
+                  placeholder: designPlaceholder(),
+                  placeholderComponent: newSession() ? "session-new-design-text" : "session-composer-text",
+                  dirty: prompt.dirty(),
+                  scrollClass: "relative max-h-[180px] overflow-y-auto no-scrollbar",
+                  editorClass:
+                    "min-h-[52px] w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap leading-5 text-[13px] font-[440] text-v2-text-text-base",
+                  placeholderClass:
+                    "absolute top-0 inset-x-0 px-4 pt-4 pointer-events-none whitespace-nowrap truncate leading-5 text-[13px] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]",
+                  setScrollRef: (el) => (scrollRef = el),
+                  setEditorRef: (el) => {
+                    editorRef = el
+                    props.ref?.(el)
+                  },
+                  onInput: handleInput,
+                  onPaste: handlePaste,
+                  onCompositionStart: handleCompositionStart,
+                  onCompositionEnd: handleCompositionEnd,
+                  onBlur: handleBlur,
+                  onKeyDown: handleKeyDown,
+                }}
+              />
             </div>
             {/* Send/Stop sits beside the editor (Claude Code / ChatGPT style) instead of on the
                 controls row, so the pickers below own the full width and never collide with it
@@ -1244,64 +1237,64 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               right edge. Each control keeps its own width ([&>*]:shrink-0) so it wraps whole. */}
           <div class="flex min-h-11 flex-wrap items-center gap-y-1 px-2 py-1 [&>*]:shrink-0">
             {fileAttachmentInput()}
-              <TooltipV2
-                placement="top"
-                value={
-                  <>
-                    {language.t("prompt.action.attachFile")}
-                    <KeybindV2 keys={command.keybindParts("file.attach")} variant="neutral" />
-                  </>
-                }
-              >
-                <IconButton
-                  data-action="prompt-attach"
-                  type="button"
-                  icon="plus"
-                  variant="ghost"
-                  class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted"
-                  style={buttons()}
-                  onClick={pick}
-                  disabled={store.mode !== "normal"}
-                  tabIndex={store.mode === "normal" ? undefined : -1}
-                  aria-label={language.t("prompt.action.attachFile")}
-                />
-              </TooltipV2>
-              {props.toolbar}
-              <ComposerControlsRow
+            <TooltipV2
+              placement="top"
+              value={
+                <>
+                  {language.t("prompt.action.attachFile")}
+                  <KeybindV2 keys={command.keybindParts("file.attach")} variant="neutral" />
+                </>
+              }
+            >
+              <IconButton
+                data-action="prompt-attach"
+                type="button"
+                icon="plus"
+                variant="ghost"
+                class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted"
+                style={buttons()}
+                onClick={pick}
+                disabled={store.mode !== "normal"}
+                tabIndex={store.mode === "normal" ? undefined : -1}
+                aria-label={language.t("prompt.action.attachFile")}
+              />
+            </TooltipV2>
+            {props.toolbar}
+            <ComposerControlsRow
+              state={{
+                sessionControls: newSession() || !!props.controls.session?.id,
+                folderVisible: props.controls.folder.visible,
+                model: modelControlState(),
+                permissionMode: permissionModeControlState(),
+                strict: strictControlState(),
+                features: featuresControlState(),
+                folder: folderControlState(),
+              }}
+            />
+            <Show when={!providersLoading() && store.mode !== "shell" && showVariantControl()}>
+              <ComposerVariantControl
                 state={{
-                  sessionControls: newSession() || !!props.controls.session?.id,
-                  folderVisible: props.controls.folder.visible,
-                  model: modelControlState(),
-                  permissionMode: permissionModeControlState(),
-                  strict: strictControlState(),
-                  features: featuresControlState(),
-                  folder: folderControlState(),
+                  revealOnHoverOnly: !props.controls.model.selection.variant.current() && !store.variantOpen,
+                  shouldAnimate: providersShouldFadeIn(),
+                  variants: variants(),
+                  current: props.controls.model.selection.variant.current(),
+                  style: control(),
+                  set: (variant) => {
+                    props.controls.model.selection.variant.set(variant)
+                    restoreFocus()
+                  },
+                  onOpenChange: (open) => setStore("variantOpen", open),
                 }}
               />
-              <Show when={!providersLoading() && store.mode !== "shell" && showVariantControl()}>
-                <ComposerVariantControl
-                  state={{
-                    revealOnHoverOnly: !props.controls.model.selection.variant.current() && !store.variantOpen,
-                    shouldAnimate: providersShouldFadeIn(),
-                    variants: variants(),
-                    current: props.controls.model.selection.variant.current(),
-                    style: control(),
-                    set: (variant) => {
-                      props.controls.model.selection.variant.set(variant)
-                      restoreFocus()
-                    },
-                    onOpenChange: (open) => setStore("variantOpen", open),
-                  }}
-                />
-              </Show>
-              {/* The context gauge (owner 2026-07-22): a Claude Code-style pie showing how full
+            </Show>
+            {/* The context gauge (owner 2026-07-22): a Claude Code-style pie showing how full
                   the model's context window is — colored amber/red as it fills so context
                   trouble is visible BEFORE it bites. Session-scoped (drafts have no context
                   yet); clicking opens the session's Context tab. Lives on the controls row with
                   the other chips (the submit button moved up beside the editor, 2026-07-24). */}
-              <Show when={props.controls.session?.id}>
-                <SessionContextUsage buttonAppearance="v2" placement="top" />
-              </Show>
+            <Show when={props.controls.session?.id}>
+              <SessionContextUsage buttonAppearance="v2" placement="top" />
+            </Show>
           </div>
         </DockShellForm>
       </div>

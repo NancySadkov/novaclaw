@@ -182,6 +182,12 @@ export function registerIpcHandlers(deps: Deps) {
     return { buffer, width: size.width, height: size.height }
   })
 
+  ipcMain.handle("read-clipboard-text", () => clipboard.readText())
+  ipcMain.handle("write-clipboard-text", (_event: IpcMainInvokeEvent, text: string) => {
+    if (typeof text !== "string") throw new TypeError("Clipboard text must be a string")
+    clipboard.writeText(text)
+  })
+
   ipcMain.on("show-notification", (_event: IpcMainEvent, title: string, body?: string) => {
     new Notification({ title, body }).show()
   })

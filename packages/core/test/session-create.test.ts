@@ -372,8 +372,7 @@ describe("SessionV2.create", () => {
       const shellEvents = Array.from(
         yield* session.events({ sessionID: created.id }).pipe(
           Stream.filter(
-            (event) =>
-              event.type === SessionEvent.Shell.Started.type || event.type === SessionEvent.Shell.Ended.type,
+            (event) => event.type === SessionEvent.Shell.Started.type || event.type === SessionEvent.Shell.Ended.type,
           ),
           Stream.take(2),
           Stream.runCollect,
@@ -586,12 +585,7 @@ describe("SessionV2 setters", () => {
       yield* session.setMetadata({ sessionID: created.id, metadata: { source: "test", pinned: true } })
       yield* session.setMetadata({ sessionID: created.id, metadata: { source: "second" } })
 
-      const row = yield* db
-        .select()
-        .from(SessionTable)
-        .where(eq(SessionTable.id, created.id))
-        .get()
-        .pipe(Effect.orDie)
+      const row = yield* db.select().from(SessionTable).where(eq(SessionTable.id, created.id)).get().pipe(Effect.orDie)
       expect(row!.metadata).toEqual({ source: "second" })
     }),
   )
@@ -610,12 +604,7 @@ describe("SessionV2 setters", () => {
 
       yield* session.setArchived({ sessionID: created.id, time: 12345 })
 
-      const row = yield* db
-        .select()
-        .from(SessionTable)
-        .where(eq(SessionTable.id, created.id))
-        .get()
-        .pipe(Effect.orDie)
+      const row = yield* db.select().from(SessionTable).where(eq(SessionTable.id, created.id)).get().pipe(Effect.orDie)
       expect(row!.time_archived).toBe(12345)
       expect(row!.time_updated).toBe(before!.time_updated)
     }),
@@ -630,12 +619,7 @@ describe("SessionV2 setters", () => {
 
       yield* session.setPermission({ sessionID: created.id, permission: ruleset })
 
-      const row = yield* db
-        .select()
-        .from(SessionTable)
-        .where(eq(SessionTable.id, created.id))
-        .get()
-        .pipe(Effect.orDie)
+      const row = yield* db.select().from(SessionTable).where(eq(SessionTable.id, created.id)).get().pipe(Effect.orDie)
       expect(row!.permission).toEqual(ruleset)
     }),
   )
@@ -738,9 +722,7 @@ describe("SessionV2.fork", () => {
       const forked = yield* session.fork({ sessionID: created.id, messageID: anchor!.id })
 
       const forkMessages = yield* session.messages({ sessionID: forked.id })
-      expect(forkMessages.map((message) => (message.type === "user" ? message.text : message.type))).toEqual([
-        "First",
-      ])
+      expect(forkMessages.map((message) => (message.type === "user" ? message.text : message.type))).toEqual(["First"])
     }),
   )
 
@@ -805,9 +787,12 @@ describe("SessionV2.remove", () => {
 
       yield* session.remove(created.id)
 
-      expect(yield* session.get(created.id).pipe(Effect.flip, Effect.map((error) => error._tag))).toBe(
-        "Session.NotFoundError",
-      )
+      expect(
+        yield* session.get(created.id).pipe(
+          Effect.flip,
+          Effect.map((error) => error._tag),
+        ),
+      ).toBe("Session.NotFoundError")
       expect(
         yield* db.select().from(SessionTable).where(eq(SessionTable.id, created.id)).all().pipe(Effect.orDie),
       ).toHaveLength(0)

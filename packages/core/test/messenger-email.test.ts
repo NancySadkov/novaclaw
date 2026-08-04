@@ -113,17 +113,28 @@ describe("EmailOAuth response parsing", () => {
       expect(start.deviceCode).toBe("dc")
 
       const ok = EmailOAuth.parseTokenResponse({ access_token: "at", refresh_token: "rt", expires_in: 3600 }, 1000)
-      expect(ok).toEqual({ kind: "token", token: { accessToken: "at", refreshToken: "rt", expiresAt: 1000 + 3600_000 } })
+      expect(ok).toEqual({
+        kind: "token",
+        token: { accessToken: "at", refreshToken: "rt", expiresAt: 1000 + 3600_000 },
+      })
 
       expect(EmailOAuth.parseTokenResponse({ error: "authorization_pending" }, 0).kind).toBe("pending")
       expect(EmailOAuth.parseTokenResponse({ error: "slow_down" }, 0).kind).toBe("slow-down")
-      expect(EmailOAuth.parseTokenResponse({ error: "authorization_declined" }, 0)).toMatchObject({ kind: "error", retryable: false })
-      expect(EmailOAuth.parseTokenResponse({ error: "expired_token" }, 0)).toMatchObject({ kind: "error", retryable: false })
+      expect(EmailOAuth.parseTokenResponse({ error: "authorization_declined" }, 0)).toMatchObject({
+        kind: "error",
+        retryable: false,
+      })
+      expect(EmailOAuth.parseTokenResponse({ error: "expired_token" }, 0)).toMatchObject({
+        kind: "error",
+        retryable: false,
+      })
 
       // Refresh keeps the old refresh token when Microsoft doesn't rotate it; throws on an error body.
       const refreshed = EmailOAuth.parseRefreshResponse({ access_token: "at2", expires_in: 3600 }, "rt", 2000)
       expect(refreshed).toEqual({ accessToken: "at2", refreshToken: "rt", expiresAt: 2000 + 3600_000 })
-      expect(() => EmailOAuth.parseRefreshResponse({ error: "invalid_grant", error_description: "revoked" }, "rt", 0)).toThrow("revoked")
+      expect(() =>
+        EmailOAuth.parseRefreshResponse({ error: "invalid_grant", error_description: "revoked" }, "rt", 0),
+      ).toThrow("revoked")
     }),
   )
 })
@@ -167,7 +178,13 @@ describe("EmailImapSmtp pure helpers", () => {
   it.effect("parseHeaders unfolds continuations; messageIds + parseFrom extract the threading fields", () =>
     Effect.sync(() => {
       const headers = EmailImapSmtp.parseHeaders(
-        ["From: Acme Client <client@acme.com>", "Subject: Re: Logo", "References: <a@x>", "  <b@x>", "Message-ID: <c@x>"].join("\r\n"),
+        [
+          "From: Acme Client <client@acme.com>",
+          "Subject: Re: Logo",
+          "References: <a@x>",
+          "  <b@x>",
+          "Message-ID: <c@x>",
+        ].join("\r\n"),
       )
       expect(EmailImapSmtp.parseFrom(headers.get("from"))).toEqual({ address: "client@acme.com", name: "Acme Client" })
       expect(EmailImapSmtp.messageIds(headers.get("references"))).toEqual(["a@x", "b@x"]) // folded line joined
@@ -180,12 +197,25 @@ describe("EmailImapSmtp pure helpers", () => {
     Effect.sync(() => {
       const email = EmailImapSmtp.assembleEmail({
         uid: 7,
-        headerBlock: "From: A <a@x>\r\nSubject: Hi\r\nIn-Reply-To: <p@x>\r\nReferences: <root@x> <p@x>\r\nMessage-ID: <m@x>",
+        headerBlock:
+          "From: A <a@x>\r\nSubject: Hi\r\nIn-Reply-To: <p@x>\r\nReferences: <root@x> <p@x>\r\nMessage-ID: <m@x>",
         text: "body line\r\n",
         fallbackAt: 500,
       })
-      expect(email).toMatchObject({ uid: 7, messageID: "m@x", fromAddress: "a@x", inReplyTo: "p@x", references: ["root@x", "p@x"], text: "body line" })
-      const noId = EmailImapSmtp.assembleEmail({ uid: 9, headerBlock: "From: a@x\r\nSubject: x", text: "", fallbackAt: 0 })
+      expect(email).toMatchObject({
+        uid: 7,
+        messageID: "m@x",
+        fromAddress: "a@x",
+        inReplyTo: "p@x",
+        references: ["root@x", "p@x"],
+        text: "body line",
+      })
+      const noId = EmailImapSmtp.assembleEmail({
+        uid: 9,
+        headerBlock: "From: a@x\r\nSubject: x",
+        text: "",
+        fallbackAt: 0,
+      })
       expect(noId.messageID).toBe("imap-uid-9@novaclaw.local")
     }),
   )
@@ -207,10 +237,25 @@ describe("EmailImapSmtp pure helpers", () => {
     return Effect.sync(() => {
       expect(EmailImapSmtp.extractPlainText(multipart)).toBe("Hey, Nova! This is a test.")
       // quoted-printable decode
-      const qp = ["--B", "Content-Type: text/plain", "Content-Transfer-Encoding: quoted-printable", "", "caf=C3=A9 =", "au lait", "--B--"].join("\r\n")
+      const qp = [
+        "--B",
+        "Content-Type: text/plain",
+        "Content-Transfer-Encoding: quoted-printable",
+        "",
+        "caf=C3=A9 =",
+        "au lait",
+        "--B--",
+      ].join("\r\n")
       expect(EmailImapSmtp.extractPlainText(qp)).toBe("café au lait")
       // base64 decode
-      const b64 = ["--B", "Content-Type: text/plain", "Content-Transfer-Encoding: base64", "", Buffer.from("hello world").toString("base64"), "--B--"].join("\r\n")
+      const b64 = [
+        "--B",
+        "Content-Type: text/plain",
+        "Content-Transfer-Encoding: base64",
+        "",
+        Buffer.from("hello world").toString("base64"),
+        "--B--",
+      ].join("\r\n")
       expect(EmailImapSmtp.extractPlainText(b64)).toBe("hello world")
       // html-only falls back to stripped text
       const htmlOnly = ["--B", "Content-Type: text/html", "", "<p>Bold <b>text</b></p>", "--B--"].join("\r\n")
@@ -369,56 +414,73 @@ describe("EmailDriver login (OAuth device-code)", () => {
 describe("EmailDriver connect (IMAP poll → thread mapping → SMTP reply)", () => {
   const signedIn = JSON.stringify({ refreshToken: "refresh_1", email: "me@outlook.com" })
 
-  it.live("refreshes the token, polls threads into events, advances the UID cursor, and replies to the right thread", () =>
-    Effect.gen(function* () {
-      const oauth = makeFakeOAuth()
-      const mail = makeFakeMail()
-      mail.state.inbox = [
-        email({ uid: 10, messageID: "m1", subject: "Logo brief", references: [], text: "need a logo" }),
-        email({ uid: 11, messageID: "m2", subject: "Re: Bug report", fromAddress: "bob@acme.com", references: ["r0"], text: "still broken" }),
-      ]
-      const cursorBox = { value: undefined as unknown }
-      const driver = EmailDriver.make(mail.factory, oauth.factory, { pollIntervalMs: 5 })
-
-      yield* Effect.scoped(
-        Effect.gen(function* () {
-          const conn = yield* driver.connect(ctxFor(signedIn, cursorBox))
-          // The refresh happened and the XOAUTH2 access token reached the transport.
-          expect(oauth.state.refreshed).toBe(1)
-          expect(mail.state.auth).toBe("access_2")
-
-          const collected: string[] = []
-          yield* Effect.forkScoped(
-            conn.inbound.pipe(
-              Stream.runForEach((event) =>
-                Effect.sync(() => {
-                  if (event.kind === "message") collected.push(`${event.chat.chatID}|${event.text}`)
-                }),
-              ),
-            ),
-          )
-          yield* drainFor(Effect.sync(() => collected), (c) => c.length >= 2, "two threads delivered")
-          // Thread mapping: message 2's chat is its References root "r0", not its own id.
-          expect(collected).toContain("m1|need a logo")
-          expect(collected).toContain("r0|still broken")
-
-          // The durable cursor advanced to the newest UID.
-          yield* drainFor(Effect.sync(() => cursorBox.value), (v) => (v as { uid?: number })?.uid === 11, "cursor at uid 11")
-          expect(cursorBox.value).toEqual({ uid: 11, uidValidity: 100 })
-
-          // Reply to the bug thread → a threaded SMTP reply to Bob, In-Reply-To m2.
-          const outcome = yield* conn.send("r0", { text: "on it" })
-          expect(outcome.messageID).toBe("sent-1")
-          expect(mail.state.sent).toHaveLength(1)
-          expect(mail.state.sent[0]).toMatchObject({
-            to: "bob@acme.com",
+  it.live(
+    "refreshes the token, polls threads into events, advances the UID cursor, and replies to the right thread",
+    () =>
+      Effect.gen(function* () {
+        const oauth = makeFakeOAuth()
+        const mail = makeFakeMail()
+        mail.state.inbox = [
+          email({ uid: 10, messageID: "m1", subject: "Logo brief", references: [], text: "need a logo" }),
+          email({
+            uid: 11,
+            messageID: "m2",
             subject: "Re: Bug report",
-            inReplyTo: "m2",
-            text: "on it",
-          })
-        }),
-      )
-    }),
+            fromAddress: "bob@acme.com",
+            references: ["r0"],
+            text: "still broken",
+          }),
+        ]
+        const cursorBox = { value: undefined as unknown }
+        const driver = EmailDriver.make(mail.factory, oauth.factory, { pollIntervalMs: 5 })
+
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const conn = yield* driver.connect(ctxFor(signedIn, cursorBox))
+            // The refresh happened and the XOAUTH2 access token reached the transport.
+            expect(oauth.state.refreshed).toBe(1)
+            expect(mail.state.auth).toBe("access_2")
+
+            const collected: string[] = []
+            yield* Effect.forkScoped(
+              conn.inbound.pipe(
+                Stream.runForEach((event) =>
+                  Effect.sync(() => {
+                    if (event.kind === "message") collected.push(`${event.chat.chatID}|${event.text}`)
+                  }),
+                ),
+              ),
+            )
+            yield* drainFor(
+              Effect.sync(() => collected),
+              (c) => c.length >= 2,
+              "two threads delivered",
+            )
+            // Thread mapping: message 2's chat is its References root "r0", not its own id.
+            expect(collected).toContain("m1|need a logo")
+            expect(collected).toContain("r0|still broken")
+
+            // The durable cursor advanced to the newest UID.
+            yield* drainFor(
+              Effect.sync(() => cursorBox.value),
+              (v) => (v as { uid?: number })?.uid === 11,
+              "cursor at uid 11",
+            )
+            expect(cursorBox.value).toEqual({ uid: 11, uidValidity: 100 })
+
+            // Reply to the bug thread → a threaded SMTP reply to Bob, In-Reply-To m2.
+            const outcome = yield* conn.send("r0", { text: "on it" })
+            expect(outcome.messageID).toBe("sent-1")
+            expect(mail.state.sent).toHaveLength(1)
+            expect(mail.state.sent[0]).toMatchObject({
+              to: "bob@acme.com",
+              subject: "Re: Bug report",
+              inReplyTo: "m2",
+              text: "on it",
+            })
+          }),
+        )
+      }),
   )
 
   it.live("refuses to reply to a thread it has never received (email is reply-only — cold-start safe)", () =>
@@ -462,7 +524,11 @@ describe("EmailDriver connect (IMAP poll → thread mapping → SMTP reply)", ()
             ),
           )
           // Under the new validity (100 ≠ 99) the old uid-3 position is void → the message re-delivers.
-          yield* drainFor(Effect.sync(() => collected), (c) => c.includes("first"), "re-delivered under new validity")
+          yield* drainFor(
+            Effect.sync(() => collected),
+            (c) => c.includes("first"),
+            "re-delivered under new validity",
+          )
           yield* drainFor(
             Effect.sync(() => cursorBox.value),
             (v) => (v as { uidValidity?: number })?.uidValidity === 100,
@@ -477,7 +543,13 @@ describe("EmailDriver connect (IMAP poll → thread mapping → SMTP reply)", ()
     Effect.gen(function* () {
       const mail = makeFakeMail()
       const oauthFactory = () => ({
-        startDeviceCode: async () => ({ userCode: "x", verificationUri: "u", deviceCode: "d", interval: 5, expiresIn: 900 }),
+        startDeviceCode: async () => ({
+          userCode: "x",
+          verificationUri: "u",
+          deviceCode: "d",
+          interval: 5,
+          expiresIn: 900,
+        }),
         pollToken: async (): Promise<PollResult> => ({ kind: "pending" }),
         refresh: async () => {
           throw new Error("AADSTS700082: refresh token expired")
@@ -523,14 +595,30 @@ describe("EmailDriver connect (IMAP poll → thread mapping → SMTP reply)", ()
       const oauth = makeFakeOAuth()
       const mail = makeFakeMail()
       mail.state.inbox = [
-        email({ uid: 1, messageID: "a", subject: "Invoice #42", fromAddress: "billing@acme.com", fromName: "Acme Billing", text: "Please pay." }),
-        email({ uid: 2, messageID: "b", subject: "Re: Logo", fromAddress: "client@studio.com", fromName: "Studio", references: ["root"], text: "Looks great!" }),
+        email({
+          uid: 1,
+          messageID: "a",
+          subject: "Invoice #42",
+          fromAddress: "billing@acme.com",
+          fromName: "Acme Billing",
+          text: "Please pay.",
+        }),
+        email({
+          uid: 2,
+          messageID: "b",
+          subject: "Re: Logo",
+          fromAddress: "client@studio.com",
+          fromName: "Studio",
+          references: ["root"],
+          text: "Looks great!",
+        }),
       ]
       const driver = EmailDriver.make(mail.factory, oauth.factory, { pollIntervalMs: 5 })
       yield* Effect.scoped(
         Effect.gen(function* () {
           const conn = yield* driver.connect(ctxFor(signedIn, { value: undefined }))
-          if (conn.history === undefined || conn.listChats === undefined) throw new Error("email driver must expose read ops")
+          if (conn.history === undefined || conn.listChats === undefined)
+            throw new Error("email driver must expose read ops")
 
           const hist = yield* conn.history("inbox", 10)
           expect(hist.map((h) => h.senderName)).toEqual(["Acme Billing", "Studio"])

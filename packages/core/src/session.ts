@@ -653,11 +653,7 @@ export const layer = Layer.effect(
             maxOutputBytes: SHELL_MAX_OUTPUT_BYTES,
           })
           return run.output?.toString("utf8") ?? ""
-        }).pipe(
-          Effect.provide(locations.get(session.location)),
-          Effect.provide(AppProcess.defaultLayer),
-          Effect.orDie,
-        )
+        }).pipe(Effect.provide(locations.get(session.location)), Effect.provide(AppProcess.defaultLayer), Effect.orDie)
         yield* events.publish(SessionEvent.Shell.Ended, {
           sessionID: input.sessionID,
           callID,

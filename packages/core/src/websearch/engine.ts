@@ -85,7 +85,10 @@ const decodeEntities = (text: string): string =>
     .replaceAll("&amp;", "&")
 
 /** Strip tags and collapse whitespace — search snippets arrive as marked-up fragments. */
-export const stripHtml = (html: string): string => decodeEntities(html.replaceAll(/<[^>]*>/g, "")).replaceAll(/\s+/g, " ").trim()
+export const stripHtml = (html: string): string =>
+  decodeEntities(html.replaceAll(/<[^>]*>/g, ""))
+    .replaceAll(/\s+/g, " ")
+    .trim()
 
 /** DuckDuckGo's HTML results wrap every outbound link in a redirect; the real URL is inside. */
 export const unwrapRedirect = (href: string): string => {
@@ -118,7 +121,12 @@ export const parseDuckDuckGo = (html: string, limit: number): readonly Result[] 
     const rest = html.slice(match.index, match.index + 4000)
     const snippetMatch = /class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/i.exec(rest)
     const snippet = snippetMatch === null ? undefined : stripHtml(snippetMatch[1] ?? "")
-    out.push({ title, url, engine: "duckduckgo", ...(snippet === undefined || snippet.length === 0 ? {} : { snippet }) })
+    out.push({
+      title,
+      url,
+      engine: "duckduckgo",
+      ...(snippet === undefined || snippet.length === 0 ? {} : { snippet }),
+    })
   }
   return out
 }
@@ -161,7 +169,12 @@ export const parseSearxng = (body: unknown, limit: number): readonly Result[] =>
     const url = entry["url"]
     if (typeof title !== "string" || typeof url !== "string") continue
     const snippet = entry["content"]
-    out.push({ title, url, engine: "searxng", ...(typeof snippet === "string" && snippet.length > 0 ? { snippet } : {}) })
+    out.push({
+      title,
+      url,
+      engine: "searxng",
+      ...(typeof snippet === "string" && snippet.length > 0 ? { snippet } : {}),
+    })
   }
   return out
 }
@@ -171,7 +184,8 @@ export const canonicalUrl = (raw: string): string => {
   try {
     const url = new URL(raw)
     url.hash = ""
-    for (const key of [...url.searchParams.keys()]) if (key.startsWith("utm_") || key === "ref" || key === "fbclid") url.searchParams.delete(key)
+    for (const key of [...url.searchParams.keys()])
+      if (key.startsWith("utm_") || key === "ref" || key === "fbclid") url.searchParams.delete(key)
     const path = url.pathname.replace(/\/+$/, "")
     return `${url.hostname.replace(/^www\./, "")}${path}${url.search}`.toLowerCase()
   } catch {
@@ -198,7 +212,8 @@ export const mergeResults = (lists: readonly (readonly Result[])[], limit: numbe
       existing.score += contribution
       existing.engines.add(result.engine)
       // Keep the fullest description available across engines.
-      if ((existing.result.snippet?.length ?? 0) < (result.snippet?.length ?? 0)) existing.result = { ...existing.result, snippet: result.snippet }
+      if ((existing.result.snippet?.length ?? 0) < (result.snippet?.length ?? 0))
+        existing.result = { ...existing.result, snippet: result.snippet }
     })
   }
   return [...scored.values()]
@@ -268,11 +283,16 @@ export const searxng = (fetchImpl: FetchLike, baseUrl: string): Engine => ({
   id: "searxng",
   name: `SearXNG (${baseUrl})`,
   search: (query, options) =>
-    fetchText(fetchImpl, `${baseUrl.replace(/\/+$/, "")}/search?format=json&q=${encodeURIComponent(query)}`, options).pipe(
+    fetchText(
+      fetchImpl,
+      `${baseUrl.replace(/\/+$/, "")}/search?format=json&q=${encodeURIComponent(query)}`,
+      options,
+    ).pipe(
       Effect.flatMap((text) =>
         Effect.try({
           try: () => parseSearxng(JSON.parse(text) as unknown, options.limit),
-          catch: () => new SearchError({ reason: "That SearXNG instance did not return JSON — is its JSON format enabled?" }),
+          catch: () =>
+            new SearchError({ reason: "That SearXNG instance did not return JSON — is its JSON format enabled?" }),
         }),
       ),
     ),

@@ -2,7 +2,7 @@ export * as Shell from "./shell"
 
 import path from "path"
 import { readFile } from "fs/promises"
-import { statSync } from "fs"
+import { readFileSync, statSync } from "fs"
 import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
 import { ShellBundle } from "./shell-bundle"
@@ -19,12 +19,7 @@ import { which } from "./util/which"
  *
  * ⚠️ Do not hand-roll another one. `test/kill-tree-ledger.test.ts` fails the build if you do.
  */
-export {
-  SIGKILL_TIMEOUT_MS,
-  descendantsOf,
-  killTree,
-  killTreeSync,
-} from "./util/kill-tree"
+export { SIGKILL_TIMEOUT_MS, descendantsOf, killTree, killTreeSync } from "./util/kill-tree"
 export type { KillTreeOptions, KillTreeTarget } from "./util/kill-tree"
 
 const META: Record<string, { deny?: boolean; login?: boolean; posix?: boolean; ps?: boolean }> = {
@@ -84,7 +79,7 @@ function resolve(file: string) {
 function win() {
   return Array.from(
     new Set(
-      [which("pwsh"), which("powershell"), gitbash(), process.env.COMSPEC || "cmd.exe"]
+      [w64devkitShell(), gitbash(), which("pwsh"), which("powershell"), process.env.COMSPEC || "cmd.exe"]
         .filter((item): item is string => Boolean(item))
         .map(full),
     ),
@@ -137,6 +132,60 @@ export function gitbash() {
   const onPath = which("bash")
   if (onPath && ShellBundle.msysRoot(onPath)) candidates.push(onPath)
   for (const file of candidates) if (stat(file)?.size) return file
+}
+
+/** The Windows distribution's embedded POSIX shell. Unlike the retired PortableGit-only model,
+ *  w64devkit is part of every packaged Windows build and also supplies GCC/binutils. The desktop
+ *  launcher provides the resource root; source/dev runs may opt into an extracted kit explicitly. */
+export function w64devkitRoot() {
+  if (process.platform !== "win32") return
+  const root = Flag.NOVACLAW_W64DEVKIT_PATH
+  if (!root) return
+  const shell = path.join(root, "bin", "sh.exe")
+  const gcc = path.join(root, "bin", "gcc.exe")
+  if (stat(shell)?.isFile() && stat(gcc)?.isFile()) return root
+}
+
+export function w64devkitShell() {
+  const root = w64devkitRoot()
+  return root ? path.join(root, "bin", "sh.exe") : undefined
+}
+
+/** Functional child environment for the composed Windows toolchain. w64devkit's own shell needs
+ *  its bin first; Git Bash keeps its MSYS userland first and receives w64devkit last so GCC is
+ *  available without recreating the measured BusyBox-shadowing failure. */
+export function toolchainEnv(file: string, base: NodeJS.ProcessEnv = process.env): Record<string, string> | undefined {
+  if (process.platform !== "win32") return
+  const root = w64devkitRoot()
+  const key = Object.keys(base).find((item) => item.toLowerCase() === "path") ?? "PATH"
+  const existing = base[key]
+  const bin = root ? path.join(root, "bin") : undefined
+  const inKit = root
+    ? FSUtil.windowsPath(file)
+        .toLowerCase()
+        .startsWith(`${FSUtil.windowsPath(root).toLowerCase()}\\`)
+    : false
+  const paths = inKit
+    ? [bin, existing]
+    : name(file) === "bash"
+      ? [...ShellBundle.pathPrepend(file), existing, bin]
+      : [existing, bin]
+  const value = Array.from(new Set(paths.filter((item): item is string => Boolean(item)))).join(path.delimiter)
+  if (!value) return
+  return {
+    [key]: value,
+    ...(root ? { W64DEVKIT_HOME: root, W64DEVKIT: readVersion(root) } : {}),
+  }
+}
+
+function readVersion(root: string) {
+  try {
+    return statSync(path.join(root, "VERSION.txt"), { throwIfNoEntry: false })?.isFile()
+      ? readFileSync(path.join(root, "VERSION.txt"), "utf8").trim()
+      : "embedded"
+  } catch {
+    return "embedded"
+  }
 }
 
 function fallback() {
@@ -221,7 +270,7 @@ let defaultAgent: string | undefined
  */
 export function agentDefault(): string {
   defaultAgent ??= (() => {
-    if (process.platform === "win32") return gitbash() ?? process.env.COMSPEC ?? "cmd.exe"
+    if (process.platform === "win32") return w64devkitShell() ?? gitbash() ?? process.env.COMSPEC ?? "cmd.exe"
     return which("bash") ?? "/bin/sh"
   })()
   return defaultAgent
@@ -233,29 +282,30 @@ agentDefault.reset = () => {
 
 let warnedFallback = false
 /**
- * TRUE when the agent shell is NOT bash — i.e. the fallback fired and every prompt that tells the
- * model "your shell is bash" is now lying to it. A silent fallback is the expensive failure: the
+ * TRUE when the agent shell accepts POSIX syntax. The embedded w64devkit shell is BusyBox ash,
+ * deliberately not Bash, but it supports the command language agents need. A silent cmd fallback
+ * is the expensive failure: the
  * model writes POSIX, cmd.exe answers, and the task dies of unrelated-looking errors. Callers that
- * hand the shell to a model surface this instead of guessing (`bashFallbackNote`), and the first
+ * hand the shell to a model surface this instead of guessing (`shellFallbackNote`), and the first
  * call also logs it once for the server operator.
  */
-export function agentShellIsBash(): boolean {
-  return name(agentDefault()) === "bash"
+export function agentShellIsPosix(): boolean {
+  return posix(agentDefault())
 }
 
-/** One line for the agent's system prompt when its shell is not bash, else undefined. */
-export function bashFallbackNote(): string | undefined {
-  if (agentShellIsBash()) return undefined
+/** One line for the agent's system prompt when its shell is not POSIX-compatible, else undefined. */
+export function shellFallbackNote(): string | undefined {
+  if (agentShellIsPosix()) return undefined
   const shell = agentDefault()
   if (!warnedFallback) {
     warnedFallback = true
     console.warn(
-      `[shell] no bash found — agent commands will run in ${shell}. Provision the bundled shell ` +
+      `[shell] no POSIX shell found — agent commands will run in ${shell}. Repair the bundled shell ` +
         `(Settings → General → Shell) or set NOVACLAW_GIT_BASH_PATH; POSIX syntax will fail until then.`,
     )
   }
   return (
-    `⚠️ Shell: this host has NO bash — your \`bash\` tool runs \`${shell}\`. POSIX syntax (\`ls\`, ` +
+    `⚠️ Shell: this host has NO POSIX shell — your \`bash\` tool runs \`${shell}\`. POSIX syntax (\`ls\`, ` +
     `pipes, \`2>/dev/null\`, \`VAR=x cmd\`, forward slashes) will FAIL here; use that shell's own ` +
     `syntax, and prefer the native read/edit/write/glob/grep tools over shell commands.`
   )
@@ -263,7 +313,8 @@ export function bashFallbackNote(): string | undefined {
 
 export function preferred(configShell?: string) {
   if (configShell) return select(configShell)
-  defaultPreferred ??= select(process.env.SHELL)
+  defaultPreferred ??=
+    process.platform === "win32" ? (w64devkitShell() ?? select(process.env.SHELL)) : select(process.env.SHELL)
   return defaultPreferred
 }
 preferred.reset = () => {

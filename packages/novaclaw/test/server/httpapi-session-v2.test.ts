@@ -177,14 +177,16 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
           // 2. busy is published synchronously before the fork.
           yield* awaitWithTimeout(Deferred.await(sawBusy), "no busy status", "5 seconds")
           // 1. routed to V2: the V2 runner emitted session.next.prompted.
-          yield* awaitWithTimeout(Deferred.await(sawPrompted), "session.next.prompted not seen — not routed to V2", "10 seconds")
+          yield* awaitWithTimeout(
+            Deferred.await(sawPrompted),
+            "session.next.prompted not seen — not routed to V2",
+            "10 seconds",
+          )
           // 2. idle ALWAYS settles the turn (here via the error path).
           yield* awaitWithTimeout(Deferred.await(sawIdle), "no idle (spinner would hang forever)", "15 seconds")
 
           // A SECOND prompt on the (now row-bearing) V2 session runs V2 too.
-          const second = yield* Effect.promise(() =>
-            sdk.v2.session.prompt({ sessionID, prompt: { text: "v2 again" } }),
-          )
+          const second = yield* Effect.promise(() => sdk.v2.session.prompt({ sessionID, prompt: { text: "v2 again" } }))
           expect(second.response.status).toBe(200)
           yield* awaitWithTimeout(Deferred.await(sawPromptedAgain), "second prompt did not route to V2", "10 seconds")
 
@@ -253,7 +255,9 @@ describe("native session twins (V1-nuke A0)", () => {
           expect(forkedID).not.toBe(sessionID)
 
           // remove: deletion is real — a follow-up get 404s
-          const removed = yield* Effect.promise(async () => (await sdk.v2.session.remove({ sessionID })).response.status)
+          const removed = yield* Effect.promise(
+            async () => (await sdk.v2.session.remove({ sessionID })).response.status,
+          )
           expect(removed).toBe(204)
           const gone = yield* Effect.promise(async () => (await sdk.v2.session.get({ sessionID })).response.status)
           expect(gone).toBe(404)

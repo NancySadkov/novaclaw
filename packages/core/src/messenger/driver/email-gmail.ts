@@ -44,10 +44,13 @@ const GMAIL_DEFAULT_CLIENT_SECRET = ""
 
 /** The effective OAuth client for an account: the account's own clientId/secret if set, else the
  *  built-in verified default. `undefined` when neither exists (login/refresh then reports it clearly). */
-const effectiveClient = (config: EmailAccountConfig): { readonly clientId: string; readonly clientSecret?: string } | undefined => {
+const effectiveClient = (
+  config: EmailAccountConfig,
+): { readonly clientId: string; readonly clientSecret?: string } | undefined => {
   const clientId = config.clientId ?? (GMAIL_DEFAULT_CLIENT_ID.length > 0 ? GMAIL_DEFAULT_CLIENT_ID : undefined)
   if (clientId === undefined) return undefined
-  const clientSecret = config.clientSecret ?? (GMAIL_DEFAULT_CLIENT_SECRET.length > 0 ? GMAIL_DEFAULT_CLIENT_SECRET : undefined)
+  const clientSecret =
+    config.clientSecret ?? (GMAIL_DEFAULT_CLIENT_SECRET.length > 0 ? GMAIL_DEFAULT_CLIENT_SECRET : undefined)
   return clientSecret === undefined ? { clientId } : { clientId, clientSecret }
 }
 
@@ -72,7 +75,11 @@ export const make = (
                 "Gmail sign-in needs a Google OAuth client. Paste a Google Cloud 'Desktop app' client ID (and secret) in Settings, or use an app password instead (paste it as the secret).",
             }),
           )
-        const client = authCodeFactory({ clientId: clientSpec.clientId, clientSecret: clientSpec.clientSecret, scopes: GMAIL_SCOPES })
+        const client = authCodeFactory({
+          clientId: clientSpec.clientId,
+          clientSecret: clientSpec.clientSecret,
+          scopes: GMAIL_SCOPES,
+        })
 
         // PKCE + CSRF state bind the code to THIS attempt; the loopback catches the redirect. The
         // loopback + the awaiting fiber both live in begin()'s Scope (the login attempt owns it), so
@@ -95,15 +102,21 @@ export const make = (
         yield* Effect.forkScoped(
           Effect.tryPromise({
             try: () => loopback.waitForCode,
-            catch: (error) => new LoginCodeError({ reason: `Google sign-in didn't complete: ${String(error)}`, retryable: false }),
+            catch: (error) =>
+              new LoginCodeError({ reason: `Google sign-in didn't complete: ${String(error)}`, retryable: false }),
           }).pipe(
             Effect.flatMap((code) =>
               Effect.tryPromise({
                 try: () => client.exchangeCode({ code, codeVerifier: verifier, redirectUri: loopback.redirectUri }),
-                catch: (error) => new ChallengeError({ message: `Google rejected the sign-in for ${config.email} (${String(error)}).` }),
+                catch: (error) =>
+                  new ChallengeError({
+                    message: `Google rejected the sign-in for ${config.email} (${String(error)}).`,
+                  }),
               }),
             ),
-            Effect.map((token) => ({ refreshToken: token.refreshToken, email: config.email }) satisfies StoredCredential),
+            Effect.map(
+              (token) => ({ refreshToken: token.refreshToken, email: config.email }) satisfies StoredCredential,
+            ),
             Effect.matchCauseEffect({
               onFailure: (cause) => Deferred.failCause(result, cause),
               onSuccess: (stored) => Deferred.succeed(result, stored),
@@ -115,7 +128,10 @@ export const make = (
           Effect.gen(function* () {
             if (!(yield* Deferred.isDone(result)))
               return yield* Effect.fail(
-                new LoginCodeError({ reason: "Still waiting for you to finish the Google sign-in in your browser…", retryable: true }),
+                new LoginCodeError({
+                  reason: "Still waiting for you to finish the Google sign-in in your browser…",
+                  retryable: true,
+                }),
               )
             const stored = yield* Deferred.await(result)
             return { session: JSON.stringify(stored) }
@@ -138,7 +154,13 @@ export const make = (
         secret,
         (c) => {
           const clientSpec = effectiveClient(c)
-          return clientSpec === undefined ? undefined : authCodeFactory({ clientId: clientSpec.clientId, clientSecret: clientSpec.clientSecret, scopes: GMAIL_SCOPES }).refresh
+          return clientSpec === undefined
+            ? undefined
+            : authCodeFactory({
+                clientId: clientSpec.clientId,
+                clientSecret: clientSpec.clientSecret,
+                scopes: GMAIL_SCOPES,
+              }).refresh
         },
         "Google",
       ),

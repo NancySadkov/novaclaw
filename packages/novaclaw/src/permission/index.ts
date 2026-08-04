@@ -35,7 +35,11 @@ interface State {
   approved: PermissionRuleset.Rule[]
 }
 
-export function evaluate(permission: string, pattern: string, ...rulesets: PermissionRuleset.Ruleset[]): PermissionRuleset.Rule {
+export function evaluate(
+  permission: string,
+  pattern: string,
+  ...rulesets: PermissionRuleset.Ruleset[]
+): PermissionRuleset.Rule {
   return (
     rulesets
       .flat()

@@ -56,20 +56,18 @@ export function useManifestApps(): () => HomeApp[] {
   }
 
   return () =>
-    persistedManifests().map(
-      (manifest): HomeApp => {
-        const subtitle = appSubtitle(t, manifest.id, manifest.subtitle)
-        return {
-          id: manifest.id,
-          title: appName(t, manifest.id, manifest.title),
-          // Validate the agent-supplied icon against the sprite — an unknown name would render a silent
-          // blank glyph, so fall back to a sensible default instead (L3).
-          icon: manifest.icon && isIconName(manifest.icon) ? manifest.icon : DEFAULT_ICON,
-          accent: manifest.accent || DEFAULT_ACCENT,
-          ...(subtitle ? { subtitle } : {}),
-          source: "agent",
-          open: () => open(manifest),
-        }
-      },
-    )
+    persistedManifests().map((manifest): HomeApp => {
+      const subtitle = appSubtitle(t, manifest.id, manifest.subtitle)
+      return {
+        id: manifest.id,
+        title: appName(t, manifest.id, manifest.title),
+        // Validate the agent-supplied icon against the sprite — an unknown name would render a silent
+        // blank glyph, so fall back to a sensible default instead (L3).
+        icon: manifest.icon && isIconName(manifest.icon) ? manifest.icon : DEFAULT_ICON,
+        accent: manifest.accent || DEFAULT_ACCENT,
+        ...(subtitle ? { subtitle } : {}),
+        source: "agent",
+        open: () => open(manifest),
+      }
+    })
 }

@@ -57,12 +57,18 @@ type Output = typeof Output.Type
  * nothing.
  */
 export const formatResults = (
-  results: readonly { readonly title: string; readonly url: string; readonly snippet?: string; readonly engine: string }[],
+  results: readonly {
+    readonly title: string
+    readonly url: string
+    readonly snippet?: string
+    readonly engine: string
+  }[],
 ): string => {
   if (results.length === 0) return ""
   const body = results
     .map((result, index) => {
-      const snippet = result.snippet === undefined || result.snippet.length === 0 ? "" : `\n   ${result.snippet.slice(0, 400)}`
+      const snippet =
+        result.snippet === undefined || result.snippet.length === 0 ? "" : `\n   ${result.snippet.slice(0, 400)}`
       return `${index + 1}. ${result.title}\n   ${result.url} [${result.engine}]${snippet}`
     })
     .join("\n\n")
@@ -119,6 +125,7 @@ export const layer = Layer.effectDiscard(
     yield* tools
       .register({
         [name]: Tool.make({
+          sideEffect: "read",
           description,
           input: Input,
           output: Output,

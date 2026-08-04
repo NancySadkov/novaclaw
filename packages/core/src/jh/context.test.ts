@@ -11,19 +11,32 @@ const base = {
 
 describe("JhContext.assemble", () => {
   test("direct then transitive, in order", () => {
-    const out = JhContext.assemble({ ...base, direct: [block("a", "aa"), block("b", "bb")], transitive: [block("c", "cc")] })
+    const out = JhContext.assemble({
+      ...base,
+      direct: [block("a", "aa"), block("b", "bb")],
+      transitive: [block("c", "cc")],
+    })
     expect(out.indexOf("artifact a")).toBeLessThan(out.indexOf("artifact b"))
     expect(out.indexOf("artifact b")).toBeLessThan(out.indexOf("artifact c"))
   })
 
   test("a non-closure artifact is absent (only given blocks render)", () => {
-    const out = JhContext.assemble({ ...base, direct: [block("algorithm-choice", "Machin"), block("add.c", "int add")], transitive: [] })
+    const out = JhContext.assemble({
+      ...base,
+      direct: [block("algorithm-choice", "Machin"), block("add.c", "int add")],
+      transitive: [],
+    })
     expect(out).not.toContain("machin.c")
   })
 
   test("per-artifact elision preserves head/tail and marks the gap", () => {
     const content = "START" + "-".repeat(500) + "FINISH" // 511 chars
-    const out = JhContext.assemble({ ...base, direct: [block("big", content)], transitive: [], limits: { perArtifactChars: 100, totalChars: 100_000 } })
+    const out = JhContext.assemble({
+      ...base,
+      direct: [block("big", content)],
+      transitive: [],
+      limits: { perArtifactChars: 100, totalChars: 100_000 },
+    })
     expect(out).toContain("START")
     expect(out).toContain("FINISH")
     expect(out).toContain("…[elided 421 chars]…") // 511 - floor(60) - floor(30)
@@ -48,7 +61,13 @@ describe("JhContext.assemble", () => {
   })
 
   test("empty artifacts → goals only, no Inputs section", () => {
-    const out = JhContext.assemble({ taskGoal: "the task", ancestorGoals: ["outer"], stepGoal: "the step", direct: [], transitive: [] })
+    const out = JhContext.assemble({
+      taskGoal: "the task",
+      ancestorGoals: ["outer"],
+      stepGoal: "the step",
+      direct: [],
+      transitive: [],
+    })
     expect(out).toContain("the task")
     expect(out).toContain("the step")
     expect(out).toContain("- outer")

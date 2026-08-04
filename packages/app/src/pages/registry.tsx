@@ -269,7 +269,12 @@ export function RegistryPage() {
                   </tbody>
                 </table>
                 <div class="flex items-center gap-2 px-2 py-2 text-[12px] text-v2-text-text-faint">
-                  <button type="button" class={btn} disabled={offset() === 0} onClick={() => setOffset(Math.max(0, offset() - PAGE_SIZE))}>
+                  <button
+                    type="button"
+                    class={btn}
+                    disabled={offset() === 0}
+                    onClick={() => setOffset(Math.max(0, offset() - PAGE_SIZE))}
+                  >
                     ← Prev
                   </button>
                   <span class="tabular-nums">
@@ -329,9 +334,7 @@ export function RegistryPage() {
                   {(row) => (
                     <div data-component="registry-editor" class="border-t border-v2-border-border-base p-3">
                       <div class="mb-2 flex items-center gap-2">
-                        <span class="text-[12px] font-semibold text-v2-text-text-base">
-                          Edit rowid {row().rowid}
-                        </span>
+                        <span class="text-[12px] font-semibold text-v2-text-text-base">Edit rowid {row().rowid}</span>
                         <div class="flex-1" />
                         <button type="button" class={btn} onClick={() => void saveRow()}>
                           Save changes

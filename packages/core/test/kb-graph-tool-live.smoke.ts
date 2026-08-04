@@ -22,7 +22,11 @@ import { toolIdentity, executeTool } from "./lib/tool"
 const sessionID = SessionV2.ID.make("ses_kb_live")
 let dir: string
 
-const call = (input: unknown) => ({ sessionID, ...toolIdentity, call: { type: "tool-call" as const, id: "c", name: KbTool.name, input } })
+const call = (input: unknown) => ({
+  sessionID,
+  ...toolIdentity,
+  call: { type: "tool-call" as const, id: "c", name: KbTool.name, input },
+})
 const text = (r: { type: string; value: unknown }) => {
   expect(r.type).toBe("text")
   return String(r.value)
@@ -58,7 +62,14 @@ describe("kb tool over the real WASM engine", () => {
       Effect.gen(function* () {
         const registry = yield* ToolRegistry.Service
         yield* waitReady
-        expect(text(yield* executeTool(registry, call({ op: "remember", text: "The user's name is Nadia and she prefers dark mode", name: "Nadia" })))).toContain("Remembered (mem_")
+        expect(
+          text(
+            yield* executeTool(
+              registry,
+              call({ op: "remember", text: "The user's name is Nadia and she prefers dark mode", name: "Nadia" }),
+            ),
+          ),
+        ).toContain("Remembered (mem_")
         const found = text(yield* executeTool(registry, call({ op: "search", query: "dark mode" })))
         expect(found).toContain("Nadia")
       }).pipe(Effect.provide(graph()), Effect.scoped) as Effect.Effect<void>,
@@ -82,12 +93,20 @@ describe("kb tool over the real WASM engine", () => {
         const registry = yield* ToolRegistry.Service
         yield* waitReady
         const idOf = (out: string) => out.match(/mem_[A-Za-z0-9]+/)?.[0] ?? ""
-        const ada = idOf(text(yield* executeTool(registry, call({ op: "remember", text: "Ada Lovelace, a mathematician", name: "Ada" }))))
-        const engine = idOf(text(yield* executeTool(registry, call({ op: "remember", text: "the Analytical Engine", name: "Engine" }))))
+        const ada = idOf(
+          text(
+            yield* executeTool(registry, call({ op: "remember", text: "Ada Lovelace, a mathematician", name: "Ada" })),
+          ),
+        )
+        const engine = idOf(
+          text(yield* executeTool(registry, call({ op: "remember", text: "the Analytical Engine", name: "Engine" }))),
+        )
         expect(ada).not.toBe("")
         expect(engine).not.toBe("")
         // relate → the tool's addEdge → the REAL WasmMemory edge table.
-        const linked = text(yield* executeTool(registry, call({ op: "relate", from: ada, to: engine, type: "wrote about" })))
+        const linked = text(
+          yield* executeTool(registry, call({ op: "relate", from: ada, to: engine, type: "wrote about" })),
+        )
         expect(linked).toContain("Linked")
         expect(linked).toContain("wrote_about")
         // neighbors reads it back out of the real engine.

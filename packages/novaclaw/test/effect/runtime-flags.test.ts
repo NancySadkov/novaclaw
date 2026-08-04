@@ -267,7 +267,7 @@ describe("RuntimeFlags", () => {
           ConfigProvider.layer(
             ConfigProvider.fromUnknown({
               NOVACLAW_DISABLE_EXTERNAL_SKILLS: "true",
-                NOVACLAW_EXPERIMENTAL: "true",
+              NOVACLAW_EXPERIMENTAL: "true",
               NOVACLAW_ENABLE_EXA: "true",
               NOVACLAW_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: "1234",
               NOVACLAW_CLIENT: "desktop",

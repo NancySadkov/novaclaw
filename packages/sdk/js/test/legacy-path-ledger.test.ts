@@ -37,9 +37,9 @@ import path from "node:path"
  * outright; a listed path the spec no longer declares fails with "delete the ledger line", so
  * un-pinning is mandatory rather than optional and the set can only get smaller.
  *
- * ⚠️ **Measured 2026-07-31, and it bounds what this file claims.** 172 paths: 86 under `/api/*`,
- * **86 legacy** (100 legacy operations across the five methods). Ruling 11 was written against 97
- * legacy paths, so the set has already shrunk by eleven — this file is what stops it going back. It
+ * ⚠️ **Measured 2026-08-04, and it bounds what this file claims.** 176 paths: 93 under `/api/*`,
+ * **83 legacy** (94 legacy operations across the five methods). Ruling 11 was written against 97
+ * legacy paths, so the set has already shrunk by fourteen — this file is what stops it going back. It
  * closes no live bug; it is a guard against the NEXT route, which is the only form this invariant
  * can take.
  *
@@ -102,10 +102,11 @@ export const LEGACY_PATHS: readonly string[] = [
   "/experimental/workspace/{id}",
   "/experimental/worktree",
   "/experimental/worktree/reset",
-  // /file — 6
+  // /file — 7
   "/file",
   "/file/content",
   "/file/mkdir",
+  "/file/rename",
   "/file/status",
   "/file/trash",
   "/file/trash/restore",
@@ -114,12 +115,13 @@ export const LEGACY_PATHS: readonly string[] = [
   "/find/file",
   // /formatter — 1
   "/formatter",
-  // /global — 5
+  // /global — 6
   "/global/config",
   "/global/discovery",
   "/global/dispose",
   "/global/event",
   "/global/health",
+  "/global/resources",
   // /instance — 1
   "/instance/dispose",
   // /log — 1
@@ -149,12 +151,6 @@ export const LEGACY_PATHS: readonly string[] = [
   "/provider",
   "/provider/presets",
   "/provider/{providerID}/probe",
-  // /pty — 5
-  "/pty",
-  "/pty/shells",
-  "/pty/{ptyID}",
-  "/pty/{ptyID}/connect",
-  "/pty/{ptyID}/connect-token",
   // /question — 3
   "/question",
   "/question/{requestID}/reject",
@@ -194,7 +190,7 @@ export const LEGACY_PATHS: readonly string[] = [
  * legacy route on an already-pinned path, which is the same widening under a different name. This
  * number closes that seam without a second 102-line list.
  */
-const LEGACY_OPERATION_COUNT = 100
+const LEGACY_OPERATION_COUNT = 94
 
 const PINNED = new Set(LEGACY_PATHS)
 
@@ -317,11 +313,11 @@ describe("every legacy path is on the ledger, and the ledger can only shrink", (
     // Pinned as a MEASUREMENT, not a preference: the honest answer to "how big is the legacy surface
     // right now". Removing a legacy route is supposed to fail here — that failure IS the ratchet
     // clicking, and lowering these numbers is how the removal gets recorded.
-    expect(LEGACY_PATHS.length, "the ledger's own length moved — recount and update this pin").toBe(86)
+    expect(LEGACY_PATHS.length, "the ledger's own length moved — recount and update this pin").toBe(83)
     expect(
       SPEC_LEGACY_PATHS.length,
       "the spec's legacy path count moved — reconcile LEGACY_PATHS and update this pin",
-    ).toBe(86)
+    ).toBe(83)
     expect(
       legacyOperations(DOCUMENT).length,
       [

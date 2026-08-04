@@ -32,7 +32,10 @@ const assistant: SessionMessage.Assistant = {
   id: SessionMessage.ID.make("msg_assistant"),
   type: "assistant",
   agent: "build",
-  model: { id: "qwen" as SessionMessage.Assistant["model"]["id"], providerID: "dgx-spark" as SessionMessage.Assistant["model"]["providerID"] },
+  model: {
+    id: "qwen" as SessionMessage.Assistant["model"]["id"],
+    providerID: "dgx-spark" as SessionMessage.Assistant["model"]["providerID"],
+  },
   content: [
     { type: "text", id: "txt_1", text: "the answer" },
     { type: "reasoning", id: "rsn_1", text: "thinking about secrets" },

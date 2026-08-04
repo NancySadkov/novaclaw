@@ -202,10 +202,7 @@ describe("ToolRegistry settlement of an unadvertised name", () => {
     Effect.gen(function* () {
       const service = yield* ToolRegistry.Service
       yield* service.register({ read: echo(), write: Tool.withPermission(echo(), "edit") })
-      const materialized = yield* service.materialize(
-        [{ action: "edit", resource: "*", effect: "deny" }],
-        () => true,
-      )
+      const materialized = yield* service.materialize([{ action: "edit", resource: "*", effect: "deny" }], () => true)
 
       expect(materialized.definitions.map((definition) => definition.name)).toEqual(["read"])
       expect(message(yield* materialized.settle(call("write")))).toContain("Available tools: read.")

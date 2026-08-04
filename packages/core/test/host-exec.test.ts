@@ -25,8 +25,7 @@ const SERVE_ENV = {
   SOME_OPERATOR_EXPORT: "x",
 }
 
-const shellShape = (command = "make") =>
-  ({ kind: "shell-command", shell: "/bin/bash", command }) as const
+const shellShape = (command = "make") => ({ kind: "shell-command", shell: "/bin/bash", command }) as const
 
 const base = {
   cwd: "/home/nancy/proj",
@@ -184,7 +183,13 @@ describe("HostExec.childEnv — the credential rule", () => {
 
 describe("HostExec.plan", () => {
   test("raw shell command: run the STRING through the shell option (cmd.exe is not `-c`)", () => {
-    const p = HostExec.plan({ ...base, shape: shellShape(), consent: "per-command", rootType: "interactive", backend: NONE })
+    const p = HostExec.plan({
+      ...base,
+      shape: shellShape(),
+      consent: "per-command",
+      rootType: "interactive",
+      backend: NONE,
+    })
     expect(p.via).toBe("shell")
     if (p.via !== "shell") throw new Error("unreachable")
     expect(p.shell).toBe("/bin/bash")
@@ -245,12 +250,26 @@ describe("HostExec.plan", () => {
   test("deny: no process is described at all, only the routing text", () => {
     // Safe mode is what puts an unattended, backend-less chain on the deny arm since 2026-07-30;
     // the hostile arm below is the other way in. Both must produce the same PLAN shape.
-    const p = HostExec.plan({ ...base, shape: shellShape(), consent: "per-command", rootType: "auto-prompting", backend: NONE, safeMode: true })
+    const p = HostExec.plan({
+      ...base,
+      shape: shellShape(),
+      consent: "per-command",
+      rootType: "auto-prompting",
+      backend: NONE,
+      safeMode: true,
+    })
     expect(p.via).toBe("none")
     if (p.via !== "none") throw new Error("unreachable")
     expect(p.message).toContain("Safe mode is ON")
     expect(p.message).toContain("read/edit/write/create/glob/grep")
-    const hostile = HostExec.plan({ ...base, shape: shellShape(), consent: "per-command", rootType: "auto-prompting", backend: NONE, hostileInput: true })
+    const hostile = HostExec.plan({
+      ...base,
+      shape: shellShape(),
+      consent: "per-command",
+      rootType: "auto-prompting",
+      backend: NONE,
+      hostileInput: true,
+    })
     expect(hostile.via).toBe("none")
     if (hostile.via !== "none") throw new Error("unreachable")
     expect(hostile.message).toContain("untrusted messenger chat")
@@ -259,7 +278,13 @@ describe("HostExec.plan", () => {
   test("without safe mode, that same unattended request now yields a RUNNABLE plan", () => {
     // The negative control for the test above: if `plan` refused regardless of the switch, every
     // assertion up there would still pass while the directive was un-shipped.
-    const p = HostExec.plan({ ...base, shape: shellShape(), consent: "per-command", rootType: "auto-prompting", backend: NONE })
+    const p = HostExec.plan({
+      ...base,
+      shape: shellShape(),
+      consent: "per-command",
+      rootType: "auto-prompting",
+      backend: NONE,
+    })
     expect(p.via).toBe("shell")
     expect(p.decision).toBe("raw")
   })
@@ -293,7 +318,14 @@ describe("HostExec.spawnPlan — the jh-runner wire shape", () => {
 
   test("a denied plan says so instead of describing a process", () => {
     const p = asRunnerPlan(
-      HostExec.spawnPlan({ ...base, shape: shellShape(), consent: "none", rootType: "goal-oriented", backend: NONE, safeMode: true }),
+      HostExec.spawnPlan({
+        ...base,
+        shape: shellShape(),
+        consent: "none",
+        rootType: "goal-oriented",
+        backend: NONE,
+        safeMode: true,
+      }),
     )
     expect(p.denied).toContain("Safe mode is ON")
     expect(p.file).toBeUndefined()
@@ -430,8 +462,7 @@ describe("an unanswerable trust question does not run raw", () => {
     bindingsForSession: () => Effect.succeed<ReadonlyArray<HostExec.ChainBinding>>([]),
     parentOf: () => Effect.succeed(undefined),
   }
-  const hostilityOf = (lookup: HostExec.ChainLookup) =>
-    Effect.runSync(HostExec.chainHasHostileBinding("ses_x", lookup))
+  const hostilityOf = (lookup: HostExec.ChainLookup) => Effect.runSync(HostExec.chainHasHostileBinding("ses_x", lookup))
 
   test("an interactive turn is DENIED on a backend-less host — and a healthy empty store still runs raw", () => {
     // The regression this whole unit exists to prevent, stated as the decision and not the value.
@@ -569,8 +600,7 @@ describe("the hostility tri-state has exactly ONE collapse point", () => {
     // Re-narrowing the field back to two values, which deletes the third outcome at the type level.
     { what: "types the hostility answer as a boolean", re: new RegExp(`\\b${NAMES}\\??\\s*:\\s*boolean\\b`) },
   ]
-  const shapesIn = (text: string): string[] =>
-    SHAPES.filter((shape) => shape.re.test(text)).map((shape) => shape.what)
+  const shapesIn = (text: string): string[] => SHAPES.filter((shape) => shape.re.test(text)).map((shape) => shape.what)
 
   const collect = (dir: string, out: Array<{ name: string; text: string }>) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -592,7 +622,7 @@ describe("the hostility tri-state has exactly ONE collapse point", () => {
   const LEDGER = new Map<string, string>([
     [
       "src/host-exec.ts",
-      "THE gate, and the ONE collapse point: `takesUnattendedArm` maps `true` and `\"unknown\"` onto the " +
+      'THE gate, and the ONE collapse point: `takesUnattendedArm` maps `true` and `"unknown"` onto the ' +
         "unattended arm, and `decide` hands the resulting boolean to AgentJail. One decision, made once.",
     ],
     [
@@ -604,7 +634,7 @@ describe("the hostility tri-state has exactly ONE collapse point", () => {
     [
       "src/tool/messenger.ts",
       "⚠️ A FALSE POSITIVE of the sweep, ledgered rather than silenced. `initiationRefusal` matches the " +
-        "tri-state EXHAUSTIVELY — `false` → clear, `\"unknown\"` → `unavailable`, `true` → `failed` — so " +
+        'tri-state EXHAUSTIVELY — `false` → clear, `"unknown"` → `unavailable`, `true` → `failed` — so ' +
         "it EXPANDS the distinction into three outcomes instead of collapsing it to two. The sweep " +
         "cannot tell the two apart, because an exhaustive match necessarily compares against literals; " +
         "that is a limit of a text sweep, not a defect in the file. It is listed here (rather than the " +
@@ -640,8 +670,7 @@ describe("the hostility tri-state has exactly ONE collapse point", () => {
     for (const name of LEDGER.keys()) {
       const file = sources.find((item) => item.name === name)
       if (file === undefined) stale.push(`${name} (no longer exists — drop the ledger entry)`)
-      else if (shapesIn(file.text).length === 0)
-        stale.push(`${name} (no longer collapses it — drop the ledger entry)`)
+      else if (shapesIn(file.text).length === 0) stale.push(`${name} (no longer collapses it — drop the ledger entry)`)
     }
     expect(stale).toEqual([])
   })

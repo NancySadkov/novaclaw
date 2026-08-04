@@ -57,8 +57,22 @@ describe("scratch dir does not litter, and can be opened at all", () => {
 
 describe("WasmMemory (in-process, everywhere)", () => {
   test("add + hybrid search (vector + FTS both contribute)", async () => {
-    await mem.addMemory({ id: "alice", kind: "entity", name: "Alice", text: "Alice lives in Berlin", scope: "global", embedding: vec(0) })
-    await mem.addMemory({ id: "acme", kind: "entity", name: "Acme", text: "Acme is based in Berlin", scope: "global", embedding: vec(1) })
+    await mem.addMemory({
+      id: "alice",
+      kind: "entity",
+      name: "Alice",
+      text: "Alice lives in Berlin",
+      scope: "global",
+      embedding: vec(0),
+    })
+    await mem.addMemory({
+      id: "acme",
+      kind: "entity",
+      name: "Acme",
+      text: "Acme is based in Berlin",
+      scope: "global",
+      embedding: vec(1),
+    })
     const hits = await mem.search({ query: "Berlin", embedding: vec(0), k: 5 })
     const ids = new Set(hits.map((h) => h.id))
     expect(ids.has("alice") && ids.has("acme")).toBe(true)
@@ -150,7 +164,13 @@ describe("WasmMemory (in-process, everywhere)", () => {
     await mem.addMemory({ id: "pt_auto1", kind: "episode", text: "auto noted one", scope: S, source: "auto-extract" })
     await mem.addMemory({ id: "pt_auto2", kind: "episode", text: "auto noted two", scope: S, source: "auto-extract" })
     for (let i = 0; i < 3; i++)
-      await mem.addMemory({ id: `pt_doc${i}`, kind: "passage", text: `ingested passage ${i}`, scope: S, source: "ingest" })
+      await mem.addMemory({
+        id: `pt_doc${i}`,
+        kind: "passage",
+        text: `ingested passage ${i}`,
+        scope: S,
+        source: "ingest",
+      })
 
     // 6 staged, cap 3 ⇒ the 3 least valuable go: the ingested passages (bulk AND re-derivable).
     expect(await mem.prune({ scope: S, maxStaged: 3 })).toBe(3)
@@ -201,9 +221,27 @@ describe("WasmMemory (in-process, everywhere)", () => {
   test("consolidate promotes session memories to global, dedups across sessions, is idempotent", async () => {
     const c = await WasmMemory.open(join(dir, "consolidate"), { dim: DIM })
     // Two sessions; the "lives in Kyoto" fact is stated in BOTH (same content).
-    await c.addMemory({ id: "s1a", kind: "episode", text: "The user lives in Kyoto", scope: "session:a", source: "auto-extract" })
-    await c.addMemory({ id: "s1b", kind: "episode", text: "The user likes Haskell", scope: "session:a", source: "auto-extract" })
-    await c.addMemory({ id: "s2a", kind: "episode", text: "The user lives in Kyoto", scope: "session:b", source: "auto-extract" })
+    await c.addMemory({
+      id: "s1a",
+      kind: "episode",
+      text: "The user lives in Kyoto",
+      scope: "session:a",
+      source: "auto-extract",
+    })
+    await c.addMemory({
+      id: "s1b",
+      kind: "episode",
+      text: "The user likes Haskell",
+      scope: "session:a",
+      source: "auto-extract",
+    })
+    await c.addMemory({
+      id: "s2a",
+      kind: "episode",
+      text: "The user lives in Kyoto",
+      scope: "session:b",
+      source: "auto-extract",
+    })
     // A deliberate "this chat only" note (no auto-extract source) must NOT be promoted.
     await c.addMemory({ id: "note", kind: "entity", text: "Ephemeral chat note about pandas", scope: "session:a" })
     // An auto-extracted RELATIONSHIP between two promoted facts. This assertion exists because its
@@ -216,17 +254,17 @@ describe("WasmMemory (in-process, everywhere)", () => {
     expect(promoted).toBe(3) // the three auto-extracted originals; the deliberate note is left alone
 
     // The deliberate session-only note stayed put (session, not global).
-    expect((await c.search({ query: "pandas", scopes: ["global"] }))).toHaveLength(0)
-    expect((await c.search({ query: "pandas", scopes: ["session:a"] }))).toHaveLength(1)
+    expect(await c.search({ query: "pandas", scopes: ["global"] })).toHaveLength(0)
+    expect(await c.search({ query: "pandas", scopes: ["session:a"] })).toHaveLength(1)
 
     // A GLOBAL-only search now finds both facts (cross-session), deduped to one Kyoto memory.
     const kyoto = await c.search({ query: "Kyoto", scopes: ["global"] })
     expect(kyoto).toHaveLength(1)
     expect(kyoto[0]!.scope).toBe("global")
-    expect((await c.search({ query: "Haskell", scopes: ["global"] }))).toHaveLength(1)
+    expect(await c.search({ query: "Haskell", scopes: ["global"] })).toHaveLength(1)
 
     // The session originals were superseded (invalidated) — no longer in a session-scoped search.
-    expect((await c.search({ query: "Kyoto", scopes: ["session:a", "session:b"] }))).toHaveLength(0)
+    expect(await c.search({ query: "Kyoto", scopes: ["session:a", "session:b"] })).toHaveLength(0)
 
     // The EDGE was carried onto the global twins — the relationship survives consolidation.
     const promotedGraph = await c.graph({ scopes: ["global"] })

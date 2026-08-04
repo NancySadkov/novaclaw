@@ -108,9 +108,9 @@ describe("the two RESERVED_IDS lists are the same list", () => {
     // leave this file congratulating a dead constant.
     for (const id of core!)
       expect(() => AppRegistry.normalize({ title: id, id, open: { type: "route", value: "/x" } })).toThrow(/reserved/)
-    expect(
-      AppRegistry.normalize({ title: "Stock prices", open: { type: "route", value: "/x" } }).id,
-    ).toBe("stock-prices")
+    expect(AppRegistry.normalize({ title: "Stock prices", open: { type: "route", value: "/x" } }).id).toBe(
+      "stock-prices",
+    )
   })
 })
 

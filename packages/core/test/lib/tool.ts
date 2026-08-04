@@ -22,4 +22,7 @@ export const executeTool = (registry: ToolRegistry.Interface, input: ToolRegistr
   // inspect `materialize()` directly when disclosure itself is the subject.
   registry
     .materialize([], () => true, new Set([input.call.name]))
-    .pipe(Effect.flatMap((materialized) => materialized.settle(input)), Effect.map((settlement) => settlement.result))
+    .pipe(
+      Effect.flatMap((materialized) => materialized.settle(input)),
+      Effect.map((settlement) => settlement.result),
+    )

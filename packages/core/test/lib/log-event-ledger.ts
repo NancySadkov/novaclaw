@@ -104,8 +104,7 @@ export const ledgerFaults = (
     const found = actualCounts.get(name) ?? 0
     const allowed = ledgerCounts.get(name) ?? 0
     if (found > allowed) unlisted.push(name + " (+" + (found - allowed) + " unledgered)")
-    if (allowed > found)
-      stale.push(name + " (-" + (allowed - found) + "; drop or decrement the ledger entry)")
+    if (allowed > found) stale.push(name + " (-" + (allowed - found) + "; drop or decrement the ledger entry)")
   }
   return { unlisted, stale }
 }

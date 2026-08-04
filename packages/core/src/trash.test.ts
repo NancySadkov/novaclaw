@@ -26,7 +26,12 @@ describe("trash store", () => {
     expect(entry.type).toBe("file")
     expect(entry.originalPath).toBe(path.resolve(file))
     expect(isValidId(entry.id)).toBe(true)
-    expect(await fs.access(file).then(() => true, () => false)).toBe(false)
+    expect(
+      await fs.access(file).then(
+        () => true,
+        () => false,
+      ),
+    ).toBe(false)
 
     const listed = await listTrash({ root })
     expect(listed.map((item) => item.id)).toEqual([entry.id])
@@ -60,7 +65,12 @@ describe("trash store", () => {
       throw Object.assign(new Error("cross-device link"), { code: "EXDEV" })
     }
     const entry = await trashPath(file, { root, renameFn })
-    expect(await fs.access(file).then(() => true, () => false)).toBe(false)
+    expect(
+      await fs.access(file).then(
+        () => true,
+        () => false,
+      ),
+    ).toBe(false)
     const payload = path.join(root, entry.id, "payload")
     expect(await fs.readFile(payload, "utf8")).toBe("moved across devices")
   })

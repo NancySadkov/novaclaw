@@ -10,8 +10,26 @@ import { JhEngine } from "./engine"
 // checkpoint. Distinct compile-error outputs per attempt keep the leaf out of the "stuck" path so the flow
 // reaches the recovery re-introspect (where the restore message is delivered).
 
-const editAtom = () => JSON.stringify({ goal: "fix a function", size: "atomic", tool: "edit_file", args: { path: "f.c", old_string: "a", new_string: "b" }, success: "compiles", check: { type: "compile", command: "gcc f.c" }, produces: [{ id: "f", type: "file" }] })
-const runAtom = () => JSON.stringify({ goal: "fix a function", size: "atomic", tool: "run", args: { command: "./x" }, success: "right output", check: { type: "run", command: "./x", expect: "OK" }, produces: [] })
+const editAtom = () =>
+  JSON.stringify({
+    goal: "fix a function",
+    size: "atomic",
+    tool: "edit_file",
+    args: { path: "f.c", old_string: "a", new_string: "b" },
+    success: "compiles",
+    check: { type: "compile", command: "gcc f.c" },
+    produces: [{ id: "f", type: "file" }],
+  })
+const runAtom = () =>
+  JSON.stringify({
+    goal: "fix a function",
+    size: "atomic",
+    tool: "run",
+    args: { command: "./x" },
+    success: "right output",
+    check: { type: "run", command: "./x", expect: "OK" },
+    produces: [],
+  })
 
 function harness(opts: {
   replies: string[]

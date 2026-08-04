@@ -339,7 +339,9 @@ const nameTheFault = <A, E>(query: Effect.Effect<A, E>, what: string): Effect.Ef
 
 /** What a read that may not have happened looks like once a consumer has taken responsibility for
  *  it: `read` says whether the database answered at all, `value` is only meaningful when it did. */
-export type Attempt<A> = { readonly read: true; readonly value: A } | { readonly read: false; readonly value: undefined }
+export type Attempt<A> =
+  | { readonly read: true; readonly value: A }
+  | { readonly read: false; readonly value: undefined }
 
 /**
  * Adapt a fallible read into an explicit *did this read happen?* pair — the one shape a consumer
@@ -379,7 +381,12 @@ export const layer = Layer.effect(
         return rows.map(accountFromRow)
       }),
       getAccount: Effect.fn("MessengerStore.getAccount")(function* (id) {
-        const row = yield* db.select().from(MessengerAccountTable).where(eq(MessengerAccountTable.id, id)).get().pipe(Effect.orDie)
+        const row = yield* db
+          .select()
+          .from(MessengerAccountTable)
+          .where(eq(MessengerAccountTable.id, id))
+          .get()
+          .pipe(Effect.orDie)
         return row === undefined ? undefined : accountFromRow(row)
       }),
       createAccount: Effect.fn("MessengerStore.createAccount")(function* (input) {
@@ -567,7 +574,8 @@ export const layer = Layer.effect(
           )
           .get()
           .pipe(Effect.orDie)
-        if (existing !== undefined) return yield* Effect.fail(new ChatAlreadyBoundError({ sessionID: existing.session_id }))
+        if (existing !== undefined)
+          return yield* Effect.fail(new ChatAlreadyBoundError({ sessionID: existing.session_id }))
         const id = Messenger.BindingID.create()
         yield* db
           .insert(MessengerBindingTable)

@@ -160,7 +160,9 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       // A command with image attachments has no native lowering (the V1 route rejected it
       // server-side with the same message) — refuse legibly before sending.
       if (images.length > 0)
-        throw new Error("A command with file attachments is not supported yet — send the attachment as a regular message instead.")
+        throw new Error(
+          "A command with file attachments is not supported yet — send the attachment as a regular message instead.",
+        )
       await input.client.v2.session.command({
         sessionID: input.draft.sessionID,
         command: cmd,

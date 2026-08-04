@@ -103,11 +103,29 @@ describe("MessengerStore", () => {
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
       const account = yield* store.createAccount({ driverID: "irc", label: "t", enabled: true, settings: {} })
-      yield* store.upsertContact({ accountID: account.id, senderID: "u1", name: "Stranger", trust: "client", pairedAt: undefined })
-      yield* store.upsertContact({ accountID: account.id, senderID: "u1", name: "Nancy", trust: "operator", pairedAt: 500 })
+      yield* store.upsertContact({
+        accountID: account.id,
+        senderID: "u1",
+        name: "Stranger",
+        trust: "client",
+        pairedAt: undefined,
+      })
+      yield* store.upsertContact({
+        accountID: account.id,
+        senderID: "u1",
+        name: "Nancy",
+        trust: "operator",
+        pairedAt: 500,
+      })
 
       const contact = yield* store.getContact(account.id, "u1")
-      expect(contact).toEqual({ accountID: account.id, senderID: "u1", name: "Nancy", trust: "operator", pairedAt: 500 })
+      expect(contact).toEqual({
+        accountID: account.id,
+        senderID: "u1",
+        name: "Nancy",
+        trust: "operator",
+        pairedAt: 500,
+      })
       expect(yield* store.listContacts(account.id)).toHaveLength(1)
 
       yield* store.removeContact(account.id, "u1")
@@ -267,7 +285,13 @@ describe("MessengerStore", () => {
       const store = yield* MessengerStore.Service
       const account = yield* store.createAccount({ driverID: "telegram", label: "t", enabled: true, settings: {} })
       yield* store.seenChat({ accountID: account.id, chatID: "1", kind: "dm", title: "x", at: 1 })
-      yield* store.upsertContact({ accountID: account.id, senderID: "u", name: "x", trust: "client", pairedAt: undefined })
+      yield* store.upsertContact({
+        accountID: account.id,
+        senderID: "u",
+        name: "x",
+        trust: "client",
+        pairedAt: undefined,
+      })
       yield* store.createBinding({ accountID: account.id, chatID: "1", sessionID: "ses_x", trust: "client" })
       yield* store.setCursor(account.id, 5)
 

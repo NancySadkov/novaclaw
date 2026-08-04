@@ -82,7 +82,10 @@ export async function embedOne(text: string, dbFile?: string): Promise<number[] 
  * rather than narrowing it. But it is NOT silent — an outage and a refusal are different facts
  * (ruling 2), so the block is logged with the policy's own message while a timeout stays quiet.
  */
-async function requestBatch(settings: MemorySetting.EmbeddingSettings, batch: readonly string[]): Promise<number[][] | undefined> {
+async function requestBatch(
+  settings: MemorySetting.EmbeddingSettings,
+  batch: readonly string[],
+): Promise<number[][] | undefined> {
   const verdict = Offline.checkUrl(settings.url, Offline.currentPolicy())
   if (!verdict.allowed) {
     console.warn(`[kb-memory] embedding request blocked: ${verdict.message}`)

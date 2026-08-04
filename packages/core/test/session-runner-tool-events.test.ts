@@ -14,6 +14,11 @@ const base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
 
 const capture = () => {
   const published: Array<{ readonly type: string; readonly data: unknown }> = []
+  const boundaries: Array<{
+    readonly phase: "drain" | "provider" | "tool" | "maintenance"
+    readonly checkpoint: "clear" | "mark" | "keep"
+  }> = []
+  let toolProtocolMarks = 0
   const events = EventV2.Service.of({
     publish: (definition, data) =>
       Effect.sync(() => {
@@ -45,7 +50,18 @@ const capture = () => {
         id: ModelV2.ID.make("model"),
         providerID: ProviderV2.ID.make("provider"),
       },
+      executionBoundary: (phase, checkpoint) =>
+        Effect.sync(() => {
+          boundaries.push({ phase, checkpoint })
+        }),
+      providerToolProtocol: () =>
+        Effect.sync(() => {
+          toolProtocolMarks++
+        }),
+      toolSideEffects: { read: "read" },
     }),
+    boundaries,
+    toolProtocolMarks: () => toolProtocolMarks,
   }
 }
 
@@ -73,6 +89,11 @@ test("local tool success serializes media base64 once and reconstructs from stru
   const { published, publisher } = capture()
   await Effect.runPromise(publisher.publish(call))
   await Effect.runPromise(publisher.publish(result))
+
+  expect(published.find((event) => event.type === "session.next.tool.called.1")?.data).toMatchObject({
+    callID: call.id,
+    sideEffect: "read",
+  })
 
   const success = published.find((event) => event.type === "session.next.tool.success.1")
   expect(success).toBeDefined()
@@ -126,13 +147,42 @@ test("old success event data containing result still decodes", () => {
   expect(decoded.result).toMatchObject({ type: "content" })
 })
 
+test("pre-receipt Tool.Called history still decodes conservatively", () => {
+  const legacy = {
+    sessionID,
+    assistantMessageID: SessionMessage.ID.create(),
+    timestamp: Date.now(),
+    callID: "legacy_call",
+    tool: "plugin_tool",
+    input: {},
+    provider: { executed: false },
+  }
+  expect(() => Schema.decodeUnknownSync(SessionEvent.Tool.Called.data)(legacy)).not.toThrow()
+})
+
 test("step finish records settlement without publishing step ended", async () => {
-  const { published, publisher } = capture()
+  const { published, publisher, boundaries } = capture()
   await Effect.runPromise(publisher.publish(LLMEvent.stepStart({ index: 0 })))
   await Effect.runPromise(publisher.publish(LLMEvent.stepFinish({ index: 0, reason: "stop" })))
 
   expect(published.some((event) => event.type === "session.next.step.ended.2")).toBe(false)
   expect(publisher.stepSettlement()).toMatchObject({ finish: "stop" })
+  expect(boundaries).toEqual([{ phase: "provider", checkpoint: "mark" }])
+})
+
+test("execution boundary records partial output once and fences unsettled tools", async () => {
+  const { publisher, boundaries, toolProtocolMarks } = capture()
+  await Effect.runPromise(publisher.publish(LLMEvent.textStart({ id: "partial-boundary" })))
+  await Effect.runPromise(publisher.publish(LLMEvent.reasoningStart({ id: "reasoning-boundary" })))
+  await Effect.runPromise(publisher.publish(call))
+  await Effect.runPromise(publisher.publish(result))
+
+  expect(boundaries).toEqual([
+    { phase: "provider", checkpoint: "mark" },
+    { phase: "tool", checkpoint: "clear" },
+    { phase: "tool", checkpoint: "mark" },
+  ])
+  expect(toolProtocolMarks()).toBe(1)
 })
 
 test("a broken stream settles its partial assistant without publishing a fatal failure", async () => {

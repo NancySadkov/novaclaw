@@ -56,7 +56,9 @@ describe("JhAffective (improve18: affective × strict)", () => {
     let s = stuck
     for (let i = 0; i < 3; i++) s = JhAffective.step(s, { result: `progress:${i}`, acted: true })
     expect(s.mood.frustration).toBeLessThan(stuck.mood.frustration)
-    expect(JhAffective.sampling(s, base).frequencyPenalty).toBeLessThan(JhAffective.sampling(stuck, base).frequencyPenalty)
+    expect(JhAffective.sampling(s, base).frequencyPenalty).toBeLessThan(
+      JhAffective.sampling(stuck, base).frequencyPenalty,
+    )
   })
 
   test("a deep rut trips the one-shot intervention (the loop-breaker steer)", () => {
@@ -71,7 +73,11 @@ describe("JhAffective (improve18: affective × strict)", () => {
     let s = JhAffective.initial
     for (let i = 0; i < 4; i++) {
       s = JhAffective.fromLog(s, { type: "action", step: "root.3", tool: "write_file" }, pending)
-      s = JhAffective.fromLog(s, { type: "verification", step: "root.3", ok: false, detail: "same error again" }, pending)
+      s = JhAffective.fromLog(
+        s,
+        { type: "verification", step: "root.3", ok: false, detail: "same error again" },
+        pending,
+      )
     }
     const stuck = s.mood.frustration
     expect(stuck).toBeGreaterThan(0.4)
@@ -104,7 +110,11 @@ describe("JhAffective (improve18: affective × strict)", () => {
   test("it is the SAME engine as the session drain loop (no look-alike homeostat)", () => {
     // Identical facts through both entry points must yield an identical mood.
     const viaJh = JhAffective.step(JhAffective.initial, { action: "a(1)", result: "error: boom", acted: true })
-    const viaSession = Affective.appraiseObserved(Affective.calmMood, { action: "a(1)", toolResult: "error: boom", acted: true })
+    const viaSession = Affective.appraiseObserved(Affective.calmMood, {
+      action: "a(1)",
+      toolResult: "error: boom",
+      acted: true,
+    })
     expect(viaJh.mood).toEqual(viaSession)
   })
 })

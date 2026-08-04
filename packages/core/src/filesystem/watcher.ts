@@ -202,9 +202,7 @@ export const layer = Layer.effect(
             return Log.event("filesystem.watcher.subscribe.failed", {
               directory,
               "filesystem.cause": Cause.pretty(cause),
-            }).pipe(
-              Effect.as(undefined),
-            )
+            }).pipe(Effect.as(undefined))
           }),
         )
       })
@@ -304,9 +302,7 @@ export const layer = Layer.effect(
             directory,
             "filesystem.ignore.attempted": JSON.stringify(item.ignore),
             "filesystem.ignore.active":
-              current === undefined
-                ? "nothing — this directory is not being watched"
-                : JSON.stringify(current.ignore),
+              current === undefined ? "nothing — this directory is not being watched" : JSON.stringify(current.ignore),
           })
           continue
         }

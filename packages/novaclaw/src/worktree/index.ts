@@ -132,12 +132,7 @@ type GitResult = { code: number; text: string; stderr: string }
 export const layer: Layer.Layer<
   Service,
   never,
-  | FSUtil.Service
-  | Path.Path
-  | AppProcess.Service
-  | Git.Service
-  | InstanceStore.Service
-  | Database.Service
+  FSUtil.Service | Path.Path | AppProcess.Service | Git.Service | InstanceStore.Service | Database.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -222,7 +217,6 @@ export const layer: Layer.Layer<
           message: created.stderr || created.text || "Failed to create git worktree",
         })
       }
-
     })
 
     const boot = Effect.fnUntraced(function* (info: Info, startCommand?: string) {

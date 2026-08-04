@@ -30,9 +30,7 @@ export function ComposerAttachmentsTray(props: { state: ComposerAttachmentsTrayS
     <>
       <PromptDragOverlay
         type={props.state.dragging}
-        label={language.t(
-          props.state.dragging === "@mention" ? "prompt.dropzone.file.label" : "prompt.dropzone.label",
-        )}
+        label={language.t(props.state.dragging === "@mention" ? "prompt.dropzone.file.label" : "prompt.dropzone.label")}
       />
       <PromptContextItems
         items={props.state.contextItems}
@@ -43,9 +41,7 @@ export function ComposerAttachmentsTray(props: { state: ComposerAttachmentsTrayS
       />
       <PromptImageAttachments
         attachments={props.state.images}
-        onOpen={(attachment) =>
-          dialog.show(() => <ImagePreview src={attachment.dataUrl} alt={attachment.filename} />)
-        }
+        onOpen={(attachment) => dialog.show(() => <ImagePreview src={attachment.dataUrl} alt={attachment.filename} />)}
         onRemove={props.state.removeImage}
         removeLabel={language.t("prompt.attachment.remove")}
       />

@@ -41,9 +41,8 @@ export const AppPlaceholder: Component<{
         </div>
         <p class="text-sm text-v2-text-text-muted leading-relaxed">
           This app's own screen is still on the way — but the AI in{" "}
-          <span class="text-v2-text-text-accent font-medium">Chats</span> can already do all of this for you. You can even
-          ask it to build a{" "}
-          {props.title.toLowerCase()} app for your home screen.
+          <span class="text-v2-text-text-accent font-medium">Chats</span> can already do all of this for you. You can
+          even ask it to build a {props.title.toLowerCase()} app for your home screen.
         </p>
         <ButtonV2
           variant="gold"

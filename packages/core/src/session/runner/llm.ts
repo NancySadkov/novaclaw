@@ -1,3 +1,5 @@
+export * as SessionRunnerLLM from "./llm"
+
 import {
   LLM,
   LLMClient,
@@ -77,6 +79,7 @@ import { SessionStrict } from "./strict"
 import { JhStore } from "../../jh/store"
 import type { JhEngine } from "../../jh/engine"
 import { createLLMEventPublisher } from "./publish-llm-event"
+import { SessionExecutionAttempt } from "../execution-attempt"
 import { attachmentModality, needsCapabilityEvidence, toLLMMessages, unreadableTurnAttachments } from "./to-llm-message"
 import { AdhocGuidance } from "../../adhoc-tools/guidance"
 import { Affective } from "./affective"
@@ -777,9 +780,11 @@ export const layer = Layer.effect(
       }
       const system =
         initialized ??
-        (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent, session.id), session.id).pipe(
-          Effect.tapError(surfacePreTurnFailure),
-        ))
+        (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent, session.id), session.id, (update) =>
+          SessionExecutionAttempt.contextUpdatedCurrent({ ...update.data, snapshot: update.snapshot }, () =>
+            SessionContextEpoch.publishUpdate(db, events, update.data, update.snapshot),
+          ),
+        ).pipe(Effect.tapError(surfacePreTurnFailure)))
       const modelSession = { ...session, model: config.model as typeof session.model }
       const model = yield* models.resolve(modelSession).pipe(Effect.tapError(surfacePreTurnFailure))
       const maxProviderAttempts = ProviderRetry.maxAttempts(yield* models.retryAttempts(modelSession))
@@ -1018,6 +1023,11 @@ export const layer = Layer.effect(
         agent: agent.id,
         model: attemptModelRef,
         snapshot: startSnapshot,
+        executionBoundary: SessionExecutionAttempt.advanceCurrent,
+        providerToolProtocol: SessionExecutionAttempt.providerToolProtocolCurrent,
+        toolSideEffects: toolMaterialization?.sideEffects,
+        toolDispatched: SessionExecutionAttempt.toolDispatchedCurrent,
+        toolSettled: SessionExecutionAttempt.toolSettledCurrent,
       })
       const withPublication = Semaphore.makeUnsafe(1).withPermit
       const publish = (event: LLMEvent, outputPaths: ReadonlyArray<string> = []) =>
@@ -1137,7 +1147,7 @@ export const layer = Layer.effect(
                           resolved: path.resolve(location.directory, requested),
                         })
                         if (count > 0)
-                          yield* Log.event("session.memory.stale-file.invalidated", {
+                          yield* Log.event("session.memory.invalidate.stale", {
                             "session.id": session.id,
                             "session.memory.invalidated": count,
                           })
@@ -1444,16 +1454,18 @@ export const layer = Layer.effect(
       )
       const attemptID = EventV2.ID.create()
       const startedAt = yield* DateTime.now
+      const providerRecovery = {
+        attemptID,
+        assistantMessageID,
+        model: attemptModelRef,
+        startedAt,
+        toolProtocol: false,
+      }
+      yield* SessionExecutionAttempt.providerStartedCurrent(providerRecovery)
       yield* events.publish(SessionEvent.ProviderAttempt.Started, {
         sessionID: session.id,
         timestamp: startedAt,
-        recovery: {
-          attemptID,
-          assistantMessageID,
-          model: attemptModelRef,
-          startedAt,
-          toolProtocol: false,
-        },
+        recovery: providerRecovery,
       })
       return yield* scheduler.admit(dispatchSlot).pipe(
         Effect.andThen(generation),
@@ -1467,7 +1479,7 @@ export const layer = Layer.effect(
               outcome:
                 exit._tag === "Success" ? "completed" : Cause.hasInterrupts(exit.cause) ? "interrupted" : "failed",
             })
-            .pipe(Effect.ignore),
+            .pipe(Effect.andThen(SessionExecutionAttempt.providerSettledCurrent(attemptID)), Effect.ignore),
         ),
       )
     }, Effect.scoped)
@@ -1542,7 +1554,11 @@ export const layer = Layer.effect(
       const agent = yield* agents.select(config.agent as typeof session.agent)
       const system =
         (yield* SessionContextEpoch.initialize(db, loadSystemContext(agent, session.id), session.id)) ??
-        (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent, session.id), session.id))
+        (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent, session.id), session.id, (update) =>
+          SessionExecutionAttempt.contextUpdatedCurrent({ ...update.data, snapshot: update.snapshot }, () =>
+            SessionContextEpoch.publishUpdate(db, events, update.data, update.snapshot),
+          ),
+        ))
       const model = yield* models.resolve({ ...session, model: config.model as typeof session.model })
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       // The compactor reads only `generation?.maxTokens` (else the model's own output limit)
@@ -1887,6 +1903,10 @@ export const layer = Layer.effect(
             ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
           },
           ...(startSnapshot === undefined ? {} : { snapshot: startSnapshot }),
+          executionBoundary: SessionExecutionAttempt.advanceCurrent,
+          providerToolProtocol: SessionExecutionAttempt.providerToolProtocolCurrent,
+          toolDispatched: SessionExecutionAttempt.toolDispatchedCurrent,
+          toolSettled: SessionExecutionAttempt.toolSettledCurrent,
         })
         // Per-racer action buffers (racing only): bounded, so the winner's can be replayed post-race.
         const racerActions: SessionStrict.MaterializedAction[][] = single ? [] : forks.map(() => [])
@@ -2197,7 +2217,9 @@ export const layer = Layer.effect(
         yield* Log.event("session.control.operator", { "session.id": input.sessionID })
         return
       }
-      const providerRecovery = (yield* store.get(input.sessionID))?.providerRecovery
+      const providerRecovery =
+        (yield* SessionExecutionAttempt.providerRecoveryCurrent()) ??
+        (yield* store.get(input.sessionID))?.providerRecovery
       if (providerRecovery) {
         yield* events.publish(SessionEvent.Synthetic, {
           sessionID: input.sessionID,
@@ -2219,6 +2241,7 @@ export const layer = Layer.effect(
           attemptID: providerRecovery.attemptID,
           reason: "new-input",
         })
+        yield* SessionExecutionAttempt.providerSettledCurrent(providerRecovery.attemptID)
       } else {
         yield* failInterruptedTools(input.sessionID)
       }

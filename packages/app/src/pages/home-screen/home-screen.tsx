@@ -216,7 +216,9 @@ export const HomeScreen: Component = () => {
                       would overflow a 360px viewport and clip the left column unreachably (centered flex
                       overflow has no start-edge scroll). Tiles are w-full inside their track. */}
                   <div class="grid w-full [grid-template-columns:repeat(4,minmax(0,5rem))] sm:[grid-template-columns:repeat(5,minmax(0,5rem))] md:[grid-template-columns:repeat(6,minmax(0,5rem))] gap-x-4 sm:gap-x-7 gap-y-9 px-4 py-8 pt-2 sm:px-8 max-w-[62rem] justify-center">
-                    <For each={pageApps}>{(app) => <SortableTile app={app} shouldSuppressOpen={shouldSuppressOpen} />}</For>
+                    <For each={pageApps}>
+                      {(app) => <SortableTile app={app} shouldSuppressOpen={shouldSuppressOpen} />}
+                    </For>
                   </div>
                 </div>
               )}

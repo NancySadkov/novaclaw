@@ -284,10 +284,7 @@ export const UNATTENDED_CONFINED_RULES: readonly PermissionRule[] = [
  * `RootType`, so `"unknown"` reaches the stance intact and gets the confined arm via `attendedRoot`
  * — the ONE collapse point above.
  */
-export const unattendedStanceRules = (
-  rootType: RootType,
-  mode: PermissionMode,
-): readonly PermissionRule[] =>
+export const unattendedStanceRules = (rootType: RootType, mode: PermissionMode): readonly PermissionRule[] =>
   attendedRoot(rootType) || mode === "yolo" ? [] : UNATTENDED_CONFINED_RULES
 
 export interface ModelRef {

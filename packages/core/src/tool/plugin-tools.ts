@@ -21,10 +21,7 @@ export interface Entry {
 }
 
 export interface Interface {
-  readonly register: (
-    name: string,
-    definition: ToolDefinition,
-  ) => Effect.Effect<State.Registration, never, Scope.Scope>
+  readonly register: (name: string, definition: ToolDefinition) => Effect.Effect<State.Registration, never, Scope.Scope>
   readonly entries: () => Effect.Effect<ReadonlyMap<string, Entry>>
 }
 

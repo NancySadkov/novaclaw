@@ -35,7 +35,10 @@ describe("Tool.makeExternal", () => {
       description: "d",
       inputSchema: {} as any,
       execute: () =>
-        Effect.succeed({ structured: null, content: [{ type: "file", data: "AAA", mime: "image/png", name: "x.png" }] }),
+        Effect.succeed({
+          structured: null,
+          content: [{ type: "file", data: "AAA", mime: "image/png", name: "x.png" }],
+        }),
     })
     const out: any = await Effect.runPromise(Tool.settle(tool, call({}), ctx) as any)
     expect(out.content).toEqual([{ type: "file", uri: "data:image/png;base64,AAA", mime: "image/png", name: "x.png" }])

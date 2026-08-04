@@ -294,40 +294,40 @@ export const make = Effect.gen(function* () {
   }
 
   const spawn = (command: ChildProcess.StandardCommand, opts: NodeChildProcess.SpawnOptions) =>
-    Effect.callback<readonly [NodeChildProcess.ChildProcess, ExitSignal, ExitedSignal], PlatformError.PlatformError>((
-      resume,
-    ) => {
-      const signal = Deferred.makeUnsafe<readonly [code: number | null, signal: NodeJS.Signals | null]>()
-      // See ExitedSignal above: settled by whichever of 'exit'/'close' lands FIRST. 'close' is a real
-      // fallback rather than dead weight — a child that dies before it ever runs can close without
-      // emitting 'exit', and teardown must not wait forever for that one either.
-      const exited = Deferred.makeUnsafe<readonly [code: number | null, signal: NodeJS.Signals | null]>()
-      const proc = launch(command.command, command.args, opts)
-      let end = false
-      let exit: readonly [code: number | null, signal: NodeJS.Signals | null] | undefined
-      proc.on("error", (err) => {
-        resume(Effect.fail(toPlatformError("spawn", err, command)))
-      })
-      proc.on("exit", (...args) => {
-        exit = args
-        Deferred.doneUnsafe(exited, Exit.succeed(args))
-      })
-      proc.on("close", (...args) => {
-        Deferred.doneUnsafe(exited, Exit.succeed(exit ?? args))
-        if (end) return
-        end = true
-        Deferred.doneUnsafe(signal, Exit.succeed(exit ?? args))
-      })
-      proc.on("spawn", () => {
-        resume(Effect.succeed([proc, signal, exited]))
-      })
-      return Effect.sync(() => {
-        // Interrupted before `spawn` fired, so `acquireRelease` never acquired and this is the ONLY
-        // teardown this child will get — it must reach the whole tree, not just the root. A sync
-        // context cannot await, hence the sync twin (no SIGTERM grace on POSIX; see kill-tree.ts).
-        killTreeSync(proc)
-      })
-    })
+    Effect.callback<readonly [NodeChildProcess.ChildProcess, ExitSignal, ExitedSignal], PlatformError.PlatformError>(
+      (resume) => {
+        const signal = Deferred.makeUnsafe<readonly [code: number | null, signal: NodeJS.Signals | null]>()
+        // See ExitedSignal above: settled by whichever of 'exit'/'close' lands FIRST. 'close' is a real
+        // fallback rather than dead weight — a child that dies before it ever runs can close without
+        // emitting 'exit', and teardown must not wait forever for that one either.
+        const exited = Deferred.makeUnsafe<readonly [code: number | null, signal: NodeJS.Signals | null]>()
+        const proc = launch(command.command, command.args, opts)
+        let end = false
+        let exit: readonly [code: number | null, signal: NodeJS.Signals | null] | undefined
+        proc.on("error", (err) => {
+          resume(Effect.fail(toPlatformError("spawn", err, command)))
+        })
+        proc.on("exit", (...args) => {
+          exit = args
+          Deferred.doneUnsafe(exited, Exit.succeed(args))
+        })
+        proc.on("close", (...args) => {
+          Deferred.doneUnsafe(exited, Exit.succeed(exit ?? args))
+          if (end) return
+          end = true
+          Deferred.doneUnsafe(signal, Exit.succeed(exit ?? args))
+        })
+        proc.on("spawn", () => {
+          resume(Effect.succeed([proc, signal, exited]))
+        })
+        return Effect.sync(() => {
+          // Interrupted before `spawn` fired, so `acquireRelease` never acquired and this is the ONLY
+          // teardown this child will get — it must reach the whole tree, not just the root. A sync
+          // context cannot await, hence the sync twin (no SIGTERM grace on POSIX; see kill-tree.ts).
+          killTreeSync(proc)
+        })
+      },
+    )
 
   /**
    * Terminate the child AND everything it spawned, through the ONE tree-kill (`util/kill-tree.ts`).

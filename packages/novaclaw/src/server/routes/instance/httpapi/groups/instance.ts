@@ -278,7 +278,8 @@ export const InstanceApi = HttpApi.make("instance")
           OpenApi.annotations({
             identifier: "app.register",
             summary: "Register a home app",
-            description: "Register (or update, by id) a home-app manifest: a launcher tile opening a route, URL, or chat prompt.",
+            description:
+              "Register (or update, by id) a home-app manifest: a launcher tile opening a route, URL, or chat prompt.",
           }),
         ),
       )

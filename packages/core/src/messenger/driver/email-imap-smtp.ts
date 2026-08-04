@@ -57,7 +57,12 @@ export const parseFrom = (value: string | undefined): { address: string; name?: 
   if (value === undefined) return { address: "" }
   const angle = value.match(/^(.*)<([^>]+)>\s*$/)
   if (angle) {
-    const name = decodeEncodedWords(angle[1]!.trim().replace(/^"(.*)"$/, "$1").trim())
+    const name = decodeEncodedWords(
+      angle[1]!
+        .trim()
+        .replace(/^"(.*)"$/, "$1")
+        .trim(),
+    )
     return { address: angle[2]!.trim(), ...(name.length > 0 ? { name } : {}) }
   }
   return { address: value.trim() }
@@ -75,7 +80,9 @@ export const decodeEncodedWords = (value: string): string => {
         enc.toUpperCase() === "B"
           ? Buffer.from(text, "base64")
           : Buffer.from(
-              text.replace(/_/g, " ").replace(/=([0-9A-Fa-f]{2})/g, (_m, h: string) => String.fromCharCode(parseInt(h, 16))),
+              text
+                .replace(/_/g, " ")
+                .replace(/=([0-9A-Fa-f]{2})/g, (_m, h: string) => String.fromCharCode(parseInt(h, 16))),
               "latin1",
             )
       return bytes.toString(/8859-1|latin1/i.test(charset) ? "latin1" : "utf8")
@@ -106,7 +113,9 @@ const decodeCTE = (body: string, cte: string | undefined): string => {
   if (cte === "quoted-printable") {
     // Decode soft line breaks + `=XX` escapes to BYTES (latin1), then read as UTF-8 (an `=C3=A9`
     // pair is one UTF-8 char, not two latin1 chars).
-    const bytes = body.replace(/=\r?\n/g, "").replace(/=([0-9A-Fa-f]{2})/g, (_m, h: string) => String.fromCharCode(parseInt(h, 16)))
+    const bytes = body
+      .replace(/=\r?\n/g, "")
+      .replace(/=([0-9A-Fa-f]{2})/g, (_m, h: string) => String.fromCharCode(parseInt(h, 16)))
     return Buffer.from(bytes, "latin1").toString("utf8")
   }
   return body
@@ -145,8 +154,14 @@ export const extractPlainText = (raw: string): string => {
     if (!split) continue
     const headers = split[1]!
     const content = split[2]!
-    const ct = headers.match(/content-type:\s*([^;\n]+)/i)?.[1]?.toLowerCase().trim()
-    const cte = headers.match(/content-transfer-encoding:\s*([^\n]+)/i)?.[1]?.toLowerCase().trim()
+    const ct = headers
+      .match(/content-type:\s*([^;\n]+)/i)?.[1]
+      ?.toLowerCase()
+      .trim()
+    const cte = headers
+      .match(/content-transfer-encoding:\s*([^\n]+)/i)?.[1]
+      ?.toLowerCase()
+      .trim()
     if (ct?.startsWith("multipart/")) {
       const nested = extractPlainText(part)
       if (nested.length > 0 && plain === undefined) plain = nested
@@ -161,7 +176,12 @@ export const extractPlainText = (raw: string): string => {
 
 /** Assemble a RawEmail from a fetched UID + its header block + text body. Pure — the whole
  *  message→event shape is testable without a socket. */
-export const assembleEmail = (input: { uid: number; headerBlock: string; text: string; fallbackAt: number }): RawEmail => {
+export const assembleEmail = (input: {
+  uid: number
+  headerBlock: string
+  text: string
+  fallbackAt: number
+}): RawEmail => {
   const headers = parseHeaders(input.headerBlock)
   const from = parseFrom(headers.get("from"))
   const ownIds = messageIds(headers.get("message-id"))
@@ -294,7 +314,8 @@ const connectStream = async (host: string, port: number, tls: boolean): Promise<
       // tuple. Switch reads+writes to the TLS socket, mark it active (so leftover raw ciphertext is
       // ignored), and DROP any bytes buffered before the handshake (they're the TLS handshake).
       const upgrade = (socket as unknown as { upgradeTLS?: (o: unknown) => [unknown, typeof socket] }).upgradeTLS
-      if (typeof upgrade !== "function") throw new Error("STARTTLS not supported by this runtime (no socket.upgradeTLS)")
+      if (typeof upgrade !== "function")
+        throw new Error("STARTTLS not supported by this runtime (no socket.upgradeTLS)")
       const ready = new Promise<void>((resolve) => (tlsReady = resolve))
       const result = upgrade.call(socket, { tls: { serverName: tlsHost }, socket: handlers })
       if (Array.isArray(result) && result[1]) socket = result[1] as typeof socket
@@ -312,11 +333,16 @@ const connectStream = async (host: string, port: number, tls: boolean): Promise<
 
 const HEADER_FIELDS = "MESSAGE-ID IN-REPLY-TO REFERENCES FROM SUBJECT DATE"
 
-const imapConnect = async (config: EmailTransportConfig): Promise<{ stream: ByteStream; uidValidity: number; exists: number; uidNext: number }> => {
+const imapConnect = async (
+  config: EmailTransportConfig,
+): Promise<{ stream: ByteStream; uidValidity: number; exists: number; uidNext: number }> => {
   const stream = await connectStream(config.imapHost, config.imapPort, config.secure !== false)
   await stream.line() // greeting (* OK ...)
   let tag = 0
-  const command = async (text: string, opts?: { collectUntagged?: (line: string) => void; literals?: boolean }): Promise<string[]> => {
+  const command = async (
+    text: string,
+    opts?: { collectUntagged?: (line: string) => void; literals?: boolean },
+  ): Promise<string[]> => {
     const id = `a${++tag}`
     stream.write(`${id} ${text}\r\n`)
     const lines: string[] = []
@@ -460,7 +486,14 @@ export const factory: EmailClientFactory = async (config: EmailTransportConfig):
     }
     return items
       .filter((item) => item.uid !== undefined)
-      .map((item) => assembleEmail({ uid: item.uid!, headerBlock: item.header ?? "", text: item.text ?? "", fallbackAt: Date.now() }))
+      .map((item) =>
+        assembleEmail({
+          uid: item.uid!,
+          headerBlock: item.header ?? "",
+          text: item.text ?? "",
+          fallbackAt: Date.now(),
+        }),
+      )
   }
   const BODY = `(UID BODY.PEEK[HEADER.FIELDS (${HEADER_FIELDS})] BODY.PEEK[TEXT])`
 

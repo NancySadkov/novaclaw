@@ -51,11 +51,16 @@ export default defineConfig({
           const output = "./out/main/chunks"
           await mkdir(output, { recursive: true })
           for (const name of await readdir(NOVACLAW_SERVER_DIST)) {
-            if (name !== "node.js" && !name.endsWith(".wasm")) continue
+            if (name !== "node.js" && name !== "session-worker-node.js" && !name.endsWith(".wasm")) continue
             // The server is already a complete Bun bundle. Treat it like the WASM payload: copy it
             // verbatim instead of making Rollup parse and re-emit 23 MB of generated JavaScript.
             // Parsing that bundle was the desktop build's dominant avoidable RAM spike.
-            const packagedName = name === "node.js" ? "novaclaw-server.js" : name
+            const packagedName =
+              name === "node.js"
+                ? "novaclaw-server.js"
+                : name === "session-worker-node.js"
+                  ? "novaclaw-session-worker.js"
+                  : name
             await copyFile(`${NOVACLAW_SERVER_DIST}/${name}`, `${output}/${packagedName}`)
           }
         },

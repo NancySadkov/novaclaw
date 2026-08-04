@@ -80,49 +80,51 @@ export const layer = Layer.effectDiscard(
     const { db } = yield* Database.Service
     yield* tools
       .register({
-        [name]: Tool.withDeferred(Tool.make({
-          description:
-            "Edit YOUR OWN standing instructions: replace this session's system-prompt override layer " +
-            "(it composes on top of your base prompt and persists across turns; sub-sessions inherit it). " +
-            "Use it when the user asks you to remember a standing rule, or to drop one — e.g. forget a " +
-            "secret you were told to stop using. It replaces the WHOLE layer, so include everything you " +
-            "want to keep; null clears it. The base prompt cannot be edited from here.",
-          input: Input,
-          output: Output,
-          structured: StructuredOutput,
-          toStructuredOutput: ({ output }) => ({
-            changed: output.changed,
-            previousLength: output.previousLength,
-            nextLength: output.nextLength,
-          }),
-          toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
-          execute: (input, context) =>
-            Effect.gen(function* () {
-              const row = yield* db
-                .select({ override: SessionTable.system_prompt_override })
-                .from(SessionTable)
-                .where(eq(SessionTable.id, context.sessionID))
-                .get()
-                .pipe(Effect.orDie)
-              if (row === undefined)
-                return yield* Effect.fail(new ToolFailure({ message: "Session not found — cannot reconfigure." }))
-              const summary = diffSummary(row.override ?? "", input.system_prompt_override)
-              if (summary.changed)
-                yield* events
-                  .publish(SessionEvent.PromptOverrideSwitched, {
-                    sessionID: context.sessionID,
-                    messageID: SessionMessage.ID.create(),
-                    timestamp: yield* DateTime.now,
-                    override: input.system_prompt_override,
-                  })
-                  .pipe(
-                    Effect.mapError(
-                      () => new ToolFailure({ message: "Unable to record the new system-prompt override." }),
-                    ),
-                  )
-              return summary
+        [name]: Tool.withDeferred(
+          Tool.make({
+            description:
+              "Edit YOUR OWN standing instructions: replace this session's system-prompt override layer " +
+              "(it composes on top of your base prompt and persists across turns; sub-sessions inherit it). " +
+              "Use it when the user asks you to remember a standing rule, or to drop one — e.g. forget a " +
+              "secret you were told to stop using. It replaces the WHOLE layer, so include everything you " +
+              "want to keep; null clears it. The base prompt cannot be edited from here.",
+            input: Input,
+            output: Output,
+            structured: StructuredOutput,
+            toStructuredOutput: ({ output }) => ({
+              changed: output.changed,
+              previousLength: output.previousLength,
+              nextLength: output.nextLength,
             }),
-        })),
+            toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
+            execute: (input, context) =>
+              Effect.gen(function* () {
+                const row = yield* db
+                  .select({ override: SessionTable.system_prompt_override })
+                  .from(SessionTable)
+                  .where(eq(SessionTable.id, context.sessionID))
+                  .get()
+                  .pipe(Effect.orDie)
+                if (row === undefined)
+                  return yield* Effect.fail(new ToolFailure({ message: "Session not found — cannot reconfigure." }))
+                const summary = diffSummary(row.override ?? "", input.system_prompt_override)
+                if (summary.changed)
+                  yield* events
+                    .publish(SessionEvent.PromptOverrideSwitched, {
+                      sessionID: context.sessionID,
+                      messageID: SessionMessage.ID.create(),
+                      timestamp: yield* DateTime.now,
+                      override: input.system_prompt_override,
+                    })
+                    .pipe(
+                      Effect.mapError(
+                        () => new ToolFailure({ message: "Unable to record the new system-prompt override." }),
+                      ),
+                    )
+                return summary
+              }),
+          }),
+        ),
       })
       .pipe(Effect.orDie)
   }),

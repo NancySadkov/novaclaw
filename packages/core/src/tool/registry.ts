@@ -24,6 +24,7 @@ import {
   outputPreview,
   permission,
   settle,
+  sideEffect,
   validateRegistration,
   type AnyTool,
   type Context as ToolContext,
@@ -55,6 +56,7 @@ export interface Interface {
 
 export interface Materialization {
   readonly definitions: ReadonlyArray<ToolDefinition>
+  readonly sideEffects: Readonly<Record<string, import("./tool").SideEffectClass>>
   /** Filtered schemas intentionally absent from `definitions` until discovered. */
   readonly deferred: ReadonlyArray<ToolCatalogue.Source>
   readonly settle: (input: ExecuteInput) => Effect.Effect<Settlement, ToolOutputStore.Error>
@@ -287,6 +289,9 @@ const registryLayer = Layer.effect(
         const callableNames = [...resident.keys(), ...callableDeferred.keys()]
         return {
           definitions: Array.from(resident, ([name, registration]) => definition(name, registration.tool)),
+          sideEffects: Object.fromEntries(
+            [...resident, ...callableDeferred].map(([name, registration]) => [name, sideEffect(registration.tool)]),
+          ),
           deferred,
           settle: (input) => {
             const registration = resident.get(input.call.name) ?? callableDeferred.get(input.call.name)

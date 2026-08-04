@@ -9,7 +9,8 @@ import { JhProcessRunner } from "./process-runner"
 
 const exec = JhBasicTools.basicExecutor(JhProcessRunner.shellRunner())
 const ref = (id: string, type: JhStep.ArtifactType): JhStep.ArtifactRef => ({ id, type })
-const runTool = (tool: string, args: Record<string, unknown>, produces: JhStep.ArtifactRef[], cwd: string) => Effect.runPromise(exec.run({ tool, args, produces, cwd }))
+const runTool = (tool: string, args: Record<string, unknown>, produces: JhStep.ArtifactRef[], cwd: string) =>
+  Effect.runPromise(exec.run({ tool, args, produces, cwd }))
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "jh-tools-"))
 
 describe("JhBasicTools.basicExecutor", () => {
@@ -33,7 +34,12 @@ describe("JhBasicTools.basicExecutor", () => {
     const first = await runTool("append_file", { path: "ch1.md", content: "First beat-run." }, [ref("a", "file")], cwd)
     expect(first.ok).toBe(true)
     expect(fs.readFileSync(path.join(cwd, "ch1.md"), "utf8")).toBe("First beat-run.")
-    const second = await runTool("append_file", { path: "ch1.md", content: "Second beat-run." }, [ref("a", "file")], cwd)
+    const second = await runTool(
+      "append_file",
+      { path: "ch1.md", content: "Second beat-run." },
+      [ref("a", "file")],
+      cwd,
+    )
     expect(second.ok).toBe(true)
     // no trailing newline on the existing text → a full blank-line paragraph separator
     expect(fs.readFileSync(path.join(cwd, "ch1.md"), "utf8")).toBe("First beat-run.\n\nSecond beat-run.")
@@ -88,7 +94,12 @@ describe("JhBasicTools.basicExecutor", () => {
   test("edit_file replaces ONE unique occurrence and sets the first file produce to the NEW content", async () => {
     const cwd = tmp()
     fs.writeFileSync(path.join(cwd, "p.c"), "int main(){ return 0; }")
-    const obs = await runTool("edit_file", { path: "p.c", old_string: "return 0;", new_string: "return 42;" }, [ref("f", "file")], cwd)
+    const obs = await runTool(
+      "edit_file",
+      { path: "p.c", old_string: "return 0;", new_string: "return 42;" },
+      [ref("f", "file")],
+      cwd,
+    )
     expect(obs.ok).toBe(true)
     expect(fs.readFileSync(path.join(cwd, "p.c"), "utf8")).toBe("int main(){ return 42; }")
     expect(obs.artifacts.get("f")).toBe("int main(){ return 42; }") // produce = full NEW content
@@ -97,9 +108,13 @@ describe("JhBasicTools.basicExecutor", () => {
 
   test("edit_file: missing file, no match, and >1 match each fail helpfully", async () => {
     const cwd = tmp()
-    expect((await runTool("edit_file", { path: "nope.c", old_string: "a", new_string: "b" }, [], cwd)).output).toContain("file not found")
+    expect(
+      (await runTool("edit_file", { path: "nope.c", old_string: "a", new_string: "b" }, [], cwd)).output,
+    ).toContain("file not found")
     fs.writeFileSync(path.join(cwd, "d.c"), "x = 1; x = 1;")
-    expect((await runTool("edit_file", { path: "d.c", old_string: "zzz", new_string: "b" }, [], cwd)).output).toContain("not found in")
+    expect((await runTool("edit_file", { path: "d.c", old_string: "zzz", new_string: "b" }, [], cwd)).output).toContain(
+      "not found in",
+    )
     const dup = await runTool("edit_file", { path: "d.c", old_string: "x = 1;", new_string: "y = 2;" }, [], cwd)
     expect(dup.ok).toBe(false)
     expect(dup.output).toContain("occurs 2 times")
@@ -115,7 +130,12 @@ describe("JhBasicTools.basicExecutor", () => {
   test("edit_file near-miss: CRLF drift heals (tier 1)", async () => {
     const cwd = tmp()
     fs.writeFileSync(path.join(cwd, "a.c"), "int a;\r\nint b;\r\nint c;\r\n") // CRLF file
-    const obs = await runTool("edit_file", { path: "a.c", old_string: "int a;\nint b;", new_string: "int a;\nint B;" }, [], cwd) // LF quote spanning 2 lines
+    const obs = await runTool(
+      "edit_file",
+      { path: "a.c", old_string: "int a;\nint b;", new_string: "int a;\nint B;" },
+      [],
+      cwd,
+    ) // LF quote spanning 2 lines
     expect(obs.ok).toBe(true)
     expect(obs.output).toContain("normalization")
     expect(fs.readFileSync(path.join(cwd, "a.c"), "utf8")).toContain("int B;")
@@ -124,7 +144,12 @@ describe("JhBasicTools.basicExecutor", () => {
   test("edit_file near-miss: trailing-space drift heals (tier 1)", async () => {
     const cwd = tmp()
     fs.writeFileSync(path.join(cwd, "a.c"), "alpha   \nbeta\n") // trailing spaces on line 1
-    const obs = await runTool("edit_file", { path: "a.c", old_string: "alpha\nbeta", new_string: "ALPHA\nbeta" }, [], cwd)
+    const obs = await runTool(
+      "edit_file",
+      { path: "a.c", old_string: "alpha\nbeta", new_string: "ALPHA\nbeta" },
+      [],
+      cwd,
+    )
     expect(obs.ok).toBe(true)
     expect(fs.readFileSync(path.join(cwd, "a.c"), "utf8")).toContain("ALPHA")
   })
@@ -132,7 +157,12 @@ describe("JhBasicTools.basicExecutor", () => {
   test("edit_file near-miss: leading-indent drift heals (tier 2)", async () => {
     const cwd = tmp()
     fs.writeFileSync(path.join(cwd, "a.c"), "void f(){\n    return 0;\n    return 1;\n}\n") // 4-space indented block
-    const obs = await runTool("edit_file", { path: "a.c", old_string: "return 0;\nreturn 1;", new_string: "return 2;\nreturn 3;" }, [], cwd) // no indent in the quote
+    const obs = await runTool(
+      "edit_file",
+      { path: "a.c", old_string: "return 0;\nreturn 1;", new_string: "return 2;\nreturn 3;" },
+      [],
+      cwd,
+    ) // no indent in the quote
     expect(obs.ok).toBe(true)
     expect(obs.output).toContain("indentation")
     expect(fs.readFileSync(path.join(cwd, "a.c"), "utf8")).toContain("return 2;")
@@ -158,7 +188,12 @@ describe("JhBasicTools.basicExecutor", () => {
   test("edit_file: total miss names the nearest line", async () => {
     const cwd = tmp()
     fs.writeFileSync(path.join(cwd, "a.c"), "int compute_sum(int n) {\n  return n;\n}\n")
-    const obs = await runTool("edit_file", { path: "a.c", old_string: "int compute_total(int n) {", new_string: "x" }, [], cwd)
+    const obs = await runTool(
+      "edit_file",
+      { path: "a.c", old_string: "int compute_total(int n) {", new_string: "x" },
+      [],
+      cwd,
+    )
     expect(obs.ok).toBe(false)
     expect(obs.output).toContain("nearest line")
     expect(obs.output).toContain("compute_sum")
@@ -205,7 +240,12 @@ describe("JhBasicTools.basicExecutor", () => {
   test("replace_lines replaces an inclusive 1-based range + echoes the removed text", async () => {
     const cwd = tmp()
     fs.writeFileSync(path.join(cwd, "p.c"), "l1\nl2\nl3\nl4\nl5")
-    const obs = await runTool("replace_lines", { path: "p.c", first_line: 2, last_line: 3, new_content: "X\nY\nZ" }, [ref("f", "file")], cwd)
+    const obs = await runTool(
+      "replace_lines",
+      { path: "p.c", first_line: 2, last_line: 3, new_content: "X\nY\nZ" },
+      [ref("f", "file")],
+      cwd,
+    )
     expect(obs.ok).toBe(true)
     expect(fs.readFileSync(path.join(cwd, "p.c"), "utf8")).toBe("l1\nX\nY\nZ\nl4\nl5")
     expect(obs.output).toContain("replaced lines 2-3")
@@ -233,15 +273,24 @@ describe("JhBasicTools.basicExecutor", () => {
   test("replace_lines rejects first_line > last_line and non-integer / missing args", async () => {
     const cwd = tmp()
     fs.writeFileSync(path.join(cwd, "p.c"), "a\nb\nc")
-    expect((await runTool("replace_lines", { path: "p.c", first_line: 3, last_line: 1, new_content: "X" }, [], cwd)).ok).toBe(false)
-    expect((await runTool("replace_lines", { path: "p.c", first_line: 1.5, last_line: 2, new_content: "X" }, [], cwd)).ok).toBe(false)
+    expect(
+      (await runTool("replace_lines", { path: "p.c", first_line: 3, last_line: 1, new_content: "X" }, [], cwd)).ok,
+    ).toBe(false)
+    expect(
+      (await runTool("replace_lines", { path: "p.c", first_line: 1.5, last_line: 2, new_content: "X" }, [], cwd)).ok,
+    ).toBe(false)
     expect((await runTool("replace_lines", { path: "p.c", first_line: 1, new_content: "X" }, [], cwd)).ok).toBe(false)
   })
 
   test("replace_lines refuses unsafe paths + a missing file", async () => {
     const cwd = tmp()
-    expect((await runTool("replace_lines", { path: "../x.c", first_line: 1, last_line: 1, new_content: "X" }, [], cwd)).ok).toBe(false)
-    expect((await runTool("replace_lines", { path: "ghost.c", first_line: 1, last_line: 1, new_content: "X" }, [], cwd)).output).toContain("file not found")
+    expect(
+      (await runTool("replace_lines", { path: "../x.c", first_line: 1, last_line: 1, new_content: "X" }, [], cwd)).ok,
+    ).toBe(false)
+    expect(
+      (await runTool("replace_lines", { path: "ghost.c", first_line: 1, last_line: 1, new_content: "X" }, [], cwd))
+        .output,
+    ).toContain("file not found")
   })
 
   test("replace_lines is in TOOL_NAMES (offered by default)", () => {

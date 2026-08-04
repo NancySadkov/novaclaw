@@ -38,7 +38,8 @@ const DDG_HTML = `
   <a class="result__snippet" href="x">Another page.</a>
 </div>`
 
-const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } })
+const json = (body: unknown) =>
+  new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } })
 
 describe("WebSearchEngine parsing", () => {
   test("DuckDuckGo results survive redirect wrapping and HTML entities", () => {
@@ -59,7 +60,14 @@ describe("WebSearchEngine parsing", () => {
   // runtime" returned zero results against the live API. Caught by probing, not by reading docs.
   test("Wikipedia full-text results decode, with the highlight markup stripped", () => {
     const results = WebSearchEngine.parseWikipedia(
-      { query: { search: [{ title: "Bun (software)", snippet: 'A <span class="searchmatch">JavaScript</span> runtime' }, { title: "Bun" }] } },
+      {
+        query: {
+          search: [
+            { title: "Bun (software)", snippet: 'A <span class="searchmatch">JavaScript</span> runtime' },
+            { title: "Bun" },
+          ],
+        },
+      },
       10,
     )
     expect(results).toHaveLength(2)
@@ -73,7 +81,10 @@ describe("WebSearchEngine parsing", () => {
   })
 
   test("a SearXNG JSON body decodes", () => {
-    const results = WebSearchEngine.parseSearxng({ results: [{ title: "T", url: "https://x.test/", content: "S" }] }, 10)
+    const results = WebSearchEngine.parseSearxng(
+      { results: [{ title: "T", url: "https://x.test/", content: "S" }] },
+      10,
+    )
     expect(results[0]).toEqual({ title: "T", url: "https://x.test/", snippet: "S", engine: "searxng" })
   })
 
@@ -107,18 +118,25 @@ describe("WebSearch settings + precedence", () => {
   const unusedFetch: WebSearchEngine.FetchLike = () => Promise.reject(new Error("unused"))
 
   test("a configured SearXNG REPLACES the built-ins (the user's instance wins)", () => {
-    expect(WebSearch.resolveEngines(unusedFetch, { searxngUrl: "https://searx.example" }).map((engine) => engine.id)).toEqual(["searxng"])
+    expect(
+      WebSearch.resolveEngines(unusedFetch, { searxngUrl: "https://searx.example" }).map((engine) => engine.id),
+    ).toEqual(["searxng"])
   })
 
   test("with nothing configured the built-ins run — and one can be disabled live", () => {
     expect(WebSearch.resolveEngines(unusedFetch, {}).map((engine) => engine.id)).toEqual(["duckduckgo", "wikipedia"])
-    expect(WebSearch.resolveEngines(unusedFetch, { disabledEngines: ["duckduckgo"] }).map((engine) => engine.id)).toEqual(["wikipedia"])
+    expect(
+      WebSearch.resolveEngines(unusedFetch, { disabledEngines: ["duckduckgo"] }).map((engine) => engine.id),
+    ).toEqual(["wikipedia"])
   })
 
   test("junk settings decode to defaults rather than throwing", () => {
     expect(WebSearch.readSettings(undefined)).toEqual({})
     expect(WebSearch.readSettings({ searxngUrl: "  " })).toEqual({})
-    expect(WebSearch.readSettings({ searxngUrl: "https://s.test", timeoutMs: 500 })).toEqual({ searxngUrl: "https://s.test", timeoutMs: 500 })
+    expect(WebSearch.readSettings({ searxngUrl: "https://s.test", timeoutMs: 500 })).toEqual({
+      searxngUrl: "https://s.test",
+      timeoutMs: 500,
+    })
   })
 })
 
@@ -142,7 +160,10 @@ const offlineMock = (enabled: boolean) =>
  *  of this file exercises the real one, over a real budget table. */
 const openGovernor = Layer.succeed(WebGovernor.Service, WebGovernor.Service.of({ guard: (input) => input.fetch }))
 
-const service = (fetchImpl: WebSearchEngine.FetchLike, options?: { offline?: boolean; settings?: Record<string, unknown> }) =>
+const service = (
+  fetchImpl: WebSearchEngine.FetchLike,
+  options?: { offline?: boolean; settings?: Record<string, unknown> },
+) =>
   WebSearch.layerWith(fetchImpl).pipe(
     Layer.provide(offlineMock(options?.offline ?? false)),
     Layer.provide(settingsMock(options?.settings ?? {})),

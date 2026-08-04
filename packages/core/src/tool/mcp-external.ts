@@ -18,14 +18,20 @@ export interface AiSdkTool {
   readonly inputSchema?: unknown
   readonly execute?: (
     args: unknown,
-    options: { readonly toolCallId: string; readonly messages: ReadonlyArray<never>; readonly abortSignal?: AbortSignal },
+    options: {
+      readonly toolCallId: string
+      readonly messages: ReadonlyArray<never>
+      readonly abortSignal?: AbortSignal
+    },
   ) => Promise<unknown>
 }
 
 // AI-SDK `jsonSchema(x)` wraps the raw schema as `{ jsonSchema: x, ... }`; unwrap it.
 const rawSchema = (tool: AiSdkTool) => {
   const wrapped = tool.inputSchema as { jsonSchema?: unknown } | undefined
-  return (wrapped?.jsonSchema ?? tool.inputSchema ?? { type: "object" }) as Parameters<typeof makeExternal>[0]["inputSchema"]
+  return (wrapped?.jsonSchema ?? tool.inputSchema ?? { type: "object" }) as Parameters<
+    typeof makeExternal
+  >[0]["inputSchema"]
 }
 
 /**
@@ -189,7 +195,10 @@ const toContent = (result: unknown): ReadonlyArray<Content> => {
  * connected MCP tool unprompted). A gate failure IS the tool result (1J: denial
  * as observation, never a halt).
  */
-export const fromMcpTool = (tool: AiSdkTool, options?: { gate?: (context: Context) => Effect.Effect<void, Failure> }): AnyTool =>
+export const fromMcpTool = (
+  tool: AiSdkTool,
+  options?: { gate?: (context: Context) => Effect.Effect<void, Failure> },
+): AnyTool =>
   makeExternal({
     description: tool.description ?? "",
     inputSchema: rawSchema(tool),

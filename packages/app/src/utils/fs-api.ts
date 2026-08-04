@@ -39,8 +39,21 @@ export function fsWrite(
   })
 }
 
-export function fsMkdir(server: ServerConnection.HttpBase, input: { directory: string; path: string }) {
-  return call<{ ok: true }>(server, "POST", "file/mkdir", input.directory, { path: input.path })
+export function fsMkdir(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; path: string; exclusive?: boolean },
+) {
+  return call<{ ok: true }>(server, "POST", "file/mkdir", input.directory, {
+    path: input.path,
+    ...(input.exclusive === undefined ? {} : { exclusive: input.exclusive }),
+  })
+}
+
+export function fsRename(server: ServerConnection.HttpBase, input: { directory: string; path: string; name: string }) {
+  return call<{ path: string }>(server, "POST", "file/rename", input.directory, {
+    path: input.path,
+    name: input.name,
+  })
 }
 
 export function fsTrash(server: ServerConnection.HttpBase, input: { directory: string; path: string }) {
@@ -61,6 +74,10 @@ export function fsTrashRestore(server: ServerConnection.HttpBase, input: { direc
 export interface ProbeResult {
   readonly status: "ok" | "unreachable" | "auth" | "model-missing" | "no-url" | "error"
   readonly latencyMs?: number
+  readonly discoveryLatencyMs?: number
+  readonly completionLatencyMs?: number
+  readonly completionAttempts?: number
+  readonly completed?: boolean
   readonly window?: number
   readonly limits?: Readonly<Record<string, { readonly context?: number; readonly output?: number }>>
   readonly detail?: string

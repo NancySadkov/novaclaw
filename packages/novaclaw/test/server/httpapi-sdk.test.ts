@@ -527,5 +527,4 @@ describe("HttpApi SDK", () => {
 
   // The SDK TUI parity suite retired with the TUI routes themselves (the server has no /tui
   // surface; the regenerated client rightly has no `sdk.tui`). It only ever exercised 404s.
-
 })

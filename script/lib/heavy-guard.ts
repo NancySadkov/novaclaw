@@ -28,10 +28,7 @@ const COMMIT_CEILING = 0.75
 /** The full test suite is the largest guarded job and retains the conservative incident-derived floor. */
 const DEFAULT_MIN_FREE_BYTES = 6 * 1024 ** 3
 
-export function hasEnoughFreeMemory(
-  freeBytes: number,
-  minimumFreeBytes: number = DEFAULT_MIN_FREE_BYTES,
-): boolean {
+export function hasEnoughFreeMemory(freeBytes: number, minimumFreeBytes: number = DEFAULT_MIN_FREE_BYTES): boolean {
   return Number.isFinite(freeBytes) && freeBytes >= minimumFreeBytes
 }
 

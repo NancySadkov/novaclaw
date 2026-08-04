@@ -4,7 +4,11 @@ import { contextTurns, formatContextFinding, formatContextTokens } from "./debug
 
 type Assistant = Extract<SessionMessage, { type: "assistant" }>
 
-const assistant = (id: string, created: number, findings: NonNullable<Assistant["context"]>["findings"] = []): Assistant => ({
+const assistant = (
+  id: string,
+  created: number,
+  findings: NonNullable<Assistant["context"]>["findings"] = [],
+): Assistant => ({
   id,
   type: "assistant",
   agent: "build",
@@ -41,9 +45,9 @@ describe("Debug context findings", () => {
   })
 
   test("explains dominant output in plain language", () => {
-    expect(
-      formatContextFinding({ kind: "dominant-tool-output", tool: "browser", tokens: 12_800, percent: 64.2 }),
-    ).toBe("browser output occupies 64.2% of this turn’s context (about 13k tokens).")
+    expect(formatContextFinding({ kind: "dominant-tool-output", tool: "browser", tokens: 12_800, percent: 64.2 })).toBe(
+      "browser output occupies 64.2% of this turn’s context (about 13k tokens).",
+    )
   })
 
   test("explains a typed share as a concrete action and names protected overflow", () => {

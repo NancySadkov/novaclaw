@@ -21,8 +21,16 @@ describe("phases-as-data kernel", () => {
   test("reactions sweep marked entities in registration order", () => {
     const kernel = new Kernel()
     const seen: string[] = []
-    kernel.registerReaction("first", { phase: "pick" as PhaseId, marker: "runnable", fn: (id) => seen.push(`first:${id}`) })
-    kernel.registerReaction("second", { phase: "pick" as PhaseId, marker: "runnable", fn: (id) => seen.push(`second:${id}`) })
+    kernel.registerReaction("first", {
+      phase: "pick" as PhaseId,
+      marker: "runnable",
+      fn: (id) => seen.push(`first:${id}`),
+    })
+    kernel.registerReaction("second", {
+      phase: "pick" as PhaseId,
+      marker: "runnable",
+      fn: (id) => seen.push(`second:${id}`),
+    })
     kernel.addMarker("s1", "runnable")
     kernel.tick()
     expect(seen).toEqual(["first:s1", "second:s1"])
@@ -32,7 +40,12 @@ describe("phases-as-data kernel", () => {
     const kernel = new Kernel()
     const seen: string[] = []
     const a = kernel.registerReaction("a", { phase: "pick" as PhaseId, marker: "m", fn: () => seen.push("a") })
-    kernel.registerReaction("b", { phase: "pick" as PhaseId, marker: "m", order: { before: [a] }, fn: () => seen.push("b") })
+    kernel.registerReaction("b", {
+      phase: "pick" as PhaseId,
+      marker: "m",
+      order: { before: [a] },
+      fn: () => seen.push("b"),
+    })
     kernel.addMarker("x", "m")
     kernel.tick()
     expect(seen).toEqual(["b", "a"])
@@ -80,7 +93,12 @@ describe("phases-as-data kernel", () => {
   test("consumed markers are one-shot (removed after the sweep, auditable not expiring)", () => {
     const kernel = new Kernel()
     let fired = 0
-    kernel.registerReaction("consumer", { phase: "ingest" as PhaseId, marker: "steer", consume: true, fn: () => fired++ })
+    kernel.registerReaction("consumer", {
+      phase: "ingest" as PhaseId,
+      marker: "steer",
+      consume: true,
+      fn: () => fired++,
+    })
     kernel.addMarker("s1", "steer")
     kernel.tick()
     kernel.tick()
@@ -106,12 +124,19 @@ describe("phases-as-data kernel", () => {
   test("rejects duplicate phases/reactions and unknown references", () => {
     const kernel = new Kernel()
     kernel.registerReaction("r", { phase: "pick" as PhaseId, marker: "m", fn: () => {} })
-    expect(() => kernel.registerReaction("r", { phase: "pick" as PhaseId, marker: "m", fn: () => {} })).toThrow(KernelError)
+    expect(() => kernel.registerReaction("r", { phase: "pick" as PhaseId, marker: "m", fn: () => {} })).toThrow(
+      KernelError,
+    )
+    expect(() => kernel.registerReaction("r2", { phase: "nope" as PhaseId, marker: "m", fn: () => {} })).toThrow(
+      /unknown phase/,
+    )
     expect(() =>
-      kernel.registerReaction("r2", { phase: "nope" as PhaseId, marker: "m", fn: () => {} }),
-    ).toThrow(/unknown phase/)
-    expect(() =>
-      kernel.registerReaction("r3", { phase: "pick" as PhaseId, marker: "m", order: { after: ["ghost" as never] }, fn: () => {} }),
+      kernel.registerReaction("r3", {
+        phase: "pick" as PhaseId,
+        marker: "m",
+        order: { after: ["ghost" as never] },
+        fn: () => {},
+      }),
     ).toThrow(/unknown reaction/)
   })
 })

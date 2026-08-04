@@ -133,6 +133,4 @@ export const CalendarGroup = HttpApiGroup.make("server.calendar")
       }),
     ),
   )
-  .annotateMerge(
-    OpenApi.annotations({ title: "calendar", description: "Scheduled + repeatable agent launches." }),
-  )
+  .annotateMerge(OpenApi.annotations({ title: "calendar", description: "Scheduled + repeatable agent launches." }))

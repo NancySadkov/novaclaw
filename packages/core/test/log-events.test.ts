@@ -270,9 +270,7 @@ describe("the key set is MEASURED against the tree, not invented", () => {
     }
     expect(unanchored([["mcp.server.spawn", absent]], ROOT)).toHaveLength(1)
     expect(anchorOf(absent, "mcp.server.spawn", ROOT)).toBeUndefined()
-    expect(
-      unanchored([["mcp.server.spawn", { ...absent, file: "packages/no/such/file.ts" }]], ROOT),
-    ).toHaveLength(1)
+    expect(unanchored([["mcp.server.spawn", { ...absent, file: "packages/no/such/file.ts" }]], ROOT)).toHaveLength(1)
     // Both arms really are reachable: the migrated live declaration anchors by key, while the
     // synthetic declaration below still proves that a source file may anchor by message.
     expect(anchorOf(EVENTS["mcp.connection.close"], "mcp.connection.close", ROOT)).toBe("key")
@@ -366,16 +364,18 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     // Fix 1d, exercised: severity is a property of the event, not a choice at the call site. A
     // developer's debug print cannot reach `ERROR` without a key that says `error`.
     expect(lines(Log.event("mcp.connection.close", { server: "searxng" }))[0]).toContain("level=WARN")
-    expect(lines(Log.event("server.request.fail", { ref: "err_1", "server.error": "x", "server.cause": "y" }))[0]).toContain(
-      "level=ERROR",
-    )
+    expect(
+      lines(Log.event("server.request.fail", { ref: "err_1", "server.error": "x", "server.cause": "y" }))[0],
+    ).toContain("level=ERROR")
     expect(lines(Log.event("skill.registry.init", { count: 1 }))[0]).toContain("level=INFO")
   })
 
   test("the two unrelated `failed` sites are finally distinguishable", () => {
     // `todo/logging.md` §0.4's argument in miniature: one word, two subsystems, and until now
     // nothing on the line could tell them apart.
-    const server = lines(Log.event("server.request.fail", { ref: "err_1", "server.error": "e", "server.cause": "c" }))[0]
+    const server = lines(
+      Log.event("server.request.fail", { ref: "err_1", "server.error": "e", "server.cause": "c" }),
+    )[0]
     const format = lines(
       Log.event("format.file.format.failed", {
         "format.file": "a.ts",
@@ -393,7 +393,9 @@ describe("a keyed record lands in the SAME line as every other log record", () =
   })
 
   test("a keyed line has NO duplicate column — and the raw path does (negative control)", () => {
-    const keyed = lines(Log.event("mcp.server.output", { server: "s", "mcp.logger": "l", "mcp.level": "error", "mcp.data": "hi" }))[0]
+    const keyed = lines(
+      Log.event("mcp.server.output", { server: "s", "mcp.logger": "l", "mcp.level": "error", "mcp.data": "hi" }),
+    )[0]
     const seen = columns(keyed ?? "")
     expect(new Set(seen).size).toBe(seen.length)
     expect(keyed).toContain("mcp.level=error")
@@ -539,10 +541,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
   })
 
   test("remote config URLs are structured but remain on the data plane", () => {
-    const [line] = lines(
-      Log.event("config.remote.fetch", { "config.url": "https://private.example/config" }),
-      "Debug",
-    )
+    const [line] = lines(Log.event("config.remote.fetch", { "config.url": "https://private.example/config" }), "Debug")
     expect(line).toContain("event=config.remote.fetch")
     expect(line).toContain('message="fetching remote config"')
     expect(line).toContain("config.url=https://private.example/config")

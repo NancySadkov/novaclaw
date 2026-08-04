@@ -37,30 +37,32 @@ const command = { _tag: "StandardCommand" } as unknown as ChildProcess.Command
 const itLive = testEffect(AppNodeBuilder.build(LayerNode.group([Database.node, BashJobs.node])))
 
 describe("BashJobs durability (live process)", () => {
-  itLive.live("the throttled flush lands output in the row while the job still runs", () =>
-    Effect.gen(function* () {
-      const bashJobs = yield* BashJobs.Service
-      const { db } = yield* Database.Service
-      const live = ChildProcess.make("bun", ["-e", "console.log('flushing'); await Bun.sleep(8000)"], {
-        stdin: "ignore",
-      })
-      const { id } = yield* bashJobs.start({
-        owner: "ses_live",
-        command: live,
-        commandText: "bun -e flush-probe",
-        maxOutputBytes: 4096,
-      })
-      let row: typeof BashJobTable.$inferSelect | undefined
-      for (let i = 0; i < 20; i++) {
-        yield* Effect.sleep(Duration.millis(400))
-        row = (yield* db.select().from(BashJobTable).all().pipe(Effect.orDie)).find((r) => r.id === id)
-        if (row && row.status === "running" && row.output.includes("flushing")) break
-      }
-      expect(row?.status).toBe("running")
-      expect(row?.output).toContain("flushing")
-      const stopped = yield* bashJobs.stop(id, "ses_live")
-      expect(stopped.running).toBe(false)
-    }),
+  itLive.live(
+    "the throttled flush lands output in the row while the job still runs",
+    () =>
+      Effect.gen(function* () {
+        const bashJobs = yield* BashJobs.Service
+        const { db } = yield* Database.Service
+        const live = ChildProcess.make("bun", ["-e", "console.log('flushing'); await Bun.sleep(8000)"], {
+          stdin: "ignore",
+        })
+        const { id } = yield* bashJobs.start({
+          owner: "ses_live",
+          command: live,
+          commandText: "bun -e flush-probe",
+          maxOutputBytes: 4096,
+        })
+        let row: typeof BashJobTable.$inferSelect | undefined
+        for (let i = 0; i < 20; i++) {
+          yield* Effect.sleep(Duration.millis(400))
+          row = (yield* db.select().from(BashJobTable).all().pipe(Effect.orDie)).find((r) => r.id === id)
+          if (row && row.status === "running" && row.output.includes("flushing")) break
+        }
+        expect(row?.status).toBe("running")
+        expect(row?.output).toContain("flushing")
+        const stopped = yield* bashJobs.stop(id, "ses_live")
+        expect(stopped.running).toBe(false)
+      }),
     20_000,
   )
 })

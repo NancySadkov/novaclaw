@@ -10,6 +10,7 @@ import {
   WorkspaceRoutingQueryFields,
 } from "../middleware/workspace-routing"
 import { described } from "./metadata"
+import { InvalidRequestError } from "../errors"
 
 export const FileQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
@@ -99,6 +100,12 @@ export const WritePayload = Schema.Struct({
 
 export const MkdirPayload = Schema.Struct({
   path: Schema.String,
+  exclusive: Schema.optional(Schema.Boolean),
+})
+
+export const RenamePayload = Schema.Struct({
+  path: Schema.String,
+  name: Schema.String,
 })
 
 export const TrashPayload = Schema.Struct({
@@ -120,6 +127,8 @@ export const OkResult = Schema.Struct({ ok: Schema.Literal(true) })
 
 export const RestoreResult = Schema.Struct({ restoredPath: Schema.String })
 
+export const RenameResult = Schema.Struct({ path: Schema.String })
+
 export const FilePaths = {
   findText: "/find",
   findFile: "/find/file",
@@ -128,6 +137,7 @@ export const FilePaths = {
   status: "/file/status",
   write: "/file/content",
   mkdir: "/file/mkdir",
+  rename: "/file/rename",
   trash: "/file/trash",
   trashList: "/file/trash",
   trashRestore: "/file/trash/restore",
@@ -202,6 +212,7 @@ export const FileApi = HttpApi.make("file")
           query: WorkspaceRoutingQuery,
           payload: MkdirPayload,
           success: described(OkResult, "Directory created"),
+          error: InvalidRequestError,
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "file.mkdir",
@@ -209,10 +220,23 @@ export const FileApi = HttpApi.make("file")
             description: "Create a directory (recursive) under the routed directory.",
           }),
         ),
+        HttpApiEndpoint.post("rename", FilePaths.rename, {
+          query: WorkspaceRoutingQuery,
+          payload: RenamePayload,
+          success: described(RenameResult, "Renamed entry"),
+          error: InvalidRequestError,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "file.rename",
+            summary: "Rename file or directory",
+            description: "Rename one entry under the routed directory without replacing an existing destination.",
+          }),
+        ),
         HttpApiEndpoint.post("trash", FilePaths.trash, {
           query: WorkspaceRoutingQuery,
           payload: TrashPayload,
           success: described(TrashEntry, "Trashed entry"),
+          error: InvalidRequestError,
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "file.trash",
@@ -238,6 +262,7 @@ export const FileApi = HttpApi.make("file")
           query: WorkspaceRoutingQuery,
           payload: TrashRestorePayload,
           success: described(RestoreResult, "Restored path"),
+          error: InvalidRequestError,
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "file.trash.restore",

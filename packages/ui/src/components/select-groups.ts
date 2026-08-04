@@ -21,4 +21,4 @@ export function selectGroups<T>(options: readonly T[], groupBy_?: (value: T) => 
 }
 
 /** The ONE predicate `options` and `optionGroupChildren` are both derived from, so they cannot disagree. */
-export const selectIsGrouped = <T,>(groupBy_?: (value: T) => string): boolean => groupBy_ !== undefined
+export const selectIsGrouped = <T>(groupBy_?: (value: T) => string): boolean => groupBy_ !== undefined

@@ -5,6 +5,7 @@ import { ModelV2 } from "../../model"
 import { SessionEvent } from "../event"
 import { SessionMessage } from "../message"
 import { SessionSchema } from "../schema"
+import { SessionExecutionAttempt } from "../execution-attempt"
 
 type Input = {
   readonly sessionID: SessionSchema.ID
@@ -12,6 +13,20 @@ type Input = {
   readonly agent: string
   readonly model: ModelV2.Ref
   readonly snapshot?: string
+  readonly executionBoundary?: (
+    phase: SessionExecutionAttempt.Phase,
+    checkpoint: "clear" | "mark" | "keep",
+  ) => Effect.Effect<void>
+  readonly providerToolProtocol?: () => Effect.Effect<void>
+  readonly toolSideEffects?: Readonly<
+    Record<string, "read" | "idempotent-write" | "non-idempotent" | "external-unknown">
+  >
+  readonly toolDispatched?: (receipt: {
+    callID: string
+    name: string
+    sideEffect: SessionExecutionAttempt.ToolSideEffect
+  }) => Effect.Effect<void>
+  readonly toolSettled?: (callID: string) => Effect.Effect<void>
 }
 
 const STREAM_CHECKPOINT_CHARS = 512
@@ -106,6 +121,15 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
   let assistantFailed = false
   let providerFailed = false
   let stepSettlement: { readonly finish: string; readonly tokens: ReturnType<typeof tokens> } | undefined
+  const executionBoundary = input.executionBoundary ?? (() => Effect.void)
+  const providerToolProtocol = input.providerToolProtocol ?? (() => Effect.void)
+  let providerCheckpointed = false
+
+  const checkpointProviderOutput = Effect.fnUntraced(function* () {
+    if (providerCheckpointed) return
+    providerCheckpointed = true
+    yield* executionBoundary("provider", "mark")
+  })
 
   const startAssistant = Effect.fnUntraced(function* () {
     if (assistantMessageID !== undefined) return assistantMessageID
@@ -361,6 +385,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
       case "step-start":
         return
       case "text-start":
+        yield* checkpointProviderOutput()
         yield* text.start(event.id)
         yield* events.publish(SessionEvent.Text.Started, {
           sessionID: input.sessionID,
@@ -383,6 +408,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         yield* text.end(event.id)
         return
       case "reasoning-start":
+        yield* checkpointProviderOutput()
         yield* reasoning.start(event.id)
         yield* events.publish(SessionEvent.Reasoning.Started, {
           sessionID: input.sessionID,
@@ -437,12 +463,19 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         tool.called = true
         tool.providerExecuted = event.providerExecuted === true
         tool.providerMetadata = event.providerMetadata
+        const sideEffect = input.toolSideEffects?.[event.name] ?? "external-unknown"
+        // Fence the dangerous interval BEFORE publishing dispatch. A crash between these writes is
+        // conservatively outcome-unknown; the inverse ordering could replay a side effect.
+        yield* input.toolDispatched?.({ callID: event.id, name: event.name, sideEffect }) ?? Effect.void
+        yield* executionBoundary("tool", "clear")
+        yield* providerToolProtocol()
         yield* events.publish(SessionEvent.Tool.Called, {
           sessionID: input.sessionID,
           timestamp: yield* timestamp,
           assistantMessageID: tool.assistantMessageID,
           callID: event.id,
           tool: event.name,
+          sideEffect,
           input: record(event.input),
           provider: {
             executed: tool.providerExecuted,
@@ -476,6 +509,8 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
             result: event.result,
             provider,
           })
+          yield* executionBoundary("tool", "mark")
+          yield* input.toolSettled?.(event.id) ?? Effect.void
           return
         }
         yield* events.publish(SessionEvent.Tool.Success, {
@@ -488,6 +523,8 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
           ...(provider.executed ? { result: event.result } : {}),
           provider,
         })
+        yield* executionBoundary("tool", "mark")
+        yield* input.toolSettled?.(event.id) ?? Effect.void
         return
       }
       case "tool-error": {
@@ -508,10 +545,13 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
             ...(event.providerMetadata === undefined ? {} : { metadata: event.providerMetadata }),
           },
         })
+        yield* executionBoundary("tool", "mark")
+        yield* input.toolSettled?.(event.id) ?? Effect.void
         return
       }
       case "step-finish":
         yield* flush()
+        yield* executionBoundary("provider", "mark")
         assistantActive = false
         if (stepSettlement) return yield* Effect.die("Duplicate step finish")
         stepSettlement = { finish: event.reason, tokens: tokens(event.usage) }

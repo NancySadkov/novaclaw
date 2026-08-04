@@ -439,7 +439,10 @@ const readOne = async (root: string, slug: string, builtinSlugs: ReadonlySet<str
     name: parsed.name ?? slug,
     ...(parsed.description ? { description: parsed.description } : {}),
     prompt: parsed.prompt,
-    assets: entries.filter((entry) => entry.isFile() && entry.name !== RECIPE_FILE).map((entry) => entry.name).sort(),
+    assets: entries
+      .filter((entry) => entry.isFile() && entry.name !== RECIPE_FILE)
+      .map((entry) => entry.name)
+      .sort(),
     builtin: builtinSlugs.has(slug),
     updatedAt: stat?.mtimeMs ?? 0,
   }
@@ -594,7 +597,8 @@ export async function materialize(slug: string, into: string, options?: Options)
     if (ok) copied.push(asset)
     else failed.push(asset)
   }
-  if (failed.length > 0) console.warn(`recipe "${slug}": ${failed.length} asset(s) could not be copied: ${failed.join(", ")}`)
+  if (failed.length > 0)
+    console.warn(`recipe "${slug}": ${failed.length} asset(s) could not be copied: ${failed.join(", ")}`)
   // Never clobber: cooking into a folder the user already works in must not overwrite their own recipe.md.
   const manifest = path.join(into, RECIPE_FILE)
   const exists = await fs

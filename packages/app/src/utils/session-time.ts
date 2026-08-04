@@ -19,9 +19,9 @@ const toMillis = (value: TimeLike): number | undefined => {
 
 /** Coerce a session record's time fields to epoch millis; returns the input untouched when
  *  already conformant (keeps referential stability for `reconcile`). */
-export function normalizeSessionTimes<T extends { time?: { created?: unknown; updated?: unknown; archived?: unknown } }>(
-  info: T,
-): T {
+export function normalizeSessionTimes<
+  T extends { time?: { created?: unknown; updated?: unknown; archived?: unknown } },
+>(info: T): T {
   const time = info?.time
   if (!time) return info
   const conformant =

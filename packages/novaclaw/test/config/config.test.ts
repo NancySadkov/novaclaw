@@ -664,12 +664,14 @@ const remotePrecedenceWellKnown = wellKnown({
   },
 })
 
-remotePrecedenceWellKnown.it.instance("wellknown remote_config url tokens and nested config override embedded config", () =>
-  Effect.gen(function* () {
-    const config = yield* Config.use.get()
-    expect(remotePrecedenceWellKnown.seen.remote).toBe("https://config.example.com/test-token/novaclaw.json")
-    expect(config.mcp?.servers?.confluence?.disabled).toBe(false)
-  }),
+remotePrecedenceWellKnown.it.instance(
+  "wellknown remote_config url tokens and nested config override embedded config",
+  () =>
+    Effect.gen(function* () {
+      const config = yield* Config.use.get()
+      expect(remotePrecedenceWellKnown.seen.remote).toBe("https://config.example.com/test-token/novaclaw.json")
+      expect(config.mcp?.servers?.confluence?.disabled).toBe(false)
+    }),
 )
 
 const envIsolationWellKnown = wellKnown({
@@ -1020,7 +1022,10 @@ it.instance("merges store plugins with auto-discovered dir-walk plugins, origins
       }),
     )
     yield* Config.use.invalidate()
-    yield* FSUtil.use.writeWithDirs(path.join(test.directory, ".novaclaw", "plugin", "my-plugin.js"), "export default {}")
+    yield* FSUtil.use.writeWithDirs(
+      path.join(test.directory, ".novaclaw", "plugin", "my-plugin.js"),
+      "export default {}",
+    )
 
     const config = yield* Config.use.get()
     const names = (config.plugins ?? []).map((p) => (typeof p === "string" ? p : p.package))

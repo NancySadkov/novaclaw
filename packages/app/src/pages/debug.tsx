@@ -8,7 +8,9 @@ import { sessionHref } from "@/utils/session-route"
 import { clearErrorLog, errorLogEntries } from "@/utils/error-log"
 import { showToast } from "@/utils/toast"
 import { schedulerSnapshot } from "@/utils/scheduler-api"
+import { retrySessionExecution, sessionExecutions, stopSessionExecution } from "@/utils/session-execution-api"
 import { contextTurns, formatContextFinding, formatContextTokens } from "./debug-context"
+import { useSettingsDialog } from "@/components/settings-dialog"
 
 // The Debug app (dependability P5) — the Developer-mode diagnostic surface. Read-only panels,
 // all fed from state the client ALREADY holds (no new server routes in v0): connection status per
@@ -27,6 +29,7 @@ const PS_LIMIT = 100
 export function DebugPage() {
   const global = useGlobal()
   const server = useServer()
+  const showModels = useSettingsDialog("models")
 
   const servers = createMemo(() => global.servers.list())
   const focused = createMemo(() => server.current ?? servers()[0])
@@ -79,6 +82,35 @@ export function DebugPage() {
     },
     ({ conn, dir }) => schedulerSnapshot(conn.http, { directory: dir }).catch(() => undefined),
   )
+
+  const [executionTick, setExecutionTick] = createSignal(0)
+  const [executions] = createResource(
+    () => {
+      const conn = focused()
+      return conn ? { conn, t: executionTick() } : undefined
+    },
+    ({ conn }) => sessionExecutions(conn.http).catch(() => []),
+  )
+  const executionBySession = createMemo(() =>
+    Object.fromEntries((executions() ?? []).map((attempt) => [attempt.sessionID, attempt])),
+  )
+  const actOnExecution = async (action: "retry" | "stop", sessionID: string) => {
+    const conn = focused()
+    if (!conn) return
+    const directory = schedDirectory() ?? ""
+    try {
+      if (action === "retry") await retrySessionExecution(conn.http, sessionID, directory)
+      else await stopSessionExecution(conn.http, sessionID, directory)
+      setExecutionTick((v) => v + 1)
+      showToast({ title: action === "retry" ? "Session retry started" : "Session stopped" })
+    } catch (error) {
+      showToast({
+        title: action === "retry" ? "Could not retry session" : "Could not stop session",
+        description: String(error),
+        variant: "error",
+      })
+    }
+  }
 
   const contextSession = createMemo(() => sessions()[0])
   const [contextLoad, { refetch: refetchContext }] = createResource(
@@ -335,9 +367,15 @@ export function DebugPage() {
           <div class={heading}>
             <span class={title}>Sessions</span>
             <span class={hint}>
-              ps-lite over the {sessions().length} cached session{sessions().length === 1 ? "" : "s"} (client cache, not
-              the full database)
+              durable execution and recovery state for {sessions().length} cached session
+              {sessions().length === 1 ? "" : "s"}
             </span>
+            <button
+              class="ml-auto text-[11px] text-v2-text-text-muted hover:underline"
+              onClick={() => setExecutionTick((v) => v + 1)}
+            >
+              Refresh
+            </button>
           </div>
           <div class="max-h-72 overflow-y-auto px-4 pb-3">
             <Show when={sessions().length > 0} fallback={<div class={hint}>no sessions cached yet</div>}>
@@ -346,9 +384,11 @@ export function DebugPage() {
                   <tr class="text-left text-v2-text-text-faint">
                     <th class="py-1 pr-2 font-medium">id</th>
                     <th class="py-1 pr-2 font-medium">status</th>
+                    <th class="py-1 pr-2 font-medium">phase / recovery</th>
                     <th class="py-1 pr-2 font-medium">agent</th>
                     <th class="py-1 pr-2 font-medium">parent</th>
                     <th class="py-1 font-medium">title</th>
+                    <th class="py-1 font-medium">actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -367,11 +407,50 @@ export function DebugPage() {
                             "text-v2-text-text-faint": row.status === "idle",
                           }}
                         >
-                          {row.status}
+                          {executionBySession()[row.id]?.state ?? row.status}
+                        </td>
+                        <td class="max-w-72 py-0.5 pr-2 text-v2-text-text-muted">
+                          <Show when={executionBySession()[row.id]} fallback="—">
+                            {(attempt) => (
+                              <span title={attempt().failureDetail}>
+                                {attempt().phase}
+                                {attempt().failureClass ? ` · ${attempt().failureClass}` : ""}
+                                {attempt().toolName
+                                  ? ` · ${attempt().toolName} (${attempt().toolSideEffect}, ${attempt().toolState})`
+                                  : ""}
+                                {attempt().failureCount
+                                  ? ` · ${attempt().failureCount} failure${attempt().failureCount === 1 ? "" : "s"}`
+                                  : ""}
+                              </span>
+                            )}
+                          </Show>
                         </td>
                         <td class="py-0.5 pr-2 text-v2-text-text-muted">{row.agent}</td>
                         <td class="py-0.5 pr-2 font-mono text-v2-text-text-faint">{row.parentID ?? "—"}</td>
                         <td class="max-w-64 truncate py-0.5 text-v2-text-text-muted">{row.title}</td>
+                        <td class="whitespace-nowrap py-0.5 text-v2-text-text-muted">
+                          <Show
+                            when={["paused", "failed", "interrupted"].includes(
+                              executionBySession()[row.id]?.state ?? "",
+                            )}
+                          >
+                            <button class="mr-2 hover:underline" onClick={() => void actOnExecution("retry", row.id)}>
+                              Retry
+                            </button>
+                          </Show>
+                          <Show
+                            when={["starting", "busy", "recovering"].includes(
+                              executionBySession()[row.id]?.state ?? "",
+                            )}
+                          >
+                            <button class="mr-2 hover:underline" onClick={() => void actOnExecution("stop", row.id)}>
+                              Stop
+                            </button>
+                          </Show>
+                          <button class="hover:underline" onClick={showModels}>
+                            Models
+                          </button>
+                        </td>
                       </tr>
                     )}
                   </For>

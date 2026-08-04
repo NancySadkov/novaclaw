@@ -96,9 +96,9 @@ describe("AgentConfigStore", () => {
 
       // And the store is otherwise untouched — a read never destroys.
       expect(yield* store.isEmpty()).toBe(false)
-      const remaining = (yield* db
-        .get(sql`SELECT count(*) AS count FROM agent_config`)
-        .pipe(Effect.orDie)) as { count: number }
+      const remaining = (yield* db.get(sql`SELECT count(*) AS count FROM agent_config`).pipe(Effect.orDie)) as {
+        count: number
+      }
       expect(remaining.count).toBe(4)
     }),
   )

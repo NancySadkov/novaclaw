@@ -133,8 +133,20 @@ describe("JhStore", () => {
   test("two tasks in ONE session keep separate log rows and separate artifacts", async () => {
     const loaded = await withDb((db) =>
       Effect.gen(function* () {
-        yield* JhStore.save(db, { id: "jh_ses_1_msg_a", goal: "goal a", status: "running", state: taskState("a"), now: 1 })
-        yield* JhStore.save(db, { id: "jh_ses_1_msg_b", goal: "goal b", status: "running", state: taskState("b"), now: 2 })
+        yield* JhStore.save(db, {
+          id: "jh_ses_1_msg_a",
+          goal: "goal a",
+          status: "running",
+          state: taskState("a"),
+          now: 1,
+        })
+        yield* JhStore.save(db, {
+          id: "jh_ses_1_msg_b",
+          goal: "goal b",
+          status: "running",
+          state: taskState("b"),
+          now: 2,
+        })
         return {
           a: yield* JhStore.load(db, "jh_ses_1_msg_a"),
           b: yield* JhStore.load(db, "jh_ses_1_msg_b"),
@@ -166,9 +178,27 @@ describe("JhStore", () => {
   test("latest() finds the session's newest plan, ignoring other sessions and legacy rows", async () => {
     const found = await withDb((db) =>
       Effect.gen(function* () {
-        yield* JhStore.save(db, { id: "jh_ses_1_msg_a", goal: "goal a", status: "done", state: taskState("a"), now: 10 })
-        yield* JhStore.save(db, { id: "jh_ses_1_msg_b", goal: "goal b", status: "running", state: taskState("b"), now: 20 })
-        yield* JhStore.save(db, { id: "jh_ses_2_msg_c", goal: "other chat", status: "running", state: taskState("c"), now: 30 })
+        yield* JhStore.save(db, {
+          id: "jh_ses_1_msg_a",
+          goal: "goal a",
+          status: "done",
+          state: taskState("a"),
+          now: 10,
+        })
+        yield* JhStore.save(db, {
+          id: "jh_ses_1_msg_b",
+          goal: "goal b",
+          status: "running",
+          state: taskState("b"),
+          now: 20,
+        })
+        yield* JhStore.save(db, {
+          id: "jh_ses_2_msg_c",
+          goal: "other chat",
+          status: "running",
+          state: taskState("c"),
+          now: 30,
+        })
         // a pre-change session-scoped row: no trailing separator, so the prefix never matches it
         yield* JhStore.save(db, { id: "jh_ses_1", goal: "orphan", status: "running", state: taskState("d"), now: 40 })
         return {
@@ -417,7 +447,12 @@ describe("JhStore", () => {
   test("resume through the DB completes with the same combined log (jh.md §6b)", async () => {
     // A 2-leaf scenario; save the state at the FIRST checkpoint, then load it and resume.
     const replies = () => [
-      JSON.stringify({ goal: "root", size: "needs_decomposition", success: "ok", substeps: [leaf("a", "a1"), leaf("b", "b1")] }),
+      JSON.stringify({
+        goal: "root",
+        size: "needs_decomposition",
+        success: "ok",
+        substeps: [leaf("a", "a1"), leaf("b", "b1")],
+      }),
       JSON.stringify(leaf("a", "a1")),
       JSON.stringify(leaf("b", "b1")),
     ]
@@ -442,7 +477,12 @@ describe("JhStore", () => {
         )
         const reloaded = yield* JhStore.load(db, "run")
         const resumed = yield* JhEngine.runTask(
-          mkDeps([JSON.stringify(leaf("b", "b1"))], [okObs("b1")], undefined, JhArtifact.memory(reloaded!.state.artifacts)),
+          mkDeps(
+            [JSON.stringify(leaf("b", "b1"))],
+            [okObs("b1")],
+            undefined,
+            JhArtifact.memory(reloaded!.state.artifacts),
+          ),
           { goal: "the task" },
           reloaded!.state,
         )
@@ -454,9 +494,22 @@ describe("JhStore", () => {
 })
 
 // --- minimal scripted deps for the resume test ---
-const leaf = (goal: string, produce: string) => ({ goal, size: "atomic", tool: "note", args: { text: "x" }, success: "ok", check: { type: "artifact_present" }, produces: [{ id: produce, type: "note" }] })
+const leaf = (goal: string, produce: string) => ({
+  goal,
+  size: "atomic",
+  tool: "note",
+  args: { text: "x" },
+  success: "ok",
+  check: { type: "artifact_present" },
+  produces: [{ id: produce, type: "note" }],
+})
 const okObs = (id: string): JhBasicTools.Observation => ({ ok: true, output: "o", artifacts: new Map([[id, "x"]]) })
-function mkDeps(replies: string[], observations: JhBasicTools.Observation[], checkpoint?: (s: JhEngine.State) => Effect.Effect<void>, artifacts = JhArtifact.memory()): JhEngine.Deps {
+function mkDeps(
+  replies: string[],
+  observations: JhBasicTools.Observation[],
+  checkpoint?: (s: JhEngine.State) => Effect.Effect<void>,
+  artifacts = JhArtifact.memory(),
+): JhEngine.Deps {
   const rq = [...replies]
   const oq = [...observations]
   const next = () => {

@@ -17,10 +17,42 @@ const bignum: JhStep.StepDraft = {
   success: "the four primitive files exist and compile",
   produces: [file("add.c"), file("sub.c"), file("mul.c"), file("div.c")],
   substeps: [
-    { goal: "write add()", size: "atomic", tool: "write_file", args: { path: "add.c", content: "/* add */" }, success: "compiles", produces: [file("add.c")], check: { type: "compile", command: "gcc -c add.c" } },
-    { goal: "write subtract()", size: "atomic", tool: "write_file", args: { path: "sub.c", content: "/* sub */" }, success: "compiles", produces: [file("sub.c")], check: { type: "compile", command: "gcc -c sub.c" } },
-    { goal: "write multiply_small()", size: "atomic", tool: "write_file", args: { path: "mul.c", content: "/* mul */" }, success: "unit test 999*999", produces: [file("mul.c")], check: { type: "run", command: "gcc mul.c -o t && ./t", expect: "998001" } },
-    { goal: "write divide_small()", size: "atomic", tool: "write_file", args: { path: "div.c", content: "/* div */" }, success: "unit test 1000/7", produces: [file("div.c")], check: { type: "run", command: "gcc div.c -o t && ./t", expect: "142" } },
+    {
+      goal: "write add()",
+      size: "atomic",
+      tool: "write_file",
+      args: { path: "add.c", content: "/* add */" },
+      success: "compiles",
+      produces: [file("add.c")],
+      check: { type: "compile", command: "gcc -c add.c" },
+    },
+    {
+      goal: "write subtract()",
+      size: "atomic",
+      tool: "write_file",
+      args: { path: "sub.c", content: "/* sub */" },
+      success: "compiles",
+      produces: [file("sub.c")],
+      check: { type: "compile", command: "gcc -c sub.c" },
+    },
+    {
+      goal: "write multiply_small()",
+      size: "atomic",
+      tool: "write_file",
+      args: { path: "mul.c", content: "/* mul */" },
+      success: "unit test 999*999",
+      produces: [file("mul.c")],
+      check: { type: "run", command: "gcc mul.c -o t && ./t", expect: "998001" },
+    },
+    {
+      goal: "write divide_small()",
+      size: "atomic",
+      tool: "write_file",
+      args: { path: "div.c", content: "/* div */" },
+      success: "unit test 1000/7",
+      produces: [file("div.c")],
+      check: { type: "run", command: "gcc div.c -o t && ./t", expect: "142" },
+    },
   ],
 }
 
@@ -30,7 +62,15 @@ export const piTree: JhStep.StepDraft = {
   success: "prints and verifies 100 digits of Pi",
   substeps: [
     // s1
-    { goal: "pick algorithm", size: "atomic", tool: "note", args: { text: "Machin + fixed-point" }, success: "names a method", produces: [note("algorithm-choice")], check: { type: "artifact_present" } },
+    {
+      goal: "pick algorithm",
+      size: "atomic",
+      tool: "note",
+      args: { text: "Machin + fixed-point" },
+      success: "names a method",
+      produces: [note("algorithm-choice")],
+      check: { type: "artifact_present" },
+    },
     // s2
     bignum,
     // s3
@@ -51,7 +91,14 @@ export const piTree: JhStep.StepDraft = {
       tool: "write_file",
       args: { path: "machin.c", content: "/* machin */" },
       success: "compiles; pi ~= 3.14159",
-      consumes: [note("algorithm-choice"), file("add.c"), file("sub.c"), file("mul.c"), file("div.c"), file("arctan.c")],
+      consumes: [
+        note("algorithm-choice"),
+        file("add.c"),
+        file("sub.c"),
+        file("mul.c"),
+        file("div.c"),
+        file("arctan.c"),
+      ],
       produces: [file("machin.c")],
       check: { type: "compile", command: "gcc machin.c -o pi" },
     },

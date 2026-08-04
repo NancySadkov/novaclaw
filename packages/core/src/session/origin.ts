@@ -135,9 +135,10 @@ export interface Badge {
  */
 export const badge = (origin: Origin | undefined): Badge | undefined => {
   if (origin === undefined) return undefined
-  if (origin.via === "agent")
-    return { label: origin.label ?? "parent agent", detail: origin.sessionID, tone: "agent" }
+  if (origin.via === "agent") return { label: origin.label ?? "parent agent", detail: origin.sessionID, tone: "agent" }
   const where =
-    origin.chatKind === undefined || origin.chatKind === "dm" ? origin.senderName : origin.chatTitle ?? origin.senderName
+    origin.chatKind === undefined || origin.chatKind === "dm"
+      ? origin.senderName
+      : (origin.chatTitle ?? origin.senderName)
   return { label: `via ${origin.driver}`, detail: where, tone: origin.trust }
 }

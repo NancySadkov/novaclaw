@@ -40,6 +40,7 @@ export const layer = Layer.effectDiscard(
     yield* tools
       .register({
         [name]: Tool.make({
+          sideEffect: "read",
           description:
             "Read a text file or supported image, page through a large UTF-8 text file by line offset, or list a directory page. Prefer this over `bash` cat/head/tail — it pages safely and warns on large slices. A large file comes back in chunks (~1500 lines / 24 KB per read): continue with `offset`, and never review or conclude from a partial view — read the rest first. Binary files are refused with a format hint: use `read-hex` for those. Relative paths resolve from the current location; absolute paths may point anywhere the host account can read. Reading never grants permission to modify that path.",
           input: Input,

@@ -12,7 +12,15 @@ import { JhEngine } from "./engine"
 
 function capture(opts: { file: { name: string; content: string }; numberedWorkspace?: boolean; fullFiles?: boolean }) {
   const prompts: { readonly goalCheck: boolean; readonly user: string }[] = []
-  const atom = JSON.stringify({ goal: "s", size: "atomic", tool: "note", args: { text: "x" }, check: { type: "artifact_present" }, produces: [], success: "ok" })
+  const atom = JSON.stringify({
+    goal: "s",
+    size: "atomic",
+    tool: "note",
+    args: { text: "x" },
+    check: { type: "artifact_present" },
+    produces: [],
+    success: "ok",
+  })
   const deps: JhEngine.Deps = {
     introspect: (p) => {
       const goalCheck = p.user.includes("Is the goal fully achieved?")
@@ -72,7 +80,11 @@ describe("jh-improve5 P1 — numbered full-visibility workspace rendering", () =
 
   test("fullFiles:false — wave-4 exact: 8000-char cap + unnamed [truncated]", async () => {
     const big = Array.from({ length: 4000 }, (_, i) => `line ${i} xxxxxxxxxxxxxxxxxxxx`).join("\n")
-    const { deps, prompts } = capture({ file: { name: "big.c", content: big }, numberedWorkspace: false, fullFiles: false })
+    const { deps, prompts } = capture({
+      file: { name: "big.c", content: big },
+      numberedWorkspace: false,
+      fullFiles: false,
+    })
     await run(deps)
     const ed = editing(prompts)
     expect(ed).toContain("[truncated]")
@@ -102,7 +114,15 @@ function budgetCapture(opts: { clock: number[]; budgetAware?: boolean; withBudge
   const introspectPrompts: string[] = []
   let checkCalls = 0
   let c = 0
-  const atom = JSON.stringify({ goal: "s", size: "atomic", tool: "note", args: { text: "x" }, check: { type: "run", command: "go" }, produces: [], success: "ok" })
+  const atom = JSON.stringify({
+    goal: "s",
+    size: "atomic",
+    tool: "note",
+    args: { text: "x" },
+    check: { type: "run", command: "go" },
+    produces: [],
+    success: "ok",
+  })
   const deps: JhEngine.Deps = {
     introspect: (p) => {
       if (!p.user.includes("Is the goal fully achieved?")) introspectPrompts.push(p.user)
@@ -123,7 +143,10 @@ function budgetCapture(opts: { clock: number[]; budgetAware?: boolean; withBudge
     limits: { maxDepth: 0, maxTotalSteps: 10 },
     trigger: JhBudget.DEFAULT_TRIGGER,
     budgetAware: opts.budgetAware,
-    budget: opts.withBudget === false ? undefined : { startedAt: 0, wallMs: 100, now: () => opts.clock[Math.min(c++, opts.clock.length - 1)]! },
+    budget:
+      opts.withBudget === false
+        ? undefined
+        : { startedAt: 0, wallMs: 100, now: () => opts.clock[Math.min(c++, opts.clock.length - 1)]! },
   }
   return { deps, introspectPrompts }
 }

@@ -551,7 +551,9 @@ describe("EventV2", () => {
       // legacy type — the F1g message/part removal leaves exactly these behind) ...
       yield* db
         .insert(EventTable)
-        .values([{ id: EventV2.ID.create(), aggregate_id: aggregateID, seq: 1, type: "test.retired.legacy.1", data: {} }])
+        .values([
+          { id: EventV2.ID.create(), aggregate_id: aggregateID, seq: 1, type: "test.retired.legacy.1", data: {} },
+        ])
         .run()
         .pipe(Effect.orDie)
       yield* db

@@ -64,10 +64,7 @@ export interface StepInfo {
  * of them) and map each touched file to the snapshot tree of the FIRST step that touched
  * it — its state before that change. Mirrors SessionRevert.plan's first-touch semantics.
  */
-export function planSteps(
-  rows: readonly StepInfo[],
-  steps: number,
-): { readonly files: ReadonlyMap<string, string> } {
+export function planSteps(rows: readonly StepInfo[], steps: number): { readonly files: ReadonlyMap<string, string> } {
   const files = new Map<string, string>()
   const changed = rows.filter((row) => row.start && row.files.length > 0)
   if (steps <= 0 || changed.length === 0) return { files }
@@ -88,90 +85,93 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.withDeferred(Tool.make({
-          description:
-            "UNDO file changes by restoring files to an earlier snapshot (git-backed, captured every step). Default undoes your last file-changing step; `steps: N` undoes the last N; `steps: 0` undoes only the current step's changes so far. Restores file EDITS — deletions are restored from the Trash instead. Use when an edit made things worse and you want a known-good state back.",
-          input: Input,
-          output: Output,
-          toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
-          execute: (input, context) =>
-            Effect.gen(function* () {
-              const source = {
-                type: "tool" as const,
-                messageID: context.assistantMessageID,
-                callID: context.toolCallID,
-              }
-              const restore = new Map<RelativePath, Snapshot.ID>()
-              if (input.messageID !== undefined) {
-                const planned = yield* SessionRevert.plan({
-                  sessionID: context.sessionID,
-                  messageID: SessionMessage.ID.make(input.messageID),
-                }).pipe(
-                  Effect.provideService(Database.Service, database),
-                  Effect.catchTag("Session.MessageNotFoundError", () =>
-                    Effect.fail(new ToolFailure({ message: `No message "${input.messageID}" in this session.` })),
-                  ),
-                )
-                for (const [file, tree] of planned) restore.set(file, tree)
-              } else if ((input.steps ?? 1) === 0) {
-                // Undo the CURRENT step: diff its start snapshot against the live tree.
-                const current = yield* loadStep(database, context.sessionID, context.assistantMessageID)
-                if (!current?.start)
+        [name]: Tool.withDeferred(
+          Tool.make({
+            description:
+              "UNDO file changes by restoring files to an earlier snapshot (git-backed, captured every step). Default undoes your last file-changing step; `steps: N` undoes the last N; `steps: 0` undoes only the current step's changes so far. Restores file EDITS — deletions are restored from the Trash instead. Use when an edit made things worse and you want a known-good state back.",
+            input: Input,
+            output: Output,
+            toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
+            execute: (input, context) =>
+              Effect.gen(function* () {
+                const source = {
+                  type: "tool" as const,
+                  messageID: context.assistantMessageID,
+                  callID: context.toolCallID,
+                }
+                const restore = new Map<RelativePath, Snapshot.ID>()
+                if (input.messageID !== undefined) {
+                  const planned = yield* SessionRevert.plan({
+                    sessionID: context.sessionID,
+                    messageID: SessionMessage.ID.make(input.messageID),
+                  }).pipe(
+                    Effect.provideService(Database.Service, database),
+                    Effect.catchTag("Session.MessageNotFoundError", () =>
+                      Effect.fail(new ToolFailure({ message: `No message "${input.messageID}" in this session.` })),
+                    ),
+                  )
+                  for (const [file, tree] of planned) restore.set(file, tree)
+                } else if ((input.steps ?? 1) === 0) {
+                  // Undo the CURRENT step: diff its start snapshot against the live tree.
+                  const current = yield* loadStep(database, context.sessionID, context.assistantMessageID)
+                  if (!current?.start)
+                    return yield* Effect.fail(
+                      new ToolFailure({
+                        message:
+                          "The current step has no snapshot — snapshots may be disabled (git unavailable?) or nothing was captured yet.",
+                      }),
+                    )
+                  const start = Snapshot.ID.make(current.start)
+                  const now = yield* snapshot.capture()
+                  if (!now)
+                    return yield* Effect.fail(
+                      new ToolFailure({ message: "Snapshot capture failed — cannot compute the current diff." }),
+                    )
+                  const changed = yield* snapshot
+                    .files({ from: start, to: now })
+                    .pipe(
+                      Effect.mapError(
+                        (error) => new ToolFailure({ message: `Snapshot diff failed: ${error.message}` }),
+                      ),
+                    )
+                  for (const file of changed) restore.set(file, start)
+                } else {
+                  const rows = yield* loadSteps(database, context.sessionID, context.assistantMessageID)
+                  const planned = planSteps(rows, input.steps ?? 1)
+                  for (const [file, tree] of planned.files) restore.set(RelativePath.make(file), Snapshot.ID.make(tree))
+                }
+                if (restore.size === 0)
                   return yield* Effect.fail(
                     new ToolFailure({
                       message:
-                        "The current step has no snapshot — snapshots may be disabled (git unavailable?) or nothing was captured yet.",
+                        "Nothing to revert: no file changes are recorded in the selected steps (snapshots may be disabled, or the steps changed no files).",
                     }),
                   )
-                const start = Snapshot.ID.make(current.start)
-                const now = yield* snapshot.capture()
-                if (!now)
-                  return yield* Effect.fail(
-                    new ToolFailure({ message: "Snapshot capture failed — cannot compute the current diff." }),
-                  )
-                const changed = yield* snapshot
-                  .files({ from: start, to: now })
-                  .pipe(
-                    Effect.mapError((error) => new ToolFailure({ message: `Snapshot diff failed: ${error.message}` })),
-                  )
-                for (const file of changed) restore.set(file, start)
-              } else {
-                const rows = yield* loadSteps(database, context.sessionID, context.assistantMessageID)
-                const planned = planSteps(rows, input.steps ?? 1)
-                for (const [file, tree] of planned.files)
-                  restore.set(RelativePath.make(file), Snapshot.ID.make(tree))
-              }
-              if (restore.size === 0)
-                return yield* Effect.fail(
-                  new ToolFailure({
-                    message:
-                      "Nothing to revert: no file changes are recorded in the selected steps (snapshots may be disabled, or the steps changed no files).",
-                  }),
-                )
-              yield* permission.assert({
-                action: name,
-                resources: [...restore.keys()],
-                save: ["*"],
-                sessionID: context.sessionID,
-                agent: context.agent,
-                source,
-              })
-              yield* snapshot
-                .restore({ files: restore })
-                .pipe(Effect.mapError((error) => new ToolFailure({ message: `Restore failed: ${error.message}` })))
-              const files = [...restore.keys()].sort()
-              return { files, count: files.length }
-            }).pipe(
-              Effect.mapError((error) => {
-                if (error instanceof ToolFailure) return error
-                const denial = PermissionV2.denialMessage(error)
-                if (denial) return new ToolFailure({ message: denial })
-                return new ToolFailure({
-                  message: `Unable to revert: ${error instanceof Error ? error.message : String(error)}`,
+                yield* permission.assert({
+                  action: name,
+                  resources: [...restore.keys()],
+                  save: ["*"],
+                  sessionID: context.sessionID,
+                  agent: context.agent,
+                  source,
                 })
-              }),
-            ),
-        })),
+                yield* snapshot
+                  .restore({ files: restore })
+                  .pipe(Effect.mapError((error) => new ToolFailure({ message: `Restore failed: ${error.message}` })))
+                const files = [...restore.keys()].sort()
+                return { files, count: files.length }
+              }).pipe(
+                Effect.mapError((error) => {
+                  if (error instanceof ToolFailure) return error
+                  const denial = PermissionV2.denialMessage(error)
+                  if (denial) return new ToolFailure({ message: denial })
+                  return new ToolFailure({
+                    message: `Unable to revert: ${error instanceof Error ? error.message : String(error)}`,
+                  })
+                }),
+              ),
+          }),
+        ),
       })
       .pipe(Effect.orDie)
   }),

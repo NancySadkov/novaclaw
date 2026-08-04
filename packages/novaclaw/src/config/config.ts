@@ -233,13 +233,7 @@ export const layer = Layer.effect(
     const referenceStore = yield* ReferenceConfigStore.Service
     const settingsStore = yield* SettingsConfigStore.Service
     const skillStore = yield* SkillConfigStore.Service
-    const provideStores = <A, E, R>(
-      effect: Effect.Effect<
-        A,
-        E,
-        R
-      >,
-    ) =>
+    const provideStores = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       effect.pipe(
         Effect.provideService(AgentConfigStore.Service, agentStore),
         Effect.provideService(CatalogStore.Service, catalogStore),
@@ -328,9 +322,7 @@ export const layer = Layer.effect(
 
     const [cachedGlobal, invalidateGlobal] = yield* Effect.cachedInvalidateWithTTL(
       loadStores().pipe(
-        Effect.tapError((error) =>
-          Log.event("config.global.load.failed", { "config.cause": String(error) }),
-        ),
+        Effect.tapError((error) => Log.event("config.global.load.failed", { "config.cause": String(error) })),
         Effect.orElseSucceed((): Info => ({})),
       ),
       Duration.infinity,
@@ -507,10 +499,7 @@ export const layer = Layer.effect(
 
           // ConfigCommand.load returns V1 command shapes that are identical to V2 ConfigCommand.Info.
           result.commands = mergeDeep(result.commands ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
-          result.agents = mergeDeep(
-            result.agents ?? {},
-            dirAgents(yield* Effect.promise(() => ConfigAgent.load(dir))),
-          )
+          result.agents = mergeDeep(result.agents ?? {}, dirAgents(yield* Effect.promise(() => ConfigAgent.load(dir))))
           // loadMode already tags each agent `mode: "primary"`; migrateAgent preserves it.
           result.agents = mergeDeep(
             result.agents ?? {},

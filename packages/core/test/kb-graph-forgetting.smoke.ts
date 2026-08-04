@@ -21,11 +21,41 @@ const pct = (x: number) => `${(x * 100).toFixed(0)}%`
 // Real facts to keep recalling: a realistic mix of CURATED (core, never forgettable) + high-confidence
 // STAGED (auto-learned but strong). Each carries a probe query drawn from its own text.
 const GOLD: Array<{ id: string; text: string; relation: "core" | "staged"; confidence: number; probe: string }> = [
-  { id: "g_rust", text: "Rust is a memory-safe systems programming language", relation: "core", confidence: 0.95, probe: "memory-safe systems programming language" },
-  { id: "g_torch", text: "PyTorch is a deep learning framework for tensor computation", relation: "core", confidence: 0.95, probe: "deep learning framework tensor computation" },
-  { id: "g_berlin", text: "Berlin is the capital city of Germany", relation: "staged", confidence: 0.9, probe: "capital city of Germany" },
-  { id: "g_pref", text: "The user prefers concise and direct answers", relation: "staged", confidence: 0.9, probe: "user prefers concise direct answers" },
-  { id: "g_kyoto", text: "Kyoto is an old imperial city in Japan", relation: "staged", confidence: 0.9, probe: "old imperial city in Japan" },
+  {
+    id: "g_rust",
+    text: "Rust is a memory-safe systems programming language",
+    relation: "core",
+    confidence: 0.95,
+    probe: "memory-safe systems programming language",
+  },
+  {
+    id: "g_torch",
+    text: "PyTorch is a deep learning framework for tensor computation",
+    relation: "core",
+    confidence: 0.95,
+    probe: "deep learning framework tensor computation",
+  },
+  {
+    id: "g_berlin",
+    text: "Berlin is the capital city of Germany",
+    relation: "staged",
+    confidence: 0.9,
+    probe: "capital city of Germany",
+  },
+  {
+    id: "g_pref",
+    text: "The user prefers concise and direct answers",
+    relation: "staged",
+    confidence: 0.9,
+    probe: "user prefers concise direct answers",
+  },
+  {
+    id: "g_kyoto",
+    text: "Kyoto is an old imperial city in Japan",
+    relation: "staged",
+    confidence: 0.9,
+    probe: "old imperial city in Japan",
+  },
 ]
 const GOLD_STAGED = GOLD.filter((g) => g.relation === "staged").length // = 3
 const DISTRACTORS_PER_PROBE = 12
@@ -36,7 +66,15 @@ let mem: WasmMemory
 const seedGold = () =>
   Promise.all(
     GOLD.map((g) =>
-      mem.addMemory({ id: g.id, kind: "entity", text: g.text, scope: "global", relation: g.relation, confidence: g.confidence, source: "seed" }),
+      mem.addMemory({
+        id: g.id,
+        kind: "entity",
+        text: g.text,
+        scope: "global",
+        relation: g.relation,
+        confidence: g.confidence,
+        source: "seed",
+      }),
     ),
   )
 
@@ -45,7 +83,15 @@ const seedNoise = async () => {
   let n = 0
   for (const g of GOLD) {
     for (let i = 0; i < DISTRACTORS_PER_PROBE; i++) {
-      await mem.addMemory({ id: `noise_${n}`, kind: "entity", text: `${g.probe} note ${n}`, scope: "global", relation: "staged", confidence: 0.1, source: "auto-extract" })
+      await mem.addMemory({
+        id: `noise_${n}`,
+        kind: "entity",
+        text: `${g.probe} note ${n}`,
+        scope: "global",
+        relation: "staged",
+        confidence: 0.1,
+        source: "auto-extract",
+      })
       n++
     }
   }
@@ -57,7 +103,8 @@ const recall = async (): Promise<number> => {
   for (const g of GOLD) if ((await mem.search({ query: g.probe, k: K })).slice(0, K).some((r) => r.id === g.id)) hit++
   return hit / GOLD.length
 }
-const stagedvalid = async () => (await mem.list({ scopes: ["global"], limit: 5000 })).filter((m) => m.relation === "staged").length
+const stagedvalid = async () =>
+  (await mem.list({ scopes: ["global"], limit: 5000 })).filter((m) => m.relation === "staged").length
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "kb-forget-"))
@@ -85,7 +132,9 @@ describe("KB-G forgetting / decay", () => {
 
     // Forget: bound the staged set to the high-value gold. Core is exempt from the cap.
     const forgotten = await mem.prune({ scope: "global", maxStaged: GOLD_STAGED })
-    console.log(`[forget] prune(maxStaged=${GOLD_STAGED}) forgot ${forgotten} memories → valid staged now ${await stagedvalid()}`)
+    console.log(
+      `[forget] prune(maxStaged=${GOLD_STAGED}) forgot ${forgotten} memories → valid staged now ${await stagedvalid()}`,
+    )
     expect(forgotten).toBe(injected) // exactly the low-confidence distractors were dropped
     expect(await stagedvalid()).toBe(GOLD_STAGED) // growth is bounded to the cap
 
@@ -109,7 +158,14 @@ describe("KB-G forgetting / decay", () => {
       // Five staged facts, distinct confidences; keep the top 2 by importance.
       const conf = { a: 0.1, b: 0.3, c: 0.5, d: 0.7, e: 0.9 }
       for (const [id, c] of Object.entries(conf))
-        await m2.addMemory({ id, kind: "entity", text: `fact ${id}`, scope: "global", relation: "staged", confidence: c })
+        await m2.addMemory({
+          id,
+          kind: "entity",
+          text: `fact ${id}`,
+          scope: "global",
+          relation: "staged",
+          confidence: c,
+        })
       expect(await m2.prune({ scope: "global", maxStaged: 2 })).toBe(3)
       const kept = new Set((await m2.list({ scopes: ["global"], limit: 100 })).map((m) => m.id))
       expect([...kept].sort()).toEqual(["d", "e"]) // the two highest-confidence survive; a,b,c forgotten

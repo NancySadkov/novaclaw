@@ -40,7 +40,9 @@ const iso = (value: unknown): string | undefined => {
       ? value
       : value instanceof Date
         ? value.getTime()
-        : typeof value === "object" && value !== null && typeof (value as { epochMillis?: unknown }).epochMillis === "number"
+        : typeof value === "object" &&
+            value !== null &&
+            typeof (value as { epochMillis?: unknown }).epochMillis === "number"
           ? (value as { epochMillis: number }).epochMillis
           : undefined
   if (millis === undefined || !Number.isFinite(millis)) return undefined
@@ -84,7 +86,14 @@ function renderTool(part: Record<string, unknown>, lines: string[]): boolean {
   lines.push(`> **Tool — ${name}** · ${running ? `${status} (still in flight at export)` : status}`)
   const io = toolIO(state)
   if (io.input !== undefined) {
-    lines.push("", "<details><summary>Input</summary>", "", codeBlock(truncate(json(io.input)), "json"), "", "</details>")
+    lines.push(
+      "",
+      "<details><summary>Input</summary>",
+      "",
+      codeBlock(truncate(json(io.input)), "json"),
+      "",
+      "</details>",
+    )
   }
   if (io.output !== undefined) {
     const text = typeof io.output === "string" ? io.output : json(io.output)

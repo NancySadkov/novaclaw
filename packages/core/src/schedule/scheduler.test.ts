@@ -187,7 +187,10 @@ describe("CalendarScheduler.makeLaunch", () => {
     const created: any[] = []
     const prompted: any[] = []
     const id = await Effect.runPromise(
-      CalendarScheduler.makeLaunch(fakeSessions(created, prompted), "/home/nancy")({
+      CalendarScheduler.makeLaunch(
+        fakeSessions(created, prompted),
+        "/home/nancy",
+      )({
         schedule: sample(),
         occurrenceMillis: 123,
         firedAt: 130,
@@ -208,7 +211,10 @@ describe("CalendarScheduler.makeLaunch", () => {
     const created: any[] = []
     const prompted: any[] = []
     await Effect.runPromise(
-      CalendarScheduler.makeLaunch(fakeSessions(created, prompted), "/home/nancy")({
+      CalendarScheduler.makeLaunch(
+        fakeSessions(created, prompted),
+        "/home/nancy",
+      )({
         schedule: sample({ location: "/srv/clients" }),
         occurrenceMillis: 1,
         firedAt: 1,
@@ -221,7 +227,10 @@ describe("CalendarScheduler.makeLaunch", () => {
     const created: any[] = []
     const prompted: any[] = []
     await Effect.runPromise(
-      CalendarScheduler.makeLaunch(fakeSessions(created, prompted), "/home/nancy")({
+      CalendarScheduler.makeLaunch(
+        fakeSessions(created, prompted),
+        "/home/nancy",
+      )({
         schedule: sample({ model: "dgx-spark/qwen3.6-35b", agent: "build", permissionMode: "bypass" }),
         occurrenceMillis: 1,
         firedAt: 1,
@@ -237,7 +246,10 @@ describe("CalendarScheduler.makeLaunch", () => {
     const created: any[] = []
     const prompted: any[] = []
     await Effect.runPromise(
-      CalendarScheduler.makeLaunch(fakeSessions(created, prompted), "/home/nancy")({
+      CalendarScheduler.makeLaunch(
+        fakeSessions(created, prompted),
+        "/home/nancy",
+      )({
         schedule: sample({ location: "/srv/clients" }),
         occurrenceMillis: 1,
         firedAt: 1,
@@ -250,7 +262,10 @@ describe("CalendarScheduler.makeLaunch", () => {
     const created: any[] = []
     const prompted: any[] = []
     await Effect.runPromise(
-      CalendarScheduler.makeLaunch(fakeSessions(created, prompted), "/home/nancy")({
+      CalendarScheduler.makeLaunch(
+        fakeSessions(created, prompted),
+        "/home/nancy",
+      )({
         schedule: sample(),
         occurrenceMillis: 1,
         firedAt: 1,

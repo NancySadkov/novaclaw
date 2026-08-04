@@ -52,7 +52,7 @@ export interface MemoryStats {
 
 export type PathResult = { readonly ids: readonly string[]; readonly hops: number } | null
 
-const call = <T,>(
+const call = <T>(
   server: ServerConnection.HttpBase,
   method: "GET" | "POST",
   route: string,

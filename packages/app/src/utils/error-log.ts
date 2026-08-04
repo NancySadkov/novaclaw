@@ -45,7 +45,9 @@ function toText(value: unknown): string {
 export function pushErrorLog(level: ErrorLogEntry["level"], parts: readonly unknown[]) {
   const text = parts.map(toText).join(" ").slice(0, MAX_TEXT)
   const entry: ErrorLogEntry = { at: Date.now(), level, text }
-  setEntries((prev) => (prev.length >= MAX_ENTRIES ? [...prev.slice(prev.length - MAX_ENTRIES + 1), entry] : [...prev, entry]))
+  setEntries((prev) =>
+    prev.length >= MAX_ENTRIES ? [...prev.slice(prev.length - MAX_ENTRIES + 1), entry] : [...prev, entry],
+  )
 }
 
 /**

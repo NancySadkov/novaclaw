@@ -263,9 +263,7 @@ export function SessionContextTab() {
     >
       <div class="px-6 pt-4 pb-10 flex flex-col gap-10">
         <div class="grid grid-cols-1 @[32rem]:grid-cols-2 gap-4">
-          <For each={stats}>
-            {(stat) => <Stat label={language.t(stat.label)} value={stat.value()} />}
-          </For>
+          <For each={stats}>{(stat) => <Stat label={language.t(stat.label)} value={stat.value()} />}</For>
         </div>
 
         <Show when={breakdown().length > 0}>

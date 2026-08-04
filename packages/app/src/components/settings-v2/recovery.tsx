@@ -71,8 +71,15 @@ export const SettingsRecoveryV2: Component = () => {
               title={language.t("settings.recovery.row.resetUi.title")}
               description={language.t("settings.recovery.row.resetUi.description")}
             >
-              <ButtonV2 size="normal" variant={armed() ? "danger" : "neutral"} onClick={resetUi} data-action="settings-recovery-reset-ui">
-                {armed() ? language.t("settings.recovery.row.resetUi.confirm") : language.t("settings.recovery.row.resetUi.action")}
+              <ButtonV2
+                size="normal"
+                variant={armed() ? "danger" : "neutral"}
+                onClick={resetUi}
+                data-action="settings-recovery-reset-ui"
+              >
+                {armed()
+                  ? language.t("settings.recovery.row.resetUi.confirm")
+                  : language.t("settings.recovery.row.resetUi.action")}
               </ButtonV2>
             </SettingsRowV2>
 

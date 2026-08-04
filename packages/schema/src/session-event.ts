@@ -520,6 +520,9 @@ export namespace Tool {
     schema: {
       ...ToolBase,
       tool: Schema.String,
+      // Optional on decode for durable events written before execution receipts shipped. Missing
+      // history is treated as external-unknown by recovery; new publishers always write it.
+      sideEffect: Schema.Literals(["read", "idempotent-write", "non-idempotent", "external-unknown"]).pipe(optional),
       input: Schema.Record(Schema.String, Schema.Unknown),
       provider: Schema.Struct({
         executed: Schema.Boolean,

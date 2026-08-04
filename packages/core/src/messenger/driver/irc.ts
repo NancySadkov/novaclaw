@@ -125,7 +125,8 @@ export const make = (factory: IrcSocketFactory): Driver => ({
       {
         type: "text",
         key: "channels",
-        message: "Channels to join at connect, comma-separated (a channel can also be typed by hand in the chat picker)",
+        message:
+          "Channels to join at connect, comma-separated (a channel can also be typed by hand in the chat picker)",
         placeholder: "#novaclaw, #support",
       },
     ],
@@ -140,10 +141,14 @@ export const make = (factory: IrcSocketFactory): Driver => ({
       const tls = (ctx.account.settings["tls"] ?? "yes").trim().toLowerCase() !== "no"
       if (host.length === 0 || nick.length === 0)
         return yield* Effect.fail(
-          new ConnectError({ reason: "This IRC account needs a server host and a nickname — fill both in Settings → Messengers." }),
+          new ConnectError({
+            reason: "This IRC account needs a server host and a nickname — fill both in Settings → Messengers.",
+          }),
         )
       if (!Number.isInteger(port) || port <= 0 || port > 65535)
-        return yield* Effect.fail(new ConnectError({ reason: `"${ctx.account.settings["port"]}" is not a valid port.` }))
+        return yield* Effect.fail(
+          new ConnectError({ reason: `"${ctx.account.settings["port"]}" is not a valid port.` }),
+        )
       const channels = (ctx.account.settings["channels"] ?? "")
         .split(",")
         .map((channel) => channel.trim())
@@ -191,11 +196,15 @@ export const make = (factory: IrcSocketFactory): Driver => ({
               }
               case "433":
                 return yield* Effect.fail(
-                  new ConnectError({ reason: `The nickname "${nick}" is already in use on ${host} — pick another in Settings.` }),
+                  new ConnectError({
+                    reason: `The nickname "${nick}" is already in use on ${host} — pick another in Settings.`,
+                  }),
                 )
               case "ERROR":
                 return yield* Effect.fail(
-                  new ConnectError({ reason: `${host} closed the connection: ${line.params.at(-1) ?? "no reason given"}` }),
+                  new ConnectError({
+                    reason: `${host} closed the connection: ${line.params.at(-1) ?? "no reason given"}`,
+                  }),
                 )
               case "PRIVMSG": {
                 messageSeq += 1

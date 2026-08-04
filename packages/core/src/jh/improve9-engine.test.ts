@@ -17,7 +17,11 @@ interface Program {
 
 function buildWorld(opts: { initial: Record<string, string>; programs: Record<string, Program> }) {
   const files = new Map(Object.entries(opts.initial))
-  const base = (p: string): string => (p.replace(/^\.[/\\]/, "").split(/[/\\]/).pop() ?? p)
+  const base = (p: string): string =>
+    p
+      .replace(/^\.[/\\]/, "")
+      .split(/[/\\]/)
+      .pop() ?? p
   const execProgram = (command: string): { code: number; output: string } => {
     const parts = command.split("&&").map((s) => s.trim())
     let output = ""
@@ -58,7 +62,11 @@ function buildWorld(opts: { initial: Record<string, string>; programs: Record<st
         const next = cur.split(String(args.old_string)).join(String(args.new_string))
         const ok = next !== cur
         if (ok) files.set(p, next)
-        return Effect.succeed({ ok, output: ok ? "edited" : `old_string not found in ${p} — see the context above`, artifacts: new Map<string, string>() })
+        return Effect.succeed({
+          ok,
+          output: ok ? "edited" : `old_string not found in ${p} — see the context above`,
+          artifacts: new Map<string, string>(),
+        })
       }
       const r = execProgram(String(args.command))
       return Effect.succeed({ ok: r.code === 0, output: r.output, artifacts: new Map<string, string>() })
@@ -68,8 +76,22 @@ function buildWorld(opts: { initial: Record<string, string>; programs: Record<st
   return { files, runner, executor, listFiles }
 }
 
-const compound = (goals: string[]) => JSON.stringify({ goal: "root", size: "needs_decomposition", success: "ok", substeps: goals.map((goal) => ({ goal, size: "atomic", tool: "note", args: { text: "x" }, check: { type: "artifact_present" }, produces: [] })) })
-const atom = (over: Record<string, unknown>) => JSON.stringify({ goal: "step", size: "atomic", success: "ok", produces: [], ...over })
+const compound = (goals: string[]) =>
+  JSON.stringify({
+    goal: "root",
+    size: "needs_decomposition",
+    success: "ok",
+    substeps: goals.map((goal) => ({
+      goal,
+      size: "atomic",
+      tool: "note",
+      args: { text: "x" },
+      check: { type: "artifact_present" },
+      produces: [],
+    })),
+  })
+const atom = (over: Record<string, unknown>) =>
+  JSON.stringify({ goal: "step", size: "atomic", success: "ok", produces: [], ...over })
 
 function harness(opts: {
   world: ReturnType<typeof buildWorld>
@@ -86,7 +108,9 @@ function harness(opts: {
   const deps: JhEngine.Deps = {
     introspect: (p) => {
       opts.onPrompt?.(p.user)
-      return p.user.includes("Is the goal fully achieved?") ? Effect.succeed(`{"achieved": false}`) : Effect.succeed(replies[i++] ?? idle)
+      return p.user.includes("Is the goal fully achieved?")
+        ? Effect.succeed(`{"achieved": false}`)
+        : Effect.succeed(replies[i++] ?? idle)
     },
     correct: () => Effect.fail({ message: "x" }),
     executor: opts.world.executor,
@@ -111,15 +135,34 @@ const log = (r: JhEngine.Report, t: string) => r.state.log.filter((e) => e.type 
 // ---- the run136 world: s.exe prints the value; the ORACLE distinguishes computed-right (score 1)
 // from formatted-right (done). s.c with FORMATTED prints "3.14"; otherwise "314" (digits, no point). ----
 const RUN = "gcc s.c -o s.exe && ./s.exe"
-const RUN_STEP = atom({ goal: "run it", tool: "run", args: { command: RUN }, check: { type: "run", command: RUN, expect: "14" } })
+const RUN_STEP = atom({
+  goal: "run it",
+  tool: "run",
+  args: { command: RUN },
+  check: { type: "run", command: RUN, expect: "14" },
+})
 const d5World = () =>
   buildWorld({
     initial: { "s.c": "prog DIGITS v1" },
-    programs: { "s.exe": (f) => ({ code: 0, output: (f.get("s.c") ?? "").includes("FORMATTED") ? "3.14" : (f.get("s.c") ?? "").includes("DIGITS") ? "314" : "xx" }) },
+    programs: {
+      "s.exe": (f) => ({
+        code: 0,
+        output: (f.get("s.c") ?? "").includes("FORMATTED")
+          ? "3.14"
+          : (f.get("s.c") ?? "").includes("DIGITS")
+            ? "314"
+            : "xx",
+      }),
+    },
   })
 const d5Oracle: JhEngine.Deps["taskComplete"] = ({ lastOutput }) => {
   if (lastOutput.includes("3.14")) return { done: true, detail: "", score: 1 }
-  if (lastOutput.includes("314")) return { done: false, score: 1, detail: "every digit is present IN ORDER — only the decimal point is missing; fix the PRINTING, not the math." }
+  if (lastOutput.includes("314"))
+    return {
+      done: false,
+      score: 1,
+      detail: "every digit is present IN ORDER — only the decimal point is missing; fix the PRINTING, not the math.",
+    }
   return { done: false, score: 0, detail: "wrong value" }
 }
 
@@ -203,8 +246,18 @@ describe("jh-improve9 P2 — verified-state finalize", () => {
     const world = d5World()
     // best sample lands (score 1, done=false), then an edit that BREAKS the source and keeps FAILING
     // its check (never re-sampled by a run) — the tail is unverified surgery.
-    const BREAK = atom({ goal: "surgery", tool: "edit_file", args: { path: "s.c", old_string: "DIGITS", new_string: "BUILDERR DIGITS" }, check: { type: "compile", command: "gcc -c s.c -o s.o" } })
-    const MISS = atom({ goal: "surgery", tool: "edit_file", args: { path: "s.c", old_string: "NO-SUCH", new_string: "x" }, check: { type: "artifact_present" } })
+    const BREAK = atom({
+      goal: "surgery",
+      tool: "edit_file",
+      args: { path: "s.c", old_string: "DIGITS", new_string: "BUILDERR DIGITS" },
+      check: { type: "compile", command: "gcc -c s.c -o s.o" },
+    })
+    const MISS = atom({
+      goal: "surgery",
+      tool: "edit_file",
+      args: { path: "s.c", old_string: "NO-SUCH", new_string: "x" },
+      check: { type: "artifact_present" },
+    })
     const deps = harness({
       world,
       replies: [compound(["run", "surgery"]), RUN_STEP, BREAK],
@@ -215,13 +268,20 @@ describe("jh-improve9 P2 — verified-state finalize", () => {
     const r = await run(deps)
     expect(r.status).toBe("blocked")
     expect(world.files.get("s.c")).toBe("prog DIGITS v1") // the VERIFIED best state, not the surgery tail
-    expect((log(r, "restored_best") as Array<{ reason: string }>).filter((e) => e.reason === "final").length).toBeGreaterThanOrEqual(1)
+    expect(
+      (log(r, "restored_best") as Array<{ reason: string }>).filter((e) => e.reason === "final").length,
+    ).toBeGreaterThanOrEqual(1)
   })
 
   test("a verified-GREEN tail is never overwritten", async () => {
     const world = d5World()
     // the edit lands AND its compile check passes (verified) — no run re-sample, but the tail is green.
-    const GREEN_EDIT = atom({ goal: "tweak", tool: "edit_file", args: { path: "s.c", old_string: "v1", new_string: "v2" }, check: { type: "compile", command: "gcc -c s.c -o s.o" } })
+    const GREEN_EDIT = atom({
+      goal: "tweak",
+      tool: "edit_file",
+      args: { path: "s.c", old_string: "v1", new_string: "v2" },
+      check: { type: "compile", command: "gcc -c s.c -o s.o" },
+    })
     const deps = harness({
       world,
       replies: [compound(["run", "tweak"]), RUN_STEP, GREEN_EDIT],

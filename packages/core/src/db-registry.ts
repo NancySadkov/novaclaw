@@ -89,9 +89,9 @@ const assertWritable = (table: string) =>
 const tableColumns = (table: string) =>
   Effect.gen(function* () {
     const { db } = yield* Database.Service
-    const rows = (yield* db
-      .all(sql`SELECT name FROM pragma_table_info(${table}) ORDER BY cid`)
-      .pipe(Effect.orDie)) as { name: string }[]
+    const rows = (yield* db.all(sql`SELECT name FROM pragma_table_info(${table}) ORDER BY cid`).pipe(Effect.orDie)) as {
+      name: string
+    }[]
     return rows.map((row) => row.name)
   })
 
@@ -112,23 +112,17 @@ export const tables = Effect.fn("DbRegistry.tables")(function* () {
   return result
 })
 
-export const rows = Effect.fn("DbRegistry.rows")(function* (input: {
-  table: string
-  limit?: number
-  offset?: number
-}) {
+export const rows = Effect.fn("DbRegistry.rows")(function* (input: { table: string; limit?: number; offset?: number }) {
   const { db } = yield* Database.Service
   const table = yield* assertTable(input.table)
   const columns = yield* tableColumns(table)
   const limit = Math.max(1, Math.min(input.limit ?? 100, 500))
   const offset = Math.max(0, input.offset ?? 0)
-  const count = (yield* db
-    .get(sql`SELECT count(*) AS count FROM ${sql.identifier(table)}`)
-    .pipe(Effect.orDie)) as { count: number } | undefined
+  const count = (yield* db.get(sql`SELECT count(*) AS count FROM ${sql.identifier(table)}`).pipe(Effect.orDie)) as
+    | { count: number }
+    | undefined
   const raw = (yield* db
-    .all(
-      sql`SELECT rowid AS __rowid__, * FROM ${sql.identifier(table)} ORDER BY rowid LIMIT ${limit} OFFSET ${offset}`,
-    )
+    .all(sql`SELECT rowid AS __rowid__, * FROM ${sql.identifier(table)} ORDER BY rowid LIMIT ${limit} OFFSET ${offset}`)
     .pipe(Effect.orDie)) as Record<string, unknown>[]
   return TablePage.make({
     table,
@@ -151,7 +145,9 @@ export const updateRow = Effect.fn("DbRegistry.updateRow")(function* (input: {
   const columns = yield* tableColumns(table)
   const entries = Object.entries(input.values).filter(([column]) => columns.includes(column))
   if (entries.length === 0) return yield* new RegistryError({ message: "No editable columns in the payload" })
-  const assignments = entries.map(([column, value]) => sql`${sql.identifier(column)} = ${value as string | number | null}`)
+  const assignments = entries.map(
+    ([column, value]) => sql`${sql.identifier(column)} = ${value as string | number | null}`,
+  )
   yield* db
     .run(sql`UPDATE ${sql.identifier(table)} SET ${sql.join(assignments, sql`, `)} WHERE rowid = ${input.rowid}`)
     .pipe(Effect.orDie)
@@ -175,7 +171,12 @@ export const insertRow = Effect.fn("DbRegistry.insertRow")(function* (input: {
   const values = entries.map(([, value]) => sql`${value as string | number | null}`)
   yield* db
     .run(sql`INSERT INTO ${sql.identifier(table)} (${sql.join(names, sql`, `)}) VALUES (${sql.join(values, sql`, `)})`)
-    .pipe(Effect.catch((cause) => new RegistryError({ message: `Insert failed: ${String((cause as { message?: string })?.message ?? cause)}` })))
+    .pipe(
+      Effect.catch(
+        (cause) =>
+          new RegistryError({ message: `Insert failed: ${String((cause as { message?: string })?.message ?? cause)}` }),
+      ),
+    )
 })
 
 export const deleteRow = Effect.fn("DbRegistry.deleteRow")(function* (input: { table: string; rowid: number }) {

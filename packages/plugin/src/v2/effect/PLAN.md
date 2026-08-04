@@ -493,12 +493,13 @@ The Effect implementation remains the canonical runtime. Promise and embedding w
 ### 8. Add Event Adapter
 
 > Status: **DONE (2026-07-30).** `src/v2/effect/event.ts` + `src/v2/promise/event.ts` (`EventMap`
-> + `EventHooks`), wired through both `context.ts` files, `core/src/plugin/host.ts` and the
-> callback bridge in `core/src/plugin/promise.ts`. Covered by
-> `core/test/plugin/event.test.ts` (7 cases, each negative-controlled).
+>
+> - `EventHooks`), wired through both `context.ts` files, `core/src/plugin/host.ts` and the
+>   callback bridge in `core/src/plugin/promise.ts`. Covered by
+>   `core/test/plugin/event.test.ts` (7 cases, each negative-controlled).
 >
 > ⚠️ Shipped as a **callback + `Registration`**, not a `Stream` — see the deviation note in
-> *Event API* above for why.
+> _Event API_ above for why.
 
 - ~~Build the SDK event discriminant map.~~ `EventMap` keyed by `Item["type"]` over the generated
   SDK `Event` union. Buys type names and a checked discriminant, not deep type safety — most

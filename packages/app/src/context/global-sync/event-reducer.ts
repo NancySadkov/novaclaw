@@ -25,10 +25,7 @@ const SESSION_CONTENT_EVENTS = new Set([
   "question.rejected",
 ])
 
-export function applyGlobalEvent(input: {
-  event: { type: string; properties?: unknown }
-  refresh: () => void
-}) {
+export function applyGlobalEvent(input: { event: { type: string; properties?: unknown }; refresh: () => void }) {
   if (input.event.type === "global.disposed" || input.event.type === "server.connected") {
     input.refresh()
   }

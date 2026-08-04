@@ -12,7 +12,7 @@ it — it costs you one message and can save you a weekend.
 Two rules that decide most patches:
 
 - **Kernel or app?** NovaClaw ships an agent OS kernel and a friendly UI, and nothing else. Developer
-  services — language servers, code indexers, editor integrations — are *apps on the OS*, not kernel
+  services — language servers, code indexers, editor integrations — are _apps on the OS_, not kernel
   features. If your feature could be an app, build it as an app; the app registry is the seam and
   your app is yours under any license you like.
 - **One UI, for humans.** The product face is the HTML UI (desktop and web). There is no interactive

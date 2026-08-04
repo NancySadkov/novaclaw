@@ -47,7 +47,11 @@ export interface Policy {
 
 export const disabledPolicy: Policy = { enabled: false, allowedHosts: new Set() }
 
-const normalizeHost = (host: string) => host.trim().toLowerCase().replace(/^\[|\]$/g, "")
+const normalizeHost = (host: string) =>
+  host
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
 
 export function isLoopbackHost(host: string): boolean {
   const normalized = normalizeHost(host)
@@ -90,7 +94,9 @@ export function providerHostsFromConfig(config: unknown): string[] {
   return hosts
 }
 
-export type Verdict = { readonly allowed: true } | { readonly allowed: false; readonly host: string; readonly message: string }
+export type Verdict =
+  | { readonly allowed: true }
+  | { readonly allowed: false; readonly host: string; readonly message: string }
 
 export function checkUrl(url: string, policy: Policy): Verdict {
   if (!policy.enabled) return { allowed: true }
@@ -135,7 +141,9 @@ function readGlobalConfig(configDir: string): unknown {
  *  runtime truth; jsonc is import/export wire only). `undefined` = the stores are not seeded yet
  *  (no db / no tables / both empty — a pre-first-boot process), so the caller may fall back to
  *  the jsonc that is about to be imported. Sync read-only one-shots — this runs at layer init. */
-export function readStorePolicy(dbFile: string): { readonly offline: boolean; readonly providerHosts: string[] } | undefined {
+export function readStorePolicy(
+  dbFile: string,
+): { readonly offline: boolean; readonly providerHosts: string[] } | undefined {
   const settings = readRowsSync(dbFile, "SELECT key, value FROM runtime_setting")
   const providers = readRowsSync(dbFile, "SELECT layers FROM catalog_provider")
   if ((settings === undefined || settings.length === 0) && (providers === undefined || providers.length === 0))
@@ -315,18 +323,45 @@ export interface LayerStatus {
 }
 
 /** Snapshot the 9-layer offline posture for the UI/status endpoint. */
-export function layerManifest(policy: Policy): { readonly enabled: boolean; readonly active: number; readonly total: number; readonly layers: readonly LayerStatus[] } {
+export function layerManifest(policy: Policy): {
+  readonly enabled: boolean
+  readonly active: number
+  readonly total: number
+  readonly layers: readonly LayerStatus[]
+} {
   const on = policy.enabled
   const layers: LayerStatus[] = [
-    { layer: 1, name: "HttpClient chokepoint", active: on, detail: "shared Effect HttpClient (LLM, webfetch, probe, share)" },
-    { layer: 2, name: "provider-host allowlist", active: on, detail: on ? `${policy.allowedHosts.size} host(s) + loopback` : undefined },
-    { layer: 3, name: "MCP transport", active: on, detail: "MCP servers ride the chokepoint or their own Offline check" },
+    {
+      layer: 1,
+      name: "HttpClient chokepoint",
+      active: on,
+      detail: "shared Effect HttpClient (LLM, webfetch, probe, share)",
+    },
+    {
+      layer: 2,
+      name: "provider-host allowlist",
+      active: on,
+      detail: on ? `${policy.allowedHosts.size} host(s) + loopback` : undefined,
+    },
+    {
+      layer: 3,
+      name: "MCP transport",
+      active: on,
+      detail: "MCP servers ride the chokepoint or their own Offline check",
+    },
     { layer: 4, name: "OTLP telemetry", active: on, detail: "exporter checks OTEL endpoint against the allowlist" },
     { layer: 5, name: "share/sync egress", active: on, detail: "share URLs ride the chokepoint" },
     { layer: 6, name: "auto-update", active: on, detail: "update fetches ride the chokepoint" },
     { layer: 7, name: "LAN services", active: on, detail: "SearXNG/KB allowed as loopback/LAN hosts" },
     { layer: 8, name: "npm installs", active: on, detail: "package fetches fail closed (pre-provision or mirror)" },
-    { layer: 9, name: "process egress guard", active: on, detail: on ? "child *_PROXY → dead sink; allowlist in NO_PROXY (confined commands: real deny-all netns, Agent Jail P2)" : "OFF-C" },
+    {
+      layer: 9,
+      name: "process egress guard",
+      active: on,
+      detail: on
+        ? "child *_PROXY → dead sink; allowlist in NO_PROXY (confined commands: real deny-all netns, Agent Jail P2)"
+        : "OFF-C",
+    },
   ]
   return { enabled: on, active: on ? layers.length : 0, total: layers.length, layers }
 }
@@ -397,19 +432,21 @@ export function guard(client: HttpClient.HttpClient, offline: Interface): HttpCl
     return Log.event("offline.request.blocked", {
       "offline.request.url": request.url,
       "offline.request.host": verdict.host,
-    }).pipe(Effect.andThen(
-      Effect.fail(
-        new HttpClientError.HttpClientError({
-          reason: new HttpClientError.InvalidUrlError({
-            request,
-            description: verdict.message,
-            // The typed declaration — see the header note. `description` stays for every reader
-            // that only knows the platform shape (and for records already on disk).
-            cause: new EgressBlocked(verdict.host, verdict.message),
+    }).pipe(
+      Effect.andThen(
+        Effect.fail(
+          new HttpClientError.HttpClientError({
+            reason: new HttpClientError.InvalidUrlError({
+              request,
+              description: verdict.message,
+              // The typed declaration — see the header note. `description` stays for every reader
+              // that only knows the platform shape (and for records already on disk).
+              cause: new EgressBlocked(verdict.host, verdict.message),
+            }),
           }),
-        }),
+        ),
       ),
-    ))
+    )
   })
 }
 

@@ -79,5 +79,8 @@ export const migrations = (
     import("./migration/20260801085049_add_tool_catalogue"),
     import("./migration/20260802165703_add_session_provider_recovery"),
     import("./migration/20260802232319_session_changes_revision"),
+    import("./migration/20260803223916_session_execution_lease"),
+    import("./migration/20260803230202_execution_provider_recovery"),
+    import("./migration/20260804164548_stormy_skreet"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

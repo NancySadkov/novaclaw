@@ -44,7 +44,7 @@ export const SettingsQualityV2: Component = () => {
   const language = useLanguage()
   const serverSync = useServerSync()
 
-  const current = (): QualityConfig => ((serverSync().data.config as { quality?: QualityConfig }).quality ?? {})
+  const current = (): QualityConfig => (serverSync().data.config as { quality?: QualityConfig }).quality ?? {}
 
   async function persist(patch: Partial<QualityConfig>) {
     const next = { ...current(), ...patch }
@@ -76,7 +76,11 @@ export const SettingsQualityV2: Component = () => {
               title={language.t("settings.quality.row.enabled.title")}
               description={language.t("settings.quality.row.enabled.description")}
             >
-              <Switch checked={current().enabled === true} onChange={(checked) => void persist({ enabled: checked })} hideLabel>
+              <Switch
+                checked={current().enabled === true}
+                onChange={(checked) => void persist({ enabled: checked })}
+                hideLabel
+              >
                 {language.t("settings.quality.row.enabled.title")}
               </Switch>
             </SettingsRowV2>

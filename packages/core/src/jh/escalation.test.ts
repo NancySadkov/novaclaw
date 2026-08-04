@@ -9,8 +9,34 @@ import { JhEngine } from "./engine"
 // R3/R4 (jh-improve1 P4/P5) engine integration: graded score + keep-best, and the escalation ladder's
 // forced-analyze stage. The root decomposes into one child (run check) and the whole-task oracle keeps
 // failing, so the root grows fix nodes and the ladder escalates tweak×3 → analyze.
-const atomObj = (over: Record<string, unknown> = {}) => JSON.stringify({ goal: "step", size: "atomic", tool: "run", args: { command: "go" }, success: "ok", check: { type: "run", command: "go" }, produces: [], ...over })
-const compound1 = () => JSON.stringify({ goal: "root", size: "needs_decomposition", success: "ok", substeps: [{ goal: "child", size: "atomic", tool: "run", args: { command: "go" }, success: "ok", check: { type: "run", command: "go" }, produces: [] }] })
+const atomObj = (over: Record<string, unknown> = {}) =>
+  JSON.stringify({
+    goal: "step",
+    size: "atomic",
+    tool: "run",
+    args: { command: "go" },
+    success: "ok",
+    check: { type: "run", command: "go" },
+    produces: [],
+    ...over,
+  })
+const compound1 = () =>
+  JSON.stringify({
+    goal: "root",
+    size: "needs_decomposition",
+    success: "ok",
+    substeps: [
+      {
+        goal: "child",
+        size: "atomic",
+        tool: "run",
+        args: { command: "go" },
+        success: "ok",
+        check: { type: "run", command: "go" },
+        produces: [],
+      },
+    ],
+  })
 
 function escHarness(opts: {
   world: (command: string) => { exitCode: number; output: string }
@@ -21,7 +47,9 @@ function escHarness(opts: {
   files?: () => Array<{ name: string; content: string }>
 }) {
   let calls = 0
-  const runner: JhProcessRunner.Runner = { run: ({ command }) => Effect.succeed({ ...opts.world(command), timedOut: false }) }
+  const runner: JhProcessRunner.Runner = {
+    run: ({ command }) => Effect.succeed({ ...opts.world(command), timedOut: false }),
+  }
   const deps: JhEngine.Deps = {
     introspect: () => {
       calls++
@@ -56,7 +84,8 @@ function escHarness(opts: {
 }
 const run = (deps: JhEngine.Deps) => Effect.runPromise(JhEngine.runTask(deps, { goal: "the whole task" }))
 const has = (r: JhEngine.Report, t: string) => r.state.log.some((e) => e.type === t)
-const verifDetail = (r: JhEngine.Report, s: string) => r.state.log.some((e) => e.type === "verification" && String((e as { detail?: unknown }).detail ?? "").includes(s))
+const verifDetail = (r: JhEngine.Report, s: string) =>
+  r.state.log.some((e) => e.type === "verification" && String((e as { detail?: unknown }).detail ?? "").includes(s))
 
 describe("R4 escalation ladder — forced analyze", () => {
   test("the ladder reaches the analyze stage; an analyze node with NO NAME=value output is demoted", async () => {
@@ -138,10 +167,19 @@ describe("D11/D12 never-dead-end robustness (from the char campaign)", () => {
   test("D11: a non-root unparseable introspection RECOVERS (grows a fix sibling) instead of cascade-blocking", async () => {
     // root → 1 child; the child's introspection is garbage twice → best-effort-commit + grow a fix sibling,
     // never a hard `unparseable` block that discards the whole run (char run45's 85-digit near-miss).
-    const steps = [atomObj({ goal: "root" }), compound1(), "total garbage not json", "still not json", atomObj({ goal: "fix" })]
+    const steps = [
+      atomObj({ goal: "root" }),
+      compound1(),
+      "total garbage not json",
+      "still not json",
+      atomObj({ goal: "fix" }),
+    ]
     let i = 0
     const deps: JhEngine.Deps = {
-      introspect: (p) => (p.user.includes("Is the goal fully achieved?") ? Effect.succeed(`{"achieved": false}`) : Effect.succeed(steps[i++] ?? atomObj())),
+      introspect: (p) =>
+        p.user.includes("Is the goal fully achieved?")
+          ? Effect.succeed(`{"achieved": false}`)
+          : Effect.succeed(steps[i++] ?? atomObj()),
       correct: () => Effect.fail({ message: "x" }),
       executor: { run: () => Effect.succeed({ ok: true, output: "ran", artifacts: new Map<string, string>() }) },
       runner: { run: () => Effect.succeed({ exitCode: 0, output: "", timedOut: false }) },

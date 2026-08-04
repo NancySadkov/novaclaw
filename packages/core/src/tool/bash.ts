@@ -49,11 +49,9 @@ export const Input = Schema.Struct({
   job: Schema.String.pipe(Schema.optional).annotate({
     description: "A job id previously returned by this tool (a command that outlived its soft deadline)",
   }),
-  action: Schema.Literals(["status", "wait", "stop"])
-    .pipe(Schema.optional)
-    .annotate({
-      description: `With \`job\`: "status" (default) reports immediately; "wait" blocks up to \`timeout\` ms for completion; "stop" terminates the job.`,
-    }),
+  action: Schema.Literals(["status", "wait", "stop"]).pipe(Schema.optional).annotate({
+    description: `With \`job\`: "status" (default) reports immediately; "wait" blocks up to \`timeout\` ms for completion; "stop" terminates the job.`,
+  }),
 })
 
 const StructuredOutput = Schema.Struct({
@@ -166,6 +164,7 @@ export const layer = Layer.effectDiscard(
     yield* tools
       .register({
         [name]: Tool.make({
+          sideEffect: "external-unknown",
           description: `Execute one shell command string with the host user's filesystem, process, and network authority. Prefer the dedicated \`read\`/\`edit\`/\`glob\`/\`grep\` tools over cat/sed/find/grep — they page and report limits safely. Output is capped at ${Math.round(MAX_CAPTURE_BYTES / 1024 / 1024)} MB: when the result says it was truncated, do not conclude from the missing span — re-run narrower (grep/head/tail). The active Location is the default working directory. Relative workdir values resolve from that Location. External workdir values require external_directory approval; best-effort command-argument path warnings are advisory only. The timeout is a SOFT deadline in milliseconds (default: ${DEFAULT_TIMEOUT_MS}; maximum: ${MAX_TIMEOUT_MS}): a command that outlives it is NOT killed — it keeps running as a job and you get its id plus output-so-far; poll with {"job": "<id>"}, block with {"job": "<id>", "action": "wait", "timeout": 30000}, or terminate with {"job": "<id>", "action": "stop"}. Never re-run a command that yielded to a job — poll the job instead. Uses the configured shell when set; otherwise bash when available (the bundled shell or system bash), falling back to /bin/sh on POSIX and COMSPEC or cmd.exe on Windows.`,
           input: Input,
           output: Output,
@@ -188,11 +187,11 @@ export const layer = Layer.effectDiscard(
               // owner-binding means a session can only ever touch its own jobs.
               if (input.job !== undefined) {
                 const action = input.action ?? "status"
-                const job = yield* (action === "stop"
+                const job = yield* action === "stop"
                   ? bashJobs.stop(input.job, context.sessionID)
                   : action === "wait"
                     ? bashJobs.wait(input.job, context.sessionID, input.timeout ?? 30_000)
-                    : bashJobs.status(input.job, context.sessionID))
+                    : bashJobs.status(input.job, context.sessionID)
                 return jobSnapshotOutput(job)
               }
               if (!input.command)
@@ -224,9 +223,7 @@ export const layer = Layer.effectDiscard(
               // asks looking alive and doing nothing. Asking for consent to run something we are
               // certain to refuse is a hang, not a gate. That reordering still earns its keep — it
               // is now the safe-mode and hostile-input turns it saves from the same hang.
-              const rootType = yield* rootSessionType(context.sessionID, (id) =>
-                sessions.get(id as SessionV2.ID),
-              )
+              const rootType = yield* rootSessionType(context.sessionID, (id) => sessions.get(id as SessionV2.ID))
               // messenger-plan §3.4: a client/audience messenger binding ANYWHERE in this chain
               // makes the turn unattended hostile input — an untrusted stranger drives it, and the
               // recommended pattern (a bound session spawning a worker sub-agent) means the binding
@@ -380,8 +377,7 @@ export const layer = Layer.effectDiscard(
                 egress,
                 credentials: peerEnv,
               })
-              if (spawnPlan.via === "none")
-                return yield* Effect.fail(new ToolFailure({ message: spawnPlan.message }))
+              if (spawnPlan.via === "none") return yield* Effect.fail(new ToolFailure({ message: spawnPlan.message }))
               const envOptions = spawnPlan.env.inherit
                 ? Object.keys(spawnPlan.env.vars).length > 0
                   ? { env: spawnPlan.env.vars, extendEnv: true as const }

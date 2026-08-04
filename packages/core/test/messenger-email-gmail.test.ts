@@ -25,14 +25,20 @@ describe("EmailOAuthGoogle pure helpers", () => {
       const ok = EmailOAuthGoogle.parseGoogleToken({ access_token: "at", refresh_token: "rt", expires_in: 3600 }, 1000)
       expect(ok).toEqual({ accessToken: "at", refreshToken: "rt", expiresAt: 1000 + 3600_000 })
       // No refresh token → Google withheld it (prior grant); a legible, actionable error.
-      expect(() => EmailOAuthGoogle.parseGoogleToken({ access_token: "at", expires_in: 3600 }, 0)).toThrow(/refresh token/i)
+      expect(() => EmailOAuthGoogle.parseGoogleToken({ access_token: "at", expires_in: 3600 }, 0)).toThrow(
+        /refresh token/i,
+      )
       // An OAuth error body surfaces its description.
-      expect(() => EmailOAuthGoogle.parseGoogleToken({ error: "invalid_grant", error_description: "bad code" }, 0)).toThrow("bad code")
+      expect(() =>
+        EmailOAuthGoogle.parseGoogleToken({ error: "invalid_grant", error_description: "bad code" }, 0),
+      ).toThrow("bad code")
 
       // Refresh: Google does NOT rotate the refresh token, so we keep the one we sent.
       const refreshed = EmailOAuthGoogle.parseGoogleRefresh({ access_token: "at2", expires_in: 3600 }, "rt", 2000)
       expect(refreshed).toEqual({ accessToken: "at2", refreshToken: "rt", expiresAt: 2000 + 3600_000 })
-      expect(() => EmailOAuthGoogle.parseGoogleRefresh({ error: "invalid_grant", error_description: "revoked" }, "rt", 0)).toThrow("revoked")
+      expect(() =>
+        EmailOAuthGoogle.parseGoogleRefresh({ error: "invalid_grant", error_description: "revoked" }, "rt", 0),
+      ).toThrow("revoked")
     }),
   )
 
@@ -107,7 +113,9 @@ describe("OAuthLoopback (real 127.0.0.1 server)", () => {
         const loopback = yield* OAuthLoopback.startLoopback({ expectedState: "st_ok" })
         // Attach the handler BEFORE the redirect fires (real use: the driver's fiber awaits it immediately).
         const outcome = loopback.waitForCode.then(() => "resolved").catch((error: Error) => error.message)
-        const res = yield* Effect.promise(() => fetch(`${loopback.redirectUri}?state=st_ok&error=access_denied&error_description=You+said+no`))
+        const res = yield* Effect.promise(() =>
+          fetch(`${loopback.redirectUri}?state=st_ok&error=access_denied&error_description=You+said+no`),
+        )
         expect(res.status).toBe(200)
         expect(yield* Effect.promise(() => outcome)).toContain("You said no")
       }),
@@ -128,7 +136,8 @@ const gmailAccount = new Messenger.AccountInfo({
 const makeFakeGoogle = () => {
   const state = { exchanged: 0, refreshed: 0, lastCode: "", lastVerifier: "", lastRedirect: "", lastRefreshToken: "" }
   const client: AuthCodeClient = {
-    buildAuthorizeUrl: ({ state: st, redirectUri }) => `https://accounts.google.com/o/oauth2/v2/auth?state=${st}&redirect_uri=${encodeURIComponent(redirectUri)}`,
+    buildAuthorizeUrl: ({ state: st, redirectUri }) =>
+      `https://accounts.google.com/o/oauth2/v2/auth?state=${st}&redirect_uri=${encodeURIComponent(redirectUri)}`,
     exchangeCode: async ({ code, codeVerifier, redirectUri }) => {
       state.exchanged += 1
       state.lastCode = code
@@ -139,7 +148,11 @@ const makeFakeGoogle = () => {
     refresh: async (refreshToken) => {
       state.refreshed += 1
       state.lastRefreshToken = refreshToken
-      return { accessToken: `g_access_${state.refreshed + 1}`, refreshToken, expiresAt: 9_999_999_999_999 } satisfies TokenSet
+      return {
+        accessToken: `g_access_${state.refreshed + 1}`,
+        refreshToken,
+        expiresAt: 9_999_999_999_999,
+      } satisfies TokenSet
     },
   }
   return { factory: () => client, state }

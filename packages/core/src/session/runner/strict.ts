@@ -85,15 +85,49 @@ export function routeOf(reply: string): "task" | "chat" {
 // Only these filler words may follow "resume"/"continue" — a message carrying NEW content
 // ("continue, but make the button red") must NOT match, or its modifier would be silently lost.
 const RESUME_TAIL = new Set([
-  "the", "that", "this", "task", "run", "job", "it", "work", "working", "please", "with", "on",
-  "going", "go", "ahead", "from", "where", "you", "we", "left", "off", "stopped", "was", "were",
-  "previous", "last", "earlier", "interrupted", "your", "my", "again", "now",
+  "the",
+  "that",
+  "this",
+  "task",
+  "run",
+  "job",
+  "it",
+  "work",
+  "working",
+  "please",
+  "with",
+  "on",
+  "going",
+  "go",
+  "ahead",
+  "from",
+  "where",
+  "you",
+  "we",
+  "left",
+  "off",
+  "stopped",
+  "was",
+  "were",
+  "previous",
+  "last",
+  "earlier",
+  "interrupted",
+  "your",
+  "my",
+  "again",
+  "now",
 ])
 
 /** A bare continuation request ("resume", "continue the task", "resume where you left off") — the
  *  documented way to pick an interrupted Strict run back up (the notices teach the word). */
 export function resumeIntent(text: string): boolean {
-  const words = text.trim().toLowerCase().replace(/[.!?,;…'"“”‘’]+/g, " ").split(/\s+/).filter(Boolean)
+  const words = text
+    .trim()
+    .toLowerCase()
+    .replace(/[.!?,;…'"“”‘’]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
   if (words.length === 0 || words.length > 7) return false
   if (words[0] !== "resume" && words[0] !== "continue") return false
   return words.slice(1).every((w) => RESUME_TAIL.has(w))
@@ -185,7 +219,9 @@ export function summaryPrompt(input: {
 
 /** ConfigStrict group toggles → engine lever flags. `undefined` = the engine's default (ON); an
  *  explicit group `false` disables its family (core/src/config/strict.ts documents the mapping). */
-export function flagsFor(strict: ConfigStrict.Info): Pick<
+export function flagsFor(
+  strict: ConfigStrict.Info,
+): Pick<
   JhEngine.Deps,
   | "staleness"
   | "regressionGate"
@@ -248,9 +284,11 @@ export interface CompletionCheck {
 export function completionChecks(quality: Quality.Config | undefined): ReadonlyArray<CompletionCheck> {
   if (quality === undefined || !quality.enabled) return []
   const out: CompletionCheck[] = []
-  if (quality.commands.typecheck) out.push({ label: "typecheck", command: quality.commands.typecheck, timeoutMs: COMPLETION_TYPECHECK_TIMEOUT })
+  if (quality.commands.typecheck)
+    out.push({ label: "typecheck", command: quality.commands.typecheck, timeoutMs: COMPLETION_TYPECHECK_TIMEOUT })
   if (quality.commands.test) out.push({ label: "test", command: quality.commands.test, timeoutMs: quality.testTimeout })
-  if (quality.commands.lint) out.push({ label: "lint", command: quality.commands.lint, timeoutMs: COMPLETION_LINT_TIMEOUT })
+  if (quality.commands.lint)
+    out.push({ label: "lint", command: quality.commands.lint, timeoutMs: COMPLETION_LINT_TIMEOUT })
   return out
 }
 
@@ -385,7 +423,10 @@ export function listFilesFor(cwd: string): ReadonlyArray<{ readonly name: string
     })
     // No silent caps: the omission is named as a pseudo-entry (its name cannot collide with a file).
     if (entries.length > shown.length)
-      files.push({ name: `(+${entries.length - shown.length} more files not shown — name one to read it)`, content: "" })
+      files.push({
+        name: `(+${entries.length - shown.length} more files not shown — name one to read it)`,
+        content: "",
+      })
     return files
   } catch {
     return []
@@ -465,8 +506,12 @@ export function forkWorkspace(src: string, attempt: number): { readonly dir: str
   if (attempt === 1) sweepStaleForks()
   const files = walkFiles(src)
   const bytes = files.reduce((a, f) => a + f.size, 0)
-  if (files.length > MAX_FORK_FILES) return { refused: `the folder has ${files.length} files (racing forks are capped at ${MAX_FORK_FILES})` }
-  if (bytes > MAX_FORK_BYTES) return { refused: `the folder is ${(bytes / 1e6).toFixed(0)} MB (racing forks are capped at ${MAX_FORK_BYTES / 1e6} MB)` }
+  if (files.length > MAX_FORK_FILES)
+    return { refused: `the folder has ${files.length} files (racing forks are capped at ${MAX_FORK_FILES})` }
+  if (bytes > MAX_FORK_BYTES)
+    return {
+      refused: `the folder is ${(bytes / 1e6).toFixed(0)} MB (racing forks are capped at ${MAX_FORK_BYTES / 1e6} MB)`,
+    }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `jh-attempt${attempt}-`))
   fs.cpSync(src, dir, { recursive: true, filter: (p) => path.basename(p) !== ".git" })
   return { dir }
@@ -678,7 +723,8 @@ export function runTask(args: RunArgs): Effect.Effect<JhEngine.Report> {
   // other harness command, so `bun test` in a Strict run is jailed, secret-free and shell-consistent
   // exactly like a `run` atom (ruling 6 — there is one host-execution gate, not one per call site).
   const gateChecks = completionChecks(args.quality)
-  const wallMin = args.strict.wallMinutes !== undefined && args.strict.wallMinutes > 0 ? args.strict.wallMinutes : WALL_DEFAULT_MIN
+  const wallMin =
+    args.strict.wallMinutes !== undefined && args.strict.wallMinutes > 0 ? args.strict.wallMinutes : WALL_DEFAULT_MIN
   const queue: string[] = []
   const flush: Effect.Effect<void> = Effect.suspend(() => {
     if (queue.length === 0) return Effect.void
@@ -690,7 +736,8 @@ export function runTask(args: RunArgs): Effect.Effect<JhEngine.Report> {
   // nothing to extract — so the reasoning stage is either budgeted generously or left off entirely.
   const execTokens = positive(args.strict.executionTokens) ?? EXECUTION_TOKENS_DEFAULT
   const reasonTokens = positive(args.strict.reasoningTokens)
-  const withFlush = (maxTokens: number) =>
+  const withFlush =
+    (maxTokens: number) =>
     (p: { readonly system: string; readonly user: string }): Effect.Effect<string, JhEngine.LLMFail> =>
       flush.pipe(Effect.andThen(args.completeOnce(p.system, p.user, maxTokens)))
   const deps: JhEngine.Deps = {

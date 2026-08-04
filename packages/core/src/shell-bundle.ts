@@ -181,8 +181,7 @@ export async function provision(options: ProvisionOptions = {}): Promise<Resolve
 
   const fetchImpl = options.fetchImpl ?? fetch
   const response = await fetchImpl(url)
-  if (!response.ok || !response.body)
-    throw new ProvisionError(`download failed: HTTP ${response.status} for ${url}`)
+  if (!response.ok || !response.body) throw new ProvisionError(`download failed: HTTP ${response.status} for ${url}`)
   const hash = createHash("sha256")
   const handle = await fsp.open(artifact, "w")
   try {

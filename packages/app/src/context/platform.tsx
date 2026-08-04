@@ -102,6 +102,10 @@ type PlatformBase = {
   /** Read image from clipboard (desktop only) */
   readClipboardImage?(): Promise<File | null>
 
+  /** Clipboard text used by terminal copy/paste. Desktop uses Electron IPC; web uses Clipboard API. */
+  readClipboardText?(): Promise<string>
+  writeClipboardText?(text: string): Promise<void>
+
   /** Export collected diagnostic logs (desktop only) */
   exportDebugLogs?(): Promise<string>
 

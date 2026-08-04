@@ -149,14 +149,14 @@ describe("McpExternal — a non-text MCP part never vanishes", () => {
     // This file is where a stranger's bytes first become a URI (`makeExternal` concatenates
     // `data:${mime};base64,${data}`), so the MIME is validated rather than trusted. Parameters are
     // dropped — a legitimate parameterised type keeps working…
-    expect(await settleWith({ content: [{ type: "image", data: PNG, mimeType: "image/png; charset=utf-8" }] })).toEqual([
-      { type: "file", uri: `data:image/png;base64,${PNG}`, mime: "image/png", name: undefined },
-    ])
+    expect(await settleWith({ content: [{ type: "image", data: PNG, mimeType: "image/png; charset=utf-8" }] })).toEqual(
+      [{ type: "file", uri: `data:image/png;base64,${PNG}`, mime: "image/png", name: undefined }],
+    )
     // …and a parameter section crafted to look like a second URI is DROPPED, not carried through:
     // the emitted mime is the bare type, so the payload cannot be displaced.
-    expect(
-      await settleWith({ content: [{ type: "image", data: PNG, mimeType: "image/png;base64,EVIL;x=" }] }),
-    ).toEqual([{ type: "file", uri: `data:image/png;base64,${PNG}`, mime: "image/png", name: undefined }])
+    expect(await settleWith({ content: [{ type: "image", data: PNG, mimeType: "image/png;base64,EVIL;x=" }] })).toEqual(
+      [{ type: "file", uri: `data:image/png;base64,${PNG}`, mime: "image/png", name: undefined }],
+    )
     // …and anything whose TYPE half is not a plain type/subtype is refused outright.
     for (const mimeType of ["image/png,evil", "not a mime", "../x", "", "image/png\nx: y"]) {
       const content = await settleWith({ content: [{ type: "image", data: PNG, mimeType }] })

@@ -3,6 +3,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { ConfigLocalRuntime } from "@novaclaw/core/config/local-runtime"
 import { dict as en } from "@/i18n/en"
+import { providerIDFromEndpoint } from "./dialog-new-model"
 
 // S0 — the Add-models dialog's half of the local-runtime probe (`todo/sidecar-inference.md` →
 // *Slice 0*). The classifier itself is pinned in `packages/core/test/config-local-runtime.test.ts`;
@@ -139,6 +140,20 @@ describe("Add-models — safe limits for discovered models", () => {
   })
 })
 
+describe("Add-models — endpoint identity", () => {
+  test("generates hidden config keys from serving URLs", () => {
+    expect(providerIDFromEndpoint("https://llm.example:8443/v1/")).toBe("llm-example-8443-v1")
+    expect(providerIDFromEndpoint("http://localhost:8080/v1")).toBe("localhost-8080-v1")
+  })
+
+  test("asks for the endpoint, not internal ids or premature display names", () => {
+    expect(code).not.toContain('<Field field="providerID"')
+    expect(code).not.toContain('<Field field="name"')
+    expect(dialog).toContain("name: saved()?.name?.trim() || form.baseURL.trim()")
+    expect(dialog).toContain('name: "local"')
+  })
+})
+
 describe("Add-models — managed local model", () => {
   test("is a first-class Local Model choice, not a terminal instruction", () => {
     expect(dialog).toContain('data-action="new-model-local"')
@@ -162,7 +177,7 @@ describe("Add-models — managed local model", () => {
 
   test("registers the installed model without requiring the sidecar to stay loaded", () => {
     expect(dialog).toContain('status.stage === "installed" || status.stage === "ready"')
-    expect(dialog).toContain('freeProviderID("local-qwen")')
+    expect(dialog).toContain('freeProviderID("local")')
     expect(dialog).toContain("baseURL: status.baseURL")
     expect(dialog).toContain("[status.modelID]: { context: status.context, output: status.output }")
     expect(dialog).toContain("serverSync().updateConfig")

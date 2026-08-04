@@ -96,19 +96,33 @@ const drainFor = <A>(read: () => A, predicate: (value: A) => boolean, label: str
 // ── pure policy ──────────────────────────────────────────────────────────────────────────────────
 
 describe("WhatsAppBaileys pure policy", () => {
-  it.effect("isSelfMessage: incoming≠self; our echo=self; Message-Yourself operator=NOT self; elsewhere-human=self", () =>
-    Effect.sync(() => {
-      const at = 1
-      const msg = (over: Partial<WAMessage>): WAMessage => ({ chatID: "c1", chatKind: "group", chatTitle: "t", messageID: "m", senderID: "s", senderName: "n", outgoing: false, at, ...over })
-      // incoming (not fromMe) is never self.
-      expect(WhatsAppBaileysDriver.isSelfMessage(msg({ outgoing: false }), "me@wa", false)).toBe(false)
-      // our own relay echoed back = self (drop).
-      expect(WhatsAppBaileysDriver.isSelfMessage(msg({ outgoing: true, chatID: "c1" }), "me@wa", true)).toBe(true)
-      // fromMe in the self-chat we did NOT send = the operator on their phone = REAL input.
-      expect(WhatsAppBaileysDriver.isSelfMessage(msg({ outgoing: true, chatID: "me@wa" }), "me@wa", false)).toBe(false)
-      // fromMe elsewhere we did not send = the human on their account = not our turn (self).
-      expect(WhatsAppBaileysDriver.isSelfMessage(msg({ outgoing: true, chatID: "c1" }), "me@wa", false)).toBe(true)
-    }),
+  it.effect(
+    "isSelfMessage: incoming≠self; our echo=self; Message-Yourself operator=NOT self; elsewhere-human=self",
+    () =>
+      Effect.sync(() => {
+        const at = 1
+        const msg = (over: Partial<WAMessage>): WAMessage => ({
+          chatID: "c1",
+          chatKind: "group",
+          chatTitle: "t",
+          messageID: "m",
+          senderID: "s",
+          senderName: "n",
+          outgoing: false,
+          at,
+          ...over,
+        })
+        // incoming (not fromMe) is never self.
+        expect(WhatsAppBaileysDriver.isSelfMessage(msg({ outgoing: false }), "me@wa", false)).toBe(false)
+        // our own relay echoed back = self (drop).
+        expect(WhatsAppBaileysDriver.isSelfMessage(msg({ outgoing: true, chatID: "c1" }), "me@wa", true)).toBe(true)
+        // fromMe in the self-chat we did NOT send = the operator on their phone = REAL input.
+        expect(WhatsAppBaileysDriver.isSelfMessage(msg({ outgoing: true, chatID: "me@wa" }), "me@wa", false)).toBe(
+          false,
+        )
+        // fromMe elsewhere we did not send = the human on their account = not our turn (self).
+        expect(WhatsAppBaileysDriver.isSelfMessage(msg({ outgoing: true, chatID: "c1" }), "me@wa", false)).toBe(true)
+      }),
   )
 
   it.effect("foldSelfAddress folds the account's LID onto its phone JID (the console depends on it)", () =>
@@ -135,7 +149,10 @@ describe("WhatsAppBaileys pure policy", () => {
 
   it.effect("a rendered QR instructs the user about the image, not the raw payload", () =>
     Effect.sync(() => {
-      const rendered = WhatsAppBaileysDriver.linkInstructions({ qr: "RAW-PAYLOAD", qrImage: "data:image/png;base64,AAA" })
+      const rendered = WhatsAppBaileysDriver.linkInstructions({
+        qr: "RAW-PAYLOAD",
+        qrImage: "data:image/png;base64,AAA",
+      })
       // The image is the instruction; leaking the unscannable payload into the text would only
       // confuse a lay user — and it must say the code refreshes, so a re-render doesn't read as a fault.
       expect(rendered).not.toContain("RAW-PAYLOAD")
@@ -244,8 +261,28 @@ describe("WhatsAppBaileys connect", () => {
     Effect.gen(function* () {
       const fake = makeFakeWA()
       fake.enqueue([
-        { chatID: "c1@g.us", chatKind: "group", chatTitle: "Team", messageID: "m1", senderID: "u1", senderName: "Alice", outgoing: false, text: "hi nova", at: 1000 },
-        { chatID: "me@wa", chatKind: "dm", chatTitle: "You", messageID: "m2", senderID: "me@wa", senderName: "Me", outgoing: true, text: "Nova, status?", at: 1001 },
+        {
+          chatID: "c1@g.us",
+          chatKind: "group",
+          chatTitle: "Team",
+          messageID: "m1",
+          senderID: "u1",
+          senderName: "Alice",
+          outgoing: false,
+          text: "hi nova",
+          at: 1000,
+        },
+        {
+          chatID: "me@wa",
+          chatKind: "dm",
+          chatTitle: "You",
+          messageID: "m2",
+          senderID: "me@wa",
+          senderName: "Me",
+          outgoing: true,
+          text: "Nova, status?",
+          at: 1001,
+        },
       ])
       const driver = WhatsAppBaileysDriver.make(factoryFor(fake))
       const seen: InboundView[] = []
@@ -257,12 +294,22 @@ describe("WhatsAppBaileys connect", () => {
               Stream.runForEach((event) =>
                 Effect.sync(() => {
                   if (event.kind === "message")
-                    seen.push({ chatID: event.chat.chatID, self: event.chat.self === true, isSelf: event.sender.isSelf, owner: event.sender.owner === true, text: event.text })
+                    seen.push({
+                      chatID: event.chat.chatID,
+                      self: event.chat.self === true,
+                      isSelf: event.sender.isSelf,
+                      owner: event.sender.owner === true,
+                      text: event.text,
+                    })
                 }),
               ),
             ),
           )
-          yield* drainFor(() => seen, (s) => s.length >= 2, "two inbound events")
+          yield* drainFor(
+            () => seen,
+            (s) => s.length >= 2,
+            "two inbound events",
+          )
         }),
       )
       const incoming = seen.find((s) => s.chatID === "c1@g.us")!
@@ -283,7 +330,10 @@ describe("WhatsAppBaileys connect", () => {
         Effect.gen(function* () {
           const conn = yield* driver.connect(ctxFor(signedIn))
           yield* conn.send("c1@g.us", { text: "x".repeat(9000) }) // > 4096 → chunks
-          yield* conn.send("c1@g.us", { file: { name: "a.pdf", mime: "application/pdf", data: new Uint8Array([1]) }, text: "the file" })
+          yield* conn.send("c1@g.us", {
+            file: { name: "a.pdf", mime: "application/pdf", data: new Uint8Array([1]) },
+            text: "the file",
+          })
         }),
       )
       const textSends = fake.state.sent.filter((entry) => !entry.file)

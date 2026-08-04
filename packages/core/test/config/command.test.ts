@@ -64,7 +64,9 @@ Review files`,
           })
 
           const store = memoryStore()
-          yield* store.setLayers("review", [decode({ commands: { review: { template: "Inline review" } } }).commands!.review])
+          yield* store.setLayers("review", [
+            decode({ commands: { review: { template: "Inline review" } } }).commands!.review,
+          ])
 
           const command = yield* CommandV2.Service
           yield* ConfigCommandPlugin.Plugin.effect(host({ command: { ...command, reload: command.reload } })).pipe(

@@ -13,22 +13,27 @@ import { Schema } from "effect"
 //   budgetSteering→ budgetAware (wall-clock steers at 50%/75%)
 export const Info = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean).annotate({
-    description: "Run Strict-harness sessions: decomposition + per-step verification for weak/local models (default: false)",
+    description:
+      "Run Strict-harness sessions: decomposition + per-step verification for weak/local models (default: false)",
   }),
   verification: Schema.optional(Schema.Boolean).annotate({
-    description: "Verification gates: derived-artifact staleness tracking + the persistent regression suite + phase gate (default: true)",
+    description:
+      "Verification gates: derived-artifact staleness tracking + the persistent regression suite + phase gate (default: true)",
   }),
   recovery: Schema.optional(Schema.Boolean).annotate({
-    description: "Recovery: keep-best snapshots (incl. restore-on-drop + terminal restore), harness-owned auto-revert, the escalation ladder, component re-derive (default: true)",
+    description:
+      "Recovery: keep-best snapshots (incl. restore-on-drop + terminal restore), harness-owned auto-revert, the escalation ladder, component re-derive (default: true)",
   }),
   editingAids: Schema.optional(Schema.Boolean).annotate({
-    description: "Editing aids: numbered full-visibility workspace, transactional edit gate, coordinate-edit enforcement after repeated mis-quotes (default: true)",
+    description:
+      "Editing aids: numbered full-visibility workspace, transactional edit gate, coordinate-edit enforcement after repeated mis-quotes (default: true)",
   }),
   budgetSteering: Schema.optional(Schema.Boolean).annotate({
     description: "Wall-clock awareness: calm simplify/land-it steers at 50%/75% of the time budget (default: true)",
   }),
   wallMinutes: Schema.optional(Schema.Number).annotate({
-    description: "Wall-clock budget per Strict task in minutes; the engine stops through its terminal best-restore at exhaustion (default: 45)",
+    description:
+      "Wall-clock budget per Strict task in minutes; the engine stops through its terminal best-restore at exhaustion (default: 45)",
   }),
   attempts: Schema.optional(Schema.Number).annotate({
     description:

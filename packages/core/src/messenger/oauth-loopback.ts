@@ -42,7 +42,9 @@ export interface LoopbackParams {
   readonly redirectUri?: string
 }
 
-export type LoopbackFactory = (params: LoopbackParams) => Effect.Effect<Loopback, ConnectError, import("effect").Scope.Scope>
+export type LoopbackFactory = (
+  params: LoopbackParams,
+) => Effect.Effect<Loopback, ConnectError, import("effect").Scope.Scope>
 
 /** Start a scoped loopback server. The server closes (and a still-pending waitForCode rejects) when
  *  the Effect scope closes. */
@@ -81,7 +83,12 @@ export const startLoopback: LoopbackFactory = (params) =>
       }
       // Bind the redirect to this attempt (CSRF): a mismatched/absent state is rejected, never used.
       if (state !== params.expectedState) {
-        page(400, OauthCallbackPage.error("This sign-in link doesn't match the request — start again.", { provider: params.provider }))
+        page(
+          400,
+          OauthCallbackPage.error("This sign-in link doesn't match the request — start again.", {
+            provider: params.provider,
+          }),
+        )
         return
       }
       if (error) {
@@ -130,10 +137,14 @@ export const startLoopback: LoopbackFactory = (params) =>
 
     const address = server.address()
     const port = typeof address === "object" && address !== null ? address.port : 0
-    if (port === 0) return yield* Effect.fail(new ConnectError({ reason: "Could not bind the local sign-in listener." }))
+    if (port === 0)
+      return yield* Effect.fail(new ConnectError({ reason: "Could not bind the local sign-in listener." }))
 
     const timeoutMs = params.timeoutMs ?? 5 * 60 * 1000
-    const timer = setTimeout(() => rejectCode(new Error("Timed out waiting for the browser sign-in — try again.")), timeoutMs)
+    const timer = setTimeout(
+      () => rejectCode(new Error("Timed out waiting for the browser sign-in — try again.")),
+      timeoutMs,
+    )
     yield* Effect.addFinalizer(() => Effect.sync(() => clearTimeout(timer)))
 
     return { redirectUri: params.redirectUri ?? `http://127.0.0.1:${port}/`, waitForCode: codePromise }

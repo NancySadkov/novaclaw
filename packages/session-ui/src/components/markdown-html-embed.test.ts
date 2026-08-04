@@ -38,7 +38,7 @@ describe("markdown html embed", () => {
   })
 
   test("static html fences embed immediately with the fence body extracted", () => {
-    const block = stream("```html\n<canvas id=\"c\"></canvas>\n```", false).at(-1)!
+    const block = stream('```html\n<canvas id="c"></canvas>\n```', false).at(-1)!
     expect(htmlEmbedForBlock(block)).toEqual({ srcdoc: '<canvas id="c"></canvas>' })
   })
 })

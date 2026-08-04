@@ -136,10 +136,10 @@ describe("editor-core (ui-arch P4a)", () => {
 
   test("insertPart refuses image parts", () => {
     expect(
-      core.insertPart(
-        { type: "image", filename: "x.png", mime: "image/png", url: "data:," } as never,
-        { fallbackCursor: () => 0, text: () => "" },
-      ),
+      core.insertPart({ type: "image", filename: "x.png", mime: "image/png", url: "data:," } as never, {
+        fallbackCursor: () => 0,
+        text: () => "",
+      }),
     ).toBe(false)
   })
 

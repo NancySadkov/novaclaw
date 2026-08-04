@@ -63,8 +63,23 @@ export function isSessionNotFoundError(error: unknown, sessionID: string) {
   // wrapClientError path: cause.body = { name:"NotFoundError", data:{ message:"Session not found: <id>" } }.
   // Scope to THIS session via the server-authored message so other 404s stay visible.
   const data = value.data as { message?: unknown } | undefined
-  if (value.name === "NotFoundError" && typeof data?.message === "string" && data.message.includes(sessionID)) return true
+  if (value.name === "NotFoundError" && typeof data?.message === "string" && data.message.includes(sessionID))
+    return true
   return false
+}
+
+export function isMissingDirectoryError(error: unknown) {
+  const matches = (value: unknown) =>
+    typeof value === "string" && value.trimStart().startsWith("Directory does not exist:")
+  if (error instanceof Error && matches(error.message)) return true
+  if (matches(error)) return true
+  const unwrapped = unwrapNamedError(error)
+  if (typeof unwrapped !== "object" || unwrapped === null) return false
+  if (!("name" in unwrapped) || !("data" in unwrapped)) return false
+  const data = unwrapped.data
+  if (typeof data !== "object" || data === null) return false
+  if (!("field" in data) || !("message" in data)) return false
+  return unwrapped.name === "InvalidRequestError" && data.field === "directory" && matches(data.message)
 }
 
 function isConfigInvalidErrorLike(error: unknown): error is ConfigInvalidError {

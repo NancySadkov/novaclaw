@@ -116,9 +116,21 @@ export type InboundEvent =
       readonly replyTo?: string
       readonly at: number
     }
-  | { readonly kind: "edited"; readonly chat: ChatSnapshot; readonly messageID: string; readonly text?: string; readonly at: number }
+  | {
+      readonly kind: "edited"
+      readonly chat: ChatSnapshot
+      readonly messageID: string
+      readonly text?: string
+      readonly at: number
+    }
   | { readonly kind: "deleted"; readonly chat: ChatSnapshot; readonly messageID: string; readonly at: number }
-  | { readonly kind: "member"; readonly chat: ChatSnapshot; readonly change: "joined" | "left"; readonly member: Sender; readonly at: number }
+  | {
+      readonly kind: "member"
+      readonly chat: ChatSnapshot
+      readonly change: "joined" | "left"
+      readonly member: Sender
+      readonly at: number
+    }
 
 export interface OutboundFile {
   readonly name: string

@@ -5,7 +5,9 @@ import { ServerConnection, useServer } from "@/context/server"
 import { useTabs } from "@/context/tabs"
 import { useLanguage } from "@/context/language"
 import { showToast } from "@/utils/toast"
-import { fsTrash, fsTrashList, fsTrashRestore } from "@/utils/fs-api"
+import { fsTrashList, fsTrashRestore } from "@/utils/fs-api"
+import { useFilesystemOperations, type FilesystemTarget } from "@/components/filesystem-operations"
+import { filesystemShortcut, isEditableFilesystemTarget } from "@/components/filesystem-domain"
 
 // The Files app (B7 + the B8 Trash surface — plan.md M3/M4). Browses the SERVER host's filesystem
 // via the same V1 /file endpoints the directory picker uses (sdk.client.file.list / .read,
@@ -40,6 +42,8 @@ export function FilesPage() {
 
   const [dir, setDir] = createSignal("")
   const [selected, setSelected] = createSignal<Entry | undefined>(undefined)
+  const [active, setActive] = createSignal<Entry | undefined>(undefined)
+  const [contextMenu, setContextMenu] = createSignal<{ x: number; y: number; entry?: Entry } | undefined>()
   // Bumped after every mutation (trash/restore) to refetch the listing + trash panel.
   const [tick, setTick] = createSignal(0)
   const [showTrash, setShowTrash] = createSignal(false)
@@ -67,7 +71,12 @@ export function FilesPage() {
   // Ported from https://github.com/NancySadkov/novaclaw/pull/11 by @DassaultFalconKing.
   const shape = (p: PathLike | undefined) =>
     p?.virtual && p.virtualRoot
-      ? { start: p.virtualRoot, roots: [] as readonly string[], home: "", places: [] as readonly { name: string; path: string }[] }
+      ? {
+          start: p.virtualRoot,
+          roots: [] as readonly string[],
+          home: "",
+          places: [] as readonly { name: string; path: string }[],
+        }
       : {
           start: p?.home || p?.directory || "",
           roots: p?.roots ?? [],
@@ -101,7 +110,9 @@ export function FilesPage() {
   const places = createMemo(() => pathInfo.latest?.places ?? [])
   const homeDir = createMemo(() => pathInfo.latest?.home ?? "")
   const bookmarks = createMemo(
-    () => ((ctx()?.sync.data.config as { folder_bookmarks?: readonly string[] } | undefined)?.folder_bookmarks ?? []) as string[],
+    () =>
+      ((ctx()?.sync.data.config as { folder_bookmarks?: readonly string[] } | undefined)?.folder_bookmarks ??
+        []) as string[],
   )
   const isPinned = (target: string) => bookmarks().some((entry) => pinKey(entry) === pinKey(target))
   const writeBookmarks = (next: string[]) =>
@@ -111,7 +122,9 @@ export function FilesPage() {
   const toggleCurrentPin = () => {
     const target = pinKey(dir())
     if (!target) return
-    writeBookmarks(isPinned(target) ? bookmarks().filter((entry) => pinKey(entry) !== target) : [...bookmarks(), target])
+    writeBookmarks(
+      isPinned(target) ? bookmarks().filter((entry) => pinKey(entry) !== target) : [...bookmarks(), target],
+    )
   }
   const baseName = (value: string) => {
     const parts = value.split(/[\\/]/).filter(Boolean)
@@ -119,8 +132,19 @@ export function FilesPage() {
   }
   const goTo = (target: string) => {
     setSelected(undefined)
+    setActive(undefined)
     setDir(target)
   }
+
+  const operations = useFilesystemOperations({
+    server: () => conn()?.http,
+    changed: () => {
+      setSelected(undefined)
+      setActive(undefined)
+      setContextMenu(undefined)
+      setTick((value) => value + 1)
+    },
+  })
 
   const [entries] = createResource(
     () => {
@@ -190,20 +214,6 @@ export function FilesPage() {
     ({ cn, d }) => fsTrashList(cn.http, { directory: d }).catch(() => undefined),
   )
 
-  async function doTrash(entry: Entry) {
-    const cn = conn()
-    if (!cn || !dir()) return
-    try {
-      await fsTrash(cn.http, { directory: dir(), path: entry.name })
-    } catch (error) {
-      // Don't fail silently — a delete that didn't happen must say so (SP5).
-      showToast({ variant: "error", title: language.t("files.trashFailed"), description: String(error) })
-      return
-    }
-    if (selected()?.absolute === entry.absolute) setSelected(undefined)
-    setTick((t) => t + 1)
-  }
-
   async function doRestore(id: string) {
     const cn = conn()
     if (!cn || !dir()) return
@@ -217,8 +227,10 @@ export function FilesPage() {
   }
 
   function open(entry: Entry) {
+    setActive(entry)
     if (entry.type === "directory") {
       setSelected(undefined)
+      setActive(undefined)
       setDir(entry.absolute)
     } else {
       setSelected(entry)
@@ -228,7 +240,37 @@ export function FilesPage() {
     const p = parentDir(dir())
     if (!p) return
     setSelected(undefined)
+    setActive(undefined)
     setDir(p)
+  }
+
+  const operationTarget = (entry: Entry): FilesystemTarget => ({ path: entry.absolute, type: entry.type })
+  const openContextMenu = (event: MouseEvent, entry: Entry) => {
+    event.preventDefault()
+    setActive(entry)
+    if (entry.type === "file") setSelected(entry)
+    setContextMenu({ x: event.clientX, y: event.clientY, entry })
+  }
+  const handleShortcut = (event: KeyboardEvent) => {
+    if (event.key === "Escape" && contextMenu()) {
+      event.preventDefault()
+      setContextMenu(undefined)
+      return
+    }
+    const action = filesystemShortcut({
+      key: event.key,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      shiftKey: event.shiftKey,
+      altKey: event.altKey,
+      editable: isEditableFilesystemTarget(event.target),
+    })
+    if (!action) return
+    if (action !== "new-folder" && !active()) return
+    event.preventDefault()
+    if (action === "new-folder") void operations.createFolder(dir())
+    if (action === "rename") void operations.rename(operationTarget(active()!))
+    if (action === "delete") void operations.trash(operationTarget(active()!))
   }
   // Open a pre-filled chat draft asking the agent to look at the target. Opens the current directory
   // as a project (a chat needs a working dir), then hands newDraft the seed prompt (adds ?prompt=).
@@ -248,12 +290,28 @@ export function FilesPage() {
     "rounded-md px-2.5 py-1 text-xs font-medium text-v2-text-text-muted transition-colors hover:bg-v2-background-bg-layer-02 disabled:pointer-events-none disabled:opacity-40"
 
   return (
-    <div class="flex min-h-0 flex-1 flex-col self-stretch m-2 rounded-[10px] overflow-hidden bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)] text-v2-text-text-base">
+    <div
+      class="flex min-h-0 flex-1 flex-col self-stretch m-2 rounded-[10px] overflow-hidden bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)] text-v2-text-text-base"
+      tabIndex={0}
+      onKeyDown={handleShortcut}
+      onPointerDown={(event) => {
+        if (!(event.target instanceof Element) || !event.target.closest("[data-files-context-menu]"))
+          setContextMenu(undefined)
+      }}
+    >
       <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5">
         <Icon name="folder-add-left" size="normal" class="shrink-0 text-v2-text-text-muted" />
         <span class="text-[15px] font-semibold">{language.t("files.title")}</span>
         <button type="button" class={btn} onClick={up} disabled={!parentDir(dir())}>
           {language.t("files.up")}
+        </button>
+        <button
+          type="button"
+          class={btn}
+          onClick={() => void operations.createFolder(dir())}
+          disabled={!conn() || !dir()}
+        >
+          {language.t("files.newFolder")}
         </button>
         <Show when={roots().length > 1}>
           <select
@@ -356,7 +414,9 @@ export function FilesPage() {
               <button
                 type="button"
                 class="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-01"
-                classList={{ "bg-v2-background-bg-layer-01 text-v2-text-text-base": pinKey(dir()) === pinKey(place.path) }}
+                classList={{
+                  "bg-v2-background-bg-layer-01 text-v2-text-text-base": pinKey(dir()) === pinKey(place.path),
+                }}
                 title={place.path}
                 onClick={() => goTo(place.path)}
               >
@@ -366,7 +426,14 @@ export function FilesPage() {
             )}
           </For>
         </div>
-        <div class="w-1/2 min-w-0 overflow-auto border-r border-v2-border-border-base py-1">
+        <div
+          class="w-1/2 min-w-0 overflow-auto border-r border-v2-border-border-base py-1"
+          onContextMenu={(event) => {
+            if (event.target instanceof Element && event.target.closest("[data-files-entry]")) return
+            event.preventDefault()
+            setContextMenu({ x: event.clientX, y: event.clientY })
+          }}
+        >
           <Show
             when={visibleEntries()}
             fallback={
@@ -382,16 +449,19 @@ export function FilesPage() {
               <For each={visibleEntries()}>
                 {(entry) => (
                   <div
+                    data-files-entry
                     class="group flex w-full items-center hover:bg-v2-background-bg-layer-02"
                     classList={{
                       "opacity-50": entry.ignored,
-                      "bg-v2-background-bg-layer-02": selected()?.absolute === entry.absolute,
+                      "bg-v2-background-bg-layer-02": active()?.absolute === entry.absolute,
                     }}
+                    onContextMenu={(event) => openContextMenu(event, entry)}
                   >
                     <button
                       type="button"
                       class="flex min-w-0 flex-1 items-center gap-2 px-4 py-1.5 text-left text-sm"
                       onClick={() => open(entry)}
+                      onFocus={() => setActive(entry)}
                     >
                       <Show when={entry.type === "directory"} fallback={<span class="size-4 shrink-0" />}>
                         <Icon name="folder" size="small" class="shrink-0 text-v2-text-text-muted" />
@@ -404,7 +474,7 @@ export function FilesPage() {
                       class="mr-2 hidden shrink-0 rounded p-1 text-v2-text-text-faint transition-colors hover:text-v2-state-fg-danger group-hover:block"
                       title={language.t("files.delete")}
                       aria-label={`${language.t("files.delete")} ${entry.name}`}
-                      onClick={() => void doTrash(entry)}
+                      onClick={() => void operations.trash(operationTarget(entry))}
                     >
                       <Icon name="trash" size="small" />
                     </button>
@@ -504,6 +574,59 @@ export function FilesPage() {
           </Show>
         </div>
       </div>
+      <Show when={contextMenu()}>
+        {(menu) => (
+          <div
+            data-files-context-menu
+            role="menu"
+            class="fixed z-60 flex min-w-48 flex-col rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-02 p-1 shadow-[var(--v2-elevation-overlay)]"
+            style={{ left: `${menu().x}px`, top: `${menu().y}px` }}
+          >
+            <div class="truncate px-2 py-1 text-[11px] text-v2-text-text-faint" title={menu().entry?.absolute ?? dir()}>
+              {menu().entry?.name ?? dir()}
+            </div>
+            <button
+              type="button"
+              role="menuitem"
+              class="flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-v2-overlay-simple-overlay-hover"
+              onClick={() => {
+                setContextMenu(undefined)
+                void operations.createFolder(dir())
+              }}
+            >
+              {language.t("files.newFolder")} <span class="ml-auto text-v2-text-text-faint">Ctrl+Shift+N</span>
+            </button>
+            <Show when={menu().entry}>
+              {(entry) => (
+                <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    class="flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-v2-overlay-simple-overlay-hover"
+                    onClick={() => {
+                      setContextMenu(undefined)
+                      void operations.rename(operationTarget(entry()))
+                    }}
+                  >
+                    {language.t("files.rename")} <span class="ml-auto text-v2-text-text-faint">F2</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    class="flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-v2-state-fg-danger hover:bg-v2-overlay-simple-overlay-hover"
+                    onClick={() => {
+                      setContextMenu(undefined)
+                      void operations.trash(operationTarget(entry()))
+                    }}
+                  >
+                    {language.t("files.delete")} <span class="ml-auto text-v2-text-text-faint">Del</span>
+                  </button>
+                </>
+              )}
+            </Show>
+          </div>
+        )}
+      </Show>
     </div>
   )
 }

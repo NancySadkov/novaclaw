@@ -40,13 +40,15 @@ const GOLD: Gold[] = [
   {
     // measured rank 1
     desc: "tile 18 PUZZLE → opened by being INFORMED",
-    query: "In the EDDS board game rules, on the D20 TILE exploration table, what does result 18 (PUZZLE) do, and what is required to open the way back?",
+    query:
+      "In the EDDS board game rules, on the D20 TILE exploration table, what does result 18 (PUZZLE) do, and what is required to open the way back?",
     passage: "PUZZLE",
   },
   {
     // measured rank 6 — the tightest of the four; a chunking regression shows up here first
     desc: "tile 16 CRAMPED → blocks LARGE or GIANT",
-    query: "In the EDDS board game rules, on the D20 TILE table, result 16 is CRAMPED. Which creatures does it block from passing?",
+    query:
+      "In the EDDS board game rules, on the D20 TILE table, result 16 is CRAMPED. Which creatures does it block from passing?",
     passage: "CRAMPED",
   },
   {
@@ -73,7 +75,14 @@ beforeAll(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "kb-edds-"))
   mem = await WasmMemory.open(path.join(dir, "graph"), { dim: 8 })
   for (let i = 0; i < passages.length; i++)
-    await mem.addMemory({ id: `p_${i}`, kind: "passage", name: "EDDS", text: passages[i]!, scope: "global", relation: "core" })
+    await mem.addMemory({
+      id: `p_${i}`,
+      kind: "passage",
+      name: "EDDS",
+      text: passages[i]!,
+      scope: "global",
+      relation: "core",
+    })
 }, 180_000)
 
 afterAll(async () => {
@@ -94,7 +103,9 @@ describe("EDDS retrieval (uncontaminated corpus, FTS)", () => {
       const found = hits.some((h) => h.text.includes(gold.passage))
       if (!found) {
         // Make a regression legible: show what DID come back instead of a bare false.
-        console.log(`   top-${K} for "${gold.desc}":\n` + hits.map((h, i) => `     ${i + 1}. ${h.text.slice(0, 110)}`).join("\n"))
+        console.log(
+          `   top-${K} for "${gold.desc}":\n` + hits.map((h, i) => `     ${i + 1}. ${h.text.slice(0, 110)}`).join("\n"),
+        )
       }
       expect(found).toBe(true)
     }, 60_000)

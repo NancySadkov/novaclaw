@@ -101,10 +101,7 @@ ctx.skill.reload()
 `ctx.event.subscribe` hands the host a callback and gets back a `Registration`:
 
 ```ts
-yield *
-  ctx.event.subscribe("catalog.updated", (event) =>
-    Effect.logInfo("the catalog changed", { id: event.id }),
-  )
+yield * ctx.event.subscribe("catalog.updated", (event) => Effect.logInfo("the catalog changed", { id: event.id }))
 ```
 
 The registration is owned by the plugin scope exactly like `ctx.tool.register` — unloading the
@@ -133,7 +130,7 @@ so one defect would have left it deaf for the rest of the process).
   service (`models-dev.refreshed`, catalog refreshes, installation events) carries none. A global
   event is nobody else's data, so you get it.
 
-Nothing else. In particular this is *not* a firehose of every session in every directory.
+Nothing else. In particular this is _not_ a firehose of every session in every directory.
 
 ### What the types buy you
 
@@ -143,7 +140,7 @@ Nothing else. In particular this is *not* a firehose of every session in every d
 
 ⚠️ Be honest about the limit: **most** members of that union declare
 `properties: { [key: string]: unknown }`, because their internal schema is an open record. So you
-get *type names and a checked discriminant*, not deep field-level type safety. Where a payload is
+get _type names and a checked discriminant_, not deep field-level type safety. Where a payload is
 narrow (`session.created`, `integration.connection.updated`, …) the fields are real; everywhere
 else, narrow `properties` yourself.
 

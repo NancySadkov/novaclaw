@@ -62,7 +62,10 @@ describe("renderer Content-Security-Policy", () => {
     for (const forbidden of ["'unsafe-eval'", "http:", "https:", "data:", "*"]) {
       expect(script, `script-src must not carry ${forbidden}`).not.toContain(forbidden)
     }
-    expect(script.some((s) => /^https?:\/\//.test(s)), "script-src must not name a remote host").toBe(false)
+    expect(
+      script.some((s) => /^https?:\/\//.test(s)),
+      "script-src must not name a remote host",
+    ).toBe(false)
   })
 
   test("script-src keeps the two grants the product measurably needs", () => {

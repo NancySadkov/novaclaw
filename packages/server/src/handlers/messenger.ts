@@ -261,7 +261,9 @@ export const MessengerHandler = HttpApiBuilder.group(Api, "server.messenger", (h
         Effect.fn(function* (ctx) {
           const login = yield* MessengerLogin.Service
           const gateway = yield* MessengerGateway.Service
-          yield* login.complete({ attemptID: ctx.params.attemptID, code: ctx.payload.code }).pipe(Effect.mapError(loginError))
+          yield* login
+            .complete({ attemptID: ctx.params.attemptID, code: ctx.payload.code })
+            .pipe(Effect.mapError(loginError))
           // The account now holds its session credential — connect it right away.
           yield* gateway.reload()
           return HttpApiSchema.NoContent.make()

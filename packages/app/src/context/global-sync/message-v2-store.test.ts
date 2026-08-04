@@ -7,7 +7,13 @@ function ev(type: string, data: Record<string, unknown>): V2Event {
 }
 function clientReturning(messages: SessionMessage[]): NovaclawClient {
   return {
-    v2: { session: { async messages() { return { data: { data: messages } } } } },
+    v2: {
+      session: {
+        async messages() {
+          return { data: { data: messages } }
+        },
+      },
+    },
   } as unknown as NovaclawClient
 }
 const noClient = {} as NovaclawClient
@@ -22,8 +28,18 @@ describe("createNativeMessageStore", () => {
     const store = createNativeMessageStore(noClient)
     store.apply(prompted("s", "msg_u"))
     store.apply(stepStarted("s", "msg_a"))
-    store.apply(ev("session.next.text.started", { timestamp: 3, sessionID: "s", assistantMessageID: "msg_a", textID: "t1" }))
-    store.apply(ev("session.next.text.delta", { timestamp: 4, sessionID: "s", assistantMessageID: "msg_a", textID: "t1", delta: "hey" }))
+    store.apply(
+      ev("session.next.text.started", { timestamp: 3, sessionID: "s", assistantMessageID: "msg_a", textID: "t1" }),
+    )
+    store.apply(
+      ev("session.next.text.delta", {
+        timestamp: 4,
+        sessionID: "s",
+        assistantMessageID: "msg_a",
+        textID: "t1",
+        delta: "hey",
+      }),
+    )
 
     const messages = store.messages("s")!
     expect(messages.map((m) => m.id)).toEqual(["msg_u", "msg_a"])

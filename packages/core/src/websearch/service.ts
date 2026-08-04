@@ -81,7 +81,10 @@ export interface Interface {
     },
   ) => Effect.Effect<SearchOutcome>
   /** What search would do right now, for the settings surface and for honest tool descriptions. */
-  readonly describe: () => Effect.Effect<{ readonly mode: "airgapped" | "searxng" | "builtin"; readonly detail: string }>
+  readonly describe: () => Effect.Effect<{
+    readonly mode: "airgapped" | "searxng" | "builtin"
+    readonly detail: string
+  }>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/WebSearch") {}
@@ -115,7 +118,8 @@ export const readSettings = (raw: unknown): Settings => {
   const disabled = Array.isArray(value["disabledEngines"])
     ? value["disabledEngines"].filter((entry): entry is string => typeof entry === "string")
     : undefined
-  const timeout = typeof value["timeoutMs"] === "number" && Number.isFinite(value["timeoutMs"]) ? value["timeoutMs"] : undefined
+  const timeout =
+    typeof value["timeoutMs"] === "number" && Number.isFinite(value["timeoutMs"]) ? value["timeoutMs"] : undefined
   return {
     ...(url.length === 0 ? {} : { searxngUrl: url }),
     ...(disabled === undefined ? {} : { disabledEngines: disabled }),
@@ -124,10 +128,15 @@ export const readSettings = (raw: unknown): Settings => {
 }
 
 /** Build the engine set for one call. Pure given the settings, so the precedence is unit-testable. */
-export const resolveEngines = (fetchImpl: WebSearchEngine.FetchLike, settings: Settings): readonly WebSearchEngine.Engine[] => {
+export const resolveEngines = (
+  fetchImpl: WebSearchEngine.FetchLike,
+  settings: Settings,
+): readonly WebSearchEngine.Engine[] => {
   if (settings.searxngUrl !== undefined) return [WebSearchEngine.searxng(fetchImpl, settings.searxngUrl)]
   const disabled = new Set(settings.disabledEngines ?? [])
-  return [WebSearchEngine.duckduckgo(fetchImpl), WebSearchEngine.wikipedia(fetchImpl)].filter((engine) => !disabled.has(engine.id))
+  return [WebSearchEngine.duckduckgo(fetchImpl), WebSearchEngine.wikipedia(fetchImpl)].filter(
+    (engine) => !disabled.has(engine.id),
+  )
 }
 
 export const layerWith = (fetchImpl: WebSearchEngine.FetchLike) =>
@@ -173,26 +182,36 @@ export const layerWith = (fetchImpl: WebSearchEngine.FetchLike) =>
           if (offline.policy.enabled)
             return { mode: "airgapped" as const, detail: "Web search is off while NovaClaw is offline or airgapped." }
           const settings = yield* currentSettings
-          if (settings.searxngUrl !== undefined) return { mode: "searxng" as const, detail: `Your own SearXNG at ${settings.searxngUrl}.` }
+          if (settings.searxngUrl !== undefined)
+            return { mode: "searxng" as const, detail: `Your own SearXNG at ${settings.searxngUrl}.` }
           const engines = resolveEngines(fetchImpl, settings).map((engine) => engine.name)
-          return { mode: "builtin" as const, detail: `Built-in search (${engines.join(", ") || "no engines enabled"}).` }
+          return {
+            mode: "builtin" as const,
+            detail: `Built-in search (${engines.join(", ") || "no engines enabled"}).`,
+          }
         })
 
       const search: Interface["search"] = (query, options) =>
         Effect.gen(function* () {
           const trimmed = query.trim()
-          if (trimmed.length === 0) return { ok: false, results: [], reason: "Give me something to search for." } satisfies SearchOutcome
+          if (trimmed.length === 0)
+            return { ok: false, results: [], reason: "Give me something to search for." } satisfies SearchOutcome
           // Rule 1 — the airgap gate, checked at call time (offline can be flipped while running).
           if (offline.policy.enabled)
             return {
               ok: false,
               results: [],
-              reason: "Web search is off because NovaClaw is in offline/airgap mode — nothing leaves this machine. Turn offline mode off to search.",
+              reason:
+                "Web search is off because NovaClaw is in offline/airgap mode — nothing leaves this machine. Turn offline mode off to search.",
             } satisfies SearchOutcome
           const settings = yield* currentSettings
           const engines = resolveEngines(fetchImpl, settings)
           if (engines.length === 0)
-            return { ok: false, results: [], reason: "Every search engine is disabled in settings." } satisfies SearchOutcome
+            return {
+              ok: false,
+              results: [],
+              reason: "Every search engine is disabled in settings.",
+            } satisfies SearchOutcome
           const limit = Math.max(1, Math.min(25, Math.floor(options?.limit ?? DEFAULT_LIMIT)))
           const policy = CalloutPolicy.websearch(settings.timeoutMs ?? DEFAULT_TIMEOUT_MS, engines.length)
           const searchOptions = {
@@ -207,7 +226,9 @@ export const layerWith = (fetchImpl: WebSearchEngine.FetchLike) =>
             engines.map((engine) =>
               engine.search(trimmed, searchOptions).pipe(
                 Effect.map((results) => ({ engine, results, failure: undefined as string | undefined })),
-                Effect.catch((error) => Effect.succeed({ engine, results: [] as readonly WebSearchEngine.Result[], failure: error.reason })),
+                Effect.catch((error) =>
+                  Effect.succeed({ engine, results: [] as readonly WebSearchEngine.Result[], failure: error.reason }),
+                ),
               ),
             ),
             { concurrency: policy.maxConcurrency },

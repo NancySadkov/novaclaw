@@ -121,10 +121,9 @@ export class ModelUnconfiguredError extends Schema.TaggedErrorClass<ModelUnconfi
 
 // Raised when the model's response can't be parsed/decoded into the agent config
 // JSON shape (`{ identifier, whenToUse, systemPrompt }`).
-export class GenerateOutputError extends Schema.TaggedErrorClass<GenerateOutputError>()(
-  "Agent.GenerateOutputError",
-  { detail: Schema.String },
-) {
+export class GenerateOutputError extends Schema.TaggedErrorClass<GenerateOutputError>()("Agent.GenerateOutputError", {
+  detail: Schema.String,
+}) {
   override get message() {
     return `The model did not return a valid agent configuration: ${this.detail}`
   }
@@ -222,7 +221,11 @@ export const layer = Layer.effect(
 
         // V2 config `permissions` is an ordered Ruleset ({action,resource,effect}); the V1 agent service
         // works in the {permission,pattern,action} ruleset shape, so remap the fields.
-        const user = (cfg.permissions ?? []).map((r) => ({ permission: r.action, pattern: r.resource, action: r.effect }))
+        const user = (cfg.permissions ?? []).map((r) => ({
+          permission: r.action,
+          pattern: r.resource,
+          action: r.effect,
+        }))
 
         const agents: Record<string, Info> = {
           build: {

@@ -43,11 +43,41 @@ const THROTTLE_FIELDS: Array<{
   fallback: number
   min: number
 }> = [
-  { key: "hostIntervalMs", label: "settings.webSearch.throttle.interval", hint: "settings.webSearch.throttle.interval.hint", fallback: 4000, min: 0 },
-  { key: "burst", label: "settings.webSearch.throttle.burst", hint: "settings.webSearch.throttle.burst.hint", fallback: 3, min: 1 },
-  { key: "perHostConcurrency", label: "settings.webSearch.throttle.concurrency", hint: "settings.webSearch.throttle.concurrency.hint", fallback: 1, min: 1 },
-  { key: "dailyPerHost", label: "settings.webSearch.throttle.daily", hint: "settings.webSearch.throttle.daily.hint", fallback: 150, min: 1 },
-  { key: "sameUrlLimit", label: "settings.webSearch.throttle.sameUrl", hint: "settings.webSearch.throttle.sameUrl.hint", fallback: 3, min: 1 },
+  {
+    key: "hostIntervalMs",
+    label: "settings.webSearch.throttle.interval",
+    hint: "settings.webSearch.throttle.interval.hint",
+    fallback: 4000,
+    min: 0,
+  },
+  {
+    key: "burst",
+    label: "settings.webSearch.throttle.burst",
+    hint: "settings.webSearch.throttle.burst.hint",
+    fallback: 3,
+    min: 1,
+  },
+  {
+    key: "perHostConcurrency",
+    label: "settings.webSearch.throttle.concurrency",
+    hint: "settings.webSearch.throttle.concurrency.hint",
+    fallback: 1,
+    min: 1,
+  },
+  {
+    key: "dailyPerHost",
+    label: "settings.webSearch.throttle.daily",
+    hint: "settings.webSearch.throttle.daily.hint",
+    fallback: 150,
+    min: 1,
+  },
+  {
+    key: "sameUrlLimit",
+    label: "settings.webSearch.throttle.sameUrl",
+    hint: "settings.webSearch.throttle.sameUrl.hint",
+    fallback: 3,
+    min: 1,
+  },
 ]
 
 // The built-in engines, so a user can toggle one off by name. Kept in step with
@@ -61,7 +91,7 @@ export const SettingsWebSearchV2: Component = () => {
   const language = useLanguage()
   const serverSync = useServerSync()
 
-  const current = (): WebSearchConfig => ((serverSync().data.config as { web_search?: WebSearchConfig }).web_search ?? {})
+  const current = (): WebSearchConfig => (serverSync().data.config as { web_search?: WebSearchConfig }).web_search ?? {}
   const usingSearxng = () => (current().searxngUrl ?? "").trim().length > 0
   // Airgap force-disables search (the WebSearch service refuses before any socket opens); the app
   // already holds the offline flag, so the tab tells the truth without a round-trip.
@@ -148,7 +178,9 @@ export const SettingsWebSearchV2: Component = () => {
       <div class="settings-v2-section">
         <h3 class="settings-v2-section-title">{language.t("settings.webSearch.builtin.title")}</h3>
         <p class="settings-v2-field-description">
-          {usingSearxng() ? language.t("settings.webSearch.builtin.overridden") : language.t("settings.webSearch.builtin.description")}
+          {usingSearxng()
+            ? language.t("settings.webSearch.builtin.overridden")
+            : language.t("settings.webSearch.builtin.description")}
         </p>
         <SettingsListV2>
           <Show when={!usingSearxng()} fallback={null}>

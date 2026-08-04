@@ -17,7 +17,7 @@ import type { HomeApp } from "./registry"
 // App-set decisions (2026-07-01, refined 2026-07-02): there is NO "New Chat" tile — new sessions live
 // inside the Chats app, which is the HERO tile (the one eye-anchor; everything else is done through
 // chat with an agent). Models + Devices are Settings tabs, not home apps. Notes / Files / Trash /
-// Processes route to real pages/dialogs; only Search / Terminal remain placeholders (a self-documenting
+// Processes route to real pages/dialogs; only Search remains a placeholder (a self-documenting
 // panel that teaches the chat-first model).
 //
 // Tile palette: gold is reserved for the hero (the single warm accent on the cool purple field —
@@ -41,7 +41,8 @@ export function useBuiltinApps(): () => HomeApp[] {
   const name = (id: BuiltinAppId) => appName(t, id, BUILTIN_APP_LABELS[id].name)
   // Every built-in ships a subtitle, so this narrows to `string` — `appSubtitle` returns `undefined`
   // only when there is nothing at all to say, which cannot happen for an entry in the table.
-  const sub = (id: BuiltinAppId): string => appSubtitle(t, id, BUILTIN_APP_LABELS[id].subtitle) ?? BUILTIN_APP_LABELS[id].subtitle
+  const sub = (id: BuiltinAppId): string =>
+    appSubtitle(t, id, BUILTIN_APP_LABELS[id].subtitle) ?? BUILTIN_APP_LABELS[id].subtitle
 
   const comingSoon = (id: BuiltinAppId, icon: string, accent: string) => () =>
     void dialog.show(() => <AppPlaceholder title={name(id)} icon={icon} accent={accent} subtitle={sub(id)} />)
@@ -123,9 +124,10 @@ export function useBuiltinApps(): () => HomeApp[] {
       accent: "#64748b",
       subtitle: sub("terminal"),
       source: "builtin",
-      // Chat is the shell for everyone else; the raw terminal only appears in Developer (uix.md §6.4).
-      minLevel: "developer",
-      open: comingSoon("terminal", "terminal", "#64748b"),
+      // Chat is the shell for everyone else; the raw terminal appears only after the user opts into
+      // Advanced or Developer expertise. Its PTY always runs on the selected instance.
+      minLevel: "advanced",
+      open: () => navigate("/terminal"),
     },
     {
       id: "registry",

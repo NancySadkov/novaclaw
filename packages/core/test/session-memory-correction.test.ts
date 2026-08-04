@@ -35,12 +35,7 @@ describe("MemoryCorrection", () => {
     const resolved = path.join(os.tmpdir(), `novaclaw-memory-missing-${crypto.randomUUID()}`, "pi.c")
     const stale = hit("mem_stale", `The file ${resolved} already implements the program.`)
     const unrelated = hit("mem_other", "The user prefers C99 for portable programs.")
-    await Effect.runPromise(
-      Effect.all([
-        store(memory, stale),
-        store(memory, unrelated),
-      ]),
-    )
+    await Effect.runPromise(Effect.all([store(memory, stale), store(memory, unrelated)]))
 
     expect(
       await Effect.runPromise(

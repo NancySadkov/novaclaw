@@ -378,7 +378,9 @@ describe("DatabaseMigration", () => {
         yield* db.run(sql`CREATE INDEX part_message_id_id_idx ON part (message_id, id)`)
         yield* db.run(sql`CREATE INDEX part_session_idx ON part (session_id)`)
         yield* db.run(sql`INSERT INTO session (id, title) VALUES ('session', 'Kept')`)
-        yield* db.run(sql`INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES ('m', 'session', 1, 1, '{}')`)
+        yield* db.run(
+          sql`INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES ('m', 'session', 1, 1, '{}')`,
+        )
         yield* db.run(
           sql`INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES ('p', 'm', 'session', 1, 1, '{}')`,
         )
@@ -388,11 +390,9 @@ describe("DatabaseMigration", () => {
 
         yield* DatabaseMigration.applyOnly(db, [dropLegacyMessagePartMigration])
 
-        const tableNames = (
-          yield* db.all<{ name: string }>(
-            sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('message', 'part', 'session_share', 'session')`,
-          )
-        ).map((row) => row.name)
+        const tableNames = (yield* db.all<{ name: string }>(
+          sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('message', 'part', 'session_share', 'session')`,
+        )).map((row) => row.name)
         expect(tableNames).toEqual(["session"])
         // Session-level data survives; the legacy transcript lapses with its tables.
         expect(yield* db.all(sql`SELECT id, title FROM session`)).toEqual([{ id: "session", title: "Kept" }])

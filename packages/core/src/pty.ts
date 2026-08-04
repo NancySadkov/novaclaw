@@ -84,6 +84,7 @@ export interface Interface {
   readonly create: (input: CreateInput) => Effect.Effect<Info>
   readonly update: (id: PtyID, input: UpdateInput) => Effect.Effect<Info, NotFoundError>
   readonly remove: (id: PtyID) => Effect.Effect<void, NotFoundError>
+  readonly removeAll: () => Effect.Effect<number>
   readonly write: (id: PtyID, data: string) => Effect.Effect<void, NotFoundError>
   readonly attach: (id: PtyID, input: AttachInput) => Effect.Effect<Attachment, NotFoundError | ExitedError>
 }
@@ -161,6 +162,14 @@ export const layer = Layer.effect(
       yield* removeSession(id)
     })
 
+    const removeAll = Effect.fn("Pty.removeAll")(function* () {
+      // Snapshot first: removeSession mutates the map and publishes one Deleted event per PTY.
+      // New terminals created after this snapshot are intentionally not part of this operation.
+      const ids = Array.from(sessions.keys())
+      for (const id of ids) yield* removeSession(id)
+      return ids.length
+    })
+
     const list = Effect.fn("Pty.list")(function* () {
       return Array.from(sessions.values()).map((session) => session.info)
     })
@@ -177,6 +186,7 @@ export const layer = Layer.effect(
       const env = {
         ...process.env,
         ...input.env,
+        ...Shell.toolchainEnv(command, { ...process.env, ...input.env }),
         TERM: "xterm-256color",
         NOVACLAW_TERMINAL: "1",
       } as Record<string, string>
@@ -321,7 +331,7 @@ export const layer = Layer.effect(
       }
     })
 
-    return Service.of({ list, get, create, update, remove, write, attach })
+    return Service.of({ list, get, create, update, remove, removeAll, write, attach })
   }),
 )
 

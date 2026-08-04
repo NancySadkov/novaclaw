@@ -43,17 +43,17 @@ test("unmounts the terminal renderer while the pane is hidden", async ({ page })
     ],
     pageMessages: () => ({ items: [] }),
   })
-  await page.route("**/pty", (route) =>
+  await page.route("**/api/pty?*", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ id: "pty_hidden_terminal", title: "Terminal 1" }),
+      body: JSON.stringify({ location: { directory }, data: { id: "pty_hidden_terminal", title: "Terminal 1" } }),
     }),
   )
-  await page.route("**/pty/pty_hidden_terminal", (route) =>
+  await page.route("**/api/pty/pty_hidden_terminal?*", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: "{}" }),
   )
-  await page.routeWebSocket("**/pty/pty_hidden_terminal/connect", () => undefined)
+  await page.routeWebSocket("**/api/pty/pty_hidden_terminal/connect?*", () => undefined)
 
   await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
   await expectSessionTitle(page, title)

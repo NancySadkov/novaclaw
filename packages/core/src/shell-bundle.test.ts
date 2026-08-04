@@ -15,9 +15,12 @@ async function tmpdir(prefix: string) {
 }
 
 const savedRoot = process.env.NOVACLAW_SHELL_BUNDLE_ROOT
+const savedW64devkit = process.env.NOVACLAW_W64DEVKIT_PATH
 afterEach(async () => {
   if (savedRoot === undefined) delete process.env.NOVACLAW_SHELL_BUNDLE_ROOT
   else process.env.NOVACLAW_SHELL_BUNDLE_ROOT = savedRoot
+  if (savedW64devkit === undefined) delete process.env.NOVACLAW_W64DEVKIT_PATH
+  else process.env.NOVACLAW_W64DEVKIT_PATH = savedW64devkit
   ShellBundle.resolve.reset()
   Shell.agentDefault.reset()
   while (cleanups.length) await fs.rm(cleanups.pop()!, { recursive: true, force: true })
@@ -36,6 +39,15 @@ async function fakeBundle(withManifest = true) {
       path.join(root, "bundle.json"),
       JSON.stringify({ kind: "portable-git", version: "2.55.0.2", url: "x", sha256: "y", provisionedAt: 123 }),
     )
+  return root
+}
+
+async function fakeW64devkit() {
+  const root = path.join(await tmpdir("w64devkit-"), "w64devkit")
+  await fs.mkdir(path.join(root, "bin"), { recursive: true })
+  await fs.writeFile(path.join(root, "bin", "sh.exe"), "fake")
+  await fs.writeFile(path.join(root, "bin", "gcc.exe"), "fake")
+  await fs.writeFile(path.join(root, "VERSION.txt"), "2.9.0\n")
   return root
 }
 
@@ -179,14 +191,35 @@ describe("shell bundle provisioning", () => {
 })
 
 describe("agent default shell (B11)", () => {
-  test("prefers the bundled bash on win32", async () => {
+  test("prefers embedded w64devkit sh on win32 and exposes its compiler environment", async () => {
     if (process.platform !== "win32") return
+    const w64devkit = await fakeW64devkit()
     const root = await fakeBundle()
+    process.env.NOVACLAW_W64DEVKIT_PATH = w64devkit
     process.env.NOVACLAW_SHELL_BUNDLE_ROOT = root
     ShellBundle.resolve.reset()
     Shell.agentDefault.reset()
-    expect(Shell.agentDefault()).toBe(path.join(root, "bin", "bash.exe"))
+    expect(Shell.agentDefault()).toBe(path.join(w64devkit, "bin", "sh.exe"))
     expect(Shell.gitbash()).toBe(path.join(root, "bin", "bash.exe"))
+    const env = Shell.toolchainEnv(Shell.agentDefault(), { Path: "C:\\Windows" })
+    expect(env?.Path?.split(path.delimiter)[0]).toBe(path.join(w64devkit, "bin"))
+    expect(env?.W64DEVKIT_HOME).toBe(w64devkit)
+    expect(env?.W64DEVKIT).toBe("2.9.0")
+    expect(Shell.agentShellIsPosix()).toBe(true)
+    expect(Shell.shellFallbackNote()).toBeUndefined()
+  })
+
+  test("keeps Git Bash userland ahead of w64devkit while adding GCC last", async () => {
+    if (process.platform !== "win32") return
+    const w64devkit = await fakeW64devkit()
+    const root = await fakeBundle()
+    process.env.NOVACLAW_W64DEVKIT_PATH = w64devkit
+    process.env.NOVACLAW_SHELL_BUNDLE_ROOT = root
+    ShellBundle.resolve.reset()
+    const bash = Shell.gitbash()!
+    const paths = Shell.toolchainEnv(bash, { PATH: "C:\\Windows" })?.PATH?.split(path.delimiter)
+    expect(paths?.[0]).toBe(path.join(root, "mingw64", "bin"))
+    expect(paths?.at(-1)).toBe(path.join(w64devkit, "bin"))
   })
 
   test("agentDefault is bash-or-fallback everywhere", () => {

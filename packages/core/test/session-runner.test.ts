@@ -2398,6 +2398,7 @@ describe("SessionRunnerLLM", () => {
         assistantMessageID,
         callID: "call-interrupted",
         tool: "echo",
+        sideEffect: "external-unknown",
         input: { text: "stale" },
         provider: { executed: false },
       })
@@ -2462,6 +2463,7 @@ describe("SessionRunnerLLM", () => {
         assistantMessageID,
         callID: "call-hosted-interrupted",
         tool: "web_search",
+        sideEffect: "read",
         input: { query: "stale" },
         provider: { executed: true, metadata: { openai: { itemId: "call-hosted-interrupted" } } },
       })

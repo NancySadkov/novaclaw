@@ -30,9 +30,7 @@ export function useJumpToAttention(): () => void {
     // hasn't resolved yet can still be routed via its notification's directory.
     let directory = id
       ? (data.info[id]?.location.directory ??
-        notification.session
-          .all(id)
-          .findLast((item) => item.directory !== undefined)?.directory)
+        notification.session.all(id).findLast((item) => item.directory !== undefined)?.directory)
       : undefined
 
     if (!id) {

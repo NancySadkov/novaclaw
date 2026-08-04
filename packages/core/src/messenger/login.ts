@@ -79,7 +79,8 @@ const describe = (error: unknown): { message: string; retryable: boolean } => {
       return { message: tagged.reason ?? "Login failed.", retryable: tagged.retryable === true }
     if (tagged._tag === "MessengerDriver.ChallengeError")
       return { message: tagged.message ?? "The provider demands verification.", retryable: false }
-    if (tagged._tag === "MessengerDriver.ConnectError") return { message: tagged.reason ?? "Login failed.", retryable: false }
+    if (tagged._tag === "MessengerDriver.ConnectError")
+      return { message: tagged.reason ?? "Login failed.", retryable: false }
   }
   return { message: error instanceof Error ? error.message : String(error), retryable: false }
 }
@@ -125,11 +126,17 @@ export const layer = Layer.effect(
         const driver = drivers.get(account.driverID)
         if (driver === undefined)
           return yield* Effect.fail(
-            new LoginError({ message: `No "${account.driverID}" messenger driver is installed in this build.`, retryable: false }),
+            new LoginError({
+              message: `No "${account.driverID}" messenger driver is installed in this build.`,
+              retryable: false,
+            }),
           )
         if (driver.meta.auth !== "login" || driver.login === undefined)
           return yield* Effect.fail(
-            new LoginError({ message: `${driver.meta.name} does not use a login flow — paste its key instead.`, retryable: false }),
+            new LoginError({
+              message: `${driver.meta.name} does not use a login flow — paste its key instead.`,
+              retryable: false,
+            }),
           )
         const attemptScope = yield* Scope.fork(scope)
         const pending = yield* driver.login.begin({ account, inputs: input.inputs }).pipe(
@@ -172,13 +179,20 @@ export const layer = Layer.effect(
         if (attempt === undefined)
           return yield* Effect.fail(new LoginError({ message: "Unknown or expired login attempt.", retryable: false }))
         if (attempt.status === "failed")
-          return new Messenger.LoginStatus({ status: "failed", message: attempt.message ?? "Login failed.", time: attempt.time })
-        if (attempt.status !== "pending") return new Messenger.LoginStatus({ status: attempt.status, time: attempt.time })
+          return new Messenger.LoginStatus({
+            status: "failed",
+            message: attempt.message ?? "Login failed.",
+            time: attempt.time,
+          })
+        if (attempt.status !== "pending")
+          return new Messenger.LoginStatus({ status: attempt.status, time: attempt.time })
         // Pending: re-ask the driver what the user should be looking at NOW. A rotating step (the
         // WhatsApp QR) has almost certainly changed since begin(); a driver without `progress` keeps
         // its original instructions. A progress failure must never break polling — fall back.
         const live = attempt.progress
-          ? yield* attempt.progress().pipe(Effect.catchCause(() => Effect.succeed({ instructions: attempt.instructions } as LoginProgress)))
+          ? yield* attempt
+              .progress()
+              .pipe(Effect.catchCause(() => Effect.succeed({ instructions: attempt.instructions } as LoginProgress)))
           : ({ instructions: attempt.instructions } satisfies LoginProgress)
         return new Messenger.LoginStatus({
           status: "pending",
@@ -201,11 +215,16 @@ export const layer = Layer.effect(
         if (claimed === undefined) {
           const attempt = attempts.get(input.attemptID)
           if (attempt === undefined)
-            return yield* Effect.fail(new LoginError({ message: "Unknown or expired login attempt.", retryable: false }))
+            return yield* Effect.fail(
+              new LoginError({ message: "Unknown or expired login attempt.", retryable: false }),
+            )
           if (attempt.status === "complete") return
           return yield* Effect.fail(
             new LoginError({
-              message: attempt.status === "pending" ? "This attempt is already completing." : "This login attempt has ended — start again.",
+              message:
+                attempt.status === "pending"
+                  ? "This attempt is already completing."
+                  : "This login attempt has ended — start again.",
               retryable: false,
             }),
           )
@@ -224,7 +243,11 @@ export const layer = Layer.effect(
           yield* store.updateAccount(claimed.accountID, { credentialID: credential.id })
           yield* lock.withPermit(
             Effect.sync(() =>
-              attempts.set(input.attemptID, { status: "complete", time: claimed.time, removeAt: now + terminalRetention }),
+              attempts.set(input.attemptID, {
+                status: "complete",
+                time: claimed.time,
+                removeAt: now + terminalRetention,
+              }),
             ),
           )
           yield* close(claimed.scope)
@@ -238,7 +261,12 @@ export const layer = Layer.effect(
         }
         yield* lock.withPermit(
           Effect.sync(() =>
-            attempts.set(input.attemptID, { status: "failed", message, time: claimed.time, removeAt: now + terminalRetention }),
+            attempts.set(input.attemptID, {
+              status: "failed",
+              message,
+              time: claimed.time,
+              removeAt: now + terminalRetention,
+            }),
           ),
         )
         yield* close(claimed.scope)

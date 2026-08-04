@@ -263,7 +263,11 @@ describe("a tool-returned image is gated by the resolved model's capabilities", 
   })
 
   test("a MIME we cannot classify is no evidence of a mismatch — it sends, and frames as 'file'", () => {
-    const blob: ToolContent = { type: "file", uri: "data:application/octet-stream;base64,QQ==", mime: "application/octet-stream" }
+    const blob: ToolContent = {
+      type: "file",
+      uri: "data:application/octet-stream;base64,QQ==",
+      mime: "application/octet-stream",
+    }
     const parts = contentParts(loweredResult(TEXT_ONLY, completed([blob])))
     expect(parts.map((part) => part.type)).toEqual(["text", "file"])
     expect(parts[0]!.type === "text" && parts[0]!.text).toContain("file from the read tool")
@@ -316,7 +320,9 @@ describe("needsCapabilityEvidence — the condition that made the gate inert", (
     expect(needsCapabilityEvidence([completed(READ_CONTENT)])).toBe(true)
     expect(needsCapabilityEvidence([completed([filePart])])).toBe(true)
     expect(
-      needsCapabilityEvidence([completed([], { providerExecuted: true, result: { type: "content", value: [filePart] } })]),
+      needsCapabilityEvidence([
+        completed([], { providerExecuted: true, result: { type: "content", value: [filePart] } }),
+      ]),
     ).toBe(true)
     expect(needsCapabilityEvidence([errored([filePart])])).toBe(true)
   })

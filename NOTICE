@@ -28,6 +28,14 @@ The documentation package (packages/docs) is based on a Mintlify template:
     SPDX-License-Identifier: MIT
     Full license text: packages/docs/LICENSE
 
+NovaClaw Windows distributions embed the w64devkit development environment:
+
+    w64devkit 2.9.0
+    Copyright Chris Wellons and contributors
+    Components are distributed under their respective open-source licenses
+    Notice and redistribution details: licenses/w64devkit-NOTICE.md
+    MinGW-w64 notices are retained at third-party/w64devkit/COPYING.MinGW-w64-runtime.txt
+
 NovaClaw also depends on numerous third-party open-source packages, each
 distributed under its own license. Refer to the individual package licenses
 under node_modules and to the dependency manifests (package.json / bun.lock)

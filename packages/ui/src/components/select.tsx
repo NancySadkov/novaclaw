@@ -4,7 +4,6 @@ import { Button, ButtonProps } from "./button"
 import { Icon } from "./icon"
 import { selectGroups, selectIsGrouped } from "./select-groups"
 
-
 export type SelectProps<T> = Omit<ComponentProps<typeof Kobalte<T>>, "value" | "onSelect" | "children"> & {
   placeholder?: string
   options: T[]

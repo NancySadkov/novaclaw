@@ -138,7 +138,10 @@ describe("slug safety — the slug is a folder name", () => {
 
 describe("save / list / read", () => {
   test("saves and reads back, deriving the slug from the name", async () => {
-    const saved = await Recipe.save({ name: "Hello C", description: "toolchain check", prompt: "Write hello.c" }, opts())
+    const saved = await Recipe.save(
+      { name: "Hello C", description: "toolchain check", prompt: "Write hello.c" },
+      opts(),
+    )
     expect(saved.slug).toBe("hello-c")
     expect(saved.assets).toEqual([])
     const read = await Recipe.read("hello-c", opts())
@@ -342,8 +345,7 @@ describe("builtins — the shipped set and its seeding", () => {
     }
     // The release set the owner asked for.
     const slugs = RecipeBuiltin.BUILTINS.map((b) => b.slug)
-    for (const required of ["hello-c", "pi-100-machin", "browser-os", "osint-brief"])
-      expect(slugs).toContain(required)
+    for (const required of ["hello-c", "pi-100-machin", "browser-os", "osint-brief"]) expect(slugs).toContain(required)
     expect(new Set(slugs).size).toBe(slugs.length) // no duplicate slugs
   })
 

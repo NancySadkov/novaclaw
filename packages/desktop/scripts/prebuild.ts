@@ -3,6 +3,7 @@ import { $ } from "bun"
 
 import { enforce } from "../../../script/lib/heavy-guard"
 import { resolveChannel } from "./utils"
+import { prepareW64devkit } from "./prepare-w64devkit"
 
 // The guard has to bite from BOTH sides. prebuild is the first lifecycle step of every desktop build,
 // so refusing here stops a build from piling onto a suite already running. The desktop floor is
@@ -13,6 +14,7 @@ import { resolveChannel } from "./utils"
 enforce("a desktop build", process.argv, { minimumFreeBytes: 2.5 * 1024 ** 3 })
 
 const channel = resolveChannel()
+await prepareW64devkit()
 await $`bun ./scripts/copy-icons.ts ${channel}`
 await $`bun ./scripts/copy-metainfo.ts ${channel}`
 

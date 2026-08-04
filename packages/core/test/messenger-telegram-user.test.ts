@@ -72,8 +72,7 @@ const makeFakeClient = (opts: FakeOptions = {}) => {
         { chatID: SELF_ID, kind: "dm", title: "Saved Messages" },
         { chatID: "-100200", kind: "group", title: "Freelance clients" },
       ],
-      history: async (chatID, limit) =>
-        (opts.historyByChat?.[chatID] ?? []).slice(-limit),
+      history: async (chatID, limit) => (opts.historyByChat?.[chatID] ?? []).slice(-limit),
       sendText: async (chatID, text) => {
         state.sent.push({ chatID, text })
         sendSeq += 1
@@ -253,7 +252,14 @@ describe("TelegramUserDriver connect", () => {
             text: "/sessions",
           }),
           // The human answers a client from their phone (outgoing elsewhere) → NOT agent input.
-          userMessage({ chatID: "555", messageID: "human-1", senderID: SELF_ID, senderName: "Nancy", outgoing: true, text: "on it!" }),
+          userMessage({
+            chatID: "555",
+            messageID: "human-1",
+            senderID: SELF_ID,
+            senderName: "Nancy",
+            outgoing: true,
+            text: "on it!",
+          }),
         ],
       ]
       const { factory } = makeFakeClient({ pullBatches: batches })

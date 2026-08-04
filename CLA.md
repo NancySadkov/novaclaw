@@ -6,7 +6,7 @@ Thank you for contributing to NovaClaw. This agreement clarifies the terms under
 contribution is accepted, so that NovaClaw can be distributed and relicensed with certainty about
 who holds which rights.
 
-**You keep the copyright in your contribution.** This is a *license*, not a transfer of ownership.
+**You keep the copyright in your contribution.** This is a _license_, not a transfer of ownership.
 You may use your own contribution however else you like, including in other projects.
 
 Please read this, fill in the details at the bottom, and send it as described in

@@ -67,6 +67,7 @@ import { DebugPage } from "@/pages/debug"
 import { RegistryPage } from "@/pages/registry"
 import { MemoryGraphPage } from "@/pages/memory-graph"
 import { TrashPage } from "@/pages/trash"
+import { TerminalPage } from "@/pages/terminal"
 import { installErrorLog } from "@/utils/error-log"
 import { publicAssetUrl } from "@/utils/public-asset"
 
@@ -207,11 +208,7 @@ function ResolvedTargetSessionRoute() {
       <Show
         when={!!current() || resolved.state !== "errored"}
         fallback={
-          isSessionNotFoundError(resolved.error, params.id) ? (
-            <SessionGoneCard />
-          ) : (
-            <ErrorPage error={resolved.error} />
-          )
+          isSessionNotFoundError(resolved.error, params.id) ? <SessionGoneCard /> : <ErrorPage error={resolved.error} />
         }
       >
         <Show when={directory()}>
@@ -569,7 +566,12 @@ function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key:
   return (
     <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base gap-6 p-6">
       <div class="flex flex-col items-center max-w-md text-center">
-        <img src={publicAssetUrl("/logo.png")} alt="NovaClaw" draggable={false} class="w-14 h-14 mb-4 opacity-80 select-none" />
+        <img
+          src={publicAssetUrl("/logo.png")}
+          alt="NovaClaw"
+          draggable={false}
+          class="w-14 h-14 mb-4 opacity-80 select-none"
+        />
         <Show
           when={server.current}
           fallback={
@@ -686,6 +688,7 @@ function Routes() {
       <Route path="/debug" component={DebugPage} />
       <Route path="/memory-graph" component={MemoryGraphPage} />
       <Route path="/trash" component={TrashPage} />
+      <Route path="/terminal" component={TerminalPage} />
       <Route path="/new-session" component={DraftRoute} />
       <Route path="/server/:serverKey/session/:id" component={TargetSessionRoute} />
       {/* Keep LAST: `/:dir` outranks nothing, and the static routes above must win the match. */}

@@ -122,8 +122,7 @@ describe("checkNeeds — ruling 2 lives in the `unknown` arm", () => {
 })
 
 describe("unmetMessage — the refusal a normal person reads", () => {
-  const checks = (resolve: (candidate: string) => string | null, facts: string[]) =>
-    Recipe.checkNeeds(facts, resolve)
+  const checks = (resolve: (candidate: string) => string | null, facts: string[]) => Recipe.checkNeeds(facts, resolve)
 
   test("nothing missing means no refusal at all", () => {
     expect(Recipe.unmetMessage("Hello, C", checks(everything, ["a C compiler"]))).toBeUndefined()
@@ -245,9 +244,7 @@ describe("the door: recipe.run checks before it cooks", () => {
     // check-is-called test while cooking anyway (ruling 2: a failed check never reports success).
     // Asserted as a BOOLEAN, not `toContain` on the source: a failing `toContain` dumps 9 KB of handler
     // into the report and buries the one line that matters.
-    const raises = source.includes(
-      "if (unmet !== undefined) return yield* new InvalidRequestError({ message: unmet })",
-    )
+    const raises = source.includes("if (unmet !== undefined) return yield* new InvalidRequestError({ message: unmet })")
     expect({ raises }).toEqual({ raises: true })
     expect(at("if (unmet !== undefined)")).toBeLessThan(at("Recipe.materialize("))
     expect(at("if (unmet !== undefined)")).toBeLessThan(at("sessions.create("))

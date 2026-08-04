@@ -32,7 +32,9 @@ const writeSettings = (embedding: boolean) => {
   const db = new Database(DB)
   db.run("CREATE TABLE runtime_setting (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
   db.run("INSERT INTO runtime_setting (key, value) VALUES ('memory', ?)", [
-    JSON.stringify(embedding ? { enabled: true, embedding: { url: EMBED_URL, model: EMBED_MODEL } } : { enabled: true }),
+    JSON.stringify(
+      embedding ? { enabled: true, embedding: { url: EMBED_URL, model: EMBED_MODEL } } : { enabled: true },
+    ),
   ])
   db.close()
   MemorySetting.bust()

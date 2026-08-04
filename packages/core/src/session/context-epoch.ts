@@ -33,8 +33,12 @@ export function prepare(
   events: EventV2.Interface,
   context: Effect.Effect<SystemContext.SystemContext>,
   sessionID: SessionSchema.ID,
+  commitUpdate?: (input: {
+    readonly data: typeof SessionEvent.ContextUpdated.data.Type
+    readonly snapshot: SystemContext.Snapshot
+  }) => Effect.Effect<void>,
 ): Effect.Effect<Prepared, SystemContext.InitializationBlocked | ContextSnapshotDecodeError> {
-  return prepareOnce(db, events, context, sessionID).pipe(Effect.withSpan("SessionContextEpoch.prepare"))
+  return prepareOnce(db, events, context, sessionID, commitUpdate).pipe(Effect.withSpan("SessionContextEpoch.prepare"))
 }
 
 const prepareOnce = Effect.fnUntraced(function* (
@@ -42,6 +46,10 @@ const prepareOnce = Effect.fnUntraced(function* (
   events: EventV2.Interface,
   context: Effect.Effect<SystemContext.SystemContext>,
   sessionID: SessionSchema.ID,
+  commitUpdate?: (input: {
+    readonly data: typeof SessionEvent.ContextUpdated.data.Type
+    readonly snapshot: SystemContext.Snapshot
+  }) => Effect.Effect<void>,
 ) {
   const [value, stored, compaction] = yield* Effect.all(
     [context, find(db, sessionID), SessionHistory.latestCompaction(db, sessionID)],
@@ -69,11 +77,10 @@ const prepareOnce = Effect.fnUntraced(function* (
     return { baseline: result.generation.baseline, baselineSeq }
   }
 
-  yield* events.publish(
-    SessionEvent.ContextUpdated,
-    { sessionID, messageID: SessionMessage.ID.create(), timestamp: yield* DateTime.now, text: result.text },
-    { commit: () => advance(db, sessionID, result.snapshot).pipe(Effect.orDie) },
-  )
+  const data = { sessionID, messageID: SessionMessage.ID.create(), timestamp: yield* DateTime.now, text: result.text }
+  yield* commitUpdate
+    ? commitUpdate({ data, snapshot: result.snapshot })
+    : publishUpdate(db, events, data, result.snapshot)
   return { baseline: stored.baseline, baselineSeq: stored.baseline_seq }
 })
 
@@ -156,6 +163,17 @@ const replace = Effect.fnUntraced(function* (
     .get()
     .pipe(Effect.orDie)
   if (!updated) return yield* Effect.die("Context Epoch not found")
+})
+
+export const publishUpdate = Effect.fn("SessionContextEpoch.publishUpdate")(function* (
+  db: DatabaseService,
+  events: EventV2.Interface,
+  data: typeof SessionEvent.ContextUpdated.data.Type,
+  snapshot: SystemContext.Snapshot,
+) {
+  yield* events.publish(SessionEvent.ContextUpdated, data, {
+    commit: () => advance(db, data.sessionID, snapshot).pipe(Effect.orDie),
+  })
 })
 
 const advance = Effect.fnUntraced(function* (

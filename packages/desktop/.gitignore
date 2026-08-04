@@ -27,3 +27,4 @@ out/
 resources/novaclaw-cli*
 resources/icons
 resources/*.metainfo.xml
+resources/third-party/

@@ -1,13 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
-import {
-  countSites,
-  ledgerFaults,
-  type LedgerEntry,
-  scanLogSource,
-  scanPackageSources,
-} from "./lib/log-event-ledger"
+import { countSites, ledgerFaults, type LedgerEntry, scanLogSource, scanPackageSources } from "./lib/log-event-ledger"
 
 /** `packages/core/test` -> app repository root. */
 const ROOT = path.resolve(import.meta.dir, "..", "..", "..")
@@ -31,9 +25,7 @@ describe("the log-event migration ledger", () => {
   test("walks the real production source boundary", () => {
     expect(SITES.length).toBeGreaterThan(200)
     expect(KEYED.length).toBeGreaterThan(0)
-    expect(SITES.length).toBe(
-      [...UNKEYED, ...KEYED].reduce((total, entry) => total + entry.count, 0),
-    )
+    expect(SITES.length).toBe([...UNKEYED, ...KEYED].reduce((total, entry) => total + entry.count, 0))
   })
 
   test("has no new bare calls and no stale allowances", () => {

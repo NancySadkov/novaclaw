@@ -53,6 +53,7 @@ export const layer = Layer.effectDiscard(
     yield* tools
       .register({
         [name]: Tool.make({
+          sideEffect: "external-unknown",
           description:
             "Evaluate a JavaScript snippet in a sandboxed scratchpad and get the result. Use it for exact arithmetic (native BigInt, or arbitrary-precision `Decimal` from decimal.js), the current date/time (`new Date()`), or to test a small algorithm — instead of computing it in your head. Returns the final expression's value plus any console.log output. Sandbox: standard JS + BigInt + Decimal + Date/Math/JSON only — NO filesystem, network, require, or process (use `bash` for those). Each call runs in a fresh isolated process and returns the final expression's value; pending promise work is not awaited. Hard 5-second timeout.",
           input: Input,

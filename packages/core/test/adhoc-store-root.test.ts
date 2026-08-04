@@ -92,10 +92,7 @@ const withBoth = <A, E, R>(
               [Global.node, Global.layerWith({ data: tmp.path })],
               [ToolOutputStore.node, outputStore],
               [PermissionV2.node, permission],
-              [
-                Config.node,
-                Layer.succeed(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) })),
-              ],
+              [Config.node, Layer.succeed(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) }))],
             ],
           ),
         ),
@@ -111,9 +108,10 @@ describe("the ad-hoc store root is resolved once, through Global.Service", () =>
 
         // Half one: the prompt advertises it. This half passed before the fix too — guidance was
         // already on the service.
-        const baseline = yield* guidance
-          .load(sessionID)
-          .pipe(Effect.flatMap(SystemContext.initialize), Effect.map((context) => context.baseline))
+        const baseline = yield* guidance.load(sessionID).pipe(
+          Effect.flatMap(SystemContext.initialize),
+          Effect.map((context) => context.baseline),
+        )
         expect(baseline).toContain("weather — Fetch a forecast")
 
         // Half two: the tool answers for the name the prompt just advertised. This is the half that
@@ -159,9 +157,10 @@ describe("the ad-hoc store root is resolved once, through Global.Service", () =>
         ])
 
         // …and both readers in the same graph now agree it exists.
-        const baseline = yield* guidance
-          .load(sessionID)
-          .pipe(Effect.flatMap(SystemContext.initialize), Effect.map((context) => context.baseline))
+        const baseline = yield* guidance.load(sessionID).pipe(
+          Effect.flatMap(SystemContext.initialize),
+          Effect.map((context) => context.baseline),
+        )
         expect(baseline).toContain("tides — Tide table")
         expect(
           yield* executeTool(registry, {

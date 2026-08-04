@@ -124,9 +124,20 @@ describe("AgentJail", () => {
     // different adversary (untrusted text arriving as data) and AGENTS.md principle 9(c) still
     // binds, so turning safe mode off must not buy a stranger's turn the host.
     for (const safeMode of [true, false, undefined]) {
-      expect(AgentJail.decideBash({ rootType: "interactive", backend: AgentJail.NO_BACKEND, hostileInput: true, safeMode })).toBe("deny")
-      expect(AgentJail.decideBash({ rootType: "goal-oriented", backend: AgentJail.NO_BACKEND, hostileInput: true, safeMode })).toBe("deny")
-      expect(AgentJail.decideBash({ rootType: "interactive", backend: FULL, hostileInput: true, safeMode })).toBe("confined")
+      expect(
+        AgentJail.decideBash({ rootType: "interactive", backend: AgentJail.NO_BACKEND, hostileInput: true, safeMode }),
+      ).toBe("deny")
+      expect(
+        AgentJail.decideBash({
+          rootType: "goal-oriented",
+          backend: AgentJail.NO_BACKEND,
+          hostileInput: true,
+          safeMode,
+        }),
+      ).toBe("deny")
+      expect(AgentJail.decideBash({ rootType: "interactive", backend: FULL, hostileInput: true, safeMode })).toBe(
+        "confined",
+      )
     }
   })
 
@@ -135,11 +146,15 @@ describe("AgentJail", () => {
   // unattended arm (confined under a backend, deny without one), while never RELAXING an already
   // unattended decision, and being a no-op when false.
   test("hostileInput treats an interactive turn as unattended (confine or deny)", () => {
-    expect(AgentJail.decideBash({ rootType: "interactive", backend: AgentJail.NO_BACKEND, hostileInput: true })).toBe("deny")
+    expect(AgentJail.decideBash({ rootType: "interactive", backend: AgentJail.NO_BACKEND, hostileInput: true })).toBe(
+      "deny",
+    )
     expect(AgentJail.decideBash({ rootType: "interactive", backend: FULL, hostileInput: true })).toBe("confined")
     expect(AgentJail.decideBash({ rootType: "sub-agent", backend: FS_ONLY, hostileInput: true })).toBe("deny")
     // false / omitted is a no-op — attended stays raw.
-    expect(AgentJail.decideBash({ rootType: "interactive", backend: AgentJail.NO_BACKEND, hostileInput: false })).toBe("raw")
+    expect(AgentJail.decideBash({ rootType: "interactive", backend: AgentJail.NO_BACKEND, hostileInput: false })).toBe(
+      "raw",
+    )
     expect(AgentJail.decideBash({ rootType: "interactive", backend: AgentJail.NO_BACKEND })).toBe("raw")
     // An already-unattended root ignores the flag (still confined/deny by backend).
     expect(AgentJail.decideBash({ rootType: "goal-oriented", backend: FULL, hostileInput: true })).toBe("confined")
@@ -183,8 +198,7 @@ describe("AgentJail", () => {
       "find / -delete", // a different binary — no rm token at all
       "echo cm0gLXJmIC8= | base64 -d | sh", // base64 pipe: opaque until decoded
     ]
-    for (const cmd of bypasses)
-      expect(Wildcard.match(cmd, denyPattern)).toBe(false) // every one sails past the matcher
+    for (const cmd of bypasses) expect(Wildcard.match(cmd, denyPattern)).toBe(false) // every one sails past the matcher
     // And the matcher only ever catches the LITERAL it was written for — proving it is a
     // convenience, not containment (util/wildcard.ts + permission.ts boundary notes).
     expect(Wildcard.match("rm -rf /data", denyPattern)).toBe(true)

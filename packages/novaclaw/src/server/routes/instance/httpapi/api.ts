@@ -18,7 +18,6 @@ import { InstanceApi } from "./groups/instance"
 import { McpApi } from "./groups/mcp"
 import { MemoryApi } from "./groups/memory"
 import { ProviderApi } from "./groups/provider"
-import { PtyApi, PtyConnectApi } from "./groups/pty"
 import { QuestionApi } from "./groups/question"
 import { RegistryApi } from "./groups/registry"
 import { ShellApi } from "./groups/shell"
@@ -65,7 +64,6 @@ export const InstanceHttpApi = HttpApi.make("novaclaw-instance")
   .addHttpApi(InstanceApi)
   .addHttpApi(McpApi)
   .addHttpApi(MemoryApi)
-  .addHttpApi(PtyApi)
   .addHttpApi(QuestionApi)
   .addHttpApi(RegistryApi)
   .addHttpApi(ProviderApi)
@@ -79,7 +77,6 @@ export const NovaClawHttpApi = HttpApi.make("novaclaw")
   .addHttpApi(EventApi)
   .addHttpApi(InstanceHttpApi)
   .addHttpApi(ServerApi)
-  .addHttpApi(PtyConnectApi)
   .annotate(HttpApi.AdditionalSchemas, [
     EventSchema,
     Question.Replied,

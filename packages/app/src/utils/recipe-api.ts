@@ -31,7 +31,7 @@ export interface RunResult {
   readonly assets: readonly string[]
 }
 
-const call = <T,>(server: ServerConnection.HttpBase, method: string, route: string, body?: unknown): Promise<T> =>
+const call = <T>(server: ServerConnection.HttpBase, method: string, route: string, body?: unknown): Promise<T> =>
   instanceFetch<T>(server, { method, route, body })
 
 export const listRecipes = (server: ServerConnection.HttpBase) => call<Recipe[]>(server, "GET", "api/recipe")

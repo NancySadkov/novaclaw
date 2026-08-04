@@ -91,14 +91,16 @@ describe("AMBIENT_SAFE_BASELINE — the compiled floor (B4c)", () => {
   test("membership is an explicit ledger — changing it is an edit here, never a side effect", () => {
     // A MEMBERSHIP ledger, not a shrink-only one: this list may legitimately need to grow (a future
     // ambient-safe action) or shrink (one of these turns out to egress), and both directions must
-    // be a deliberate edit rather than something a refactor can do quietly. Every entry has to pass
-    // the three tests written above the constant: cannot mutate the host, cannot egress, cannot
-    // change what a later turn or session runs.
+    // be a deliberate edit rather than something a refactor can do quietly. `webfetch` and `js` are
+    // named product-default exceptions (owner, 2026-08-04); their independent hard boundaries are
+    // documented beside the constant rather than disguised as ambient safety.
     expect(PermissionV2.AMBIENT_SAFE_BASELINE.map((rule) => rule.action)).toEqual([
       "read",
       "explore",
       "todowrite",
       "resource_status",
+      "webfetch",
+      "js",
     ])
     // Every rule is an unconditional allow on `*` — the floor is a floor, not a pattern game.
     expect(PermissionV2.AMBIENT_SAFE_BASELINE.every((rule) => rule.resource === "*" && rule.effect === "allow")).toBe(
@@ -182,11 +184,9 @@ describe("the built-in agents the plugin actually builds", () => {
       // an MCP tool (its action IS the remote tool's name) and an ad-hoc tool a model invents at
       // runtime via `tool/define-tool.ts`. Those two are why growing `MODE_RULES` could not fix it.
       const wasSilentlyAllowed = [
-        "js",
         "spawn",
         "kb",
         "skill",
-        "webfetch",
         "revert",
         "provision",
         "define_tool",
@@ -202,6 +202,14 @@ describe("the built-in agents the plugin actually builds", () => {
           action,
           effect: "ask",
         })
+    }),
+  )
+
+  it.effect("web fetch and inline JavaScript are available by default", () =>
+    Effect.gen(function* () {
+      const build = (yield* builtinAgents).get("build")!
+      expect(effectFor(build, "webfetch", "https://example.com/")).toBe("allow")
+      expect(effectFor(build, "js", "1 + 1")).toBe("allow")
     }),
   )
 

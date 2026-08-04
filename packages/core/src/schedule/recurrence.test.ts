@@ -105,8 +105,6 @@ describe("timezone offset", () => {
 
 describe("namespace export", () => {
   test("Recurrence.nextFire is the same function", () => {
-    expect(Recurrence.nextFire({ kind: "daily", time: at9 }, utc(2025, 3, 10, 8, 0))).toBe(
-      utc(2025, 3, 10, 9, 0),
-    )
+    expect(Recurrence.nextFire({ kind: "daily", time: at9 }, utc(2025, 3, 10, 8, 0))).toBe(utc(2025, 3, 10, 9, 0))
   })
 })

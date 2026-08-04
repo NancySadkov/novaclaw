@@ -6,8 +6,7 @@ const bytes = (...v: number[]) => new Uint8Array(v)
 describe("detectFileType", () => {
   test("ELF", () => expect(detectFileType(bytes(0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01))?.format).toBe("ELF"))
   test("PE / DOS (MZ)", () => expect(detectFileType(bytes(0x4d, 0x5a, 0x90, 0x00))?.format).toBe("PE"))
-  test("PNG", () =>
-    expect(detectFileType(bytes(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a))?.format).toBe("PNG"))
+  test("PNG", () => expect(detectFileType(bytes(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a))?.format).toBe("PNG"))
   test("gzip", () => expect(detectFileType(bytes(0x1f, 0x8b, 0x08, 0x00))?.format).toBe("gzip"))
   test("PDF", () => expect(detectFileType(bytes(0x25, 0x50, 0x44, 0x46, 0x2d))?.format).toBe("PDF"))
   test("ZIP", () => expect(detectFileType(bytes(0x50, 0x4b, 0x03, 0x04))?.format).toBe("ZIP"))

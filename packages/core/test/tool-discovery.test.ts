@@ -61,9 +61,7 @@ const deferred: ReadonlyArray<ToolCatalogue.Source> = [
 
 describe("ToolDiscovery", () => {
   test("derives callable names only from completed tool_search discovery results in the current transcript", () => {
-    expect([...ToolDiscovery.discovered([discoveryMessage(["github_create_issue"])])]).toEqual([
-      "github_create_issue",
-    ])
+    expect([...ToolDiscovery.discovered([discoveryMessage(["github_create_issue"])])]).toEqual(["github_create_issue"])
     expect([...ToolDiscovery.discovered([])]).toEqual([])
     expect([...ToolDiscovery.discovered([discoveryMessage(["github_create_issue"], "tool-search-empty")])]).toEqual([])
   })
@@ -209,8 +207,6 @@ test("tool_call forwards the exact disclosed name and input through the resident
       },
     ),
   )
-  expect(seen).toEqual([
-    { name: "github_create_issue", input: { repository: "nova", title: "Bug" } },
-  ])
+  expect(seen).toEqual([{ name: "github_create_issue", input: { repository: "nova", title: "Bug" } }])
   expect(output).toEqual({ structured: { created: true }, content: [{ type: "text", text: "created" }] })
 })

@@ -329,6 +329,29 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`session_execution\` (
+          \`session_id\` text PRIMARY KEY,
+          \`attempt_id\` text NOT NULL UNIQUE,
+          \`generation\` integer NOT NULL,
+          \`owner_id\` text NOT NULL,
+          \`state\` text NOT NULL,
+          \`phase\` text NOT NULL,
+          \`failure_class\` text,
+          \`failure_detail\` text,
+          \`failure_count\` integer DEFAULT 0 NOT NULL,
+          \`heartbeat_at\` integer NOT NULL,
+          \`checkpoint_at\` integer,
+          \`tool_call_id\` text,
+          \`tool_name\` text,
+          \`tool_side_effect\` text,
+          \`tool_state\` text,
+          \`provider_recovery\` text,
+          \`started_at\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL,
+          CONSTRAINT \`fk_session_execution_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`session_input\` (
           \`id\` text PRIMARY KEY,
           \`session_id\` text NOT NULL,
@@ -478,6 +501,9 @@ export default {
       )
       yield* tx.run(
         `CREATE INDEX \`session_compaction_session_prefix_idx\` ON \`session_compaction\` (\`session_id\`,\`prefix_seq\`);`,
+      )
+      yield* tx.run(
+        `CREATE INDEX \`session_execution_state_heartbeat_idx\` ON \`session_execution\` (\`state\`,\`heartbeat_at\`);`,
       )
       yield* tx.run(
         `CREATE INDEX \`session_input_session_pending_delivery_seq_idx\` ON \`session_input\` (\`session_id\`,\`promoted_seq\`,\`delivery\`,\`admitted_seq\`);`,

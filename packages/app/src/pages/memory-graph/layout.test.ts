@@ -10,7 +10,10 @@ describe("layoutGraph", () => {
 
   test("deterministic: same input → identical positions (the stable-layout crux)", () => {
     const ids = ["a", "b", "c", "d", "e"]
-    const edges = [{ from: "a", to: "b" }, { from: "b", to: "c" }]
+    const edges = [
+      { from: "a", to: "b" },
+      { from: "b", to: "c" },
+    ]
     const one = layoutGraph(ids, edges)
     const two = layoutGraph(ids, edges)
     expect(two).toEqual(one)
@@ -52,7 +55,13 @@ describe("layoutGraph", () => {
   })
 
   test("tolerates dangling edges (endpoint not in the node set)", () => {
-    const pos = layoutGraph(["a", "b"], [{ from: "a", to: "ghost" }, { from: "a", to: "b" }])
+    const pos = layoutGraph(
+      ["a", "b"],
+      [
+        { from: "a", to: "ghost" },
+        { from: "a", to: "b" },
+      ],
+    )
     expect(pos.a).toBeDefined()
     expect(pos.b).toBeDefined()
     expect(pos.ghost).toBeUndefined()

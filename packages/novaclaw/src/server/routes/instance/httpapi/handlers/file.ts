@@ -13,6 +13,7 @@ import ignore from "ignore"
 import path from "path"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
+import { InvalidRequestError } from "../errors"
 
 export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handlers) =>
   Effect.gen(function* () {
@@ -146,15 +147,38 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
       return { ok: true as const }
     })
 
-    const mkdir = Effect.fn("FileHttpApi.mkdir")(function* (ctx: { payload: { path: string } }) {
+    const mutationError = (action: string, error: unknown) =>
+      new InvalidRequestError({
+        message: `Could not ${action}: ${error instanceof Error ? error.message : String(error)}`,
+      })
+
+    const mkdir = Effect.fn("FileHttpApi.mkdir")(function* (ctx: { payload: { path: string; exclusive?: boolean } }) {
       const dir = yield* resolveContained(ctx.payload.path)
-      yield* Effect.tryPromise(() => fs.mkdir(dir, { recursive: true })).pipe(Effect.orDie)
+      yield* Effect.tryPromise(() => fs.mkdir(dir, { recursive: !ctx.payload.exclusive })).pipe(
+        Effect.mapError((error) => mutationError("create that folder", error)),
+      )
       return { ok: true as const }
+    })
+
+    const rename = Effect.fn("FileHttpApi.rename")(function* (ctx: { payload: { path: string; name: string } }) {
+      const source = yield* resolveContained(ctx.payload.path)
+      const name = ctx.payload.name.trim()
+      if (!name || name === "." || name === ".." || /[\\/\0]/.test(name))
+        return yield* new InvalidRequestError({ message: "The new name must be one file or folder name" })
+      const target = yield* resolveContained(path.join(path.dirname(ctx.payload.path), name))
+      const occupied = yield* FSUtil.Service.use((fs) => fs.existsSafe(target))
+      if (occupied) return yield* new InvalidRequestError({ message: "A file or folder with that name already exists" })
+      yield* Effect.tryPromise(() => fs.rename(source, target)).pipe(
+        Effect.mapError((error) => mutationError("rename that item", error)),
+      )
+      return { path: target }
     })
 
     const trash = Effect.fn("FileHttpApi.trash")(function* (ctx: { payload: { path: string } }) {
       const target = yield* resolveContained(ctx.payload.path)
-      return yield* Effect.tryPromise(() => Trash.trashPath(target)).pipe(Effect.orDie)
+      return yield* Effect.tryPromise(() => Trash.trashPath(target)).pipe(
+        Effect.mapError((error) => mutationError("move that item to Trash", error)),
+      )
     })
 
     // The trash store is GLOBAL (one store, entries from any root) — `directory` is only for routing.
@@ -163,7 +187,9 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
     })
 
     const trashRestore = Effect.fn("FileHttpApi.trashRestore")(function* (ctx: { payload: { id: string } }) {
-      const restoredPath = yield* Effect.tryPromise(() => Trash.restore(ctx.payload.id)).pipe(Effect.orDie)
+      const restoredPath = yield* Effect.tryPromise(() => Trash.restore(ctx.payload.id)).pipe(
+        Effect.mapError((error) => mutationError("restore that item", error)),
+      )
       return { restoredPath }
     })
 
@@ -175,6 +201,7 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
       .handle("status", status)
       .handle("write", write)
       .handle("mkdir", mkdir)
+      .handle("rename", rename)
       .handle("trash", trash)
       .handle("trashList", trashList)
       .handle("trashRestore", trashRestore)

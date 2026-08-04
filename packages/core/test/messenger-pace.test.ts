@@ -63,7 +63,9 @@ describe("MessengerPace per-account typing speed (Settings → Messengers)", () 
       expect(MessengerPace.paceFromSettings({ [MessengerPace.PACE_SETTING_KEY]: "9999" })).toEqual({
         charsPerSecond: MessengerPace.PACE_CPS_MAX,
       })
-      expect(MessengerPace.paceFromSettings({ [MessengerPace.PACE_SETTING_KEY]: "1" })).toEqual({ charsPerSecond: MessengerPace.PACE_CPS_MIN })
+      expect(MessengerPace.paceFromSettings({ [MessengerPace.PACE_SETTING_KEY]: "1" })).toEqual({
+        charsPerSecond: MessengerPace.PACE_CPS_MIN,
+      })
       expect(MessengerPace.paceFromSettings({})).toBeUndefined()
       expect(MessengerPace.paceFromSettings({ [MessengerPace.PACE_SETTING_KEY]: "abc" })).toBeUndefined()
     }),

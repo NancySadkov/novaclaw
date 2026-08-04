@@ -272,8 +272,7 @@
     color: var(--v2-icon-icon-base);
   }
 
-  [data-component="markdown-code"]:hover
-    :is([data-slot="markdown-copy-button"], [data-slot="markdown-embed-toggle"]),
+  [data-component="markdown-code"]:hover :is([data-slot="markdown-copy-button"], [data-slot="markdown-embed-toggle"]),
   [data-component="markdown-html-embed"]:hover [data-slot="markdown-embed-toggle"] {
     opacity: 1;
   }

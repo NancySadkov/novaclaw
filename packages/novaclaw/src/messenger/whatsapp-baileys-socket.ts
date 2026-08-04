@@ -14,7 +14,13 @@ import makeWASocket, {
 } from "@whiskeysockets/baileys"
 import QRCode from "qrcode"
 import type { ChatSnapshot } from "@novaclaw/core/messenger/driver"
-import type { WAClient, WAClientConfig, WAClientFactory, WALink, WAMessage } from "@novaclaw/core/messenger/driver/whatsapp-baileys"
+import type {
+  WAClient,
+  WAClientConfig,
+  WAClientFactory,
+  WALink,
+  WAMessage,
+} from "@novaclaw/core/messenger/driver/whatsapp-baileys"
 import { WAClientError, WhatsAppBaileysDriver } from "@novaclaw/core/messenger/driver/whatsapp-baileys"
 
 // The Baileys socket factory — the ONLY file that imports @whiskeysockets/baileys (the ToS-gray,
@@ -192,7 +198,12 @@ export const factory: WAClientFactory = async (config: WAClientConfig): Promise<
     const self = selfId()
     const title = jid === self ? "Message Yourself" : (message.pushName ?? jid)
     if (!seenChats.has(jid))
-      seenChats.set(jid, { chatID: jid, kind: isGroup ? "group" : "dm", title, ...(jid === self ? { self: true } : {}) })
+      seenChats.set(jid, {
+        chatID: jid,
+        kind: isGroup ? "group" : "dm",
+        title,
+        ...(jid === self ? { self: true } : {}),
+      })
     return {
       chatID: jid,
       chatKind: isGroup ? "group" : "dm",
@@ -244,7 +255,8 @@ export const factory: WAClientFactory = async (config: WAClientConfig): Promise<
       }
       if (update.connection === "close") {
         if (intentionalClose) return
-        const statusCode = (update.lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output?.statusCode
+        const statusCode = (update.lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output
+          ?.statusCode
         if (statusCode === DisconnectReason.loggedOut) {
           const error = new WAClientError({ kind: "logged-out" })
           onOpenFail(error)
@@ -298,7 +310,8 @@ export const factory: WAClientFactory = async (config: WAClientConfig): Promise<
     me: async () => {
       await whenOpen
       const user = sock.user
-      if (user === undefined) throw new WAClientError({ kind: "error", message: "WhatsApp did not report the linked account." })
+      if (user === undefined)
+        throw new WAClientError({ kind: "error", message: "WhatsApp did not report the linked account." })
       return { id: jidNormalizedUser(user.id), name: user.name ?? user.id }
     },
     startLink: async (phone) => {
@@ -327,7 +340,8 @@ export const factory: WAClientFactory = async (config: WAClientConfig): Promise<
     chats: async (limit) => {
       const self = selfId()
       const list = [...seenChats.values()]
-      if (self !== undefined && !seenChats.has(self)) list.unshift({ chatID: self, kind: "dm", title: "Message Yourself", self: true })
+      if (self !== undefined && !seenChats.has(self))
+        list.unshift({ chatID: self, kind: "dm", title: "Message Yourself", self: true })
       return list.slice(0, Math.max(1, limit))
     },
     history: async () => [], // v7 dropped the in-memory store; on-demand history is a later cut

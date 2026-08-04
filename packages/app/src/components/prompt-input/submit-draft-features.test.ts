@@ -72,9 +72,10 @@ describe("a draft's Tuning switches reach session.create", () => {
     // and `DRAFT_FEATURE_NAMES` is the literal union, and `toEqual` will not take the two at
     // different widths. Widening the known side is honest; asserting the kernel's list into the
     // union would claim the very fact this test exists to check.
-    expect([...DRAFT_FEATURE_NAMES].map(String).sort(), "submit.ts's switch list has drifted from SessionFeature.Name").toEqual(
-      kernelFeatures().sort(),
-    )
+    expect(
+      [...DRAFT_FEATURE_NAMES].map(String).sort(),
+      "submit.ts's switch list has drifted from SessionFeature.Name",
+    ).toEqual(kernelFeatures().sort())
   })
 
   test("every switch the user set travels", () => {
@@ -96,9 +97,7 @@ describe("a draft's Tuning switches reach session.create", () => {
   test("a switch the user never touched is ABSENT, not false", () => {
     for (const features of [undefined, {}, { quality: true }]) {
       const body = newSessionCreateBody({ ...base, features }) as Record<string, unknown>
-      const invented = DRAFT_FEATURE_NAMES.filter(
-        (name) => !(name in (features ?? {})) && Object.hasOwn(body, name),
-      )
+      const invented = DRAFT_FEATURE_NAMES.filter((name) => !(name in (features ?? {})) && Object.hasOwn(body, name))
       expect(
         invented.join(", "),
         `with features=${JSON.stringify(features)} the body INVENTED a stance — that defeats inheritance and stamps a default into every new chat`,
@@ -119,8 +118,9 @@ describe("a draft's Tuning switches reach session.create", () => {
   // mapping cannot quietly take the Mode or Strict choice with it.
   test("the non-feature draft choices still map as before", () => {
     expect(newSessionCreateBody({ ...base, features: undefined })).toEqual({})
-    expect(newSessionCreateBody({ permissionMode: "plan", strict: undefined, features: undefined, mode: undefined }))
-      .toEqual({ permissionMode: "plan" })
+    expect(
+      newSessionCreateBody({ permissionMode: "plan", strict: undefined, features: undefined, mode: undefined }),
+    ).toEqual({ permissionMode: "plan" })
     expect(
       newSessionCreateBody({
         permissionMode: "ask",

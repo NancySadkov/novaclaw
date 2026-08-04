@@ -33,5 +33,3 @@ export function normalizeProviderList(input: ProviderListResponse): NormalizedPr
     connected: input.connected,
   }
 }
-
-

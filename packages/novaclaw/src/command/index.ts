@@ -5,8 +5,7 @@ import { Schema } from "effect"
 // prompts) and dispatch rides the V2 session command op. What remains here is the V1 WIRE
 // shape (`Info`, the legacy /command response) and the built-in command name constants.
 
-export const Event = {
-}
+export const Event = {}
 
 export const Info = Schema.Struct({
   name: Schema.String,

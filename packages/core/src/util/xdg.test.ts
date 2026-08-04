@@ -46,7 +46,9 @@ describe("Xdg.resolveHome", () => {
 
 describe("Xdg.baseDir", () => {
   test("the env var wins when set", () => {
-    expect(Xdg.baseDir({ XDG_DATA_HOME: "D:\\xdg" }, "C:\\Users\\n", "XDG_DATA_HOME", ".local", "share")).toBe("D:\\xdg")
+    expect(Xdg.baseDir({ XDG_DATA_HOME: "D:\\xdg" }, "C:\\Users\\n", "XDG_DATA_HOME", ".local", "share")).toBe(
+      "D:\\xdg",
+    )
   })
 
   test("otherwise the XDG default under $HOME — the layout existing installs already use", () => {

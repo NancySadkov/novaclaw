@@ -32,12 +32,7 @@ describe("revert planSteps", () => {
   })
 
   test("non-changing steps between changing ones do not shift the count", () => {
-    const rows = [
-      step("m1", "t1", ["a.txt"]),
-      step("m2", "t2", []),
-      step("m3", "t3", ["b.txt"]),
-      step("m4", "t4", []),
-    ]
+    const rows = [step("m1", "t1", ["a.txt"]), step("m2", "t2", []), step("m3", "t3", ["b.txt"]), step("m4", "t4", [])]
     const { files } = planSteps(rows, 1)
     expect([...files.entries()]).toEqual([["b.txt", "t3"]])
   })

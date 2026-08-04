@@ -27,7 +27,11 @@ export interface TestEntry {
 }
 
 export interface Registry {
-  readonly register: (input: { readonly command: string; readonly expect?: string; readonly depsDigest: string }) => void
+  readonly register: (input: {
+    readonly command: string
+    readonly expect?: string
+    readonly depsDigest: string
+  }) => void
   /** the registered tests whose stored digest ≠ the current one (`digestOf(command)`) — i.e. NOT executed
    *  against the current source state, so they must be re-run before we trust the foundation. */
   readonly staleTests: (digestOf: (command: string) => string) => ReadonlyArray<TestEntry>
@@ -59,7 +63,14 @@ export function registry(): Registry {
     // streak, AND clears `suspect` — the test just PASSED as a leaf's own check, so the suspicion is
     // withdrawn (a replaced/fixed test re-earns trust the same way it earned registration). `unsanitized`
     // clears too only if the re-registering pass was clean (the caller re-marks when it wasn't).
-    tests.set(key, { command: key, expect: expect ?? prev?.expect, depsDigest, failures: 0, suspect: false, unsanitized: false })
+    tests.set(key, {
+      command: key,
+      expect: expect ?? prev?.expect,
+      depsDigest,
+      failures: 0,
+      suspect: false,
+      unsanitized: false,
+    })
   }
 
   const staleTests: Registry["staleTests"] = (digestOf) => {

@@ -11,7 +11,7 @@ import { InstanceState } from "@/effect/instance-state"
 
 import { Effect, Layer } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
-import { HttpClient, HttpClientError, HttpClientRequest } from "effect/unstable/http"
+import { HttpBody, HttpClient, HttpClientError, HttpClientRequest } from "effect/unstable/http"
 import { isEgressBlocked } from "@novaclaw/llm"
 import { InstanceHttpApi } from "../api"
 import { ConfigProviderPreset } from "@novaclaw/core/config/provider-preset"
@@ -19,6 +19,7 @@ import { ProviderV2 } from "@novaclaw/core/provider"
 
 /** How long one probe may take end to end (connect + headers + body). */
 const PROBE_TIMEOUT = "5 seconds"
+const COMPLETION_TIMEOUT = "45 seconds"
 
 /**
  * The airgap verdict's headline, kept SHORT and FIRST so it survives any downstream truncation.
@@ -123,6 +124,111 @@ export const probeEndpoint = (
       })
     }),
   )
+
+type CompletionProbe =
+  | { readonly kind: "ok"; readonly latencyMs: number }
+  | {
+      readonly kind: "failed"
+      readonly latencyMs: number
+      readonly status: "auth" | "unreachable" | "error"
+      readonly detail: string
+    }
+
+/** A tiny real generation through the endpoint's native wire shape. It is bounded independently
+ * from discovery because a healthy slow model can legitimately need much longer than GET /models. */
+export const probeCompletion = (
+  client: HttpClient.HttpClient,
+  input: {
+    baseURL: string
+    modelID: string
+    authStyle: ConfigProviderPreset.AuthStyle
+    headers: Record<string, string>
+  },
+): Effect.Effect<CompletionProbe> => {
+  const anthropic = input.authStyle === "anthropic"
+  const url = `${input.baseURL.replace(/\/+$/, "")}/${anthropic ? "messages" : "chat/completions"}`
+  const body = anthropic
+    ? { model: input.modelID, messages: [{ role: "user", content: "Reply OK" }], max_tokens: 1, stream: false }
+    : {
+        model: input.modelID,
+        messages: [{ role: "user", content: "Reply OK" }],
+        max_tokens: 1,
+        temperature: 0,
+        stream: false,
+      }
+  const started = Date.now()
+  return client
+    .execute(
+      HttpClientRequest.post(url, {
+        headers: new Headers({ ...input.headers, "content-type": "application/json" }),
+        body: HttpBody.jsonUnsafe(body),
+      }),
+    )
+    .pipe(
+      Effect.flatMap((response) => {
+        const latencyMs = Date.now() - started
+        if (response.status === 401 || response.status === 403)
+          return Effect.succeed<CompletionProbe>({
+            kind: "failed",
+            status: "auth",
+            latencyMs,
+            detail: `Generation rejected the credentials (HTTP ${response.status}).`,
+          })
+        if (response.status < 200 || response.status >= 300)
+          return response.text.pipe(
+            Effect.map(
+              (text): CompletionProbe => ({
+                kind: "failed",
+                status: "error",
+                latencyMs,
+                detail: `Generation returned HTTP ${response.status}${text ? `: ${text.slice(0, 240)}` : ""}`,
+              }),
+            ),
+          )
+        return response.json.pipe(
+          Effect.map((value): CompletionProbe => {
+            const valid = anthropic
+              ? typeof value === "object" && value !== null && Array.isArray((value as { content?: unknown }).content)
+              : typeof value === "object" && value !== null && Array.isArray((value as { choices?: unknown }).choices)
+            return valid
+              ? { kind: "ok", latencyMs }
+              : {
+                  kind: "failed",
+                  status: "error",
+                  latencyMs,
+                  detail: "Generation answered, but its JSON did not match this endpoint's response format.",
+                }
+          }),
+          Effect.catch(() =>
+            Effect.succeed<CompletionProbe>({
+              kind: "failed",
+              status: "error",
+              latencyMs,
+              detail: "Generation answered with invalid JSON.",
+            }),
+          ),
+        )
+      }),
+      Effect.timeoutOrElse({
+        duration: COMPLETION_TIMEOUT,
+        orElse: () =>
+          Effect.succeed<CompletionProbe>({
+            kind: "failed",
+            status: "unreachable",
+            latencyMs: Date.now() - started,
+            detail: `The model accepted discovery but did not generate within ${COMPLETION_TIMEOUT}. It may be loading or overloaded; try again or increase its connection timeout.`,
+          }),
+      }),
+      Effect.catch((error) =>
+        Effect.succeed<CompletionProbe>({
+          kind: "failed",
+          status: "unreachable",
+          latencyMs: Date.now() - started,
+          detail: `Discovery worked, but generation could not connect: ${transportDetail(error).slice(0, 240)}`,
+        }),
+      ),
+    )
+}
 
 /** Context-window spellings emitted by the OpenAI-compatible servers we support. */
 export function modelContextWindow(model: Record<string, unknown>): number | undefined {
@@ -280,14 +386,45 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       const models = listed.map((item) => item.id)
       const limits = discoveredModelLimits(listed)
       const found = ctx.payload.modelID ? data.find((item) => item.id === ctx.payload.modelID) : undefined
-      if (ctx.payload.modelID && !found)
-        return {
-          status: "model-missing" as const,
-          latencyMs,
-          models,
-          detail: `Model "${ctx.payload.modelID}" is not in the server's /models list.`,
-        }
+      const configuredIDUnlisted = ctx.payload.modelID !== undefined && !found
       const window = found ? modelContextWindow(found) : sharedContextWindow(data)
+      // A listing proves routing/auth only. Exercise the actual generation route as well, using the
+      // configured upstream model id and bounded per-model retry count. This deliberately bypasses
+      // the agent harness: Settings must remain able to diagnose a model that cannot run the harness.
+      let completionLatencyMs: number | undefined
+      let completionAttempts: number | undefined
+      if (ctx.payload.modelID) {
+        const savedModel = entry?.models?.[ctx.payload.modelID] as
+          | { api?: { id?: string }; retry?: { attempts?: number } }
+          | undefined
+        const wireModelID = savedModel?.api?.id ?? ctx.payload.modelID
+        const attempts = Math.max(1, Math.min(5, Math.trunc(savedModel?.retry?.attempts ?? 1)))
+        let completion: CompletionProbe | undefined
+        for (let attempt = 1; attempt <= attempts; attempt++) {
+          completionAttempts = attempt
+          completion = yield* probeCompletion(http, { baseURL, modelID: wireModelID, authStyle, headers: authHeaders })
+          completionLatencyMs = (completionLatencyMs ?? 0) + completion.latencyMs
+          if (completion.kind === "ok" || completion.status === "auth" || completion.status === "error") break
+        }
+        if (completion?.kind === "failed")
+          return {
+            status: completion.status,
+            latencyMs: Date.now() - started,
+            discoveryLatencyMs: latencyMs,
+            completionLatencyMs,
+            completionAttempts,
+            completed: false,
+            models,
+            ...(Object.keys(limits).length === 0 ? {} : { limits }),
+            ...(window === undefined ? {} : { window }),
+            detail: `Model discovery is healthy. ${completion.detail}`,
+            ...(configuredIDUnlisted
+              ? {
+                  detail: `The configured id "${ctx.payload.modelID}" is not advertised by /models. Generation also failed: ${completion.detail}`,
+                }
+              : {}),
+          }
+      }
       // T3 — remember the honored window so model resolution sizes the 1M context pack from
       // live truth, but only when this probed the SAVED provider endpoint: a payload baseURL
       // is the New-Model discovery flow probing an UNSAVED endpoint, and caching that against
@@ -296,7 +433,16 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
         ProbeWindow.remember(ctx.params.providerID, ctx.payload.modelID, window)
       return {
         status: "ok" as const,
-        latencyMs,
+        latencyMs: Date.now() - started,
+        discoveryLatencyMs: latencyMs,
+        ...(completionLatencyMs === undefined ? {} : { completionLatencyMs }),
+        ...(completionAttempts === undefined ? {} : { completionAttempts }),
+        ...(ctx.payload.modelID === undefined ? {} : { completed: true }),
+        ...(configuredIDUnlisted
+          ? {
+              detail: `Generation succeeded with configured id "${ctx.payload.modelID}", although /models advertises ${models.length ? models.map((id) => `"${id}"`).join(", ") : "no model ids"}. The server is accepting an alias.`,
+            }
+          : {}),
         models,
         ...(Object.keys(limits).length === 0 ? {} : { limits }),
         ...(window === undefined ? {} : { window }),

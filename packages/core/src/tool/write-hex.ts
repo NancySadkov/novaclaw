@@ -51,71 +51,75 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.withDeferred(Tool.make({
-          description:
-            "Patch bytes in a BINARY file at a byte offset (in place — the rest of the file is untouched; writing at the file size appends; a missing file is created only at offset 0). `data` is hex text — canonical input example:\n" +
-            "  4d 5a 90 00 03 00 00 00 ; first 8 bytes\n" +
-            "  ff fe\n" +
-            'Anything after ";" is a comment, blank lines and indentation are ignored, and a byte may be written as 4d, 0x4d, 4dh or 4d-h — so read-hex output can be edited and written back verbatim. Use this (not `write`) for any non-text file.',
-          input: Input,
-          output: Output,
-          toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
-          execute: (input, context) =>
-            Effect.gen(function* () {
-              const source = {
-                type: "tool" as const,
-                messageID: context.assistantMessageID,
-                callID: context.toolCallID,
-              }
-              const offset = Math.max(0, Math.floor(input.offset ?? 0))
-              const bytes = yield* Effect.try({
-                try: () => parseHexInput(input.data),
-                catch: (error) => new ToolFailure({ message: error instanceof Error ? error.message : String(error) }),
-              })
-              if (bytes.length === 0)
-                return yield* new ToolFailure({ message: "No bytes to write — `data` parsed empty" })
-              const target = yield* mutation.resolve({ path: input.filename })
-              const external = target.externalDirectory
-              if (external)
+        [name]: Tool.withDeferred(
+          Tool.make({
+            sideEffect: "idempotent-write",
+            description:
+              "Patch bytes in a BINARY file at a byte offset (in place — the rest of the file is untouched; writing at the file size appends; a missing file is created only at offset 0). `data` is hex text — canonical input example:\n" +
+              "  4d 5a 90 00 03 00 00 00 ; first 8 bytes\n" +
+              "  ff fe\n" +
+              'Anything after ";" is a comment, blank lines and indentation are ignored, and a byte may be written as 4d, 0x4d, 4dh or 4d-h — so read-hex output can be edited and written back verbatim. Use this (not `write`) for any non-text file.',
+            input: Input,
+            output: Output,
+            toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
+            execute: (input, context) =>
+              Effect.gen(function* () {
+                const source = {
+                  type: "tool" as const,
+                  messageID: context.assistantMessageID,
+                  callID: context.toolCallID,
+                }
+                const offset = Math.max(0, Math.floor(input.offset ?? 0))
+                const bytes = yield* Effect.try({
+                  try: () => parseHexInput(input.data),
+                  catch: (error) =>
+                    new ToolFailure({ message: error instanceof Error ? error.message : String(error) }),
+                })
+                if (bytes.length === 0)
+                  return yield* new ToolFailure({ message: "No bytes to write — `data` parsed empty" })
+                const target = yield* mutation.resolve({ path: input.filename })
+                const external = target.externalDirectory
+                if (external)
+                  yield* permission.assert({
+                    ...LocationMutation.externalDirectoryPermission(external, "write"),
+                    sessionID: context.sessionID,
+                    agent: context.agent,
+                    source,
+                  })
+                // A byte patch is a surgical in-place change -> `edit` (allowed in surgical mode);
+                // creating a brand-new file asserts `create` (the 1I split).
+                const exists = yield* Effect.tryPromise(() =>
+                  import("node:fs/promises").then((fs) =>
+                    fs.stat(target.canonical).then(
+                      () => true,
+                      () => false,
+                    ),
+                  ),
+                )
                 yield* permission.assert({
-                  ...LocationMutation.externalDirectoryPermission(external, "write"),
+                  action: exists ? "edit" : "create",
+                  resources: [target.resource],
+                  targets: [{ resource: target.resource, canonical: target.canonical }],
+                  attachmentPaths: [...(context.attachmentPaths ?? [])],
+                  save: ["*"],
                   sessionID: context.sessionID,
                   agent: context.agent,
                   source,
                 })
-              // A byte patch is a surgical in-place change -> `edit` (allowed in surgical mode);
-              // creating a brand-new file asserts `create` (the 1I split).
-              const exists = yield* Effect.tryPromise(() =>
-                import("node:fs/promises").then((fs) =>
-                  fs.stat(target.canonical).then(
-                    () => true,
-                    () => false,
-                  ),
-                ),
-              )
-              yield* permission.assert({
-                action: exists ? "edit" : "create",
-                resources: [target.resource],
-                targets: [{ resource: target.resource, canonical: target.canonical }],
-                attachmentPaths: [...(context.attachmentPaths ?? [])],
-                save: ["*"],
-                sessionID: context.sessionID,
-                agent: context.agent,
-                source,
-              })
-              const result = yield* Effect.tryPromise(() => writePatch(target.canonical, offset, bytes))
-              return { bytesWritten: result.bytesWritten, offset, size: result.size, created: result.created }
-            }).pipe(
-              Effect.mapError((error) => {
-                if (error instanceof ToolFailure) return error
-                const denial = PermissionV2.denialMessage(error)
-                if (denial) return new ToolFailure({ message: denial })
-                return new ToolFailure({
-                  message: `Unable to write-hex ${input.filename}: ${error instanceof Error ? error.message : String(error)}`,
-                })
-              }),
-            ),
-        })),
+                const result = yield* Effect.tryPromise(() => writePatch(target.canonical, offset, bytes))
+                return { bytesWritten: result.bytesWritten, offset, size: result.size, created: result.created }
+              }).pipe(
+                Effect.mapError((error) => {
+                  if (error instanceof ToolFailure) return error
+                  const denial = PermissionV2.denialMessage(error)
+                  if (denial) return new ToolFailure({ message: denial })
+                  return new ToolFailure({
+                    message: `Unable to write-hex ${input.filename}: ${error instanceof Error ? error.message : String(error)}`,
+                  })
+                }),
+              ),
+          }),
+        ),
       })
       .pipe(Effect.orDie)
   }),

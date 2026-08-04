@@ -131,7 +131,11 @@ export function coerceDraftShape(value: unknown, fallbackGoal?: string, inSubste
   // R3 (3/32): a STRING substep ("Phase 1: …") is a phase goal — wrap it as an atomic child
   // (lazyPlan strips nesting anyway, and a phase re-plans itself when reached).
   if (Array.isArray(out.substeps)) {
-    out.substeps = out.substeps.map((s) => (typeof s === "string" && s.trim() !== "" ? { goal: s.trim(), size: "atomic" } : coerceDraftShape(s, fallbackGoal, true)))
+    out.substeps = out.substeps.map((s) =>
+      typeof s === "string" && s.trim() !== ""
+        ? { goal: s.trim(), size: "atomic" }
+        : coerceDraftShape(s, fallbackGoal, true),
+    )
   }
   // R1 (17/32): the TOOL-CALL shape — the model emitted its native {name, arguments} (or tool/args
   // without goal). The caller KNOWS which goal this reply was filling — adopt it instead of
@@ -144,7 +148,12 @@ export function coerceDraftShape(value: unknown, fallbackGoal?: string, inSubste
       delete out.arguments
     }
   }
-  if ((out.goal === undefined || out.goal === null || out.goal === "") && fallbackGoal !== undefined && !inSubstep && (out.tool !== undefined || out.substeps !== undefined)) {
+  if (
+    (out.goal === undefined || out.goal === null || out.goal === "") &&
+    fallbackGoal !== undefined &&
+    !inSubstep &&
+    (out.tool !== undefined || out.substeps !== undefined)
+  ) {
     out.goal = fallbackGoal
   }
   // R2 (11/32): a missing `size` is INFERABLE — substeps present = a decomposition; a tool = an atom;
@@ -160,8 +169,7 @@ export function coerceDraftShape(value: unknown, fallbackGoal?: string, inSubste
 
 const join = (base: string, seg: string): string => (base === "" ? seg : `${base}.${seg}`)
 
-const hasTool = (draft: StepDraft): boolean =>
-  typeof draft.tool === "string" && draft.tool.trim() !== ""
+const hasTool = (draft: StepDraft): boolean => typeof draft.tool === "string" && draft.tool.trim() !== ""
 
 /**
  * Pure, total, recursive. Codec-valid drafts can still be structurally wrong (an atomic step with

@@ -2,7 +2,12 @@ import { describe, expect, test } from "bun:test"
 import type { SessionNotFoundError } from "@novaclaw/sdk/v2/client"
 import type { TranslationParams } from "@/context/language"
 import type { ConfigInvalidError, ProviderModelNotFoundError } from "./server-errors"
-import { formatServerError, isSessionNotFoundError, parseReadableConfigInvalidError } from "./server-errors"
+import {
+  formatServerError,
+  isMissingDirectoryError,
+  isSessionNotFoundError,
+  parseReadableConfigInvalidError,
+} from "./server-errors"
 
 function fill(text: string, vars?: TranslationParams) {
   if (!vars) return text
@@ -225,5 +230,29 @@ describe("isSessionNotFoundError", () => {
       },
     })
     expect(isSessionNotFoundError(error, "ses_x")).toBe(false)
+  })
+})
+
+describe("isMissingDirectoryError", () => {
+  test("matches the bare client error returned by a missing routed folder", () => {
+    expect(isMissingDirectoryError(new Error("Directory does not exist: C:/gone"))).toBe(true)
+  })
+
+  test("matches the SDK-wrapped InvalidRequestError shape", () => {
+    const body = {
+      name: "InvalidRequestError",
+      data: { field: "directory", message: "Directory does not exist: /gone" },
+    }
+    expect(isMissingDirectoryError(new Error("Request failed", { cause: { body, status: 400 } }))).toBe(true)
+  })
+
+  test("does not hide unrelated request errors", () => {
+    expect(isMissingDirectoryError(new Error("Failed to fetch"))).toBe(false)
+    expect(
+      isMissingDirectoryError({
+        name: "InvalidRequestError",
+        data: { field: "workspace", message: "Directory does not exist: /gone" },
+      }),
+    ).toBe(false)
   })
 })

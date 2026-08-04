@@ -148,11 +148,7 @@ export async function listTrash(options?: Options): Promise<Entry[]> {
  * entry dir removed. Ordering is load-bearing: an entry may itself be past the TTL and still be
  * sitting there, and a sweep that ran first would delete the very thing the user asked to restore.
  */
-export async function restore(
-  id: string,
-  input?: { overwrite?: boolean },
-  options?: Options,
-): Promise<string> {
+export async function restore(id: string, input?: { overwrite?: boolean }, options?: Options): Promise<string> {
   if (!isValidId(id)) throw new Error(`Invalid trash id: ${id}`)
   const dir = path.join(trashRoot(options), id)
   const raw = await fs.readFile(path.join(dir, "entry.json"), "utf8")

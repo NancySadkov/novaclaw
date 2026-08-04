@@ -304,9 +304,7 @@ export function NewHome() {
       )
       // Threads tree (uix-improvement slice 4): the roots-only list never carries child sessions;
       // hydrate them per directory (best-effort — the roots already rendered).
-      void Promise.all(
-        projectDirectories().map((directory) => focusedSync().project.loadChildSessions(directory)),
-      )
+      void Promise.all(projectDirectories().map((directory) => focusedSync().project.loadChildSessions(directory)))
       return null
     },
   }))
@@ -534,9 +532,7 @@ export function NewHome() {
                     }
                     if (message.type !== "assistant") return []
                     return message.content.flatMap((content) =>
-                      content.type === "text" && content.text
-                        ? preloadMarkdown(content.text, content.id, marked)
-                        : [],
+                      content.type === "text" && content.text ? preloadMarkdown(content.text, content.id, marked) : [],
                     )
                   }),
                 )
@@ -702,9 +698,13 @@ export function NewHome() {
   async function stopSession(session: Session) {
     const ctx = focusedServerCtx()
     if (!ctx) return
-    await ctx.sdk.client.v2.session
-      .interrupt({ sessionID: session.id })
-      .catch(requestFailedToast)
+    await ctx.sdk.client.v2.session.interrupt({ sessionID: session.id }).catch(requestFailedToast)
+  }
+
+  async function renameSession(session: Session, title: string) {
+    const ctx = focusedServerCtx()
+    if (!ctx) return
+    await ctx.sdk.client.v2.session.update({ sessionID: session.id, title }).catch(requestFailedToast)
   }
 
   async function cloneSession(session: Session) {
@@ -729,11 +729,13 @@ export function NewHome() {
     if (!conn) return
     // A Save-As, not a bare folder pick: the picker showed nowhere to type a name, so the export read as
     // broken (owner 2026-07-26). Seeded with a slug of the chat title; the server still guards the name.
-    const suggested = `${(session.title || session.id)
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 48) || session.id}.md`
+    const suggested = `${
+      (session.title || session.id)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 48) || session.id
+    }.md`
     let filename = suggested
     pickDirectory({
       server: conn,
@@ -873,37 +875,37 @@ export function NewHome() {
                 </>
               }
             >
-            <div data-slot="home-sort" class="flex shrink-0 items-center gap-1">
-              <For each={["recent", "active", "tokens"] as const}>
-                {(mode) => (
-                  <button
-                    type="button"
-                    class="rounded-full px-2 py-1 text-[12px] leading-none [font-weight:500] transition-colors"
-                    classList={{
-                      "bg-v2-background-bg-layer-02 text-v2-text-text-base": sortMode() === mode,
-                      "text-v2-text-text-muted hover:bg-v2-background-bg-layer-01": sortMode() !== mode,
-                    }}
-                    aria-pressed={sortMode() === mode}
-                    onClick={() => setSortMode(mode)}
-                  >
-                    {language.t(`home.sessions.sort.${mode}`)}
-                  </button>
-                )}
-              </For>
-            </div>
-            <ButtonV2 size="small" variant="ghost-muted" class="shrink-0" onClick={() => setSelecting(true)}>
-              {language.t("home.sessions.select")}
-            </ButtonV2>
-            <ButtonV2
-              size="small"
-              variant="gold"
-              class="shrink-0"
-              disabled={!newAgent.ready() || newAgent.spawning()}
-              onClick={() => void newAgent.spawn()}
-            >
-              <Icon name="plus-small" size="small" />
-              {language.t("home.sessions.new")}
-            </ButtonV2>
+              <div data-slot="home-sort" class="flex shrink-0 items-center gap-1">
+                <For each={["recent", "active", "tokens"] as const}>
+                  {(mode) => (
+                    <button
+                      type="button"
+                      class="rounded-full px-2 py-1 text-[12px] leading-none [font-weight:500] transition-colors"
+                      classList={{
+                        "bg-v2-background-bg-layer-02 text-v2-text-text-base": sortMode() === mode,
+                        "text-v2-text-text-muted hover:bg-v2-background-bg-layer-01": sortMode() !== mode,
+                      }}
+                      aria-pressed={sortMode() === mode}
+                      onClick={() => setSortMode(mode)}
+                    >
+                      {language.t(`home.sessions.sort.${mode}`)}
+                    </button>
+                  )}
+                </For>
+              </div>
+              <ButtonV2 size="small" variant="ghost-muted" class="shrink-0" onClick={() => setSelecting(true)}>
+                {language.t("home.sessions.select")}
+              </ButtonV2>
+              <ButtonV2
+                size="small"
+                variant="gold"
+                class="shrink-0"
+                disabled={!newAgent.ready() || newAgent.spawning()}
+                onClick={() => void newAgent.spawn()}
+              >
+                <Icon name="plus-small" size="small" />
+                {language.t("home.sessions.new")}
+              </ButtonV2>
             </Show>
           </div>
           <Show when={(tagUniverse()?.length ?? 0) > 0}>
@@ -977,6 +979,7 @@ export function NewHome() {
                               stopSession={stopSession}
                               cloneSession={cloneSession}
                               exportSession={exportSession}
+                              renameSession={renameSession}
                               deleteSession={deleteSession}
                               selecting={selecting()}
                               selected={selectedIDs().has(record.session.id)}
@@ -989,76 +992,78 @@ export function NewHome() {
                       </div>
                     }
                   >
-                  <Show when={(attentionRecords()?.length ?? 0) > 0}>
-                    <HomeSessionGroupHeader
-                      title={language.t("home.sessions.group.attention")}
-                      titleOpacity={1}
-                      // A callback no-op, NOT `undefined`: Solid compiles a plain ref prop into an
-                      // assignment, and forwarding undefined becomes `window.undefined = el` (crash).
-                      ref={() => {}}
-                      elevated
-                    />
-                    <div data-slot="home-attention-cluster" class="flex min-w-0 flex-col gap-px pt-4 mb-6">
-                      <For each={attentionRecords()}>
-                        {(record) => (
-                          <HomeSessionRow
-                            record={record}
-                            showProjectName={!selectedProject()}
-                            server={selection().server}
-                            activeServer={selection().server === server.key}
-                            openSession={openSession}
-                            archiveSession={archiveSession}
-                            stopSession={stopSession}
-                            cloneSession={cloneSession}
+                    <Show when={(attentionRecords()?.length ?? 0) > 0}>
+                      <HomeSessionGroupHeader
+                        title={language.t("home.sessions.group.attention")}
+                        titleOpacity={1}
+                        // A callback no-op, NOT `undefined`: Solid compiles a plain ref prop into an
+                        // assignment, and forwarding undefined becomes `window.undefined = el` (crash).
+                        ref={() => {}}
+                        elevated
+                      />
+                      <div data-slot="home-attention-cluster" class="flex min-w-0 flex-col gap-px pt-4 mb-6">
+                        <For each={attentionRecords()}>
+                          {(record) => (
+                            <HomeSessionRow
+                              record={record}
+                              showProjectName={!selectedProject()}
+                              server={selection().server}
+                              activeServer={selection().server === server.key}
+                              openSession={openSession}
+                              archiveSession={archiveSession}
+                              stopSession={stopSession}
+                              cloneSession={cloneSession}
                               exportSession={exportSession}
-                            deleteSession={deleteSession}
-                            selecting={selecting()}
-                            selected={selectedIDs().has(record.session.id)}
-                            onToggleSelect={(session) => toggleSelected(session.id)}
-                            onSelectStart={beginDragSelect}
-                            onSelectOver={dragSelectOver}
+                              renameSession={renameSession}
+                              deleteSession={deleteSession}
+                              selecting={selecting()}
+                              selected={selectedIDs().has(record.session.id)}
+                              onToggleSelect={(session) => toggleSelected(session.id)}
+                              onSelectStart={beginDragSelect}
+                              onSelectOver={dragSelectOver}
+                            />
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+                    <For each={groups()}>
+                      {(group, index) => (
+                        <>
+                          <HomeSessionGroupHeader
+                            title={group.title}
+                            titleOpacity={sessionHeaderOpacity.titleOpacity(group.id)}
+                            ref={(el) => sessionHeaderOpacity.setHeaderRef(group.id, el)}
+                            elevated={index() === 0}
                           />
-                        )}
-                      </For>
-                    </div>
-                  </Show>
-                  <For each={groups()}>
-                    {(group, index) => (
-                      <>
-                        <HomeSessionGroupHeader
-                          title={group.title}
-                          titleOpacity={sessionHeaderOpacity.titleOpacity(group.id)}
-                          ref={(el) => sessionHeaderOpacity.setHeaderRef(group.id, el)}
-                          elevated={index() === 0}
-                        />
-                        <div
-                          class={`flex min-w-0 flex-col gap-px pt-4 ${index() === groups().length - 1 ? "" : "mb-6"}`}
-                        >
-                          <For each={group.sessions}>
-                            {(record) => (
-                              <HomeSessionRow
-                                record={record}
-                                showProjectName={!selectedProject()}
-                                server={selection().server}
-                                activeServer={selection().server === server.key}
-                                openSession={openSession}
-                                archiveSession={archiveSession}
-                                stopSession={stopSession}
-                                cloneSession={cloneSession}
-                              exportSession={exportSession}
-                                deleteSession={deleteSession}
-                                selecting={selecting()}
-                                selected={selectedIDs().has(record.session.id)}
-                                onToggleSelect={(session) => toggleSelected(session.id)}
-                                onSelectStart={beginDragSelect}
-                                onSelectOver={dragSelectOver}
-                              />
-                            )}
-                          </For>
-                        </div>
-                      </>
-                    )}
-                  </For>
+                          <div
+                            class={`flex min-w-0 flex-col gap-px pt-4 ${index() === groups().length - 1 ? "" : "mb-6"}`}
+                          >
+                            <For each={group.sessions}>
+                              {(record) => (
+                                <HomeSessionRow
+                                  record={record}
+                                  showProjectName={!selectedProject()}
+                                  server={selection().server}
+                                  activeServer={selection().server === server.key}
+                                  openSession={openSession}
+                                  archiveSession={archiveSession}
+                                  stopSession={stopSession}
+                                  cloneSession={cloneSession}
+                                  exportSession={exportSession}
+                                  renameSession={renameSession}
+                                  deleteSession={deleteSession}
+                                  selecting={selecting()}
+                                  selected={selectedIDs().has(record.session.id)}
+                                  onToggleSelect={(session) => toggleSelected(session.id)}
+                                  onSelectStart={beginDragSelect}
+                                  onSelectOver={dragSelectOver}
+                                />
+                              )}
+                            </For>
+                          </div>
+                        </>
+                      )}
+                    </For>
                   </Show>
                 </div>
               </Show>
@@ -1292,6 +1297,7 @@ function HomeSessionRow(props: {
   stopSession: (session: Session) => Promise<void>
   cloneSession: (session: Session) => Promise<void>
   exportSession: (session: Session) => Promise<void>
+  renameSession: (session: Session, title: string) => Promise<void>
   deleteSession: (session: Session) => Promise<void>
   // Selection mode (mass delete/archive): clicking toggles membership instead of opening,
   // a leading check indicator renders, and the hover action strip stands down. The pointer
@@ -1325,7 +1331,10 @@ function HomeSessionRow(props: {
     if (!props.activeServer) return []
     const directory = props.record.session.location?.directory
     if (!directory) return []
-    return subtreeRows(serverSyncForChildren().child(directory, { bootstrap: false })[0].session, props.record.session.id)
+    return subtreeRows(
+      serverSyncForChildren().child(directory, { bootstrap: false })[0].session,
+      props.record.session.id,
+    )
   })
   // Tags component (notes/entities.md T0): the chat's tag chips from the instance-wide tag map.
   const rowTags = createMemo(() =>
@@ -1333,9 +1342,7 @@ function HomeSessionRow(props: {
   )
   // Task-manager meta (todo.md ps row: … status · tokens): the chat's token spend incl. its
   // sub-agent threads, and whether a turn is currently running (gates the Stop control).
-  const tokens = createMemo(() =>
-    tokenTotals([props.record.session, ...children().map((row) => row.session)]),
-  )
+  const tokens = createMemo(() => tokenTotals([props.record.session, ...children().map((row) => row.session)]))
   const working = createMemo(
     () => props.activeServer && serverSyncForChildren().session.data.session_working(props.record.session.id),
   )
@@ -1349,269 +1356,288 @@ function HomeSessionRow(props: {
       <DialogDeleteSession name={title()} onConfirm={() => props.deleteSession(props.record.session)} />
     ))
   }
+  const openRename = () => {
+    void dialog.show(() => (
+      <DialogRenameSession name={title()} onConfirm={(next) => props.renameSession(props.record.session, next)} />
+    ))
+  }
 
   return (
     <>
-    <div
-      class="group/session relative flex h-10 min-w-0 items-center rounded-[6px]"
-      classList={{ group: !!showProjectName(), "bg-v2-background-bg-layer-01": !!props.selected }}
-    >
-      <button
-        type="button"
-        data-component="home-session-row"
-        aria-pressed={props.selecting ? !!props.selected : undefined}
-        class={`${HOME_ROW} h-10 min-w-0 flex-1 gap-2 py-3 pl-3 pr-10`}
-        onPointerDown={(event) => {
-          if (props.selecting && event.button === 0) {
-            // preventDefault keeps the press from starting text selection while sweeping.
-            event.preventDefault()
-            props.onSelectStart?.(props.record.session)
-          }
-        }}
-        onPointerEnter={() => {
-          if (props.selecting) props.onSelectOver?.(props.record.session)
-        }}
-        onClick={(event) => {
-          if (!props.selecting) props.openSession(props.record.session)
-          // Keyboard activation only (detail 0): the pointer path already toggled on
-          // pointerdown — letting the trailing click toggle again would undo it.
-          else if (event.detail === 0) props.onToggleSelect?.(props.record.session)
-        }}
+      <div
+        class="group/session relative flex h-10 min-w-0 items-center rounded-[6px]"
+        classList={{ group: !!showProjectName(), "bg-v2-background-bg-layer-01": !!props.selected }}
       >
-        <Show when={props.selecting}>
-          <span
-            data-slot="home-session-check"
-            class="flex size-4 shrink-0 items-center justify-center rounded-full ring-1 transition-colors"
-            classList={{
-              "ring-v2-text-text-accent bg-v2-background-bg-layer-02 text-v2-icon-icon-accent": !!props.selected,
-              "ring-v2-border-border-base": !props.selected,
-            }}
-          >
-            {/* Render the check ONLY when selected — sprite strokes don't inherit
-                text-transparent, so an always-mounted check read as "prefilled". */}
-            <Show when={props.selected}>
-              <Icon name="check-small" size="small" />
-            </Show>
-          </span>
-        </Show>
-        <HomeSessionLeading
-          project={props.record.project}
-          session={props.record.session}
-          server={props.server}
-          activeServer={props.activeServer}
-          revealProjectOnHover={!!showProjectName()}
-        />
-        <span
-          class={`min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-base [font-weight:530] ${showProjectName() ? "max-w-[min(70%,480px)] flex-[0_1_auto]" : "flex-[1_1_auto]"}`}
+        <button
+          type="button"
+          data-component="home-session-row"
+          aria-pressed={props.selecting ? !!props.selected : undefined}
+          class={`${HOME_ROW} h-10 min-w-0 flex-1 gap-2 py-3 pl-3 pr-10`}
+          onPointerDown={(event) => {
+            if (props.selecting && event.button === 0) {
+              // preventDefault keeps the press from starting text selection while sweeping.
+              event.preventDefault()
+              props.onSelectStart?.(props.record.session)
+            }
+          }}
+          onPointerEnter={() => {
+            if (props.selecting) props.onSelectOver?.(props.record.session)
+          }}
+          onClick={(event) => {
+            if (!props.selecting) props.openSession(props.record.session)
+            // Keyboard activation only (detail 0): the pointer path already toggled on
+            // pointerdown — letting the trailing click toggle again would undo it.
+            else if (event.detail === 0) props.onToggleSelect?.(props.record.session)
+          }}
         >
-          {title()}
-        </span>
-        <Show when={showProjectName()}>
-          <span class="min-w-0 flex-[1_1_auto] overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-muted [font-weight:440]">
-            {props.record.projectName}
+          <Show when={props.selecting}>
+            <span
+              data-slot="home-session-check"
+              class="flex size-4 shrink-0 items-center justify-center rounded-full ring-1 transition-colors"
+              classList={{
+                "ring-v2-text-text-accent bg-v2-background-bg-layer-02 text-v2-icon-icon-accent": !!props.selected,
+                "ring-v2-border-border-base": !props.selected,
+              }}
+            >
+              {/* Render the check ONLY when selected — sprite strokes don't inherit
+                text-transparent, so an always-mounted check read as "prefilled". */}
+              <Show when={props.selected}>
+                <Icon name="check-small" size="small" />
+              </Show>
+            </span>
+          </Show>
+          <HomeSessionLeading
+            project={props.record.project}
+            session={props.record.session}
+            server={props.server}
+            activeServer={props.activeServer}
+            revealProjectOnHover={!!showProjectName()}
+          />
+          <span
+            class={`min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-base [font-weight:530] ${showProjectName() ? "max-w-[min(70%,480px)] flex-[0_1_auto]" : "flex-[1_1_auto]"}`}
+          >
+            {title()}
           </span>
-        </Show>
-        {/* The whole meta cluster (tags · attention · changes · tokens · time) yields to the
+          <Show when={showProjectName()}>
+            <span class="min-w-0 flex-[1_1_auto] overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-muted [font-weight:440]">
+              {props.record.projectName}
+            </span>
+          </Show>
+          {/* The whole meta cluster (tags · attention · changes · tokens · time) yields to the
             hover-reveal action icons — hiding only the time left the icons drawn OVER the
             token/changes badges (owner-hit 2026-07-22). opacity keeps layout, so the title
             never slides under the icons; hover-conceal handles touch, where the icons are
             always visible. */}
-        <span
-          class="ml-auto flex shrink-0 items-center gap-2"
-          classList={{
-            // In selection mode the action strip stands down, so the meta needn't yield.
-            "hover-conceal group-hover/session:opacity-0 group-focus-within/session:opacity-0": !props.selecting,
-          }}
-        >
-          <Show when={rowTags().length > 0}>
-            <span data-slot="home-session-tags" class="flex shrink-0 items-center gap-1">
-              <For each={rowTags().slice(0, 2)}>
-                {(tag) => (
-                  <span class="rounded-full bg-v2-background-bg-layer-01 px-1.5 py-0.5 text-[11px] leading-none text-v2-text-text-muted [font-weight:470]">
-                    {tag}
-                  </span>
-                )}
-              </For>
-              <Show when={rowTags().length > 2}>
-                <span class="text-[11px] leading-none text-v2-text-text-faint">+{rowTags().length - 2}</span>
-              </Show>
-            </span>
-          </Show>
-          <HomeSessionAttention session={props.record.session} activeServer={props.activeServer} />
-          <Show when={changes()}>
-            {(c) => (
-              <span
-                data-slot="home-session-changes"
-                class="shrink-0 flex items-center gap-1 rounded-[4px] bg-v2-background-bg-layer-01 px-1.5 py-0.5 text-[11px] leading-none text-v2-text-text-muted [font-weight:530]"
-                // "workspace" is load-bearing: the diff is the FOLDER's uncommitted state, which
-                // this chat may only partly own (issues.md nit — outside edits showed as the chat's).
-                title={`+${c().additions} −${c().deletions} · ${c().files} changed in workspace`}
-              >
-                <span class="text-v2-state-fg-success">+{c().additions}</span>
-                <span class="text-v2-state-fg-danger">−{c().deletions}</span>
-              </span>
-            )}
-          </Show>
-          <Show when={live()}>
-            {(stats) => (
-              <span
-                data-slot="home-session-live"
-                class="shrink-0 flex items-center gap-1 rounded-[4px] bg-v2-background-bg-layer-01 px-1.5 py-0.5 text-[11px] leading-none tabular-nums text-v2-text-text-accent [font-weight:530]"
-                title={language.t("home.session.live.title")}
-              >
-                <span
-                  aria-hidden="true"
-                  class="size-1.5 rounded-full bg-v2-icon-icon-accent motion-safe:animate-pulse"
-                />
-                ~{compactTokens(stats().approxTokens)} · {stats().tps} t/s
-              </span>
-            )}
-          </Show>
-          <Show when={tokens().generated > 0}>
-            <span
-              data-slot="home-session-tokens"
-              class="shrink-0 flex items-center gap-1 rounded-[4px] bg-v2-background-bg-layer-01 px-1.5 py-0.5 text-[11px] leading-none tabular-nums text-v2-text-text-muted [font-weight:530]"
-              title={language.t("home.session.tokens.title", {
-                generated: tokens().generated.toLocaleString(),
-                output: tokens().output.toLocaleString(),
-                reasoning: tokens().reasoning.toLocaleString(),
-              })}
-            >
-              <Icon name="cpu" size="small" class="text-v2-icon-icon-muted" />
-              {compactTokens(tokens().generated)}
-            </span>
-          </Show>
           <span
-            data-slot="home-session-time"
-            class="shrink-0 text-[11px] leading-none tabular-nums text-v2-text-text-faint [font-weight:440]"
+            class="ml-auto flex shrink-0 items-center gap-2"
+            classList={{
+              // In selection mode the action strip stands down, so the meta needn't yield.
+              "hover-conceal group-hover/session:opacity-0 group-focus-within/session:opacity-0": !props.selecting,
+            }}
           >
-            {timeLabel()}
-          </span>
-        </span>
-      </button>
-      {/* group-focus-within (not just self focus-within): keyboard-focusing the ROW must reveal
-          the actions in the same beat it hides the meta cluster — self-only focus left a focused
-          row with meta hidden and nothing shown in its place. Stands down in selection mode. */}
-      <Show when={!props.selecting}>
-      <div class="hover-reveal absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1 group-hover/session:opacity-100 group-focus-within/session:opacity-100">
-        <Show when={working()}>
-          <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("home.session.stop")}>
-            <IconButtonV2
-              data-action="home-session-stop"
-              variant="ghost-muted"
-              size="large"
-              icon={<Icon name="stop" size="small" />}
-              aria-label={language.t("home.session.stop")}
-              onClick={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                void props.stopSession(props.record.session)
-              }}
-            />
-          </TooltipV2>
-        </Show>
-        <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("home.session.info")}>
-          <IconButtonV2
-            data-action="home-session-info"
-            variant="ghost-muted"
-            size="large"
-            icon={<Icon name="info" size="small" />}
-            aria-label={language.t("home.session.info")}
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              void dialog.show(() => (
-                <DialogSessionInfo session={props.record.session} projectName={props.record.projectName} />
-              ))
-            }}
-          />
-        </TooltipV2>
-        <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("home.session.clone")}>
-          <IconButtonV2
-            data-action="home-session-clone"
-            variant="ghost-muted"
-            size="large"
-            icon={<Icon name="fork" size="small" />}
-            aria-label={language.t("home.session.clone")}
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              void props.cloneSession(props.record.session)
-            }}
-          />
-        </TooltipV2>
-        <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("home.session.export")}>
-          <IconButtonV2
-            data-action="home-session-export"
-            variant="ghost-muted"
-            size="large"
-            icon={<Icon name="download" size="small" />}
-            aria-label={language.t("home.session.export")}
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              void props.exportSession(props.record.session)
-            }}
-          />
-        </TooltipV2>
-        <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("session.delete.title")}>
-          <IconButtonV2
-            data-action="home-session-delete"
-            variant="ghost-muted"
-            size="large"
-            icon={<Icon name="trash" size="small" />}
-            aria-label={language.t("session.delete.title")}
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              confirmDelete()
-            }}
-          />
-        </TooltipV2>
-        <Show when={SHOW_HOME_SESSION_ARCHIVE}>
-          <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("common.archive")}>
-            <IconButtonV2
-              data-action="home-session-archive"
-              variant="ghost-muted"
-              size="large"
-              icon={<IconV2 name="archive" />}
-              aria-label={language.t("common.archive")}
-              onClick={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                void props.archiveSession(props.record.session)
-              }}
-            />
-          </TooltipV2>
-        </Show>
-      </div>
-      </Show>
-    </div>
-    <For each={children()}>
-      {(row) => (
-        <button
-          type="button"
-          data-component="home-session-child-row"
-          class={`${HOME_ROW} h-8 min-w-0 flex-none gap-2 py-2 pr-10`}
-          style={{ "padding-left": `${12 + row.depth * 16}px` }}
-          onClick={() => props.openSession(row.session)}
-        >
-          <span aria-hidden="true" class="shrink-0 text-[12px] leading-none text-v2-text-text-faint">
-            └
-          </span>
-          <span class="min-w-0 flex-[1_1_auto] overflow-hidden text-ellipsis whitespace-nowrap text-left text-[13px] text-v2-text-text-muted [font-weight:470]">
-            {sessionTitle(row.session.title) || row.session.id}
-          </span>
-          <span class="ml-auto flex shrink-0 items-center gap-2">
-            <HomeSessionAttention session={row.session} activeServer={props.activeServer} />
-            <span class="shrink-0 text-[11px] leading-none tabular-nums text-v2-text-text-faint [font-weight:440]">
-              {homeSessionTimeLabel(row.session.time.updated ?? row.session.time.created, language.intl())}
+            <Show when={rowTags().length > 0}>
+              <span data-slot="home-session-tags" class="flex shrink-0 items-center gap-1">
+                <For each={rowTags().slice(0, 2)}>
+                  {(tag) => (
+                    <span class="rounded-full bg-v2-background-bg-layer-01 px-1.5 py-0.5 text-[11px] leading-none text-v2-text-text-muted [font-weight:470]">
+                      {tag}
+                    </span>
+                  )}
+                </For>
+                <Show when={rowTags().length > 2}>
+                  <span class="text-[11px] leading-none text-v2-text-text-faint">+{rowTags().length - 2}</span>
+                </Show>
+              </span>
+            </Show>
+            <HomeSessionAttention session={props.record.session} activeServer={props.activeServer} />
+            <Show when={changes()}>
+              {(c) => (
+                <span
+                  data-slot="home-session-changes"
+                  class="shrink-0 flex items-center gap-1 rounded-[4px] bg-v2-background-bg-layer-01 px-1.5 py-0.5 text-[11px] leading-none text-v2-text-text-muted [font-weight:530]"
+                  // "workspace" is load-bearing: the diff is the FOLDER's uncommitted state, which
+                  // this chat may only partly own (issues.md nit — outside edits showed as the chat's).
+                  title={`+${c().additions} −${c().deletions} · ${c().files} changed in workspace`}
+                >
+                  <span class="text-v2-state-fg-success">+{c().additions}</span>
+                  <span class="text-v2-state-fg-danger">−{c().deletions}</span>
+                </span>
+              )}
+            </Show>
+            <Show when={live()}>
+              {(stats) => (
+                <span
+                  data-slot="home-session-live"
+                  class="shrink-0 flex items-center gap-1 rounded-[4px] bg-v2-background-bg-layer-01 px-1.5 py-0.5 text-[11px] leading-none tabular-nums text-v2-text-text-accent [font-weight:530]"
+                  title={language.t("home.session.live.title")}
+                >
+                  <span
+                    aria-hidden="true"
+                    class="size-1.5 rounded-full bg-v2-icon-icon-accent motion-safe:animate-pulse"
+                  />
+                  ~{compactTokens(stats().approxTokens)} · {stats().tps} t/s
+                </span>
+              )}
+            </Show>
+            <Show when={tokens().generated > 0}>
+              <span
+                data-slot="home-session-tokens"
+                class="shrink-0 flex items-center gap-1 rounded-[4px] bg-v2-background-bg-layer-01 px-1.5 py-0.5 text-[11px] leading-none tabular-nums text-v2-text-text-muted [font-weight:530]"
+                title={language.t("home.session.tokens.title", {
+                  generated: tokens().generated.toLocaleString(),
+                  output: tokens().output.toLocaleString(),
+                  reasoning: tokens().reasoning.toLocaleString(),
+                })}
+              >
+                <Icon name="cpu" size="small" class="text-v2-icon-icon-muted" />
+                {compactTokens(tokens().generated)}
+              </span>
+            </Show>
+            <span
+              data-slot="home-session-time"
+              class="shrink-0 text-[11px] leading-none tabular-nums text-v2-text-text-faint [font-weight:440]"
+            >
+              {timeLabel()}
             </span>
           </span>
         </button>
-      )}
-    </For>
-  </>
+        {/* group-focus-within (not just self focus-within): keyboard-focusing the ROW must reveal
+          the actions in the same beat it hides the meta cluster — self-only focus left a focused
+          row with meta hidden and nothing shown in its place. Stands down in selection mode. */}
+        <Show when={!props.selecting}>
+          <div class="hover-reveal absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1 group-hover/session:opacity-100 group-focus-within/session:opacity-100">
+            <Show when={working()}>
+              <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("home.session.stop")}>
+                <IconButtonV2
+                  data-action="home-session-stop"
+                  variant="ghost-muted"
+                  size="large"
+                  icon={<Icon name="stop" size="small" />}
+                  aria-label={language.t("home.session.stop")}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    void props.stopSession(props.record.session)
+                  }}
+                />
+              </TooltipV2>
+            </Show>
+            <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("home.session.info")}>
+              <IconButtonV2
+                data-action="home-session-info"
+                variant="ghost-muted"
+                size="large"
+                icon={<Icon name="info" size="small" />}
+                aria-label={language.t("home.session.info")}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  void dialog.show(() => (
+                    <DialogSessionInfo session={props.record.session} projectName={props.record.projectName} />
+                  ))
+                }}
+              />
+            </TooltipV2>
+            <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("common.rename")}>
+              <IconButtonV2
+                data-action="home-session-rename"
+                variant="ghost-muted"
+                size="large"
+                icon={<Icon name="edit" size="small" />}
+                aria-label={language.t("common.rename")}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  openRename()
+                }}
+              />
+            </TooltipV2>
+            <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("home.session.clone")}>
+              <IconButtonV2
+                data-action="home-session-clone"
+                variant="ghost-muted"
+                size="large"
+                icon={<Icon name="fork" size="small" />}
+                aria-label={language.t("home.session.clone")}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  void props.cloneSession(props.record.session)
+                }}
+              />
+            </TooltipV2>
+            <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("home.session.export")}>
+              <IconButtonV2
+                data-action="home-session-export"
+                variant="ghost-muted"
+                size="large"
+                icon={<Icon name="download" size="small" />}
+                aria-label={language.t("home.session.export")}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  void props.exportSession(props.record.session)
+                }}
+              />
+            </TooltipV2>
+            <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("session.delete.title")}>
+              <IconButtonV2
+                data-action="home-session-delete"
+                variant="ghost-muted"
+                size="large"
+                icon={<Icon name="trash" size="small" />}
+                aria-label={language.t("session.delete.title")}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  confirmDelete()
+                }}
+              />
+            </TooltipV2>
+            <Show when={SHOW_HOME_SESSION_ARCHIVE}>
+              <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("common.archive")}>
+                <IconButtonV2
+                  data-action="home-session-archive"
+                  variant="ghost-muted"
+                  size="large"
+                  icon={<IconV2 name="archive" />}
+                  aria-label={language.t("common.archive")}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    void props.archiveSession(props.record.session)
+                  }}
+                />
+              </TooltipV2>
+            </Show>
+          </div>
+        </Show>
+      </div>
+      <For each={children()}>
+        {(row) => (
+          <button
+            type="button"
+            data-component="home-session-child-row"
+            class={`${HOME_ROW} h-8 min-w-0 flex-none gap-2 py-2 pr-10`}
+            style={{ "padding-left": `${12 + row.depth * 16}px` }}
+            onClick={() => props.openSession(row.session)}
+          >
+            <span aria-hidden="true" class="shrink-0 text-[12px] leading-none text-v2-text-text-faint">
+              └
+            </span>
+            <span class="min-w-0 flex-[1_1_auto] overflow-hidden text-ellipsis whitespace-nowrap text-left text-[13px] text-v2-text-text-muted [font-weight:470]">
+              {sessionTitle(row.session.title) || row.session.id}
+            </span>
+            <span class="ml-auto flex shrink-0 items-center gap-2">
+              <HomeSessionAttention session={row.session} activeServer={props.activeServer} />
+              <span class="shrink-0 text-[11px] leading-none tabular-nums text-v2-text-text-faint [font-weight:440]">
+                {homeSessionTimeLabel(row.session.time.updated ?? row.session.time.created, language.intl())}
+              </span>
+            </span>
+          </button>
+        )}
+      </For>
+    </>
   )
 }
 
@@ -1651,6 +1677,40 @@ function DialogBulkSessions(props: {
           </Button>
         </div>
       </div>
+    </Dialog>
+  )
+}
+
+function DialogRenameSession(props: { name: string; onConfirm: (title: string) => Promise<void> }) {
+  const dialog = useDialog()
+  const language = useLanguage()
+  const [value, setValue] = createSignal(props.name)
+  const [busy, setBusy] = createSignal(false)
+  const submit = (event: SubmitEvent) => {
+    event.preventDefault()
+    const title = value().trim()
+    if (!title || busy()) return
+    setBusy(true)
+    void props.onConfirm(title).finally(() => dialog.close())
+  }
+  return (
+    <Dialog title={language.t("common.rename")} fit>
+      <form onSubmit={submit} class="flex min-w-[22rem] flex-col gap-4 pl-6 pr-2.5 pb-3">
+        <TextInputV2
+          autofocus
+          value={value()}
+          aria-label={language.t("common.rename")}
+          onInput={(event) => setValue(event.currentTarget.value)}
+        />
+        <div class="flex justify-end gap-2">
+          <Button variant="ghost" size="large" type="button" onClick={() => dialog.close()}>
+            {language.t("common.cancel")}
+          </Button>
+          <Button variant="primary" size="large" type="submit" disabled={busy() || !value().trim()}>
+            {language.t("common.rename")}
+          </Button>
+        </div>
+      </form>
     </Dialog>
   )
 }

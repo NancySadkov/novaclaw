@@ -28,14 +28,25 @@ interface Spy {
   readonly doPrompts: JhExpander.PromptPair[]
 }
 
-function deps(think: ((p: JhExpander.PromptPair) => Effect.Effect<string, JhEngine.LLMFail>) | undefined, spy: Spy, over: Partial<JhEngine.Deps> = {}): JhEngine.Deps {
+function deps(
+  think: ((p: JhExpander.PromptPair) => Effect.Effect<string, JhEngine.LLMFail>) | undefined,
+  spy: Spy,
+  over: Partial<JhEngine.Deps> = {},
+): JhEngine.Deps {
   return {
     introspect: (p) => {
       spy.doPrompts.push(p)
       return Effect.succeed(atom)
     },
     correct: () => Effect.succeed(atom),
-    ...(think ? { think: (p: JhExpander.PromptPair) => { spy.thinkPrompts.push(p); return think(p) } } : {}),
+    ...(think
+      ? {
+          think: (p: JhExpander.PromptPair) => {
+            spy.thinkPrompts.push(p)
+            return think(p)
+          },
+        }
+      : {}),
     // The declared produce must actually arrive, or `artifact_present` can never pass and every run
     // blocks on budget regardless of the think stage (fixture bug, not engine behaviour).
     executor: { run: () => Effect.succeed({ ok: true, output: "o", artifacts: new Map([["out", "x"]]) }) },
@@ -70,7 +81,9 @@ describe("JhEngine think/do split (improve19)", () => {
     expect(t.system).toContain("no JSON")
     expect(t.system).not.toContain('"size"')
     // …and the plan must arrive in the DO call's context.
-    expect(s.doPrompts.some((p) => p.user.includes("write the file") && p.user.includes("YOUR PLAN FOR THIS STEP"))).toBe(true)
+    expect(
+      s.doPrompts.some((p) => p.user.includes("write the file") && p.user.includes("YOUR PLAN FOR THIS STEP")),
+    ).toBe(true)
   })
 
   test("the plan is an ARTIFACT: `planned` is logged verbatim, not hidden", async () => {
@@ -85,7 +98,9 @@ describe("JhEngine think/do split (improve19)", () => {
     const s = spy()
     const r = await run(deps(() => Effect.fail({ message: "llm down" }), s))
     expect(r.status).toBe("done") // the run completes unplanned
-    expect(r.state.log.some((e) => e.type === "think_failed" && (e as { reason: string }).reason === "llm_unreachable")).toBe(true)
+    expect(
+      r.state.log.some((e) => e.type === "think_failed" && (e as { reason: string }).reason === "llm_unreachable"),
+    ).toBe(true)
     expect(s.doPrompts.some((p) => p.user.includes("YOUR PLAN FOR THIS STEP"))).toBe(false)
   })
 
@@ -94,7 +109,9 @@ describe("JhEngine think/do split (improve19)", () => {
     // `<think>` ate the whole budget → empty content. Wave 1 disabled thinking because of this.
     const r = await run(deps(() => Effect.succeed("   \n  \n"), s))
     expect(r.status).toBe("done")
-    expect(r.state.log.some((e) => e.type === "think_failed" && (e as { reason: string }).reason === "empty")).toBe(true)
+    expect(r.state.log.some((e) => e.type === "think_failed" && (e as { reason: string }).reason === "empty")).toBe(
+      true,
+    )
   })
 
   test("`thinkOn` narrows the stage to the expensive nodes only", async () => {

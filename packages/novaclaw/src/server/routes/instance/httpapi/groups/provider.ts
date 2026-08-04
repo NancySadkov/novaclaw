@@ -25,6 +25,10 @@ export const ProbeResult = Schema.Struct({
     Schema.Literal("error"),
   ]),
   latencyMs: Schema.optional(Schema.Number),
+  discoveryLatencyMs: Schema.optional(Schema.Number),
+  completionLatencyMs: Schema.optional(Schema.Number),
+  completionAttempts: Schema.optional(Schema.Number),
+  completed: Schema.optional(Schema.Boolean),
   window: Schema.optional(Schema.Number),
   limits: Schema.optional(
     Schema.Record(

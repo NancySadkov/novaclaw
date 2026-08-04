@@ -47,7 +47,19 @@ describe("MemoryClient.fromEngine", () => {
     const engine: MemoryClient.Engine = {
       addMemory: async (i) => void calls.push(`add:${i.id}`),
       addEdge: async () => {},
-      search: async () => [{ id: "z", kind: "entity", text: "t", name: null, scope: "global", source: null, confidence: null, relation: "staged", score: 1 }],
+      search: async () => [
+        {
+          id: "z",
+          kind: "entity",
+          text: "t",
+          name: null,
+          scope: "global",
+          source: null,
+          confidence: null,
+          relation: "staged",
+          score: 1,
+        },
+      ],
       neighbors: async () => [],
       path: async () => null,
       invalidate: async () => {},

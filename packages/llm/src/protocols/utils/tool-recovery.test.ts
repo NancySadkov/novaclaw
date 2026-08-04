@@ -14,15 +14,14 @@ describe("resolveToolName", () => {
   test("hallucinated name -> undefined", () => expect(resolveToolName("frobnicate", TOOLS)).toBeUndefined())
   test("near-miss below the 0.85 cutoff -> undefined (reads !-> read)", () =>
     expect(resolveToolName("reads", TOOLS)).toBeUndefined())
-  test("scrubName cuts at the first harmony token", () =>
-    expect(scrubName("read<|channel|>x")).toBe("read"))
+  test("scrubName cuts at the first harmony token", () => expect(scrubName("read<|channel|>x")).toBe("read"))
 })
 
 describe("recoverToolCallsFromText — hermes / <tool_call>", () => {
   test("closed block with nested arguments", () =>
-    expect(recoverToolCallsFromText('<tool_call>{"name":"read","arguments":{"filePath":"a.ts"}}</tool_call>', TOOLS)).toEqual(
-      [{ name: "read", arguments: '{"filePath":"a.ts"}' }],
-    ))
+    expect(
+      recoverToolCallsFromText('<tool_call>{"name":"read","arguments":{"filePath":"a.ts"}}</tool_call>', TOOLS),
+    ).toEqual([{ name: "read", arguments: '{"filePath":"a.ts"}' }]))
   test("UNCLOSED block still recovers", () =>
     expect(recoverToolCallsFromText('<tool_call>{"name":"read","arguments":{"filePath":"a.ts"}}', TOOLS)).toEqual([
       { name: "read", arguments: '{"filePath":"a.ts"}' },
@@ -33,12 +32,15 @@ describe("recoverToolCallsFromText — hermes / <tool_call>", () => {
     ]))
   test("preamble prose before the block is ignored", () =>
     expect(
-      recoverToolCallsFromText('Sure, let me look. <tool_call>{"name":"bash","arguments":{"command":"ls"}}</tool_call>', TOOLS),
+      recoverToolCallsFromText(
+        'Sure, let me look. <tool_call>{"name":"bash","arguments":{"command":"ls"}}</tool_call>',
+        TOOLS,
+      ),
     ).toEqual([{ name: "bash", arguments: '{"command":"ls"}' }]))
   test("name is canonicalized (Read -> read)", () =>
-    expect(recoverToolCallsFromText('<tool_call>{"name":"Read","arguments":{"filePath":"a"}}</tool_call>', TOOLS)).toEqual([
-      { name: "read", arguments: '{"filePath":"a"}' },
-    ]))
+    expect(
+      recoverToolCallsFromText('<tool_call>{"name":"Read","arguments":{"filePath":"a"}}</tool_call>', TOOLS),
+    ).toEqual([{ name: "read", arguments: '{"filePath":"a"}' }]))
   test("leaked harmony token in the name is scrubbed", () =>
     expect(
       recoverToolCallsFromText('<tool_call>{"name":"write<|channel|>x","arguments":{"path":"a"}}</tool_call>', TOOLS),
@@ -81,7 +83,10 @@ describe("recoverToolCallsFromText — bare JSON", () => {
     ]))
   test("array of calls", () =>
     expect(
-      recoverToolCallsFromText('[{"name":"read","arguments":{"filePath":"a"}},{"name":"list","arguments":{"path":"/"}}]', TOOLS),
+      recoverToolCallsFromText(
+        '[{"name":"read","arguments":{"filePath":"a"}},{"name":"list","arguments":{"path":"/"}}]',
+        TOOLS,
+      ),
     ).toEqual([
       { name: "read", arguments: '{"filePath":"a"}' },
       { name: "list", arguments: '{"path":"/"}' },
@@ -110,17 +115,17 @@ describe("recoverToolCallsFromText — qwen3_coder shapes", () => {
       ),
     ).toEqual([{ name: "write", arguments: '{"path":"mask-probe.txt","content":"hello"}' }]))
   test("<function=name> opener without the <tool_call> wrapper", () =>
-    expect(
-      recoverToolCallsFromText("<function=write><parameter=path>a.txt</parameter></function>", TOOLS),
-    ).toEqual([{ name: "write", arguments: '{"path":"a.txt"}' }]))
+    expect(recoverToolCallsFromText("<function=write><parameter=path>a.txt</parameter></function>", TOOLS)).toEqual([
+      { name: "write", arguments: '{"path":"a.txt"}' },
+    ]))
   test("unclosed trailing <parameter=…> still recovers (stream cut mid-call)", () =>
     expect(recoverToolCallsFromText("<write><parameter=path>a.txt", TOOLS)).toEqual([
       { name: "write", arguments: '{"path":"a.txt"}' },
     ]))
   test("special-token-fused tags recover (<|bash><|command>… — the live no-recall emission)", () =>
-    expect(
-      recoverToolCallsFromText("<|bash>\n<|command>\necho hello > f.txt\n</|command>\n</bash>", TOOLS),
-    ).toEqual([{ name: "bash", arguments: '{"command":"echo hello > f.txt"}' }]))
+    expect(recoverToolCallsFromText("<|bash>\n<|command>\necho hello > f.txt\n</|command>\n</bash>", TOOLS)).toEqual([
+      { name: "bash", arguments: '{"command":"echo hello > f.txt"}' },
+    ]))
   test("tool_-prefixed name + mismatched close tags recover (the live <tool_write> emission)", () =>
     expect(
       recoverToolCallsFromText(
@@ -146,9 +151,9 @@ describe("recoverToolCallsFromText — mask-token wrapping + paren-call syntax",
       recoverToolCallsFromText("<|mask_start|><write><parameter=path>x</parameter></write><|mask_end|>", TOOLS),
     ).toEqual([{ name: "write", arguments: '{"path":"x"}' }]))
   test("pure mask-token garbage recovers nothing", () =>
-    expect(recoverToolCallsFromText("\n\n<|mask_start|><think>\n\n\n\n<|mask_start|><think>\n\n\n\n<|mask_end|>", TOOLS)).toEqual(
-      [],
-    ))
+    expect(
+      recoverToolCallsFromText("\n\n<|mask_start|><think>\n\n\n\n<|mask_start|><think>\n\n\n\n<|mask_end|>", TOOLS),
+    ).toEqual([]))
   test("prose naming a tool with UNQUOTED parens never matches", () =>
     expect(recoverToolCallsFromText("You can call write(path, content) to save files.", TOOLS)).toEqual([]))
   test("prose with a quoted pair plus extra words never matches", () =>

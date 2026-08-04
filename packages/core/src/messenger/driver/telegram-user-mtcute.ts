@@ -61,11 +61,17 @@ export const classify = (error: unknown): UserClientError => {
   if (/PHONE_CODE_INVALID|PHONE_CODE_EXPIRED|PHONE_CODE_EMPTY|CODE_INVALID/.test(text))
     return new UserClientError({
       kind: "bad-code",
-      message: text.includes("EXPIRED") ? "That code expired — restart the login to get a fresh one." : "That code doesn't match — check it and try again.",
+      message: text.includes("EXPIRED")
+        ? "That code expired — restart the login to get a fresh one."
+        : "That code doesn't match — check it and try again.",
     })
   const flood = text.match(/FLOOD_WAIT_(\d+)/)
   if (flood !== null) return new UserClientError({ kind: "flood", seconds: Number(flood[1]) })
-  if (/AUTH_KEY_UNREGISTERED|AUTH_KEY_DUPLICATED|SESSION_REVOKED|SESSION_EXPIRED|USER_DEACTIVATED|PHONE_NUMBER_BANNED|PHONE_NUMBER_FLOOD/.test(text))
+  if (
+    /AUTH_KEY_UNREGISTERED|AUTH_KEY_DUPLICATED|SESSION_REVOKED|SESSION_EXPIRED|USER_DEACTIVATED|PHONE_NUMBER_BANNED|PHONE_NUMBER_FLOOD/.test(
+      text,
+    )
+  )
     return new UserClientError({
       kind: "challenge",
       message: `Telegram rejected this account's session (${text}) — log in again from Settings → Messengers.`,

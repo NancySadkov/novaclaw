@@ -71,7 +71,9 @@ export interface OutboundEmail {
 export interface EmailClient {
   /** Fetch messages with UID strictly greater than `sinceUid` (0 = all). Returns the mailbox's
    *  current UIDVALIDITY so a validity CHANGE (mailbox rebuilt) resets the cursor, never drops mail. */
-  readonly fetchSince: (sinceUid: number) => Promise<{ readonly uidValidity: number; readonly messages: readonly RawEmail[] }>
+  readonly fetchSince: (
+    sinceUid: number,
+  ) => Promise<{ readonly uidValidity: number; readonly messages: readonly RawEmail[] }>
   /** The last `limit` inbox messages, newest last — the READ path an agent uses to summarize recent
    *  mail without waiting for new arrivals (drives the `history`/`listChats` ops). */
   readonly fetchRecent: (limit: number) => Promise<{ readonly messages: readonly RawEmail[] }>
@@ -277,7 +279,11 @@ export const parseEmailConfig = (
     const clientId = (account.settings["clientId"] ?? "").trim()
     const clientSecret = (account.settings["clientSecret"] ?? "").trim()
     if (email.length === 0)
-      return yield* Effect.fail(new ConnectError({ reason: "This email account needs the mailbox address — fill it in Settings → Messengers." }))
+      return yield* Effect.fail(
+        new ConnectError({
+          reason: "This email account needs the mailbox address — fill it in Settings → Messengers.",
+        }),
+      )
     const port = (key: string, fallback: number) => {
       const value = Number((account.settings[key] ?? "").trim())
       return Number.isInteger(value) && value > 0 && value <= 65535 ? value : fallback
@@ -328,7 +334,9 @@ export const resolveEmailAuth = (
     const refresh = makeRefresh(config)
     if (refresh === undefined)
       return yield* Effect.fail(
-        new ConnectError({ reason: "This OAuth mailbox is missing its client ID — re-add it in Settings → Messengers." }),
+        new ConnectError({
+          reason: "This OAuth mailbox is missing its client ID — re-add it in Settings → Messengers.",
+        }),
       )
     const token = yield* Effect.tryPromise({
       try: () => refresh(stored.refreshToken),
@@ -353,14 +361,19 @@ export const makeConnect =
     mailFactory: EmailClientFactory,
     pollIntervalMs: number,
     resolveConfig: (account: Messenger.AccountInfo) => Effect.Effect<EmailAccountConfig, ConnectError>,
-    resolveAuth: (config: EmailAccountConfig, secret: string) => Effect.Effect<EmailAuth, ConnectError | ChallengeError>,
+    resolveAuth: (
+      config: EmailAccountConfig,
+      secret: string,
+    ) => Effect.Effect<EmailAuth, ConnectError | ChallengeError>,
   ) =>
   (ctx: ConnectContext) =>
     Effect.gen(function* () {
       const config = yield* resolveConfig(ctx.account)
       if (ctx.secret === undefined || ctx.secret.length === 0)
         return yield* Effect.fail(
-          new ConnectError({ reason: "This mailbox isn't signed in yet — sign in (or paste an app password) in Settings → Messengers." }),
+          new ConnectError({
+            reason: "This mailbox isn't signed in yet — sign in (or paste an app password) in Settings → Messengers.",
+          }),
         )
 
       // Two auth kinds behind one driver (§0.2): the stored credential is EITHER our OAuth JSON
@@ -378,7 +391,8 @@ export const makeConnect =
               smtpPort: config.smtpPort,
               auth,
             }),
-          catch: (error) => new ConnectError({ reason: `Could not reach the mail server for ${config.email}: ${String(error)}` }),
+          catch: (error) =>
+            new ConnectError({ reason: `Could not reach the mail server for ${config.email}: ${String(error)}` }),
         }),
         (open) => Effect.promise(() => open.close().catch(() => undefined)),
       )
@@ -393,7 +407,8 @@ export const makeConnect =
         const raw = yield* ctx.cursor.get().pipe(Effect.orElseSucceed(() => undefined))
         if (raw !== null && typeof raw === "object" && "uid" in raw && "uidValidity" in raw) {
           const value = raw as { uid: unknown; uidValidity: unknown }
-          if (typeof value.uid === "number" && typeof value.uidValidity === "number") return value as { uid: number; uidValidity: number }
+          if (typeof value.uid === "number" && typeof value.uidValidity === "number")
+            return value as { uid: number; uidValidity: number }
         }
         // No stored cursor → start at the current mailbox head, so the pump delivers only mail that
         // arrives AFTER this first connect (never the entire history). Persist it immediately.
@@ -450,7 +465,8 @@ export const makeConnect =
           for (const chunk of chunks) {
             last = yield* Effect.tryPromise({
               try: () => client.send(buildReply(state, chunk)),
-              catch: (error) => new SendError({ reason: `Could not send the email: ${String(error)}`, retryable: true }),
+              catch: (error) =>
+                new SendError({ reason: `Could not send the email: ${String(error)}`, retryable: true }),
             })
           }
           sentSeq += 1
@@ -464,13 +480,15 @@ export const makeConnect =
       const recent = (limit: number) =>
         Effect.tryPromise({
           try: () => client.fetchRecent(Math.max(1, Math.min(limit, 50))),
-          catch: (error) => new ConnectError({ reason: `Could not read recent mail for ${config.email}: ${String(error)}` }),
+          catch: (error) =>
+            new ConnectError({ reason: `Could not read recent mail for ${config.email}: ${String(error)}` }),
         }).pipe(
           Effect.tap((batch) =>
             Effect.sync(() => {
               for (const mail of batch.messages) {
                 const event = toInbound(mail, config.email)
-                if (event.kind === "message" && event.sender.isSelf !== true) threads.set(event.chat.chatID, threadStateFrom(mail))
+                if (event.kind === "message" && event.sender.isSelf !== true)
+                  threads.set(event.chat.chatID, threadStateFrom(mail))
               }
             }),
           ),
@@ -540,12 +558,14 @@ export const make = (
           Effect.gen(function* () {
             const result = yield* Effect.tryPromise({
               try: () => oauth.pollToken(start.deviceCode),
-              catch: (error) => new LoginCodeError({ reason: `Sign-in check failed: ${String(error)}`, retryable: true }),
+              catch: (error) =>
+                new LoginCodeError({ reason: `Sign-in check failed: ${String(error)}`, retryable: true }),
             })
             if (result.kind === "pending" || result.kind === "slow-down")
               return yield* Effect.fail(
                 new LoginCodeError({
-                  reason: "Still waiting for you to approve the sign-in in your browser — finish that, then click Done again.",
+                  reason:
+                    "Still waiting for you to approve the sign-in in your browser — finish that, then click Done again.",
                   retryable: true,
                 }),
               )
@@ -570,7 +590,12 @@ export const make = (
     pollIntervalMs,
     (account) => parseEmailConfig(account, OUTLOOK_DEFAULTS),
     (config, secret) =>
-      resolveEmailAuth(config, secret, (c) => (c.clientId === undefined ? undefined : oauthFor(c, c.clientId).refresh), "Microsoft"),
+      resolveEmailAuth(
+        config,
+        secret,
+        (c) => (c.clientId === undefined ? undefined : oauthFor(c, c.clientId).refresh),
+        "Microsoft",
+      ),
   )
 
   return {
@@ -588,9 +613,19 @@ export const make = (
           message: "OAuth client ID (Azure app registration — Microsoft requires OAuth for Outlook/365)",
           placeholder: "00000000-0000-0000-0000-000000000000",
         },
-        { type: "text", key: "imapHost", message: "IMAP host (default: Outlook)", placeholder: OUTLOOK_DEFAULTS.imapHost },
+        {
+          type: "text",
+          key: "imapHost",
+          message: "IMAP host (default: Outlook)",
+          placeholder: OUTLOOK_DEFAULTS.imapHost,
+        },
         { type: "text", key: "imapPort", message: "IMAP port", placeholder: String(OUTLOOK_DEFAULTS.imapPort) },
-        { type: "text", key: "smtpHost", message: "SMTP host (default: Outlook)", placeholder: OUTLOOK_DEFAULTS.smtpHost },
+        {
+          type: "text",
+          key: "smtpHost",
+          message: "SMTP host (default: Outlook)",
+          placeholder: OUTLOOK_DEFAULTS.smtpHost,
+        },
         { type: "text", key: "smtpPort", message: "SMTP port", placeholder: String(OUTLOOK_DEFAULTS.smtpPort) },
       ],
       // No upfront prompts: the device-code flow needs nothing typed — begin() returns a URL + code

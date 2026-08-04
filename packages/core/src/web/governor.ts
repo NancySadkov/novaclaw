@@ -109,9 +109,7 @@ export const make = (deps: Deps): Interface => {
         .where(eq(WebHostBudgetTable.host, host))
         .get()
         .pipe(Effect.orDie)
-      const state = row
-        ? { day: row.day, count: row.count, tokens: row.tokens, updatedAt: row.updated_at }
-        : undefined
+      const state = row ? { day: row.day, count: row.count, tokens: row.tokens, updatedAt: row.updated_at } : undefined
       const decision = WebFetchPace.decide(state, now, limits)
       if (decision.kind === "deny") return yield* Effect.fail(new WebBudgetError(decision.reason))
 

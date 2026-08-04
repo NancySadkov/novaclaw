@@ -4,7 +4,17 @@ import { Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Messenger } from "@novaclaw/schema/messenger"
 import { Log } from "@novaclaw/schema/log"
 import { MessengerFormat } from "../format"
-import type { ChatSnapshot, Connection, ConnectContext, Driver, FileRef, HistoryEntry, InboundEvent, ModerationAct, OutboundFile } from "../driver"
+import type {
+  ChatSnapshot,
+  Connection,
+  ConnectContext,
+  Driver,
+  FileRef,
+  HistoryEntry,
+  InboundEvent,
+  ModerationAct,
+  OutboundFile,
+} from "../driver"
 import { ConnectError, FileError, ModerationError, SendError } from "../driver"
 
 // The Discord BOT driver (messenger-plan §2.1): REST over HTTPS + the Gateway WebSocket, both
@@ -172,7 +182,8 @@ export const readAnchors = (value: unknown): Record<string, string> => {
   const anchors = (value as Record<string, unknown>)["anchors"]
   if (typeof anchors !== "object" || anchors === null) return {}
   const out: Record<string, string> = {}
-  for (const [channelID, messageID] of Object.entries(anchors)) if (typeof messageID === "string") out[channelID] = messageID
+  for (const [channelID, messageID] of Object.entries(anchors))
+    if (typeof messageID === "string") out[channelID] = messageID
   return out
 }
 
@@ -296,7 +307,12 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
           if (channel === undefined || channel._tag === "None") return undefined
           // A thread's name is a POST TITLE ("Crash on save"), not a channel handle — only
           // channels get the leading #.
-          const label = channel.value.name == null ? undefined : THREAD_TYPES.has(channel.value.type) ? channel.value.name : `#${channel.value.name}`
+          const label =
+            channel.value.name == null
+              ? undefined
+              : THREAD_TYPES.has(channel.value.type)
+                ? channel.value.name
+                : `#${channel.value.name}`
           const meta: ChannelMeta = {
             ...(label === undefined ? {} : { title: label }),
             type: channel.value.type,
@@ -366,7 +382,13 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
       const persistCursor = Effect.suspend(() =>
         ctx.cursor
           .set({
-            ...(session === undefined ? {} : { sessionID: session.sessionID, seq, ...(session.resumeURL === undefined ? {} : { resumeURL: session.resumeURL }) }),
+            ...(session === undefined
+              ? {}
+              : {
+                  sessionID: session.sessionID,
+                  seq,
+                  ...(session.resumeURL === undefined ? {} : { resumeURL: session.resumeURL }),
+                }),
             anchors: Object.fromEntries(anchors),
           })
           .pipe(Effect.ignore),
@@ -407,7 +429,8 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
       // Only on a fresh identify: a RESUME already replays the gap through the gateway, and running
       // both would double-deliver (the dedup set guards the overlap, but skipping the REST burst
       // when it isn't needed is cheaper and kinder to the rate limit).
-      if (stored === undefined && anchors.size > 0) yield* Effect.forkScoped(backfill.pipe(Effect.catchCause(() => Effect.void)))
+      if (stored === undefined && anchors.size > 0)
+        yield* Effect.forkScoped(backfill.pipe(Effect.catchCause(() => Effect.void)))
 
       const pump = Effect.gen(function* () {
         while (true) {
@@ -421,7 +444,8 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
           switch (op) {
             case 10: {
               const hello = decodeHello(d)
-              if (hello._tag === "Some") yield* Effect.forkScoped(heartbeat(hello.value.heartbeat_interval).pipe(Effect.ignore))
+              if (hello._tag === "Some")
+                yield* Effect.forkScoped(heartbeat(hello.value.heartbeat_interval).pipe(Effect.ignore))
               acked = true
               if (session !== undefined) {
                 yield* sendFrame({ op: 6, d: { token, session_id: session.sessionID, seq } })
@@ -459,7 +483,9 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
                   session = {
                     sessionID: ready.value.session_id,
                     seq,
-                    ...(ready.value.resume_gateway_url === undefined ? {} : { resumeURL: ready.value.resume_gateway_url }),
+                    ...(ready.value.resume_gateway_url === undefined
+                      ? {}
+                      : { resumeURL: ready.value.resume_gateway_url }),
                   }
                   yield* persistCursor
                 }
@@ -489,7 +515,9 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
           // noise. `fail_if_not_exists: false` so a deleted question still gets its answer posted
           // (a hard failure would swallow the reply entirely).
           const reference =
-            message.replyTo === undefined ? {} : { message_reference: { message_id: message.replyTo, fail_if_not_exists: false } }
+            message.replyTo === undefined
+              ? {}
+              : { message_reference: { message_id: message.replyTo, fail_if_not_exists: false } }
           const post = (body: RequestInit) =>
             rest(`/channels/${chatID}/messages`, { method: "POST", ...body }).pipe(
               Effect.mapError((error) => new SendError({ reason: error.reason, retryable: true })),
@@ -513,11 +541,17 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
             form.set(
               "payload_json",
               JSON.stringify({
-                ...(message.text !== undefined && message.text.length > 0 ? { content: message.text.slice(0, 2000) } : {}),
+                ...(message.text !== undefined && message.text.length > 0
+                  ? { content: message.text.slice(0, 2000) }
+                  : {}),
                 ...reference,
               }),
             )
-            form.set("files[0]", new Blob([message.file.data as BlobPart], { type: message.file.mime }), message.file.name)
+            form.set(
+              "files[0]",
+              new Blob([message.file.data as BlobPart], { type: message.file.mime }),
+              message.file.name,
+            )
             const response = yield* post({ body: form })
             const sent = decodeSent(response.body)
             return { messageID: sent._tag === "Some" ? sent.value.id : "0" }
@@ -584,7 +618,9 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
           const guilds = decodeGuilds(guildsResponse.body)
           if (guilds._tag === "None") return out
           for (const guild of guilds.value.slice(0, 20)) {
-            const channelsResponse = yield* rest(`/guilds/${guild.id}/channels`).pipe(Effect.orElseSucceed(() => undefined))
+            const channelsResponse = yield* rest(`/guilds/${guild.id}/channels`).pipe(
+              Effect.orElseSucceed(() => undefined),
+            )
             const channels = channelsResponse === undefined ? undefined : decodeChannels(channelsResponse.body)
             if (channels !== undefined && channels._tag === "Some")
               for (const channel of channels.value) {
@@ -606,7 +642,9 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
               }
             // Live threads (every open forum post is one). They route to their parent's binding,
             // but they're listed so an operator can bind or read a single conversation.
-            const threadsResponse = yield* rest(`/guilds/${guild.id}/threads/active`).pipe(Effect.orElseSucceed(() => undefined))
+            const threadsResponse = yield* rest(`/guilds/${guild.id}/threads/active`).pipe(
+              Effect.orElseSucceed(() => undefined),
+            )
             const threads = threadsResponse === undefined ? undefined : decodeActiveThreads(threadsResponse.body)
             if (threads === undefined || threads._tag === "None") continue
             for (const thread of threads.value.threads) {
@@ -664,10 +702,14 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
               ),
             )
           const guildID = Effect.gen(function* () {
-            const response = yield* rest(`/channels/${chatID}`).pipe(Effect.mapError((error) => new ModerationError({ reason: error.reason })))
+            const response = yield* rest(`/channels/${chatID}`).pipe(
+              Effect.mapError((error) => new ModerationError({ reason: error.reason })),
+            )
             const gid = (response.body as { guild_id?: unknown })?.guild_id
             if (typeof gid !== "string")
-              return yield* Effect.fail(new ModerationError({ reason: "That chat isn't in a server — ban/kick/mute need a server channel." }))
+              return yield* Effect.fail(
+                new ModerationError({ reason: "That chat isn't in a server — ban/kick/mute need a server channel." }),
+              )
             return gid
           })
           switch (act.act) {
@@ -680,12 +722,16 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
               if (act.durationDays !== undefined)
                 return yield* Effect.fail(
                   new ModerationError({
-                    reason: "Discord has no temporary ban — ban permanently, or time the member out (mute) for a while instead.",
+                    reason:
+                      "Discord has no temporary ban — ban permanently, or time the member out (mute) for a while instead.",
                   }),
                 )
               // A spam wave needs the posts gone too, not just the account — Discord deletes the
               // member's messages from the last N seconds (max 7 days) on the ban itself.
-              const purge = act.purgeSeconds === undefined ? undefined : Math.max(0, Math.min(Math.floor(act.purgeSeconds), 7 * 24 * 3600))
+              const purge =
+                act.purgeSeconds === undefined
+                  ? undefined
+                  : Math.max(0, Math.min(Math.floor(act.purgeSeconds), 7 * 24 * 3600))
               return yield* call(`/guilds/${yield* guildID}/bans/${act.userID}`, {
                 method: "PUT",
                 headers: { "content-type": "application/json" },

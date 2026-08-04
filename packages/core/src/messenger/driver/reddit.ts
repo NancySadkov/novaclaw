@@ -126,7 +126,8 @@ export const isPostChat = (chatID: string): boolean => chatID.startsWith("t3_")
 
 /** Reddit ids are `<type>_<base36>`; some endpoints want the bare base36 ("article"), and mixing
  *  the two up is the classic Reddit integration bug. */
-export const bareID = (fullname: string): string => (fullname.includes("_") ? fullname.slice(fullname.indexOf("_") + 1) : fullname)
+export const bareID = (fullname: string): string =>
+  fullname.includes("_") ? fullname.slice(fullname.indexOf("_") + 1) : fullname
 
 /** Reddit answers a throttled WRITE with HTTP 200 and the error inside the body, so a driver that
  *  only checks status codes silently drops replies. Returns the retry delay when that happened. */
@@ -172,14 +173,19 @@ export const moderationRequest = (
       // Reddit CANNOT delete a banned user's back catalogue as part of the ban — say so instead of
       // banning them and quietly leaving the spam up, which reads as success.
       if (act.purgeSeconds !== undefined)
-        return { refusal: "Reddit can't remove a user's past posts as part of a ban — ban them, then remove the items (they're in the queue)." }
+        return {
+          refusal:
+            "Reddit can't remove a user's past posts as part of a ban — ban them, then remove the items (they're in the queue).",
+        }
       return {
         path: `/r/${subreddit}/api/friend`,
         form: {
           type: "banned",
           name: act.userID,
           api_type: "json",
-          ...(act.durationDays === undefined ? {} : { duration: String(Math.max(1, Math.min(999, Math.round(act.durationDays)))) }),
+          ...(act.durationDays === undefined
+            ? {}
+            : { duration: String(Math.max(1, Math.min(999, Math.round(act.durationDays)))) }),
         },
       }
     case "mute":
@@ -206,7 +212,11 @@ const num = (value: unknown): number | undefined => (typeof value === "number" ?
 
 /** A post → the chat it opens plus the message that opened it. Title and body are one message: to a
  *  reader they ARE the post, and an agent triaging bug reports needs both. */
-export const postInbound = (subreddit: string, data: Record<string, unknown>, selfName: string | undefined): InboundEvent | undefined => {
+export const postInbound = (
+  subreddit: string,
+  data: Record<string, unknown>,
+  selfName: string | undefined,
+): InboundEvent | undefined => {
   const name = str(data["name"]) ?? (str(data["id"]) === undefined ? undefined : `t3_${str(data["id"])}`)
   const author = str(data["author"])
   if (name === undefined || author === undefined) return undefined
@@ -222,7 +232,11 @@ export const postInbound = (subreddit: string, data: Record<string, unknown>, se
     messageID: name,
     // The id IS the username: Reddit moderation acts on names, not on t2_ ids, so this is what
     // `moderate ban` needs to receive from the message header.
-    sender: { id: author, name: author, isSelf: selfName !== undefined && author.toLowerCase() === selfName.toLowerCase() },
+    sender: {
+      id: author,
+      name: author,
+      isSelf: selfName !== undefined && author.toLowerCase() === selfName.toLowerCase(),
+    },
     text,
     at: (num(data["created_utc"]) ?? Date.now() / 1000) * 1000,
   }
@@ -234,13 +248,19 @@ export const postInbound = (subreddit: string, data: Record<string, unknown>, se
  * lands in the queue chat rather than the post's thread, an item that was already delivered when it
  * was posted doesn't read as a duplicate of itself.
  */
-export const modqueueInbound = (subreddit: string, data: Record<string, unknown>, selfName: string | undefined): InboundEvent | undefined => {
+export const modqueueInbound = (
+  subreddit: string,
+  data: Record<string, unknown>,
+  selfName: string | undefined,
+): InboundEvent | undefined => {
   const name = str(data["name"])
   const author = str(data["author"])
   if (name === undefined || author === undefined) return undefined
   const isPost = name.startsWith("t3_")
   const body = isPost
-    ? [str(data["title"]), str(data["selftext"])].filter((part): part is string => part !== undefined && part.length > 0).join("\n\n")
+    ? [str(data["title"]), str(data["selftext"])]
+        .filter((part): part is string => part !== undefined && part.length > 0)
+        .join("\n\n")
     : (str(data["body"]) ?? "")
   const where = str(data["link_title"])
   return {
@@ -254,7 +274,11 @@ export const modqueueInbound = (subreddit: string, data: Record<string, unknown>
       proposedAccess: "private",
     },
     messageID: name,
-    sender: { id: author, name: author, isSelf: selfName !== undefined && author.toLowerCase() === selfName.toLowerCase() },
+    sender: {
+      id: author,
+      name: author,
+      isSelf: selfName !== undefined && author.toLowerCase() === selfName.toLowerCase(),
+    },
     text: [
       `[${isPost ? "post" : "comment"} · ${queueReason(data)}]${where !== undefined && !isPost ? ` on "${where}"` : ""}`,
       body,
@@ -265,7 +289,11 @@ export const modqueueInbound = (subreddit: string, data: Record<string, unknown>
   }
 }
 
-export const commentInbound = (subreddit: string, data: Record<string, unknown>, selfName: string | undefined): InboundEvent | undefined => {
+export const commentInbound = (
+  subreddit: string,
+  data: Record<string, unknown>,
+  selfName: string | undefined,
+): InboundEvent | undefined => {
   const name = str(data["name"]) ?? (str(data["id"]) === undefined ? undefined : `t1_${str(data["id"])}`)
   const author = str(data["author"])
   const linkID = str(data["link_id"])
@@ -281,7 +309,11 @@ export const commentInbound = (subreddit: string, data: Record<string, unknown>,
       proposedAccess: "public",
     },
     messageID: name,
-    sender: { id: author, name: author, isSelf: selfName !== undefined && author.toLowerCase() === selfName.toLowerCase() },
+    sender: {
+      id: author,
+      name: author,
+      isSelf: selfName !== undefined && author.toLowerCase() === selfName.toLowerCase(),
+    },
     text: str(data["body"]) ?? "",
     ...(parent === undefined ? {} : { replyTo: parent }),
     at: (num(data["created_utc"]) ?? Date.now() / 1000) * 1000,
@@ -311,11 +343,15 @@ export const advanceCursor = (
   return { cursor: { before: fullnames[0], seen: merged }, fresh }
 }
 
-export const readCursor = (value: unknown): { posts: ListingCursor; comments: ListingCursor; modqueue: ListingCursor } => {
+export const readCursor = (
+  value: unknown,
+): { posts: ListingCursor; comments: ListingCursor; modqueue: ListingCursor } => {
   const raw = (value ?? {}) as Record<string, unknown>
   const one = (key: string): ListingCursor => {
     const entry = (raw[key] ?? {}) as Record<string, unknown>
-    const seen = Array.isArray(entry["seen"]) ? entry["seen"].filter((item): item is string => typeof item === "string") : []
+    const seen = Array.isArray(entry["seen"])
+      ? entry["seen"].filter((item): item is string => typeof item === "string")
+      : []
     const before = str(entry["before"])
     return before === undefined ? { seen } : { before, seen }
   }
@@ -336,17 +372,32 @@ const parseConfig = (account: Messenger.AccountInfo): Effect.Effect<RedditConfig
     const subreddit = normalizeSubreddit(account.settings["subreddit"] ?? "")
     const clientId = (account.settings["clientId"] ?? "").trim()
     const username = (account.settings["username"] ?? "").trim()
-    if (subreddit.length === 0) return yield* Effect.fail(new ConnectError({ reason: "Which subreddit? Fill in the subreddit for this account in Settings." }))
+    if (subreddit.length === 0)
+      return yield* Effect.fail(
+        new ConnectError({ reason: "Which subreddit? Fill in the subreddit for this account in Settings." }),
+      )
     if (clientId.length === 0)
       return yield* Effect.fail(
-        new ConnectError({ reason: "Reddit needs your own app's client ID (Settings → Messengers). Reddit's rate limit is per client ID, so each instance uses its own." }),
+        new ConnectError({
+          reason:
+            "Reddit needs your own app's client ID (Settings → Messengers). Reddit's rate limit is per client ID, so each instance uses its own.",
+        }),
       )
     if (username.length === 0)
-      return yield* Effect.fail(new ConnectError({ reason: "Reddit requires the bot account's username as contact info in every request. Add it in Settings." }))
+      return yield* Effect.fail(
+        new ConnectError({
+          reason: "Reddit requires the bot account's username as contact info in every request. Add it in Settings.",
+        }),
+      )
     return { subreddit, clientId, username }
   })
 
-export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, openBrowser: (url: string) => Effect.Effect<void>, options?: RedditOptions): Driver => {
+export const make = (
+  fetchImpl: FetchLike,
+  loopbackFactory: LoopbackFactory,
+  openBrowser: (url: string) => Effect.Effect<void>,
+  options?: RedditOptions,
+): Driver => {
   const pollIntervalMs = options?.pollIntervalMs ?? 20_000
   const version = options?.version ?? InstallationVersion
 
@@ -377,7 +428,12 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
         const state = crypto.randomUUID()
         // Fixed port + exact URI: Reddit rejects a redirect that doesn't match what was registered,
         // so this must equal the string the setup recipe told the user to enter (REDIRECT_URI).
-        const loopback = yield* loopbackFactory({ expectedState: state, provider: "Reddit", port: LOOPBACK_PORT, redirectUri: REDIRECT_URI })
+        const loopback = yield* loopbackFactory({
+          expectedState: state,
+          provider: "Reddit",
+          port: LOOPBACK_PORT,
+          redirectUri: REDIRECT_URI,
+        })
         // `duration=permanent` is what earns a refresh token — without it the login dies in an hour.
         const url =
           `${WWW}/api/v1/authorize?` +
@@ -395,7 +451,8 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
         yield* Effect.forkScoped(
           Effect.tryPromise({
             try: () => loopback.waitForCode,
-            catch: (error) => new LoginCodeError({ reason: `Reddit sign-in didn't complete: ${String(error)}`, retryable: false }),
+            catch: (error) =>
+              new LoginCodeError({ reason: `Reddit sign-in didn't complete: ${String(error)}`, retryable: false }),
           }).pipe(
             Effect.flatMap((code) =>
               tokenCall(config, { grant_type: "authorization_code", code, redirect_uri: loopback.redirectUri }).pipe(
@@ -422,7 +479,12 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
         const complete: LoginPending["complete"] = () =>
           Effect.gen(function* () {
             if (!(yield* Deferred.isDone(result)))
-              return yield* Effect.fail(new LoginCodeError({ reason: "Still waiting for you to approve NovaClaw in your browser…", retryable: true }))
+              return yield* Effect.fail(
+                new LoginCodeError({
+                  reason: "Still waiting for you to approve NovaClaw in your browser…",
+                  retryable: true,
+                }),
+              )
             return { session: JSON.stringify(yield* Deferred.await(result)) }
           })
 
@@ -446,7 +508,11 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
         }
       })()
       if (stored === undefined)
-        return yield* Effect.fail(new ConnectError({ reason: "This Reddit account isn't signed in yet — use Log in in Settings → Messengers." }))
+        return yield* Effect.fail(
+          new ConnectError({
+            reason: "This Reddit account isn't signed in yet — use Log in in Settings → Messengers.",
+          }),
+        )
 
       let accessToken: string | undefined
       let expiresAt = 0
@@ -462,7 +528,10 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
           const reason = str(body?.["error"]) ?? `HTTP ${response.status}`
           return yield* Effect.fail(
             reason === "invalid_grant"
-              ? new ChallengeError({ message: "Reddit no longer accepts this sign-in (access was revoked). Log in again in Settings → Messengers." })
+              ? new ChallengeError({
+                  message:
+                    "Reddit no longer accepts this sign-in (access was revoked). Log in again in Settings → Messengers.",
+                })
               : new ConnectError({ reason: `Reddit refused the token refresh (${reason}).` }),
           )
         }
@@ -475,7 +544,9 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
       // `Connection` method may only fail with ConnectError, so the challenge is raised where it
       // can be honoured: at connect (below, and again on every reconnect after the stream dies).
       const apiToken = token.pipe(
-        Effect.mapError((error) => (error._tag === "MessengerDriver.ChallengeError" ? new ConnectError({ reason: error.message }) : error)),
+        Effect.mapError((error) =>
+          error._tag === "MessengerDriver.ChallengeError" ? new ConnectError({ reason: error.message }) : error,
+        ),
       )
 
       const api = (path: string, init?: { method?: string; form?: Record<string, string> }) =>
@@ -509,7 +580,9 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
       // Who we are — also the self-echo test, since Reddit identifies authors by username.
       const meResponse = yield* api("/api/v1/me")
       if (meResponse.status === 401 || meResponse.status === 403)
-        return yield* Effect.fail(new ConnectError({ reason: "Reddit rejected this sign-in — log in again in Settings → Messengers." }))
+        return yield* Effect.fail(
+          new ConnectError({ reason: "Reddit rejected this sign-in — log in again in Settings → Messengers." }),
+        )
       const selfName = str((meResponse.body as Record<string, unknown> | undefined)?.["name"]) ?? config.username
 
       const queue = yield* Queue.unbounded<InboundEvent>()
@@ -521,10 +594,17 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
       }
 
       /** One poll of one listing: newest-first from Reddit, emitted oldest-first. */
-      const pollListing = (path: string, key: "posts" | "comments" | "modqueue", toEvent: (data: Record<string, unknown>) => InboundEvent | undefined) =>
+      const pollListing = (
+        path: string,
+        key: "posts" | "comments" | "modqueue",
+        toEvent: (data: Record<string, unknown>) => InboundEvent | undefined,
+      ) =>
         Effect.gen(function* () {
           const cursor = cursors[key]
-          const query = new URLSearchParams({ limit: "100", ...(cursor.before === undefined ? {} : { before: cursor.before }) })
+          const query = new URLSearchParams({
+            limit: "100",
+            ...(cursor.before === undefined ? {} : { before: cursor.before }),
+          })
           const response = yield* api(`${path}?${query.toString()}`)
           if (response.status === 429) return // budget exhausted; the next tick retries
           if (response.status >= 400)
@@ -545,15 +625,19 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
 
       const pump = Effect.gen(function* () {
         while (true) {
-          yield* pollListing(`/r/${config.subreddit}/new`, "posts", (data) => postInbound(config.subreddit, data, selfName))
-          yield* pollListing(`/r/${config.subreddit}/comments`, "comments", (data) => commentInbound(config.subreddit, data, selfName))
+          yield* pollListing(`/r/${config.subreddit}/new`, "posts", (data) =>
+            postInbound(config.subreddit, data, selfName),
+          )
+          yield* pollListing(`/r/${config.subreddit}/comments`, "comments", (data) =>
+            commentInbound(config.subreddit, data, selfName),
+          )
           // The queue is polled too: a report can land on a week-old comment that no `/new` poll
           // will ever surface again, and a report is precisely what should wake a moderator. A
           // failure here is NOT fatal — the bot may simply lack the `posts` mod permission, and
           // losing the public listings over that would be a worse outcome than a quiet queue.
-          yield* pollListing(`/r/${config.subreddit}/about/modqueue`, "modqueue", (data) => modqueueInbound(config.subreddit, data, selfName)).pipe(
-            Effect.catchCause(() => Effect.void),
-          )
+          yield* pollListing(`/r/${config.subreddit}/about/modqueue`, "modqueue", (data) =>
+            modqueueInbound(config.subreddit, data, selfName),
+          ).pipe(Effect.catchCause(() => Effect.void))
           yield* Effect.sleep(Duration.millis(pollIntervalMs))
         }
       })
@@ -562,7 +646,12 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
       const send = (chatID: string, message: OutboundMessage) =>
         Effect.gen(function* () {
           if (message.file !== undefined)
-            return yield* Effect.fail(new SendError({ reason: "Reddit comments can't carry file uploads — link to the file instead.", retryable: false }))
+            return yield* Effect.fail(
+              new SendError({
+                reason: "Reddit comments can't carry file uploads — link to the file instead.",
+                retryable: false,
+              }),
+            )
           const text = message.text ?? ""
           if (text.length === 0) return { messageID: "" }
           // Reply to the exact comment when asked; otherwise a top-level comment on the post. The
@@ -572,23 +661,36 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
           if (parent === undefined)
             return yield* Effect.fail(
               new SendError({
-                reason: "Reply to a post or a comment (use the chat id of the post) — this driver doesn't submit new posts.",
+                reason:
+                  "Reply to a post or a comment (use the chat id of the post) — this driver doesn't submit new posts.",
                 retryable: false,
               }),
             )
-          const response = yield* api("/api/comment", { method: "POST", form: { thing_id: parent, text, api_type: "json" } }).pipe(
-            Effect.mapError((error) => new SendError({ reason: error.reason, retryable: true })),
-          )
+          const response = yield* api("/api/comment", {
+            method: "POST",
+            form: { thing_id: parent, text, api_type: "json" },
+          }).pipe(Effect.mapError((error) => new SendError({ reason: error.reason, retryable: true })))
           // The throttle Reddit answers with HTTP 200 — checked BEFORE status, since status is fine.
           const throttled = parseRateLimit(response.body)
           if (throttled !== undefined)
             return yield* Effect.fail(
-              new SendError({ reason: `Reddit is throttling this account — retry in about ${Math.ceil(throttled.retryAfterMs / 1000)}s.`, retryable: true }),
+              new SendError({
+                reason: `Reddit is throttling this account — retry in about ${Math.ceil(throttled.retryAfterMs / 1000)}s.`,
+                retryable: true,
+              }),
             )
           const failure = parseApiError(response.body)
-          if (failure !== undefined) return yield* Effect.fail(new SendError({ reason: `Reddit refused the comment (${failure})`, retryable: false }))
+          if (failure !== undefined)
+            return yield* Effect.fail(
+              new SendError({ reason: `Reddit refused the comment (${failure})`, retryable: false }),
+            )
           if (response.status >= 400)
-            return yield* Effect.fail(new SendError({ reason: `Reddit refused the comment (HTTP ${response.status})`, retryable: response.status >= 500 }))
+            return yield* Effect.fail(
+              new SendError({
+                reason: `Reddit refused the comment (HTTP ${response.status})`,
+                retryable: response.status >= 500,
+              }),
+            )
           const things = (response.body as { json?: { data?: { things?: unknown } } })?.json?.data?.things
           const first = Array.isArray(things) ? (things[0] as Thing | undefined) : undefined
           return { messageID: str(first?.data?.["name"]) ?? "" }
@@ -640,7 +742,10 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
             const response = yield* api(`/r/${config.subreddit}/about/modqueue?limit=${Math.min(100, limit)}`)
             if (response.status === 403)
               return yield* Effect.fail(
-                new ConnectError({ reason: "Reddit refused the moderation queue — this account needs the `posts` moderator permission on the subreddit." }),
+                new ConnectError({
+                  reason:
+                    "Reddit refused the moderation queue — this account needs the `posts` moderator permission on the subreddit.",
+                }),
               )
             for (const thing of [...children(response.body)].reverse()) {
               const event = modqueueInbound(config.subreddit, thing.data, selfName)
@@ -673,12 +778,17 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
             }
             return entries
           }
-          const response = yield* api(`/r/${config.subreddit}/comments/${bareID(chatID)}?limit=${Math.min(100, limit)}&sort=old`)
+          const response = yield* api(
+            `/r/${config.subreddit}/comments/${bareID(chatID)}?limit=${Math.min(100, limit)}&sort=old`,
+          )
           // A comment-tree response is [post listing, comment listing]; both are things we render.
           const listings = Array.isArray(response.body) ? (response.body as unknown[]) : []
           for (const [index, listing] of listings.entries()) {
             for (const thing of children(listing)) {
-              const event = index === 0 ? postInbound(config.subreddit, thing.data, selfName) : commentInbound(config.subreddit, thing.data, selfName)
+              const event =
+                index === 0
+                  ? postInbound(config.subreddit, thing.data, selfName)
+                  : commentInbound(config.subreddit, thing.data, selfName)
               if (event?.kind !== "message") continue
               entries.push({
                 messageID: event.messageID,
@@ -701,7 +811,8 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
             Effect.mapError((error) => new ModerationError({ reason: error.reason })),
           )
           const failure = parseApiError(response.body)
-          if (failure !== undefined) return yield* Effect.fail(new ModerationError({ reason: `Reddit refused (${failure})` }))
+          if (failure !== undefined)
+            return yield* Effect.fail(new ModerationError({ reason: `Reddit refused (${failure})` }))
           if (response.status >= 400)
             return yield* Effect.fail(
               new ModerationError({
@@ -725,9 +836,24 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
       auth: "login",
       loginStyle: "browser",
       settings: [
-        { type: "text", key: "subreddit", message: "Which subreddit does this account moderate?", placeholder: "r/novaclaw" },
-        { type: "text", key: "username", message: "The Reddit account NovaClaw will act as", placeholder: "novaclaw-bot" },
-        { type: "text", key: "clientId", message: "Your Reddit app's client ID", placeholder: "from reddit.com/prefs/apps" },
+        {
+          type: "text",
+          key: "subreddit",
+          message: "Which subreddit does this account moderate?",
+          placeholder: "r/novaclaw",
+        },
+        {
+          type: "text",
+          key: "username",
+          message: "The Reddit account NovaClaw will act as",
+          placeholder: "novaclaw-bot",
+        },
+        {
+          type: "text",
+          key: "clientId",
+          message: "Your Reddit app's client ID",
+          placeholder: "from reddit.com/prefs/apps",
+        },
       ],
       loginPrompts: [],
       setup: {

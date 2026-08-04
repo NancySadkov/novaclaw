@@ -55,7 +55,13 @@ describe("JhProbe.staircaseDriver", () => {
 
   test("step-halving after the first reversal (step 2 → 1)", async () => {
     const result = await Effect.runPromise(
-      JhProbe.staircaseDriver({ run: (task) => Effect.succeed(task.k <= 7), seed: 5, start: 3, stepSize: 2, maxProbes: 20 })
+      JhProbe.staircaseDriver({
+        run: (task) => Effect.succeed(task.k <= 7),
+        seed: 5,
+        start: 3,
+        stepSize: 2,
+        maxProbes: 20,
+      }),
     )
     // Early climb uses step 2 (3,5,7...), later refinement moves by 1 (7,8,7,8...).
     const ks = result.trace.map((t) => t.k)

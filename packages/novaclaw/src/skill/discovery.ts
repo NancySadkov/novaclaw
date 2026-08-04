@@ -75,8 +75,7 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | Path.Path | Htt
       const missing = data.skills.filter((skill) => !skill.files.includes("SKILL.md"))
       yield* Effect.forEach(
         missing,
-        (skill) =>
-          Log.event("skill.index.entry.invalid", { "skill.url": index, "skill.name": skill.name }),
+        (skill) => Log.event("skill.index.entry.invalid", { "skill.url": index, "skill.name": skill.name }),
         { discard: true },
       )
       const list = data.skills.filter((skill) => skill.files.includes("SKILL.md"))

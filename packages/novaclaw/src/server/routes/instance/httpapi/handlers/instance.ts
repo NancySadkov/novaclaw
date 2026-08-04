@@ -72,9 +72,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       // mode (no host FS to jump to); never fails the route (degrades to none).
       const places = virtual
         ? []
-        : yield* Effect.promise(() => OsPlaces.probePlaces(Global.Path.home)).pipe(
-            Effect.orElseSucceed(() => []),
-          )
+        : yield* Effect.promise(() => OsPlaces.probePlaces(Global.Path.home)).pipe(Effect.orElseSucceed(() => []))
       return {
         home: Global.Path.home,
         state: Global.Path.state,
@@ -180,9 +178,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       return yield* Effect.tryPromise(() => AppRegistry.listApps()).pipe(Effect.orDie)
     })
 
-    const registerApp = Effect.fn("InstanceHttpApi.appRegister")(function* (ctx: {
-      payload: AppRegistry.SaveInput
-    }) {
+    const registerApp = Effect.fn("InstanceHttpApi.appRegister")(function* (ctx: { payload: AppRegistry.SaveInput }) {
       const manifest = yield* Effect.tryPromise(() => AppRegistry.saveApp(ctx.payload)).pipe(
         Effect.mapError(
           (error) =>

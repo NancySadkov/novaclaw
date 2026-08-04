@@ -199,6 +199,16 @@
   background: var(--v2-overlay-simple-overlay-hover);
 }
 
+.directory-picker-v2-context-menu-shortcut {
+  margin-left: auto;
+  color: var(--v2-text-text-faint);
+  font-size: 10px;
+}
+
+.directory-picker-v2-context-menu button.directory-picker-v2-context-menu-danger {
+  color: var(--v2-state-fg-danger);
+}
+
 .directory-picker-v2-state {
   position: absolute;
   z-index: 1;

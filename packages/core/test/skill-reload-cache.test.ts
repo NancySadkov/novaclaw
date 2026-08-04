@@ -59,10 +59,7 @@ describe("SkillV2 cache invalidation", () => {
 
         yield* skill.reload()
 
-        expect(described(yield* skill.list())).toEqual([
-          "deploy:Ship the build",
-          "review:Review a change, carefully",
-        ])
+        expect(described(yield* skill.list())).toEqual(["deploy:Ship the build", "review:Review a change, carefully"])
       }),
     ),
   )

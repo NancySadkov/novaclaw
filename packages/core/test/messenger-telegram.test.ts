@@ -30,16 +30,16 @@ const makeFakeApi = (updateBatches: unknown[][]) => {
       return Response.json({ ok: true, result })
     }
     if (method === "sendMessage")
-      return Response.json({ ok: true, result: { message_id: 5000 + calls.length, chat: { id: body.chat_id, type: "private" }, date: 1 } })
+      return Response.json({
+        ok: true,
+        result: { message_id: 5000 + calls.length, chat: { id: body.chat_id, type: "private" }, date: 1 },
+      })
     return Response.json({ ok: false, description: "unknown method" })
   }
   return { fetchImpl, calls }
 }
 
-const collect = (
-  fetchImpl: FetchLike,
-  opts?: { cursorStore?: { value: unknown } },
-) =>
+const collect = (fetchImpl: FetchLike, opts?: { cursorStore?: { value: unknown } }) =>
   Effect.gen(function* () {
     const cursor = opts?.cursorStore ?? { value: undefined as unknown }
     const received: InboundEvent[] = []
@@ -60,7 +60,10 @@ const collect = (
           },
         })
         // Pull a few events, then leave the scope (ending the poll loop).
-        yield* connection.inbound.pipe(Stream.take(2), Stream.runForEach((event) => Effect.sync(() => received.push(event))))
+        yield* connection.inbound.pipe(
+          Stream.take(2),
+          Stream.runForEach((event) => Effect.sync(() => received.push(event))),
+        )
         return connection
       }),
     )
@@ -161,7 +164,10 @@ describe("TelegramDriver", () => {
               document: { file_id: "FILE1", file_name: "brief.pdf", mime_type: "application/pdf", file_size: 1234 },
             },
           },
-          { update_id: 2, message: { message_id: 4, chat: { id: -400, type: "supergroup", title: "Support" }, date: 1, text: "ping" } },
+          {
+            update_id: 2,
+            message: { message_id: 4, chat: { id: -400, type: "supergroup", title: "Support" }, date: 1, text: "ping" },
+          },
         ],
       ])
       const received = yield* collect(fetchImpl)
@@ -170,7 +176,12 @@ describe("TelegramDriver", () => {
         expect(doc.chat.kind).toBe("group")
         expect(doc.chat.title).toBe("Support")
         expect(doc.text).toBe("here is the brief")
-        expect(doc.attachments?.[0]).toMatchObject({ id: "FILE1", name: "brief.pdf", mime: "application/pdf", size: 1234 })
+        expect(doc.attachments?.[0]).toMatchObject({
+          id: "FILE1",
+          name: "brief.pdf",
+          mime: "application/pdf",
+          size: 1234,
+        })
       }
     }),
   )

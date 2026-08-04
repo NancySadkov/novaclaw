@@ -197,10 +197,7 @@ export const unreadableTurnAttachments = (
  * came back blind, so the tool is named. Same closing instruction, for the same reason — a small
  * model handed "an image was returned" will describe it.
  */
-export const unreadableToolMediaNotice = (
-  file: Pick<ToolFileContent, "mime" | "name">,
-  toolName: string,
-): string => {
+export const unreadableToolMediaNotice = (file: Pick<ToolFileContent, "mime" | "name">, toolName: string): string => {
   const modality = attachmentModality(file.mime) ?? "this kind of"
   return `[The ${toolName} tool returned ${file.name ? `${file.name} ` : ""}(${file.mime}), which was NOT sent to you: the selected model cannot read ${modality} input. You have not seen it — say so rather than describing or guessing its contents.]`
 }
@@ -417,11 +414,7 @@ const toolResult = (
   }
 }
 
-const assistant = (
-  message: SessionMessage.Assistant,
-  model: Model,
-  capabilities: InputCapabilities | undefined,
-) => {
+const assistant = (message: SessionMessage.Assistant, model: Model, capabilities: InputCapabilities | undefined) => {
   const sameModel =
     String(message.model.providerID) === String(model.provider) && String(message.model.id) === String(model.id)
   // A broken stream may leave provider-native continuation handles half-written. Keep the human-readable

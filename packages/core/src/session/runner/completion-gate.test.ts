@@ -37,11 +37,15 @@ describe("SessionStrict.completionChecks", () => {
     // `syntax`/`check` are `{file}` templates (Quality.renderCommand) — they answer a question about
     // one edit, not about the deliverable, and running them with no file substituted would be a
     // fabricated verdict.
-    expect(SessionStrict.completionChecks(cfg({ commands: { syntax: "tsc {file}", check: "eslint {file}" } }))).toEqual([])
+    expect(SessionStrict.completionChecks(cfg({ commands: { syntax: "tsc {file}", check: "eslint {file}" } }))).toEqual(
+      [],
+    )
   })
 
   test("typecheck → test → lint, each with its own timeout", () => {
-    const checks = SessionStrict.completionChecks(cfg({ testTimeout: 42_000, commands: { lint: "L", test: "T", typecheck: "TC", syntax: "S" } }))
+    const checks = SessionStrict.completionChecks(
+      cfg({ testTimeout: 42_000, commands: { lint: "L", test: "T", typecheck: "TC", syntax: "S" } }),
+    )
     expect(checks.map((c) => c.label)).toEqual(["typecheck", "test", "lint"])
     expect(checks.map((c) => c.command)).toEqual(["TC", "T", "L"])
     expect(checks.map((c) => c.timeoutMs)).toEqual([
@@ -111,10 +115,22 @@ describe("SessionStrict.runTask reaches the gate (the filing's claim, inverted)"
     // check so it commits without a per-step goal-check, and the whole-task goal-check then claims
     // success with a quote that IS in the workspace (so the evidence rule passes and the ONLY thing
     // left standing between the claim and `done` is the mechanical gate).
-    const leaf = { size: "atomic", tool: "run", args: { command: "exit 0" }, success: "ok", check: { type: "run", command: "exit 0" }, produces: [] }
+    const leaf = {
+      size: "atomic",
+      tool: "run",
+      args: { command: "exit 0" },
+      success: "ok",
+      check: { type: "run", command: "exit 0" },
+      produces: [],
+    }
     const steps = [
       JSON.stringify({ goal: "whole task", ...leaf }),
-      JSON.stringify({ goal: "root", size: "needs_decomposition", success: "ok", substeps: [{ goal: "do it", ...leaf }] }),
+      JSON.stringify({
+        goal: "root",
+        size: "needs_decomposition",
+        success: "ok",
+        substeps: [{ goal: "do it", ...leaf }],
+      }),
       JSON.stringify({ goal: "do it", ...leaf }),
     ]
     let i = 0
@@ -136,7 +152,10 @@ describe("SessionStrict.runTask reaches the gate (the filing's claim, inverted)"
   // afterAll, not an exit hook — otherwise every run of this file leaves a fixture root in %TEMP%.
   const roots: string[] = []
   afterAll(() => {
-    for (const r of roots) try { fs.rmSync(r, { recursive: true, force: true }) } catch {}
+    for (const r of roots)
+      try {
+        fs.rmSync(r, { recursive: true, force: true })
+      } catch {}
   })
   const workspace = () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "jh-gate-"))
@@ -172,10 +191,22 @@ describe("SessionStrict.runTask reaches the gate (the filing's claim, inverted)"
     const notices: string[] = []
     const cwd = workspace()
     fs.writeFileSync(path.join(cwd, "out.txt"), "RESULT PROOF-42 done")
-    const leaf = { size: "atomic", tool: "run", args: { command: "exit 0" }, success: "ok", check: { type: "run", command: "exit 0" }, produces: [] }
+    const leaf = {
+      size: "atomic",
+      tool: "run",
+      args: { command: "exit 0" },
+      success: "ok",
+      check: { type: "run", command: "exit 0" },
+      produces: [],
+    }
     const steps = [
       JSON.stringify({ goal: "whole task", ...leaf }),
-      JSON.stringify({ goal: "root", size: "needs_decomposition", success: "ok", substeps: [{ goal: "do it", ...leaf }] }),
+      JSON.stringify({
+        goal: "root",
+        size: "needs_decomposition",
+        success: "ok",
+        substeps: [{ goal: "do it", ...leaf }],
+      }),
       JSON.stringify({ goal: "do it", ...leaf }),
     ]
     let i = 0
@@ -185,14 +216,24 @@ describe("SessionStrict.runTask reaches the gate (the filing's claim, inverted)"
       strict: { wallMinutes: 2 },
       quality: cfg({ commands: { test: "exit 3" }, testTimeout: 20_000 }),
       completeOnce: (_system, user) =>
-        Effect.succeed(user.includes("Is the goal fully achieved?") ? `{"achieved": true, "missing": "", "evidence": "PROOF-42"}` : (steps[i++] ?? JSON.stringify({ goal: "again", ...leaf }))),
+        Effect.succeed(
+          user.includes("Is the goal fully achieved?")
+            ? `{"achieved": true, "missing": "", "evidence": "PROOF-42"}`
+            : (steps[i++] ?? JSON.stringify({ goal: "again", ...leaf })),
+        ),
       onMilestone: (text) => Effect.sync(() => void notices.push(text)),
     }).pipe(Effect.runPromise)
     expect(notices.join("\n")).toContain("completion_gate")
   }, 60_000)
 
   test("the terminal notice explains the stop in words, and never claims completion", () => {
-    const text = SessionStrict.terminalNotice({ status: "blocked", reason: "completion_unverified", steps: 7, single: true, keptBest: false })
+    const text = SessionStrict.terminalNotice({
+      status: "blocked",
+      reason: "completion_unverified",
+      steps: 7,
+      single: true,
+      keptBest: false,
+    })
     expect(text).toContain("did NOT pass this project's own verification commands")
     expect(text).toContain("not reported complete")
     expect(text).not.toContain("✅") // never the done wording

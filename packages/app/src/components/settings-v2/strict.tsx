@@ -39,12 +39,11 @@ export const SettingsStrictV2: Component = () => {
   const language = useLanguage()
   const serverSync = useServerSync()
 
-  const current = (): StrictConfig => ((serverSync().data.config as { strict?: StrictConfig }).strict ?? {})
+  const current = (): StrictConfig => (serverSync().data.config as { strict?: StrictConfig }).strict ?? {}
 
   async function persist(patch: Partial<StrictConfig>) {
     const next = { ...current(), ...patch }
-    for (const key of Object.keys(next) as Array<keyof StrictConfig>)
-      if (next[key] === undefined) delete next[key]
+    for (const key of Object.keys(next) as Array<keyof StrictConfig>) if (next[key] === undefined) delete next[key]
     await serverSync()
       .updateConfig({ strict: next } as never)
       .catch((error: unknown) => {
@@ -70,7 +69,11 @@ export const SettingsStrictV2: Component = () => {
               title={language.t("settings.strict.row.enabled.title")}
               description={language.t("settings.strict.row.enabled.description")}
             >
-              <Switch checked={current().enabled === true} onChange={(checked) => void persist({ enabled: checked })} hideLabel>
+              <Switch
+                checked={current().enabled === true}
+                onChange={(checked) => void persist({ enabled: checked })}
+                hideLabel
+              >
                 {language.t("settings.strict.row.enabled.title")}
               </Switch>
             </SettingsRowV2>
@@ -149,7 +152,9 @@ export const SettingsStrictV2: Component = () => {
                   placeholder={String(DEFAULT_EXECUTION_TOKENS)}
                   onChange={(event) => {
                     const parsed = Number.parseInt(event.currentTarget.value, 10)
-                    void persist({ executionTokens: Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, MAX_TOKENS) : 0 })
+                    void persist({
+                      executionTokens: Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, MAX_TOKENS) : 0,
+                    })
                   }}
                   aria-label={language.t("settings.strict.row.executionTokens.title")}
                 />
@@ -171,7 +176,9 @@ export const SettingsStrictV2: Component = () => {
                   placeholder="0"
                   onChange={(event) => {
                     const parsed = Number.parseInt(event.currentTarget.value, 10)
-                    void persist({ reasoningTokens: Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, MAX_TOKENS) : 0 })
+                    void persist({
+                      reasoningTokens: Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, MAX_TOKENS) : 0,
+                    })
                   }}
                   aria-label={language.t("settings.strict.row.reasoningTokens.title")}
                 />

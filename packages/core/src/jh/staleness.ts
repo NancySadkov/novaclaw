@@ -90,7 +90,13 @@ const baseName = (name: string): string => {
 }
 
 /** the base-named tokens a command references (module-level twin of the tracker's internal refsOf). */
-const refsOfCommand = (command: string): Set<string> => new Set(command.split(/[\s"'=]+/).filter(Boolean).map(baseName))
+const refsOfCommand = (command: string): Set<string> =>
+  new Set(
+    command
+      .split(/[\s"'=]+/)
+      .filter(Boolean)
+      .map(baseName),
+  )
 
 /** improve6 P1 (gate surgery): extract ONLY the compile segment for `baseFile` from a possibly-COMPOUND
  *  command, keeping the leading environment-setup segments (`set PATH=…` / `export …`) it needs in a fresh
@@ -188,7 +194,13 @@ export function tracker(): Tracker {
   }
 
   // basenames a command references (its arguments), for chain discovery.
-  const refsOf = (command: string): Set<string> => new Set(command.split(/[\s"'=]+/).filter(Boolean).map(baseName))
+  const refsOf = (command: string): Set<string> =>
+    new Set(
+      command
+        .split(/[\s"'=]+/)
+        .filter(Boolean)
+        .map(baseName),
+    )
 
   const staleChainFor: Tracker["staleChainFor"] = (command, current) => {
     const curDigest = sourceDigest(current)
@@ -284,5 +296,17 @@ export function tracker(): Tracker {
     return undefined
   }
 
-  return { snap, recordAction, staleProducts, allStale, staleChainFor, checkDigest, sourceDigestNow, referencesProduct, productPresent, deepestSource, objectCompileFor }
+  return {
+    snap,
+    recordAction,
+    staleProducts,
+    allStale,
+    staleChainFor,
+    checkDigest,
+    sourceDigestNow,
+    referencesProduct,
+    productPresent,
+    deepestSource,
+    objectCompileFor,
+  }
 }

@@ -89,7 +89,9 @@ const SendOp = Schema.Struct({
 
 const ConnectOp = Schema.Struct({
   op: Schema.Literal("connect"),
-  chat: Schema.String.annotate({ description: "Chat id (from `chats`) to bind THIS session to — inbound messages become your turns" }),
+  chat: Schema.String.annotate({
+    description: "Chat id (from `chats`) to bind THIS session to — inbound messages become your turns",
+  }),
   trust: Schema.Literals(["operator", "client", "audience"]).annotate({
     description:
       "Who is on the other side — operator (you/family, full control), client (a customer whose requests you treat carefully), or audience (the public you only moderate). REQUIRED — ask the user if unsure.",
@@ -105,8 +107,12 @@ const ConnectOp = Schema.Struct({
 
 const DisconnectOp = Schema.Struct({
   op: Schema.Literal("disconnect"),
-  chat: Schema.String.pipe(Schema.optional).annotate({ description: "Chat id to unbind (default: this session's binding)" }),
-  account: Schema.String.pipe(Schema.optional).annotate({ description: "Account id or label — omit when only one account exists" }),
+  chat: Schema.String.pipe(Schema.optional).annotate({
+    description: "Chat id to unbind (default: this session's binding)",
+  }),
+  account: Schema.String.pipe(Schema.optional).annotate({
+    description: "Account id or label — omit when only one account exists",
+  }),
 })
 
 const UploadOp = Schema.Struct({
@@ -122,7 +128,9 @@ const UploadOp = Schema.Struct({
 const DownloadOp = Schema.Struct({
   op: Schema.Literal("download"),
   chat: Schema.String.annotate({ description: "Chat id the message with the attachment is in" }),
-  message: Schema.String.annotate({ description: "Message id carrying the attachment (shown in message headers and history)" }),
+  message: Schema.String.annotate({
+    description: "Message id carrying the attachment (shown in message headers and history)",
+  }),
   path: Schema.String.pipe(Schema.optional).annotate({
     description: "Where to save it, relative to this session's folder (default: downloads/<original name>)",
   }),
@@ -138,7 +146,9 @@ const ModerateOp = Schema.Struct({
     description:
       "delete a message · ban/kick/mute a member (needs a SERVER chat) · pin a message · approve a removed or reported item back into the listings · lock this chat against new replies. Not every platform has every act — a miss comes back saying so.",
   }),
-  message: Schema.String.pipe(Schema.optional).annotate({ description: "Message id — required for delete, pin and approve" }),
+  message: Schema.String.pipe(Schema.optional).annotate({
+    description: "Message id — required for delete, pin and approve",
+  }),
   user: Schema.String.pipe(Schema.optional).annotate({ description: "User id — required for ban, kick, and mute" }),
   seconds: Schema.Finite.pipe(Schema.optional).annotate({
     description:
@@ -153,7 +163,17 @@ const ModerateOp = Schema.Struct({
   }),
 })
 
-export const Input = Schema.Union([StatusOp, ChatsOp, HistoryOp, SendOp, ConnectOp, DisconnectOp, UploadOp, DownloadOp, ModerateOp])
+export const Input = Schema.Union([
+  StatusOp,
+  ChatsOp,
+  HistoryOp,
+  SendOp,
+  ConnectOp,
+  DisconnectOp,
+  UploadOp,
+  DownloadOp,
+  ModerateOp,
+])
 
 /** Build the driver `ModerationAct` from the flat op, validating the target this act needs. Pure. */
 export const buildModerationAct = (input: {
@@ -167,11 +187,15 @@ export const buildModerationAct = (input: {
   const user = input.user?.trim()
   switch (input.act) {
     case "delete":
-      return message ? { act: "delete", messageID: message } : { error: "delete needs a message id (from history/chat headers)." }
+      return message
+        ? { act: "delete", messageID: message }
+        : { error: "delete needs a message id (from history/chat headers)." }
     case "pin":
       return message ? { act: "pin", messageID: message } : { error: "pin needs a message id." }
     case "approve":
-      return message ? { act: "approve", messageID: message } : { error: "approve needs the message id of the item to restore." }
+      return message
+        ? { act: "approve", messageID: message }
+        : { error: "approve needs the message id of the item to restore." }
     case "lock":
       // Locking targets the CHAT the op already names — no message id to ask for.
       return { act: "lock" }
@@ -188,7 +212,11 @@ export const buildModerationAct = (input: {
       return user ? { act: "kick", userID: user } : { error: "kick needs a user id." }
     case "mute":
       return user
-        ? { act: "mute", userID: user, ...(input.seconds === undefined ? {} : { seconds: Math.max(1, Math.floor(input.seconds)) }) }
+        ? {
+            act: "mute",
+            userID: user,
+            ...(input.seconds === undefined ? {} : { seconds: Math.max(1, Math.floor(input.seconds)) }),
+          }
         : { error: "mute needs a user id." }
   }
 }
@@ -456,7 +484,8 @@ export const layer = Layer.effectDiscard(
       Effect.gen(function* () {
         const listed = yield* MessengerStore.attempted(store.listAccounts())
         if (!listed.read) return { miss: { outcome: "unavailable", message: STORE_UNAVAILABLE } satisfies Output }
-        const accounts = allowed === undefined ? listed.value : listed.value.filter((account) => allowed.has(account.id))
+        const accounts =
+          allowed === undefined ? listed.value : listed.value.filter((account) => allowed.has(account.id))
         if (accounts.length === 0)
           return {
             miss: {
@@ -544,420 +573,448 @@ export const layer = Layer.effectDiscard(
      * raised as an ask. Sending a file to the outside world is not something to negotiate mid-turn.
      */
     const containedPath = Effect.fn("MessengerTool.containedPath")(function* (raw: string) {
-      const target = yield* mutation
-        .resolve({ path: raw, kind: "file" })
-        .pipe(Effect.orElseSucceed(() => undefined))
+      const target = yield* mutation.resolve({ path: raw, kind: "file" }).pipe(Effect.orElseSucceed(() => undefined))
       if (target === undefined || target.externalDirectory !== undefined) return undefined
       return target.canonical
     })
 
     yield* tools
       .register({
-        [name]: Tool.withDeferred(Tool.make({
-          description:
-            "Read and send the user's real messages AND EMAILS through their connected accounts — chat " +
-            "apps (Telegram, Discord, IRC) AND email mailboxes (Gmail, Outlook, any IMAP account). THIS " +
-            "TOOL IS your access to the user's email and messaging. Whenever the user mentions email, mail, " +
-            "their inbox, Gmail/Outlook, a chat, or 'my messages', do NOT assume you have no access — START " +
-            'by calling {"op":"status"} to see which accounts are actually connected. ' +
-            "Ops: status (connected accounts + connection state + this session's bindings) · chats (list an " +
-            "account's conversations / recent EMAIL THREADS — subjects + senders; ids feed the other ops) · " +
-            "history (recent messages / emails of one chat or thread, oldest first — use it to read and " +
-            "summarize a mailbox or conversation) · send (write into a chat / reply to an email thread AS the " +
-            "user, paced at human speed; writing to a chat that has never messaged this account is a COLD " +
-            'START — refused unless you pass initiate:true, which asks the user for permission and is ' +
-            "strictly capped per day, so prefer asking people to message first) · connect (bind THIS session " +
-            "to a chat/thread — pick a trust tier) · " +
-            "disconnect · upload (send a workspace file, optional caption) · download (save an attachment) · " +
-            "moderate (delete a message, or ban/kick/mute/pin a member — for chats you moderate, where the " +
-            "platform supports it). " +
-            'To summarize a mailbox: {"op":"status"} → {"op":"chats","account":"<id or label>"} (recent ' +
-            'threads) → optionally {"op":"history","chat":"<id>"} for bodies → summarize. ' +
-            "The user's messages and emails are private: handle them inside this workspace and never forward " +
-            "them anywhere without being asked. " +
-            "ALSO USE THIS TOOL AS A RESEARCH SOURCE — it reads platforms the open web cannot. Many sources " +
-            "publish ONLY inside a chat platform: Telegram channels, Discord announcement/news channels " +
-            "(indie studios often post releases there before anywhere else), subreddits. Their web pages are " +
-            "JavaScript-only or blocked, so webfetch returns an empty shell. When research leads to one of " +
-            'those and the account is connected, read it HERE: {"op":"chats","account":"<id>"} to find the ' +
-            'channel, then {"op":"history","chat":"<id>"} for the posts. This is the SANCTIONED route — the ' +
-            "user's own account reading a public channel — not scraping, so prefer it over trying to fetch " +
-            "the platform's website. Cite the channel and post date like any other source. " +
-            '⚠️ For RESEARCH, pass purpose:"research" on `history` and read ONLY chats `chats` labels ' +
-            '"public source". The label is per chat and the user owns it, so the chat KIND tells you nothing ' +
-            "about it: a server text channel can be a public news feed or a company's private staff room. " +
-            '"private — never cite" is the user\'s correspondence and "unlabelled"/"unconfirmed" means nobody ' +
-            "has said yet — in all three cases you may still read the chat as correspondence when the user " +
-            "asked you to, but nothing from it may be quoted, summarized or cited outside this conversation. " +
-            "If you need one of those as a source, ask the user to mark it public in Settings → Messengers; " +
-            "you cannot mark it yourself, and that is deliberate.",
-          input: Input,
-          output: Output,
-          toModelOutput: ({ output }) => [{ type: "text", text: modelText(output) }],
-          execute: (input, context) =>
-            Effect.gen(function* () {
-              const gateway = MessengerGatewayHandle.get()
-              switch (input.op) {
-                case "status": {
-                  // ⚠️ THE headline lie this whole change exists for. `status` is the op the tool's
-                  // own description tells the model to START with, and an unreadable account table
-                  // used to reach it as "No messenger accounts are set up. Ask the user to add one
-                  // in Settings → Messengers" — a database fault rendered as a claim about the
-                  // user's setup, on the one surface a model consults before deciding it has no
-                  // messaging at all.
-                  const scope = yield* readScope(context.sessionID)
-                  if (scope === "unknown") return scopedReadRefusal(scope)!
-                  const listed = yield* MessengerStore.attempted(store.listAccounts())
-                  if (!listed.read) return { outcome: "unavailable", message: STORE_UNAVAILABLE } satisfies Output
-                  const allowedAccounts = scopedAccounts(scope)
-                  const accounts =
-                    allowedAccounts === undefined
-                      ? listed.value
-                      : listed.value.filter((account) => allowedAccounts.has(account.id))
-                  if (accounts.length === 0)
+        [name]: Tool.withDeferred(
+          Tool.make({
+            sideEffect: "non-idempotent",
+            description:
+              "Read and send the user's real messages AND EMAILS through their connected accounts — chat " +
+              "apps (Telegram, Discord, IRC) AND email mailboxes (Gmail, Outlook, any IMAP account). THIS " +
+              "TOOL IS your access to the user's email and messaging. Whenever the user mentions email, mail, " +
+              "their inbox, Gmail/Outlook, a chat, or 'my messages', do NOT assume you have no access — START " +
+              'by calling {"op":"status"} to see which accounts are actually connected. ' +
+              "Ops: status (connected accounts + connection state + this session's bindings) · chats (list an " +
+              "account's conversations / recent EMAIL THREADS — subjects + senders; ids feed the other ops) · " +
+              "history (recent messages / emails of one chat or thread, oldest first — use it to read and " +
+              "summarize a mailbox or conversation) · send (write into a chat / reply to an email thread AS the " +
+              "user, paced at human speed; writing to a chat that has never messaged this account is a COLD " +
+              "START — refused unless you pass initiate:true, which asks the user for permission and is " +
+              "strictly capped per day, so prefer asking people to message first) · connect (bind THIS session " +
+              "to a chat/thread — pick a trust tier) · " +
+              "disconnect · upload (send a workspace file, optional caption) · download (save an attachment) · " +
+              "moderate (delete a message, or ban/kick/mute/pin a member — for chats you moderate, where the " +
+              "platform supports it). " +
+              'To summarize a mailbox: {"op":"status"} → {"op":"chats","account":"<id or label>"} (recent ' +
+              'threads) → optionally {"op":"history","chat":"<id>"} for bodies → summarize. ' +
+              "The user's messages and emails are private: handle them inside this workspace and never forward " +
+              "them anywhere without being asked. " +
+              "ALSO USE THIS TOOL AS A RESEARCH SOURCE — it reads platforms the open web cannot. Many sources " +
+              "publish ONLY inside a chat platform: Telegram channels, Discord announcement/news channels " +
+              "(indie studios often post releases there before anywhere else), subreddits. Their web pages are " +
+              "JavaScript-only or blocked, so webfetch returns an empty shell. When research leads to one of " +
+              'those and the account is connected, read it HERE: {"op":"chats","account":"<id>"} to find the ' +
+              'channel, then {"op":"history","chat":"<id>"} for the posts. This is the SANCTIONED route — the ' +
+              "user's own account reading a public channel — not scraping, so prefer it over trying to fetch " +
+              "the platform's website. Cite the channel and post date like any other source. " +
+              '⚠️ For RESEARCH, pass purpose:"research" on `history` and read ONLY chats `chats` labels ' +
+              '"public source". The label is per chat and the user owns it, so the chat KIND tells you nothing ' +
+              "about it: a server text channel can be a public news feed or a company's private staff room. " +
+              '"private — never cite" is the user\'s correspondence and "unlabelled"/"unconfirmed" means nobody ' +
+              "has said yet — in all three cases you may still read the chat as correspondence when the user " +
+              "asked you to, but nothing from it may be quoted, summarized or cited outside this conversation. " +
+              "If you need one of those as a source, ask the user to mark it public in Settings → Messengers; " +
+              "you cannot mark it yourself, and that is deliberate.",
+            input: Input,
+            output: Output,
+            toModelOutput: ({ output }) => [{ type: "text", text: modelText(output) }],
+            execute: (input, context) =>
+              Effect.gen(function* () {
+                const gateway = MessengerGatewayHandle.get()
+                switch (input.op) {
+                  case "status": {
+                    // ⚠️ THE headline lie this whole change exists for. `status` is the op the tool's
+                    // own description tells the model to START with, and an unreadable account table
+                    // used to reach it as "No messenger accounts are set up. Ask the user to add one
+                    // in Settings → Messengers" — a database fault rendered as a claim about the
+                    // user's setup, on the one surface a model consults before deciding it has no
+                    // messaging at all.
+                    const scope = yield* readScope(context.sessionID)
+                    if (scope === "unknown") return scopedReadRefusal(scope)!
+                    const listed = yield* MessengerStore.attempted(store.listAccounts())
+                    if (!listed.read) return { outcome: "unavailable", message: STORE_UNAVAILABLE } satisfies Output
+                    const allowedAccounts = scopedAccounts(scope)
+                    const accounts =
+                      allowedAccounts === undefined
+                        ? listed.value
+                        : listed.value.filter((account) => allowedAccounts.has(account.id))
+                    if (accounts.length === 0)
+                      return {
+                        outcome: "failed",
+                        message: "No messenger accounts are set up. Ask the user to add one in Settings → Messengers.",
+                      } satisfies Output
+                    const status =
+                      gateway === undefined
+                        ? new Map<Messenger.AccountID, Messenger.AccountStatus>()
+                        : yield* gateway.status()
+                    // The binding half degrades on its own: the accounts above may read fine while
+                    // the binding table does not, and "This chat has no remote binding" is then a
+                    // statement about THIS session made from a read that failed. Reporting the
+                    // accounts and naming the missing half beats withholding both.
+                    const bindings = yield* MessengerStore.attempted(store.bindingsForSession(context.sessionID))
+                    const bound =
+                      scope instanceof Set
+                        ? `This chat is privacy-scoped to ${[...scope].join(", ")}.`
+                        : !bindings.read
+                          ? "I could not read this instance's binding table, so I can't say whether this chat is linked to a remote chat."
+                          : bindings.value.length === 0
+                            ? "This chat has no remote binding."
+                            : bindings.value
+                                .map(
+                                  (binding) =>
+                                    `This chat is bound to chat ${binding.chatID} on ${binding.accountID} (${binding.trust}).`,
+                                )
+                                .join("\n")
+                    const lines = accounts.map((account) => {
+                      const driver = drivers.get(account.driverID)
+                      const state = status.get(account.id)
+                      return `${account.id} · ${account.label} (${driver?.meta.name ?? account.driverID}) · ${state === undefined ? "off" : statusLine(state)}`
+                    })
                     return {
-                      outcome: "failed",
-                      message: "No messenger accounts are set up. Ask the user to add one in Settings → Messengers.",
+                      outcome: bindings.read ? "ok" : "unavailable",
+                      message: `${lines.join("\n")}\n${bound}`,
                     } satisfies Output
-                  const status =
-                    gateway === undefined
-                      ? new Map<Messenger.AccountID, Messenger.AccountStatus>()
-                      : yield* gateway.status()
-                  // The binding half degrades on its own: the accounts above may read fine while
-                  // the binding table does not, and "This chat has no remote binding" is then a
-                  // statement about THIS session made from a read that failed. Reporting the
-                  // accounts and naming the missing half beats withholding both.
-                  const bindings = yield* MessengerStore.attempted(store.bindingsForSession(context.sessionID))
-                  const bound = scope instanceof Set
-                    ? `This chat is privacy-scoped to ${[...scope].join(", ")}.`
-                    : !bindings.read
-                    ? "I could not read this instance's binding table, so I can't say whether this chat is linked to a remote chat."
-                    : bindings.value.length === 0
-                      ? "This chat has no remote binding."
-                      : bindings.value
-                          .map((binding) => `This chat is bound to chat ${binding.chatID} on ${binding.accountID} (${binding.trust}).`)
-                          .join("\n")
-                  const lines = accounts.map((account) => {
-                    const driver = drivers.get(account.driverID)
-                    const state = status.get(account.id)
-                    return `${account.id} · ${account.label} (${driver?.meta.name ?? account.driverID}) · ${state === undefined ? "off" : statusLine(state)}`
-                  })
-                  return {
-                    outcome: bindings.read ? "ok" : "unavailable",
-                    message: `${lines.join("\n")}\n${bound}`,
-                  } satisfies Output
-                }
-                case "chats": {
-                  if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
-                  const scope = yield* readScope(context.sessionID)
-                  const refusal = scopedReadRefusal(scope)
-                  if (refusal !== undefined) return refusal
-                  const resolved = yield* resolveAccount(input.account)
-                  if (resolved.account === undefined) return resolved.miss
-                  const outcome = yield* gateway.chats(resolved.account.id)
-                  if (!outcome.ok) return { outcome: "failed", message: outcome.reason } satisfies Output
-                  if (outcome.chats.length === 0)
-                    return { outcome: "failed", message: "No chats are visible on that account yet." } satisfies Output
-                  return {
-                    outcome: "ok",
-                    message: formatChats([...outcome.chats]),
-                  } satisfies Output
-                }
-                case "history": {
-                  if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
-                  const scope = yield* readScope(context.sessionID)
-                  if (scope === "unknown") return scopedReadRefusal(scope)!
-                  const resolved = yield* resolveAccount(input.account, scopedAccounts(scope))
-                  if (resolved.account === undefined) return resolved.miss
-                  const refusal = scopedReadRefusal(scope, `${resolved.account.id}:${input.chat.trim()}`)
-                  if (refusal !== undefined) return refusal
-                  const limit = Math.max(1, Math.min(200, Math.floor(input.limit ?? 50)))
-                  const outcome = yield* gateway.history({
-                    accountID: resolved.account.id,
-                    chatID: input.chat.trim(),
-                    limit,
-                    // Ruling 7: the gateway's read seam decides, not this tool and not a later
-                    // filter over the model's output. Absent means correspondence — the shipped
-                    // behaviour, and the one that must never regress for the operator's own mail.
-                    ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
-                  })
-                  if (!outcome.ok) return { outcome: "failed", message: outcome.reason } satisfies Output
-                  if (outcome.messages.length === 0)
-                    return { outcome: "failed", message: "That chat has no fetchable messages." } satisfies Output
-                  return { outcome: "ok", message: formatHistory([...outcome.messages]) } satisfies Output
-                }
-                case "send": {
-                  if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
-                  const resolved = yield* resolveAccount(input.account)
-                  if (resolved.account === undefined) return resolved.miss
-                  const chatID = input.chat.trim()
-                  const resource = `${resolved.account.id}:${chatID}`
-                  // ⭐ AGENTS.md #9(b)'s OTHER half — starting a conversation. The default (never
-                  // cold-start) is the gateway's; this is the "explicit permission" the rule pairs
-                  // with the daily cap, and until 2026-07-31 it did not exist, so the product could
-                  // not start a conversation at all.
-                  const initiating = input.initiate === true
-                  if (initiating) {
-                    // Deny-fast, BEFORE either card. Asking the operator to approve something we are
-                    // certain to refuse is a hang dressed as a gate (`tool/bash.ts`'s jail check made
-                    // the same move for the same reason) — and here it is worse than wasteful, because
-                    // the card would be prompted by a stranger's words. Reasoning: `initiationRefusal`.
-                    const refusal = initiationRefusal(yield* chainHasHostileBinding(context.sessionID))
-                    if (refusal !== undefined) return refusal
                   }
-                  // Writing AS the user is consequential — permission-gated (default policy applies;
-                  // the resource is the chat so saved rules can scope per conversation).
-                  yield* permission.assert({
-                    action: "messenger.send",
-                    resources: [resource],
-                    save: ["*"],
-                    sessionID: context.sessionID,
-                    agent: context.agent,
-                    source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
-                  })
-                  // ⚠️ SECOND gate, and it is ADDITIONAL — never a replacement for the one above.
-                  // A cold start is also a send, so a user who denied `messenger.send` for this chat
-                  // must not be able to be talked into the same write through the initiate card; and
-                  // conversely a saved "always allow messenger.send on *" (which is what the assert
-                  // above offers) cannot satisfy this one, because the action name differs and
-                  // `Wildcard.match` compares actions literally.
-                  //
-                  // ⚠️ `save: [resource]` — NOT `save: ["*"]`, which is what `messenger.send` uses.
-                  // The asymmetry is the whole point, and `tool/recipe.ts` faced the identical
-                  // question for a durable instance-global write: an "always" answered here with a
-                  // wildcard would be a standing grant to COLD-DM ANYONE, FOREVER, from one card the
-                  // user answered about one person. Scoped to the one chat, "always" means what a
-                  // person would think it means — keep writing to THIS conversation — and every new
-                  // stranger costs its own card. The daily cap still bounds the whole day on top.
-                  //
-                  // ⚠️ Asked on the DECLARED intent, not on a pre-flight cold/invited check. Two
-                  // reasons: a check-then-send would be a TOCTOU (the invitation can change between
-                  // the read and the write, and the gateway re-asks it anyway at the point of send),
-                  // and it would need a second read seam into the messenger store for a question the
-                  // gateway already owns. The cost is one card in the rare case the model sets
-                  // `initiate` on a chat that turns out to have written to us — the field's own
-                  // description tells it not to, and over-asking is the safe direction here.
-                  if (initiating)
+                  case "chats": {
+                    if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
+                    const scope = yield* readScope(context.sessionID)
+                    const refusal = scopedReadRefusal(scope)
+                    if (refusal !== undefined) return refusal
+                    const resolved = yield* resolveAccount(input.account)
+                    if (resolved.account === undefined) return resolved.miss
+                    const outcome = yield* gateway.chats(resolved.account.id)
+                    if (!outcome.ok) return { outcome: "failed", message: outcome.reason } satisfies Output
+                    if (outcome.chats.length === 0)
+                      return {
+                        outcome: "failed",
+                        message: "No chats are visible on that account yet.",
+                      } satisfies Output
+                    return {
+                      outcome: "ok",
+                      message: formatChats([...outcome.chats]),
+                    } satisfies Output
+                  }
+                  case "history": {
+                    if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
+                    const scope = yield* readScope(context.sessionID)
+                    if (scope === "unknown") return scopedReadRefusal(scope)!
+                    const resolved = yield* resolveAccount(input.account, scopedAccounts(scope))
+                    if (resolved.account === undefined) return resolved.miss
+                    const refusal = scopedReadRefusal(scope, `${resolved.account.id}:${input.chat.trim()}`)
+                    if (refusal !== undefined) return refusal
+                    const limit = Math.max(1, Math.min(200, Math.floor(input.limit ?? 50)))
+                    const outcome = yield* gateway.history({
+                      accountID: resolved.account.id,
+                      chatID: input.chat.trim(),
+                      limit,
+                      // Ruling 7: the gateway's read seam decides, not this tool and not a later
+                      // filter over the model's output. Absent means correspondence — the shipped
+                      // behaviour, and the one that must never regress for the operator's own mail.
+                      ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
+                    })
+                    if (!outcome.ok) return { outcome: "failed", message: outcome.reason } satisfies Output
+                    if (outcome.messages.length === 0)
+                      return { outcome: "failed", message: "That chat has no fetchable messages." } satisfies Output
+                    return { outcome: "ok", message: formatHistory([...outcome.messages]) } satisfies Output
+                  }
+                  case "send": {
+                    if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
+                    const resolved = yield* resolveAccount(input.account)
+                    if (resolved.account === undefined) return resolved.miss
+                    const chatID = input.chat.trim()
+                    const resource = `${resolved.account.id}:${chatID}`
+                    // ⭐ AGENTS.md #9(b)'s OTHER half — starting a conversation. The default (never
+                    // cold-start) is the gateway's; this is the "explicit permission" the rule pairs
+                    // with the daily cap, and until 2026-07-31 it did not exist, so the product could
+                    // not start a conversation at all.
+                    const initiating = input.initiate === true
+                    if (initiating) {
+                      // Deny-fast, BEFORE either card. Asking the operator to approve something we are
+                      // certain to refuse is a hang dressed as a gate (`tool/bash.ts`'s jail check made
+                      // the same move for the same reason) — and here it is worse than wasteful, because
+                      // the card would be prompted by a stranger's words. Reasoning: `initiationRefusal`.
+                      const refusal = initiationRefusal(yield* chainHasHostileBinding(context.sessionID))
+                      if (refusal !== undefined) return refusal
+                    }
+                    // Writing AS the user is consequential — permission-gated (default policy applies;
+                    // the resource is the chat so saved rules can scope per conversation).
                     yield* permission.assert({
-                      action: "messenger.initiate",
+                      action: "messenger.send",
                       resources: [resource],
-                      save: [resource],
+                      save: ["*"],
                       sessionID: context.sessionID,
                       agent: context.agent,
                       source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
                     })
-                  const outcome = yield* gateway.send({
-                    accountID: resolved.account.id,
-                    chatID,
-                    text: input.text,
-                    ...(initiating ? { initiate: true } : {}),
-                    ...(input.reply === undefined || input.reply.trim().length === 0 ? {} : { replyTo: input.reply.trim() }),
-                  })
-                  // Three arms, switched not truthiness-tested. `unavailable` carries through as
-                  // itself: the model must not be told "the platform refused it" when the truth is
-                  // that this instance could not check whether it was allowed to write at all.
-                  if (outcome.kind === "refused") return { outcome: "failed", message: outcome.reason } satisfies Output
-                  if (outcome.kind === "unavailable") return { outcome: "unavailable", message: outcome.reason } satisfies Output
-                  return { outcome: "ok", message: "Sent (paced at human typing speed)." } satisfies Output
-                }
-                case "connect": {
-                  const resolved = yield* resolveAccount(input.account)
-                  if (resolved.account === undefined) return resolved.miss
-                  // Bypass-bind warning (§3.4): wiring an UNTRUSTED client/audience chat into a
-                  // session that auto-approves every tool call (bypass/yolo) hands a stranger an
-                  // agent with no consent gate. Refuse unless the model confirms with the user and
-                  // retries with force — the calm-warning pattern, not a hard block (the operator
-                  // may genuinely want it, e.g. a curated-ruleset preset).
-                  if (input.trust !== "operator" && input.force !== true) {
-                    const effective = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, context.sessionID, (id) =>
-                      sessions.get(id as never),
-                    ).pipe(Effect.orElseSucceed(() => EFFECTIVE_CONFIG_DEFAULTS))
-                    const refusal = MessengerPipeline.bypassBindRefusal({
-                      trust: input.trust,
-                      permissionMode: effective.permissionMode,
-                      force: false, // the outer guard already handled force:true
+                    // ⚠️ SECOND gate, and it is ADDITIONAL — never a replacement for the one above.
+                    // A cold start is also a send, so a user who denied `messenger.send` for this chat
+                    // must not be able to be talked into the same write through the initiate card; and
+                    // conversely a saved "always allow messenger.send on *" (which is what the assert
+                    // above offers) cannot satisfy this one, because the action name differs and
+                    // `Wildcard.match` compares actions literally.
+                    //
+                    // ⚠️ `save: [resource]` — NOT `save: ["*"]`, which is what `messenger.send` uses.
+                    // The asymmetry is the whole point, and `tool/recipe.ts` faced the identical
+                    // question for a durable instance-global write: an "always" answered here with a
+                    // wildcard would be a standing grant to COLD-DM ANYONE, FOREVER, from one card the
+                    // user answered about one person. Scoped to the one chat, "always" means what a
+                    // person would think it means — keep writing to THIS conversation — and every new
+                    // stranger costs its own card. The daily cap still bounds the whole day on top.
+                    //
+                    // ⚠️ Asked on the DECLARED intent, not on a pre-flight cold/invited check. Two
+                    // reasons: a check-then-send would be a TOCTOU (the invitation can change between
+                    // the read and the write, and the gateway re-asks it anyway at the point of send),
+                    // and it would need a second read seam into the messenger store for a question the
+                    // gateway already owns. The cost is one card in the rare case the model sets
+                    // `initiate` on a chat that turns out to have written to us — the field's own
+                    // description tells it not to, and over-asking is the safe direction here.
+                    if (initiating)
+                      yield* permission.assert({
+                        action: "messenger.initiate",
+                        resources: [resource],
+                        save: [resource],
+                        sessionID: context.sessionID,
+                        agent: context.agent,
+                        source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                      })
+                    const outcome = yield* gateway.send({
+                      accountID: resolved.account.id,
+                      chatID,
+                      text: input.text,
+                      ...(initiating ? { initiate: true } : {}),
+                      ...(input.reply === undefined || input.reply.trim().length === 0
+                        ? {}
+                        : { replyTo: input.reply.trim() }),
                     })
-                    if (refusal !== undefined) return { outcome: "failed", message: refusal } satisfies Output
+                    // Three arms, switched not truthiness-tested. `unavailable` carries through as
+                    // itself: the model must not be told "the platform refused it" when the truth is
+                    // that this instance could not check whether it was allowed to write at all.
+                    if (outcome.kind === "refused")
+                      return { outcome: "failed", message: outcome.reason } satisfies Output
+                    if (outcome.kind === "unavailable")
+                      return { outcome: "unavailable", message: outcome.reason } satisfies Output
+                    return { outcome: "ok", message: "Sent (paced at human typing speed)." } satisfies Output
                   }
-                  // Binding a chat to a session shapes where the agent listens — gated so a hostile
-                  // client can't wire the agent into an arbitrary chat. Resource = the chat.
-                  yield* permission.assert({
-                    action: "messenger.connect",
-                    resources: [`${resolved.account.id}:${input.chat.trim()}`],
-                    save: ["*"],
-                    sessionID: context.sessionID,
-                    agent: context.agent,
-                    source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
-                  })
-                  const binding = yield* store
-                    .createBinding({
+                  case "connect": {
+                    const resolved = yield* resolveAccount(input.account)
+                    if (resolved.account === undefined) return resolved.miss
+                    // Bypass-bind warning (§3.4): wiring an UNTRUSTED client/audience chat into a
+                    // session that auto-approves every tool call (bypass/yolo) hands a stranger an
+                    // agent with no consent gate. Refuse unless the model confirms with the user and
+                    // retries with force — the calm-warning pattern, not a hard block (the operator
+                    // may genuinely want it, e.g. a curated-ruleset preset).
+                    if (input.trust !== "operator" && input.force !== true) {
+                      const effective = yield* resolveSessionConfig(
+                        EFFECTIVE_CONFIG_DEFAULTS,
+                        context.sessionID,
+                        (id) => sessions.get(id as never),
+                      ).pipe(Effect.orElseSucceed(() => EFFECTIVE_CONFIG_DEFAULTS))
+                      const refusal = MessengerPipeline.bypassBindRefusal({
+                        trust: input.trust,
+                        permissionMode: effective.permissionMode,
+                        force: false, // the outer guard already handled force:true
+                      })
+                      if (refusal !== undefined) return { outcome: "failed", message: refusal } satisfies Output
+                    }
+                    // Binding a chat to a session shapes where the agent listens — gated so a hostile
+                    // client can't wire the agent into an arbitrary chat. Resource = the chat.
+                    yield* permission.assert({
+                      action: "messenger.connect",
+                      resources: [`${resolved.account.id}:${input.chat.trim()}`],
+                      save: ["*"],
+                      sessionID: context.sessionID,
+                      agent: context.agent,
+                      source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                    })
+                    const binding = yield* store
+                      .createBinding({
+                        accountID: resolved.account.id,
+                        chatID: input.chat.trim(),
+                        sessionID: context.sessionID,
+                        trust: input.trust,
+                      })
+                      .pipe(Effect.catch((error) => Effect.succeed({ error })))
+                    if ("error" in binding)
+                      return {
+                        outcome: "failed",
+                        message: `That chat is already bound to session ${binding.error.sessionID}. Disconnect it there first.`,
+                      } satisfies Output
+                    return {
+                      outcome: "ok",
+                      message: `Bound this session to chat ${input.chat.trim()} as "${input.trust}". Its incoming messages will now become your turns.`,
+                    } satisfies Output
+                  }
+                  case "upload": {
+                    if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
+                    const resolved = yield* resolveAccount(input.account)
+                    if (resolved.account === undefined) return resolved.miss
+                    const caps = drivers.get(resolved.account.driverID)?.capabilities(resolved.account)
+                    if (caps !== undefined && !caps.files.up)
+                      return {
+                        outcome: "failed",
+                        message:
+                          "This messenger can't carry files — paste the content as text or share a link instead.",
+                      } satisfies Output
+                    const filePath = yield* containedPath(input.path.trim())
+                    if (filePath === undefined)
+                      return {
+                        outcome: "failed",
+                        message:
+                          "That path is outside this session's workspace — only workspace files can be uploaded.",
+                      } satisfies Output
+                    const stat = yield* Effect.tryPromise(() => fs.stat(filePath)).pipe(
+                      Effect.orElseSucceed(() => undefined),
+                    )
+                    if (stat === undefined || !stat.isFile())
+                      return { outcome: "failed", message: `No file at ${input.path.trim()}.` } satisfies Output
+                    const maxBytes = caps?.files.maxBytes
+                    if (maxBytes !== undefined && stat.size > maxBytes)
+                      return {
+                        outcome: "failed",
+                        message: `That file is ${Math.round(stat.size / 1_000_000)} MB — this messenger caps uploads at ${Math.round(maxBytes / 1_000_000)} MB.`,
+                      } satisfies Output
+                    // Sending a file AS the user is a send — same gate, same resource shape.
+                    yield* permission.assert({
+                      action: "messenger.send",
+                      resources: [`${resolved.account.id}:${input.chat.trim()}`],
+                      save: ["*"],
+                      sessionID: context.sessionID,
+                      agent: context.agent,
+                      source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                    })
+                    const data = yield* Effect.tryPromise(() => fs.readFile(filePath)).pipe(
+                      Effect.mapError(() => new ToolFailure({ message: `Could not read ${input.path.trim()}.` })),
+                    )
+                    const outcome = yield* gateway.sendFile({
                       accountID: resolved.account.id,
                       chatID: input.chat.trim(),
-                      sessionID: context.sessionID,
-                      trust: input.trust,
+                      file: {
+                        name: path.basename(filePath),
+                        mime: FSUtil.mimeType(filePath),
+                        data: new Uint8Array(data),
+                      },
+                      ...(input.caption === undefined ? {} : { caption: input.caption }),
                     })
-                    .pipe(Effect.catch((error) => Effect.succeed({ error })))
-                  if ("error" in binding)
+                    if (outcome.kind === "refused")
+                      return { outcome: "failed", message: outcome.reason } satisfies Output
+                    if (outcome.kind === "unavailable")
+                      return { outcome: "unavailable", message: outcome.reason } satisfies Output
                     return {
-                      outcome: "failed",
-                      message: `That chat is already bound to session ${binding.error.sessionID}. Disconnect it there first.`,
+                      outcome: "ok",
+                      message: `Sent ${path.basename(filePath)} (${Math.max(1, Math.round(stat.size / 1024))} KB) to chat ${input.chat.trim()}.`,
                     } satisfies Output
-                  return {
-                    outcome: "ok",
-                    message: `Bound this session to chat ${input.chat.trim()} as "${input.trust}". Its incoming messages will now become your turns.`,
-                  } satisfies Output
-                }
-                case "upload": {
-                  if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
-                  const resolved = yield* resolveAccount(input.account)
-                  if (resolved.account === undefined) return resolved.miss
-                  const caps = drivers.get(resolved.account.driverID)?.capabilities(resolved.account)
-                  if (caps !== undefined && !caps.files.up)
+                  }
+                  case "download": {
+                    if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
+                    const scope = yield* readScope(context.sessionID)
+                    if (scope === "unknown") return scopedReadRefusal(scope)!
+                    const resolved = yield* resolveAccount(input.account, scopedAccounts(scope))
+                    if (resolved.account === undefined) return resolved.miss
+                    const refusal = scopedReadRefusal(scope, `${resolved.account.id}:${input.chat.trim()}`)
+                    if (refusal !== undefined) return refusal
+                    // Pulling remote data into the workspace moves the user's files around — the
+                    // same messenger.send gate covers both directions (plan §4).
+                    yield* permission.assert({
+                      action: "messenger.send",
+                      resources: [`${resolved.account.id}:${input.chat.trim()}`],
+                      save: ["*"],
+                      sessionID: context.sessionID,
+                      agent: context.agent,
+                      source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                    })
+                    const outcome = yield* gateway.attachment({
+                      accountID: resolved.account.id,
+                      chatID: input.chat.trim(),
+                      messageID: input.message.trim(),
+                    })
+                    if (!outcome.ok) return { outcome: "failed", message: outcome.reason } satisfies Output
+                    const relative = input.path?.trim().length
+                      ? input.path.trim()
+                      : path.join("downloads", outcome.name)
+                    const target = yield* containedPath(relative)
+                    if (target === undefined)
+                      return {
+                        outcome: "failed",
+                        message: "That save path is outside this session's workspace — pick one inside it.",
+                      } satisfies Output
+                    yield* Effect.tryPromise(async () => {
+                      await fs.mkdir(path.dirname(target), { recursive: true })
+                      await fs.writeFile(target, outcome.data)
+                    }).pipe(Effect.mapError(() => new ToolFailure({ message: `Could not write ${relative}.` })))
                     return {
-                      outcome: "failed",
-                      message: "This messenger can't carry files — paste the content as text or share a link instead.",
+                      outcome: "ok",
+                      message: `Saved "${outcome.name}" (${outcome.mime}, ${Math.max(1, Math.round(outcome.data.byteLength / 1024))} KB) to ${relative}.`,
                     } satisfies Output
-                  const filePath = yield* containedPath(input.path.trim())
-                  if (filePath === undefined)
+                  }
+                  case "disconnect": {
+                    const resolved = yield* resolveAccount(input.account)
+                    if (resolved.account === undefined) return resolved.miss
+                    // ⚠️ An empty list here used to mean "This session has no messenger binding to
+                    // disconnect" — which the model relays as "you weren't connected". Said while the
+                    // binding table is unreadable, that is a false statement about the session AND it
+                    // leaves a live binding in place that the user now believes is gone.
+                    const listed = yield* MessengerStore.attempted(store.bindingsForSession(context.sessionID))
+                    if (!listed.read) return { outcome: "unavailable", message: STORE_UNAVAILABLE } satisfies Output
+                    const bindings = listed.value
+                    const target =
+                      input.chat === undefined
+                        ? (bindings.find((binding) => binding.accountID === resolved.account.id) ?? bindings[0])
+                        : bindings.find((binding) => binding.chatID === input.chat!.trim())
+                    if (target === undefined)
+                      return {
+                        outcome: "failed",
+                        message: "This session has no messenger binding to disconnect.",
+                      } satisfies Output
+                    yield* store.removeBinding(target.id)
                     return {
-                      outcome: "failed",
-                      message: "That path is outside this session's workspace — only workspace files can be uploaded.",
+                      outcome: "ok",
+                      message: `Unbound this session from chat ${target.chatID}.`,
                     } satisfies Output
-                  const stat = yield* Effect.tryPromise(() => fs.stat(filePath)).pipe(
-                    Effect.orElseSucceed(() => undefined),
-                  )
-                  if (stat === undefined || !stat.isFile())
-                    return { outcome: "failed", message: `No file at ${input.path.trim()}.` } satisfies Output
-                  const maxBytes = caps?.files.maxBytes
-                  if (maxBytes !== undefined && stat.size > maxBytes)
-                    return {
-                      outcome: "failed",
-                      message: `That file is ${Math.round(stat.size / 1_000_000)} MB — this messenger caps uploads at ${Math.round(maxBytes / 1_000_000)} MB.`,
-                    } satisfies Output
-                  // Sending a file AS the user is a send — same gate, same resource shape.
-                  yield* permission.assert({
-                    action: "messenger.send",
-                    resources: [`${resolved.account.id}:${input.chat.trim()}`],
-                    save: ["*"],
-                    sessionID: context.sessionID,
-                    agent: context.agent,
-                    source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
-                  })
-                  const data = yield* Effect.tryPromise(() => fs.readFile(filePath)).pipe(
-                    Effect.mapError(() => new ToolFailure({ message: `Could not read ${input.path.trim()}.` })),
-                  )
-                  const outcome = yield* gateway.sendFile({
-                    accountID: resolved.account.id,
-                    chatID: input.chat.trim(),
-                    file: {
-                      name: path.basename(filePath),
-                      mime: FSUtil.mimeType(filePath),
-                      data: new Uint8Array(data),
-                    },
-                    ...(input.caption === undefined ? {} : { caption: input.caption }),
-                  })
-                  if (outcome.kind === "refused") return { outcome: "failed", message: outcome.reason } satisfies Output
-                  if (outcome.kind === "unavailable") return { outcome: "unavailable", message: outcome.reason } satisfies Output
-                  return {
-                    outcome: "ok",
-                    message: `Sent ${path.basename(filePath)} (${Math.max(1, Math.round(stat.size / 1024))} KB) to chat ${input.chat.trim()}.`,
-                  } satisfies Output
+                  }
+                  case "moderate": {
+                    if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
+                    const resolved = yield* resolveAccount(input.account)
+                    if (resolved.account === undefined) return resolved.miss
+                    const built = buildModerationAct(input)
+                    if ("error" in built) return { outcome: "failed", message: built.error } satisfies Output
+                    // Moderating a chat is consequential (deletes/bans act on other people) — gated like
+                    // send, resource = the chat so rules can scope per conversation.
+                    yield* permission.assert({
+                      action: "messenger.moderate",
+                      resources: [`${resolved.account.id}:${input.chat.trim()}`],
+                      save: ["*"],
+                      sessionID: context.sessionID,
+                      agent: context.agent,
+                      source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                    })
+                    const outcome = yield* gateway.moderate({
+                      accountID: resolved.account.id,
+                      chatID: input.chat.trim(),
+                      act: built,
+                    })
+                    if (!outcome.ok) return { outcome: "failed", message: outcome.reason } satisfies Output
+                    return { outcome: "ok", message: `Done (${input.act}).` } satisfies Output
+                  }
                 }
-                case "download": {
-                  if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
-                  const scope = yield* readScope(context.sessionID)
-                  if (scope === "unknown") return scopedReadRefusal(scope)!
-                  const resolved = yield* resolveAccount(input.account, scopedAccounts(scope))
-                  if (resolved.account === undefined) return resolved.miss
-                  const refusal = scopedReadRefusal(scope, `${resolved.account.id}:${input.chat.trim()}`)
-                  if (refusal !== undefined) return refusal
-                  // Pulling remote data into the workspace moves the user's files around — the
-                  // same messenger.send gate covers both directions (plan §4).
-                  yield* permission.assert({
-                    action: "messenger.send",
-                    resources: [`${resolved.account.id}:${input.chat.trim()}`],
-                    save: ["*"],
-                    sessionID: context.sessionID,
-                    agent: context.agent,
-                    source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+              }).pipe(
+                // A denied/asked-and-refused `messenger.send` reads as a denial, not a crash;
+                // anything else unexpected is a real infra fault (bash.ts precedent).
+                Effect.mapError((error) => {
+                  if (error instanceof ToolFailure) return error
+                  const denial = PermissionV2.denialMessage(error)
+                  if (denial) return new ToolFailure({ message: denial })
+                  return new ToolFailure({
+                    message: `messenger failed: ${error instanceof Error ? error.message : String(error)}`,
                   })
-                  const outcome = yield* gateway.attachment({
-                    accountID: resolved.account.id,
-                    chatID: input.chat.trim(),
-                    messageID: input.message.trim(),
-                  })
-                  if (!outcome.ok) return { outcome: "failed", message: outcome.reason } satisfies Output
-                  const relative = input.path?.trim().length ? input.path.trim() : path.join("downloads", outcome.name)
-                  const target = yield* containedPath(relative)
-                  if (target === undefined)
-                    return {
-                      outcome: "failed",
-                      message: "That save path is outside this session's workspace — pick one inside it.",
-                    } satisfies Output
-                  yield* Effect.tryPromise(async () => {
-                    await fs.mkdir(path.dirname(target), { recursive: true })
-                    await fs.writeFile(target, outcome.data)
-                  }).pipe(Effect.mapError(() => new ToolFailure({ message: `Could not write ${relative}.` })))
-                  return {
-                    outcome: "ok",
-                    message: `Saved "${outcome.name}" (${outcome.mime}, ${Math.max(1, Math.round(outcome.data.byteLength / 1024))} KB) to ${relative}.`,
-                  } satisfies Output
-                }
-                case "disconnect": {
-                  const resolved = yield* resolveAccount(input.account)
-                  if (resolved.account === undefined) return resolved.miss
-                  // ⚠️ An empty list here used to mean "This session has no messenger binding to
-                  // disconnect" — which the model relays as "you weren't connected". Said while the
-                  // binding table is unreadable, that is a false statement about the session AND it
-                  // leaves a live binding in place that the user now believes is gone.
-                  const listed = yield* MessengerStore.attempted(store.bindingsForSession(context.sessionID))
-                  if (!listed.read) return { outcome: "unavailable", message: STORE_UNAVAILABLE } satisfies Output
-                  const bindings = listed.value
-                  const target =
-                    input.chat === undefined
-                      ? bindings.find((binding) => binding.accountID === resolved.account.id) ?? bindings[0]
-                      : bindings.find((binding) => binding.chatID === input.chat!.trim())
-                  if (target === undefined)
-                    return { outcome: "failed", message: "This session has no messenger binding to disconnect." } satisfies Output
-                  yield* store.removeBinding(target.id)
-                  return { outcome: "ok", message: `Unbound this session from chat ${target.chatID}.` } satisfies Output
-                }
-                case "moderate": {
-                  if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
-                  const resolved = yield* resolveAccount(input.account)
-                  if (resolved.account === undefined) return resolved.miss
-                  const built = buildModerationAct(input)
-                  if ("error" in built) return { outcome: "failed", message: built.error } satisfies Output
-                  // Moderating a chat is consequential (deletes/bans act on other people) — gated like
-                  // send, resource = the chat so rules can scope per conversation.
-                  yield* permission.assert({
-                    action: "messenger.moderate",
-                    resources: [`${resolved.account.id}:${input.chat.trim()}`],
-                    save: ["*"],
-                    sessionID: context.sessionID,
-                    agent: context.agent,
-                    source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
-                  })
-                  const outcome = yield* gateway.moderate({
-                    accountID: resolved.account.id,
-                    chatID: input.chat.trim(),
-                    act: built,
-                  })
-                  if (!outcome.ok) return { outcome: "failed", message: outcome.reason } satisfies Output
-                  return { outcome: "ok", message: `Done (${input.act}).` } satisfies Output
-                }
-              }
-            }).pipe(
-              // A denied/asked-and-refused `messenger.send` reads as a denial, not a crash;
-              // anything else unexpected is a real infra fault (bash.ts precedent).
-              Effect.mapError((error) => {
-                if (error instanceof ToolFailure) return error
-                const denial = PermissionV2.denialMessage(error)
-                if (denial) return new ToolFailure({ message: denial })
-                return new ToolFailure({ message: `messenger failed: ${error instanceof Error ? error.message : String(error)}` })
-              }),
-            ),
-        })),
+                }),
+              ),
+          }),
+        ),
       })
       .pipe(Effect.orDie)
   }),

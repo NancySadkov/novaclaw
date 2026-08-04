@@ -202,8 +202,7 @@ export class Ledger {
     for (const candidate of pool) {
       const entry = this.entries.get(candidate.id)!
       const bonus = Math.min((candidate.warmthTokens ?? 0) * beta, cap) / entry.weight
-      const score =
-        eligible.length > 0 ? this.virtualDeadline(candidate.id) - bonus : -this.lag(candidate.id)
+      const score = eligible.length > 0 ? this.virtualDeadline(candidate.id) - bonus : -this.lag(candidate.id)
       if (!best || score < best.score) best = { id: candidate.id, score }
     }
     return best?.id

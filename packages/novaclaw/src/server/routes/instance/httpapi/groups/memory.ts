@@ -84,13 +84,25 @@ export const MemoryApi = HttpApi.make("memory").add(
       HttpApiEndpoint.get("list", `${root}/list`, {
         query: ListQuery,
         success: described(Schema.Array(MemoryRow), "Memories, newest first (valid only unless includeInvalid)"),
-      }).annotateMerge(meta("memory.list", "List memories", "Enumerate memories (no query); filter by scope/kind/validity, paginated.")),
+      }).annotateMerge(
+        meta(
+          "memory.list",
+          "List memories",
+          "Enumerate memories (no query); filter by scope/kind/validity, paginated.",
+        ),
+      ),
     )
     .add(
       HttpApiEndpoint.get("graph", `${root}/graph`, {
         query: GraphQuery,
         success: described(MemoryGraph, "Graph slice: nodes + the edges among them"),
-      }).annotateMerge(meta("memory.graph", "Memory graph", "A bounded graph slice for the visualizer: nodes + valid edges among them.")),
+      }).annotateMerge(
+        meta(
+          "memory.graph",
+          "Memory graph",
+          "A bounded graph slice for the visualizer: nodes + valid edges among them.",
+        ),
+      ),
     )
     .add(
       HttpApiEndpoint.post("search", `${root}/search`, {
@@ -127,7 +139,13 @@ export const MemoryApi = HttpApi.make("memory").add(
         payload: IdPayload,
         success: described(Schema.Boolean, "True on success"),
         error: InvalidRequestError,
-      }).annotateMerge(meta("memory.invalidate", "Forget (invalidate)", "Supersede a memory bitemporally — kept in history, dropped from search.")),
+      }).annotateMerge(
+        meta(
+          "memory.invalidate",
+          "Forget (invalidate)",
+          "Supersede a memory bitemporally — kept in history, dropped from search.",
+        ),
+      ),
     )
     .add(
       HttpApiEndpoint.post("purge", `${root}/purge`, {
@@ -135,7 +153,9 @@ export const MemoryApi = HttpApi.make("memory").add(
         payload: IdPayload,
         success: described(Schema.Boolean, "True on success"),
         error: InvalidRequestError,
-      }).annotateMerge(meta("memory.purge", "Purge (hard delete)", "Hard-delete a memory with no history — for secrets.")),
+      }).annotateMerge(
+        meta("memory.purge", "Purge (hard delete)", "Hard-delete a memory with no history — for secrets."),
+      ),
     )
     .add(
       HttpApiEndpoint.post("ingest", `${root}/ingest`, {
@@ -157,7 +177,9 @@ export const MemoryApi = HttpApi.make("memory").add(
         payload: ScopePayload,
         success: described(Schema.Boolean, "True on success"),
         error: InvalidRequestError,
-      }).annotateMerge(meta("memory.clearScope", "Clear a scope", "Delete every memory in a scope (e.g. one chat, or all global).")),
+      }).annotateMerge(
+        meta("memory.clearScope", "Clear a scope", "Delete every memory in a scope (e.g. one chat, or all global)."),
+      ),
     )
     .annotateMerge(
       OpenApi.annotations({ title: "memory", description: "The graph-memory viewer/editor API (kb-graph)." }),

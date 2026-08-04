@@ -96,7 +96,11 @@ describe("IrcDriver", () => {
     const dm = IrcDriver.toInbound({ prefix: "bob!u@h", command: "PRIVMSG", params: ["nova", "hi"] }, "nova", "irc-2")
     if (dm?.kind === "message")
       expect(dm.chat).toEqual({ chatID: "bob", kind: "dm", title: "bob", proposedAccess: "private" })
-    const self = IrcDriver.toInbound({ prefix: "NOVA!u@h", command: "PRIVMSG", params: ["#support", "echo"] }, "nova", "irc-3")
+    const self = IrcDriver.toInbound(
+      { prefix: "NOVA!u@h", command: "PRIVMSG", params: ["#support", "echo"] },
+      "nova",
+      "irc-3",
+    )
     if (self?.kind === "message") expect(self.sender.isSelf).toBe(true)
     const ctcp = IrcDriver.toInbound(
       { prefix: "x!u@h", command: "PRIVMSG", params: ["nova", "VERSION"] },

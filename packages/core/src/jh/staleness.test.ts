@@ -19,10 +19,16 @@ describe("JhStaleness.tracker (pure)", () => {
     t.recordAction({ tool: "write_file", ok: true, before: s0, after: s1 })
     expect(t.staleProducts("cc a.c", s1)).toEqual([])
     // now a successful run creates out.exe from a.c → out.exe is a product
-    const s2 = t.snap([{ name: "a.c", content: "x" }, { name: "out.exe", content: "BIN0" }])
+    const s2 = t.snap([
+      { name: "a.c", content: "x" },
+      { name: "out.exe", content: "BIN0" },
+    ])
     t.recordAction({ tool: "run", ok: true, command: "gcc a.c -o out.exe", before: s1, after: s2 })
     // edit the source → out.exe is stale; a.c is never flagged (it's a source)
-    const s3 = t.snap([{ name: "a.c", content: "y" }, { name: "out.exe", content: "BIN0" }])
+    const s3 = t.snap([
+      { name: "a.c", content: "y" },
+      { name: "out.exe", content: "BIN0" },
+    ])
     expect(t.staleProducts("out.exe", s3).map((p) => p.file)).toEqual(["out.exe"])
     expect(t.staleProducts("a.c", s3)).toEqual([])
   })
@@ -30,25 +36,40 @@ describe("JhStaleness.tracker (pure)", () => {
   test("2. source edit → staleProducts names the product with its remembered rebuild command", () => {
     const t = JhStaleness.tracker()
     const s0 = t.snap([{ name: "pi.c", content: "v0" }])
-    const s1 = t.snap([{ name: "pi.c", content: "v0" }, { name: "pi.exe", content: "BIN0" }])
+    const s1 = t.snap([
+      { name: "pi.c", content: "v0" },
+      { name: "pi.exe", content: "BIN0" },
+    ])
     t.recordAction({ tool: "run", ok: true, command: "gcc pi.c -o pi.exe", before: s0, after: s1 })
     // not stale before any edit
     expect(t.staleProducts(".\\pi.exe", s1)).toEqual([])
     // edit the source → stale, with the rebuild command, matched despite the .\ prefix
-    const s2 = t.snap([{ name: "pi.c", content: "v1" }, { name: "pi.exe", content: "BIN0" }])
+    const s2 = t.snap([
+      { name: "pi.c", content: "v1" },
+      { name: "pi.exe", content: "BIN0" },
+    ])
     expect(t.staleProducts(".\\pi.exe", s2)).toEqual([{ file: "pi.exe", rebuild: "gcc pi.c -o pi.exe" }])
   })
 
   test("9. product→source migration: model write_file's over pi.exe → no more refresh loop", () => {
     const t = JhStaleness.tracker()
     const s0 = t.snap([{ name: "pi.c", content: "v0" }])
-    const s1 = t.snap([{ name: "pi.c", content: "v0" }, { name: "pi.exe", content: "BIN0" }])
+    const s1 = t.snap([
+      { name: "pi.c", content: "v0" },
+      { name: "pi.exe", content: "BIN0" },
+    ])
     t.recordAction({ tool: "run", ok: true, command: "gcc pi.c -o pi.exe", before: s0, after: s1 })
     // the model overwrites pi.exe via write_file → it's now a SOURCE (took ownership)
-    const s2 = t.snap([{ name: "pi.c", content: "v0" }, { name: "pi.exe", content: "HANDWRITTEN" }])
+    const s2 = t.snap([
+      { name: "pi.c", content: "v0" },
+      { name: "pi.exe", content: "HANDWRITTEN" },
+    ])
     t.recordAction({ tool: "write_file", ok: true, before: s1, after: s2 })
     // a later source change does NOT flag pi.exe (no product → no refresh loop), and a no-op run does not re-seed it
-    const s3 = t.snap([{ name: "pi.c", content: "v1" }, { name: "pi.exe", content: "HANDWRITTEN" }])
+    const s3 = t.snap([
+      { name: "pi.c", content: "v1" },
+      { name: "pi.exe", content: "HANDWRITTEN" },
+    ])
     expect(t.staleProducts(".\\pi.exe", s3)).toEqual([])
     t.recordAction({ tool: "run", ok: false, command: "foo", before: s3, after: s3 })
     expect(t.staleProducts(".\\pi.exe", s3)).toEqual([])
@@ -57,9 +78,15 @@ describe("JhStaleness.tracker (pure)", () => {
   test("R5: an edit_file change is a model-written SOURCE (not a product) → its product goes stale", () => {
     const t = JhStaleness.tracker()
     const s0 = t.snap([{ name: "pi.c", content: "v0" }])
-    const s1 = t.snap([{ name: "pi.c", content: "v0" }, { name: "pi.exe", content: "E0" }])
+    const s1 = t.snap([
+      { name: "pi.c", content: "v0" },
+      { name: "pi.exe", content: "E0" },
+    ])
     t.recordAction({ tool: "run", ok: true, command: "gcc pi.c -o pi.exe", before: s0, after: s1 }) // pi.exe product
-    const s2 = t.snap([{ name: "pi.c", content: "v1" }, { name: "pi.exe", content: "E0" }])
+    const s2 = t.snap([
+      { name: "pi.c", content: "v1" },
+      { name: "pi.exe", content: "E0" },
+    ])
     t.recordAction({ tool: "edit_file", ok: true, before: s1, after: s2 }) // edit_file (tool !== "run") → source
     expect(t.staleProducts(".\\pi.exe", s2).map((p) => p.file)).toEqual(["pi.exe"]) // product stale after the edit
     expect(t.staleProducts("pi.c", s2)).toEqual([]) // the edited file is never a product
@@ -79,12 +106,23 @@ describe("JhStaleness.tracker (pure)", () => {
   test("allStale returns EVERY stale product in production order (chain: pi.o before pi.exe)", () => {
     const t = JhStaleness.tracker()
     const s0 = t.snap([{ name: "pi.c", content: "v0" }])
-    const s1 = t.snap([{ name: "pi.c", content: "v0" }, { name: "pi.o", content: "O0" }])
+    const s1 = t.snap([
+      { name: "pi.c", content: "v0" },
+      { name: "pi.o", content: "O0" },
+    ])
     t.recordAction({ tool: "run", ok: true, command: "gcc -c pi.c", before: s0, after: s1 }) // pi.o
-    const s2 = t.snap([{ name: "pi.c", content: "v0" }, { name: "pi.o", content: "O0" }, { name: "pi.exe", content: "E0" }])
+    const s2 = t.snap([
+      { name: "pi.c", content: "v0" },
+      { name: "pi.o", content: "O0" },
+      { name: "pi.exe", content: "E0" },
+    ])
     t.recordAction({ tool: "run", ok: true, command: "gcc pi.o -o pi.exe", before: s1, after: s2 }) // pi.exe
     expect(t.allStale(s2)).toEqual([]) // nothing stale before an edit
-    const s3 = t.snap([{ name: "pi.c", content: "v1" }, { name: "pi.o", content: "O0" }, { name: "pi.exe", content: "E0" }])
+    const s3 = t.snap([
+      { name: "pi.c", content: "v1" },
+      { name: "pi.o", content: "O0" },
+      { name: "pi.exe", content: "E0" },
+    ])
     expect(t.allStale(s3)).toEqual([
       { file: "pi.o", rebuild: "gcc -c pi.c" },
       { file: "pi.exe", rebuild: "gcc pi.o -o pi.exe" },
@@ -97,24 +135,54 @@ describe("JhStaleness.tracker (pure)", () => {
     // created files ARE its products regardless of the run's overall exit; the command is a usable rebuild.
     const t = JhStaleness.tracker()
     const s0 = t.snap([{ name: "pi.c", content: "v0" }])
-    const s1 = t.snap([{ name: "pi.c", content: "v0" }, { name: "pi.o", content: "O0" }])
+    const s1 = t.snap([
+      { name: "pi.c", content: "v0" },
+      { name: "pi.o", content: "O0" },
+    ])
     const compound = "gcc -c pi.c && gcc pi.o -o pi.exe && .\\pi.exe"
     t.recordAction({ tool: "run", ok: false, command: compound, before: s0, after: s1 }) // FAILED run, but pi.o was made
-    const s2 = t.snap([{ name: "pi.c", content: "v1" }, { name: "pi.o", content: "O0" }]) // edit source → pi.o stale
+    const s2 = t.snap([
+      { name: "pi.c", content: "v1" },
+      { name: "pi.o", content: "O0" },
+    ]) // edit source → pi.o stale
     expect(t.allStale(s2)).toEqual([{ file: "pi.o", rebuild: compound }]) // stale WITH a rebuild, not an orphan ""
   })
 
   test("staleChainFor (P5/I4): the check's product + its chain ONLY, not unrelated stale products", () => {
     const t = JhStaleness.tracker()
-    const s0 = t.snap([{ name: "pi.c", content: "v0" }, { name: "t_mul.c", content: "u0" }])
-    const s1 = t.snap([{ name: "pi.c", content: "v0" }, { name: "t_mul.c", content: "u0" }, { name: "pi.o", content: "O0" }])
+    const s0 = t.snap([
+      { name: "pi.c", content: "v0" },
+      { name: "t_mul.c", content: "u0" },
+    ])
+    const s1 = t.snap([
+      { name: "pi.c", content: "v0" },
+      { name: "t_mul.c", content: "u0" },
+      { name: "pi.o", content: "O0" },
+    ])
     t.recordAction({ tool: "run", ok: true, command: "gcc -c pi.c", before: s0, after: s1 }) // pi.o
-    const s2 = t.snap([{ name: "pi.c", content: "v0" }, { name: "t_mul.c", content: "u0" }, { name: "pi.o", content: "O0" }, { name: "pi.exe", content: "E0" }])
+    const s2 = t.snap([
+      { name: "pi.c", content: "v0" },
+      { name: "t_mul.c", content: "u0" },
+      { name: "pi.o", content: "O0" },
+      { name: "pi.exe", content: "E0" },
+    ])
     t.recordAction({ tool: "run", ok: true, command: "gcc pi.o -o pi.exe", before: s1, after: s2 }) // pi.exe ← pi.o
-    const s3 = t.snap([{ name: "pi.c", content: "v0" }, { name: "t_mul.c", content: "u0" }, { name: "pi.o", content: "O0" }, { name: "pi.exe", content: "E0" }, { name: "t_mul.exe", content: "M0" }])
+    const s3 = t.snap([
+      { name: "pi.c", content: "v0" },
+      { name: "t_mul.c", content: "u0" },
+      { name: "pi.o", content: "O0" },
+      { name: "pi.exe", content: "E0" },
+      { name: "t_mul.exe", content: "M0" },
+    ])
     t.recordAction({ tool: "run", ok: true, command: "gcc t_mul.c -o t_mul.exe", before: s2, after: s3 }) // t_mul.exe (unrelated)
     // edit pi.c → the global source digest changes, so ALL products read stale (the flat model)...
-    const s4 = t.snap([{ name: "pi.c", content: "v1" }, { name: "t_mul.c", content: "u0" }, { name: "pi.o", content: "O0" }, { name: "pi.exe", content: "E0" }, { name: "t_mul.exe", content: "M0" }])
+    const s4 = t.snap([
+      { name: "pi.c", content: "v1" },
+      { name: "t_mul.c", content: "u0" },
+      { name: "pi.o", content: "O0" },
+      { name: "pi.exe", content: "E0" },
+      { name: "t_mul.exe", content: "M0" },
+    ])
     expect(t.allStale(s4).map((p) => p.file)).toEqual(["pi.o", "pi.exe", "t_mul.exe"]) // ...allStale rebuilds all 3
     // ...but a check that runs pi.exe only needs the pi.exe chain — NOT t_mul.exe (rebuilt later when ITS check runs)
     expect(t.staleChainFor(".\\pi.exe", s4).map((p) => p.file)).toEqual(["pi.o", "pi.exe"])
@@ -123,10 +191,16 @@ describe("JhStaleness.tracker (pure)", () => {
   test("improve5 P1c: a replace_lines change is a model-written SOURCE (tool !== 'run') → its product goes stale", () => {
     const t = JhStaleness.tracker()
     const s0 = t.snap([{ name: "pi.c", content: "v0" }])
-    const s1 = t.snap([{ name: "pi.c", content: "v0" }, { name: "pi.exe", content: "BIN0" }])
+    const s1 = t.snap([
+      { name: "pi.c", content: "v0" },
+      { name: "pi.exe", content: "BIN0" },
+    ])
     t.recordAction({ tool: "run", ok: true, command: "gcc pi.c -o pi.exe", before: s0, after: s1 })
     // the model edits pi.c via replace_lines (tool = "replace_lines", not "run") → pi.c stays a source
-    const s2 = t.snap([{ name: "pi.c", content: "v1" }, { name: "pi.exe", content: "BIN0" }])
+    const s2 = t.snap([
+      { name: "pi.c", content: "v1" },
+      { name: "pi.exe", content: "BIN0" },
+    ])
     t.recordAction({ tool: "replace_lines", ok: true, before: s1, after: s2 })
     expect(t.staleProducts(".\\pi.exe", s2).map((p) => p.file)).toEqual(["pi.exe"]) // product stale
     expect(t.staleProducts("pi.c", s2)).toEqual([]) // the edited file is never itself a product
@@ -136,34 +210,60 @@ describe("JhStaleness.tracker (pure)", () => {
     const t = JhStaleness.tracker()
     const s0 = t.snap([{ name: "pi.c", content: "v0" }])
     const d0 = t.sourceDigestNow(s0)
-    const s1 = t.snap([{ name: "pi.c", content: "v0" }, { name: "pi.exe", content: "BIN0" }])
+    const s1 = t.snap([
+      { name: "pi.c", content: "v0" },
+      { name: "pi.exe", content: "BIN0" },
+    ])
     t.recordAction({ tool: "run", ok: true, command: "gcc pi.c -o pi.exe", before: s0, after: s1 })
     expect(t.sourceDigestNow(s1)).toBe(d0) // pi.exe is a product, not a source → digest unchanged
-    const s2 = t.snap([{ name: "pi.c", content: "v1" }, { name: "pi.exe", content: "BIN0" }])
+    const s2 = t.snap([
+      { name: "pi.c", content: "v1" },
+      { name: "pi.exe", content: "BIN0" },
+    ])
     expect(t.sourceDigestNow(s2)).not.toBe(d0) // editing the source moves the digest
   })
 
   test("improve4 P1: referencesProduct + productPresent (for registration + prune)", () => {
     const t = JhStaleness.tracker()
-    const s0 = t.snap([{ name: "t_mul.c", content: "u0" }, { name: "bigint.c", content: "b0" }])
+    const s0 = t.snap([
+      { name: "t_mul.c", content: "u0" },
+      { name: "bigint.c", content: "b0" },
+    ])
     expect(t.referencesProduct(".\\t_mul.exe")).toBe(false) // nothing built yet
-    const s1 = t.snap([{ name: "t_mul.c", content: "u0" }, { name: "bigint.c", content: "b0" }, { name: "t_mul.exe", content: "M0" }])
+    const s1 = t.snap([
+      { name: "t_mul.c", content: "u0" },
+      { name: "bigint.c", content: "b0" },
+      { name: "t_mul.exe", content: "M0" },
+    ])
     t.recordAction({ tool: "run", ok: true, command: "gcc t_mul.c bigint.c -o t_mul.exe", before: s0, after: s1 })
     expect(t.referencesProduct(".\\t_mul.exe")).toBe(true) // command runs a tracked product
     expect(t.referencesProduct("echo hi")).toBe(false)
     expect(t.productPresent(".\\t_mul.exe", s1)).toBe(true)
-    const s2 = t.snap([{ name: "t_mul.c", content: "u0" }, { name: "bigint.c", content: "b0" }]) // t_mul.exe deleted
+    const s2 = t.snap([
+      { name: "t_mul.c", content: "u0" },
+      { name: "bigint.c", content: "b0" },
+    ]) // t_mul.exe deleted
     expect(t.productPresent(".\\t_mul.exe", s2)).toBe(false) // product gone → prune it
   })
 
   test("improve5 P2: objectCompileFor finds a source's `-c` object compile, not a link", () => {
     const t = JhStaleness.tracker()
-    const s0 = t.snap([{ name: "bigint.c", content: "b0" }, { name: "t_mul.c", content: "m0" }])
+    const s0 = t.snap([
+      { name: "bigint.c", content: "b0" },
+      { name: "t_mul.c", content: "m0" },
+    ])
     // a `-c` object compile of bigint.c → bigint.o
-    const s1 = t.snap([{ name: "bigint.c", content: "b0" }, { name: "t_mul.c", content: "m0" }, { name: "bigint.o", content: "O" }])
+    const s1 = t.snap([
+      { name: "bigint.c", content: "b0" },
+      { name: "t_mul.c", content: "m0" },
+      { name: "bigint.o", content: "O" },
+    ])
     t.recordAction({ tool: "run", ok: true, command: "gcc -c bigint.c -o bigint.o", before: s0, after: s1 })
     // a LINK of t_mul (no -c) → t_mul.exe
-    const s2 = t.snap([...s1.map((f) => ({ name: f.name, content: f.name === "bigint.o" ? "O" : "x" })), { name: "t_mul.exe", content: "M" }])
+    const s2 = t.snap([
+      ...s1.map((f) => ({ name: f.name, content: f.name === "bigint.o" ? "O" : "x" })),
+      { name: "t_mul.exe", content: "M" },
+    ])
     t.recordAction({ tool: "run", ok: true, command: "gcc t_mul.c bigint.o -o t_mul.exe", before: s1, after: s2 })
     expect(t.objectCompileFor("bigint.c")).toBe("gcc -c bigint.c -o bigint.o") // the -c compile
     expect(t.objectCompileFor(".\\bigint.c")).toBe("gcc -c bigint.c -o bigint.o") // basename-tolerant
@@ -200,8 +300,14 @@ describe("JhStaleness.tracker (pure)", () => {
   test("orphan product (pre-existing binary, never produced) becomes stale after a source edit — no rebuild", () => {
     const t = JhStaleness.tracker()
     // pi.exe pre-exists; the first action is a source edit
-    const before = t.snap([{ name: "pi.c", content: "v0" }, { name: "pi.exe", content: "OLD" }])
-    const after = t.snap([{ name: "pi.c", content: "v1" }, { name: "pi.exe", content: "OLD" }])
+    const before = t.snap([
+      { name: "pi.c", content: "v0" },
+      { name: "pi.exe", content: "OLD" },
+    ])
+    const after = t.snap([
+      { name: "pi.c", content: "v1" },
+      { name: "pi.exe", content: "OLD" },
+    ])
     t.recordAction({ tool: "write_file", ok: true, before, after })
     const stale = t.staleProducts(".\\pi.exe", after)
     expect(stale).toEqual([{ file: "pi.exe", rebuild: "" }]) // stale, but no remembered rebuild
@@ -212,10 +318,29 @@ describe("JhStaleness.tracker (pure)", () => {
 // Engine-integration tests — a scripted in-memory filesystem so listFiles/executor/runner stay
 // self-consistent (a compile writes a "binary" encoding the source; running it reads that back).
 // ---------------------------------------------------------------------------------------------------
-const atom = (over: Record<string, unknown> = {}) => JSON.stringify({ goal: "leaf", size: "atomic", tool: "note", args: { text: "x" }, success: "ok", check: { type: "artifact_present" }, produces: [], ...over })
-const compound = (substeps: unknown[]) => JSON.stringify({ goal: "root", size: "needs_decomposition", success: "ok", substeps })
+const atom = (over: Record<string, unknown> = {}) =>
+  JSON.stringify({
+    goal: "leaf",
+    size: "atomic",
+    tool: "note",
+    args: { text: "x" },
+    success: "ok",
+    check: { type: "artifact_present" },
+    produces: [],
+    ...over,
+  })
+const compound = (substeps: unknown[]) =>
+  JSON.stringify({ goal: "root", size: "needs_decomposition", success: "ok", substeps })
 // a structurally-valid atomic substep placeholder (children re-introspect, but a substep must still decode)
-const subObj = (goal: string) => ({ goal, size: "atomic", tool: "note", args: { text: "x" }, success: "ok", check: { type: "artifact_present" }, produces: [] })
+const subObj = (goal: string) => ({
+  goal,
+  size: "atomic",
+  tool: "note",
+  args: { text: "x" },
+  success: "ok",
+  check: { type: "artifact_present" },
+  produces: [],
+})
 
 // A Pi-like world: `gcc` compiles pi.c into pi.exe (the binary encodes the current source); running
 // pi.exe prints correct digits iff the encoded source contains "FIXED".
@@ -332,7 +457,13 @@ describe("JhStaleness engine integration", () => {
       world: piWorld,
       replies: [
         atom({ goal: "build+verify", tool: "run", args: { command: "gcc pi.c -o pi.exe" }, check: runCheck }),
-        atom({ goal: "fix", tool: "write_file", args: { path: "pi.c", content: "FIXED source" }, check: runCheck, produces: [{ id: "pi.c", type: "file" }] }),
+        atom({
+          goal: "fix",
+          tool: "write_file",
+          args: { path: "pi.c", content: "FIXED source" },
+          check: runCheck,
+          produces: [{ id: "pi.c", type: "file" }],
+        }),
       ],
       limits: { maxDepth: 0, maxTotalSteps: 16 },
     })
@@ -351,12 +482,23 @@ describe("JhStaleness engine integration", () => {
       world: piWorld,
       replies: [
         atom({ goal: "build+verify", tool: "run", args: { command: "gcc pi.c -o pi.exe" }, check: runCheck }),
-        atom({ goal: "fix", tool: "write_file", args: { path: "pi.c", content: "BROKEN" }, check: runCheck, produces: [{ id: "pi.c", type: "file" }] }),
+        atom({
+          goal: "fix",
+          tool: "write_file",
+          args: { path: "pi.c", content: "BROKEN" },
+          check: runCheck,
+          produces: [{ id: "pi.c", type: "file" }],
+        }),
       ],
       limits: { maxDepth: 0, maxTotalSteps: 16 },
     })
     const r = await runEngine(h)
-    expect(r.state.log.some((e) => e.type === "verification" && !e.ok && String((e as { detail?: unknown }).detail).includes("REBUILD FAILED"))).toBe(true)
+    expect(
+      r.state.log.some(
+        (e) =>
+          e.type === "verification" && !e.ok && String((e as { detail?: unknown }).detail).includes("REBUILD FAILED"),
+      ),
+    ).toBe(true)
     // exactly ONE binary execution (the pre-edit check); every post-edit rebuild failed → the re-check was skipped
     // (`.\\pi.exe` is the check command; the gcc rebuild also contains "pi.exe" so match the run form precisely)
     expect(h.runLog().filter((c) => c.includes(".\\pi.exe")).length).toBe(1)
@@ -367,11 +509,21 @@ describe("JhStaleness engine integration", () => {
     const h = fsHarness({
       initial: { "pi.c": "v0", "pi.exe": "OLDBIN" }, // pi.exe pre-exists, never produced by a recorded run
       world: piWorld,
-      replies: [atom({ goal: "edit", tool: "write_file", args: { path: "pi.c", content: "v1" }, check: runCheck, produces: [{ id: "pi.c", type: "file" }] })],
+      replies: [
+        atom({
+          goal: "edit",
+          tool: "write_file",
+          args: { path: "pi.c", content: "v1" },
+          check: runCheck,
+          produces: [{ id: "pi.c", type: "file" }],
+        }),
+      ],
       limits: { maxDepth: 0, maxTotalSteps: 16 },
     })
     const r = await runEngine(h)
-    const stales = r.state.log.filter((e) => e.type === "verification" && String((e as { detail?: unknown }).detail).includes("STALE ARTIFACT"))
+    const stales = r.state.log.filter(
+      (e) => e.type === "verification" && String((e as { detail?: unknown }).detail).includes("STALE ARTIFACT"),
+    )
     expect(stales.length).toBeGreaterThan(3) // it ran to the explore cap, NOT stuck at STUCK_REPEATS(3)
     expect(h.runLog().filter((c) => c.includes("pi.exe")).length).toBe(0) // the check is skipped every time (no execution)
   })
@@ -388,7 +540,13 @@ describe("JhStaleness engine integration", () => {
     })
     const r = await runEngine(h)
     expect(h.runLog().filter((c) => c === "failing").length).toBe(1) // executed once; later identical checks cached
-    expect(r.state.log.some((e) => e.type === "verification" && String((e as { detail?: unknown }).detail).includes("nothing has changed since the last attempt"))).toBe(true)
+    expect(
+      r.state.log.some(
+        (e) =>
+          e.type === "verification" &&
+          String((e as { detail?: unknown }).detail).includes("nothing has changed since the last attempt"),
+      ),
+    ).toBe(true)
     expect(r.status).toBe("blocked") // the cached repeats DID count toward stuck
   })
 
@@ -396,13 +554,25 @@ describe("JhStaleness engine integration", () => {
     // compile once, then 3 write leaves (weak checks — no product execution), then a run-check leaf: the
     // binary is stale by 3 edits and auto-rebuilds exactly once.
     const runCheck = { type: "run", command: ".\\pi.exe", expect: "3.14159" }
-    const wl = (content: string) => atom({ goal: "edit", tool: "write_file", args: { path: "pi.c", content }, check: { type: "artifact_present" }, produces: [{ id: "pi.c", type: "file" }] })
+    const wl = (content: string) =>
+      atom({
+        goal: "edit",
+        tool: "write_file",
+        args: { path: "pi.c", content },
+        check: { type: "artifact_present" },
+        produces: [{ id: "pi.c", type: "file" }],
+      })
     const h = fsHarness({
       initial: { "pi.c": "v0" },
       world: piWorld,
       replies: [
         compound([subObj("compile"), subObj("e1"), subObj("e2"), subObj("e3"), subObj("check")]),
-        atom({ goal: "compile", tool: "run", args: { command: "gcc pi.c -o pi.exe" }, check: { type: "compile", command: "gcc pi.c -o pi.exe" } }),
+        atom({
+          goal: "compile",
+          tool: "run",
+          args: { command: "gcc pi.c -o pi.exe" },
+          check: { type: "compile", command: "gcc pi.c -o pi.exe" },
+        }),
         wl("v1"),
         wl("v2"),
         wl("FIXED final"),
@@ -422,7 +592,13 @@ describe("JhStaleness engine integration", () => {
       world: piWorld,
       replies: [
         atom({ goal: "build+verify", tool: "run", args: { command: "gcc pi.c -o pi.exe" }, check: runCheck }),
-        atom({ goal: "fix", tool: "write_file", args: { path: "pi.c", content: "FIXED math" }, check: runCheck, produces: [{ id: "pi.c", type: "file" }] }),
+        atom({
+          goal: "fix",
+          tool: "write_file",
+          args: { path: "pi.c", content: "FIXED math" },
+          check: runCheck,
+          produces: [{ id: "pi.c", type: "file" }],
+        }),
       ],
       limits: { maxDepth: 0, maxTotalSteps: 16 },
     })
@@ -443,16 +619,32 @@ describe("JhStaleness engine integration", () => {
       replies: [
         compound([subObj("compile"), subObj("link+run")]),
         // step1: WRITE the source; its CHECK compiles it to pi.o (compile is a CHECK, not the action)
-        atom({ goal: "compile", tool: "write_file", args: { path: "pi.c", content: "buggy" }, check: { type: "compile", command: "gcc -c pi.c" }, produces: [{ id: "pi.c", type: "file" }] }),
+        atom({
+          goal: "compile",
+          tool: "write_file",
+          args: { path: "pi.c", content: "buggy" },
+          check: { type: "compile", command: "gcc -c pi.c" },
+          produces: [{ id: "pi.c", type: "file" }],
+        }),
         // step2: link + run — buggy first, so it fails and the recovery edits the source
         atom({ goal: "link+run", tool: "run", args: { command: "gcc pi.o -o pi.exe" }, check: runCheck }),
-        atom({ goal: "fix", tool: "write_file", args: { path: "pi.c", content: "FIXED" }, check: runCheck, produces: [{ id: "pi.c", type: "file" }] }),
+        atom({
+          goal: "fix",
+          tool: "write_file",
+          args: { path: "pi.c", content: "FIXED" },
+          check: runCheck,
+          produces: [{ id: "pi.c", type: "file" }],
+        }),
       ],
       limits: { maxDepth: 2, maxTotalSteps: 32 },
     })
     const r = await runEngine(h)
     expect(r.status).toBe("done") // the edited source propagated through pi.o → pi.exe automatically
-    expect(r.state.log.filter((e) => e.type === "verification" && String((e as { detail?: unknown }).detail).includes("STALE ARTIFACT")).length).toBe(0) // pi.o was tracked, never an orphan
+    expect(
+      r.state.log.filter(
+        (e) => e.type === "verification" && String((e as { detail?: unknown }).detail).includes("STALE ARTIFACT"),
+      ).length,
+    ).toBe(0) // pi.o was tracked, never an orphan
     expect(refreshedCount(r)).toBeGreaterThanOrEqual(2) // pi.o AND pi.exe auto-rebuilt in order
   })
 
@@ -464,7 +656,13 @@ describe("JhStaleness engine integration", () => {
       staleness: false,
       replies: [
         atom({ goal: "build+verify", tool: "run", args: { command: "gcc pi.c -o pi.exe" }, check: runCheck }),
-        atom({ goal: "fix", tool: "write_file", args: { path: "pi.c", content: "FIXED source" }, check: runCheck, produces: [{ id: "pi.c", type: "file" }] }),
+        atom({
+          goal: "fix",
+          tool: "write_file",
+          args: { path: "pi.c", content: "FIXED source" },
+          check: runCheck,
+          produces: [{ id: "pi.c", type: "file" }],
+        }),
       ],
       limits: { maxDepth: 0, maxTotalSteps: 16 },
     })
@@ -479,7 +677,8 @@ describe("JhStaleness engine integration", () => {
 import { compileSegment } from "./staleness"
 
 describe("jh-improve6 — compileSegment extraction", () => {
-  const COMPOUND = "set PATH=C:/w64devkit/bin;%PATH% && gcc -c bigint.c -o bigint.o && gcc t_add.c bigint.o -o t_add.exe && .\t_add.exe"
+  const COMPOUND =
+    "set PATH=C:/w64devkit/bin;%PATH% && gcc -c bigint.c -o bigint.o && gcc t_add.c bigint.o -o t_add.exe && .\t_add.exe"
 
   test("a compound keeps env prefixes + the -c segment ONLY (no link, no test execution)", () => {
     const seg = compileSegment(COMPOUND, "bigint.c")
@@ -500,6 +699,8 @@ describe("jh-improve6 — compileSegment extraction", () => {
   })
 
   test("path/case tolerant: matches a dot-backslash path and an upper-case spelling", () => {
-    expect(compileSegment("gcc -c .\\bigint.c -o bigint.o && .\\t.exe", "BIGINT.C")).toBe("gcc -c .\\bigint.c -o bigint.o")
+    expect(compileSegment("gcc -c .\\bigint.c -o bigint.o && .\\t.exe", "BIGINT.C")).toBe(
+      "gcc -c .\\bigint.c -o bigint.o",
+    )
   })
 })

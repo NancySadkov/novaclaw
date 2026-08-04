@@ -41,9 +41,11 @@ import { usePrompt, DEFAULT_PROMPT } from "@/context/prompt"
 import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
 import { useServerSDK } from "@/context/server-sdk"
+import { useServer } from "@/context/server"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
+import { retrySessionExecution, sessionExecutions, stopSessionExecution } from "@/utils/session-execution-api"
 import { PromptInput } from "@/components/prompt-input"
 import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
 import {
@@ -128,6 +130,7 @@ export default function Page() {
   const language = useLanguage()
   const sdk = useSDK()
   const serverSDK = useServerSDK()
+  const server = useServer()
   const settings = useSettings()
   const platform = usePlatform()
   const prompt = usePrompt()
@@ -383,6 +386,29 @@ export default function Page() {
       : store.mobileTab === "changes",
   )
   const sessionStatus = () => sync().data.session_status[params.id ?? ""]?.type ?? "idle"
+  const executionQuery = createQuery(() => ({
+    queryKey: ["session-execution", server.current?.http.url ?? "", params.id ?? ""],
+    enabled: !!server.current && !!params.id,
+    queryFn: () => sessionExecutions(server.current!.http),
+    refetchInterval: 2_000,
+  }))
+  const executionAttempt = createMemo(() => executionQuery.data?.find((item) => item.sessionID === params.id))
+  const executionAction = async (action: "retry" | "stop") => {
+    const conn = server.current
+    const id = params.id
+    if (!conn || !id) return
+    try {
+      if (action === "retry") await retrySessionExecution(conn.http, id, sdk().directory)
+      else await stopSessionExecution(conn.http, id, sdk().directory)
+      await executionQuery.refetch()
+    } catch (error) {
+      showToast({
+        title: action === "retry" ? "Could not retry this chat" : "Could not stop this chat",
+        description: String(error),
+        variant: "error",
+      })
+    }
+  }
   const reviewSource = createMemo(() =>
     resolveReviewSource({
       selected: store.changes,
@@ -1833,6 +1859,32 @@ export default function Page() {
     <div class="relative size-full overflow-hidden flex flex-col">
       {sessionSync() ?? ""}
       <SessionHeader />
+      <Show when={executionAttempt()}>
+        {(attempt) => (
+          <Show when={["recovering", "paused", "failed", "interrupted"].includes(attempt().state)}>
+            <div class="mx-2 mt-2 flex select-text items-center gap-3 rounded-[10px] border border-v2-state-border-warning bg-v2-state-bg-warning px-3 py-2 text-xs text-v2-text-text-muted">
+              <span class="min-w-0 flex-1">
+                <strong class="text-v2-text-text-strong">
+                  {attempt().state === "recovering" ? "This chat is recovering." : "This chat is paused safely."}
+                </strong>{" "}
+                {attempt().failureDetail ??
+                  attempt().failureClass ??
+                  "Execution stopped before Nova could confirm the outcome."}
+              </span>
+              <Show when={attempt().state !== "recovering"}>
+                <Button size="small" variant="secondary" onClick={() => void executionAction("retry")}>
+                  Retry
+                </Button>
+              </Show>
+              <Show when={attempt().state === "recovering"}>
+                <Button size="small" variant="secondary" onClick={() => void executionAction("stop")}>
+                  Stop
+                </Button>
+              </Show>
+            </div>
+          </Show>
+        )}
+      </Show>
       <div class="flex-1 min-h-0 flex flex-col md:flex-row gap-2 p-2">
         <div
           classList={{

@@ -187,8 +187,7 @@ const isInvisibleFormat = (cp: number) =>
 /** Greek and Cyrillic — the two blocks whose letters have ASCII lookalikes on a normal keyboard. */
 const isConfusableLetter = (cp: number) => (cp >= 0x0370 && cp <= 0x03ff) || (cp >= 0x0400 && cp <= 0x04ff)
 
-const isAsciiLetter = (cp: number) =>
-  (cp >= 0x0041 && cp <= 0x005a) || (cp >= 0x0061 && cp <= 0x007a) /* A-Z a-z */
+const isAsciiLetter = (cp: number) => (cp >= 0x0041 && cp <= 0x005a) || (cp >= 0x0061 && cp <= 0x007a) /* A-Z a-z */
 
 /** What can sit inside one identifier-shaped word: `A-Z a-z 0-9 _ $` plus the confusable letters. */
 const isWordCharacter = (cp: number) =>
@@ -483,9 +482,7 @@ describe("the guard actually bites (negative control)", () => {
     // ⚠️ The expected word must be BUILT from the code point, never typed. Written as the ASCII
     // `perCall` this assertion fails with a diff whose two sides are visually identical — which is
     // how it failed while being written, and is the whole defect restated inside its own test.
-    expect(findingsIn(`\n\n * \`per${cyrillicC}all\``)).toEqual([
-      `a mixed-script word: "per${cyrillicC}all" (line 3)`,
-    ])
+    expect(findingsIn(`\n\n * \`per${cyrillicC}all\``)).toEqual([`a mixed-script word: "per${cyrillicC}all" (line 3)`])
     // The reported word is emphatically NOT the ASCII spelling someone would search for.
     expect(findingsIn(`\n\n * \`per${cyrillicC}all\``)[0]).not.toContain("perCall")
   })

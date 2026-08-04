@@ -56,9 +56,7 @@ export type Shape =
 
 /** The argv a shape becomes when it is exec'd directly (inside the sandbox, or as a plain exec). */
 export function argvOf(shape: Shape): string[] {
-  return shape.kind === "shell-command"
-    ? [shape.shell, "-c", shape.command]
-    : [shape.runtime, "-e", shape.program]
+  return shape.kind === "shell-command" ? [shape.shell, "-c", shape.command] : [shape.runtime, "-e", shape.program]
 }
 
 /**
@@ -208,7 +206,11 @@ export function resolveShell(configured?: string): string {
 /** The MSYS-bash userland PATH prefix (`bash -c` is not a login shell), or undefined for any other
  *  shell. */
 export function bundleOverlay(shell: string): Record<string, string> | undefined {
-  return Shell.name(shell) === "bash" ? ShellBundle.envForBash(shell) : undefined
+  return process.platform === "win32"
+    ? Shell.toolchainEnv(shell)
+    : Shell.name(shell) === "bash"
+      ? ShellBundle.envForBash(shell)
+      : undefined
 }
 
 /**
@@ -396,8 +398,7 @@ export function chainHasHostileBinding(sessionID: string, lookup: ChainLookup): 
  * So the answer is the SAME rule on the attended and unattended paths; only its effect differs. Two
  * rules would have been a per-call-site preference, which is what ruling 6 exists to stop.
  */
-const takesUnattendedArm = (hostility: Hostility | undefined): boolean =>
-  hostility === true || hostility === "unknown"
+const takesUnattendedArm = (hostility: Hostility | undefined): boolean => hostility === true || hostility === "unknown"
 
 /**
  * raw · confined · deny. An UNDECLARED root type (`rootType: undefined`) runs raw unless the turn is

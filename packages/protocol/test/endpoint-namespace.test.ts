@@ -241,7 +241,7 @@ describe("the endpoint namespace", () => {
         "An operation id is a strict dot-prefix of another one.",
         "The generated client nests by dot-segment, so the parent container would need the same name",
         "as both a method and a sub-container getter. Give the shorter route a leaf segment of its own",
-        '(e.g. `calendar.schedule.get`, never bare `calendar.schedule`).',
+        "(e.g. `calendar.schedule.get`, never bare `calendar.schedule`).",
       ].join("\n"),
     ).toEqual([])
   })
@@ -272,14 +272,23 @@ describe("the guard bites (negative controls)", () => {
 
   test("a duplicate endpoint id is reported by name", () => {
     expect(
-      duplicateKeys([route("calendar.fires.list", "GET", "/api/calendar/fires"), route("calendar.fires.list", "GET", "/api/calendar/fires-2")], (item) => item.name),
+      duplicateKeys(
+        [
+          route("calendar.fires.list", "GET", "/api/calendar/fires"),
+          route("calendar.fires.list", "GET", "/api/calendar/fires-2"),
+        ],
+        (item) => item.name,
+      ),
     ).toEqual(["calendar.fires.list <- calendar.fires.list, calendar.fires.list"])
   })
 
   test("a duplicate METHOD + path is reported by name", () => {
     expect(
       duplicateKeys(
-        [route("calendar.fires.list", "GET", "/api/calendar/fires"), route("calendar.fires.recent", "GET", "/api/calendar/fires")],
+        [
+          route("calendar.fires.list", "GET", "/api/calendar/fires"),
+          route("calendar.fires.recent", "GET", "/api/calendar/fires"),
+        ],
         (item) => `${item.method} ${item.path}`,
       ),
     ).toEqual(["GET /api/calendar/fires <- calendar.fires.list, calendar.fires.recent"])

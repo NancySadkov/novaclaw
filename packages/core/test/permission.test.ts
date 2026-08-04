@@ -886,9 +886,7 @@ describe("PermissionV2 — unattended confinement stance", () => {
         const id = `ses_read_${permissionMode}`
         yield* insertSession({ id, type, permissionMode })
         expect(
-          yield* service.ask(
-            outside({ sessionID: SessionV2.ID.make(id), action: "external_directory_read" }),
-          ),
+          yield* service.ask(outside({ sessionID: SessionV2.ID.make(id), action: "external_directory_read" })),
         ).toMatchObject({ effect: "allow" })
       }
     }),

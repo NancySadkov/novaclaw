@@ -67,14 +67,14 @@ describe("session scheduler admission gate", () => {
     // Queue BOTH waiters first (registration order favors hot), THEN charge hot's
     // debt — with peers registered, virtual time advances slower than hot's vruntime.
     const hotFiber = Effect.runFork(
-      gate.admit({ sessionID: "hot", deviceKey: "d", sessionClass: "auto-prompting" }).pipe(
-        Effect.map(() => order.push("hot")),
-      ),
+      gate
+        .admit({ sessionID: "hot", deviceKey: "d", sessionClass: "auto-prompting" })
+        .pipe(Effect.map(() => order.push("hot"))),
     )
     const coldFiber = Effect.runFork(
-      gate.admit({ sessionID: "cold", deviceKey: "d", sessionClass: "auto-prompting" }).pipe(
-        Effect.map(() => order.push("cold")),
-      ),
+      gate
+        .admit({ sessionID: "cold", deviceKey: "d", sessionClass: "auto-prompting" })
+        .pipe(Effect.map(() => order.push("cold"))),
     )
     await new Promise((resolve) => setTimeout(resolve, 20))
     await run(gate.report({ sessionID: "hot", deviceKey: "d", costTokens: 300_000 }))
@@ -194,8 +194,7 @@ describe("ledger retention: bounded by the forgiveness TTL, not by session lifet
     // The equivalence the whole design rests on: whether the sweep gets there first (entry
     // dropped, then re-`ensure`d at the current virtual time) or `onWake` does (lag reset to 0),
     // the session lands in the SAME place. So the sweep destroys no debt the policy was keeping.
-    const lagOf = async (id: string) =>
-      (await run(gate.snapshot()))[0]!.ledger.find((entry) => entry.id === id)?.lag
+    const lagOf = async (id: string) => (await run(gate.snapshot()))[0]!.ledger.find((entry) => entry.id === id)?.lag
     // A peer is REQUIRED to owe anything at all: with one entry, `charge` advances virtual time
     // and vruntime by the same amount, so a solo session sits exactly on its share (lag 0).
     await run(gate.admit({ sessionID: "peer", deviceKey: "d", sessionClass: "interactive" }))

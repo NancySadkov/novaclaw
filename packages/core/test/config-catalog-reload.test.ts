@@ -119,9 +119,7 @@ describe("a provider write re-materialises the catalog", () => {
           // AGENTS.md's self-healing example verbatim: the vendor moved its servers and an agent
           // repairs the instance with one PATCH. A reload that only ever runs once (or a
           // materialisation that caches) passes the assertion above and fails here.
-          yield* ConfigStoreWrite.apply(
-            decodeInfo({ providers: { [PROBE]: { api: api("https://after.test/v1") } } }),
-          )
+          yield* ConfigStoreWrite.apply(decodeInfo({ providers: { [PROBE]: { api: api("https://after.test/v1") } } }))
           expect((yield* catalog.provider.get(PROBE_ID))?.api?.url).toBe("https://after.test/v1")
 
           // The INTEGRATION half, which rides the same registration: a provider declaring `env`

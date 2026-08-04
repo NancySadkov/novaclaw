@@ -131,8 +131,7 @@ function runOnce(
   })
 }
 
-const defaultShell = (): string =>
-  process.platform === "win32" ? (process.env.COMSPEC ?? "cmd.exe") : "/bin/sh"
+const defaultShell = (): string => (process.platform === "win32" ? (process.env.COMSPEC ?? "cmd.exe") : "/bin/sh")
 
 /**
  * The runner every SESSION-side caller uses: each command is planned by the host-execution gate

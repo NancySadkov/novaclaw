@@ -69,7 +69,8 @@ export function writeTargets(context: readonly SessionMessage.Message[]): string
     if (part.type !== "tool" || !WRITE_TOOLS.has(part.name)) continue
     if (part.state.status !== "completed") continue
     const input = part.state.input as { path?: unknown; filePath?: unknown }
-    const file = typeof input.path === "string" ? input.path : typeof input.filePath === "string" ? input.filePath : undefined
+    const file =
+      typeof input.path === "string" ? input.path : typeof input.filePath === "string" ? input.filePath : undefined
     if (file) files.push(file)
   }
   return [...new Set(files)]
@@ -103,8 +104,10 @@ export function dueMidLoop(config: Config, state: State, files: readonly string[
   const due: DueCheck[] = []
   for (const file of files) {
     state.writes++
-    if (config.commands.syntax) due.push({ step: 1, label: "syntax", command: renderCommand(config.commands.syntax, file) })
-    if (config.commands.check) due.push({ step: 2, label: "check", command: renderCommand(config.commands.check, file) })
+    if (config.commands.syntax)
+      due.push({ step: 1, label: "syntax", command: renderCommand(config.commands.syntax, file) })
+    if (config.commands.check)
+      due.push({ step: 2, label: "check", command: renderCommand(config.commands.check, file) })
     if (config.commands.typecheck && state.writes % config.cadence === 0)
       due.push({ step: 3, label: "typecheck", command: config.commands.typecheck })
   }
@@ -123,7 +126,8 @@ export function dueTurnEnd(config: Config, state: State): TurnEndCheck[] {
   if (!config.enabled || state.turnEndDone || state.writes === 0) return []
   state.turnEndDone = true
   const due: TurnEndCheck[] = []
-  if (config.commands.test) due.push({ step: 4, label: "test", command: config.commands.test, timeoutMs: config.testTimeout })
+  if (config.commands.test)
+    due.push({ step: 4, label: "test", command: config.commands.test, timeoutMs: config.testTimeout })
   if (config.commands.lint) due.push({ step: 5, label: "lint", command: config.commands.lint, timeoutMs: 120_000 })
   return due
 }

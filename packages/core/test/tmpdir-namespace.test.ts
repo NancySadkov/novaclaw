@@ -33,7 +33,10 @@ const CORE = path.resolve(import.meta.dir, "..")
 const OWNER = "test/fixture/tmpdir.ts"
 
 /** This file necessarily names the prefix it is guarding. */
-const SELF = path.relative(CORE, import.meta.path).split(path.sep).join("/")
+const SELF = path
+  .relative(CORE, import.meta.path)
+  .split(path.sep)
+  .join("/")
 
 const SKIP_DIRS = new Set(["node_modules", "dist", "out", "build", "coverage", "gen", ".git", ".turbo", ".vite"])
 
@@ -105,9 +108,12 @@ describe("the novaclaw-core-test-* temp namespace has exactly one producer", () 
     // why it stopped being one, and must not be flagged for saying so.
     expect(
       producers(
-        [{ name: "test/prose.test.ts", text: '// used to be mkdtemp(os.tmpdir(), "novaclaw-core-test-")\nconst x = 1' }].map(
-          (file) => ({ ...file, text: stripComments(file.text) }),
-        ),
+        [
+          {
+            name: "test/prose.test.ts",
+            text: '// used to be mkdtemp(os.tmpdir(), "novaclaw-core-test-")\nconst x = 1',
+          },
+        ].map((file) => ({ ...file, text: stripComments(file.text) })),
       ),
     ).toEqual([])
 

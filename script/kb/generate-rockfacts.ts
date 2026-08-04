@@ -59,18 +59,174 @@ const pick = <T>(list: readonly T[]): T => list[Math.floor(rand() * list.length)
 const rangeInt = (lo: number, hi: number) => lo + Math.floor(rand() * (hi - lo + 1))
 
 // ── fictional vocabulary (syllable-combinatoric; intentionally NOT real names) ─────────
-const ADJ = ["Velvet", "Rusted", "Neon", "Hollow", "Static", "Crimson", "Paper", "Glass", "Feral", "Lunar", "Molten", "Granite", "Electric", "Wandering", "Broken", "Silent", "Chrome", "Saffron", "Obsidian", "Peculiar"]
-const NOUN = ["Corvids", "Furnaces", "Lanterns", "Vipers", "Prophets", "Engines", "Orchids", "Sirens", "Anchors", "Pylons", "Foxes", "Harbors", "Mirrors", "Wolves", "Turbines", "Meridians", "Sparrows", "Bonfires", "Cellars", "Comets"]
-const FIRST = ["Korvath", "Maribel", "Dax", "Ilona", "Ryland", "Sable", "Orin", "Vespera", "Callum", "Zinnia", "Harlan", "Petra", "Joss", "Ondine", "Bram", "Liora", "Castor", "Vada", "Emrick", "Thessaly", "Rooke", "Isolde", "Fenwick", "Marisol"]
-const LAST = ["Dreyne", "Vasko", "Quillan", "Marrow", "Hexley", "Solvang", "Petrichor", "Ashgrove", "Brandt", "Okonkwo", "Silvermane", "Tarwater", "Ellsworth", "Vane", "Crowhurst", "Mendel", "Rasky", "Duval", "Northgate", "Palissy"]
-const CITY = ["Grey Harbor", "Veldt City", "Ironpool", "Cascabel", "New Tallis", "Port Umber", "Drossford", "Kestrel Falls", "Marrow Bay", "Sunfall", "Ochre Springs", "Vantage Point", "Colderidge", "Bellmouth", "Tarn Hollow"]
-const GENRE = ["garage rock", "doom metal", "psychedelic rock", "post-punk", "surf rock", "progressive rock", "glam rock", "krautrock", "shoegaze", "stoner rock", "art rock", "proto-punk"]
-const LABEL = ["Cinder Disc Records", "Halcyon Wax", "Grimm Audio", "Northgate Sound", "Tin Ceiling Records", "Ferrous Music", "Opaline Records", "Blue Furnace Recordings"]
+const ADJ = [
+  "Velvet",
+  "Rusted",
+  "Neon",
+  "Hollow",
+  "Static",
+  "Crimson",
+  "Paper",
+  "Glass",
+  "Feral",
+  "Lunar",
+  "Molten",
+  "Granite",
+  "Electric",
+  "Wandering",
+  "Broken",
+  "Silent",
+  "Chrome",
+  "Saffron",
+  "Obsidian",
+  "Peculiar",
+]
+const NOUN = [
+  "Corvids",
+  "Furnaces",
+  "Lanterns",
+  "Vipers",
+  "Prophets",
+  "Engines",
+  "Orchids",
+  "Sirens",
+  "Anchors",
+  "Pylons",
+  "Foxes",
+  "Harbors",
+  "Mirrors",
+  "Wolves",
+  "Turbines",
+  "Meridians",
+  "Sparrows",
+  "Bonfires",
+  "Cellars",
+  "Comets",
+]
+const FIRST = [
+  "Korvath",
+  "Maribel",
+  "Dax",
+  "Ilona",
+  "Ryland",
+  "Sable",
+  "Orin",
+  "Vespera",
+  "Callum",
+  "Zinnia",
+  "Harlan",
+  "Petra",
+  "Joss",
+  "Ondine",
+  "Bram",
+  "Liora",
+  "Castor",
+  "Vada",
+  "Emrick",
+  "Thessaly",
+  "Rooke",
+  "Isolde",
+  "Fenwick",
+  "Marisol",
+]
+const LAST = [
+  "Dreyne",
+  "Vasko",
+  "Quillan",
+  "Marrow",
+  "Hexley",
+  "Solvang",
+  "Petrichor",
+  "Ashgrove",
+  "Brandt",
+  "Okonkwo",
+  "Silvermane",
+  "Tarwater",
+  "Ellsworth",
+  "Vane",
+  "Crowhurst",
+  "Mendel",
+  "Rasky",
+  "Duval",
+  "Northgate",
+  "Palissy",
+]
+const CITY = [
+  "Grey Harbor",
+  "Veldt City",
+  "Ironpool",
+  "Cascabel",
+  "New Tallis",
+  "Port Umber",
+  "Drossford",
+  "Kestrel Falls",
+  "Marrow Bay",
+  "Sunfall",
+  "Ochre Springs",
+  "Vantage Point",
+  "Colderidge",
+  "Bellmouth",
+  "Tarn Hollow",
+]
+const GENRE = [
+  "garage rock",
+  "doom metal",
+  "psychedelic rock",
+  "post-punk",
+  "surf rock",
+  "progressive rock",
+  "glam rock",
+  "krautrock",
+  "shoegaze",
+  "stoner rock",
+  "art rock",
+  "proto-punk",
+]
+const LABEL = [
+  "Cinder Disc Records",
+  "Halcyon Wax",
+  "Grimm Audio",
+  "Northgate Sound",
+  "Tin Ceiling Records",
+  "Ferrous Music",
+  "Opaline Records",
+  "Blue Furnace Recordings",
+]
 const ROLE = ["lead vocals", "lead guitar", "bass guitar", "drums", "keyboards", "rhythm guitar"]
-const ALBUM_A = ["Midnight", "Concrete", "Endless", "Borrowed", "Phantom", "Amber", "Savage", "Quiet", "Burning", "Forgotten", "Electric", "Marble"]
-const ALBUM_B = ["Arithmetic", "Gardens", "Divide", "Cathedral", "Weather", "Mile", "Machinery", "Postcards", "Latitude", "Ceremony", "Appetite", "Harvest"]
+const ALBUM_A = [
+  "Midnight",
+  "Concrete",
+  "Endless",
+  "Borrowed",
+  "Phantom",
+  "Amber",
+  "Savage",
+  "Quiet",
+  "Burning",
+  "Forgotten",
+  "Electric",
+  "Marble",
+]
+const ALBUM_B = [
+  "Arithmetic",
+  "Gardens",
+  "Divide",
+  "Cathedral",
+  "Weather",
+  "Mile",
+  "Machinery",
+  "Postcards",
+  "Latitude",
+  "Ceremony",
+  "Appetite",
+  "Harvest",
+]
 
-const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+const slug = (name: string) =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
 
 // ── generate the universe ───────────────────────────────────────────────────────────────
 const facts: Fact[] = []
@@ -106,8 +262,7 @@ for (let b = 0; b < BANDS; b++) {
     // FIRST×LAST is only 480 combos — fewer than the musicians a big universe needs, so
     // a bare uniqueness loop would spin forever. Fall back to a generational suffix.
     let person = `${pick(FIRST)} ${pick(LAST)}`
-    for (let attempt = 0; usedPeople.has(person) && attempt < 8; attempt++)
-      person = `${pick(FIRST)} ${pick(LAST)}`
+    for (let attempt = 0; usedPeople.has(person) && attempt < 8; attempt++) person = `${pick(FIRST)} ${pick(LAST)}`
     if (usedPeople.has(person)) {
       const suffixes = ["Jr", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"]
       const base = person

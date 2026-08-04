@@ -44,7 +44,10 @@ function scriptedDeps(opts: {
   const deps: JhEngine.Deps = {
     introspect: () => nextReply(),
     correct: () => nextReply(),
-    executor: { run: () => Effect.succeed(observations.shift() ?? { ok: false, output: "no scripted observation", artifacts: new Map() }) },
+    executor: {
+      run: () =>
+        Effect.succeed(observations.shift() ?? { ok: false, output: "no scripted observation", artifacts: new Map() }),
+    },
     runner: {
       run: (input: { command: string; cwd: string; timeoutMs: number }) => {
         runnerCalls++
@@ -83,7 +86,11 @@ const atomObj = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 const compoundObj = (substeps: unknown[]) => ({ goal: "root", size: "needs_decomposition", success: "ok", substeps })
-const okObs = (artifacts: Record<string, string> = {}): JhBasicTools.Observation => ({ ok: true, output: "o", artifacts: new Map(Object.entries(artifacts)) })
+const okObs = (artifacts: Record<string, string> = {}): JhBasicTools.Observation => ({
+  ok: true,
+  output: "o",
+  artifacts: new Map(Object.entries(artifacts)),
+})
 const failObs = (output = "boom"): JhBasicTools.Observation => ({ ok: false, output, artifacts: new Map() })
 const run = (d: ReturnType<typeof scriptedDeps>) => Effect.runPromise(JhEngine.runTask(d.deps, { goal: "the task" }))
 const types = (r: JhEngine.Report) => r.state.log.map((e) => e.type)
@@ -93,14 +100,27 @@ describe("JhEngine.runTask", () => {
     const d = scriptedDeps({ replies: [reply(atomObj())], observations: [okObs({ out: "x" })] })
     const r = await run(d)
     expect(r.status).toBe("done")
-    expect(types(r)).toEqual(["task_started", "introspected", "action", "observation", "verification", "committed", "task_done"])
+    expect(types(r)).toEqual([
+      "task_started",
+      "introspected",
+      "action",
+      "observation",
+      "verification",
+      "committed",
+      "task_done",
+    ])
     expect(d.artifacts.get("out")?.content).toBe("x")
   })
 
   test("2. one decomposition, both leaves commit, preorder", async () => {
     const d = scriptedDeps({
       replies: [
-        reply(compoundObj([atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] }), atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] })])),
+        reply(
+          compoundObj([
+            atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] }),
+            atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] }),
+          ]),
+        ),
         reply(atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] })),
         reply(atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] })),
       ],
@@ -119,11 +139,28 @@ describe("JhEngine.runTask", () => {
   test("3. verify fail → directive recovery (edit) → pass", async () => {
     const d = scriptedDeps({
       replies: [
-        reply(atomObj({ tool: "write_file", args: { path: "f.c", content: "bad" }, check: { type: "compile", command: "gcc" }, produces: [{ id: "f", type: "file" }] })),
-        reply(atomObj({ tool: "write_file", args: { path: "f.c", content: "good" }, check: { type: "compile", command: "gcc" }, produces: [{ id: "f", type: "file" }] })), // recovery: fix the source
+        reply(
+          atomObj({
+            tool: "write_file",
+            args: { path: "f.c", content: "bad" },
+            check: { type: "compile", command: "gcc" },
+            produces: [{ id: "f", type: "file" }],
+          }),
+        ),
+        reply(
+          atomObj({
+            tool: "write_file",
+            args: { path: "f.c", content: "good" },
+            check: { type: "compile", command: "gcc" },
+            produces: [{ id: "f", type: "file" }],
+          }),
+        ), // recovery: fix the source
       ],
       observations: [okObs({ f: "bad" }), okObs({ f: "good" })],
-      runResults: [{ exitCode: 1, output: "err", timedOut: false }, { exitCode: 0, output: "", timedOut: false }],
+      runResults: [
+        { exitCode: 1, output: "err", timedOut: false },
+        { exitCode: 0, output: "", timedOut: false },
+      ],
     })
     const r = await run(d)
     expect(r.status).toBe("done")
@@ -134,13 +171,26 @@ describe("JhEngine.runTask", () => {
 
   test("4. budget exhaustion → forced decomposition (no forced_split log)", async () => {
     // stuck needs the SAME error STUCK_REPEATS (3) times → 3 compile failures before the forced decompose.
-    const writeAtom = reply(atomObj({ tool: "write_file", difficulty_prior: "trivial", args: { path: "f.c", content: "x" }, check: { type: "compile", command: "gcc" }, produces: [{ id: "f", type: "file" }] }))
+    const writeAtom = reply(
+      atomObj({
+        tool: "write_file",
+        difficulty_prior: "trivial",
+        args: { path: "f.c", content: "x" },
+        check: { type: "compile", command: "gcc" },
+        produces: [{ id: "f", type: "file" }],
+      }),
+    )
     const d = scriptedDeps({
       replies: [
         writeAtom,
         writeAtom, // recovery attempt 2
         writeAtom, // recovery attempt 3 (3rd identical compile fail → stuck)
-        reply(compoundObj([atomObj({ goal: "g1", produces: [{ id: "g1", type: "note" }] }), atomObj({ goal: "g2", produces: [{ id: "g2", type: "note" }] })])),
+        reply(
+          compoundObj([
+            atomObj({ goal: "g1", produces: [{ id: "g1", type: "note" }] }),
+            atomObj({ goal: "g2", produces: [{ id: "g2", type: "note" }] }),
+          ]),
+        ),
         reply(atomObj({ goal: "g1", produces: [{ id: "g1", type: "note" }] })),
         reply(atomObj({ goal: "g2", produces: [{ id: "g2", type: "note" }] })),
       ],
@@ -159,9 +209,23 @@ describe("JhEngine.runTask", () => {
 
   test("5. budget exhaustion at maxDepth → blocked, no throw", async () => {
     const d = scriptedDeps({
-      replies: [reply(atomObj({ tool: "write_file", difficulty_prior: "trivial", args: { path: "f.c", content: "x" }, check: { type: "compile", command: "gcc" }, produces: [{ id: "f", type: "file" }] })), "```\nfix\n```"],
+      replies: [
+        reply(
+          atomObj({
+            tool: "write_file",
+            difficulty_prior: "trivial",
+            args: { path: "f.c", content: "x" },
+            check: { type: "compile", command: "gcc" },
+            produces: [{ id: "f", type: "file" }],
+          }),
+        ),
+        "```\nfix\n```",
+      ],
       observations: [okObs({ f: "x" }), okObs({ f: "y" })],
-      runResults: [{ exitCode: 1, output: "e", timedOut: false }, { exitCode: 1, output: "e", timedOut: false }],
+      runResults: [
+        { exitCode: 1, output: "e", timedOut: false },
+        { exitCode: 1, output: "e", timedOut: false },
+      ],
       limits: { maxDepth: 0, maxTotalSteps: 64 },
     })
     const r = await run(d)
@@ -175,7 +239,9 @@ describe("JhEngine.runTask", () => {
     // check never passed, the root exhausted its own attempts and — having no parent to grow a fix SIBLING
     // on — blocked the WHOLE task ~2 minutes into a 40-minute wall. E2's never-dead-end law now covers the
     // root itself: it grows the fix child under ITSELF (appendChild makes it an expanded phase).
-    const atomic = reply(atomObj({ tool: "run", args: { command: "x" }, check: { type: "run", command: "x" }, produces: [] }))
+    const atomic = reply(
+      atomObj({ tool: "run", args: { command: "x" }, check: { type: "run", command: "x" }, produces: [] }),
+    )
     const deps: JhEngine.Deps = {
       introspect: () => Effect.succeed(atomic), // ALWAYS atomic — the model refuses to plan, even under mustDecompose
       correct: () => Effect.succeed(atomic),
@@ -197,15 +263,24 @@ describe("JhEngine.runTask", () => {
     // budget. It is "never dead-ends AT THE ROOT with the wall unused": pre-fix this run died with a
     // ONE-node tree; now the root keeps growing fix children until the real budget is spent.
     expect(r.state.tree.nodes.size).toBeGreaterThanOrEqual(4)
-    expect(r.state.log.some((e) => e.type === "blocked" && e.step === r.state.tree.root && e.reason === "budget")).toBe(false)
+    expect(r.state.log.some((e) => e.type === "blocked" && e.step === r.state.tree.root && e.reason === "budget")).toBe(
+      false,
+    )
   })
 
   test("6. dataflow: the ROOT TOLERATES dangling consumes (char run74); a NON-ROOT node still validates + repairs", async () => {
     // improve3 (char run74): a root plan with a dangling consume is ATTACHED (disk is truth; the root has no
     // parent to grow a fix sibling on), not hard-blocked — matching the tolerant trySoftDecompose path.
-    const rootDangling = compoundObj([atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] }), atomObj({ goal: "b", consumes: [{ id: "missing", type: "file" }], produces: [{ id: "b1", type: "note" }] })])
+    const rootDangling = compoundObj([
+      atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] }),
+      atomObj({ goal: "b", consumes: [{ id: "missing", type: "file" }], produces: [{ id: "b1", type: "note" }] }),
+    ])
     const rootTol = scriptedDeps({
-      replies: [reply(rootDangling), reply(atomObj({ produces: [{ id: "a1", type: "note" }] })), reply(atomObj({ produces: [{ id: "b1", type: "note" }] }))],
+      replies: [
+        reply(rootDangling),
+        reply(atomObj({ produces: [{ id: "a1", type: "note" }] })),
+        reply(atomObj({ produces: [{ id: "b1", type: "note" }] })),
+      ],
       observations: [okObs({ a1: "x" }), okObs({ b1: "x" })],
     })
     const rt = await run(rootTol)
@@ -213,10 +288,32 @@ describe("JhEngine.runTask", () => {
     expect(types(rt)).not.toContain("dataflow_rejected") // the ROOT was not rejected
 
     // A NON-ROOT node's dangling consume is still validated + repaired (validation unchanged off the root).
-    const phaseDangling = { goal: "phase", size: "needs_decomposition", success: "ok", substeps: [atomObj({ goal: "x", produces: [{ id: "x1", type: "note" }] }), atomObj({ goal: "y", consumes: [{ id: "missing", type: "file" }] })] }
-    const phaseFixed = { goal: "phase", size: "needs_decomposition", success: "ok", substeps: [atomObj({ goal: "x", produces: [{ id: "x1", type: "note" }] }), atomObj({ goal: "y", produces: [{ id: "y1", type: "note" }] })] }
+    const phaseDangling = {
+      goal: "phase",
+      size: "needs_decomposition",
+      success: "ok",
+      substeps: [
+        atomObj({ goal: "x", produces: [{ id: "x1", type: "note" }] }),
+        atomObj({ goal: "y", consumes: [{ id: "missing", type: "file" }] }),
+      ],
+    }
+    const phaseFixed = {
+      goal: "phase",
+      size: "needs_decomposition",
+      success: "ok",
+      substeps: [
+        atomObj({ goal: "x", produces: [{ id: "x1", type: "note" }] }),
+        atomObj({ goal: "y", produces: [{ id: "y1", type: "note" }] }),
+      ],
+    }
     const nonRoot = scriptedDeps({
-      replies: [reply(compoundObj([phaseDangling])), reply(phaseDangling), reply(phaseFixed), reply(atomObj({ produces: [{ id: "x1", type: "note" }] })), reply(atomObj({ produces: [{ id: "y1", type: "note" }] }))],
+      replies: [
+        reply(compoundObj([phaseDangling])),
+        reply(phaseDangling),
+        reply(phaseFixed),
+        reply(atomObj({ produces: [{ id: "x1", type: "note" }] })),
+        reply(atomObj({ produces: [{ id: "y1", type: "note" }] })),
+      ],
       observations: [okObs({ x1: "x" }), okObs({ y1: "x" })],
     })
     const rn = await run(nonRoot)
@@ -229,7 +326,12 @@ describe("JhEngine.runTask", () => {
       noForceSplit: false, // re-arm the wave-4 trigger (default is now advisory-only — P3)
       replies: [
         reply(atomObj({ consumes: nineConsumes, produces: [] })),
-        reply(compoundObj([atomObj({ goal: "s1", produces: [{ id: "s1", type: "note" }] }), atomObj({ goal: "s2", produces: [{ id: "s2", type: "note" }] })])),
+        reply(
+          compoundObj([
+            atomObj({ goal: "s1", produces: [{ id: "s1", type: "note" }] }),
+            atomObj({ goal: "s2", produces: [{ id: "s2", type: "note" }] }),
+          ]),
+        ),
         reply(atomObj({ produces: [{ id: "s1", type: "note" }] })),
         reply(atomObj({ produces: [{ id: "s2", type: "note" }] })),
       ],
@@ -258,7 +360,16 @@ describe("JhEngine.runTask", () => {
     const d = scriptedDeps({
       forceRootDecompose: true, // Strict mode → the root-degrade branch is eligible
       replies: [
-        garbage, garbage, garbage, garbage, garbage, garbage, garbage, garbage, garbage, garbage, // 10 root introspects all fail
+        garbage,
+        garbage,
+        garbage,
+        garbage,
+        garbage,
+        garbage,
+        garbage,
+        garbage,
+        garbage,
+        garbage, // 10 root introspects all fail
         reply(atomObj({ tool: "note", args: { text: "start" }, check: { type: "artifact_present" } })), // the degrade: one atomic start
       ],
       observations: [okObs({ out: "x" })],
@@ -280,7 +391,10 @@ describe("JhEngine.runTask", () => {
 
   test("7c. improve5 P3.2: force-split is DISARMED by default under lazyPlan (advisory only — no forced decomposition)", async () => {
     const nineConsumes = Array.from({ length: 9 }, (_, i) => ({ id: `c${i}`, type: "file" as const }))
-    const adv = scriptedDeps({ replies: [reply(atomObj({ consumes: nineConsumes, produces: [] }))], observations: [okObs()] })
+    const adv = scriptedDeps({
+      replies: [reply(atomObj({ consumes: nineConsumes, produces: [] }))],
+      observations: [okObs()],
+    })
     const r = await run(adv)
     expect(types(r)).toContain("forced_split_advisory")
     expect(types(r)).not.toContain("forced_split") // the trigger did not force a decomposition
@@ -289,7 +403,10 @@ describe("JhEngine.runTask", () => {
 
   test("8. depth cap with lazyPlan:false → blocked(depth_budget) (wave-2 behavior)", async () => {
     const d = scriptedDeps({
-      replies: [reply(compoundObj([atomObj({ goal: "child", produces: [{ id: "c1", type: "note" }] })])), reply(compoundObj([atomObj({ goal: "deeper", produces: [{ id: "d1", type: "note" }] })]))],
+      replies: [
+        reply(compoundObj([atomObj({ goal: "child", produces: [{ id: "c1", type: "note" }] })])),
+        reply(compoundObj([atomObj({ goal: "deeper", produces: [{ id: "d1", type: "note" }] })])),
+      ],
       limits: { maxDepth: 1, maxTotalSteps: 64 },
       lazyPlan: false,
     })
@@ -315,7 +432,12 @@ describe("JhEngine.runTask", () => {
   })
 
   test("8c. lazyPlan flatten (P3b): a NESTED plan attaches the TOP LEVEL only + logs flattened{discarded}", async () => {
-    const phaseA = { goal: "phase A", size: "needs_decomposition", success: "ok", substeps: [atomObj({ goal: "a1" }), atomObj({ goal: "a2" })] }
+    const phaseA = {
+      goal: "phase A",
+      size: "needs_decomposition",
+      success: "ok",
+      substeps: [atomObj({ goal: "a1" }), atomObj({ goal: "a2" })],
+    }
     const phaseB = { goal: "phase B", size: "needs_decomposition", success: "ok", substeps: [atomObj({ goal: "b1" })] }
     const d = scriptedDeps({
       replies: [
@@ -334,7 +456,12 @@ describe("JhEngine.runTask", () => {
   })
 
   test("8d. lazyPlan:false → nested plan attaches RECURSIVELY (wave-2), no flattened log", async () => {
-    const phaseA = { goal: "phase A", size: "needs_decomposition", success: "ok", substeps: [atomObj({ goal: "a1", produces: [{ id: "a1", type: "note" }] })] }
+    const phaseA = {
+      goal: "phase A",
+      size: "needs_decomposition",
+      success: "ok",
+      substeps: [atomObj({ goal: "a1", produces: [{ id: "a1", type: "note" }] })],
+    }
     const d = scriptedDeps({
       replies: [reply(compoundObj([phaseA])), reply(atomObj({ goal: "a1", produces: [{ id: "a1", type: "note" }] }))],
       observations: [okObs({ a1: "x" })],
@@ -355,7 +482,18 @@ describe("JhEngine.runTask", () => {
 
   test("10. tool failure is data — verify NOT invoked, obs.output is the detail", async () => {
     const d = scriptedDeps({
-      replies: [reply(atomObj({ tool: "write_file", difficulty_prior: "trivial", args: { path: "f.c", content: "x" }, check: { type: "compile", command: "gcc" }, produces: [{ id: "f", type: "file" }] })), "```\nfix\n```"],
+      replies: [
+        reply(
+          atomObj({
+            tool: "write_file",
+            difficulty_prior: "trivial",
+            args: { path: "f.c", content: "x" },
+            check: { type: "compile", command: "gcc" },
+            produces: [{ id: "f", type: "file" }],
+          }),
+        ),
+        "```\nfix\n```",
+      ],
       observations: [failObs("tool boom"), failObs("tool boom")],
       limits: { maxDepth: 0, maxTotalSteps: 64 },
     })
@@ -366,7 +504,10 @@ describe("JhEngine.runTask", () => {
   })
 
   test("11. parse failure: recover on retry; persistently → blocked(unparseable)", async () => {
-    const recover = scriptedDeps({ replies: ["not json at all", reply(atomObj())], observations: [okObs({ out: "x" })] })
+    const recover = scriptedDeps({
+      replies: ["not json at all", reply(atomObj())],
+      observations: [okObs({ out: "x" })],
+    })
     const rr = await run(recover)
     expect(rr.status).toBe("done")
     const rt = types(rr)
@@ -381,7 +522,10 @@ describe("JhEngine.runTask", () => {
   })
 
   test("12. structural failure: recover on retry", async () => {
-    const d = scriptedDeps({ replies: [reply(atomObj({ substeps: [atomObj()] })), reply(atomObj())], observations: [okObs({ out: "x" })] })
+    const d = scriptedDeps({
+      replies: [reply(atomObj({ substeps: [atomObj()] })), reply(atomObj())],
+      observations: [okObs({ out: "x" })],
+    })
     const r = await run(d)
     expect(r.status).toBe("done")
     const t = types(r)
@@ -399,7 +543,12 @@ describe("JhEngine.runTask", () => {
     const scenario = () =>
       scriptedDeps({
         replies: [
-          reply(compoundObj([atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] }), atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] })])),
+          reply(
+            compoundObj([
+              atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] }),
+              atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] }),
+            ]),
+          ),
           reply(atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] })),
           reply(atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] })),
         ],
@@ -412,11 +561,18 @@ describe("JhEngine.runTask", () => {
 
   test("15. resume from a checkpoint completes with the same combined log", async () => {
     const scenarioReplies = () => [
-      reply(compoundObj([atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] }), atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] })])),
+      reply(
+        compoundObj([
+          atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] }),
+          atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] }),
+        ]),
+      ),
       reply(atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] })),
       reply(atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] })),
     ]
-    const fullRun = await run(scriptedDeps({ replies: scenarioReplies(), observations: [okObs({ a1: "x" }), okObs({ b1: "x" })] }))
+    const fullRun = await run(
+      scriptedDeps({ replies: scenarioReplies(), observations: [okObs({ a1: "x" }), okObs({ b1: "x" })] }),
+    )
     const fullTypes = types(fullRun)
 
     let captured: JhEngine.State | undefined
@@ -424,7 +580,10 @@ describe("JhEngine.runTask", () => {
       scriptedDeps({
         replies: scenarioReplies(),
         observations: [okObs({ a1: "x" }), okObs({ b1: "x" })],
-        checkpoint: (s) => Effect.sync(() => { if (!captured) captured = s }),
+        checkpoint: (s) =>
+          Effect.sync(() => {
+            if (!captured) captured = s
+          }),
       }),
     )
     expect(captured).toBeDefined()
@@ -465,7 +624,10 @@ describe("JhEngine.runTask", () => {
   })
 
   test("17. research_needed → research_flagged, execution proceeds", async () => {
-    const d = scriptedDeps({ replies: [reply(atomObj({ research_needed: true }))], observations: [okObs({ out: "x" })] })
+    const d = scriptedDeps({
+      replies: [reply(atomObj({ research_needed: true }))],
+      observations: [okObs({ out: "x" })],
+    })
     const r = await run(d)
     expect(r.status).toBe("done")
     expect(types(r)).toContain("research_flagged")
@@ -474,7 +636,15 @@ describe("JhEngine.runTask", () => {
   test("18. exploration budget: NOVEL errors extend past the prior budget until convergence", async () => {
     const d = scriptedDeps({
       replies: [
-        reply(atomObj({ tool: "write_file", difficulty_prior: "trivial", args: { path: "f.c", content: "v0" }, check: { type: "compile", command: "gcc" }, produces: [{ id: "f", type: "file" }] })),
+        reply(
+          atomObj({
+            tool: "write_file",
+            difficulty_prior: "trivial",
+            args: { path: "f.c", content: "v0" },
+            check: { type: "compile", command: "gcc" },
+            produces: [{ id: "f", type: "file" }],
+          }),
+        ),
         "```\nv1\n```",
         "```\nv2\n```",
       ],
@@ -492,9 +662,23 @@ describe("JhEngine.runTask", () => {
 
   test("18b. stuck: a REPEATED error ends the leaf at the budget (no runaway)", async () => {
     const d = scriptedDeps({
-      replies: [reply(atomObj({ tool: "write_file", difficulty_prior: "trivial", args: { path: "f.c", content: "x" }, check: { type: "compile", command: "gcc" }, produces: [{ id: "f", type: "file" }] })), "```\nfix\n```"],
+      replies: [
+        reply(
+          atomObj({
+            tool: "write_file",
+            difficulty_prior: "trivial",
+            args: { path: "f.c", content: "x" },
+            check: { type: "compile", command: "gcc" },
+            produces: [{ id: "f", type: "file" }],
+          }),
+        ),
+        "```\nfix\n```",
+      ],
       observations: [okObs({ f: "x" }), okObs({ f: "y" })],
-      runResults: [{ exitCode: 1, output: "same error", timedOut: false }, { exitCode: 1, output: "same error", timedOut: false }],
+      runResults: [
+        { exitCode: 1, output: "same error", timedOut: false },
+        { exitCode: 1, output: "same error", timedOut: false },
+      ],
       limits: { maxDepth: 0, maxTotalSteps: 64 },
     })
     const r = await run(d)
@@ -503,9 +687,16 @@ describe("JhEngine.runTask", () => {
   })
 
   test("19. duplicate_produce is TOLERATED — only dangling consumes blocks a decomposition", async () => {
-    const dup = compoundObj([atomObj({ goal: "a", produces: [{ id: "shared", type: "note" }] }), atomObj({ goal: "b", produces: [{ id: "shared", type: "note" }] })])
+    const dup = compoundObj([
+      atomObj({ goal: "a", produces: [{ id: "shared", type: "note" }] }),
+      atomObj({ goal: "b", produces: [{ id: "shared", type: "note" }] }),
+    ])
     const d = scriptedDeps({
-      replies: [reply(dup), reply(atomObj({ produces: [{ id: "shared", type: "note" }] })), reply(atomObj({ produces: [{ id: "shared", type: "note" }] }))],
+      replies: [
+        reply(dup),
+        reply(atomObj({ produces: [{ id: "shared", type: "note" }] })),
+        reply(atomObj({ produces: [{ id: "shared", type: "note" }] })),
+      ],
       observations: [okObs({ shared: "x" }), okObs({ shared: "y" })],
     })
     const r = await run(d)
@@ -518,7 +709,12 @@ describe("JhEngine.runTask", () => {
     const d = scriptedDeps({
       replies: [
         reply(atomObj({ goal: "the whole task", produces: [{ id: "out", type: "note" }] })), // root claims atomic
-        reply(compoundObj([atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] }), atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] })])),
+        reply(
+          compoundObj([
+            atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] }),
+            atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] }),
+          ]),
+        ),
         reply(atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] })),
         reply(atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] })),
       ],
@@ -555,7 +751,11 @@ describe("JhEngine.runTask", () => {
   })
 
   test("23. verifyGoal ON + goal ACHIEVED: weak check commits (extra goal-check call)", async () => {
-    const d = scriptedDeps({ replies: [reply(atomObj()), `{"achieved": true}`], observations: [okObs({ out: "x" })], verifyGoal: true })
+    const d = scriptedDeps({
+      replies: [reply(atomObj()), `{"achieved": true}`],
+      observations: [okObs({ out: "x" })],
+      verifyGoal: true,
+    })
     const r = await run(d)
     expect(types(r)).toContain("committed")
     expect(d.modelCalls()).toBe(2) // introspect + goal-check
@@ -564,14 +764,24 @@ describe("JhEngine.runTask", () => {
   test("24. verifyGoal ON + goal NOT achieved: weak-check pass is DEMOTED to a verify fail (no false-done)", async () => {
     const no = `{"achieved": false, "missing": "not compiled/verified"}`
     const d = scriptedDeps({
-      replies: [reply(atomObj({ difficulty_prior: "trivial" })), no, reply(atomObj({ difficulty_prior: "trivial" })), no],
+      replies: [
+        reply(atomObj({ difficulty_prior: "trivial" })),
+        no,
+        reply(atomObj({ difficulty_prior: "trivial" })),
+        no,
+      ],
       observations: [okObs({ out: "x" }), okObs({ out: "x" })],
       verifyGoal: true,
     })
     const r = await run(d)
     const verifs = r.state.log.filter((e) => e.type === "verification")
     // the mechanical artifact_present check passed, yet the goal-check demoted it → a verify FAIL surfaced
-    expect(verifs.some((e) => "ok" in e && e.ok === false && String((e as { detail?: unknown }).detail).includes("goal not yet achieved"))).toBe(true)
+    expect(
+      verifs.some(
+        (e) =>
+          "ok" in e && e.ok === false && String((e as { detail?: unknown }).detail).includes("goal not yet achieved"),
+      ),
+    ).toBe(true)
     // and the root was NOT committed on that false-done
     expect(types(r)).not.toContain("committed")
   })
@@ -582,11 +792,43 @@ describe("JhEngine.runTask", () => {
     const runCheck = { type: "run", command: ".\\pi.exe", expect: "3.14159" }
     const d = scriptedDeps({
       replies: [
-        reply(atomObj({ tool: "run", args: { command: ".\\pi.exe" }, check: runCheck, produces: [], difficulty_prior: "trivial" })),
+        reply(
+          atomObj({
+            tool: "run",
+            args: { command: ".\\pi.exe" },
+            check: runCheck,
+            produces: [],
+            difficulty_prior: "trivial",
+          }),
+        ),
         // recovery: switch to write_file with a WEAK check — must be rejected in favor of the run gate
-        reply(atomObj({ tool: "write_file", args: { path: "pi.c", content: "x" }, check: { type: "artifact_present" }, produces: [{ id: "pi.c", type: "file" }], difficulty_prior: "trivial" })),
-        reply(atomObj({ tool: "write_file", args: { path: "pi.c", content: "y" }, check: { type: "artifact_present" }, produces: [{ id: "pi.c", type: "file" }], difficulty_prior: "trivial" })),
-        reply(atomObj({ tool: "write_file", args: { path: "pi.c", content: "z" }, check: { type: "artifact_present" }, produces: [{ id: "pi.c", type: "file" }], difficulty_prior: "trivial" })),
+        reply(
+          atomObj({
+            tool: "write_file",
+            args: { path: "pi.c", content: "x" },
+            check: { type: "artifact_present" },
+            produces: [{ id: "pi.c", type: "file" }],
+            difficulty_prior: "trivial",
+          }),
+        ),
+        reply(
+          atomObj({
+            tool: "write_file",
+            args: { path: "pi.c", content: "y" },
+            check: { type: "artifact_present" },
+            produces: [{ id: "pi.c", type: "file" }],
+            difficulty_prior: "trivial",
+          }),
+        ),
+        reply(
+          atomObj({
+            tool: "write_file",
+            args: { path: "pi.c", content: "z" },
+            check: { type: "artifact_present" },
+            produces: [{ id: "pi.c", type: "file" }],
+            difficulty_prior: "trivial",
+          }),
+        ),
       ],
       observations: [okObs(), okObs({ "pi.c": "x" }), okObs({ "pi.c": "y" }), okObs({ "pi.c": "z" })],
       // the program always prints wrong output → the run gate NEVER passes; a downgrade to artifact_present WOULD have
@@ -602,12 +844,29 @@ describe("JhEngine.runTask", () => {
     // iter 19: action fixed `pi.exe`→`.\\pi.exe` (ran ok) but the frozen check kept running `pi.exe` → fail.
     const d = scriptedDeps({
       replies: [
-        reply(atomObj({ tool: "run", args: { command: "pi.exe" }, check: { type: "run", command: "pi.exe" }, produces: [] })),
-        reply(atomObj({ tool: "run", args: { command: ".\\pi.exe" }, check: { type: "run", command: ".\\pi.exe" }, produces: [] })), // recovery corrects BOTH command and check
+        reply(
+          atomObj({
+            tool: "run",
+            args: { command: "pi.exe" },
+            check: { type: "run", command: "pi.exe" },
+            produces: [],
+          }),
+        ),
+        reply(
+          atomObj({
+            tool: "run",
+            args: { command: ".\\pi.exe" },
+            check: { type: "run", command: ".\\pi.exe" },
+            produces: [],
+          }),
+        ), // recovery corrects BOTH command and check
       ],
       observations: [okObs(), okObs()],
       // command-sensitive: bare `pi.exe` is "not recognized" (exit 1); `.\pi.exe` runs (exit 0)
-      runByCommand: (cmd) => (cmd.includes(".\\pi.exe") ? { exitCode: 0, output: "Pi", timedOut: false } : { exitCode: 1, output: "'pi.exe' is not recognized", timedOut: false }),
+      runByCommand: (cmd) =>
+        cmd.includes(".\\pi.exe")
+          ? { exitCode: 0, output: "Pi", timedOut: false }
+          : { exitCode: 1, output: "'pi.exe' is not recognized", timedOut: false },
     })
     const r = await run(d)
     expect(r.status).toBe("done") // the corrected check runs `.\pi.exe` and passes — no infinite stale-check fail
@@ -618,17 +877,31 @@ describe("JhEngine.runTask", () => {
   test("27. root-completion goal-check EXTENDS with a fix node when the whole-task goal isn't met", async () => {
     // iter 21 false-done: children all committed (weak per-step checks passed) but the program printed wrong
     // output. The root-level goal-check must catch it and GROW a fix node (owner #2+#5), not report done.
-    const runAtom = (goal: string, cmd: string) => reply(atomObj({ goal, tool: "run", args: { command: cmd }, check: { type: "run", command: cmd }, produces: [] }))
+    const runAtom = (goal: string, cmd: string) =>
+      reply(atomObj({ goal, tool: "run", args: { command: cmd }, check: { type: "run", command: cmd }, produces: [] }))
     const d = scriptedDeps({
       replies: [
-        reply(compoundObj([atomObj({ goal: "g1", tool: "run", args: { command: "a" }, check: { type: "run", command: "a" }, produces: [] })])), // root decomposes → 1 child
+        reply(
+          compoundObj([
+            atomObj({
+              goal: "g1",
+              tool: "run",
+              args: { command: "a" },
+              check: { type: "run", command: "a" },
+              produces: [],
+            }),
+          ]),
+        ), // root decomposes → 1 child
         runAtom("g1", "a"), // root.1 introspect → runs, commits
         `{"achieved": false, "missing": "the program prints wrong digits"}`, // root goal-check #1 → NOT achieved
         runAtom("fix", "b"), // the appended root.2 (fix) introspect → runs, commits
         `{"achieved": true, "missing": ""}`, // root goal-check #2 → achieved
       ],
       observations: [okObs(), okObs()],
-      runResults: [{ exitCode: 0, output: "", timedOut: false }, { exitCode: 0, output: "", timedOut: false }],
+      runResults: [
+        { exitCode: 0, output: "", timedOut: false },
+        { exitCode: 0, output: "", timedOut: false },
+      ],
       verifyGoal: true,
     })
     const r = await run(d)
@@ -636,17 +909,40 @@ describe("JhEngine.runTask", () => {
     // the root GREW a second child (the fix node) — it was not a false-done
     expect(JhTree.get(r.state.tree, r.state.tree.root)?.children.length).toBe(2)
     // two root-level goal verifications: first fail, then pass
-    const rootVerifs = r.state.log.filter((e) => e.type === "verification" && "step" in e && (e as { step?: string }).step === r.state.tree.root)
+    const rootVerifs = r.state.log.filter(
+      (e) => e.type === "verification" && "step" in e && (e as { step?: string }).step === r.state.tree.root,
+    )
     expect(rootVerifs.map((e) => (e as { ok?: boolean }).ok)).toEqual([false, true])
   })
 
   test("28. a stuck NON-root leaf GROWS a fix sibling instead of dead-ending its ancestors (verifyGoal)", async () => {
     // iter 26: a run leaf re-ran the same wrong binary 3× and blocked → cascaded up. Under verifyGoal it must
     // best-effort-commit and extend its parent with a fix node; the root goal-check is the backstop.
-    const runAtom = (cmd: string) => reply(atomObj({ goal: `run ${cmd}`, tool: "run", args: { command: cmd }, check: { type: "run", command: cmd, expect: "PI" }, produces: [], difficulty_prior: "trivial" }))
+    const runAtom = (cmd: string) =>
+      reply(
+        atomObj({
+          goal: `run ${cmd}`,
+          tool: "run",
+          args: { command: cmd },
+          check: { type: "run", command: cmd, expect: "PI" },
+          produces: [],
+          difficulty_prior: "trivial",
+        }),
+      )
     const d = scriptedDeps({
       replies: [
-        reply(compoundObj([atomObj({ goal: "run a", tool: "run", args: { command: "a" }, check: { type: "run", command: "a", expect: "PI" }, produces: [], difficulty_prior: "trivial" })])),
+        reply(
+          compoundObj([
+            atomObj({
+              goal: "run a",
+              tool: "run",
+              args: { command: "a" },
+              check: { type: "run", command: "a", expect: "PI" },
+              produces: [],
+              difficulty_prior: "trivial",
+            }),
+          ]),
+        ),
         runAtom("a"), // root.1 introspect
         runAtom("a"), // recovery (re-run) after fail 1
         runAtom("a"), // recovery (re-run) after fail 2 → fail 3 = stuck → extend
@@ -654,7 +950,10 @@ describe("JhEngine.runTask", () => {
         `{"achieved": true}`, // root goal-check → done
       ],
       observations: [okObs(), okObs(), okObs(), okObs()],
-      runByCommand: (cmd) => (cmd === "b" ? { exitCode: 0, output: "PI=3.14", timedOut: false } : { exitCode: 0, output: "wrong", timedOut: false }),
+      runByCommand: (cmd) =>
+        cmd === "b"
+          ? { exitCode: 0, output: "PI=3.14", timedOut: false }
+          : { exitCode: 0, output: "wrong", timedOut: false },
       verifyGoal: true,
     })
     const r = await run(d)
@@ -671,12 +970,27 @@ describe("JhEngine.runTask", () => {
     // Leaves use a `run` check (not a weak artifact_present) so verifyGoal's weak-check goal demotion never
     // fires — the ONLY oracle consulted is taskComplete, at the root-completion gate. Faithful to the real
     // harness (verifyGoal + taskComplete both on).
-    const solve = reply(atomObj({ tool: "run", args: { command: "x" }, check: { type: "run", command: "x" }, produces: [] }))
-    const rootDecomp = reply(compoundObj([atomObj({ goal: "child", tool: "run", args: { command: "x" }, check: { type: "run", command: "x" }, produces: [] })]))
+    const solve = reply(
+      atomObj({ tool: "run", args: { command: "x" }, check: { type: "run", command: "x" }, produces: [] }),
+    )
+    const rootDecomp = reply(
+      compoundObj([
+        atomObj({
+          goal: "child",
+          tool: "run",
+          args: { command: "x" },
+          check: { type: "run", command: "x" },
+          produces: [],
+        }),
+      ]),
+    )
     let calls = 0
     const maxTotalSteps = 12
     const deps: JhEngine.Deps = {
-      introspect: () => { calls++; return Effect.succeed(calls === 1 ? rootDecomp : solve) }, // 1st = root decompose, rest = atomic solves
+      introspect: () => {
+        calls++
+        return Effect.succeed(calls === 1 ? rootDecomp : solve)
+      }, // 1st = root decompose, rest = atomic solves
       correct: () => Effect.succeed(solve),
       executor: { run: () => Effect.succeed({ ok: true, output: "o", artifacts: new Map<string, string>() }) },
       runner: { run: () => Effect.succeed({ exitCode: 0, output: "", timedOut: false }) },

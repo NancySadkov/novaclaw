@@ -59,7 +59,7 @@ describe("extractJsonObject", () => {
   test("invalid C escapes healed but valid escapes preserved", () => {
     const r = JhExtract.extractJsonObject('{"content": "char z = \'\\0\'; printf(\\"hi\\\\n\\");\\n\\ttab"}')
     // \0 (invalid) becomes literal backslash-zero; \\n and \n and \t (valid) are preserved
-    expect(value(r).content).toBe('char z = \'\\0\'; printf("hi\\n");\n\ttab')
+    expect(value(r).content).toBe("char z = '\\0'; printf(\"hi\\n\");\n\ttab")
   })
 
   test("already-correct escaped backslashes are NOT corrupted", () => {

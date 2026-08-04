@@ -72,7 +72,9 @@ describe("MessengerPipeline.renderSessions", () => {
 describe("MessengerPipeline.chatKey", () => {
   test("is stable and account-scoped", () => {
     expect(MessengerPipeline.chatKey("msa_1" as never, "42")).toBe("msa_1:42")
-    expect(MessengerPipeline.chatKey("msa_1" as never, "42")).not.toBe(MessengerPipeline.chatKey("msa_2" as never, "42"))
+    expect(MessengerPipeline.chatKey("msa_1" as never, "42")).not.toBe(
+      MessengerPipeline.chatKey("msa_2" as never, "42"),
+    )
   })
 })
 
@@ -112,7 +114,9 @@ describe("MessengerPipeline dispatch helpers (SS0.1.5 rule 3 — spawn, don't in
     expect(MessengerPipeline.dispatchTarget(undefined)).toBeUndefined()
     expect(MessengerPipeline.dispatchTarget({})).toBeUndefined()
     expect(MessengerPipeline.dispatchTarget({ [MessengerPipeline.DISPATCH_KEY]: "junk" })).toBeUndefined()
-    expect(MessengerPipeline.dispatchTarget({ [MessengerPipeline.DISPATCH_KEY]: { accountID: 5, chatID: "c" } })).toBeUndefined()
+    expect(
+      MessengerPipeline.dispatchTarget({ [MessengerPipeline.DISPATCH_KEY]: { accountID: 5, chatID: "c" } }),
+    ).toBeUndefined()
     expect(MessengerPipeline.dispatchTarget({ other: { accountID: "a", chatID: "c" } })).toBeUndefined()
   })
 
@@ -140,7 +144,9 @@ describe("MessengerPipeline dispatch helpers (SS0.1.5 rule 3 — spawn, don't in
     const worked = true // it ran commands / edited files, so its result summarizes real work
     expect(MessengerPipeline.dispatchDoneNeeded(answer, answer, worked)).toBe(false)
     expect(MessengerPipeline.dispatchDoneNeeded("  It's currently   10:45 AM UTC.\n", answer, worked)).toBe(false) // whitespace-insensitive
-    expect(MessengerPipeline.dispatchDoneNeeded("10:45 AM UTC", "The time is 10:45 AM UTC right now", worked)).toBe(false) // a restated slice
+    expect(MessengerPipeline.dispatchDoneNeeded("10:45 AM UTC", "The time is 10:45 AM UTC right now", worked)).toBe(
+      false,
+    ) // a restated slice
 
     // The live case wording alone could NOT catch — a paraphrase of the answer it already sent.
     // `didWork: false` is what makes it suppressible.
@@ -168,16 +174,26 @@ describe("MessengerPipeline.bypassBindRefusal (§3.4 bypass-bind warning)", () =
     expect(client).toContain("bypass")
     expect(client).toContain("no consent gate")
     expect(client).toContain("force:true")
-    expect(MessengerPipeline.bypassBindRefusal({ trust: "audience", permissionMode: "yolo", force: false })).toContain("yolo")
+    expect(MessengerPipeline.bypassBindRefusal({ trust: "audience", permissionMode: "yolo", force: false })).toContain(
+      "yolo",
+    )
   })
 
   test("operator is exempt, force overrides, and safe modes pass", () => {
     // The owner/family through their own chat is trusted — never warned.
-    expect(MessengerPipeline.bypassBindRefusal({ trust: "operator", permissionMode: "bypass", force: false })).toBeUndefined()
+    expect(
+      MessengerPipeline.bypassBindRefusal({ trust: "operator", permissionMode: "bypass", force: false }),
+    ).toBeUndefined()
     // Explicit confirmation.
-    expect(MessengerPipeline.bypassBindRefusal({ trust: "client", permissionMode: "bypass", force: true })).toBeUndefined()
+    expect(
+      MessengerPipeline.bypassBindRefusal({ trust: "client", permissionMode: "bypass", force: true }),
+    ).toBeUndefined()
     // A gated mode has a consent gate — no warning needed.
-    expect(MessengerPipeline.bypassBindRefusal({ trust: "client", permissionMode: "ask", force: false })).toBeUndefined()
-    expect(MessengerPipeline.bypassBindRefusal({ trust: "audience", permissionMode: "surgical", force: false })).toBeUndefined()
+    expect(
+      MessengerPipeline.bypassBindRefusal({ trust: "client", permissionMode: "ask", force: false }),
+    ).toBeUndefined()
+    expect(
+      MessengerPipeline.bypassBindRefusal({ trust: "audience", permissionMode: "surgical", force: false }),
+    ).toBeUndefined()
   })
 })

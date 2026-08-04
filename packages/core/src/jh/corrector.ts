@@ -47,7 +47,9 @@ export function correctorPrompt(input: {
   return { system, user }
 }
 
-export function parseCorrection(text: string): { readonly ok: true; readonly content: string } | { readonly ok: false; readonly issue: string } {
+export function parseCorrection(
+  text: string,
+): { readonly ok: true; readonly content: string } | { readonly ok: false; readonly issue: string } {
   const content = lastFence(text)
   if (content === undefined) return { ok: false, issue: "no fenced code block found in the correction" }
   return { ok: true, content }

@@ -7,6 +7,7 @@ import { Flag } from "@novaclaw/core/flag/flag"
 import { killTreeSync } from "@novaclaw/core/util/kill-tree"
 import { CommandSpec } from "../command-spec"
 import { ServeChildCommand } from "../serve-child-command"
+import { ServeLiveness } from "../serve-liveness"
 
 // Dependability P4 (uix-dependability-plan): `novaclaw serve` is SUPERVISED BY DEFAULT — the
 // managed-by-default stance. The parent process is a tiny restart loop; the actual server runs as a
@@ -36,9 +37,16 @@ const superviseLoop = async (): Promise<"clean" | "giveup"> => {
   let current: ReturnType<typeof Bun.spawn> | undefined
   let stopping = false
   let state = initialSuperviseState
+  let monitorAbort: AbortController | undefined
+  let unresponsive = false
+  const stopMonitor = () => {
+    monitorAbort?.abort()
+    monitorAbort = undefined
+  }
   const shutdown = () => {
     if (stopping) return
     stopping = true
+    stopMonitor()
     treeKill(current)
   }
   process.on("SIGINT", () => {
@@ -54,20 +62,47 @@ const superviseLoop = async (): Promise<"clean" | "giveup"> => {
   const cmd = ServeChildCommand.current()
   for (;;) {
     const startedAt = Date.now()
-    current = Bun.spawn(cmd, {
+    unresponsive = false
+    monitorAbort = undefined
+    const child = Bun.spawn(cmd, {
       stdin: "inherit",
-      stdout: "inherit", // health/log parsing depends on pass-through
+      // Pipe only to discover the ACTUAL address when `--port 0` is used; every byte is immediately
+      // forwarded, so supervised serve has the same visible stdout contract as the bare child.
+      stdout: "pipe",
       stderr: "inherit",
       env: process.env as Record<string, string>,
     })
+    current = child
+    void forwardStdout(child.stdout, (line) => {
+      if (monitorAbort) return
+      const healthURL = ServeLiveness.probeURLFromListenLine(line)
+      if (!healthURL) return
+      monitorAbort = new AbortController()
+      void ServeLiveness.monitor({
+        signal: monitorAbort.signal,
+        check: () => ServeLiveness.probe(healthURL, Flag.NOVACLAW_SERVER_PASSWORD),
+        onUnresponsive: (failures) => {
+          if (stopping || child !== current) return
+          unresponsive = true
+          console.error(`[supervise] server missed ${failures} health checks — terminating the hung process`)
+          treeKill(child)
+        },
+      })
+    }).catch((error) => console.error(`[supervise] failed to read server stdout: ${String(error)}`))
     console.log(`[supervise] server child started (pid ${current.pid})`)
     const code = await current.exited
+    stopMonitor()
     current = undefined
     if (stopping) return "clean"
     // A child that held the port through TIME_WAIT or a foreign holder exits fast — the backoff
     // ladder IS the bind-retry (≈1+2+4+8+16s across 5 attempts) and the giveup IS the "refuse to
     // fight a foreign process" stop.
-    const decision = superviseDecision(state, { code, aliveMs: Date.now() - startedAt })
+    // Reaching the decision while `stopping === false` means the parent did not request shutdown.
+    // Treat even exit 0 as a fault; intentional signals took the early return above.
+    const decision = superviseDecision(state, {
+      code: unresponsive || code === 0 ? 1 : code,
+      aliveMs: Date.now() - startedAt,
+    })
     if (decision.action === "stop-clean") {
       console.log("[supervise] server exited cleanly — not restarting")
       return "clean"
@@ -83,6 +118,23 @@ const superviseLoop = async (): Promise<"clean" | "giveup"> => {
     await new Promise((resolve) => setTimeout(resolve, decision.delayMs))
     state = decision.next
   }
+}
+
+async function forwardStdout(stream: ReadableStream<Uint8Array>, onLine: (line: string) => void) {
+  const reader = stream.getReader()
+  const decoder = new TextDecoder()
+  let pending = ""
+  for (;;) {
+    const item = await reader.read()
+    if (item.done) break
+    process.stdout.write(item.value)
+    pending += decoder.decode(item.value, { stream: true })
+    const lines = pending.split(/\r?\n/)
+    pending = lines.pop() ?? ""
+    for (const line of lines) onLine(line)
+  }
+  pending += decoder.decode()
+  if (pending) onLine(pending)
 }
 
 export const ServeCommand = effectCmd({

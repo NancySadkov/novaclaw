@@ -40,7 +40,7 @@ export const NUDGE =
   "(active for future sessions). If the scan finds nothing, re-call it passing explicit commands. Then continue your task."
 
 /**
- * Syntax family of the shell the provisioned commands will RUN in — `Shell.agentShellIsBash()`
+ * Syntax family of the shell the provisioned commands will RUN in — `Shell.agentShellIsPosix()`
  * at the call site, NOT `process.platform`: the agent shell is Git Bash on Windows whenever one
  * is found, and cmd.exe only as the documented fallback. It decides `./gradlew` vs `gradlew.bat`.
  */
@@ -355,7 +355,10 @@ export function scan(input: ScanInput): Proposal {
  * a value once the runner has a touched file (`Quality.renderCommand`).
  */
 export function verifiableCommand(command: string): string {
-  return command.replaceAll("{file}", " ").replace(/\s{2,}/g, " ").trim()
+  return command
+    .replaceAll("{file}", " ")
+    .replace(/\s{2,}/g, " ")
+    .trim()
 }
 
 /** Rung-1 verification verdict for one executed candidate command. */
@@ -376,7 +379,11 @@ const MISSING_PATTERNS = [
 ]
 
 /** Classify a finished candidate run: distinguish "toolchain missing" from "ran (even if red)". */
-export function classifyRun(input: { readonly exit?: number; readonly output: string; readonly timedOut?: boolean }): Verification["verdict"] {
+export function classifyRun(input: {
+  readonly exit?: number
+  readonly output: string
+  readonly timedOut?: boolean
+}): Verification["verdict"] {
   if (input.timedOut) return "timeout"
   if (input.exit === 127 || input.exit === 9009) return "missing"
   if (input.exit !== 0 && MISSING_PATTERNS.some((pattern) => pattern.test(input.output))) return "missing"

@@ -37,7 +37,7 @@
  */
 import { spawnSync } from "node:child_process"
 import { existsSync, readdirSync, statSync } from "node:fs"
-import { copyFile, cp, mkdir, mkdtemp, rm } from "node:fs/promises"
+import { copyFile, cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:net"
 import os from "node:os"
 import path from "node:path"
@@ -86,8 +86,7 @@ function resolveExe(explicit: string | undefined): string {
     return path.resolve(explicit)
   }
   const dir = path.resolve(import.meta.dir, "..", "dist", unpackedDir())
-  if (!existsSync(dir))
-    throw new Error(`no packaged artifact: ${dir} does not exist — run the build before the smoke`)
+  if (!existsSync(dir)) throw new Error(`no packaged artifact: ${dir} does not exist — run the build before the smoke`)
   const entries = readdirSync(dir).filter((name) => {
     if (process.platform === "win32") return name.toLowerCase().endsWith(".exe")
     if (name.includes(".")) return false
@@ -97,8 +96,7 @@ function resolveExe(explicit: string | undefined): string {
       return false
     }
   })
-  const preferred =
-    entries.find((name) => name.toLowerCase().startsWith("novaclaw")) ?? entries[0]
+  const preferred = entries.find((name) => name.toLowerCase().startsWith("novaclaw")) ?? entries[0]
   if (!preferred) throw new Error(`no executable found under ${dir} — run the build before the smoke`)
   return path.join(dir, preferred)
 }
@@ -116,7 +114,10 @@ function expectedChannel(exe: string): Channel {
   // variable outright, so this file asks "was one configured?" and lets the resolver say what it MEANS
   // (including the "latest" alias, and refusing a typo instead of silently calling it dev).
   if (channelConfigured()) return resolveChannel()
-  const name = path.basename(exe).replace(/\.exe$/i, "").toLowerCase()
+  const name = path
+    .basename(exe)
+    .replace(/\.exe$/i, "")
+    .toLowerCase()
   if (name.endsWith("dev")) return "dev"
   if (name.endsWith("beta")) return "beta"
   return "prod"
@@ -370,14 +371,16 @@ function authHeader(credentials: Credentials): Record<string, string> {
 
 async function request(
   credentials: Credentials,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "PUT" | "DELETE",
   route: string,
   body?: unknown,
+  headers?: Record<string, string>,
 ): Promise<{ status: number; json: unknown; text: string }> {
   const res = await fetch(new URL(route, credentials.url), {
     method,
     headers: {
       ...authHeader(credentials),
+      ...headers,
       ...(body === undefined ? {} : { "content-type": "application/json" }),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -391,6 +394,73 @@ async function request(
     json = undefined
   }
   return { status: res.status, json, text }
+}
+
+function processAlive(pid: number) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM"
+  }
+}
+
+async function waitForProcessExit(pid: number, timeoutMs = 8_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (!processAlive(pid)) return true
+    await sleep(50)
+  }
+  return !processAlive(pid)
+}
+
+/** Open the same ticketed socket as the Terminal app and return a child pid emitted by the shell. */
+function exercisePtySocket(url: URL, timeoutMs = 15_000): Promise<{ childPID: number; output: string }> {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(url)
+    socket.binaryType = "arraybuffer"
+    const decoder = new TextDecoder()
+    let output = ""
+    let settled = false
+    const finish = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      try {
+        socket.close(1000, "artifact smoke complete")
+      } catch {
+        /* already closed */
+      }
+      fn()
+    }
+    const timer = setTimeout(
+      () => finish(() => reject(new Error(`PTY socket timed out; output: ${output.slice(-500)}`))),
+      timeoutMs,
+    )
+    socket.onerror = () => finish(() => reject(new Error(`PTY socket error on ${url}`)))
+    socket.onclose = () => {
+      if (!settled)
+        finish(() => reject(new Error(`PTY socket closed before the marker; output: ${output.slice(-500)}`)))
+    }
+    socket.onopen = () => {
+      // The marker is octal-escaped so terminal echo cannot satisfy the assertion. `sleep` remains
+      // alive as a descendant, letting the remove step prove tree cleanup rather than shell-only exit.
+      socket.send(
+        `sleep 300 & printf '\\116\\117\\126\\101\\103\\114\\101\\127\\137\\120\\124\\131\\137\\117\\113\\072%s\\n' "$!"\r`,
+      )
+    }
+    socket.onmessage = (event: MessageEvent) => {
+      if (typeof event.data === "string") output += event.data
+      else if (event.data instanceof ArrayBuffer) {
+        const bytes = new Uint8Array(event.data)
+        if (bytes[0] !== 0) output += decoder.decode(bytes)
+      }
+      const match = output.match(/NOVACLAW_PTY_OK:(\d+)/)
+      if (!match) return
+      const childPID = Number(match[1])
+      finish(() => resolve({ childPID, output }))
+    }
+  })
 }
 
 // ── the run ─────────────────────────────────────────────────────────────────────────────────────
@@ -495,6 +565,52 @@ async function run() {
   tempHome = await mkdtemp(path.join(os.tmpdir(), "novaclaw-smoke-"))
   const exe = await stageArtifact(sourceExe, tempHome)
   console.log(`staged   : ${exe} (isolated from workspace dependencies)`)
+  if (process.platform === "win32") {
+    const kit = path.join(path.dirname(exe), "resources", "third-party", "w64devkit")
+    const bin = path.join(kit, "bin")
+    const critical = ["sh.exe", "busybox.exe", "gcc.exe", "as.exe", "ld.exe", "make.exe"]
+    for (const name of critical)
+      check(existsSync(path.join(bin, name)), `w64devkit-${name}`, `missing ${path.join(bin, name)}`)
+    check(existsSync(path.join(kit, "VERSION.txt")), "w64devkit-version", `missing ${path.join(kit, "VERSION.txt")}`)
+    check(
+      existsSync(path.join(kit, "COPYING.MinGW-w64-runtime.txt")),
+      "w64devkit-license",
+      "the embedded MinGW-w64 runtime licence is missing",
+    )
+
+    const shell = spawnSync(path.join(bin, "sh.exe"), ["-lc", "printf NOVACLAW_PACKAGED_SH_OK"], {
+      cwd: tempHome,
+      encoding: "utf8",
+    })
+    check(
+      shell.status === 0 && shell.stdout === "NOVACLAW_PACKAGED_SH_OK",
+      "w64devkit-shell-run",
+      `ash exited ${String(shell.status)}: ${shell.stderr || shell.stdout}`,
+    )
+
+    const source = path.join(tempHome, "packaged-toolchain-smoke.c")
+    const program = path.join(tempHome, "packaged-toolchain-smoke.exe")
+    await writeFile(source, '#include <stdio.h>\nint main(void){fputs("NOVACLAW_PACKAGED_GCC_OK",stdout);return 0;}\n')
+    const compilerEnv = { ...process.env }
+    const pathKey = Object.keys(compilerEnv).find((key) => key.toLowerCase() === "path") ?? "Path"
+    compilerEnv[pathKey] = `${bin}${path.delimiter}${compilerEnv[pathKey] ?? ""}`
+    const compiled = spawnSync(path.join(bin, "gcc.exe"), ["-std=c99", source, "-o", program], {
+      cwd: tempHome,
+      encoding: "utf8",
+      env: compilerEnv,
+    })
+    check(
+      compiled.status === 0 && existsSync(program),
+      "w64devkit-c99-compile",
+      `GCC exited ${String(compiled.status)}: ${compiled.stderr || compiled.stdout}`,
+    )
+    const executed = existsSync(program) ? spawnSync(program, [], { encoding: "utf8" }) : undefined
+    check(
+      executed?.status === 0 && executed.stdout === "NOVACLAW_PACKAGED_GCC_OK",
+      "w64devkit-c99-run",
+      `compiled program exited ${String(executed?.status)}: ${executed?.stderr || executed?.stdout || "not run"}`,
+    )
+  }
   const authSeed = process.env.NOVACLAW_SMOKE_AUTH_FILE
   const keySeed = process.env.NOVACLAW_SMOKE_CREDENTIAL_KEY
   if (!!authSeed !== !!keySeed)
@@ -600,9 +716,7 @@ async function run() {
   let scratchDir: string | undefined
   if (paths) {
     const home = tempHome
-    const strings = Object.entries(paths).filter(
-      (entry): entry is [string, string] => typeof entry[1] === "string",
-    )
+    const strings = Object.entries(paths).filter((entry): entry is [string, string] => typeof entry[1] === "string")
     // THE pitfall-#0 signature. Checked over every path the server reports, not just `data`,
     // because in v0.1.0 three XDG variables were poisoned at once and each fanned out.
     const poisoned = strings.filter(([, value]) => hasUndefinedSegment(value))
@@ -622,11 +736,7 @@ async function run() {
         check(false, `home-contains-${key}`, `/path did not report a string "${key}"`)
         continue
       }
-      check(
-        insideOrEqual(home, value),
-        `home-contains-${key}`,
-        `expected a path under ${home}, got ${value}`,
-      )
+      check(insideOrEqual(home, value), `home-contains-${key}`, `expected a path under ${home}, got ${value}`)
     }
     check(
       typeof paths.instanceHome === "string" && insideOrEqual(home, paths.instanceHome),
@@ -658,7 +768,11 @@ async function run() {
       `POST /api/session answered ${res.status}: ${res.text.slice(0, 400)}`,
     )
     if (res.status >= 200 && res.status < 300)
-      check(typeof created === "string", "session-create-id", `no session id in the response: ${res.text.slice(0, 200)}`)
+      check(
+        typeof created === "string",
+        "session-create-id",
+        `no session id in the response: ${res.text.slice(0, 200)}`,
+      )
   } catch (error) {
     check(false, "session-create", `POST /api/session failed: ${String(error)}`)
   }
@@ -667,29 +781,78 @@ async function run() {
   // Merely booting is insufficient now that PTY is correctly lazy. v0.1.55 initially omitted the
   // generic @lydell/node-pty loader; an in-tree smoke found it in the workspace and passed, while a
   // downloaded copy failed. Staging above closes the resolution leak; creating one PTY proves both
-  // the generic loader and the platform-native package made it into the artifact.
+  // the generic loader and the platform-native package made it into the artifact. Exercise the
+  // canonical `/api/pty` contract: this is the exact surface used by the Terminal renderer, so this
+  // gate must not pass by keeping the retired legacy transport alive beside a broken product route.
   if (scratchDir) {
-    const location = `?location[directory]=${encodeURIComponent(scratchDir)}`
+    const location = `?location%5Bdirectory%5D=${encodeURIComponent(scratchDir)}`
     let ptyID: string | undefined
+    let ptyPID: number | undefined
+    let childPID: number | undefined
     try {
       const res = await request(credentials, "POST", `/api/pty${location}`, {
         cwd: scratchDir,
         title: "Artifact smoke",
       })
-      ptyID = (res.json as { data?: { id?: string } } | undefined)?.data?.id
+      const info = (res.json as { data?: { id?: string; pid?: number } } | undefined)?.data
+      ptyID = info?.id
+      ptyPID = info?.pid
       check(
         res.status >= 200 && res.status < 300 && typeof ptyID === "string",
         "pty-create",
         `POST /api/pty answered ${res.status}: ${res.text.slice(0, 400)}`,
       )
+
+      if (ptyID) {
+        const token = await request(
+          credentials,
+          "POST",
+          `/api/pty/${encodeURIComponent(ptyID)}/connect-token${location}`,
+          undefined,
+          { "x-novaclaw-ticket": "1" },
+        )
+        const ticket = (token.json as { data?: { ticket?: string } } | undefined)?.data?.ticket
+        check(
+          token.status === 200 && typeof ticket === "string",
+          "pty-websocket-ticket",
+          `connect-token answered ${token.status}: ${token.text.slice(0, 300)}`,
+        )
+        if (ticket) {
+          const socketURL = new URL(`/api/pty/${encodeURIComponent(ptyID)}/connect${location}`, credentials.url)
+          socketURL.protocol = socketURL.protocol === "https:" ? "wss:" : "ws:"
+          socketURL.searchParams.set("cursor", "-1")
+          socketURL.searchParams.set("ticket", ticket)
+          const exchange = await exercisePtySocket(socketURL)
+          childPID = exchange.childPID
+          check(
+            exchange.output.includes(`NOVACLAW_PTY_OK:${childPID}`),
+            "pty-websocket-io",
+            exchange.output.slice(-500),
+          )
+          check(processAlive(childPID), "pty-child-running", `reported child process ${childPID} was not alive`)
+          if (ptyPID !== undefined && ptyPID > 0)
+            check(processAlive(ptyPID), "pty-shell-running", `reported shell process ${ptyPID} was not alive`)
+        }
+      }
     } catch (error) {
-      check(false, "pty-create", `POST /api/pty failed: ${String(error)}`)
+      check(false, ptyID ? "pty-websocket-io" : "pty-create", String(error))
     } finally {
       if (ptyID) {
-        const removed = await request(credentials, "DELETE", `/api/pty/${encodeURIComponent(ptyID)}${location}`).catch(
-          () => undefined,
+        const removed = await request(credentials, "DELETE", `/api/pty${location}`).catch(() => undefined)
+        const removedCount = (removed?.json as { data?: number } | undefined)?.data
+        check(
+          removed?.status === 200 && typeof removedCount === "number" && removedCount >= 1,
+          "pty-stop-all",
+          `expected a 200 location-wrapped count >= 1, got ${String(removed?.status)} ${removed?.text ?? ""}`,
         )
-        check(removed?.status === 204, "pty-remove", `expected 204, got ${String(removed?.status)}`)
+        if (ptyPID !== undefined && ptyPID > 0)
+          check(await waitForProcessExit(ptyPID), "pty-shell-stopped", `shell process ${ptyPID} survived PTY removal`)
+        if (childPID !== undefined)
+          check(
+            await waitForProcessExit(childPID),
+            "pty-child-stopped",
+            `child process ${childPID} survived PTY removal`,
+          )
       }
     }
   } else {

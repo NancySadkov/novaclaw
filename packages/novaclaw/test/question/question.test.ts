@@ -313,9 +313,7 @@ it.instance(
         const [rejectRequest] = yield* waitForPending(1)
         yield* rejectEffect(rejectRequest.id)
         expect((yield* Fiber.await(rejected))._tag).toBe("Failure")
-        expect(
-          Exit.isFailure(yield* rejectEffect(QuestionID.make("que_unknown_reject")).pipe(Effect.exit)),
-        ).toBe(true)
+        expect(Exit.isFailure(yield* rejectEffect(QuestionID.make("que_unknown_reject")).pipe(Effect.exit))).toBe(true)
       }).pipe(
         Effect.provide(Logger.layer([capture], { mergeWithExisting: false })),
         Effect.provideService(References.MinimumLogLevel, "Info"),
@@ -331,7 +329,7 @@ it.instance(
         "question.request.reject.unknown",
       ])
       expect(questionLines[1]).toContain("question.answers=")
-      expect(questionLines[1]).toContain('message=replied')
+      expect(questionLines[1]).toContain("message=replied")
     }),
   { git: true },
 )

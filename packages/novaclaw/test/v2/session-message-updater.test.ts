@@ -165,6 +165,7 @@ test.skip("tool completion stores completed timestamp", () => {
         timestamp: DateTime.makeUnsafe(3),
         callID,
         tool: "bash",
+        sideEffect: "external-unknown",
         input: { command: "pwd" },
         provider: { executed: true, metadata: { fake: { source: "provider" } } },
       },

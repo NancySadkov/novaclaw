@@ -18,7 +18,9 @@ const escapeHtml = (text: string): string =>
 // Shared inline-markdown passes. Order matters: fences first (their bodies must not be
 // re-interpreted), then links, then emphasis/code decoration.
 const stripFences = (text: string, wrap?: (body: string) => string): string =>
-  text.replaceAll(/```[^\n]*\n([\s\S]*?)```/g, (_, body: string) => (wrap ? wrap(body.replace(/\n$/, "")) : body.replace(/\n$/, "")))
+  text.replaceAll(/```[^\n]*\n([\s\S]*?)```/g, (_, body: string) =>
+    wrap ? wrap(body.replace(/\n$/, "")) : body.replace(/\n$/, ""),
+  )
 
 const plainInline = (text: string): string =>
   text
@@ -41,10 +43,7 @@ export function downgrade(text: string, flavor: Flavor): string {
   if (flavor === "markdown") return text
   if (flavor === "plain") {
     const unfenced = stripFences(text)
-    return plainInline(unfenced)
-      .split("\n")
-      .map(plainLine)
-      .join("\n")
+    return plainInline(unfenced).split("\n").map(plainLine).join("\n")
   }
   // html: escape FIRST so user content can't smuggle tags, then decorate.
   const escaped = escapeHtml(text)
@@ -87,7 +86,12 @@ const hardSplit = (text: string, budget: Budget): string[] => {
   return out
 }
 
-const splitBy = (parts: readonly string[], joiner: string, budget: Budget, refine: (part: string) => string[]): string[] => {
+const splitBy = (
+  parts: readonly string[],
+  joiner: string,
+  budget: Budget,
+  refine: (part: string) => string[],
+): string[] => {
   const out: string[] = []
   let current = ""
   const flush = () => {

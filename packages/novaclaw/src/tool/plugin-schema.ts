@@ -53,7 +53,9 @@ function zodJsonSchema(schema: z.ZodType): JSONSchema7 {
   const result = normalizeZodJsonSchema(z.toJSONSchema(schema, { io: "input", metadata: zodMetadataRegistry(schema) }))
   if (!isJsonSchemaObject(result)) throw new Error("plugin tool Zod schema produced a non-object JSON Schema")
   const { $defs, ...rest } = result
-  return ($defs && isJsonSchemaObject($defs) ? { ...rest, definitions: $defs as JSONSchema7["definitions"] } : rest) as JSONSchema7
+  return (
+    $defs && isJsonSchemaObject($defs) ? { ...rest, definitions: $defs as JSONSchema7["definitions"] } : rest
+  ) as JSONSchema7
 }
 
 function zodMetadataRegistry(schema: z.ZodType) {

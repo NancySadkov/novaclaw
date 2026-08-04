@@ -732,12 +732,7 @@ export const layer = Layer.effect(
     })
 
     const list = Effect.fn("Workspace.list")(function* (origin: string) {
-      return (yield* db
-        .select()
-        .from(WorkspaceTable)
-        .where(eq(WorkspaceTable.origin, origin))
-        .all()
-        .pipe(Effect.orDie))
+      return (yield* db.select().from(WorkspaceTable).where(eq(WorkspaceTable.origin, origin)).all().pipe(Effect.orDie))
         .map(fromRow)
         .sort((a, b) => a.id.localeCompare(b.id))
     })

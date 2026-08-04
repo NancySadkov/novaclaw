@@ -1,8 +1,8 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "0ed622c5-ea17-4676-a3af-7a7666ffe7cf",
-  "prevIds": ["ac61fd8f-8394-469b-94e0-269345a28fb6"],
+  "id": "f2490e2a-9fd3-4a0a-8fcf-1cf242f9fca7",
+  "prevIds": ["7032d523-3e7a-459a-89a4-6b6b88ce97f6"],
   "ddl": [
     {
       "name": "workspace",
@@ -130,6 +130,10 @@
     },
     {
       "name": "session_context_epoch",
+      "entityType": "tables"
+    },
+    {
+      "name": "session_execution",
       "entityType": "tables"
     },
     {
@@ -2040,6 +2044,186 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
+      "name": "session_id",
+      "entityType": "columns",
+      "table": "session_execution"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "attempt_id",
+      "entityType": "columns",
+      "table": "session_execution"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "generation",
+      "entityType": "columns",
+      "table": "session_execution"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "owner_id",
+      "entityType": "columns",
+      "table": "session_execution"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "state",
+      "entityType": "columns",
+      "table": "session_execution"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "phase",
+      "entityType": "columns",
+      "table": "session_execution"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "failure_class",
+      "entityType": "columns",
+      "table": "session_execution"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "failure_detail",
+      "entityType": "columns",
+      "table": "session_execution"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "failure_count",
+      "entityType": "columns",
+      "table": "session_execution"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "heartbeat_at",
+      "entityType": "columns",
+      "table": "session_execution"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "checkpoint_at",
+      "entityType": "columns",
+      "table": "session_execution"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tool_call_id",
+      "entityType": "columns",
+      "table": "session_execution"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tool_name",
+      "entityType": "columns",
+      "table": "session_execution"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tool_side_effect",
+      "entityType": "columns",
+      "table": "session_execution"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tool_state",
+      "entityType": "columns",
+      "table": "session_execution"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "provider_recovery",
+      "entityType": "columns",
+      "table": "session_execution"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "started_at",
+      "entityType": "columns",
+      "table": "session_execution"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "session_execution"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
       "name": "id",
       "entityType": "columns",
       "table": "session_input"
@@ -2975,6 +3159,17 @@
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
+      "name": "fk_session_execution_session_id_session_id_fk",
+      "entityType": "fks",
+      "table": "session_execution"
+    },
+    {
+      "columns": ["session_id"],
+      "tableTo": "session",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
       "name": "fk_session_input_session_id_session_id_fk",
       "entityType": "fks",
       "table": "session_input"
@@ -3258,6 +3453,13 @@
       "entityType": "pks"
     },
     {
+      "columns": ["session_id"],
+      "nameExplicit": false,
+      "name": "session_execution_pk",
+      "table": "session_execution",
+      "entityType": "pks"
+    },
+    {
       "columns": ["id"],
       "nameExplicit": false,
       "name": "session_input_pk",
@@ -3493,6 +3695,24 @@
     {
       "columns": [
         {
+          "value": "state",
+          "isExpression": false
+        },
+        {
+          "value": "heartbeat_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "session_execution_state_heartbeat_idx",
+      "entityType": "indexes",
+      "table": "session_execution"
+    },
+    {
+      "columns": [
+        {
           "value": "session_id",
           "isExpression": false
         },
@@ -3701,6 +3921,13 @@
       "name": "tool_catalogue_scope_server_idx",
       "entityType": "indexes",
       "table": "tool_catalogue"
+    },
+    {
+      "columns": ["attempt_id"],
+      "nameExplicit": false,
+      "name": "session_execution_attempt_id_unique",
+      "entityType": "uniques",
+      "table": "session_execution"
     }
   ],
   "renames": []

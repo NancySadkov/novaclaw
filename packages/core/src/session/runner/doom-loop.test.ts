@@ -34,10 +34,8 @@ const toolPart = (name: string, input: Record<string, unknown>, failed: boolean)
   name,
   state: { status: failed ? "error" : "completed", input },
 })
-const assistantMsg = (
-  parts: ReadonlyArray<Record<string, unknown>>,
-  error?: { message: string },
-) => ({ type: "assistant", content: parts, ...(error ? { error } : {}) }) as unknown as SessionMessage.Message
+const assistantMsg = (parts: ReadonlyArray<Record<string, unknown>>, error?: { message: string }) =>
+  ({ type: "assistant", content: parts, ...(error ? { error } : {}) }) as unknown as SessionMessage.Message
 const textPart = (text: string) => ({ type: "text", text })
 const reasoningPart = (text: string) => ({ type: "reasoning", text })
 
@@ -60,7 +58,11 @@ describe("detectDoomLoop", () => {
 
   test("different args break the loop", () => {
     expect(
-      detectDoomLoop([call("bash", '{"command":"a"}'), call("bash", '{"command":"b"}'), call("bash", '{"command":"a"}')]),
+      detectDoomLoop([
+        call("bash", '{"command":"a"}'),
+        call("bash", '{"command":"b"}'),
+        call("bash", '{"command":"a"}'),
+      ]),
     ).toBeUndefined()
   })
 
@@ -102,7 +104,9 @@ describe("toolTargetKey", () => {
   })
 
   test("glob/grep key on pattern, not the surrounding path", () => {
-    expect(toolTargetKey("grep", '{"pattern":"foo","path":"a"}')).toBe(toolTargetKey("grep", '{"pattern":"foo","path":"b"}'))
+    expect(toolTargetKey("grep", '{"pattern":"foo","path":"a"}')).toBe(
+      toolTargetKey("grep", '{"pattern":"foo","path":"b"}'),
+    )
   })
 
   test("different tools with the same path are different targets", () => {
@@ -142,10 +146,7 @@ describe("detectFailureStreak", () => {
   })
 
   test("a different target breaks the streak", () => {
-    const calls = [
-      ...Array.from({ length: 4 }, () => fail("read", '{"path":"a"}')),
-      fail("read", '{"path":"b"}'),
-    ]
+    const calls = [...Array.from({ length: 4 }, () => fail("read", '{"path":"a"}')), fail("read", '{"path":"b"}')]
     expect(detectFailureStreak(calls)).toBeUndefined()
   })
 

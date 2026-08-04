@@ -41,9 +41,10 @@ describe("PluginConfigStore", () => {
     expect(PluginConfigSeed.normalizePluginEntry("/proj", "./plugins/a.js")).toEqual({
       package: path.resolve("/proj", "./plugins/a.js"),
     })
-    expect(
-      PluginConfigSeed.normalizePluginEntry("/proj", { package: "../shared/b.js", options: { x: 1 } }),
-    ).toEqual({ package: path.resolve("/proj", "../shared/b.js"), options: { x: 1 } })
+    expect(PluginConfigSeed.normalizePluginEntry("/proj", { package: "../shared/b.js", options: { x: 1 } })).toEqual({
+      package: path.resolve("/proj", "../shared/b.js"),
+      options: { x: 1 },
+    })
     const fileUrl = pathToFileURL(path.resolve("/proj/plugins/c.js")).href
     expect(PluginConfigSeed.normalizePluginEntry("/proj", fileUrl)).toEqual({
       package: path.resolve("/proj/plugins/c.js"),
@@ -63,10 +64,7 @@ describe("PluginConfigStore", () => {
       const globalDir = path.join(dir.path, "global")
       yield* Effect.promise(async () => {
         await fs.mkdir(globalDir, { recursive: true })
-        await fs.writeFile(
-          path.join(globalDir, "config.json"),
-          JSON.stringify({ plugins: ["team-plugin@2.0.0"] }),
-        )
+        await fs.writeFile(path.join(globalDir, "config.json"), JSON.stringify({ plugins: ["team-plugin@2.0.0"] }))
         await fs.writeFile(
           path.join(globalDir, "novaclaw.jsonc"),
           JSON.stringify({ plugins: [{ package: "./tools/local.js", options: { enabled: true } }] }),
@@ -83,7 +81,7 @@ describe("PluginConfigStore", () => {
       // A user edit after seeding must survive a re-seed (the isEmpty idempotence gate).
       yield* store.removePlugin("team-plugin@2.0.0")
       yield* PluginConfigSeed.seedFromDirectory(globalDir)
-      expect(((yield* store.plugins()).map((entry) => entry.package)).includes("team-plugin@2.0.0")).toBe(false)
+      expect((yield* store.plugins()).map((entry) => entry.package).includes("team-plugin@2.0.0")).toBe(false)
     }),
   )
 })

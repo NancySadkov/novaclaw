@@ -2822,11 +2822,18 @@
             }
           },
           "400": {
-            "description": "Bad request",
+            "description": "InvalidRequestError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
                 }
               }
             }
@@ -2842,6 +2849,9 @@
                 "properties": {
                   "path": {
                     "type": "string"
+                  },
+                  "exclusive": {
+                    "type": "boolean"
                   }
                 },
                 "required": ["path"],
@@ -2854,6 +2864,94 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.file.mkdir({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/file/rename": {
+      "post": {
+        "tags": ["file"],
+        "operationId": "file.rename",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Renamed entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["path"],
+                  "additionalProperties": false,
+                  "description": "Renamed entry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Rename one entry under the routed directory without replacing an existing destination.",
+        "summary": "Rename file or directory",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": ["path", "name"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.file.rename({\n  ...\n})"
           }
         ]
       }
@@ -2892,11 +2990,18 @@
             }
           },
           "400": {
-            "description": "Bad request",
+            "description": "InvalidRequestError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
                 }
               }
             }
@@ -3026,11 +3131,18 @@
             }
           },
           "400": {
-            "description": "Bad request",
+            "description": "InvalidRequestError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
                 }
               }
             }
@@ -6065,563 +6177,6 @@
         ]
       }
     },
-    "/pty/shells": {
-      "get": {
-        "tags": ["pty"],
-        "operationId": "pty.shells",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "List of shells",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "path": {
-                        "type": "string"
-                      },
-                      "name": {
-                        "type": "string"
-                      },
-                      "acceptable": {
-                        "type": "boolean"
-                      }
-                    },
-                    "required": ["path", "name", "acceptable"],
-                    "additionalProperties": false
-                  },
-                  "description": "List of shells"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Get a list of available shells on the system.",
-        "summary": "List available shells",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.pty.shells({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/pty": {
-      "get": {
-        "tags": ["pty"],
-        "operationId": "pty.list",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "List of sessions",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Pty"
-                  },
-                  "description": "List of sessions"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Get a list of all active pseudo-terminal (PTY) sessions managed by NovaClaw.",
-        "summary": "List PTY sessions",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.pty.list({\n  ...\n})"
-          }
-        ]
-      },
-      "post": {
-        "tags": ["pty"],
-        "operationId": "pty.create",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Created session",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Pty"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "BadRequest | InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
-                    },
-                    {
-                      "$ref": "#/components/schemas/InvalidRequestError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "description": "Create a new pseudo-terminal (PTY) session for running shell commands and processes.",
-        "summary": "Create PTY session",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "command": {
-                    "type": "string"
-                  },
-                  "args": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "cwd": {
-                    "type": "string"
-                  },
-                  "title": {
-                    "type": "string"
-                  },
-                  "env": {
-                    "type": "object",
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  }
-                },
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.pty.create({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/pty/{ptyID}": {
-      "get": {
-        "tags": ["pty"],
-        "operationId": "pty.get",
-        "parameters": [
-          {
-            "name": "ptyID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^pty"
-            },
-            "required": true
-          },
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Session info",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Pty"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "PtyNotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PtyNotFoundError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Retrieve detailed information about a specific pseudo-terminal (PTY) session.",
-        "summary": "Get PTY session",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.pty.get({\n  ...\n})"
-          }
-        ]
-      },
-      "put": {
-        "tags": ["pty"],
-        "operationId": "pty.update",
-        "parameters": [
-          {
-            "name": "ptyID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^pty"
-            },
-            "required": true
-          },
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Updated session",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Pty"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "BadRequest | InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
-                    },
-                    {
-                      "$ref": "#/components/schemas/InvalidRequestError"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "PtyNotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PtyNotFoundError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Update properties of an existing pseudo-terminal (PTY) session.",
-        "summary": "Update PTY session",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "title": {
-                    "type": "string"
-                  },
-                  "size": {
-                    "type": "object",
-                    "properties": {
-                      "rows": {
-                        "type": "integer",
-                        "exclusiveMinimum": 0
-                      },
-                      "cols": {
-                        "type": "integer",
-                        "exclusiveMinimum": 0
-                      }
-                    },
-                    "required": ["rows", "cols"],
-                    "additionalProperties": false
-                  }
-                },
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.pty.update({\n  ...\n})"
-          }
-        ]
-      },
-      "delete": {
-        "tags": ["pty"],
-        "operationId": "pty.remove",
-        "parameters": [
-          {
-            "name": "ptyID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^pty"
-            },
-            "required": true
-          },
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Session removed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "boolean",
-                  "description": "Session removed"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "PtyNotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PtyNotFoundError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Remove and terminate a specific pseudo-terminal (PTY) session.",
-        "summary": "Remove PTY session",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.pty.remove({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/pty/{ptyID}/connect-token": {
-      "post": {
-        "tags": ["pty"],
-        "operationId": "pty.connectToken",
-        "parameters": [
-          {
-            "name": "ptyID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^pty"
-            },
-            "required": true
-          },
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "WebSocket connect token",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PtyTicketConnectToken"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "PtyForbiddenError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PtyForbiddenError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "PtyNotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PtyNotFoundError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Create a short-lived ticket for opening a PTY WebSocket connection.",
-        "summary": "Create PTY WebSocket token",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.pty.connectToken({\n  ...\n})"
-          }
-        ]
-      }
-    },
     "/question": {
       "get": {
         "tags": ["question"],
@@ -7409,6 +6964,78 @@
                           "enum": ["Infinity", "-Infinity", "NaN"]
                         }
                       ]
+                    },
+                    "discoveryLatencyMs": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "completionLatencyMs": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "completionAttempts": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "completed": {
+                      "type": "boolean"
                     },
                     "window": {
                       "anyOf": [
@@ -9665,6 +9292,64 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.active({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/session/execution": {
+      "get": {
+        "tags": ["sessions"],
+        "operationId": "v2.session.execution.list",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SessionExecution"
+                      }
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "List durable execution and recovery state, including paused failures and their human-readable details.",
+        "summary": "Inspect durable session execution",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.execution.list({\n  ...\n})"
           }
         ]
       }
@@ -12134,6 +11819,74 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.interrupt({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/session/{sessionID}/execution/retry": {
+      "post": {
+        "tags": ["sessions"],
+        "operationId": "v2.session.execution.retry",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Record explicit operator authority, reset the recovery circuit breaker, and resume queued work without requiring a model response.",
+        "summary": "Retry paused session execution",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.execution.retry({\n  ...\n})"
           }
         ]
       }
@@ -18164,6 +17917,70 @@
         ]
       }
     },
+    "/api/pty/shells": {
+      "get": {
+        "tags": ["pty"],
+        "operationId": "v2.pty.shells",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "acceptable": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": ["path", "name", "acceptable"],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "List shells available for human terminal sessions on this NovaClaw instance.",
+        "summary": "List available shells",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.pty.shells({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/pty": {
       "get": {
         "tags": ["pty"],
@@ -18351,6 +18168,83 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.pty.create({\n  ...\n})"
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["pty"],
+        "operationId": "v2.pty.removeAll",
+        "parameters": [
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "$ref": "#/components/schemas/LocationInfo"
+                    },
+                    "data": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": ["location", "data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Terminate and remove every PTY session for a location.",
+        "summary": "Stop all PTY sessions",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.pty.removeAll({\n  ...\n})"
           }
         ]
       }
@@ -19351,92 +19245,6 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.reference.remove({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/pty/{ptyID}/connect": {
-      "get": {
-        "tags": ["pty"],
-        "operationId": "pty.connect",
-        "parameters": [
-          {
-            "name": "ptyID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^pty"
-            },
-            "required": true
-          },
-          {
-            "in": "query",
-            "name": "directory",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "workspace",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "ticket",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Connected session",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "boolean",
-                  "description": "Connected session"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/effect_HttpApiError_Forbidden"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NotFoundError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Establish a WebSocket connection to interact with a pseudo-terminal (PTY) session in real-time.",
-        "summary": "Connect to PTY session",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.pty.connect({\n  ...\n})"
           }
         ]
       }
@@ -21749,6 +21557,10 @@
                       },
                       "tool": {
                         "type": "string"
+                      },
+                      "sideEffect": {
+                        "type": "string",
+                        "enum": ["read", "idempotent-write", "non-idempotent", "external-unknown"]
                       },
                       "input": {
                         "type": "object"
@@ -24357,37 +24169,6 @@
         "required": ["_tag", "name", "message"],
         "additionalProperties": false
       },
-      "PtyNotFoundError": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": ["PtyNotFoundError"]
-          },
-          "ptyID": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": ["_tag", "ptyID", "message"],
-        "additionalProperties": false
-      },
-      "PtyForbiddenError": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": ["PtyForbiddenError"]
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": ["_tag", "message"],
-        "additionalProperties": false
-      },
       "QuestionRequest": {
         "type": "object",
         "properties": {
@@ -25514,6 +25295,23 @@
         },
         "contentMediaType": "application/json"
       },
+      "PtyNotFoundError": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["PtyNotFoundError"]
+          },
+          "ptyID": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": ["_tag", "ptyID", "message"],
+        "additionalProperties": false
+      },
       "ForbiddenError": {
         "type": "object",
         "properties": {
@@ -25526,17 +25324,6 @@
           }
         },
         "required": ["_tag", "message"],
-        "additionalProperties": false
-      },
-      "effect_HttpApiError_Forbidden": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": ["Forbidden"]
-          }
-        },
-        "required": ["_tag"],
         "additionalProperties": false
       },
       "CredentialValue": {
@@ -29234,6 +29021,10 @@
                   "tool": {
                     "type": "string"
                   },
+                  "sideEffect": {
+                    "type": "string",
+                    "enum": ["read", "idempotent-write", "non-idempotent", "external-unknown"]
+                  },
                   "input": {
                     "type": "object"
                   },
@@ -31737,20 +31528,6 @@
         ],
         "additionalProperties": false
       },
-      "PtyTicketConnectToken": {
-        "type": "object",
-        "properties": {
-          "ticket": {
-            "type": "string"
-          },
-          "expires_in": {
-            "type": "integer",
-            "exclusiveMinimum": 0
-          }
-        },
-        "required": ["ticket", "expires_in"],
-        "additionalProperties": false
-      },
       "DbRegistryTableSummary": {
         "type": "object",
         "properties": {
@@ -31946,6 +31723,200 @@
           }
         },
         "required": ["id", "request", "mode", "hidden", "permissions"],
+        "additionalProperties": false
+      },
+      "SessionExecution": {
+        "type": "object",
+        "properties": {
+          "sessionID": {
+            "type": "string",
+            "pattern": "^ses"
+          },
+          "attemptID": {
+            "type": "string"
+          },
+          "generation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "ownerID": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": ["starting", "busy", "recovering", "paused", "failed", "interrupted", "settled"]
+          },
+          "phase": {
+            "type": "string",
+            "enum": ["drain", "provider", "tool", "maintenance"]
+          },
+          "heartbeatAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "checkpointAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "failureClass": {
+            "type": "string"
+          },
+          "failureDetail": {
+            "type": "string"
+          },
+          "failureCount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "toolCallID": {
+            "type": "string"
+          },
+          "toolName": {
+            "type": "string"
+          },
+          "toolSideEffect": {
+            "type": "string",
+            "enum": ["read", "idempotent-write", "non-idempotent", "external-unknown"]
+          },
+          "toolState": {
+            "type": "string",
+            "enum": ["dispatched", "settled"]
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          }
+        },
+        "required": [
+          "sessionID",
+          "attemptID",
+          "generation",
+          "ownerID",
+          "state",
+          "phase",
+          "heartbeatAt",
+          "failureCount",
+          "startedAt",
+          "updatedAt"
+        ],
         "additionalProperties": false
       },
       "PromptInputFileAttachment": {
@@ -33844,6 +33815,10 @@
               },
               "tool": {
                 "type": "string"
+              },
+              "sideEffect": {
+                "type": "string",
+                "enum": ["read", "idempotent-write", "non-idempotent", "external-unknown"]
               },
               "input": {
                 "type": "object"
@@ -39185,6 +39160,20 @@
         "required": ["id", "type", "data"],
         "additionalProperties": false
       },
+      "PtyTicketConnectToken": {
+        "type": "object",
+        "properties": {
+          "ticket": {
+            "type": "string"
+          },
+          "expires_in": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": ["ticket", "expires_in"],
+        "additionalProperties": false
+      },
       "QuestionV2Request": {
         "type": "object",
         "properties": {
@@ -40890,6 +40879,10 @@
               },
               "tool": {
                 "type": "string"
+              },
+              "sideEffect": {
+                "type": "string",
+                "enum": ["read", "idempotent-write", "non-idempotent", "external-unknown"]
               },
               "input": {
                 "type": "object"
@@ -42644,10 +42637,6 @@
       "description": "The graph-memory viewer/editor API (kb-graph)."
     },
     {
-      "name": "pty",
-      "description": "Experimental HttpApi PTY routes."
-    },
-    {
       "name": "question",
       "description": "Question routes."
     },
@@ -42750,10 +42739,6 @@
     {
       "name": "reference",
       "description": "Location-scoped project references."
-    },
-    {
-      "name": "pty",
-      "description": "PTY websocket route."
     }
   ]
 }

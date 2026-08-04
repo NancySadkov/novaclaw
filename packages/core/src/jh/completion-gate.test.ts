@@ -22,7 +22,16 @@ import { JhEngine } from "./engine"
 // Strict configuration (`forceRootDecompose` + `verifyGoal`, no oracle).
 
 const atom = (over: Record<string, unknown> = {}) =>
-  JSON.stringify({ goal: "leaf", size: "atomic", tool: "note", args: { text: "x" }, success: "ok", check: { type: "artifact_present" }, produces: [], ...over })
+  JSON.stringify({
+    goal: "leaf",
+    size: "atomic",
+    tool: "note",
+    args: { text: "x" },
+    success: "ok",
+    check: { type: "artifact_present" },
+    produces: [],
+    ...over,
+  })
 
 interface GateOpts {
   /** verdicts the gate returns, in order; the last one repeats. */
@@ -41,7 +50,17 @@ function harness(opts: GateOpts) {
       goal: "root",
       size: "needs_decomposition",
       success: "ok",
-      substeps: [{ goal: "run it", size: "atomic", tool: "run", args: { command: "x" }, success: "ok", check: { type: "run", command: "x" }, produces: [] }],
+      substeps: [
+        {
+          goal: "run it",
+          size: "atomic",
+          tool: "run",
+          args: { command: "x" },
+          success: "ok",
+          check: { type: "run", command: "x" },
+          produces: [],
+        },
+      ],
     }),
     atom({ goal: "run it", tool: "run", args: { command: "x" }, check: { type: "run", command: "x" }, produces: [] }),
   ]
@@ -107,7 +126,11 @@ describe("completion gate — the mechanical veto over a self-attested done", ()
     expect(r.status).toBe("blocked")
     expect(r.reason).toBe("completion_unverified")
     // The model's own claim IS present in the log — it just is not the last word.
-    expect(r.state.log.some((e) => e.type === "verification" && String((e as { detail?: unknown }).detail).includes("task goal achieved"))).toBe(true)
+    expect(
+      r.state.log.some(
+        (e) => e.type === "verification" && String((e as { detail?: unknown }).detail).includes("task goal achieved"),
+      ),
+    ).toBe(true)
     expect(r.state.log.some((e) => e.type === "task_done")).toBe(false)
     assertNoUnverifiedDone(r, true)
   })

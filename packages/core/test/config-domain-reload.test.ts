@@ -81,9 +81,7 @@ const withLocation = <A, E, R>(body: (location: Location.Ref, directory: string)
   Effect.acquireRelease(
     Effect.promise(() => tmpdir()),
     (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
-  ).pipe(
-    Effect.flatMap((dir) => body(Location.Ref.make({ directory: AbsolutePath.make(dir.path) }), dir.path)),
-  )
+  ).pipe(Effect.flatMap((dir) => body(Location.Ref.make({ directory: AbsolutePath.make(dir.path) }), dir.path)))
 
 describe("a config write re-materialises the domain it edited", () => {
   it.live("an edited AGENT is live on the same AgentV2 instance — no layer rebuild", () =>
@@ -194,9 +192,7 @@ describe("the reload guard is per-key, and a failed reload is described honestly
       // `permissions` is not an agent key, but `config/plugin/agent.ts` folds the global ruleset
       // into EVERY agent at materialisation time — so an edited global rule is frozen into agent
       // state exactly the way an edited agent is, and it has to re-materialise too.
-      yield* ConfigStoreWrite.apply(
-        decodeInfo({ permissions: [{ action: "read", resource: "*", effect: "allow" }] }),
-      )
+      yield* ConfigStoreWrite.apply(decodeInfo({ permissions: [{ action: "read", resource: "*", effect: "allow" }] }))
       expect(seen).toEqual(["agents", "agents"])
 
       yield* ConfigStoreWrite.apply(decodeInfo({ skills: ["/opt/probe-skills"] }))
@@ -214,9 +210,9 @@ describe("the reload guard is per-key, and a failed reload is described honestly
         }),
       )
 
-      const exit = yield* ConfigStoreWrite.apply(
-        decodeInfo({ agents: { [PROBE]: { description: "durable" } } }),
-      ).pipe(Effect.exit)
+      const exit = yield* ConfigStoreWrite.apply(decodeInfo({ agents: { [PROBE]: { description: "durable" } } })).pipe(
+        Effect.exit,
+      )
 
       // Ruling 2 — the mutation did not fully take effect, so it must not report success…
       expect(Exit.isFailure(exit)).toBe(true)

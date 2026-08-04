@@ -72,6 +72,7 @@ describe("Tool.Progress", () => {
             assistantMessageID,
             callID,
             tool: "bash",
+            sideEffect: "external-unknown",
             input: { command: "pwd" },
             provider: { executed: false },
           })

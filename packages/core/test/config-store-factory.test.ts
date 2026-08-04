@@ -270,9 +270,7 @@ describe("every layered store (one factory, four stores)", () => {
         expect(value["partly"], store.label).toBeUndefined()
         // Spelled out, because "undefined" alone would also pass if the store returned the good
         // layer under some other key: the entity is ABSENT, and the surviving layer is nowhere.
-        expect(JSON.stringify(value), `${store.label} leaked the readable layer of a broken row`).not.toContain(
-          "fine",
-        )
+        expect(JSON.stringify(value), `${store.label} leaked the readable layer of a broken row`).not.toContain("fine")
         expect(records, store.label).toHaveLength(1)
         expect(records[0], store.label).toEqual([
           { event: "config.store.read.degraded" },

@@ -38,11 +38,11 @@ const read = (rel: string) => readFileSync(path.join(REPO, rel), "utf8")
 let cachedMentions: string[] | undefined
 function filesMentioningChannel(): string[] {
   if (cachedMentions) return cachedMentions
-  const proc = spawnSync(
-    "git",
-    ["grep", "--untracked", "-l", "-F", "NOVACLAW_CHANNEL", "--", "*.ts", "*.tsx"],
-    { cwd: REPO, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
-  )
+  const proc = spawnSync("git", ["grep", "--untracked", "-l", "-F", "NOVACLAW_CHANNEL", "--", "*.ts", "*.tsx"], {
+    cwd: REPO,
+    encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
+  })
   // git grep exits 1 when there are no matches, which for this repo would itself be suspicious — the
   // vacuity test below is what turns that into a failure rather than a silent pass.
   if (proc.status !== 0 && proc.status !== 1)
@@ -124,7 +124,8 @@ describe("one resolver — the ratchet", () => {
   test("every consumer imports the shared resolver", () => {
     // Either straight from `script/lib/channel`, or via `./utils`, which re-exports it for the
     // desktop build scripts that already imported from there.
-    const importsResolver = (source: string) => /from "[^"]*lib\/channel"/.test(source) || /from "\.\/utils"/.test(source)
+    const importsResolver = (source: string) =>
+      /from "[^"]*lib\/channel"/.test(source) || /from "\.\/utils"/.test(source)
     expect(RESOLVER_CONSUMERS.filter((rel) => !importsResolver(read(rel)))).toEqual([])
   })
 
@@ -132,14 +133,19 @@ describe("one resolver — the ratchet", () => {
     // The shape every old copy had: a chain of equality tests against the channel literals. Matching
     // on that shape (rather than on the env var) is what makes this a ratchet — a NEW hand-rolled
     // resolver fails here even if it reads the value some other way.
-    const reimplemented = RESOLVER_CONSUMERS.filter((rel) =>
-      /===\s*"dev"\s*\|\|/.test(read(rel)) || /raw\s*===\s*"latest"/.test(read(rel)),
+    const reimplemented = RESOLVER_CONSUMERS.filter(
+      (rel) => /===\s*"dev"\s*\|\|/.test(read(rel)) || /raw\s*===\s*"latest"/.test(read(rel)),
     )
     expect(reimplemented).toEqual([])
   })
 
   test("nothing outside the allowlist reads process.env.NOVACLAW_CHANNEL", () => {
-    const allowed = new Set([...DEFINE_SIDE, ...RESOLVER_CONSUMERS, "script/lib/channel.ts", "script/lib/channel.test.ts"])
+    const allowed = new Set([
+      ...DEFINE_SIDE,
+      ...RESOLVER_CONSUMERS,
+      "script/lib/channel.ts",
+      "script/lib/channel.test.ts",
+    ])
     const offenders = filesMentioningChannel().filter(
       (rel) => !allowed.has(rel) && /(process|Bun)\.env\[?["'.]?NOVACLAW_CHANNEL/.test(read(rel)),
     )

@@ -472,6 +472,14 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/project/bootstrap.ts",
   },
+  /** One optional instance service failed to initialize; the remaining services continue. */
+  "instance.bootstrap.service.failed": {
+    level: "warn",
+    message: "init failed",
+    attributes: { "instance.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/project/bootstrap.ts",
+  },
   /** A directory had no instance yet, so one is being created. 1146 lines. */
   "instance.store.create": {
     level: "info",
@@ -547,7 +555,8 @@ export const EVENTS = {
   /** Account reconciliation is skipped because its durable account list could not be read. */
   "messenger.account.reconcile.skipped": {
     level: "warn",
-    message: "messenger: skipping reconcile — the account table could not be read; live connections are left exactly as they are",
+    message:
+      "messenger: skipping reconcile — the account table could not be read; live connections are left exactly as they are",
     attributes: {},
     content: "none",
     file: "packages/core/src/messenger/gateway.ts",
@@ -587,7 +596,8 @@ export const EVENTS = {
   /** An inbound message is refused because the durable route could not be read. */
   "messenger.inbound.route.rejected": {
     level: "warn",
-    message: "messenger: cannot route inbound — the messenger database could not be read; the message was not delivered",
+    message:
+      "messenger: cannot route inbound — the messenger database could not be read; the message was not delivered",
     attributes: { "messenger.route": "text" },
     content: "user",
     file: "packages/core/src/messenger/gateway.ts",
@@ -1113,7 +1123,7 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
-  "session.memory.stale-file.invalidated": {
+  "session.memory.invalidate.stale": {
     level: "info",
     message: "invalidated recalled file memories after a confirmed missing-path read",
     attributes: { "session.id": "id", "session.memory.invalidated": "count" },

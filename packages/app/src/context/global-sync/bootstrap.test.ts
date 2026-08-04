@@ -7,7 +7,12 @@ import { bootstrapDirectory, isCancelledError, loadPathQuery, loadProvidersQuery
 import type { State, VcsCache } from "./types"
 import { ServerScope } from "@/utils/server-scope"
 
-const provider = { all: new Map(), models: new Map(), connected: [], default: {} } satisfies NormalizedProviderListResponse
+const provider = {
+  all: new Map(),
+  models: new Map(),
+  connected: [],
+  default: {},
+} satisfies NormalizedProviderListResponse
 
 describe("isCancelledError", () => {
   // The SSE-reconnect recovery invalidates a scope with cancelRefetch — the cancellations it
@@ -55,7 +60,15 @@ describe("bootstrapDirectory", () => {
       mcp: false,
       global: {
         config: {} satisfies Config,
-        path: { state: "", config: "", data: "", roots: [], worktree: "/project", directory: "/project", home: "/home" },
+        path: {
+          state: "",
+          config: "",
+          data: "",
+          roots: [],
+          worktree: "/project",
+          directory: "/project",
+          home: "/home",
+        },
         provider,
       },
       sdk: {
@@ -80,7 +93,7 @@ describe("bootstrapDirectory", () => {
             return { data: {} }
           },
         },
-        provider: { list: async () => ({ data: { all: [], connected: [], default: {} } }) },
+        provider: { list: async () => ({ data: { providers: [], models: [], connected: [], default: {} } }) },
       } as unknown as NovaclawClient,
       store,
       setStore,
@@ -96,6 +109,81 @@ describe("bootstrapDirectory", () => {
 
     expect(store.status).toBe("complete")
     expect(mcpReads).toEqual([])
+  })
+
+  test("recognizes a deleted project before fan-out and reports it only once", async () => {
+    const missing = "/gone"
+    const notices: string[] = []
+    let pathReads = 0
+    let sessionReads = 0
+    const path = { state: "", config: "", data: "", roots: [], worktree: missing, directory: missing, home: "/home" }
+    const [store, setStore] = createStore<State>({
+      status: "loading",
+      agent: [],
+      command: [],
+      projectMeta: undefined,
+      icon: undefined,
+      provider_ready: true,
+      provider,
+      config: {},
+      path,
+      session: [],
+      sessionTotal: 0,
+      session_status: {},
+      session_working() {
+        return false
+      },
+      session_diff: {},
+      todo: {},
+      permission: {},
+      question: {},
+      mcp_ready: true,
+      mcp: {},
+      vcs: undefined,
+      limit: 5,
+    })
+    const run = () =>
+      bootstrapDirectory({
+        directory: missing,
+        scope: ServerScope.local,
+        mcp: false,
+        global: {
+          config: {} satisfies Config,
+          path: { ...path, directory: "/home", worktree: "/home" },
+          provider,
+        },
+        sdk: {
+          path: {
+            get: async () => {
+              pathReads++
+              throw new Error(`Directory does not exist: ${missing}`)
+            },
+          },
+        } as unknown as NovaclawClient,
+        store,
+        setStore,
+        vcsCache: { setStore() {} } as unknown as VcsCache,
+        loadSessions() {
+          sessionReads++
+        },
+        translate: (key) => key,
+        queryClient: new QueryClient(),
+        onDirectoryMissing: (directory) => notices.push(directory),
+      })
+
+    await run()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(store.status).toBe("missing")
+    expect(pathReads).toBe(1)
+    expect(sessionReads).toBe(0)
+    expect(notices).toEqual([missing])
+
+    await run()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(store.status).toBe("missing")
+    expect(pathReads).toBe(2)
+    expect(sessionReads).toBe(0)
+    expect(notices).toEqual([missing])
   })
 })
 
@@ -167,12 +255,12 @@ describe("bootstrapDirectory path seeding", () => {
           vcs: { get: async () => ({ data: undefined }) },
           command: { list: async () => ({ data: [] }) },
           v2: {
-          permission: { request: { list: async () => ({ data: { data: [] } }) } },
-          session: { active: async () => ({ data: { data: {} } }) },
-        },
+            permission: { request: { list: async () => ({ data: { data: [] } }) } },
+            session: { active: async () => ({ data: { data: {} } }) },
+          },
           question: { list: async () => ({ data: [] }) },
           mcp: { status: async () => ({ data: {} }) },
-          provider: { list: async () => ({ data: { all: [], connected: [], default: {} } }) },
+          provider: { list: async () => ({ data: { providers: [], models: [], connected: [], default: {} } }) },
         } as unknown as NovaclawClient,
         store,
         setStore,
@@ -254,7 +342,7 @@ describe("bootstrapDirectory path seeding", () => {
         },
         question: { list: async () => ({ data: [] }) },
         mcp: { status: async () => ({ data: {} }) },
-        provider: { list: async () => ({ data: { all: [], connected: [], default: {} } }) },
+        provider: { list: async () => ({ data: { providers: [], models: [], connected: [], default: {} } }) },
       } as unknown as NovaclawClient,
       store,
       setStore,

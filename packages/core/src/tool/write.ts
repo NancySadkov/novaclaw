@@ -54,6 +54,7 @@ export const layer = Layer.effectDiscard(
     yield* tools
       .register({
         [name]: Tool.make({
+          sideEffect: "idempotent-write",
           description:
             "Write content to one file. Prefer `edit` for any change short of a full rewrite — every rewrite is a fresh chance to introduce a typo, and wholesale overwrites can be denied by permission mode. Known failure mode: content beyond a few hundred lines can be truncated by the model server mid-stream, breaking the call — build any large NEW file in chunks from the FIRST call (write the head, then append parts with bash `cat >> path <<'EOF'`), and never retry a truncated whole-file write through any tool. Relative paths resolve within the active Location. Absolute paths inside the Location are accepted. Explicit external absolute paths require external_directory approval before edit approval.",
           input: Input,

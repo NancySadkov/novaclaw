@@ -78,7 +78,11 @@ describe("Glob", () => {
       await using tmp = await tmpdir()
       await fs.mkdir(path.join(tmp.path, "realdir"))
       await fs.writeFile(path.join(tmp.path, "realdir", "file.txt"), "", "utf-8")
-      await fs.symlink(path.join(tmp.path, "realdir"), path.join(tmp.path, "linkdir"))
+      await fs.symlink(
+        path.join(tmp.path, "realdir"),
+        path.join(tmp.path, "linkdir"),
+        process.platform === "win32" ? "junction" : "dir",
+      )
 
       const results = await Glob.scan("**/*.txt", { cwd: tmp.path })
 
@@ -89,7 +93,11 @@ describe("Glob", () => {
       await using tmp = await tmpdir()
       await fs.mkdir(path.join(tmp.path, "realdir"))
       await fs.writeFile(path.join(tmp.path, "realdir", "file.txt"), "", "utf-8")
-      await fs.symlink(path.join(tmp.path, "realdir"), path.join(tmp.path, "linkdir"))
+      await fs.symlink(
+        path.join(tmp.path, "realdir"),
+        path.join(tmp.path, "linkdir"),
+        process.platform === "win32" ? "junction" : "dir",
+      )
 
       const results = await Glob.scan("**/*.txt", { cwd: tmp.path, symlink: true })
 

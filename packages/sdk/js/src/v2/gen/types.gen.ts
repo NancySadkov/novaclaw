@@ -710,6 +710,7 @@ export type GlobalEvent = {
           assistantMessageID: string
           callID: string
           tool: string
+          sideEffect?: "read" | "idempotent-write" | "non-idempotent" | "external-unknown"
           input: {
             [key: string]: unknown
           }
@@ -1494,17 +1495,6 @@ export type McpServerNotFoundError = {
   message: string
 }
 
-export type PtyNotFoundError = {
-  _tag: "PtyNotFoundError"
-  ptyID: string
-  message: string
-}
-
-export type PtyForbiddenError = {
-  _tag: "PtyForbiddenError"
-  message: string
-}
-
 export type QuestionRequest = {
   id: string
   sessionID: string
@@ -1860,13 +1850,15 @@ export type V2Event =
 
 export type V2EventStream = string
 
-export type ForbiddenError = {
-  _tag: "ForbiddenError"
+export type PtyNotFoundError = {
+  _tag: "PtyNotFoundError"
+  ptyID: string
   message: string
 }
 
-export type EffectHttpApiErrorForbidden = {
-  _tag: "Forbidden"
+export type ForbiddenError = {
+  _tag: "ForbiddenError"
+  message: string
 }
 
 export type CredentialValue = CredentialOAuth | CredentialKey
@@ -3044,6 +3036,7 @@ export type SyncEventSessionNextToolCalled = {
       assistantMessageID: string
       callID: string
       tool: string
+      sideEffect?: "read" | "idempotent-write" | "non-idempotent" | "external-unknown"
       input: {
         [key: string]: unknown
       }
@@ -3879,11 +3872,6 @@ export type ModelV2Info = {
   }
 }
 
-export type PtyTicketConnectToken = {
-  ticket: string
-  expires_in: number
-}
-
 export type DbRegistryTableSummary = {
   name: string
   rowCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
@@ -3928,6 +3916,26 @@ export type AgentV2Info = {
   color?: AgentColor
   steps?: number
   permissions: PermissionV2Ruleset
+}
+
+export type SessionExecution = {
+  sessionID: string
+  attemptID: string
+  generation: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  ownerID: string
+  state: "starting" | "busy" | "recovering" | "paused" | "failed" | "interrupted" | "settled"
+  phase: "drain" | "provider" | "tool" | "maintenance"
+  heartbeatAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  checkpointAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  failureClass?: string
+  failureDetail?: string
+  failureCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  toolCallID?: string
+  toolName?: string
+  toolSideEffect?: "read" | "idempotent-write" | "non-idempotent" | "external-unknown"
+  toolState?: "dispatched" | "settled"
+  startedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  updatedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
 export type PromptInputFileAttachment = {
@@ -4577,6 +4585,7 @@ export type SessionNextToolCalled = {
     assistantMessageID: string
     callID: string
     tool: string
+    sideEffect?: "read" | "idempotent-write" | "non-idempotent" | "external-unknown"
     input: {
       [key: string]: unknown
     }
@@ -6111,6 +6120,11 @@ export type GlobalDisposed = {
   }
 }
 
+export type PtyTicketConnectToken = {
+  ticket: string
+  expires_in: number
+}
+
 export type QuestionV2Request = {
   id: string
   sessionID: string
@@ -6645,6 +6659,7 @@ export type EventSessionNextToolCalled = {
     assistantMessageID: string
     callID: string
     tool: string
+    sideEffect?: "read" | "idempotent-write" | "non-idempotent" | "external-unknown"
     input: {
       [key: string]: unknown
     }
@@ -8221,6 +8236,7 @@ export type FileStatusResponse = FileStatusResponses[keyof FileStatusResponses]
 export type FileMkdirData = {
   body?: {
     path: string
+    exclusive?: boolean
   }
   path?: never
   query?: {
@@ -8232,9 +8248,9 @@ export type FileMkdirData = {
 
 export type FileMkdirErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestError
 }
 
 export type FileMkdirError = FileMkdirErrors[keyof FileMkdirErrors]
@@ -8249,6 +8265,39 @@ export type FileMkdirResponses = {
 }
 
 export type FileMkdirResponse = FileMkdirResponses[keyof FileMkdirResponses]
+
+export type FileRenameData = {
+  body?: {
+    path: string
+    name: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/file/rename"
+}
+
+export type FileRenameErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type FileRenameError = FileRenameErrors[keyof FileRenameErrors]
+
+export type FileRenameResponses = {
+  /**
+   * Renamed entry
+   */
+  200: {
+    path: string
+  }
+}
+
+export type FileRenameResponse = FileRenameResponses[keyof FileRenameResponses]
 
 export type FileTrashListData = {
   body?: never
@@ -8292,9 +8341,9 @@ export type FileTrashData = {
 
 export type FileTrashErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestError
 }
 
 export type FileTrashError = FileTrashErrors[keyof FileTrashErrors]
@@ -8322,9 +8371,9 @@ export type FileTrashRestoreData = {
 
 export type FileTrashRestoreErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestError
 }
 
 export type FileTrashRestoreError = FileTrashRestoreErrors[keyof FileTrashRestoreErrors]
@@ -9431,248 +9480,6 @@ export type MemoryClearScopeResponses = {
 
 export type MemoryClearScopeResponse = MemoryClearScopeResponses[keyof MemoryClearScopeResponses]
 
-export type PtyShellsData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/pty/shells"
-}
-
-export type PtyShellsErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type PtyShellsError = PtyShellsErrors[keyof PtyShellsErrors]
-
-export type PtyShellsResponses = {
-  /**
-   * List of shells
-   */
-  200: Array<{
-    path: string
-    name: string
-    acceptable: boolean
-  }>
-}
-
-export type PtyShellsResponse = PtyShellsResponses[keyof PtyShellsResponses]
-
-export type PtyListData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/pty"
-}
-
-export type PtyListErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type PtyListError = PtyListErrors[keyof PtyListErrors]
-
-export type PtyListResponses = {
-  /**
-   * List of sessions
-   */
-  200: Array<Pty>
-}
-
-export type PtyListResponse = PtyListResponses[keyof PtyListResponses]
-
-export type PtyCreateData = {
-  body?: {
-    command?: string
-    args?: Array<string>
-    cwd?: string
-    title?: string
-    env?: {
-      [key: string]: string
-    }
-  }
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/pty"
-}
-
-export type PtyCreateErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-}
-
-export type PtyCreateError = PtyCreateErrors[keyof PtyCreateErrors]
-
-export type PtyCreateResponses = {
-  /**
-   * Created session
-   */
-  200: Pty
-}
-
-export type PtyCreateResponse = PtyCreateResponses[keyof PtyCreateResponses]
-
-export type PtyRemoveData = {
-  body?: never
-  path: {
-    ptyID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/pty/{ptyID}"
-}
-
-export type PtyRemoveErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-  /**
-   * PtyNotFoundError
-   */
-  404: PtyNotFoundError
-}
-
-export type PtyRemoveError = PtyRemoveErrors[keyof PtyRemoveErrors]
-
-export type PtyRemoveResponses = {
-  /**
-   * Session removed
-   */
-  200: boolean
-}
-
-export type PtyRemoveResponse = PtyRemoveResponses[keyof PtyRemoveResponses]
-
-export type PtyGetData = {
-  body?: never
-  path: {
-    ptyID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/pty/{ptyID}"
-}
-
-export type PtyGetErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-  /**
-   * PtyNotFoundError
-   */
-  404: PtyNotFoundError
-}
-
-export type PtyGetError = PtyGetErrors[keyof PtyGetErrors]
-
-export type PtyGetResponses = {
-  /**
-   * Session info
-   */
-  200: Pty
-}
-
-export type PtyGetResponse = PtyGetResponses[keyof PtyGetResponses]
-
-export type PtyUpdateData = {
-  body?: {
-    title?: string
-    size?: {
-      rows: number
-      cols: number
-    }
-  }
-  path: {
-    ptyID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/pty/{ptyID}"
-}
-
-export type PtyUpdateErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * PtyNotFoundError
-   */
-  404: PtyNotFoundError
-}
-
-export type PtyUpdateError = PtyUpdateErrors[keyof PtyUpdateErrors]
-
-export type PtyUpdateResponses = {
-  /**
-   * Updated session
-   */
-  200: Pty
-}
-
-export type PtyUpdateResponse = PtyUpdateResponses[keyof PtyUpdateResponses]
-
-export type PtyConnectTokenData = {
-  body?: never
-  path: {
-    ptyID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/pty/{ptyID}/connect-token"
-}
-
-export type PtyConnectTokenErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-  /**
-   * PtyForbiddenError
-   */
-  403: PtyForbiddenError
-  /**
-   * PtyNotFoundError
-   */
-  404: PtyNotFoundError
-}
-
-export type PtyConnectTokenError = PtyConnectTokenErrors[keyof PtyConnectTokenErrors]
-
-export type PtyConnectTokenResponses = {
-  /**
-   * WebSocket connect token
-   */
-  200: PtyTicketConnectToken
-}
-
-export type PtyConnectTokenResponse = PtyConnectTokenResponses[keyof PtyConnectTokenResponses]
-
 export type QuestionListData = {
   body?: never
   path?: never
@@ -9992,6 +9799,10 @@ export type ProviderProbeResponses = {
   200: {
     status: "ok" | "unreachable" | "auth" | "model-missing" | "no-url" | "error"
     latencyMs?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    discoveryLatencyMs?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    completionLatencyMs?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    completionAttempts?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    completed?: boolean
     window?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     limits?: {
       [key: string]: {
@@ -10885,6 +10696,37 @@ export type V2SessionActiveResponses = {
 }
 
 export type V2SessionActiveResponse = V2SessionActiveResponses[keyof V2SessionActiveResponses]
+
+export type V2SessionExecutionListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/session/execution"
+}
+
+export type V2SessionExecutionListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2SessionExecutionListError = V2SessionExecutionListErrors[keyof V2SessionExecutionListErrors]
+
+export type V2SessionExecutionListResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: Array<SessionExecution>
+  }
+}
+
+export type V2SessionExecutionListResponse = V2SessionExecutionListResponses[keyof V2SessionExecutionListResponses]
 
 export type V2SessionRemoveData = {
   body?: never
@@ -11936,6 +11778,41 @@ export type V2SessionInterruptResponses = {
 }
 
 export type V2SessionInterruptResponse = V2SessionInterruptResponses[keyof V2SessionInterruptResponses]
+
+export type V2SessionExecutionRetryData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/execution/retry"
+}
+
+export type V2SessionExecutionRetryErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionExecutionRetryError = V2SessionExecutionRetryErrors[keyof V2SessionExecutionRetryErrors]
+
+export type V2SessionExecutionRetryResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2SessionExecutionRetryResponse = V2SessionExecutionRetryResponses[keyof V2SessionExecutionRetryResponses]
 
 export type V2SessionMessageData = {
   body?: never
@@ -14219,6 +14096,76 @@ export type V2EventSubscribeResponses = {
 
 export type V2EventSubscribeResponse = V2EventSubscribeResponses[keyof V2EventSubscribeResponses]
 
+export type V2PtyShellsData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/pty/shells"
+}
+
+export type V2PtyShellsErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2PtyShellsError = V2PtyShellsErrors[keyof V2PtyShellsErrors]
+
+export type V2PtyShellsResponses = {
+  /**
+   * Success
+   */
+  200: Array<{
+    path: string
+    name: string
+    acceptable: boolean
+  }>
+}
+
+export type V2PtyShellsResponse = V2PtyShellsResponses[keyof V2PtyShellsResponses]
+
+export type V2PtyRemoveAllData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/pty"
+}
+
+export type V2PtyRemoveAllErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2PtyRemoveAllError = V2PtyRemoveAllErrors[keyof V2PtyRemoveAllErrors]
+
+export type V2PtyRemoveAllResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: number
+  }
+}
+
+export type V2PtyRemoveAllResponse = V2PtyRemoveAllResponses[keyof V2PtyRemoveAllResponses]
+
 export type V2PtyListData = {
   body?: never
   path?: never
@@ -14742,39 +14689,3 @@ export type V2ReferenceRemoveResponses = {
 }
 
 export type V2ReferenceRemoveResponse = V2ReferenceRemoveResponses[keyof V2ReferenceRemoveResponses]
-
-export type PtyConnectData = {
-  body?: never
-  path: {
-    ptyID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-    cursor?: string
-    ticket?: string
-  }
-  url: "/pty/{ptyID}/connect"
-}
-
-export type PtyConnectErrors = {
-  /**
-   * Forbidden
-   */
-  403: EffectHttpApiErrorForbidden
-  /**
-   * Not found
-   */
-  404: NotFoundError
-}
-
-export type PtyConnectError = PtyConnectErrors[keyof PtyConnectErrors]
-
-export type PtyConnectResponses = {
-  /**
-   * Connected session
-   */
-  200: boolean
-}
-
-export type PtyConnectResponse = PtyConnectResponses[keyof PtyConnectResponses]

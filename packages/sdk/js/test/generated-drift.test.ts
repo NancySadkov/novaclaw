@@ -25,10 +25,9 @@ import path from "path"
 // generator: every route the spec declares must be reachable from the typed client, and the typed
 // client must expose no route the spec does not declare.
 //
-// ⚠️ Whoever fixes a failure here: the regen ritual is `bun run --cwd packages/sdk/js regen`. Do NOT
-// run `bun run script/generate.ts` from the repo root — it ends in `script/format.ts`, whose whole
-// body is `prettier --ignore-unknown --write .` over ~390 files, and `.prettierignore` excludes only
-// three paths.
+// Whoever fixes a failure here: `bun run --cwd packages/sdk/js regen` and
+// `bun script/generate.ts` now reach the same root-aware pipeline. It refreshes the committed spec
+// BEFORE generating the client, then formats only the generated contract artifacts.
 
 const root = path.resolve(import.meta.dir, "../../../..")
 const specPath = path.join(root, "packages/sdk/openapi.json")
@@ -192,7 +191,6 @@ describe("the SDK's generated artifacts", () => {
           summary,
           "",
           `Fix:  ${REGEN}`,
-          "⚠️  NOT `bun run script/generate.ts` — that ends in a whole-repo prettier sweep (~390 files).",
         ].join("\n"),
       )
     },

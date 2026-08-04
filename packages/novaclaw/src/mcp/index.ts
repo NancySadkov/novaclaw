@@ -466,9 +466,7 @@ export const layer = Layer.effect(
                   status: "needs_client_registration" as const,
                   error: "Server does not support dynamic client registration. Please provide clientId in config.",
                 }
-                return Log.event("mcp.auth.registration.required", { server: key }).pipe(
-                  Effect.as(undefined),
-                )
+                return Log.event("mcp.auth.registration.required", { server: key }).pipe(Effect.as(undefined))
               } else {
                 pendingOAuthTransports.set(key, { transport })
                 lastStatus = { status: "needs_auth" as const }
@@ -494,11 +492,7 @@ export const layer = Layer.effect(
       }
     })
 
-    const connectLocal = Effect.fn("MCP.connectLocal")(function* (
-      key: string,
-      mcp: McpLocal,
-      connectTimeout: number,
-    ) {
+    const connectLocal = Effect.fn("MCP.connectLocal")(function* (key: string, mcp: McpLocal, connectTimeout: number) {
       const [cmd, ...args] = mcp.command
       const baseDir = yield* InstanceState.directory
       const cwd = mcp.cwd ? path.resolve(baseDir, mcp.cwd) : baseDir
@@ -1010,7 +1004,8 @@ export const layer = Layer.effect(
             McpCatalog.fetch(
               clientName,
               client,
-              (c) => listFn(c, requestTimeout(s, clientName, cfg.mcp?.servers?.[clientName], cfg.mcp?.timeout?.request)),
+              (c) =>
+                listFn(c, requestTimeout(s, clientName, cfg.mcp?.servers?.[clientName], cfg.mcp?.timeout?.request)),
               label,
               key,
             ).pipe(Effect.map((items) => Object.entries(items ?? {}))),

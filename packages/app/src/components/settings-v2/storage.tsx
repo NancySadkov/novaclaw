@@ -86,11 +86,10 @@ export const SettingsStorageV2: Component = () => {
   // shown and doing nothing.
   const canOpen = () => typeof platform.openPath === "function"
   const open = (value: string) => {
-    void platform.openPath?.(value)?.catch?.(() =>
-      showToast({ title: language.t("settings.storage.openFailed"), description: value }),
-    )
+    void platform
+      .openPath?.(value)
+      ?.catch?.(() => showToast({ title: language.t("settings.storage.openFailed"), description: value }))
   }
-
 
   return (
     <>
@@ -115,7 +114,13 @@ export const SettingsStorageV2: Component = () => {
               title={language.t("settings.storage.instanceHome")}
               description={language.t("settings.storage.instanceHome.description")}
             >
-              <PathValue value={home()} onCopy={copy} onOpen={canOpen() ? open : undefined} copyLabel={language.t("settings.storage.copy")} openLabel={language.t("settings.storage.open")} />
+              <PathValue
+                value={home()}
+                onCopy={copy}
+                onOpen={canOpen() ? open : undefined}
+                copyLabel={language.t("settings.storage.copy")}
+                openLabel={language.t("settings.storage.open")}
+              />
             </SettingsRowV2>
           </SettingsListV2>
         )}
@@ -166,12 +171,24 @@ const PathValue: Component<{
     >
       {props.value}
     </code>
-    <ButtonV2 variant="ghost" size="small" onClick={() => props.onCopy(props.value)} aria-label={props.copyLabel} title={props.copyLabel}>
+    <ButtonV2
+      variant="ghost"
+      size="small"
+      onClick={() => props.onCopy(props.value)}
+      aria-label={props.copyLabel}
+      title={props.copyLabel}
+    >
       <Icon name="copy" size="small" />
     </ButtonV2>
     <Show when={props.onOpen}>
       {(onOpen) => (
-        <ButtonV2 variant="ghost" size="small" onClick={() => onOpen()(props.value)} aria-label={props.openLabel} title={props.openLabel}>
+        <ButtonV2
+          variant="ghost"
+          size="small"
+          onClick={() => onOpen()(props.value)}
+          aria-label={props.openLabel}
+          title={props.openLabel}
+        >
           <Icon name="folder" size="small" />
         </ButtonV2>
       )}

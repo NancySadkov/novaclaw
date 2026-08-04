@@ -142,9 +142,11 @@ describe("lowering — a vision model gets the bytes, a text-only model gets an 
   test("unknown capabilities lower exactly as before the gate existed", () => {
     // Both the omitted-argument call (every pre-existing caller) and an explicitly empty catalog
     // entry must keep sending bytes.
-    expect(toLLMMessages([user("legacy", [png])], model).flatMap((m) =>
-      typeof m.content === "string" ? [] : m.content.map((p) => p.type),
-    )).toEqual(["text", "media"])
+    expect(
+      toLLMMessages([user("legacy", [png])], model).flatMap((m) =>
+        typeof m.content === "string" ? [] : m.content.map((p) => p.type),
+      ),
+    ).toEqual(["text", "media"])
     expect(partTypes(undefined, [user("undef", [png])])).toEqual(["text", "media"])
     expect(partTypes(NO_EVIDENCE, [user("empty", [png])])).toEqual(["text", "media"])
   })
@@ -297,7 +299,10 @@ describe("runner/llm.ts is wired to the gate", () => {
   })
 
   test("the turn's own input is gated before the request is built", () => {
-    wired("unreadableTurnAttachments(context", "the runner never calls unreadableTurnAttachments — the gate is dead code")
+    wired(
+      "unreadableTurnAttachments(context",
+      "the runner never calls unreadableTurnAttachments — the gate is dead code",
+    )
     wired("ModelInputUnsupportedError({", "a blocked turn must raise ModelInputUnsupportedError, not fall through")
     wired("surfacePreTurnFailure(refusal)", "the refusal must be surfaced in the CHAT, not only the server log")
   })

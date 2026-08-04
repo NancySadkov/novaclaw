@@ -89,6 +89,7 @@ export const layer = Layer.effectDiscard(
         // `test/tool-permission-identity.test.ts` ledgers this site and fails if a no-op reappears.
         [name]: Tool.withPermission(
           Tool.make({
+            sideEffect: "idempotent-write",
             description: `Apply one patch containing add, update, and delete file operations. ${PATCH_FORMAT_HELP} All targets are resolved and approved before target contents are read. Operations apply sequentially; if a later operation fails, earlier operations remain applied and the failure reports them explicitly. Moves and atomic rollback are not supported yet.`,
             input: Input,
             output: Output,

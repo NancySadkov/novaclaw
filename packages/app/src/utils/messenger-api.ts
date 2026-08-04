@@ -106,7 +106,7 @@ export class MessengerApiError extends InstanceFetchError {
 
 const fault = (input: InstanceFault) => new MessengerApiError(input)
 
-const call = <T,>(
+const call = <T>(
   server: ServerConnection.HttpBase,
   method: "GET" | "POST" | "PATCH" | "DELETE",
   route: string,
@@ -119,7 +119,7 @@ const call = <T,>(
  * It coerces rather than throws, and names the fault on the console rather than silently showing
  * nothing; the reasoning is written out where it now lives.
  */
-const callList = <T,>(server: ServerConnection.HttpBase, route: string, what: string): Promise<T[]> =>
+const callList = <T>(server: ServerConnection.HttpBase, route: string, what: string): Promise<T[]> =>
   instanceFetchList<T>(server, { route, fault }, what)
 
 export function messengerDrivers(server: ServerConnection.HttpBase) {

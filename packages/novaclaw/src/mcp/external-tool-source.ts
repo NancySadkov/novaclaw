@@ -55,8 +55,7 @@ export const make = Effect.gen(function* () {
           (error) =>
             new Tool.Failure({
               message:
-                PermissionV2.denialMessage(error) ??
-                `Permission check failed for MCP tool '${name}': ${String(error)}`,
+                PermissionV2.denialMessage(error) ?? `Permission check failed for MCP tool '${name}': ${String(error)}`,
             }),
         ),
       )
@@ -73,17 +72,15 @@ export const make = Effect.gen(function* () {
   return ExternalToolSource.Service.of({
     entries: () =>
       Effect.gen(function* () {
-        const tools = yield* mcp
-          .tools()
-          .pipe(
-            Effect.provideService(InstanceRef, instance),
-            Effect.catchCause((cause) =>
-              Log.event("mcp.tool.source.unavailable", {
-                directory: location.directory,
-                "mcp.cause": Cause.pretty(cause),
-              }).pipe(Effect.map(() => ({}) as Record<string, unknown>)),
-            ),
-          )
+        const tools = yield* mcp.tools().pipe(
+          Effect.provideService(InstanceRef, instance),
+          Effect.catchCause((cause) =>
+            Log.event("mcp.tool.source.unavailable", {
+              directory: location.directory,
+              "mcp.cause": Cause.pretty(cause),
+            }).pipe(Effect.map(() => ({}) as Record<string, unknown>)),
+          ),
+        )
         const key = Object.keys(tools).sort().join(" ")
         const current = yield* Ref.get(cache)
         if (key === current.key) return current.entries

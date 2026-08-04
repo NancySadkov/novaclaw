@@ -14,7 +14,7 @@ import type { Revert } from "@novaclaw/schema/revert"
 import type { SessionProviderRecovery } from "@novaclaw/schema/session-provider-recovery"
 
 type SessionMessageData = Omit<(typeof SessionMessage.Message)["Encoded"], "type" | "id">
-type StoredProviderRecovery = Omit<SessionProviderRecovery.Info, "startedAt"> & { readonly startedAt: number }
+export type StoredProviderRecovery = Omit<SessionProviderRecovery.Info, "startedAt"> & { readonly startedAt: number }
 
 export const SessionTable = sqliteTable(
   "session",
@@ -78,6 +78,43 @@ export const SessionTable = sqliteTable(
     time_archived: integer(),
   },
   (table) => [index("session_workspace_idx").on(table.workspace_id), index("session_parent_idx").on(table.parent_id)],
+)
+
+// The durable ownership/fencing row for the session's CURRENT execution attempt. A new owner
+// replaces this row transactionally and increments `generation`; every heartbeat/settlement is
+// conditional on (attempt_id, generation), so a late worker cannot publish itself healthy or idle
+// after the host has fenced it. Attempt history belongs in structured logs; this table is the small,
+// authoritative recovery fact queried at boot and by Processes.
+export const SessionExecutionTable = sqliteTable(
+  "session_execution",
+  {
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .primaryKey()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    attempt_id: text().notNull().unique(),
+    generation: integer().notNull(),
+    owner_id: text().notNull(),
+    state: text()
+      .$type<"starting" | "busy" | "recovering" | "paused" | "failed" | "interrupted" | "settled">()
+      .notNull(),
+    phase: text().$type<"drain" | "provider" | "tool" | "maintenance">().notNull(),
+    failure_class: text(),
+    failure_detail: text(),
+    failure_count: integer().notNull().default(0),
+    heartbeat_at: integer().notNull(),
+    checkpoint_at: integer(),
+    tool_call_id: text(),
+    tool_name: text(),
+    tool_side_effect: text().$type<"read" | "idempotent-write" | "non-idempotent" | "external-unknown">(),
+    tool_state: text().$type<"dispatched" | "settled">(),
+    // Transitional compatibility: the authoritative, FENCED copy lives with the execution lease.
+    // SessionTable.provider_recovery remains only until old databases/UI readers have migrated.
+    provider_recovery: text({ mode: "json" }).$type<StoredProviderRecovery>(),
+    started_at: integer().notNull(),
+    time_updated: integer().notNull(),
+  },
+  (table) => [index("session_execution_state_heartbeat_idx").on(table.state, table.heartbeat_at)],
 )
 
 export const TodoTable = sqliteTable(

@@ -27,22 +27,28 @@ type ModelItem = ReturnType<ReturnType<typeof useModels>["list"]>[number]
 // B15 — one-line human rendering of a probe outcome (the config-drift killer: "cannot
 // connect" mysteries become "unreachable" / "auth failed" / "not on server" at a glance).
 export function probeLabel(result: ProbeResult, t: Translator): string {
+  const detail = result.detail ? ` · ${result.detail}` : ""
   switch (result.status) {
     case "ok": {
       const latency = result.latencyMs === undefined ? "" : ` · ${result.latencyMs} ms`
-      const window = result.window === undefined ? "" : ` · ${t("settings.models.probe.window")} ${Math.round(result.window / 1024)}k`
-      return `${t("settings.models.probe.ok")}${latency}${window}`
+      const window =
+        result.window === undefined
+          ? ""
+          : ` · ${t("settings.models.probe.window")} ${Math.round(result.window / 1024)}k`
+      const attempts =
+        result.completionAttempts && result.completionAttempts > 1 ? ` · ${result.completionAttempts} attempts` : ""
+      return `${t("settings.models.probe.ok")}${latency}${window}${attempts}${detail}`
     }
     case "unreachable":
-      return t("settings.models.probe.unreachable")
+      return `${t("settings.models.probe.unreachable")}${detail}`
     case "auth":
-      return t("settings.models.probe.auth")
+      return `${t("settings.models.probe.auth")}${detail}`
     case "model-missing":
-      return t("settings.models.probe.missing")
+      return `${t("settings.models.probe.missing")}${detail}`
     case "no-url":
-      return t("settings.models.probe.noUrl")
+      return `${t("settings.models.probe.noUrl")}${detail}`
     case "error":
-      return `${t("settings.models.probe.error")}${result.detail ? ` (${result.detail})` : ""}`
+      return `${t("settings.models.probe.error")}${detail}`
   }
 }
 
@@ -208,106 +214,108 @@ export const SettingsModelsV2: Component = () => {
           >
             <SettingsListV2>
               <For each={list.flat()}>
-                      {(item) => {
-                        const key = { providerID: item.provider.id, modelID: item.id }
-                        const probeState = () => probes()[`${key.providerID}:${key.modelID}`]
-                        const probeResult = () => {
-                          const state = probeState()
-                          return state && state !== "probing" ? state : undefined
-                        }
-                        return (
-                          <SettingsRowV2 title={item.name} description={item.provider.name}>
-                            <div class="settings-v2-models-row-actions">
-                              <ButtonV2
-                                size="small"
-                                variant="neutral"
-                                aria-label={language.t("settings.models.tier.pick")}
-                                onClick={() =>
-                                  dialog.push(() => (
-                                    <DialogModelTier
-                                      modelName={item.name}
-                                      current={models.tier.get(key)}
-                                      onSelect={(tier) => models.tier.set(key, tier)}
-                                    />
-                                  ))
-                                }
-                              >
-                                {language.t(`settings.models.tier.${models.tier.get(key)}.name`)}
-                              </ButtonV2>
-                              <ButtonV2
-                                size="small"
-                                variant="ghost-muted"
-                                aria-label={language.t("settings.models.config.open")}
-                                onClick={() =>
-                                  dialog.push(() => (
-                                    <DialogModelConfig
-                                      providerID={key.providerID}
-                                      modelID={key.modelID}
-                                      modelName={item.name}
-                                      defaults={{
-                                        reasoning: item.variants.length > 0,
-                                        tool_call: item.capabilities.tools,
-                                        limit: item.limit,
-                                        modalities: {
-                                          input: [...item.capabilities.input],
-                                          output: [...item.capabilities.output],
-                                        },
-                                      }}
-                                    />
-                                  ))
-                                }
-                              >
-                                {language.t("settings.models.config.open")}
-                              </ButtonV2>
-                              <ButtonV2
-                                size="small"
-                                variant="ghost-muted"
-                                aria-label={language.t("settings.models.clone.action")}
-                                onClick={() => void cloneModel(key, item.name)}
-                              >
-                                {language.t("settings.models.clone.action")}
-                              </ButtonV2>
-                              <Show when={probeResult()}>
-                                {(result) => (
-                                  <span
-                                    class="settings-v2-models-probe-result"
-                                    data-status={result().status}
-                                    title={result().detail ?? ""}
-                                  >
-                                    {probeLabel(result(), language.t)}
-                                  </span>
-                                )}
-                              </Show>
-                              <ButtonV2
-                                size="small"
-                                variant="neutral"
-                                disabled={probeState() === "probing"}
-                                onClick={() => void probe(key)}
-                              >
-                                {probeState() === "probing"
-                                  ? language.t("settings.models.probe.probing")
-                                  : language.t("settings.models.probe.test")}
-                              </ButtonV2>
-                              <Switch
-                                checked={models.visible(key)}
-                                onChange={(checked) => {
-                                  models.setVisibility(key, checked)
-                                }}
-                                hideLabel
-                              >
-                                {item.name}
-                              </Switch>
-                              <IconButtonV2
-                                size="small"
-                                variant="ghost-muted"
-                                aria-label={language.t("settings.models.remove.confirm.action")}
-                                icon={<Icon name="trash" size="small" />}
-                                onClick={() => void removeModel(key, item.name)}
+                {(item) => {
+                  const key = { providerID: item.provider.id, modelID: item.id }
+                  const probeState = () => probes()[`${key.providerID}:${key.modelID}`]
+                  const probeResult = () => {
+                    const state = probeState()
+                    return state && state !== "probing" ? state : undefined
+                  }
+                  return (
+                    <SettingsRowV2 title={item.name} description={item.provider.name}>
+                      <div class="settings-v2-models-row-actions">
+                        <ButtonV2
+                          size="small"
+                          variant="neutral"
+                          aria-label={language.t("settings.models.tier.pick")}
+                          onClick={() =>
+                            dialog.push(() => (
+                              <DialogModelTier
+                                modelName={item.name}
+                                current={models.tier.get(key)}
+                                onSelect={(tier) => models.tier.set(key, tier)}
                               />
-                            </div>
-                          </SettingsRowV2>
-                        )
-                      }}
+                            ))
+                          }
+                        >
+                          {language.t(`settings.models.tier.${models.tier.get(key)}.name`)}
+                        </ButtonV2>
+                        <ButtonV2
+                          size="small"
+                          variant="ghost-muted"
+                          aria-label={language.t("settings.models.config.open")}
+                          onClick={() =>
+                            dialog.push(() => (
+                              <DialogModelConfig
+                                providerID={key.providerID}
+                                modelID={key.modelID}
+                                modelName={item.name}
+                                apiModelID={item.api.id}
+                                providerApi={item.provider.api}
+                                defaults={{
+                                  reasoning: item.variants.length > 0,
+                                  tool_call: item.capabilities.tools,
+                                  limit: item.limit,
+                                  modalities: {
+                                    input: [...item.capabilities.input],
+                                    output: [...item.capabilities.output],
+                                  },
+                                }}
+                              />
+                            ))
+                          }
+                        >
+                          {language.t("settings.models.config.open")}
+                        </ButtonV2>
+                        <ButtonV2
+                          size="small"
+                          variant="ghost-muted"
+                          aria-label={language.t("settings.models.clone.action")}
+                          onClick={() => void cloneModel(key, item.name)}
+                        >
+                          {language.t("settings.models.clone.action")}
+                        </ButtonV2>
+                        <Show when={probeResult()}>
+                          {(result) => (
+                            <span
+                              class="settings-v2-models-probe-result"
+                              data-status={result().status}
+                              title={result().detail ?? ""}
+                            >
+                              {probeLabel(result(), language.t)}
+                            </span>
+                          )}
+                        </Show>
+                        <ButtonV2
+                          size="small"
+                          variant="neutral"
+                          disabled={probeState() === "probing"}
+                          onClick={() => void probe(key)}
+                        >
+                          {probeState() === "probing"
+                            ? language.t("settings.models.probe.probing")
+                            : language.t("settings.models.probe.test")}
+                        </ButtonV2>
+                        <Switch
+                          checked={models.visible(key)}
+                          onChange={(checked) => {
+                            models.setVisibility(key, checked)
+                          }}
+                          hideLabel
+                        >
+                          {item.name}
+                        </Switch>
+                        <IconButtonV2
+                          size="small"
+                          variant="ghost-muted"
+                          aria-label={language.t("settings.models.remove.confirm.action")}
+                          icon={<Icon name="trash" size="small" />}
+                          onClick={() => void removeModel(key, item.name)}
+                        />
+                      </div>
+                    </SettingsRowV2>
+                  )
+                }}
               </For>
             </SettingsListV2>
           </Show>

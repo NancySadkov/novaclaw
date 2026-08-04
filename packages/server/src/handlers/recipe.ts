@@ -43,7 +43,8 @@ export const RecipeHandler = HttpApiBuilder.group(Api, "server.recipe", (handler
         "recipe.get",
         Effect.fn(function* (ctx) {
           const recipe = yield* Effect.promise(() => Recipe.read(ctx.params.slug, builtins))
-          if (recipe === undefined) return yield* new InvalidRequestError({ message: `No recipe named "${ctx.params.slug}"` })
+          if (recipe === undefined)
+            return yield* new InvalidRequestError({ message: `No recipe named "${ctx.params.slug}"` })
           return recipe
         }),
       )
@@ -81,7 +82,8 @@ export const RecipeHandler = HttpApiBuilder.group(Api, "server.recipe", (handler
         "recipe.run",
         Effect.fn(function* (ctx) {
           const recipe = yield* Effect.promise(() => Recipe.read(ctx.params.slug, builtins))
-          if (recipe === undefined) return yield* new InvalidRequestError({ message: `No recipe named "${ctx.params.slug}"` })
+          if (recipe === undefined)
+            return yield* new InvalidRequestError({ message: `No recipe named "${ctx.params.slug}"` })
 
           // ── THE DOOR: ruling 14's one machine-read field, checked before anything happens ──────────
           //
@@ -159,19 +161,17 @@ export const RecipeHandler = HttpApiBuilder.group(Api, "server.recipe", (handler
           })
           // The session already exists by now, so a prompt failure must not read as "nothing happened":
           // report it with the session id so the user can open that chat and send the recipe themselves.
-          yield* sessions
-            .prompt({ sessionID: session.id, prompt: { text: recipe.prompt }, delivery: "queue" })
-            .pipe(
-              Effect.catch((error) =>
-                Effect.fail(
-                  new InvalidRequestError({
-                    message:
-                      `Started the session for "${recipe.name}" and copied its files to ${directory}, but could not ` +
-                      `queue the prompt (${error._tag}). Open that chat and send the recipe text to cook it.`,
-                  }),
-                ),
+          yield* sessions.prompt({ sessionID: session.id, prompt: { text: recipe.prompt }, delivery: "queue" }).pipe(
+            Effect.catch((error) =>
+              Effect.fail(
+                new InvalidRequestError({
+                  message:
+                    `Started the session for "${recipe.name}" and copied its files to ${directory}, but could not ` +
+                    `queue the prompt (${error._tag}). Open that chat and send the recipe text to cook it.`,
+                }),
               ),
-            )
+            ),
+          )
           return { sessionID: session.id, directory, assets }
         }),
       )

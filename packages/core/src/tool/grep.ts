@@ -70,6 +70,7 @@ export const layer = Layer.effectDiscard(
         // `test/tool-permission-identity.test.ts` for the ledger entry.
         [name]: Tool.withPermission(
           Tool.make({
+            sideEffect: "read",
             outputPreview: "earliest",
             description:
               "Search file contents by regular expression within the active Location or an absolute managed tool-output file. Use a path to narrow the search, include to filter files by glob, and limit to bound the match count. Returns concise file resources, line numbers, and bounded line previews.",

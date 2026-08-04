@@ -12,7 +12,7 @@ describe("detect — the turns that actually shipped a silent no-op", () => {
       "",
       "**Step 1: Initial searches**",
       "",
-      '```bash',
+      "```bash",
       `bash -c "echo 'Starting LNR/DNR influencer research'"`,
       "```",
     ].join("\n")

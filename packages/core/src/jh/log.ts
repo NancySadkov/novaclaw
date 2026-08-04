@@ -27,7 +27,12 @@ export type Entry =
   // widened the trigger beyond escalation: `drop` = consecutive below-best samples mid-run; `final` = the
   // terminal restore (the deliverable is the BEST state, never a regressed one — run112 walked away from 82
   // digits; run113 from 98).
-  | { readonly type: "restored_best"; readonly step: string; readonly score: number; readonly reason: "escalation" | "drop" | "final" }
+  | {
+      readonly type: "restored_best"
+      readonly step: string
+      readonly score: number
+      readonly reason: "escalation" | "drop" | "final"
+    }
   // improve7 P2 (C7): a file crossed COORD_AFTER consecutive `old_string not found` misses — edit_file is
   // disabled for it (intercepted pre-execution with a replace_lines redirect) until a successful edit lands.
   | { readonly type: "coord_mode"; readonly step: string; readonly file: string }
@@ -44,10 +49,21 @@ export type Entry =
   | { readonly type: "test_registered"; readonly step: string; readonly command: string }
   // improve4 P1: a registered test that passed before the edit FAILS now — the source-edit at `step` broke
   // previously-verified behavior; `changed` names the file(s) the edit touched. Preempts the leaf's own check.
-  | { readonly type: "regression"; readonly step: string; readonly command: string; readonly changed: ReadonlyArray<string> }
+  | {
+      readonly type: "regression"
+      readonly step: string
+      readonly command: string
+      readonly changed: ReadonlyArray<string>
+    }
   // improve4 P1/P2: a regression-suite evaluation (a post-edit re-run or a phase/root gate). `skipped` > 0
   // means the MAX_SUITE_MS budget cut it short — surfaced so a partial suite is never silently trusted.
-  | { readonly type: "suite"; readonly step: string; readonly green: number; readonly red: number; readonly skipped: number }
+  | {
+      readonly type: "suite"
+      readonly step: string
+      readonly green: number
+      readonly red: number
+      readonly skipped: number
+    }
   // improve4 P4: a component that kept failing its test was targeted for a from-scratch re-derivation.
   | { readonly type: "rederived"; readonly step: string; readonly file: string }
   // improve5 P2: a source edit was REJECTED at the door — it did not compile (its per-file syntax gate
@@ -87,7 +103,12 @@ export type Entry =
   | { readonly type: "root_extended"; readonly step: string; readonly reason: string }
   // improve5 P3: the closure-cardinality force-split trigger fired but is DISARMED in the file-workspace
   // regime (context = disk, §5 law-5) — logged as advisory data for a future §4 recalibration, no behavior.
-  | { readonly type: "forced_split_advisory"; readonly step: string; readonly cardinality: number; readonly density: number }
+  | {
+      readonly type: "forced_split_advisory"
+      readonly step: string
+      readonly cardinality: number
+      readonly density: number
+    }
   // improve5 P4: a wall-clock budget threshold (0.5 / 0.75) was crossed → a calm "simplify / land it" steer
   // was injected into the next introspection (one-shot per threshold).
   | { readonly type: "budget_note"; readonly step: string; readonly fraction: number }
@@ -96,7 +117,13 @@ export type Entry =
   // never the last word (jh.md §14.1: judge calls and self-assessments are fallible input, never
   // ground truth). `spent` marks the refusal that comes from the per-run budget rather than from a
   // command that actually ran, so a transcript never reads a budget stop as a test failure.
-  | { readonly type: "completion_gate"; readonly step: string; readonly ok: boolean; readonly spent: boolean; readonly detail: string }
+  | {
+      readonly type: "completion_gate"
+      readonly step: string
+      readonly ok: boolean
+      readonly spent: boolean
+      readonly detail: string
+    }
   | { readonly type: "committed"; readonly step: string }
   // A leaf the harness gave up VERIFYING (stuck/budget) but committed best-effort so the tree can grow a
   // fix sibling instead of dead-ending (engine.ts stuck path). NOT a success — the reason carries the

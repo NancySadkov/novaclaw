@@ -129,12 +129,7 @@ export default function NewSessionPage() {
                             projectRoot={projectRoot()}
                             workspaces={[] as string[]}
                             branch={selectedBranch()}
-                            onChange={(value) =>
-                              setStore(
-                                "worktree",
-                                value,
-                              )
-                            }
+                            onChange={(value) => setStore("worktree", value)}
                             onDone={() => inputRef?.focus()}
                           />
                         </Show>

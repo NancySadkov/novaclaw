@@ -88,9 +88,14 @@ const HeroTile: Component<{ app: HomeApp; shouldSuppressOpen?: () => boolean }> 
       <TileBadge app={props.app} />
       <div
         class="flex flex-col items-start gap-1 text-left"
-        style={{ color: props.app.glyphTone === "dark" ? "color-mix(in srgb, var(--nc-ink, #1a1135) 94%, transparent)" : "#ffffff" }}
+        style={{
+          color:
+            props.app.glyphTone === "dark" ? "color-mix(in srgb, var(--nc-ink, #1a1135) 94%, transparent)" : "#ffffff",
+        }}
       >
-        <span class="text-[19px] font-semibold leading-tight [text-shadow:0_1px_2px_rgba(255,255,255,0.12)]">{props.app.title}</span>
+        <span class="text-[19px] font-semibold leading-tight [text-shadow:0_1px_2px_rgba(255,255,255,0.12)]">
+          {props.app.title}
+        </span>
         {/* Live status wins over the tagline: while agents are running, what they are DOING is the most
             useful thing this tile can say. Falls back to the subtitle when there is nothing to report. */}
         <Show when={props.app.status?.() ?? props.app.subtitle}>

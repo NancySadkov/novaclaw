@@ -125,9 +125,7 @@ export const SettingsSystemPromptV2: Component = () => {
 
         <div class="settings-v2-section">
           <h3 class="settings-v2-section-title">{language.t("settings.systemPrompt.instructions.title")}</h3>
-          <p class="settings-v2-field-description">
-            {language.t("settings.systemPrompt.instructions.description")}
-          </p>
+          <p class="settings-v2-field-description">{language.t("settings.systemPrompt.instructions.description")}</p>
           <TextareaV2
             class="settings-v2-textarea"
             rows={3}

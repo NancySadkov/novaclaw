@@ -100,12 +100,15 @@ export class Kernel {
   registerReaction(name: string, spec: ReactionSpec): ReactionId {
     const id = name as ReactionId
     if (this.reactions.has(id)) throw new KernelError(`reaction already registered: ${name}`)
-    if (!this.phaseDeps.has(spec.phase)) throw new KernelError(`reaction "${name}" targets unknown phase "${spec.phase}"`)
+    if (!this.phaseDeps.has(spec.phase))
+      throw new KernelError(`reaction "${name}" targets unknown phase "${spec.phase}"`)
     for (const ref of [...(spec.order?.after ?? []), ...(spec.order?.before ?? [])]) {
       const other = this.reactions.get(ref)
       if (!other) throw new KernelError(`reaction "${name}" orders against unknown reaction "${ref}"`)
       if (other.phase !== spec.phase)
-        throw new KernelError(`reaction "${name}" orders against "${ref}" in a DIFFERENT phase — order edges are within-phase only`)
+        throw new KernelError(
+          `reaction "${name}" orders against "${ref}" in a DIFFERENT phase — order edges are within-phase only`,
+        )
     }
     this.reactions.set(id, { ...spec, id, seq: this.reactionSeq++ })
     return id
@@ -138,7 +141,9 @@ export class Kernel {
     const done: Reaction[] = []
     const pending = [...list]
     while (pending.length > 0) {
-      const index = pending.findIndex((r) => [...after.get(r.id)!].every((dep) => done.some((d) => d.id === dep) || !after.has(dep)))
+      const index = pending.findIndex((r) =>
+        [...after.get(r.id)!].every((dep) => done.some((d) => d.id === dep) || !after.has(dep)),
+      )
       if (index < 0) throw new KernelError(`ordering cycle among reactions in phase "${phase}"`)
       done.push(pending.splice(index, 1)[0]!)
     }
@@ -175,7 +180,9 @@ export class Kernel {
     const remaining = new Map([...this.phaseDeps].map(([id, deps]) => [id, new Set(deps.after)]))
     const order: PhaseId[] = []
     while (remaining.size > 0) {
-      const ready = [...remaining].filter(([, deps]) => [...deps].every((dep) => order.includes(dep) || !this.phaseDeps.has(dep)))
+      const ready = [...remaining].filter(([, deps]) =>
+        [...deps].every((dep) => order.includes(dep) || !this.phaseDeps.has(dep)),
+      )
       if (ready.length === 0) throw new KernelError("phase DependsOn cycle")
       // Deterministic: among ready phases, keep insertion order.
       const [id] = ready[0]!

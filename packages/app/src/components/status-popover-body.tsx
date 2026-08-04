@@ -283,7 +283,6 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
           </Tabs.Trigger>
         </Tabs.List>
 
-
         <Tabs.Content value="mcp">
           <div class="flex flex-col px-2 pb-2">
             <div class="flex flex-col p-3 bg-background-base rounded-sm min-h-14">

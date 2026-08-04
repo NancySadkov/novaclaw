@@ -51,7 +51,10 @@ export function resolveToolName(raw: string, names: ReadonlyArray<string>): stri
 
 /** Cut at the first harmony channel token and drop any remaining angle-bracket tags. */
 export function scrubName(raw: string): string {
-  return raw.split("<|")[0].replace(/<[^>]*>/g, "").trim()
+  return raw
+    .split("<|")[0]
+    .replace(/<[^>]*>/g, "")
+    .trim()
 }
 
 function closestName(name: string, names: ReadonlyArray<string>): string | undefined {

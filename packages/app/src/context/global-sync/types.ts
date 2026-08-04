@@ -28,7 +28,7 @@ export type ProjectMeta = {
 }
 
 export type State = {
-  status: "loading" | "partial" | "complete"
+  status: "loading" | "partial" | "complete" | "missing"
   agent: Agent[]
   command: Command[]
   projectMeta: ProjectMeta | undefined

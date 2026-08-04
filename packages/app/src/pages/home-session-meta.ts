@@ -23,7 +23,9 @@ export type TokenTotals = {
 
 /** Sum token usage across sessions (a chat + its sub-agent threads for the rollup). */
 export function tokenTotals(
-  sessions: readonly { tokens?: { input: number; output: number; reasoning: number; cache: { read: number; write: number } } }[],
+  sessions: readonly {
+    tokens?: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+  }[],
 ): TokenTotals {
   const out = { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 0, generated: 0 }
   for (const session of sessions) {
@@ -52,7 +54,10 @@ export function compactTokens(count: number): string {
  * newest first per level), skipping archived sessions. The Chats list day-groups ROOTS only;
  * children always render under their root regardless of their own updated day.
  */
-export function subtreeRows<T extends SessionLike>(sessions: readonly T[], rootID: string): { session: T; depth: number }[] {
+export function subtreeRows<T extends SessionLike>(
+  sessions: readonly T[],
+  rootID: string,
+): { session: T; depth: number }[] {
   const byParent = new Map<string, T[]>()
   for (const session of sessions) {
     if (!session.parentID || session.time.archived) continue

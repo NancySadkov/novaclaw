@@ -74,8 +74,7 @@ if (previousValue === HOOKS_DIR) {
   if (!set.ok) die(`could not set core.hooksPath: ${set.stderr || "git failed"}`)
   if (previousValue === undefined) console.log(`core.hooksPath was unset  ->  ${HOOKS_DIR}`)
   else console.log(`core.hooksPath was ${previousValue} (${previousOrigin})  ->  ${HOOKS_DIR}`)
-  if (previousValue === ".husky/_")
-    console.log(`  (that directory does not exist — no hook in this repo had ever run)`)
+  if (previousValue === ".husky/_") console.log(`  (that directory does not exist — no hook in this repo had ever run)`)
 }
 
 // --- what now runs, and what still needs a human -----------------------------------------------

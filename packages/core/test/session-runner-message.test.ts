@@ -585,8 +585,7 @@ Recent work
   })
 
   test("a failed turn with empty content still surfaces the error text to the model", () => {
-    const errorText =
-      "HTTP transport failed: connect ECONNREFUSED (target http://127.0.0.1:1/v1/chat/completions)"
+    const errorText = "HTTP transport failed: connect ECONNREFUSED (target http://127.0.0.1:1/v1/chat/completions)"
     const messages = toLLMMessages(
       [
         SessionMessage.Assistant.make({

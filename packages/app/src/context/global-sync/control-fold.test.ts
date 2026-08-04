@@ -15,20 +15,18 @@ describe("controlPatch", () => {
       patch: { agent: "review" },
     })
     expect(
-      controlPatch(
-        envelope("session.next.model.switched", { sessionID: "s", model: { id: "m", providerID: "p" } }),
-      ),
+      controlPatch(envelope("session.next.model.switched", { sessionID: "s", model: { id: "m", providerID: "p" } })),
     ).toEqual({ sessionID: "s", patch: { model: { id: "m", providerID: "p" } } })
-    expect(controlPatch(envelope("session.next.responder.switched", { sessionID: "s", responder: "operator" }))).toEqual(
-      { sessionID: "s", patch: { responder: "operator" } },
-    )
+    expect(
+      controlPatch(envelope("session.next.responder.switched", { sessionID: "s", responder: "operator" })),
+    ).toEqual({ sessionID: "s", patch: { responder: "operator" } })
     expect(controlPatch(envelope("session.next.mode.switched", { sessionID: "s", permissionMode: "bypass" }))).toEqual({
       sessionID: "s",
       patch: { permissionMode: "bypass" },
     })
-    expect(controlPatch(envelope("session.next.strict.switched", { sessionID: "s", strict: { enabled: true } }))).toEqual(
-      { sessionID: "s", patch: { strict: { enabled: true } } },
-    )
+    expect(
+      controlPatch(envelope("session.next.strict.switched", { sessionID: "s", strict: { enabled: true } })),
+    ).toEqual({ sessionID: "s", patch: { strict: { enabled: true } } })
     expect(
       controlPatch(envelope("session.next.feature.switched", { sessionID: "s", feature: "quality", enabled: true })),
     ).toEqual({ sessionID: "s", patch: { quality: true } })
@@ -41,9 +39,10 @@ describe("controlPatch", () => {
     // T3 shape: the move patches the record's `location` struct (+ subpath), never a flat
     // top-level `directory` — that field doesn't exist on the record and patching it left every
     // reader (folder chip, Chats grouping) on the OLD folder until reload.
-    expect(
-      controlPatch(envelope("session.next.moved", { sessionID: "s", location: { directory: "C:\\x" } })),
-    ).toEqual({ sessionID: "s", patch: { location: { directory: "C:\\x" }, subpath: undefined } })
+    expect(controlPatch(envelope("session.next.moved", { sessionID: "s", location: { directory: "C:\\x" } }))).toEqual({
+      sessionID: "s",
+      patch: { location: { directory: "C:\\x" }, subpath: undefined },
+    })
     expect(
       controlPatch(
         envelope("session.next.moved", { sessionID: "s", location: { directory: "C:\\x" }, subdirectory: "sub" }),
@@ -67,7 +66,9 @@ describe("controlPatch", () => {
   test("ignores non-control events, unknown features, and missing sessionIDs", () => {
     expect(controlPatch(envelope("session.next.prompted", { sessionID: "s" }))).toBeUndefined()
     expect(controlPatch(envelope("session.updated", { info: {} }))).toBeUndefined()
-    expect(controlPatch(envelope("session.next.feature.switched", { sessionID: "s", feature: "bogus" }))).toBeUndefined()
+    expect(
+      controlPatch(envelope("session.next.feature.switched", { sessionID: "s", feature: "bogus" })),
+    ).toBeUndefined()
     expect(controlPatch(envelope("session.next.agent.switched", { agent: "x" }))).toBeUndefined()
   })
 })

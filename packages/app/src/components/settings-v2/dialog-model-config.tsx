@@ -19,6 +19,8 @@ import { SettingsRowV2 } from "./parts/row"
 // with a NAMED-PRESET droplist beside each raw field, so a user needn't know that e.g.
 // repetition_penalty 1.02 is already a meaningful nudge (expert knowledge → taxonomic labels).
 type ModelConfig = {
+  name?: string
+  api?: { id?: string; [k: string]: unknown }
   reasoning?: boolean
   tool_call?: boolean
   limit?: { context?: number; output?: number }
@@ -32,14 +34,38 @@ type ModelConfig = {
   [k: string]: unknown
 }
 
+type ProviderApi = {
+  readonly type: "aisdk" | "native"
+  readonly url?: string
+  readonly package?: string
+  readonly settings?: Readonly<Record<string, unknown>>
+}
+
+type ProviderConfig = {
+  name?: string
+  api?: ProviderApi
+  models?: Record<string, ModelConfig>
+  [k: string]: unknown
+}
+
 const MODALITIES = ["text", "image", "audio"] as const
-const SAMPLING = ["temperature", "top_p", "top_k", "min_p", "repetition_penalty", "presence_penalty", "frequency_penalty"] as const
+const SAMPLING = [
+  "temperature",
+  "top_p",
+  "top_k",
+  "min_p",
+  "repetition_penalty",
+  "presence_penalty",
+  "frequency_penalty",
+] as const
 type FieldKey = (typeof SAMPLING)[number] | "context" | "maxTokens" | "thinkingBudget" | "retryAttempts"
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 // MindControl thinking budget is stored in request.body (the free-form record the runtime reads),
 // NOT under `options`/`limit` — see reasoning-budget.ts. Read/written directly by this dialog.
-type WithRequestBody = { request?: { headers?: Record<string, string>; body?: Record<string, unknown>; variant?: string } }
+type WithRequestBody = {
+  request?: { headers?: Record<string, string>; body?: Record<string, unknown>; variant?: string }
+}
 const bodyBudget = (m: unknown): unknown => (m as WithRequestBody | undefined)?.request?.body?.thinkingBudget
 
 // Presets per field. `{}` = "use the default" (blank). `word` is a shared i18n intensity term; `size`
@@ -47,27 +73,113 @@ const bodyBudget = (m: unknown): unknown => (m as WithRequestBody | undefined)?.
 // ⚠️ `word` is a union, not `string`: it is interpolated into `settings.models.config.preset.<word>`
 // and the app's translator is key-typed, so widening it would silently switch that check off.
 type PresetWord =
-  | "precise" | "focused" | "balanced" | "creative" | "wild"
-  | "off" | "diverse" | "tight" | "wide"
-  | "light" | "strong" | "gentle" | "moderate"
+  | "precise"
+  | "focused"
+  | "balanced"
+  | "creative"
+  | "wild"
+  | "off"
+  | "diverse"
+  | "tight"
+  | "wide"
+  | "light"
+  | "strong"
+  | "gentle"
+  | "moderate"
   | "disabled"
 type RawPreset = { num?: number; word?: PresetWord; size?: string }
 const PRESETS: Record<FieldKey, RawPreset[]> = {
-  temperature: [{}, { word: "precise", num: 0 }, { word: "focused", num: 0.3 }, { word: "balanced", num: 0.7 }, { word: "creative", num: 1 }, { word: "wild", num: 1.3 }],
-  top_p: [{}, { word: "off", num: 1 }, { word: "focused", num: 0.9 }, { word: "balanced", num: 0.95 }, { word: "diverse", num: 0.8 }],
-  top_k: [{}, { word: "off", num: 0 }, { word: "tight", num: 20 }, { word: "balanced", num: 40 }, { word: "wide", num: 100 }],
-  min_p: [{}, { word: "off", num: 0 }, { word: "light", num: 0.05 }, { word: "balanced", num: 0.1 }, { word: "strong", num: 0.2 }],
-  repetition_penalty: [{}, { word: "off", num: 1 }, { word: "gentle", num: 1.02 }, { word: "light", num: 1.05 }, { word: "moderate", num: 1.1 }, { word: "strong", num: 1.2 }],
-  presence_penalty: [{}, { word: "off", num: 0 }, { word: "light", num: 0.3 }, { word: "moderate", num: 0.6 }, { word: "strong", num: 1 }],
-  frequency_penalty: [{}, { word: "off", num: 0 }, { word: "light", num: 0.3 }, { word: "moderate", num: 0.6 }, { word: "strong", num: 1 }],
-  context: [{}, { size: "4K", num: 4096 }, { size: "8K", num: 8192 }, { size: "16K", num: 16384 }, { size: "32K", num: 32768 }, { size: "64K", num: 65536 }, { size: "128K", num: 131072 }, { size: "256K", num: 262144 }],
-  maxTokens: [{}, { size: "512", num: 512 }, { size: "1K", num: 1024 }, { size: "2K", num: 2048 }, { size: "4K", num: 4096 }, { size: "8K", num: 8192 }, { size: "16K", num: 16384 }, { size: "32K", num: 32768 }],
+  temperature: [
+    {},
+    { word: "precise", num: 0 },
+    { word: "focused", num: 0.3 },
+    { word: "balanced", num: 0.7 },
+    { word: "creative", num: 1 },
+    { word: "wild", num: 1.3 },
+  ],
+  top_p: [
+    {},
+    { word: "off", num: 1 },
+    { word: "focused", num: 0.9 },
+    { word: "balanced", num: 0.95 },
+    { word: "diverse", num: 0.8 },
+  ],
+  top_k: [
+    {},
+    { word: "off", num: 0 },
+    { word: "tight", num: 20 },
+    { word: "balanced", num: 40 },
+    { word: "wide", num: 100 },
+  ],
+  min_p: [
+    {},
+    { word: "off", num: 0 },
+    { word: "light", num: 0.05 },
+    { word: "balanced", num: 0.1 },
+    { word: "strong", num: 0.2 },
+  ],
+  repetition_penalty: [
+    {},
+    { word: "off", num: 1 },
+    { word: "gentle", num: 1.02 },
+    { word: "light", num: 1.05 },
+    { word: "moderate", num: 1.1 },
+    { word: "strong", num: 1.2 },
+  ],
+  presence_penalty: [
+    {},
+    { word: "off", num: 0 },
+    { word: "light", num: 0.3 },
+    { word: "moderate", num: 0.6 },
+    { word: "strong", num: 1 },
+  ],
+  frequency_penalty: [
+    {},
+    { word: "off", num: 0 },
+    { word: "light", num: 0.3 },
+    { word: "moderate", num: 0.6 },
+    { word: "strong", num: 1 },
+  ],
+  context: [
+    {},
+    { size: "4K", num: 4096 },
+    { size: "8K", num: 8192 },
+    { size: "16K", num: 16384 },
+    { size: "32K", num: 32768 },
+    { size: "64K", num: 65536 },
+    { size: "128K", num: 131072 },
+    { size: "256K", num: 262144 },
+  ],
+  maxTokens: [
+    {},
+    { size: "512", num: 512 },
+    { size: "1K", num: 1024 },
+    { size: "2K", num: 2048 },
+    { size: "4K", num: 4096 },
+    { size: "8K", num: 8192 },
+    { size: "16K", num: 16384 },
+    { size: "32K", num: 32768 },
+  ],
   // -1 is the DISABLED value (owner 2026-07-26): one entry in the same list rather than a separate switch,
   // because "no budget" is a budget setting. The runtime already collapses any non-positive configured
   // value to 0 (`defaultThinkingBudget` clamps with Math.max(0, …)) and the runner gates on `> 0`, so the
   // sentinel needs no schema, migration or protocol change. Blank still means "derive the default".
-  thinkingBudget: [{}, { word: "disabled", num: -1 }, { size: "2K", num: 2048 }, { size: "4K", num: 4096 }, { size: "6K", num: 6144 }, { size: "8K", num: 8192 }, { size: "16K", num: 16384 }, { size: "32K", num: 32768 }],
-  retryAttempts: [{ size: "1", num: 1 }, { size: "3", num: 3 }, { size: "5", num: 5 }, { size: "10", num: 10 }],
+  thinkingBudget: [
+    {},
+    { word: "disabled", num: -1 },
+    { size: "2K", num: 2048 },
+    { size: "4K", num: 4096 },
+    { size: "6K", num: 6144 },
+    { size: "8K", num: 8192 },
+    { size: "16K", num: 16384 },
+    { size: "32K", num: 32768 },
+  ],
+  retryAttempts: [
+    { size: "1", num: 1 },
+    { size: "3", num: 3 },
+    { size: "5", num: 5 },
+    { size: "10", num: 10 },
+  ],
 }
 
 type Opt = { id: string; num: number | undefined; label: string }
@@ -76,16 +188,16 @@ export const DialogModelConfig: Component<{
   providerID: string
   modelID: string
   modelName: string
+  apiModelID: string
+  providerApi: ProviderApi
   defaults?: ModelConfig
 }> = (props) => {
   const dialog = useDialog()
   const language = useLanguage()
   const serverSync = useServerSync()
 
-  const providerCfg = (): { models?: Record<string, ModelConfig>; [k: string]: unknown } =>
-    (serverSync().data.config?.providers as Record<string, { models?: Record<string, ModelConfig> }> | undefined)?.[
-      props.providerID
-    ] ?? {}
+  const providerCfg = (): ProviderConfig =>
+    (serverSync().data.config?.providers as Record<string, ProviderConfig> | undefined)?.[props.providerID] ?? {}
   const savedModel = (): ModelConfig => providerCfg().models?.[props.modelID] ?? {}
 
   const init = savedModel()
@@ -94,8 +206,18 @@ export const DialogModelConfig: Component<{
   const optNum = (k: string) => nstr((init.options as Record<string, unknown> | undefined)?.[k])
   const inMod = init.modalities?.input ?? d.modalities?.input ?? ["text"]
   const outMod = init.modalities?.output ?? d.modalities?.output ?? ["text"]
+  const defaultProviderName = () =>
+    providerCfg().name === "local" ? "local" : (providerCfg().api?.url ?? props.providerApi.url ?? props.providerID)
+  const customProviderName = () => {
+    const name = providerCfg().name?.trim()
+    return name && name !== defaultProviderName() ? name : ""
+  }
 
   const [form, setForm] = createStore({
+    apiPath: providerCfg().api?.url ?? props.providerApi.url ?? "",
+    providerName: customProviderName(),
+    modelID: init.api?.id ?? props.apiModelID,
+    modelName: init.name ?? props.modelName,
     temperature: optNum("temperature"),
     top_p: optNum("top_p"),
     top_k: optNum("top_k"),
@@ -128,7 +250,10 @@ export const DialogModelConfig: Component<{
   const optLabel = (p: RawPreset): string => {
     if (p.num === undefined) return language.t("settings.models.config.preset.default")
     // A sentinel is not a quantity: "Disabled (-1)" would invite the reader to reason about -1 tokens.
-    if (p.word) return p.num < 0 ? language.t(`settings.models.config.preset.${p.word}`) : `${language.t(`settings.models.config.preset.${p.word}`)} (${p.num})`
+    if (p.word)
+      return p.num < 0
+        ? language.t(`settings.models.config.preset.${p.word}`)
+        : `${language.t(`settings.models.config.preset.${p.word}`)} (${p.num})`
     if (p.size) return p.size
     return String(p.num)
   }
@@ -160,6 +285,8 @@ export const DialogModelConfig: Component<{
 
     const model: ModelConfig = {
       ...saved,
+      name: form.modelName.trim() || props.modelName,
+      api: { ...(saved.api ?? {}), id: form.modelID.trim() || props.apiModelID },
       reasoning: form.reasoning,
       tool_call: form.tool_call,
       limit,
@@ -177,11 +304,21 @@ export const DialogModelConfig: Component<{
     else if (saved.prePrompt !== undefined) model.prePrompt = ""
     else delete model.prePrompt
     const provider = providerCfg()
+    const apiPath = form.apiPath.trim()
+    // The endpoint is provider-wide today, so preserve the complete resolved API channel (including
+    // its discriminant, package and settings) when a built-in provider had no saved override yet.
+    // A fragment containing only `url` does not decode as Provider.Api and would make Save fail.
+    const api = apiPath ? { ...(provider.api ?? props.providerApi), url: apiPath } : provider.api
     // The config key is `providers` (plural) — the schema drops a stray `provider`, which silently
     // discarded every save this dialog made (pre-existing bug, fixed 2026-07-24).
     const patch = {
       providers: {
-        [props.providerID]: { ...provider, models: { ...(provider.models ?? {}), [props.modelID]: model } },
+        [props.providerID]: {
+          ...provider,
+          name: form.providerName.trim() || (provider.name === "local" ? "local" : apiPath || props.providerID),
+          ...(api === undefined ? {} : { api }),
+          models: { ...(provider.models ?? {}), [props.modelID]: model },
+        },
       },
     }
     try {
@@ -206,7 +343,11 @@ export const DialogModelConfig: Component<{
     const matched = () => options().find((o) => o.num === currentNum())
     const customOpt = (): Opt | undefined =>
       currentNum() !== undefined && !matched()
-        ? { id: "custom", num: currentNum(), label: `${language.t("settings.models.config.preset.custom")} (${currentNum()})` }
+        ? {
+            id: "custom",
+            num: currentNum(),
+            label: `${language.t("settings.models.config.preset.custom")} (${currentNum()})`,
+          }
         : undefined
     const allOptions = () => {
       const extra = customOpt()
@@ -282,7 +423,7 @@ export const DialogModelConfig: Component<{
                   "ring-v2-border-border-base text-v2-text-text-muted hover:bg-v2-background-bg-layer-01": !form[field],
                 }}
                 aria-pressed={!!form[field]}
-                onClick={() => setForm(field as never, (!form[field]) as never)}
+                onClick={() => setForm(field as never, !form[field] as never)}
               >
                 {language.t(`settings.models.config.modality.${m}`)}
               </button>
@@ -293,9 +434,9 @@ export const DialogModelConfig: Component<{
     </SettingsRowV2>
   )
 
-  const section = (key: "corrections" | "sampling" | "limits" | "reliability" | "capabilities" | "modalities") => (
-    <h3 class="settings-v2-section-title mt-1">{language.t(`settings.models.config.section.${key}`)}</h3>
-  )
+  const section = (
+    key: "identity" | "corrections" | "sampling" | "limits" | "reliability" | "capabilities" | "modalities",
+  ) => <h3 class="settings-v2-section-title mt-1">{language.t(`settings.models.config.section.${key}`)}</h3>
 
   return (
     <Dialog size="content">
@@ -310,6 +451,63 @@ export const DialogModelConfig: Component<{
         </div>
 
         <div class="flex flex-col gap-4 max-h-[62vh] overflow-y-auto -mx-1 px-1">
+          {section("identity")}
+          <SettingsListV2>
+            <SettingsRowV2
+              title={language.t("settings.models.config.providerName.name")}
+              description={language.t("settings.models.config.providerName.desc")}
+            >
+              <TextInputV2
+                class="w-64 max-w-full"
+                value={form.providerName}
+                onInput={(event) => setForm("providerName", event.currentTarget.value)}
+                placeholder={defaultProviderName()}
+                aria-label={language.t("settings.models.config.providerName.name")}
+              />
+            </SettingsRowV2>
+            <SettingsRowV2
+              title={language.t("settings.models.config.apiPath.name")}
+              description={language.t("settings.models.config.apiPath.desc")}
+            >
+              <TextInputV2
+                class="w-64 max-w-full"
+                value={form.apiPath}
+                onInput={(event) => setForm("apiPath", event.currentTarget.value)}
+                spellcheck={false}
+                autocorrect="off"
+                autocomplete="off"
+                autocapitalize="off"
+                aria-label={language.t("settings.models.config.apiPath.name")}
+              />
+            </SettingsRowV2>
+            <SettingsRowV2
+              title={language.t("settings.models.config.modelID.name")}
+              description={language.t("settings.models.config.modelID.desc")}
+            >
+              <TextInputV2
+                class="w-64 max-w-full"
+                value={form.modelID}
+                onInput={(event) => setForm("modelID", event.currentTarget.value)}
+                spellcheck={false}
+                autocorrect="off"
+                autocomplete="off"
+                autocapitalize="off"
+                aria-label={language.t("settings.models.config.modelID.name")}
+              />
+            </SettingsRowV2>
+            <SettingsRowV2
+              title={language.t("settings.models.config.modelName.name")}
+              description={language.t("settings.models.config.modelName.desc")}
+            >
+              <TextInputV2
+                class="w-64 max-w-full"
+                value={form.modelName}
+                onInput={(event) => setForm("modelName", event.currentTarget.value)}
+                aria-label={language.t("settings.models.config.modelName.name")}
+              />
+            </SettingsRowV2>
+          </SettingsListV2>
+
           {section("corrections")}
           <div class="flex flex-col gap-1.5">
             <span class="text-[12px] text-v2-text-text-muted leading-snug">
@@ -366,7 +564,12 @@ export const DialogModelConfig: Component<{
           <ButtonV2 size="normal" variant="ghost-muted" onClick={() => dialog.close()}>
             {language.t("common.cancel")}
           </ButtonV2>
-          <ButtonV2 size="normal" variant="gold" onClick={() => void save()}>
+          <ButtonV2
+            size="normal"
+            variant="gold"
+            disabled={!form.modelID.trim() || !form.modelName.trim()}
+            onClick={() => void save()}
+          >
             {language.t("common.save")}
           </ButtonV2>
         </div>

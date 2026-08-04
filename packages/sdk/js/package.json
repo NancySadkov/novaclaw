@@ -7,7 +7,7 @@
     "test": "bun test",
     "typecheck": "tsgo --noEmit && tsgo --noEmit -p tsconfig.bun.json",
     "build": "bun ./script/build.ts",
-    "regen": "bun ./script/build.ts && cd ../../novaclaw && bun dev generate > ../sdk/openapi.json",
+    "regen": "bun ../../../script/generate.ts",
     "check:generated": "bun run regen && git diff --exit-code -- ../openapi.json src/v2/gen"
   },
   "exports": {

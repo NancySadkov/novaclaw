@@ -165,9 +165,9 @@ describe("auto-recall (the retrieval leg of B2)", () => {
 
 describe("the consumers that already filtered still do, through the shared predicate", () => {
   test("SessionTitle.firstRealUserText skips steers and blanks (unchanged behaviour)", () => {
-    expect(
-      SessionTitle.firstRealUserText([steer("You appear stuck."), user("   "), user("  add dark mode  ")]),
-    ).toBe("add dark mode")
+    expect(SessionTitle.firstRealUserText([steer("You appear stuck."), user("   "), user("  add dark mode  ")])).toBe(
+      "add dark mode",
+    )
     expect(SessionTitle.firstRealUserText([])).toBeUndefined()
   })
 

@@ -43,7 +43,9 @@ export function verify(input: {
       )
     case "file_exists":
       return Effect.succeed(
-        input.fileExists(check.path) ? { ok: true, detail: "" } : { ok: false, detail: `file not found: ${check.path}` },
+        input.fileExists(check.path)
+          ? { ok: true, detail: "" }
+          : { ok: false, detail: `file not found: ${check.path}` },
       )
     case "compile":
     case "run": {

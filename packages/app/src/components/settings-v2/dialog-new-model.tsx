@@ -37,6 +37,23 @@ import type { ServerConnection } from "@/context/server"
 const PROVIDER_ID = /^[a-z0-9][a-z0-9-_]*$/
 const OPENAI_COMPATIBLE = "@ai-sdk/openai-compatible"
 
+/** Internal config keys are generated from the endpoint and never presented as user-authored identity. */
+export const providerIDFromEndpoint = (input: string): string => {
+  let source = input.trim().toLowerCase()
+  try {
+    const url = new URL(source)
+    source = `${url.hostname}${url.port ? `-${url.port}` : ""}${url.pathname}`
+  } catch {
+    // An incomplete URL is still useful while the user types; validation remains the probe's job.
+  }
+  return (
+    source
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 64) || "endpoint"
+  )
+}
+
 type SavedProvider = {
   name?: string
   api?: { url?: string; package?: string }
@@ -63,8 +80,8 @@ export const DialogNewModel: Component<{
 
   const [step, setStep] = createSignal<"pick" | "local" | "connect" | "choose">("pick")
   // undefined = nothing chosen yet; "custom" = the free-form endpoint card.
-  const [presetID, setPresetID] = createSignal<string | "custom">()
-  const [form, setForm] = createStore({ baseURL: "", providerID: "", name: "", apiKey: "" })
+  const [presetID, setPresetID] = createSignal<string>()
+  const [form, setForm] = createStore({ baseURL: "", providerID: "", apiKey: "" })
   const [probing, setProbing] = createSignal(false)
   const [result, setResult] = createSignal<ProbeResult>()
   const [picked, setPicked] = createStore<Record<string, boolean>>({})
@@ -119,6 +136,13 @@ export const DialogNewModel: Component<{
    */
   const freeProviderID = (base: string) =>
     ConfigLocalRuntime.uniqueProviderID(base, Object.keys(config().providers ?? {}))
+  const providerIDAtURL = (baseURL: string) => {
+    const target = baseURL.trim().replace(/\/+$/, "")
+    if (!target) return undefined
+    return Object.entries(config().providers ?? {}).find(
+      ([, provider]) => provider.api?.url?.trim().replace(/\/+$/, "") === target,
+    )?.[0]
+  }
   onMount(() => {
     // A Resource created while dialog.push() commits inside a Solid transition can suspend the
     // dialog itself. Mount the usable Custom endpoint card first; discovery fills in afterward.
@@ -162,10 +186,14 @@ export const DialogNewModel: Component<{
     return result !== undefined && !result.ran
   }
 
-  const saved = (): SavedProvider | undefined => config().providers?.[form.providerID.trim()]
+  const effectiveProviderID = () =>
+    presetID() === "custom"
+      ? form.providerID.trim() || providerIDAtURL(form.baseURL) || freeProviderID(providerIDFromEndpoint(form.baseURL))
+      : form.providerID.trim()
+  const saved = (): SavedProvider | undefined => config().providers?.[effectiveProviderID()]
   const savedKey = () => typeof saved()?.request?.body?.apiKey === "string" && !!saved()?.request?.body?.apiKey
   const models = () => result()?.models ?? []
-  const validID = () => PROVIDER_ID.test(form.providerID.trim())
+  const validID = () => PROVIDER_ID.test(effectiveProviderID())
   const canDiscover = () => !!form.baseURL.trim() && validID() && !probing()
   const pickedIDs = () => models().filter((id) => picked[id])
   const visiblePresets = () => Object.entries(presets()).filter(([, entry]) => entry.hidden !== true)
@@ -220,7 +248,6 @@ export const DialogNewModel: Component<{
     setForm({
       baseURL: existing?.api?.url ?? entry.baseURL ?? "",
       providerID: id,
-      name: existing?.name ?? entry.name ?? id,
       apiKey: "",
     })
     setResult(undefined)
@@ -230,15 +257,15 @@ export const DialogNewModel: Component<{
 
   const chooseCustom = () => {
     setPresetID("custom")
-    setForm({ baseURL: "", providerID: "", name: "", apiKey: "" })
+    setForm({ baseURL: "", providerID: "", apiKey: "" })
     setResult(undefined)
     setError(undefined)
     setStep("connect")
   }
 
   // Adopt a runtime the sweep found. `presetID` is set to "custom" because that is what this IS —
-  // a user-owned OpenAI-compatible endpoint — so Back shows the editable Short-name field and no
-  // branded preset can leak an api channel or a keyURL into a local server.
+  // a user-owned OpenAI-compatible endpoint — so no branded preset can leak an api channel or a
+  // keyURL into a local server. Its internal config id remains generated and hidden from the user.
   const adoptLocal = (outcome: ConfigLocalRuntime.Outcome) => {
     const found = outcome.candidate
     setPresetID("custom")
@@ -248,7 +275,6 @@ export const DialogNewModel: Component<{
       // overwriting its endpoint would break a working setup in order to install a new one. Same
       // resolution the probe used, so the id on screen is the id that was tested.
       providerID: freeProviderID(found.id),
-      name: found.label,
       apiKey: "",
     })
     setError(undefined)
@@ -277,7 +303,7 @@ export const DialogNewModel: Component<{
     setError(undefined)
     const r = await providerProbe(props.http, {
       directory: props.directory,
-      providerID: form.providerID.trim(),
+      providerID: effectiveProviderID(),
       baseURL: form.baseURL.trim(),
       apiKey: form.apiKey.trim() || undefined,
       authStyle: preset()?.authStyle,
@@ -363,8 +389,8 @@ export const DialogNewModel: Component<{
 
   const add = () =>
     saveProvider({
-      providerID: form.providerID.trim(),
-      name: form.name.trim(),
+      providerID: effectiveProviderID(),
+      name: saved()?.name?.trim() || form.baseURL.trim(),
       baseURL: form.baseURL.trim(),
       ids: pickedIDs(),
       limits: result()?.limits ?? {},
@@ -374,10 +400,10 @@ export const DialogNewModel: Component<{
 
   const useManaged = async (status: LocalModelStatus) => {
     if (!status.baseURL || !status.modelID) return
-    const providerID = freeProviderID("local-qwen")
+    const providerID = freeProviderID("local")
     await saveProvider({
       providerID,
-      name: "Local Qwen",
+      name: "local",
       baseURL: status.baseURL,
       ids: [status.modelID],
       limits: {
@@ -423,7 +449,7 @@ export const DialogNewModel: Component<{
     else if (status.stage !== "error") managedPoll = setTimeout(() => void refreshManaged(), 500)
   }
 
-  const Field = (p: { field: "baseURL" | "providerID" | "name" | "apiKey"; type?: string; placeholder?: string }) => (
+  const Field = (p: { field: "baseURL" | "apiKey"; type?: string; placeholder?: string }) => (
     <div class="flex flex-col gap-1.5">
       <label class="text-[12px] font-medium text-v2-text-text-faint">
         {t(`settings.models.new.field.${p.field}.label`)}
@@ -439,9 +465,6 @@ export const DialogNewModel: Component<{
         autocomplete="off"
         autocapitalize="off"
       />
-      <Show when={p.field === "providerID" && !!form.providerID.trim() && !validID()}>
-        <span class="text-[11px] text-v2-text-text-danger">{t("settings.models.new.field.providerID.invalid")}</span>
-      </Show>
     </div>
   )
 
@@ -483,7 +506,7 @@ export const DialogNewModel: Component<{
         <div class="flex flex-col gap-1 text-center">
           <span class="text-[17px] font-semibold text-v2-text-text-base">
             {step() === "connect"
-              ? t("settings.models.new.connect.title", { name: form.name || form.providerID || "…" })
+              ? t("settings.models.new.connect.title", { name: form.baseURL || "…" })
               : step() === "local"
                 ? t("settings.models.new.managed.title")
                 : t("settings.models.new.title")}
@@ -748,6 +771,7 @@ export const DialogNewModel: Component<{
         <Show when={step() === "connect"}>
           <div class="flex flex-col gap-3">
             <BackButton to="pick" />
+            <Field field="baseURL" />
             <div class="flex flex-col gap-1.5">
               <Field
                 field="apiKey"
@@ -769,11 +793,6 @@ export const DialogNewModel: Component<{
               </Show>
               <span class="text-[11px] text-v2-text-text-faint">{t("settings.models.new.keyHint")}</span>
             </div>
-            <Show when={presetID() === "custom"}>
-              <Field field="providerID" />
-            </Show>
-            <Field field="name" />
-            <Field field="baseURL" />
             <ButtonV2 size="normal" variant="gold" disabled={!canDiscover()} onClick={() => void discover()}>
               {probing() ? t("settings.models.new.discovering") : t("settings.models.new.discover")}
             </ButtonV2>

@@ -17,6 +17,7 @@ import { disposeIfDisposable, getHoveredLinkText, setOptionIfSupported } from "@
 import { terminalWriter } from "@/utils/terminal-writer"
 import { terminalWebSocketURL } from "@/utils/terminal-websocket-url"
 import type { TerminalConnectFailure } from "./terminal-connection"
+import { restartTerminalCursorBlink, terminalClipboardShortcut } from "./terminal-keyboard"
 
 const TOGGLE_TERMINAL_ID = "terminal.toggle"
 const DEFAULT_TOGGLE_TERMINAL_KEYBIND = "ctrl+`"
@@ -98,7 +99,7 @@ const useTerminalUiBindings = (input: {
   }
 
   const handleTextareaFocus = () => {
-    input.term.options.cursorBlink = true
+    restartTerminalCursorBlink(input.term.options)
   }
   const handleTextareaBlur = () => {
     input.term.options.cursorBlink = false
@@ -220,9 +221,10 @@ export const Terminal = (props: TerminalProps) => {
   }
 
   const pushSize = (cols: number, rows: number) => {
-    return client.pty
+    return client.v2.pty
       .update({
         ptyID: id,
+        location: { directory },
         size: { cols, rows },
       })
       .catch((err) => {
@@ -378,10 +380,28 @@ export const Terminal = (props: TerminalProps) => {
       )
 
       t.attachCustomKeyEventHandler((event) => {
-        const key = event.key.toLowerCase()
-
-        if (event.ctrlKey && event.shiftKey && !event.metaKey && key === "c") {
-          document.execCommand("copy")
+        const clipboardShortcut = terminalClipboardShortcut(event)
+        if (clipboardShortcut === "copy") {
+          const selection = t.getSelection()
+          if (selection) {
+            if (!platform.writeClipboardText) {
+              t.copySelection()
+              return true
+            }
+            void platform
+              .writeClipboardText(selection)
+              .catch((error) => debugTerminal("failed to copy terminal selection", error))
+          }
+          return true
+        }
+        if (clipboardShortcut === "paste") {
+          const read = platform.readClipboardText?.() ?? navigator.clipboard?.readText?.()
+          if (!read) return true
+          void read
+            .then((text) => {
+              if (text) t.paste(text)
+            })
+            .catch((error) => debugTerminal("failed to paste into terminal", error))
           return true
         }
 
@@ -424,6 +444,7 @@ export const Terminal = (props: TerminalProps) => {
       })
       cleanups.push(() => disposeIfDisposable(onData))
       const onKey = t.onKey((key) => {
+        restartTerminalCursorBlink(t.options)
         if (key.key == "Enter") {
           props.onSubmit?.()
         }
@@ -474,8 +495,8 @@ export const Terminal = (props: TerminalProps) => {
       }
 
       const gone = () =>
-        client.pty
-          .get({ ptyID: id }, { throwOnError: false })
+        client.v2.pty
+          .get({ ptyID: id, location: { directory } }, { throwOnError: false })
           .then((result) => result.response.status === 404)
           .catch((err) => {
             debugTerminal("failed to inspect terminal session", err)
@@ -483,9 +504,9 @@ export const Terminal = (props: TerminalProps) => {
           })
 
       const connectToken = async () => {
-        const result = await client.pty
+        const result = await client.v2.pty
           .connectToken(
-            { ptyID: id, directory },
+            { ptyID: id, location: { directory } },
             {
               throwOnError: false,
               headers: { "x-novaclaw-ticket": "1" },
@@ -496,7 +517,7 @@ export const Terminal = (props: TerminalProps) => {
             throw err
           })
         if (!result) return
-        if (result.response.status === 200 && result.data?.ticket) return result.data.ticket
+        if (result.response.status === 200 && result.data?.data.ticket) return result.data.data.ticket
         if (result.response.status === 404 || result.response.status === 405) return
         if (result.response.status === 403)
           throw new Error("PTY connect ticket rejected by origin or CSRF checks. Check the server CORS config.")

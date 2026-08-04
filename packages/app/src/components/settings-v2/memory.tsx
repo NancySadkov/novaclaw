@@ -59,7 +59,8 @@ export const SettingsMemoryV2: Component<{ sessionID?: string }> = (props) => {
   // can manage what's already stored. Opt-out: enabled unless explicitly false.
   const memoryConfig = createMemo(
     () =>
-      (serverSync().data.config as { memory?: { enabled?: boolean; embedding?: { url?: string; model?: string } } }).memory ?? {},
+      (serverSync().data.config as { memory?: { enabled?: boolean; embedding?: { url?: string; model?: string } } })
+        .memory ?? {},
   )
   const enabled = () => memoryConfig().enabled !== false
   // The VECTOR leg's device (Advanced). Measured: hybrid vector+FTS retrieval 85% vs 77% keyword-only.
@@ -191,7 +192,9 @@ export const SettingsMemoryV2: Component<{ sessionID?: string }> = (props) => {
         variant: "error",
         title: language.t("settings.memory.import.invalid.title"),
         description: language.t(
-          parsed.error === "version" ? "settings.memory.import.invalid.version" : "settings.memory.import.invalid.description",
+          parsed.error === "version"
+            ? "settings.memory.import.invalid.version"
+            : "settings.memory.import.invalid.description",
         ),
       })
       return
@@ -225,7 +228,11 @@ export const SettingsMemoryV2: Component<{ sessionID?: string }> = (props) => {
       failed(new Error(language.t("settings.memory.import.none")))
       return
     }
-    showToast({ variant: "success", icon: "circle-check", title: language.t("settings.memory.import.toast", { count: ok }) })
+    showToast({
+      variant: "success",
+      icon: "circle-check",
+      title: language.t("settings.memory.import.toast", { count: ok }),
+    })
   }
 
   const clearScopes = async (scopes: readonly string[]) => {

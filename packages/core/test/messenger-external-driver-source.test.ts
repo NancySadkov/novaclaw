@@ -31,7 +31,12 @@ const fakeDriver = (id: string): Driver => ({
 
 const registryWith = (drivers: readonly Driver[]) =>
   MessengerDrivers.layer.pipe(
-    Layer.provide(Layer.succeed(ExternalDriverSource.Service, ExternalDriverSource.Service.of({ drivers: () => Effect.succeed(drivers) }))),
+    Layer.provide(
+      Layer.succeed(
+        ExternalDriverSource.Service,
+        ExternalDriverSource.Service.of({ drivers: () => Effect.succeed(drivers) }),
+      ),
+    ),
   )
 
 describe("ExternalDriverSource → MessengerDrivers composition", () => {

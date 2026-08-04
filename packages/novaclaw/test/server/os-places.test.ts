@@ -11,7 +11,7 @@ describe("parseXdgUserDirs", () => {
       'XDG_DESKTOP_DIR="$HOME/Desktop"',
       'XDG_DOWNLOAD_DIR="$HOME/dl"',
       'XDG_MUSIC_DIR="$HOME"',
-      'not a dir line',
+      "not a dir line",
     ].join("\n")
     expect(parseXdgUserDirs(text, "/home/nancy")).toEqual([
       { name: "Desktop", path: "/home/nancy/Desktop" },

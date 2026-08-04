@@ -54,61 +54,64 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.withDeferred(Tool.make({
-          description:
-            "Inspect a BINARY file as a hex dump: 16 hex bytes per line, `;` starts a comment carrying the line's offset and ascii gloss. Reads a window of `length` bytes at `offset` — it pages, so it works on multi-GB images. The output format is exactly what `write-hex` accepts, so you can edit a dump and write it back. Use this (not `read`) for .bin/.iso/.o/object files/images and any non-text file.",
-          input: Input,
-          output: Output,
-          toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
-          execute: (input, context) =>
-            Effect.gen(function* () {
-              const source = {
-                type: "tool" as const,
-                messageID: context.assistantMessageID,
-                callID: context.toolCallID,
-              }
-              const offset = Math.max(0, Math.floor(input.offset ?? 0))
-              const length = Math.min(Math.max(1, Math.floor(input.length ?? DEFAULT_HEX_BYTES)), MAX_HEX_BYTES)
-              const target = yield* mutation.resolve({ path: input.filename })
-              const external = target.externalDirectory
-              if (external)
+        [name]: Tool.withDeferred(
+          Tool.make({
+            sideEffect: "read",
+            description:
+              "Inspect a BINARY file as a hex dump: 16 hex bytes per line, `;` starts a comment carrying the line's offset and ascii gloss. Reads a window of `length` bytes at `offset` — it pages, so it works on multi-GB images. The output format is exactly what `write-hex` accepts, so you can edit a dump and write it back. Use this (not `read`) for .bin/.iso/.o/object files/images and any non-text file.",
+            input: Input,
+            output: Output,
+            toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
+            execute: (input, context) =>
+              Effect.gen(function* () {
+                const source = {
+                  type: "tool" as const,
+                  messageID: context.assistantMessageID,
+                  callID: context.toolCallID,
+                }
+                const offset = Math.max(0, Math.floor(input.offset ?? 0))
+                const length = Math.min(Math.max(1, Math.floor(input.length ?? DEFAULT_HEX_BYTES)), MAX_HEX_BYTES)
+                const target = yield* mutation.resolve({ path: input.filename })
+                const external = target.externalDirectory
+                if (external)
+                  yield* permission.assert({
+                    ...LocationMutation.externalDirectoryPermission(external, "read"),
+                    sessionID: context.sessionID,
+                    agent: context.agent,
+                    source,
+                  })
+                // A hex read IS a read — saved `read` grants govern it identically.
                 yield* permission.assert({
-                  ...LocationMutation.externalDirectoryPermission(external, "read"),
+                  action: "read",
+                  resources: [target.resource],
+                  save: ["*"],
                   sessionID: context.sessionID,
                   agent: context.agent,
                   source,
                 })
-              // A hex read IS a read — saved `read` grants govern it identically.
-              yield* permission.assert({
-                action: "read",
-                resources: [target.resource],
-                save: ["*"],
-                sessionID: context.sessionID,
-                agent: context.agent,
-                source,
-              })
-              const window = yield* Effect.tryPromise(() => readWindow(target.canonical, offset, length))
-              const end = offset + window.bytes.length
-              const type = offset === 0 ? detectFileType(window.bytes) : undefined
-              const header = type ? `; ${type.format} — ${type.description}\n` : ""
-              return {
-                content: header + hexDump(window.bytes, offset),
-                offset,
-                bytes: window.bytes.length,
-                size: window.size,
-                ...(end < window.size ? { next: end } : {}),
-              }
-            }).pipe(
-              Effect.mapError((error) => {
-                if (error instanceof ToolFailure) return error
-                const denial = PermissionV2.denialMessage(error)
-                if (denial) return new ToolFailure({ message: denial })
-                return new ToolFailure({
-                  message: `Unable to read-hex ${input.filename}: ${error instanceof Error ? error.message : String(error)}`,
-                })
-              }),
-            ),
-        })),
+                const window = yield* Effect.tryPromise(() => readWindow(target.canonical, offset, length))
+                const end = offset + window.bytes.length
+                const type = offset === 0 ? detectFileType(window.bytes) : undefined
+                const header = type ? `; ${type.format} — ${type.description}\n` : ""
+                return {
+                  content: header + hexDump(window.bytes, offset),
+                  offset,
+                  bytes: window.bytes.length,
+                  size: window.size,
+                  ...(end < window.size ? { next: end } : {}),
+                }
+              }).pipe(
+                Effect.mapError((error) => {
+                  if (error instanceof ToolFailure) return error
+                  const denial = PermissionV2.denialMessage(error)
+                  if (denial) return new ToolFailure({ message: denial })
+                  return new ToolFailure({
+                    message: `Unable to read-hex ${input.filename}: ${error instanceof Error ? error.message : String(error)}`,
+                  })
+                }),
+              ),
+          }),
+        ),
       })
       .pipe(Effect.orDie)
   }),

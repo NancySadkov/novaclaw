@@ -155,6 +155,7 @@ export const layer = Layer.effectDiscard(
     yield* tools
       .register({
         [name]: Tool.make({
+          sideEffect: "read",
           description,
           input: Input,
           output: Output,

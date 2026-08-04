@@ -103,11 +103,7 @@ export interface UserClient {
   readonly history: (chatID: string, limit: number) => Promise<readonly UserMessage[]>
   readonly sendText: (chatID: string, text: string) => Promise<{ readonly messageID: string }>
   /** Upload + send one file (a document), with an optional caption. */
-  readonly sendFile: (
-    chatID: string,
-    file: OutboundFile,
-    caption?: string,
-  ) => Promise<{ readonly messageID: string }>
+  readonly sendFile: (chatID: string, file: OutboundFile, caption?: string) => Promise<{ readonly messageID: string }>
   /** Download a file by the platform file id a FileRef carries. */
   readonly downloadFile: (fileID: string) => Promise<Uint8Array>
   readonly close: () => Promise<void>
@@ -149,7 +145,9 @@ const mapClientError = (error: unknown): ConnectError | ChallengeError => {
 const tryClient = <A>(run: () => Promise<A>): Effect.Effect<A, ConnectError | ChallengeError> =>
   Effect.tryPromise({ try: run, catch: mapClientError })
 
-const parseAccountConfig = (account: Messenger.AccountInfo): Effect.Effect<{ apiId: number; apiHash: string }, ConnectError> => {
+const parseAccountConfig = (
+  account: Messenger.AccountInfo,
+): Effect.Effect<{ apiId: number; apiHash: string }, ConnectError> => {
   const apiId = Number(account.settings["apiId"] ?? "")
   const apiHash = (account.settings["apiHash"] ?? "").trim()
   if (!Number.isInteger(apiId) || apiId <= 0 || apiHash.length === 0)
@@ -203,8 +201,9 @@ export const isSelfMessage = (
 
 export const make = (factory: UserClientFactory): Driver => {
   const acquire = (config: UserClientConfig) =>
-    Effect.acquireRelease(tryClient(() => factory(config)), (client) =>
-      Effect.promise(() => client.close().catch(() => undefined)),
+    Effect.acquireRelease(
+      tryClient(() => factory(config)),
+      (client) => Effect.promise(() => client.close().catch(() => undefined)),
     )
 
   const login: LoginSupport = {
@@ -213,7 +212,9 @@ export const make = (factory: UserClientFactory): Driver => {
         const config = yield* parseAccountConfig(account)
         const phone = (inputs["phone"] ?? "").trim()
         if (phone.length === 0)
-          return yield* Effect.fail(new ConnectError({ reason: "A phone number is required (international format, e.g. +49…)." }))
+          return yield* Effect.fail(
+            new ConnectError({ reason: "A phone number is required (international format, e.g. +49…)." }),
+          )
         const password = (inputs["password"] ?? "").trim()
         const client = yield* acquire(config)
         const sent = yield* tryClient(() => client.sendCode(phone))
@@ -221,7 +222,9 @@ export const make = (factory: UserClientFactory): Driver => {
           Effect.gen(function* () {
             const trimmed = code.trim()
             if (trimmed.length === 0)
-              return yield* Effect.fail(new LoginCodeError({ reason: "Enter the code Telegram sent you.", retryable: true }))
+              return yield* Effect.fail(
+                new LoginCodeError({ reason: "Enter the code Telegram sent you.", retryable: true }),
+              )
             yield* Effect.tryPromise({
               try: () => client.signIn({ phone, phoneCodeHash: sent.phoneCodeHash, code: trimmed }),
               catch: (error) => error,
@@ -231,7 +234,10 @@ export const make = (factory: UserClientFactory): Driver => {
                   if (error.failure.kind === "password-needed") {
                     // 2FA: the password was collected up front (loginPrompts) so this stays one round-trip.
                     if (password.length > 0)
-                      return Effect.tryPromise({ try: () => client.checkPassword(password), catch: (inner) => inner }).pipe(
+                      return Effect.tryPromise({
+                        try: () => client.checkPassword(password),
+                        catch: (inner) => inner,
+                      }).pipe(
                         Effect.catch((inner) =>
                           Effect.fail(
                             inner instanceof UserClientError && inner.failure.kind === "challenge"
@@ -316,7 +322,9 @@ export const make = (factory: UserClientFactory): Driver => {
         const session = ctx.secret
         if (session === undefined || session.length === 0)
           return yield* Effect.fail(
-            new ConnectError({ reason: "This account isn't logged in yet — finish the Telegram login in Settings → Messengers." }),
+            new ConnectError({
+              reason: "This account isn't logged in yet — finish the Telegram login in Settings → Messengers.",
+            }),
           )
         const config = yield* parseAccountConfig(ctx.account)
         const client = yield* acquire({ ...config, session })
@@ -417,9 +425,13 @@ export const make = (factory: UserClientFactory): Driver => {
           listChats: () =>
             demoteChallenge(
               tryClient(() =>
-                client.dialogs(100).then((chats) =>
-                  chats.map((chat) => (chat.chatID === me.id ? { ...chat, self: true, title: "Saved Messages" } : chat)),
-                ),
+                client
+                  .dialogs(100)
+                  .then((chats) =>
+                    chats.map((chat) =>
+                      chat.chatID === me.id ? { ...chat, self: true, title: "Saved Messages" } : chat,
+                    ),
+                  ),
               ),
             ),
           history: (chatID, limit) =>

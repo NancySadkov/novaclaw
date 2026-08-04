@@ -102,25 +102,27 @@ export const layer = Layer.effectDiscard(
     yield* tools
       .register({
         [name]: ToolRegistry.withAvailability(
-          Tool.withDeferred(Tool.make({
-            description,
-            input: Input,
-            output: Output,
-            toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
-            // Reads through to the settings store on every call (ruling 3), so a profile edited
-            // mid-session is what the next call returns — there is no registration-time snapshot to
-            // go stale. `username` is the legacy name fallback (mirrors B4).
-            execute: () =>
-              config.entries().pipe(
-                Effect.map((current) => {
-                  const p = Config.latest(current, "user_profile")
-                  const profileName = p?.name?.trim() || Config.latest(current, "username")?.trim() || undefined
-                  const about = p?.about?.trim() || undefined
-                  return { name: profileName, about }
-                }),
-                Effect.mapError(() => new ToolFailure({ message: "Unable to read the user profile" })),
-              ),
-          })),
+          Tool.withDeferred(
+            Tool.make({
+              description,
+              input: Input,
+              output: Output,
+              toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
+              // Reads through to the settings store on every call (ruling 3), so a profile edited
+              // mid-session is what the next call returns — there is no registration-time snapshot to
+              // go stale. `username` is the legacy name fallback (mirrors B4).
+              execute: () =>
+                config.entries().pipe(
+                  Effect.map((current) => {
+                    const p = Config.latest(current, "user_profile")
+                    const profileName = p?.name?.trim() || Config.latest(current, "username")?.trim() || undefined
+                    const about = p?.about?.trim() || undefined
+                    return { name: profileName, about }
+                  }),
+                  Effect.mapError(() => new ToolFailure({ message: "Unable to read the user profile" })),
+                ),
+            }),
+          ),
           sharingEnabled,
         ),
       })

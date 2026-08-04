@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { Context, Effect } from "effect"
 import path from "path"
+import fs from "fs/promises"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { FilePaths } from "../../src/server/routes/instance/httpapi/groups/file"
 import { resetDatabase } from "../fixture/db"
@@ -19,6 +20,20 @@ function request(route: string, directory: string, query?: Record<string, string
       headers: {
         "x-novaclaw-directory": directory,
       },
+    }),
+    context,
+  )
+}
+
+function mutate(route: string, directory: string, body: unknown) {
+  return HttpApiApp.webHandler().handler(
+    new Request(`http://localhost${route}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-novaclaw-directory": directory,
+      },
+      body: JSON.stringify(body),
     }),
     context,
   )
@@ -73,5 +88,34 @@ describe("file HttpApi", () => {
 
     expect(files.response.status).toBe(200)
     expect(files.body).toContain("hello.txt")
+  })
+
+  test("renames files and folders without replacing an existing destination", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Bun.write(path.join(tmp.path, "before.txt"), "before")
+
+    const renamed = await mutate(FilePaths.rename, tmp.path, { path: "before.txt", name: "after.txt" })
+    expect(renamed.status).toBe(200)
+    expect(await Bun.file(path.join(tmp.path, "after.txt")).text()).toBe("before")
+    expect(await Bun.file(path.join(tmp.path, "before.txt")).exists()).toBe(false)
+
+    await Bun.write(path.join(tmp.path, "occupied.txt"), "keep")
+    const collision = await mutate(FilePaths.rename, tmp.path, { path: "after.txt", name: "occupied.txt" })
+    expect(collision.status).toBeGreaterThanOrEqual(400)
+    expect(await Bun.file(path.join(tmp.path, "after.txt")).text()).toBe("before")
+    expect(await Bun.file(path.join(tmp.path, "occupied.txt")).text()).toBe("keep")
+
+    const folder = await mutate(FilePaths.mkdir, tmp.path, { path: "folder-before", exclusive: true })
+    expect(folder.status).toBe(200)
+    const duplicate = await mutate(FilePaths.mkdir, tmp.path, { path: "folder-before", exclusive: true })
+    expect(duplicate.status).toBe(400)
+    expect((await duplicate.json()).message).toContain("Could not create that folder")
+
+    const renamedFolder = await mutate(FilePaths.rename, tmp.path, {
+      path: "folder-before",
+      name: "folder-after",
+    })
+    expect(renamedFolder.status).toBe(200)
+    expect((await fs.stat(path.join(tmp.path, "folder-after"))).isDirectory()).toBe(true)
   })
 })

@@ -20,7 +20,8 @@ const GRAPH_LIMIT = 600
 const SCOPE_GLOBAL = "#8b5cf6" // violet — durable, cross-chat
 const SCOPE_SESSION = "#22d3ee" // cyan — this chat only
 const scopeColor = (scope: string) => (scope === "global" ? SCOPE_GLOBAL : SCOPE_SESSION)
-const scopeLabel = (scope: string) => (scope === "global" ? "Always (global)" : scope.startsWith("session:") ? "One chat" : scope)
+const scopeLabel = (scope: string) =>
+  scope === "global" ? "Always (global)" : scope.startsWith("session:") ? "One chat" : scope
 
 const truncate = (text: string, n = 40) => (text.length > n ? text.slice(0, n - 1) + "…" : text)
 
@@ -63,7 +64,9 @@ export function MemoryGraphPage() {
       return cn ? { cn, dir: directory(), t: tick() } : undefined
     },
     ({ cn, dir }) =>
-      memoryGraph(cn.http, { directory: dir, limit: GRAPH_LIMIT }).catch(() => ({ nodes: [], edges: [] }) as MemoryGraph),
+      memoryGraph(cn.http, { directory: dir, limit: GRAPH_LIMIT }).catch(
+        () => ({ nodes: [], edges: [] }) as MemoryGraph,
+      ),
   )
 
   // Deterministic layout, seeded from the per-instance cache (stable across opens); positions written
@@ -291,10 +294,7 @@ export function MemoryGraphPage() {
                     <For each={selectedEdges()}>
                       {(edge) => (
                         <li>
-                          <button
-                            class="w-full text-left hover:underline"
-                            onClick={() => setSelected(edge.other)}
-                          >
+                          <button class="w-full text-left hover:underline" onClick={() => setSelected(edge.other)}>
                             <span class="opacity-50">
                               {edge.dir} [{edge.type}]{" "}
                             </span>

@@ -19,7 +19,11 @@ interface Program {
 
 function buildWorld(opts: { initial: Record<string, string>; programs: Record<string, Program> }) {
   const files = new Map(Object.entries(opts.initial))
-  const base = (p: string): string => (p.replace(/^\.[/\\]/, "").split(/[/\\]/).pop() ?? p)
+  const base = (p: string): string =>
+    p
+      .replace(/^\.[/\\]/, "")
+      .split(/[/\\]/)
+      .pop() ?? p
   const execProgram = (command: string): { code: number; output: string } => {
     const parts = command.split("&&").map((s) => s.trim())
     let output = ""
@@ -60,7 +64,11 @@ function buildWorld(opts: { initial: Record<string, string>; programs: Record<st
         const next = cur.split(String(args.old_string)).join(String(args.new_string))
         const ok = next !== cur
         if (ok) files.set(p, next)
-        return Effect.succeed({ ok, output: ok ? "edited" : `old_string not found in ${p} — see the context above`, artifacts: new Map<string, string>() })
+        return Effect.succeed({
+          ok,
+          output: ok ? "edited" : `old_string not found in ${p} — see the context above`,
+          artifacts: new Map<string, string>(),
+        })
       }
       const r = execProgram(String(args.command))
       return Effect.succeed({ ok: r.code === 0, output: r.output, artifacts: new Map<string, string>() })
@@ -70,8 +78,22 @@ function buildWorld(opts: { initial: Record<string, string>; programs: Record<st
   return { files, runner, executor, listFiles }
 }
 
-const compound = (goals: string[]) => JSON.stringify({ goal: "root", size: "needs_decomposition", success: "ok", substeps: goals.map((goal) => ({ goal, size: "atomic", tool: "note", args: { text: "x" }, check: { type: "artifact_present" }, produces: [] })) })
-const atom = (over: Record<string, unknown>) => JSON.stringify({ goal: "step", size: "atomic", success: "ok", produces: [], ...over })
+const compound = (goals: string[]) =>
+  JSON.stringify({
+    goal: "root",
+    size: "needs_decomposition",
+    success: "ok",
+    substeps: goals.map((goal) => ({
+      goal,
+      size: "atomic",
+      tool: "note",
+      args: { text: "x" },
+      check: { type: "artifact_present" },
+      produces: [],
+    })),
+  })
+const atom = (over: Record<string, unknown>) =>
+  JSON.stringify({ goal: "step", size: "atomic", success: "ok", produces: [], ...over })
 
 function harness(opts: {
   world: ReturnType<typeof buildWorld>
@@ -88,7 +110,9 @@ function harness(opts: {
   const deps: JhEngine.Deps = {
     introspect: (p) => {
       opts.onPrompt?.(p.user)
-      return p.user.includes("Is the goal fully achieved?") ? Effect.succeed(`{"achieved": false}`) : Effect.succeed(replies[i++] ?? idle)
+      return p.user.includes("Is the goal fully achieved?")
+        ? Effect.succeed(`{"achieved": false}`)
+        : Effect.succeed(replies[i++] ?? idle)
     },
     correct: () => Effect.fail({ message: "x" }),
     executor: opts.world.executor,
@@ -114,8 +138,21 @@ const log = (r: JhEngine.Report, t: string) => r.state.log.filter((e) => e.type 
 // ---- the run138/139 world: t.exe embodies a WRONG hand-computed expectation — it fails with the SAME
 // output no matter how prog.c changes (the program is effectively correct; the oracle is not). ----
 const CHECK_CMD = "gcc t.c prog.c -o t.exe && ./t.exe"
-const RUN_STEP = atom({ goal: "build and test", tool: "run", args: { command: CHECK_CMD }, check: { type: "run", command: CHECK_CMD, expect: "PASS" }, difficulty_prior: "hard" })
-const editStep = (from: string, to: string) => atom({ goal: "fix prog", tool: "edit_file", args: { path: "prog.c", old_string: from, new_string: to }, check: { type: "run", command: CHECK_CMD, expect: "PASS" }, difficulty_prior: "hard" })
+const RUN_STEP = atom({
+  goal: "build and test",
+  tool: "run",
+  args: { command: CHECK_CMD },
+  check: { type: "run", command: CHECK_CMD, expect: "PASS" },
+  difficulty_prior: "hard",
+})
+const editStep = (from: string, to: string) =>
+  atom({
+    goal: "fix prog",
+    tool: "edit_file",
+    args: { path: "prog.c", old_string: from, new_string: to },
+    check: { type: "run", command: CHECK_CMD, expect: "PASS" },
+    difficulty_prior: "hard",
+  })
 const wrongOracleWorld = () =>
   buildWorld({
     initial: { "prog.c": "prog v1", "t.c": "test expects THREE" },
@@ -128,7 +165,14 @@ describe("jh-improve10 P1 — never-green suspicion (§K6)", () => {
     const prompts: string[] = []
     const deps = harness({
       world,
-      replies: [compound(["build and test"]), RUN_STEP, editStep("v1", "v2"), editStep("v2", "v3"), editStep("v3", "v4"), editStep("v4", "v5")],
+      replies: [
+        compound(["build and test"]),
+        RUN_STEP,
+        editStep("v1", "v2"),
+        editStep("v2", "v3"),
+        editStep("v3", "v4"),
+        editStep("v4", "v5"),
+      ],
       onPrompt: (u) => prompts.push(u),
     })
     const r = await run(deps)
@@ -146,7 +190,14 @@ describe("jh-improve10 P1 — never-green suspicion (§K6)", () => {
     })
     const deps = harness({
       world,
-      replies: [compound(["build and test"]), RUN_STEP, editStep("v1", "v2"), editStep("v2", "v3"), editStep("v3", "v4"), editStep("v4", "v5")],
+      replies: [
+        compound(["build and test"]),
+        RUN_STEP,
+        editStep("v1", "v2"),
+        editStep("v2", "v3"),
+        editStep("v3", "v4"),
+        editStep("v4", "v5"),
+      ],
     })
     const r = await run(deps)
     expect(log(r, "test_never_green").length).toBe(0)
@@ -156,7 +207,12 @@ describe("jh-improve10 P1 — never-green suspicion (§K6)", () => {
     // passes on the first run (registers), then fails identically forever once prog.c reaches v2+.
     const world = buildWorld({
       initial: { "prog.c": "prog v1", "t.c": "test" },
-      programs: { "t.exe": (f) => ((f.get("prog.c") ?? "").includes("v1") ? { code: 0, output: "PASS" } : { code: 1, output: "FAIL: expected 3 got 2" }) },
+      programs: {
+        "t.exe": (f) =>
+          (f.get("prog.c") ?? "").includes("v1")
+            ? { code: 0, output: "PASS" }
+            : { code: 1, output: "FAIL: expected 3 got 2" },
+      },
     })
     const deps = harness({
       world,
@@ -177,7 +233,14 @@ describe("jh-improve10 P1 — never-green suspicion (§K6)", () => {
     const world = wrongOracleWorld()
     const deps = harness({
       world,
-      replies: [compound(["build and test"]), RUN_STEP, editStep("v1", "v2"), editStep("v2", "v3"), editStep("v3", "v4"), editStep("v4", "v5")],
+      replies: [
+        compound(["build and test"]),
+        RUN_STEP,
+        editStep("v1", "v2"),
+        editStep("v2", "v3"),
+        editStep("v3", "v4"),
+        editStep("v4", "v5"),
+      ],
       neverGreen: false,
     })
     const r = await run(deps)
@@ -188,7 +251,13 @@ describe("jh-improve10 P1 — never-green suspicion (§K6)", () => {
 describe("jh-improve11 P1 — the cooperative abort seam (racing)", () => {
   test("aborted mid-run: exits through the normal terminal path with reason 'aborted', mid-leaf included", async () => {
     const world = buildWorld({ initial: { "lib.c": "v1" }, programs: {} })
-    const MISS = atom({ goal: "m", tool: "edit_file", args: { path: "lib.c", old_string: "NO-SUCH", new_string: "x" }, check: { type: "artifact_present" }, difficulty_prior: "hard" })
+    const MISS = atom({
+      goal: "m",
+      tool: "edit_file",
+      args: { path: "lib.c", old_string: "NO-SUCH", new_string: "x" },
+      check: { type: "artifact_present" },
+      difficulty_prior: "hard",
+    })
     let calls = 0
     const deps = harness({
       world,
@@ -210,21 +279,45 @@ describe("jh-improve11 P1 — the cooperative abort seam (racing)", () => {
 describe("jh-improve10 P2 — the cumulative (sticky) drift-lock", () => {
   test("run140 fixture: interleaved miss/success evades the consecutive counter but trips the cumulative lock", async () => {
     const world = buildWorld({ initial: { "lib.c": "alpha beta gamma delta epsilon zeta eta v1" }, programs: {} })
-    const MISS = atom({ goal: "m", tool: "edit_file", args: { path: "lib.c", old_string: "NO-SUCH", new_string: "x" }, check: { type: "artifact_present" } })
-    const hit = (from: string, to: string) => atom({ goal: "h", tool: "edit_file", args: { path: "lib.c", old_string: from, new_string: to }, check: { type: "artifact_present" } })
+    const MISS = atom({
+      goal: "m",
+      tool: "edit_file",
+      args: { path: "lib.c", old_string: "NO-SUCH", new_string: "x" },
+      check: { type: "artifact_present" },
+    })
+    const hit = (from: string, to: string) =>
+      atom({
+        goal: "h",
+        tool: "edit_file",
+        args: { path: "lib.c", old_string: from, new_string: to },
+        check: { type: "artifact_present" },
+      })
     // 6 misses, each separated by a successful edit — the consecutive counter never reaches 3.
     const deps = harness({
       world,
       replies: [
         compound(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"]),
-        MISS, hit("alpha", "A"), MISS, hit("beta", "B"), MISS, hit("gamma", "C"), MISS, hit("delta", "D"), MISS, hit("epsilon", "E"), MISS, hit("zeta", "F"),
+        MISS,
+        hit("alpha", "A"),
+        MISS,
+        hit("beta", "B"),
+        MISS,
+        hit("gamma", "C"),
+        MISS,
+        hit("delta", "D"),
+        MISS,
+        hit("epsilon", "E"),
+        MISS,
+        hit("zeta", "F"),
       ],
       defaultReply: MISS,
       limits: { maxDepth: 3, maxTotalSteps: 40 },
     })
     const r = await run(deps)
     expect(log(r, "coord_mode").length).toBe(1) // the STICKY cumulative lock fired
-    const details = r.state.log.filter((e) => e.type === "verification").map((e) => String((e as { detail?: unknown }).detail ?? ""))
+    const details = r.state.log
+      .filter((e) => e.type === "verification")
+      .map((e) => String((e as { detail?: unknown }).detail ?? ""))
     expect(details.filter((d) => d.startsWith("old_string not found in lib.c")).length).toBe(6) // misses 7+ were intercepted
     expect(details.some((d) => d.includes("edit_file is DISABLED for lib.c"))).toBe(true)
   })

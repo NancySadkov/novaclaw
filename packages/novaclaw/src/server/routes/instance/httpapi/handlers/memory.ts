@@ -13,7 +13,10 @@ import { InvalidRequestError } from "../errors"
 
 const csv = (value: string | undefined): string[] | undefined => {
   if (value === undefined) return undefined
-  const parts = value.split(",").map((s) => s.trim()).filter(Boolean)
+  const parts = value
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
   return parts.length ? parts : undefined
 }
 const truthy = (value: string | undefined) => value === "1" || value === "true"
@@ -22,7 +25,11 @@ const truthy = (value: string | undefined) => value === "1" || value === "true"
 const MAX_INGEST_CHARS = 4_000_000
 
 const asBadRequest = <A, R>(effect: Effect.Effect<A, MemoryClient.MemoryError, R>) =>
-  effect.pipe(Effect.catchTag("MemoryClient.MemoryError", (error) => Effect.fail(new InvalidRequestError({ message: error.reason }))))
+  effect.pipe(
+    Effect.catchTag("MemoryClient.MemoryError", (error) =>
+      Effect.fail(new InvalidRequestError({ message: error.reason })),
+    ),
+  )
 
 export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (handlers) =>
   Effect.gen(function* () {
@@ -84,7 +91,9 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
       .handle(
         "path",
         Effect.fn("MemoryHttpApi.path")(function* (ctx) {
-          return yield* memory.path(ctx.payload.from, ctx.payload.to, ctx.payload.maxHops).pipe(Effect.orElseSucceed(() => null))
+          return yield* memory
+            .path(ctx.payload.from, ctx.payload.to, ctx.payload.maxHops)
+            .pipe(Effect.orElseSucceed(() => null))
         }),
       )
       .handle(

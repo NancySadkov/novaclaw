@@ -28,11 +28,24 @@ export interface Executor {
   }) => Effect.Effect<Observation>
 }
 
-export const TOOL_NAMES: ReadonlyArray<string> = ["write_file", "append_file", "edit_file", "replace_lines", "read_file", "run", "note", "git_revert"]
+export const TOOL_NAMES: ReadonlyArray<string> = [
+  "write_file",
+  "append_file",
+  "edit_file",
+  "replace_lines",
+  "read_file",
+  "run",
+  "note",
+  "git_revert",
+]
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 const noArtifacts: ReadonlyMap<string, string> = new Map()
-const obs = (ok: boolean, output: string, artifacts: ReadonlyMap<string, string> = noArtifacts): Observation => ({ ok, output, artifacts })
+const obs = (ok: boolean, output: string, artifacts: ReadonlyMap<string, string> = noArtifacts): Observation => ({
+  ok,
+  output,
+  artifacts,
+})
 const badArgs = (tool: string, shape: string): Observation => obs(false, `${tool} expects ${shape}`)
 
 /** Resolve a relative path under cwd, refusing absolute paths and `..` escapes. */
@@ -44,14 +57,23 @@ function safePath(cwd: string, rel: string): string | undefined {
 }
 
 /** The first declared produce matching `pred` receives the tool's principal content. */
-function assignFirst(produces: ReadonlyArray<JhStep.ArtifactRef>, pred: (r: JhStep.ArtifactRef) => boolean, content: string): ReadonlyMap<string, string> {
+function assignFirst(
+  produces: ReadonlyArray<JhStep.ArtifactRef>,
+  pred: (r: JhStep.ArtifactRef) => boolean,
+  content: string,
+): ReadonlyMap<string, string> {
   const ref = produces.find(pred)
   return ref ? new Map([[ref.id, content]]) : noArtifacts
 }
 
-function writeFile(input: { args: Readonly<Record<string, unknown>>; produces: ReadonlyArray<JhStep.ArtifactRef>; cwd: string }): Observation {
+function writeFile(input: {
+  args: Readonly<Record<string, unknown>>
+  produces: ReadonlyArray<JhStep.ArtifactRef>
+  cwd: string
+}): Observation {
   const { path: p, content } = input.args
-  if (typeof p !== "string" || typeof content !== "string") return badArgs("write_file", "{path: string, content: string}")
+  if (typeof p !== "string" || typeof content !== "string")
+    return badArgs("write_file", "{path: string, content: string}")
   const target = safePath(input.cwd, p)
   if (!target) return obs(false, `write_file refused unsafe path "${p}" (absolute or contains "..")`)
   try {
@@ -60,7 +82,11 @@ function writeFile(input: { args: Readonly<Record<string, unknown>>; produces: R
   } catch (e) {
     return obs(false, `write_file failed: ${messageOf(e)}`)
   }
-  return obs(true, `wrote ${Buffer.byteLength(content, "utf8")} bytes to ${p}`, assignFirst(input.produces, (r) => r.type === "file", content))
+  return obs(
+    true,
+    `wrote ${Buffer.byteLength(content, "utf8")} bytes to ${p}`,
+    assignFirst(input.produces, (r) => r.type === "file", content),
+  )
 }
 
 // improve17 L2 (the beat-run pipeline): bulk artifacts (chapters, long documents) GROW in verified
@@ -68,9 +94,14 @@ function writeFile(input: { args: Readonly<Record<string, unknown>>; produces: R
 // sink in the Tier-3 batteries: every gate failure re-bought a ~2,700-token generation). Creates the
 // file when missing; separates increments with a blank line when the existing text doesn't already
 // end in one (the natural paragraph glue for prose — and harmless for code/logs).
-function appendFile(input: { args: Readonly<Record<string, unknown>>; produces: ReadonlyArray<JhStep.ArtifactRef>; cwd: string }): Observation {
+function appendFile(input: {
+  args: Readonly<Record<string, unknown>>
+  produces: ReadonlyArray<JhStep.ArtifactRef>
+  cwd: string
+}): Observation {
   const { path: p, content } = input.args
-  if (typeof p !== "string" || typeof content !== "string") return badArgs("append_file", "{path: string, content: string}")
+  if (typeof p !== "string" || typeof content !== "string")
+    return badArgs("append_file", "{path: string, content: string}")
   if (content === "") return obs(false, "append_file: content is empty — nothing to append")
   const target = safePath(input.cwd, p)
   if (!target) return obs(false, `append_file refused unsafe path "${p}" (absolute or contains "..")`)
@@ -104,7 +135,10 @@ const normLine = (l: string, tier: number): string => {
   if (tier >= 3) x = x.replace(/\s+/g, " ").trim() // improve5 P1d tier 3: collapse ALL internal whitespace runs
   return x
 }
-type EditMatch = { readonly kind: "ok"; readonly updated: string; readonly tier: number } | { readonly kind: "multi"; readonly count: number; readonly tier: number } | { readonly kind: "miss" }
+type EditMatch =
+  | { readonly kind: "ok"; readonly updated: string; readonly tier: number }
+  | { readonly kind: "multi"; readonly count: number; readonly tier: number }
+  | { readonly kind: "miss" }
 function matchEdit(content: string, oldStr: string, newStr: string): EditMatch {
   if (oldStr === "") return { kind: "miss" }
   // Tier 0: exact.
@@ -164,9 +198,14 @@ function nearestLine(content: string, oldStr: string): string {
 // R5 (jh-improve1): a TARGETED edit — replace ONE unique occurrence of old_string. ~10× fewer output tokens
 // than a whole-file rewrite and can't corrupt the untouched rest of the file (kills D5). improve3 P4 adds the
 // near-miss tiers above so weak-model quote drift heals instead of looping.
-function editFile(input: { args: Readonly<Record<string, unknown>>; produces: ReadonlyArray<JhStep.ArtifactRef>; cwd: string }): Observation {
+function editFile(input: {
+  args: Readonly<Record<string, unknown>>
+  produces: ReadonlyArray<JhStep.ArtifactRef>
+  cwd: string
+}): Observation {
   const { path: p, old_string: oldStr, new_string: newStr } = input.args
-  if (typeof p !== "string" || typeof oldStr !== "string" || typeof newStr !== "string") return badArgs("edit_file", "{path: string, old_string: string, new_string: string}")
+  if (typeof p !== "string" || typeof oldStr !== "string" || typeof newStr !== "string")
+    return badArgs("edit_file", "{path: string, old_string: string, new_string: string}")
   const target = safePath(input.cwd, p)
   if (!target) return obs(false, `edit_file refused unsafe path "${p}" (absolute or contains "..")`)
   let content: string
@@ -180,19 +219,33 @@ function editFile(input: { args: Readonly<Record<string, unknown>>; produces: Re
     return obs(false, `file not found: ${p} — files present: ${present}`)
   }
   const m = matchEdit(content, oldStr, newStr)
-  if (m.kind === "multi") return obs(false, `old_string occurs ${m.count} times in ${p} — provide a longer, UNIQUE snippet so exactly one match is edited`)
+  if (m.kind === "multi")
+    return obs(
+      false,
+      `old_string occurs ${m.count} times in ${p} — provide a longer, UNIQUE snippet so exactly one match is edited`,
+    )
   if (m.kind === "miss") {
     const near = nearestLine(content, oldStr)
     const hint = near ? ` The nearest line in the file is: '${near}' — copy it EXACTLY (including indentation).` : ""
-    return obs(false, `old_string not found in ${p} — the file's ACTUAL current content is shown in the context above; copy the exact text to replace.${hint}`)
+    return obs(
+      false,
+      `old_string not found in ${p} — the file's ACTUAL current content is shown in the context above; copy the exact text to replace.${hint}`,
+    )
   }
   try {
     fs.writeFileSync(target, m.updated, "utf8")
   } catch (e) {
     return obs(false, `edit_file failed: ${messageOf(e)}`)
   }
-  const note = m.tier > 0 ? ` (matched with ${m.tier === 1 ? "whitespace" : m.tier === 2 ? "indentation" : "whitespace-collapsed"} normalization)` : ""
-  return obs(true, `edited ${p}: -${oldStr.length} +${newStr.length} chars${note}`, assignFirst(input.produces, (r) => r.type === "file", m.updated))
+  const note =
+    m.tier > 0
+      ? ` (matched with ${m.tier === 1 ? "whitespace" : m.tier === 2 ? "indentation" : "whitespace-collapsed"} normalization)`
+      : ""
+  return obs(
+    true,
+    `edited ${p}: -${oldStr.length} +${newStr.length} chars${note}`,
+    assignFirst(input.produces, (r) => r.type === "file", m.updated),
+  )
 }
 
 // improve5 P1c: coordinate-addressed editing — replace an INCLUSIVE 1-based line range with new content. A
@@ -200,11 +253,16 @@ function editFile(input: { args: Readonly<Record<string, unknown>>; produces: Re
 // wave 4), but it CAN read the `N→` line numbers shown in the workspace and name a range. Replace-only
 // (first_line ≤ last_line ≤ line count); out-of-range names the file's actual length; the observation ECHOES
 // the replaced lines so a mis-target is immediately visible + git/tx-revertible. Sandboxed like write_file.
-function replaceLines(input: { args: Readonly<Record<string, unknown>>; produces: ReadonlyArray<JhStep.ArtifactRef>; cwd: string }): Observation {
+function replaceLines(input: {
+  args: Readonly<Record<string, unknown>>
+  produces: ReadonlyArray<JhStep.ArtifactRef>
+  cwd: string
+}): Observation {
   const { path: p, first_line: first, last_line: last, new_content: repl } = input.args
   if (typeof p !== "string" || typeof first !== "number" || typeof last !== "number" || typeof repl !== "string")
     return badArgs("replace_lines", "{path: string, first_line: number, last_line: number, new_content: string}")
-  if (!Number.isInteger(first) || !Number.isInteger(last)) return obs(false, "replace_lines: first_line and last_line must be integers")
+  if (!Number.isInteger(first) || !Number.isInteger(last))
+    return obs(false, "replace_lines: first_line and last_line must be integers")
   const target = safePath(input.cwd, p)
   if (!target) return obs(false, `replace_lines refused unsafe path "${p}" (absolute or contains "..")`)
   let content: string
@@ -216,7 +274,10 @@ function replaceLines(input: { args: Readonly<Record<string, unknown>>; produces
   const lines = content.split("\n")
   const n = lines.length
   if (first < 1 || last < first || last > n)
-    return obs(false, `replace_lines out of range: ${p} has ${n} lines; you gave first_line=${first} last_line=${last} (need 1 ≤ first_line ≤ last_line ≤ ${n}). The workspace listing shows the current line numbers.`)
+    return obs(
+      false,
+      `replace_lines out of range: ${p} has ${n} lines; you gave first_line=${first} last_line=${last} (need 1 ≤ first_line ≤ last_line ≤ ${n}). The workspace listing shows the current line numbers.`,
+    )
   const removed = lines.slice(first - 1, last).join("\n")
   const updated = [...lines.slice(0, first - 1), ...repl.split("\n"), ...lines.slice(last)].join("\n")
   try {
@@ -225,10 +286,18 @@ function replaceLines(input: { args: Readonly<Record<string, unknown>>; produces
     return obs(false, `replace_lines failed: ${messageOf(e)}`)
   }
   const echo = removed.length > 240 ? removed.slice(0, 240) + "…" : removed
-  return obs(true, `replaced lines ${first}-${last} in ${p} (was: ${JSON.stringify(echo)})`, assignFirst(input.produces, (r) => r.type === "file", updated))
+  return obs(
+    true,
+    `replaced lines ${first}-${last} in ${p} (was: ${JSON.stringify(echo)})`,
+    assignFirst(input.produces, (r) => r.type === "file", updated),
+  )
 }
 
-function readFile(input: { args: Readonly<Record<string, unknown>>; produces: ReadonlyArray<JhStep.ArtifactRef>; cwd: string }): Observation {
+function readFile(input: {
+  args: Readonly<Record<string, unknown>>
+  produces: ReadonlyArray<JhStep.ArtifactRef>
+  cwd: string
+}): Observation {
   const { path: p } = input.args
   if (typeof p !== "string") return badArgs("read_file", "{path: string}")
   const target = safePath(input.cwd, p)
@@ -236,16 +305,27 @@ function readFile(input: { args: Readonly<Record<string, unknown>>; produces: Re
   try {
     let content = fs.readFileSync(target, "utf8")
     if (content.length > 65_536) content = content.slice(0, 65_536) + "…[truncated]"
-    return obs(true, content, assignFirst(input.produces, () => true, content))
+    return obs(
+      true,
+      content,
+      assignFirst(input.produces, () => true, content),
+    )
   } catch (e) {
     return obs(false, `read_file failed: ${messageOf(e)}`)
   }
 }
 
-function note(input: { args: Readonly<Record<string, unknown>>; produces: ReadonlyArray<JhStep.ArtifactRef> }): Observation {
+function note(input: {
+  args: Readonly<Record<string, unknown>>
+  produces: ReadonlyArray<JhStep.ArtifactRef>
+}): Observation {
   const { text } = input.args
   if (typeof text !== "string") return badArgs("note", "{text: string}")
-  return obs(true, text, assignFirst(input.produces, (r) => r.type === "note" || r.type === "text", text))
+  return obs(
+    true,
+    text,
+    assignFirst(input.produces, (r) => r.type === "note" || r.type === "text", text),
+  )
 }
 
 // jh-improve2: undo a botched, unfixable edit by rolling the file back to the last VERIFIED checkpoint (the
@@ -253,20 +333,26 @@ function note(input: { args: Readonly<Record<string, unknown>>; produces: Readon
 // untracked file (never checkpointed) can't be reverted this way — that's reported. Uses the runner (a git
 // subprocess), like `run`. This is the surgical-edit safety net (owner: don't rewrite the whole program —
 // edit; if the edit botches, revert and re-edit).
-function gitRevert(runner: JhProcessRunner.Runner, input: { args: Readonly<Record<string, unknown>>; cwd: string }): Effect.Effect<Observation> {
+function gitRevert(
+  runner: JhProcessRunner.Runner,
+  input: { args: Readonly<Record<string, unknown>>; cwd: string },
+): Effect.Effect<Observation> {
   const raw = input.args.path
   const p = typeof raw === "string" && raw.trim() !== "" ? raw.trim() : "."
-  if (p !== "." && !safePath(input.cwd, p)) return Effect.succeed(obs(false, `git_revert refused unsafe path "${p}" (absolute or contains "..")`))
-  return runner.run({ command: `git checkout -- ${p}`, cwd: input.cwd, timeoutMs: 15_000 }).pipe(
-    Effect.map((r) =>
-      obs(
-        r.exitCode === 0 && !r.timedOut,
-        r.exitCode === 0 && !r.timedOut
-          ? `git_revert: rolled ${p === "." ? "the working tree" : p} back to the last verified checkpoint`
-          : `git_revert failed (exit ${r.exitCode}): ${r.output.trim() || "the file may be untracked (never checkpointed) or this is not a git repo"}`,
+  if (p !== "." && !safePath(input.cwd, p))
+    return Effect.succeed(obs(false, `git_revert refused unsafe path "${p}" (absolute or contains "..")`))
+  return runner
+    .run({ command: `git checkout -- ${p}`, cwd: input.cwd, timeoutMs: 15_000 })
+    .pipe(
+      Effect.map((r) =>
+        obs(
+          r.exitCode === 0 && !r.timedOut,
+          r.exitCode === 0 && !r.timedOut
+            ? `git_revert: rolled ${p === "." ? "the working tree" : p} back to the last verified checkpoint`
+            : `git_revert failed (exit ${r.exitCode}): ${r.output.trim() || "the file may be untracked (never checkpointed) or this is not a git repo"}`,
+        ),
       ),
-    ),
-  )
+    )
 }
 
 export function basicExecutor(runner: JhProcessRunner.Runner, opts?: { readonly runTimeoutMs?: number }): Executor {

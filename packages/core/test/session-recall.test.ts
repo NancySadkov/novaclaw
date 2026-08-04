@@ -7,7 +7,8 @@ import type { SessionMessage } from "@novaclaw/core/session/message"
 // and the injected block is silent-use context (undefined when there's nothing to recall).
 
 const user = (text: string): SessionMessage.Message => ({ type: "user", text }) as unknown as SessionMessage.Message
-const assistant = (): SessionMessage.Message => ({ type: "assistant", content: [] }) as unknown as SessionMessage.Message
+const assistant = (): SessionMessage.Message =>
+  ({ type: "assistant", content: [] }) as unknown as SessionMessage.Message
 
 const hit = (text: string, name: string | null = null): MemoryClient.SearchHit => ({
   id: "mem_1",
@@ -53,9 +54,9 @@ describe("SessionRecall", () => {
   test("finds recalled memories that cite an exact Windows path", () => {
     const stale = hit("The file C:\\Users\\Nangl\\work\\pi.c already implements the program.")
     const other = { ...hit("Use C:\\Users\\Nangl\\work\\other.c instead."), id: "mem_2" }
-    expect(SessionRecall.memoriesMentioningPath([stale, other], ["C:/users/nangl/work/pi.c"]).map((row) => row.id)).toEqual([
-      "mem_1",
-    ])
+    expect(
+      SessionRecall.memoriesMentioningPath([stale, other], ["C:/users/nangl/work/pi.c"]).map((row) => row.id),
+    ).toEqual(["mem_1"])
   })
 
   test("does not confuse a missing path with a nearby filename or a path fragment", () => {

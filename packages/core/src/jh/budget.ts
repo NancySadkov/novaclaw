@@ -73,5 +73,7 @@ export const DEFAULT_TRIGGER: SplitTrigger = { cardinality: 8, density: 12, marg
 
 /** Force a split when measured cardinality (or density) exceeds its trigger minus the margin. */
 export function shouldForceSplit(trigger: SplitTrigger, measured: { cardinality: number; density: number }): boolean {
-  return measured.cardinality > trigger.cardinality - trigger.margin || measured.density > trigger.density - trigger.margin
+  return (
+    measured.cardinality > trigger.cardinality - trigger.margin || measured.density > trigger.density - trigger.margin
+  )
 }

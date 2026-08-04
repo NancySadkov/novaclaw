@@ -78,8 +78,12 @@ describe("toSampling (modulate AROUND the baseline, clamped)", () => {
   test("temperature is hard-clamped at both ends", () => {
     const manic: Mood = { ...calmMood, frustration: 1, boredom: 1 }
     const zen: Mood = { ...calmMood, satisfaction: 1, urgency: 1 }
-    expect(toSampling(manic, { temperature: 5 }, { toolsPresent: false, extended: false }).temperature).toBeLessThanOrEqual(1.15)
-    expect(toSampling(zen, { temperature: 0 }, { toolsPresent: false, extended: false }).temperature).toBeGreaterThanOrEqual(0.2)
+    expect(
+      toSampling(manic, { temperature: 5 }, { toolsPresent: false, extended: false }).temperature,
+    ).toBeLessThanOrEqual(1.15)
+    expect(
+      toSampling(zen, { temperature: 0 }, { toolsPresent: false, extended: false }).temperature,
+    ).toBeGreaterThanOrEqual(0.2)
   })
   test("extended adds a bounded top_k", () => {
     const out = toSampling({ ...calmMood, frustration: 1 }, { topK: 20 }, { toolsPresent: false, extended: true })

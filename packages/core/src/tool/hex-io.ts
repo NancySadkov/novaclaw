@@ -63,7 +63,9 @@ export async function writePatch(path: string, offset: number, bytes: Uint8Array
   try {
     const stat = await handle.stat()
     if (offset > stat.size)
-      throw new Error(`Offset ${offset} is past the end of the file (${stat.size} bytes) — appending starts AT the size`)
+      throw new Error(
+        `Offset ${offset} is past the end of the file (${stat.size} bytes) — appending starts AT the size`,
+      )
     let done = 0
     while (done < bytes.length) {
       const { bytesWritten } = await handle.write(

@@ -59,9 +59,7 @@ export function ComposerLegacyModelControls(props: { state: ComposerLegacyModelC
                 style={{ "will-change": "opacity", transform: "translateZ(0)" }}
               />
             </Show>
-            <span class="truncate">
-              {props.state.model.current()?.name ?? language.t("dialog.model.select.title")}
-            </span>
+            <span class="truncate">{props.state.model.current()?.name ?? language.t("dialog.model.select.title")}</span>
             <Icon name="chevron-down" size="small" class="shrink-0" />
           </ModelSelectorPopover>
         </TooltipKeybind>

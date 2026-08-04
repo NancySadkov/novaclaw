@@ -45,8 +45,7 @@ export const recallPoolSize = (budget: number): number => Math.max(Math.min(Math
 
 const slashPathText = (value: string): string => value.replaceAll("\\", "/")
 
-const pathBoundary = (value: string | undefined): boolean =>
-  value === undefined || /[\s"'`()\[\]{},;:!?]/.test(value)
+const pathBoundary = (value: string | undefined): boolean => value === undefined || /[\s"'`()\[\]{},;:!?]/.test(value)
 
 const mentionsExactPath = (text: string, target: string): boolean => {
   const normalizedTarget = slashPathText(target.trim())
@@ -61,9 +60,7 @@ const mentionsExactPath = (text: string, target: string): boolean => {
   while (offset >= 0) {
     const before = offset === 0 ? undefined : haystack[offset - 1]
     const after = offset + needle.length >= haystack.length ? undefined : haystack[offset + needle.length]
-    const afterBoundary =
-      pathBoundary(after) ||
-      (after === "." && pathBoundary(haystack[offset + needle.length + 1]))
+    const afterBoundary = pathBoundary(after) || (after === "." && pathBoundary(haystack[offset + needle.length + 1]))
     if (pathBoundary(before) && afterBoundary) return true
     offset = haystack.indexOf(needle, offset + 1)
   }

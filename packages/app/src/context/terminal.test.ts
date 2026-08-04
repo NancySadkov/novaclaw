@@ -4,6 +4,8 @@ import { ServerScope } from "@/utils/server-scope"
 let getWorkspaceTerminalCacheKey: typeof import("./terminal").getWorkspaceTerminalCacheKey
 let getLegacyTerminalStorageKeys: (dir: string, legacySessionID?: string) => string[]
 let migrateTerminalState: (value: unknown) => unknown
+let stopAllWorkspaceTerminals: typeof import("./terminal").stopAllWorkspaceTerminals
+let stopWorkspaceTerminal: typeof import("./terminal").stopWorkspaceTerminal
 
 beforeAll(async () => {
   mock.module("@solidjs/router", () => ({
@@ -22,6 +24,67 @@ beforeAll(async () => {
   getWorkspaceTerminalCacheKey = mod.getWorkspaceTerminalCacheKey
   getLegacyTerminalStorageKeys = mod.getLegacyTerminalStorageKeys
   migrateTerminalState = mod.migrateTerminalState
+  stopAllWorkspaceTerminals = mod.stopAllWorkspaceTerminals
+  stopWorkspaceTerminal = mod.stopWorkspaceTerminal
+})
+
+describe("stopAllWorkspaceTerminals", () => {
+  test("clears local tabs after the server confirms termination", async () => {
+    let cleared = false
+    const removed = await stopAllWorkspaceTerminals(
+      { v2: { pty: { removeAll: async () => ({ data: { data: 3 } }) } } } as never,
+      "/repo",
+      () => {
+        cleared = true
+      },
+    )
+    expect(removed).toBe(3)
+    expect(cleared).toBe(true)
+  })
+
+  test("retains local tabs when server termination fails", async () => {
+    let cleared = false
+    await expect(
+      stopAllWorkspaceTerminals(
+        { v2: { pty: { removeAll: async () => Promise.reject(new Error("offline")) } } } as never,
+        "/repo",
+        () => {
+          cleared = true
+        },
+      ),
+    ).rejects.toThrow("offline")
+    expect(cleared).toBe(false)
+  })
+})
+
+describe("stopWorkspaceTerminal", () => {
+  test("uses the canonical location-scoped removal operation", async () => {
+    let input: unknown
+    await stopWorkspaceTerminal(
+      {
+        v2: {
+          pty: {
+            remove: async (value: unknown) => {
+              input = value
+            },
+          },
+        },
+      } as never,
+      "/repo",
+      "pty_one",
+    )
+    expect(input).toEqual({ ptyID: "pty_one", location: { directory: "/repo" } })
+  })
+
+  test("reports removal failures to the caller", async () => {
+    await expect(
+      stopWorkspaceTerminal(
+        { v2: { pty: { remove: async () => Promise.reject(new Error("offline")) } } } as never,
+        "/repo",
+        "pty_one",
+      ),
+    ).rejects.toThrow("offline")
+  })
 })
 
 describe("getWorkspaceTerminalCacheKey", () => {

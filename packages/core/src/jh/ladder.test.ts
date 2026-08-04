@@ -4,7 +4,12 @@ import { JhLadder } from "./ladder"
 // R4 (jh-improve1 P5): the escalation ladder transition table. De-latched, per-signature, cycling.
 describe("JhLadder.next", () => {
   test("first escalation on a signature → tweak, count 1", () => {
-    expect(JhLadder.next(undefined, { sig: "A", scoreImproved: false })).toEqual({ sig: "A", count: 1, stage: "tweak", rewrites: 0 })
+    expect(JhLadder.next(undefined, { sig: "A", scoreImproved: false })).toEqual({
+      sig: "A",
+      count: 1,
+      stage: "tweak",
+      rewrites: 0,
+    })
   })
 
   test("counts 2-3 stay tweak; 4 → analyze; 5 → targeted_fix; 6 → rewrite (first time)", () => {
@@ -23,17 +28,32 @@ describe("JhLadder.next", () => {
 
   test("after a rewrite → resets to tweak with rewrites incremented (rewrite is spent)", () => {
     const rewrite: JhLadder.LadderState = { sig: "A", count: 6, stage: "rewrite", rewrites: 0 }
-    expect(JhLadder.next(rewrite, { sig: "A", scoreImproved: false })).toEqual({ sig: "A", count: 1, stage: "tweak", rewrites: 1 })
+    expect(JhLadder.next(rewrite, { sig: "A", scoreImproved: false })).toEqual({
+      sig: "A",
+      count: 1,
+      stage: "tweak",
+      rewrites: 1,
+    })
   })
 
   test("a changed signature RESETS to tweak (per-problem), carrying the rewrites budget", () => {
     const s: JhLadder.LadderState = { sig: "A", count: 5, stage: "targeted_fix", rewrites: 1 }
-    expect(JhLadder.next(s, { sig: "B", scoreImproved: false })).toEqual({ sig: "B", count: 1, stage: "tweak", rewrites: 1 })
+    expect(JhLadder.next(s, { sig: "B", scoreImproved: false })).toEqual({
+      sig: "B",
+      count: 1,
+      stage: "tweak",
+      rewrites: 1,
+    })
   })
 
   test("score improvement RESETS to tweak even on the same signature", () => {
     const s: JhLadder.LadderState = { sig: "A", count: 5, stage: "targeted_fix", rewrites: 0 }
-    expect(JhLadder.next(s, { sig: "A", scoreImproved: true })).toEqual({ sig: "A", count: 1, stage: "tweak", rewrites: 0 })
+    expect(JhLadder.next(s, { sig: "A", scoreImproved: true })).toEqual({
+      sig: "A",
+      count: 1,
+      stage: "tweak",
+      rewrites: 0,
+    })
   })
 
   test("once a rewrite is spent, count 6 CYCLES to tweak instead of rewriting again (no permanent latch)", () => {

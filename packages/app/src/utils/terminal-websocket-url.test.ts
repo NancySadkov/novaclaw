@@ -14,6 +14,8 @@ describe("terminalWebSocketURL", () => {
     })
 
     expect(url.protocol).toBe("ws:")
+    expect(url.pathname).toBe("/api/pty/pty_test/connect")
+    expect(url.searchParams.get("location[directory]")).toBe("/tmp/project")
     expect(url.username).toBe("")
     expect(url.password).toBe("")
     expect(url.searchParams.get("auth_token")).toBe(btoa("novaclaw:secret"))

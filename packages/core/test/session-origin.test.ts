@@ -65,7 +65,9 @@ describe("SessionOrigin.headerLine (bare attribution, for audience batches)", ()
   // forum every post is its own chat — so the line must carry the chat it came from, not just the
   // binding's. All three ids the tool needs are here.
   test("carries every id the messenger tool takes — chat, sender, message", () => {
-    const line = SessionOrigin.headerLine(messenger({ chatID: "post-77", chatKind: "thread", chatTitle: "Crash on save" }))
+    const line = SessionOrigin.headerLine(
+      messenger({ chatID: "post-77", chatKind: "thread", chatTitle: "Crash on save" }),
+    )
     expect(line).toContain("chat post-77")
     expect(line).toContain("id 42")
     expect(line).toContain("msg 7")

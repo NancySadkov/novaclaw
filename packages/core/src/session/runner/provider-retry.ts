@@ -53,7 +53,9 @@ export function isTransientProviderFailure(error: unknown): error is LLMError {
 
 /** A malformed/truncated reply can be replayed only while it has produced no durable assistant output. */
 export function isRetryableBeforeOutput(error: unknown): error is LLMError {
-  return isTransientProviderFailure(error) || (error instanceof LLMError && error.reason._tag === "InvalidProviderOutput")
+  return (
+    isTransientProviderFailure(error) || (error instanceof LLMError && error.reason._tag === "InvalidProviderOutput")
+  )
 }
 
 /** A malformed stream tail is non-fatal once useful output has already been persisted. */

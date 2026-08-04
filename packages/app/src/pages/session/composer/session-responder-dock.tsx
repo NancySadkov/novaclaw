@@ -20,7 +20,9 @@ export function SessionResponderDock(props: { sessionID: string | undefined }) {
     const id = props.sessionID
     return id ? serverSync().session.get(id) : undefined
   })
-  const responder = createMemo(() => (session() as { responder?: "nova" | "operator" } | undefined)?.responder ?? "nova")
+  const responder = createMemo(
+    () => (session() as { responder?: "nova" | "operator" } | undefined)?.responder ?? "nova",
+  )
   const [directory] = createResource(session, (s) => (s as { directory?: string } | undefined)?.directory)
 
   const toggle = async () => {
@@ -50,7 +52,13 @@ export function SessionResponderDock(props: { sessionID: string | undefined }) {
           <span class="min-w-0 flex-1 truncate text-13-regular text-text-base cursor-default">
             {language.t("session.responderDock.operatorHint")}
           </span>
-          <Button size="small" variant="secondary" class="shrink-0 ml-auto" disabled={busy()} onClick={() => void toggle()}>
+          <Button
+            size="small"
+            variant="secondary"
+            class="shrink-0 ml-auto"
+            disabled={busy()}
+            onClick={() => void toggle()}
+          >
             {language.t("session.responderDock.handBack")}
           </Button>
         </div>
@@ -66,7 +74,9 @@ export function ResponderTakeoverButton(props: { sessionID: string | undefined }
   const serverSync = useServerSync()
   const [busy, setBusy] = createSignal(false)
   const session = createMemo(() => (props.sessionID ? serverSync().session.get(props.sessionID) : undefined))
-  const responder = createMemo(() => (session() as { responder?: "nova" | "operator" } | undefined)?.responder ?? "nova")
+  const responder = createMemo(
+    () => (session() as { responder?: "nova" | "operator" } | undefined)?.responder ?? "nova",
+  )
 
   const takeOver = async () => {
     const id = props.sessionID

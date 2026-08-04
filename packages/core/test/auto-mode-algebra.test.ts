@@ -35,8 +35,7 @@ describe("auto mode: the ladder is untouched", () => {
 describe("autoResolvedMode: a self-grant can only NARROW", () => {
   test("no grant anywhere means no change at all — including the unattended `yolo` escape hatch", () => {
     for (const rootType of [...ATTENDED, ...UNATTENDED])
-      for (const resolvedMode of MODES)
-        expect(autoResolvedMode({ resolvedMode, rootType })).toBe(resolvedMode)
+      for (const resolvedMode of MODES) expect(autoResolvedMode({ resolvedMode, rootType })).toBe(resolvedMode)
     // Named explicitly because it is the one that would be easy to "fix" into a regression: an
     // UNATTENDED root the USER set to yolo keeps yolo while it holds no grant. That is the
     // documented way out of the deny-fast stance (`config-resolve.ts` §UNATTENDED CONFINEMENT), and
@@ -201,8 +200,9 @@ describe("the written justification is the product feature, not paperwork", () =
 describe("decide: lowering is always permitted, raising is bounded", () => {
   test("lowering never asks", () => {
     for (const target of ["plan", "ask", "surgical"] as const)
-      expect(call({ op: "lower", target, state: state({ current: "yolo", ceiling: "yolo", resolvedMode: "yolo" }) }))
-        .toEqual({ kind: "granted", approval: false })
+      expect(
+        call({ op: "lower", target, state: state({ current: "yolo", ceiling: "yolo", resolvedMode: "yolo" }) }),
+      ).toEqual({ kind: "granted", approval: false })
   })
 
   test("raising WITHIN the ceiling is granted and does not ask", () => {

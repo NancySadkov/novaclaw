@@ -75,9 +75,7 @@ describe("raw transports carry their own live offline guard", () => {
       // The specific regression: a policy resolved once, at layer/module scope, and closed over.
       // `loadPolicy` is legitimate INSIDE offline.ts and in tests that inject a source; in a raw
       // transport it is the snapshot bug by construction.
-      expect(code.includes("loadPolicy("), `${entry.file}: captures loadPolicy — that is the snapshot bug`).toBe(
-        false,
-      )
+      expect(code.includes("loadPolicy("), `${entry.file}: captures loadPolicy — that is the snapshot bug`).toBe(false)
     })
 
   test("the ledger can only shrink — a site that moved to the shared client must be dropped", () => {
@@ -87,7 +85,10 @@ describe("raw transports carry their own live offline guard", () => {
       const code = codeOf(entry.file)
       return !code.includes("fetch(") && !code.includes("arborist.reify") && !code.includes("Arborist")
     })
-    expect(stale.map((entry) => entry.file), "these no longer raw-transport — DELETE their ledger lines").toEqual([])
+    expect(
+      stale.map((entry) => entry.file),
+      "these no longer raw-transport — DELETE their ledger lines",
+    ).toEqual([])
   })
 })
 

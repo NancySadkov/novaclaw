@@ -3,7 +3,8 @@ import { Effect } from "effect"
 import { HostExec } from "../host-exec"
 import { JhProcessRunner } from "./process-runner"
 
-const run = (r: JhProcessRunner.Runner, input: { command: string; cwd: string; timeoutMs: number }) => Effect.runPromise(r.run(input))
+const run = (r: JhProcessRunner.Runner, input: { command: string; cwd: string; timeoutMs: number }) =>
+  Effect.runPromise(r.run(input))
 const cwd = process.cwd()
 
 describe("JhProcessRunner.shellRunner", () => {
@@ -30,7 +31,11 @@ describe("JhProcessRunner.shellRunner", () => {
 
   test("output cap appends the truncation marker", async () => {
     const cmd = `"${process.execPath}" -e "process.stdout.write('x'.repeat(200000))"`
-    const res = await run(JhProcessRunner.shellRunner({ maxOutputBytes: 65_536 }), { command: cmd, cwd, timeoutMs: 15_000 })
+    const res = await run(JhProcessRunner.shellRunner({ maxOutputBytes: 65_536 }), {
+      command: cmd,
+      cwd,
+      timeoutMs: 15_000,
+    })
     expect(res.output.endsWith("…[truncated]")).toBe(true)
     expect(res.output.length).toBeLessThanOrEqual(65_536 + 20)
   }, 20_000)

@@ -150,8 +150,7 @@ export const make = (options?: Options): Interface => {
   const sweep = (device: DeviceState) =>
     device.ledger.sweepForgiven(
       now(),
-      (id) =>
-        device.inFlightInteractive.has(id) || device.inFlightBatch.has(id) || device.waiters.has(id),
+      (id) => device.inFlightInteractive.has(id) || device.inFlightBatch.has(id) || device.waiters.has(id),
     )
 
   const batchCapacity = (device: DeviceState) =>
@@ -218,8 +217,7 @@ export const make = (options?: Options): Interface => {
     Effect.sync(() => {
       const device = devices.get(input.deviceKey)
       if (!device) return
-      const held =
-        device.inFlightInteractive.delete(input.sessionID) || device.inFlightBatch.delete(input.sessionID)
+      const held = device.inFlightInteractive.delete(input.sessionID) || device.inFlightBatch.delete(input.sessionID)
       if (!held) return
       // The session has stopped holding the device: start its block clock, so its debt is kept
       // for the forgiveness window and its entry is swept once that window closes. Gated on

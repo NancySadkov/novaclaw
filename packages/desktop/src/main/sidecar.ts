@@ -68,9 +68,7 @@ async function start(command: StartCommand) {
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
-    const serverURL = pathToFileURL(
-      join(dirname(fileURLToPath(import.meta.url)), "chunks", "novaclaw-server.js"),
-    ).href
+    const serverURL = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "chunks", "novaclaw-server.js")).href
     const { Server } = (await import(/* @vite-ignore */ serverURL)) as ServerModule
 
     listener = await Server.listen({

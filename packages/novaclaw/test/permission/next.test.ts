@@ -1275,7 +1275,9 @@ it.instance(
   "reply - fails for unknown requestID",
   () =>
     Effect.gen(function* () {
-      const exit = yield* reply({ requestID: PermissionRuleset.ID.make("per_unknown"), reply: "once" }).pipe(Effect.exit)
+      const exit = yield* reply({ requestID: PermissionRuleset.ID.make("per_unknown"), reply: "once" }).pipe(
+        Effect.exit,
+      )
       expect(Exit.isFailure(exit)).toBe(true)
       if (Exit.isFailure(exit)) {
         expect(Cause.squash(exit.cause)).toMatchObject({ _tag: "Permission.NotFoundError", requestID: "per_unknown" })

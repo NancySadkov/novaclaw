@@ -25,7 +25,9 @@ describe("chunk", () => {
   test("carries the section heading into EVERY chunk cut from that section", () => {
     // The regression that motivated this: without the heading, the row below contains neither "D20"
     // nor "ATTACK", so a query naming the table can never match it.
-    const text = ["D20 ATTACK", "1. Miss and actor gains Disadvantage", "9. Hit unless HARD, ABSURD or THICK"].join("\n")
+    const text = ["D20 ATTACK", "1. Miss and actor gains Disadvantage", "9. Hit unless HARD, ABSURD or THICK"].join(
+      "\n",
+    )
     const out = chunk(text, 40) // force multiple chunks out of one section
     expect(out.length).toBeGreaterThan(1)
     expect(out.every((c) => c.startsWith("[D20 ATTACK]"))).toBe(true)
@@ -63,7 +65,13 @@ describe("chunk", () => {
 
 describe("stripGutenberg", () => {
   test("removes the boilerplate around a public-domain body", () => {
-    const raw = ["header junk", "*** START OF THE PROJECT GUTENBERG EBOOK X ***", "the real body", "*** END OF THE PROJECT GUTENBERG EBOOK X ***", "footer junk"].join("\n")
+    const raw = [
+      "header junk",
+      "*** START OF THE PROJECT GUTENBERG EBOOK X ***",
+      "the real body",
+      "*** END OF THE PROJECT GUTENBERG EBOOK X ***",
+      "footer junk",
+    ].join("\n")
     const out = stripGutenberg(raw)
     expect(out).toContain("the real body")
     expect(out).not.toContain("header junk")

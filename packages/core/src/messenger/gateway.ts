@@ -196,7 +196,11 @@ const SOURCE_UNREADABLE =
  * — a fault, or a state, is never described falsely). Only two accesses can reach here, since
  * `public` is what the caller asked for and got.
  */
-const researchRefusal = (title: string, decision: Messenger.SourceDecision, proposed: Messenger.SourceAccess): string => {
+const researchRefusal = (
+  title: string,
+  decision: Messenger.SourceDecision,
+  proposed: Messenger.SourceAccess,
+): string => {
   const keepOut =
     "Read it as correspondence if the user asked you to, but keep it out of anything that leaves this chat."
   if (decision.access === "private")
@@ -242,7 +246,10 @@ export interface Interface {
   readonly reload: () => Effect.Effect<void>
   /** Mint a single-use pairing code (10-min TTL) a sender redeems with `/pair <code>` to become a
    *  contact at `trust`. This is how a stranger becomes somebody (messenger-plan §7). */
-  readonly mintPairingCode: (accountID: Messenger.AccountID, trust: Messenger.ContactTrust) => Effect.Effect<PairingCode>
+  readonly mintPairingCode: (
+    accountID: Messenger.AccountID,
+    trust: Messenger.ContactTrust,
+  ) => Effect.Effect<PairingCode>
   /** The account's chats: the live driver list where the capability exists (seeding the seen-cache —
    *  a conversation that EXISTS in the user's account is never a cold start), else the seen-cache. */
   readonly chats: (accountID: Messenger.AccountID) => Effect.Effect<ChatsOutcome>
@@ -396,7 +403,10 @@ const build = (options: Options) =>
     const reloadLock = Semaphore.makeUnsafe(1)
 
     const entries = new Map<Messenger.AccountID, Entry>()
-    const pairing = new Map<string, { accountID: Messenger.AccountID; trust: Messenger.ContactTrust; expiresAt: number }>()
+    const pairing = new Map<
+      string,
+      { accountID: Messenger.AccountID; trust: Messenger.ContactTrust; expiresAt: number }
+    >()
     // Last `/sessions` listing per operator chat, so `/use N` indexes exactly what they saw.
     const listings = new Map<string, string[]>()
     // The daily cold-start bucket (traffic rules §2.3) is NOT here any more, and its absence is the
@@ -464,10 +474,7 @@ const build = (options: Options) =>
       Effect.gen(function* () {
         const seen = yield* MessengerStore.attempted(store.hasChat(accountID, chatID))
         const bound = yield* MessengerStore.attempted(store.bindingForChat(accountID, chatID))
-        return invitationOf(
-          seen.read ? seen.value : "unknown",
-          bound.read ? bound.value !== undefined : "unknown",
-        )
+        return invitationOf(seen.read ? seen.value : "unknown", bound.read ? bound.value !== undefined : "unknown")
       })
 
     // Per-account typing speed (§2.3, user-tunable in Settings → Messengers): recorded per live
@@ -523,7 +530,9 @@ const build = (options: Options) =>
         for (const ref of refs.slice(0, MAX_ATTACHMENTS_PER_MESSAGE)) {
           const name = safeFileName(ref.name ?? ref.id)
           if (ref.size !== undefined && ref.size > FETCH_FILE_CAP_BYTES) {
-            notes.push(`[attachment "${name}" skipped — ${Math.round(ref.size / 1_000_000)} MB is over the ${FETCH_FILE_CAP_BYTES / 1_000_000} MB fetch cap]`)
+            notes.push(
+              `[attachment "${name}" skipped — ${Math.round(ref.size / 1_000_000)} MB is over the ${FETCH_FILE_CAP_BYTES / 1_000_000} MB fetch cap]`,
+            )
             continue
           }
           const download = connection.downloadFile
@@ -553,7 +562,10 @@ const build = (options: Options) =>
           const wrote = yield* Effect.tryPromise(async () => {
             await fs.mkdir(dir, { recursive: true })
             await fs.writeFile(target, outcome.data!)
-          }).pipe(Effect.as(true), Effect.catch(() => Effect.succeed(false)))
+          }).pipe(
+            Effect.as(true),
+            Effect.catch(() => Effect.succeed(false)),
+          )
           if (!wrote) {
             notes.push(`[attachment "${name}" could not be saved to the workspace]`)
             continue
@@ -562,7 +574,9 @@ const build = (options: Options) =>
           notes.push(`[attachment "${name}" saved to ${target}]`)
         }
         if (refs.length > MAX_ATTACHMENTS_PER_MESSAGE)
-          notes.push(`[${refs.length - MAX_ATTACHMENTS_PER_MESSAGE} more attachments ignored — max ${MAX_ATTACHMENTS_PER_MESSAGE} per message]`)
+          notes.push(
+            `[${refs.length - MAX_ATTACHMENTS_PER_MESSAGE} more attachments ignored — max ${MAX_ATTACHMENTS_PER_MESSAGE} per message]`,
+          )
         return { files, notes }
       })
 
@@ -632,9 +646,9 @@ const build = (options: Options) =>
             metadata: MessengerPipeline.dispatchMetadata({ accountID: account.id, chatID: event.chat.chatID }),
           })
           // Spawn parity (4D): the child inherits the console session's ad-hoc recipes. Best-effort.
-          yield* Effect.tryPromise(() =>
-            copySessionRecipes(parent.id, child.id, { root: sessionStoreRoot }),
-          ).pipe(Effect.ignore)
+          yield* Effect.tryPromise(() => copySessionRecipes(parent.id, child.id, { root: sessionStoreRoot })).pipe(
+            Effect.ignore,
+          )
           yield* sessions.prompt({
             sessionID: child.id,
             prompt: {
@@ -647,7 +661,11 @@ const build = (options: Options) =>
           return child.id
         }).pipe(Effect.catch(() => Effect.succeed(undefined)))
         if (startedID === undefined) {
-          yield* reply(connection, event.chat.chatID, "I couldn't start that task — the linked session may be gone. /sessions to relink this console.")
+          yield* reply(
+            connection,
+            event.chat.chatID,
+            "I couldn't start that task — the linked session may be gone. /sessions to relink this console.",
+          )
           return
         }
         // The ack WAITS. A question answered in a few seconds should cost the operator one message,
@@ -722,7 +740,11 @@ const build = (options: Options) =>
           const now = Date.now()
           const record = pairing.get(command.code)
           if (record === undefined || record.accountID !== account.id || record.expiresAt < now) {
-            yield* reply(connection, event.chat.chatID, "That pairing code is invalid or expired. Mint a fresh one in Settings → Messengers.")
+            yield* reply(
+              connection,
+              event.chat.chatID,
+              "That pairing code is invalid or expired. Mint a fresh one in Settings → Messengers.",
+            )
             return
           }
           pairing.delete(command.code)
@@ -733,7 +755,11 @@ const build = (options: Options) =>
             trust: record.trust,
             pairedAt: now,
           })
-          yield* reply(connection, event.chat.chatID, `Paired — you're set as "${record.trust}". Send /help to see what you can do.`)
+          yield* reply(
+            connection,
+            event.chat.chatID,
+            `Paired — you're set as "${record.trust}". Send /help to see what you can do.`,
+          )
           return
         }
         // Everything else is operator-only, in a DM.
@@ -855,12 +881,22 @@ const build = (options: Options) =>
           },
           delivery: "queue",
         })
-        .pipe(Effect.catch(() => reply(connection, chatID, "That session is no longer available. /sessions to pick another.")))
+        .pipe(
+          Effect.catch(() =>
+            reply(connection, chatID, "That session is no longer available. /sessions to pick another."),
+          ),
+        )
 
     // Flush an audience buffer as ONE queued turn (the batch, each entry origin-headed). `viaTimer`
     // distinguishes the time-trigger (the pending timer IS the caller — don't interrupt self) from
     // the size-trigger (cancel the pending timer first).
-    const flushAudience = (connection: Connection, chatID: string, sessionID: Session.ID, key: string, viaTimer: boolean) =>
+    const flushAudience = (
+      connection: Connection,
+      chatID: string,
+      sessionID: Session.ID,
+      key: string,
+      viaTimer: boolean,
+    ) =>
       Effect.gen(function* () {
         const buffer = audienceBuffers.get(key)
         if (buffer === undefined) return
@@ -880,7 +916,14 @@ const build = (options: Options) =>
         // waiting in the channel hears nothing. (Harness-authored, so it is trusted instruction —
         // never conflate it with the remote text below the separator.)
         const header = `${framing}\n${MODERATION_ACTIONS}\n\n`
-        yield* injectTurn(connection, chatID, sessionID, header + buffer.lines.join("\n\n---\n\n"), undefined, buffer.files)
+        yield* injectTurn(
+          connection,
+          chatID,
+          sessionID,
+          header + buffer.lines.join("\n\n---\n\n"),
+          undefined,
+          buffer.files,
+        )
       })
 
     /**
@@ -897,7 +940,9 @@ const build = (options: Options) =>
       account: Messenger.AccountInfo,
       event: Extract<InboundEvent, { kind: "message" }>,
       trust: Messenger.ContactTrust | undefined,
-    ): Effect.Effect<{ readonly read: false } | { readonly read: true; readonly binding: Messenger.BindingInfo | undefined }> =>
+    ): Effect.Effect<
+      { readonly read: false } | { readonly read: true; readonly binding: Messenger.BindingInfo | undefined }
+    > =>
       Effect.gen(function* () {
         // `as const` is load-bearing, not decoration: without it each literal's `read` widens to
         // `boolean`, the union stops discriminating, and `if (!route.read)` at the call site would
@@ -929,7 +974,9 @@ const build = (options: Options) =>
           // untouched by this write (see `seenChat`), which is what keeps a proposal a proposal.
           ...(event.chat.proposedAccess === undefined ? {} : { proposedAccess: event.chat.proposedAccess }),
         })
-        yield* events.publish(Messenger.Event.ChatSeen, { accountID: account.id, chatID: event.chat.chatID }).pipe(Effect.ignore)
+        yield* events
+          .publish(Messenger.Event.ChatSeen, { accountID: account.id, chatID: event.chat.chatID })
+          .pipe(Effect.ignore)
         // Index attachments for the tool's `download` op — for EVERY seen message (an audience
         // agent lurks but may still be asked to fetch a file someone posted).
         if (event.attachments !== undefined && event.attachments.length > 0)
@@ -956,7 +1003,10 @@ const build = (options: Options) =>
           const stripped =
             event.text === undefined
               ? undefined
-              : MessengerPipeline.addressed(event.text, account.settings["address"] ?? MessengerPipeline.DEFAULT_ADDRESS)
+              : MessengerPipeline.addressed(
+                  event.text,
+                  account.settings["address"] ?? MessengerPipeline.DEFAULT_ADDRESS,
+                )
           if (stripped === undefined) return
           promptText = stripped
         }
@@ -1009,7 +1059,11 @@ const build = (options: Options) =>
         const flood = floodClear(MessengerPipeline.chatKey(account.id, event.chat.chatID))
         if (!flood.ok) {
           if (flood.warn)
-            yield* reply(connection, event.chat.chatID, "You're sending faster than I can keep up — I'll skip some messages until it slows down.")
+            yield* reply(
+              connection,
+              event.chat.chatID,
+              "You're sending faster than I can keep up — I'll skip some messages until it slows down.",
+            )
           return
         }
         // Files in (P5): materialize attachments into prompt files + note lines BEFORE framing,
@@ -1093,7 +1147,11 @@ const build = (options: Options) =>
             // Relaying a reply to a chat the session came from is never a cold-start; still paced.
             // A parent-routed binding (a forum) answers in the THREAD that last spoke — replying in
             // the forum root instead would land the answer where nobody asked.
-            yield* paceSend(entry.connection, lastInboundChat.get(binding.id) ?? binding.chatID, payload.data.text).pipe(Effect.ignore)
+            yield* paceSend(
+              entry.connection,
+              lastInboundChat.get(binding.id) ?? binding.chatID,
+              payload.data.text,
+            ).pipe(Effect.ignore)
           }
           // A dispatched task's finished text parts are its progress narration — the operator
           // watches it work from the phone, without the console session hearing a word. Remember the
@@ -1135,19 +1193,25 @@ const build = (options: Options) =>
           // ⚠️ Fail SAFE: if the history can't be read (lookup failed, nothing recorded), assume it
           // worked and report. Suppression is an optimization; swallowing a real result is a defect
           // — and one the operator could never notice, because nothing arrives to look wrong.
-          const history = yield* sessions.messages({ sessionID, limit: 100 }).pipe(Effect.orElseSucceed(() => undefined))
+          const history = yield* sessions
+            .messages({ sessionID, limit: 100 })
+            .pipe(Effect.orElseSucceed(() => undefined))
           const didWork =
             history === undefined ||
             history.length === 0 ||
             history.some(
-              (message) => message.type === "assistant" && message.content.some((part) => part.type === "tool" && part.name !== "exit"),
+              (message) =>
+                message.type === "assistant" &&
+                message.content.some((part) => part.type === "tool" && part.name !== "exit"),
             )
           // A question's answer and its exit(result) are the same sentence — report only what adds
           // something the operator has not already read on their phone.
           if (!MessengerPipeline.dispatchDoneNeeded(result, narrated, didWork)) return
-          yield* paceSend(target.connection, target.chatID, MessengerPipeline.renderDispatchDone(target.title, result)).pipe(
-            Effect.ignore,
-          )
+          yield* paceSend(
+            target.connection,
+            target.chatID,
+            MessengerPipeline.renderDispatchDone(target.title, result),
+          ).pipe(Effect.ignore)
         }),
       ),
     )
@@ -1434,7 +1498,10 @@ const build = (options: Options) =>
             return { ok: false, reason: "That messenger account isn't connected right now." } satisfies HistoryOutcome
           const fetchHistory = entry.connection.history
           if (fetchHistory === undefined)
-            return { ok: false, reason: "This messenger can't fetch past messages — only new ones arrive." } satisfies HistoryOutcome
+            return {
+              ok: false,
+              reason: "This messenger can't fetch past messages — only new ones arrive.",
+            } satisfies HistoryOutcome
           return yield* fetchHistory(input.chatID, input.limit).pipe(
             Effect.map((messages) => ({ ok: true, messages }) satisfies HistoryOutcome),
             Effect.catch((error) => Effect.succeed({ ok: false, reason: error.reason } satisfies HistoryOutcome)),
@@ -1444,7 +1511,10 @@ const build = (options: Options) =>
         Effect.gen(function* () {
           const entry = entries.get(input.accountID)
           if (entry?.connection === undefined)
-            return { kind: "refused", reason: "That messenger account isn't connected right now." } satisfies SendOutcome
+            return {
+              kind: "refused",
+              reason: "That messenger account isn't connected right now.",
+            } satisfies SendOutcome
           const invited = yield* invitation(input.accountID, input.chatID)
           // ⚠️ Not a cold start, and not a send either. Both inputs to the cold-start test are
           // database reads; when neither could answer, "this chat has never messaged us" is a
@@ -1518,7 +1588,10 @@ const build = (options: Options) =>
         Effect.gen(function* () {
           const entry = entries.get(input.accountID)
           if (entry?.connection === undefined)
-            return { kind: "refused", reason: "That messenger account isn't connected right now." } satisfies SendOutcome
+            return {
+              kind: "refused",
+              reason: "That messenger account isn't connected right now.",
+            } satisfies SendOutcome
           // The same question, through the same collapse point — a file has no `initiate` escape at
           // all, so `cold` and `unknown` both stop here and only the SENTENCE differs.
           const invited = yield* invitation(input.accountID, input.chatID)
@@ -1548,7 +1621,10 @@ const build = (options: Options) =>
         Effect.gen(function* () {
           const entry = entries.get(input.accountID)
           if (entry?.connection === undefined)
-            return { ok: false, reason: "That messenger account isn't connected right now." } satisfies AttachmentOutcome
+            return {
+              ok: false,
+              reason: "That messenger account isn't connected right now.",
+            } satisfies AttachmentOutcome
           const refs = attachments.get(`${input.accountID}:${input.chatID}:${input.messageID}`)
           const ref = refs?.[0]
           if (ref === undefined)
@@ -1576,7 +1652,10 @@ const build = (options: Options) =>
         Effect.gen(function* () {
           const entry = entries.get(input.accountID)
           if (entry?.connection === undefined)
-            return { ok: false, reason: "That messenger account isn't connected right now." } satisfies ModerationOutcome
+            return {
+              ok: false,
+              reason: "That messenger account isn't connected right now.",
+            } satisfies ModerationOutcome
           const act = entry.connection.moderate
           if (act === undefined)
             return { ok: false, reason: "This messenger has no moderation controls." } satisfies ModerationOutcome

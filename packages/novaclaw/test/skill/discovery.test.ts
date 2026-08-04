@@ -104,10 +104,7 @@ describe("Discovery.pull", () => {
         .pipe(Effect.provide(Logger.layer([collector])))
       expect(dirs).toEqual([])
       expect(records[0]).toEqual([{ event: "skill.index.fetch" }, "fetching index", { "skill.url": index }])
-      expect(records[1]?.slice(0, 2)).toEqual([
-        { event: "skill.index.fetch.failed" },
-        "failed to fetch skill index",
-      ])
+      expect(records[1]?.slice(0, 2)).toEqual([{ event: "skill.index.fetch.failed" }, "failed to fetch skill index"])
       expect(records[1]?.[2]).toMatchObject({ "skill.url": index, "skill.error": expect.any(String) })
     }),
   )

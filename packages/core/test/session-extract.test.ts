@@ -11,7 +11,12 @@ const assistant = (...texts: string[]): SessionMessage.Message =>
 
 describe("SessionExtract.buildExchange", () => {
   test("serializes only the latest real user message", () => {
-    const ex = SessionExtract.buildExchange([user("old"), assistant("old reply"), user("my name is Nadia"), assistant("Nice to", " meet you")])
+    const ex = SessionExtract.buildExchange([
+      user("old"),
+      assistant("old reply"),
+      user("my name is Nadia"),
+      assistant("Nice to", " meet you"),
+    ])
     expect(ex).toBe("User: my name is Nadia")
   })
   test("no assistant reply yet → just the user line; no user → undefined", () => {
@@ -59,7 +64,9 @@ describe("SessionExtract durable-memory origin policy", () => {
 
 describe("SessionExtract.parseExtraction", () => {
   test("parses a plain JSON array of {name,text}", () => {
-    const out = SessionExtract.parseExtraction('[{"name":"Nadia","text":"The user is named Nadia"},{"text":"Prefers dark mode"}]')
+    const out = SessionExtract.parseExtraction(
+      '[{"name":"Nadia","text":"The user is named Nadia"},{"text":"Prefers dark mode"}]',
+    )
     expect(out).toEqual([{ name: "Nadia", text: "The user is named Nadia" }, { text: "Prefers dark mode" }])
   })
   test("tolerates code fences + surrounding prose", () => {
@@ -81,7 +88,9 @@ describe("SessionExtract.parseExtraction", () => {
 
 describe("SessionExtract.buildLinkPrompt", () => {
   test("appends the closed SUBJECTS list to the exchange", () => {
-    expect(SessionExtract.buildLinkPrompt("User: hi", ["Acme", "Berlin"])).toBe("User: hi\n\nSUBJECTS:\n- Acme\n- Berlin")
+    expect(SessionExtract.buildLinkPrompt("User: hi", ["Acme", "Berlin"])).toBe(
+      "User: hi\n\nSUBJECTS:\n- Acme\n- Berlin",
+    )
   })
 })
 
@@ -111,11 +120,15 @@ describe("SessionExtract.parseLinks", () => {
 
   test("a bad or missing type falls back to related_to — a good pair is never lost to a bad label", () => {
     expect(SessionExtract.parseLinks('[{"from":"Nancy","to":"Berlin"}]', names)[0]?.type).toBe("related_to")
-    expect(SessionExtract.parseLinks('[{"from":"Nancy","to":"Berlin","type":"!!!"}]', names)[0]?.type).toBe("related_to")
+    expect(SessionExtract.parseLinks('[{"from":"Nancy","to":"Berlin","type":"!!!"}]', names)[0]?.type).toBe(
+      "related_to",
+    )
   })
 
   test("tolerates fences/prose, never throws, and needs ≥2 names to link anything", () => {
-    expect(SessionExtract.parseLinks('```json\n[{"from":"Nancy","to":"Berlin","type":"in"}]\n```', names)).toHaveLength(1)
+    expect(SessionExtract.parseLinks('```json\n[{"from":"Nancy","to":"Berlin","type":"in"}]\n```', names)).toHaveLength(
+      1,
+    )
     expect(SessionExtract.parseLinks("not json", names)).toEqual([])
     expect(SessionExtract.parseLinks("[]", names)).toEqual([])
     expect(SessionExtract.parseLinks('[{"from":"Nancy","to":"Berlin","type":"in"}]', ["Nancy"])).toEqual([])
@@ -123,7 +136,9 @@ describe("SessionExtract.parseLinks", () => {
 
   test("caps to max", () => {
     const many = JSON.stringify(Array.from({ length: 30 }, (_, i) => ({ from: "Nancy", to: `T${i}`, type: "t" })))
-    expect(SessionExtract.parseLinks(many, ["Nancy", ...Array.from({ length: 30 }, (_, i) => `T${i}`)], 5)).toHaveLength(5)
+    expect(
+      SessionExtract.parseLinks(many, ["Nancy", ...Array.from({ length: 30 }, (_, i) => `T${i}`)], 5),
+    ).toHaveLength(5)
   })
 })
 

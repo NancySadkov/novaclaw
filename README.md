@@ -14,13 +14,13 @@ Settings, Notes, Files, Search — not a terminal.
 
 ## Download
 
-**You do not need to build anything.** This repository is the source; if you just want to *run*
+**You do not need to build anything.** This repository is the source; if you just want to _run_
 NovaClaw, download a prebuilt release:
 
-| Where | What you get |
-|---|---|
+| Where                                                                | What you get                                                |
+| -------------------------------------------------------------------- | ----------------------------------------------------------- |
 | **[nancygold.itch.io/novaclaw](https://nancygold.itch.io/novaclaw)** | The prebuilt releases — pay-what-you-want, free to download |
-| **[novaclaw.app](https://novaclaw.app)** | The same builds, with a published SHA-256 for each file |
+| **[novaclaw.app](https://novaclaw.app)**                             | The same builds, with a published SHA-256 for each file     |
 
 Windows builds are **portable**: unpack the zip wherever you like and run `NovaClaw.exe`. There is
 no installer, no admin rights, and no setup step — the server it needs is bundled inside. Point it

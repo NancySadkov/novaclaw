@@ -234,6 +234,10 @@ const createPlatform = (): Platform => {
         type: "image/png",
       })
     },
+
+    readClipboardText: () => window.api.readClipboardText(),
+
+    writeClipboardText: (text: string) => window.api.writeClipboardText(text),
   }
 }
 

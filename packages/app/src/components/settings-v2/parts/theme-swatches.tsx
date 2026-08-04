@@ -30,8 +30,14 @@ export const ThemeSwatches: Component = () => {
             onMouseEnter={() => appTheme.preview(preset.id)}
             onMouseLeave={() => appTheme.cancelPreview()}
           >
-            <div class="relative h-12 w-[4.5rem] overflow-hidden rounded-lg ring-1 ring-white/10" style={{ background: preset.bg }}>
-              <div class="absolute bottom-1.5 left-1.5 size-4 rounded-full shadow-sm" style={{ background: preset.accent }} />
+            <div
+              class="relative h-12 w-[4.5rem] overflow-hidden rounded-lg ring-1 ring-white/10"
+              style={{ background: preset.bg }}
+            >
+              <div
+                class="absolute bottom-1.5 left-1.5 size-4 rounded-full shadow-sm"
+                style={{ background: preset.accent }}
+              />
             </div>
             <span class="text-[11px] font-medium text-v2-text-text-muted">{language.t(preset.nameKey)}</span>
           </button>

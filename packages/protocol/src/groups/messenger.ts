@@ -87,8 +87,7 @@ export const MessengerGroup = HttpApiGroup.make("server.messenger")
       OpenApi.annotations({
         identifier: "v2.messenger.account.remove",
         summary: "Remove messenger account",
-        description:
-          "Remove a messenger account, its stored credential, seen chats, contacts, bindings, and cursor.",
+        description: "Remove a messenger account, its stored credential, seen chats, contacts, bindings, and cursor.",
       }),
     ),
   )
@@ -169,7 +168,8 @@ export const MessengerGroup = HttpApiGroup.make("server.messenger")
       OpenApi.annotations({
         identifier: "v2.messenger.binding.remove",
         summary: "Unbind a chat",
-        description: "Remove a session↔chat binding. The chat stops driving (or reporting to) the session immediately.",
+        description:
+          "Remove a session↔chat binding. The chat stops driving (or reporting to) the session immediately.",
       }),
     ),
   )

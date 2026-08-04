@@ -51,8 +51,7 @@ function shutdown(code: number): never {
 
 const prefix = (label: string, stream: NodeJS.ReadableStream | null) => {
   stream?.on("data", (chunk: Buffer) => {
-    for (const line of chunk.toString().split("\n"))
-      if (line.trim()) process.stdout.write(`[${label}] ${line}\n`)
+    for (const line of chunk.toString().split("\n")) if (line.trim()) process.stdout.write(`[${label}] ${line}\n`)
   })
 }
 

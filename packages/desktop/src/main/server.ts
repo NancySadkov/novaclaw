@@ -6,7 +6,13 @@ import { getLogger } from "./logging"
 import { getUserShell, loadShellEnv } from "./shell-env"
 import { getStore } from "./store"
 import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
-import { initialSuperviseState, superviseDecision, FAST_CRASH_GIVEUP } from "./supervise-policy"
+import {
+  initialSuperviseState,
+  livenessDecision,
+  superviseDecision,
+  FAST_CRASH_GIVEUP,
+  LIVENESS_FAILURE_LIMIT,
+} from "./supervise-policy"
 
 export type HealthCheck = { wait: Promise<void> }
 
@@ -20,6 +26,7 @@ export type SidecarListener = { stop: () => Promise<void> }
 const SIDECAR_SERVICE_NAME = "novaclaw server"
 const SIDECAR_START_STALL_TIMEOUT = 60_000
 const SIDECAR_STOP_TIMEOUT = 6_000
+const SIDECAR_LIVENESS_INTERVAL = 2_000
 
 type SpawnLocalServerOptions = {
   onStdout?: (message: string) => void
@@ -206,6 +213,11 @@ export async function spawnLocalServer(
         ])
         return stopping
       },
+      // Fault recovery, not a user shutdown: do not send an IPC stop request to a child whose event
+      // loop has stopped answering. The supervisor observes the resulting exit and respawns it.
+      terminate: () => {
+        if (!exited) child.kill()
+      },
     },
     health: { wait },
   }
@@ -230,10 +242,47 @@ export async function superviseLocalServer(
   let startedAt = Date.now()
   let current: Awaited<ReturnType<typeof spawnLocalServer>> | undefined
   let respawnTimer: NodeJS.Timeout | undefined
+  let monitorTimer: NodeJS.Timeout | undefined
+  let monitorEpoch = 0
+  let livenessFailures = 0
+  let unresponsive = false
   const note = (message: string) => options.onStderr?.(`[supervise] ${message}`)
+
+  const stopMonitor = () => {
+    monitorEpoch++
+    if (monitorTimer) clearTimeout(monitorTimer)
+    monitorTimer = undefined
+    livenessFailures = 0
+  }
+
+  const startMonitor = (handle: Awaited<ReturnType<typeof spawnLocalServer>>) => {
+    stopMonitor()
+    const epoch = monitorEpoch
+    const probe = async () => {
+      if (stopping || current !== handle || epoch !== monitorEpoch) return
+      const decision = livenessDecision(livenessFailures, await checkHealth(`http://${hostname}:${port}`, password))
+      if (stopping || current !== handle || epoch !== monitorEpoch) return
+      livenessFailures = decision.failures
+      if (decision.action === "restart") {
+        unresponsive = true
+        stopMonitor()
+        note(`sidecar missed ${LIVENESS_FAILURE_LIMIT} health checks — terminating the hung process`)
+        handle.listener.terminate()
+        return
+      }
+      monitorTimer = setTimeout(() => void probe(), SIDECAR_LIVENESS_INTERVAL)
+    }
+    void handle.health.wait
+      .then(() => {
+        if (!stopping && current === handle && epoch === monitorEpoch)
+          monitorTimer = setTimeout(() => void probe(), SIDECAR_LIVENESS_INTERVAL)
+      })
+      .catch(() => undefined) // the exit/respawn path owns failed startup health
+  }
 
   const spawnOnce = async () => {
     let readySeen = false
+    unresponsive = false
     startedAt = Date.now()
     const handle = await spawnLocalServer(hostname, port, password, {
       ...options,
@@ -241,7 +290,9 @@ export async function superviseLocalServer(
         options.onExit?.(code)
         // Pre-ready exits reject spawnOnce's await and are counted by the caller — only a child
         // that made it past ready is handled here (readySeen is set before any later event fires).
-        if (readySeen && !stopping) onChildGone(code)
+        // `stopping` is the proof of an intentional shutdown. Any exit observed here—including 0—
+        // is unexpected and must heal; otherwise a buggy clean exit silently leaves a dead port.
+        if (readySeen && !stopping) onChildGone(unresponsive || code === 0 ? 1 : code)
       },
     })
     readySeen = true
@@ -249,13 +300,16 @@ export async function superviseLocalServer(
   }
 
   const onChildGone = (code: number) => {
+    stopMonitor()
     const decision = superviseDecision(state, { code, aliveMs: Date.now() - startedAt })
     if (decision.action === "stop-clean") {
       note("sidecar exited cleanly — not restarting")
       return
     }
     if (decision.action === "giveup") {
-      note(`crash loop: ${FAST_CRASH_GIVEUP} consecutive fast exits — giving up; the connection banner will show the outage`)
+      note(
+        `crash loop: ${FAST_CRASH_GIVEUP} consecutive fast exits — giving up; the connection banner will show the outage`,
+      )
       return
     }
     note(`sidecar exited (code ${code}) — restarting in ${decision.delayMs / 1000}s`)
@@ -268,6 +322,7 @@ export async function superviseLocalServer(
     try {
       current = await spawnOnce()
       note("sidecar respawned")
+      startMonitor(current)
       // Respawned children aren't awaited by boot code — surface a failed health gate in the log.
       current.health.wait.catch((error: unknown) => note(`respawned sidecar health check failed: ${String(error)}`))
     } catch (error) {
@@ -278,10 +333,12 @@ export async function superviseLocalServer(
   }
 
   current = await spawnOnce() // first boot failures throw to the caller, exactly as before
+  startMonitor(current)
   return {
     listener: {
       stop: () => {
         stopping = true
+        stopMonitor()
         if (respawnTimer) clearTimeout(respawnTimer)
         return current ? current.listener.stop() : Promise.resolve()
       },
@@ -344,6 +401,8 @@ function createSidecarEnv(): Record<string, string> {
   delete env.DEBUG
   if (process.platform === "linux") delete env.LD_PRELOAD
   if (!app.isPackaged) env.NOVACLAW_DISABLE_CHANNEL_DB = "1"
+  if (process.platform === "win32" && app.isPackaged)
+    env.NOVACLAW_W64DEVKIT_PATH = join(process.resourcesPath, "third-party", "w64devkit")
   return env
 }
 

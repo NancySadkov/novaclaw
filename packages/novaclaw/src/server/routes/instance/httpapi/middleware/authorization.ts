@@ -2,7 +2,6 @@ import { ServerAuth } from "@/server/auth"
 import { Effect, Encoding, Layer, Redacted } from "effect"
 import { HttpEffect, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiError, HttpApiMiddleware } from "effect/unstable/httpapi"
-import { hasPtyConnectTicketURL } from "@/server/shared/pty-ticket"
 import { isPublicUIPath } from "@/server/shared/public-ui"
 import { ServerAuth as V2ServerAuth } from "@novaclaw/server/auth"
 import { authorizationLayer as unconfiguredServerAuthorizationLayer } from "@novaclaw/server/middleware/authorization"
@@ -17,13 +16,6 @@ const WWW_AUTHENTICATE = 'Basic realm="Secure Area"'
 // and remap an authorized NotFound into Unauthorized.
 export class Authorization extends HttpApiMiddleware.Service<Authorization>()(
   "@novaclaw/ExperimentalHttpApiAuthorization",
-  {
-    error: HttpApiError.UnauthorizedNoContent,
-  },
-) {}
-
-export class PtyConnectAuthorization extends HttpApiMiddleware.Service<PtyConnectAuthorization>()(
-  "@novaclaw/ExperimentalHttpApiPtyConnectAuthorization",
   {
     error: HttpApiError.UnauthorizedNoContent,
   },
@@ -148,23 +140,4 @@ export const authorizationLayer = Layer.effect(
  */
 export const serverAuthorizationLayer = unconfiguredServerAuthorizationLayer.pipe(
   Layer.provide(V2ServerAuth.Config.defaultLayer),
-)
-
-export const ptyConnectAuthorizationLayer = Layer.effect(
-  PtyConnectAuthorization,
-  Effect.gen(function* () {
-    const envConfig = yield* ServerAuth.Config
-    return PtyConnectAuthorization.of((effect) =>
-      Effect.gen(function* () {
-        const config = ServerAuth.effective(envConfig)
-        if (!ServerAuth.required(config)) return yield* effect
-        const request = yield* HttpServerRequest.HttpServerRequest
-        const url = new URL(request.url, "http://localhost")
-        if (hasPtyConnectTicketURL(url)) return yield* effect
-        return yield* credentialFromURL(url, request).pipe(
-          Effect.flatMap((credential) => validateCredential(effect, credential, config)),
-        )
-      }),
-    )
-  }),
 )

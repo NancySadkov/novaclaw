@@ -52,7 +52,10 @@ const getBase = (appId: string): Configuration => ({
   extraMetadata: {
     desktopName: `${appId}.desktop`,
   },
-  files: ["out/**/*", "resources/**/*"],
+  // The expanded w64devkit tree is a native extraResource below. Excluding it here is load-bearing:
+  // otherwise electron-builder copies ~575 MiB into app.asar (where native subprocesses cannot use
+  // it) and then copies it a second time beside the asar.
+  files: ["out/**/*", "resources/**/*", "!resources/third-party/**"],
   // The KB graph engine (@ladybugdb/wasm-core) is loaded by the sidecar through a RUNTIME
   // `createRequire(...)("@ladybugdb/wasm-core/nodejs/sync")`, which no bundler can see — so it is
   // neither inlined into the main bundle nor emitted as an asset, and it has to ship as a real
@@ -80,6 +83,16 @@ const getBase = (appId: string): Configuration => ({
       to: "native/",
       filter: ["index.js", "index.d.ts", "build/Release/mac_window.node", "swift-build/**"],
     },
+    ...(process.platform === "win32"
+      ? [
+          {
+            // Prepared and SHA-256 verified by scripts/prepare-w64devkit.ts before every Windows
+            // build. Ship the expanded tree so first launch needs neither network nor extraction.
+            from: "resources/third-party/w64devkit/",
+            to: "third-party/w64devkit/",
+          },
+        ]
+      : []),
   ],
   mac: {
     category: "public.app-category.developer-tools",

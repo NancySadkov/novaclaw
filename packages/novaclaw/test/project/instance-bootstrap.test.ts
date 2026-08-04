@@ -51,4 +51,3 @@ it.live("CLI bootstrap disposes the instance when the callback rejects", () =>
     yield* Fiber.join(disposed)
   }),
 )
-

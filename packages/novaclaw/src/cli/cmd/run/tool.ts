@@ -47,7 +47,10 @@ const GrepParameters = Schema.Struct({ path: Schema.optional(Schema.String), pat
 type GrepToolInfo = Tool.Info<typeof GrepParameters, { count: number; matches: number }>
 const ReadParameters = Schema.Struct({ filePath: Schema.optional(Schema.String) })
 type ReadToolInfo = Tool.Info<typeof ReadParameters>
-const WriteParameters = Schema.Struct({ filePath: Schema.optional(Schema.String), content: Schema.optional(Schema.String) })
+const WriteParameters = Schema.Struct({
+  filePath: Schema.optional(Schema.String),
+  content: Schema.optional(Schema.String),
+})
 type WriteToolInfo = Tool.Info<typeof WriteParameters>
 const WebFetchParameters = Schema.Struct({ url: Schema.optional(Schema.String) })
 type WebFetchToolInfo = Tool.Info<typeof WebFetchParameters>
@@ -55,7 +58,10 @@ const EditParameters = Schema.Struct({ filePath: Schema.optional(Schema.String) 
 type EditToolInfo = Tool.Info<typeof EditParameters, { diff: string }>
 const WebSearchParameters = Schema.Struct({ query: Schema.optional(Schema.String) })
 type WebSearchToolInfo = Tool.Info<typeof WebSearchParameters, { provider: unknown }>
-const BashParameters = Schema.Struct({ command: Schema.optional(Schema.String), workdir: Schema.optional(Schema.String) })
+const BashParameters = Schema.Struct({
+  command: Schema.optional(Schema.String),
+  workdir: Schema.optional(Schema.String),
+})
 type BashToolInfo = Tool.Info<typeof BashParameters, { exit: number }>
 const TodoWriteParameters = Schema.Struct({ todos: Schema.optional(Schema.Any) })
 type TodoWriteToolInfo = Tool.Info<typeof TodoWriteParameters>

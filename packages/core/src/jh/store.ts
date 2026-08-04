@@ -136,13 +136,26 @@ const serialize = (state: JhEngine.State): SerializedState => ({
   telemetry: [...state.telemetry],
 })
 
-export function save(db: Db, input: { id: string; goal: string; status: string; state: JhEngine.State; now: number }): Effect.Effect<void> {
+export function save(
+  db: Db,
+  input: { id: string; goal: string; status: string; state: JhEngine.State; now: number },
+): Effect.Effect<void> {
   return Effect.gen(function* () {
     const state = serialize(input.state)
     yield* db
       .insert(JhPlanTable)
-      .values({ id: input.id, goal: input.goal, status: input.status, state, timeCreated: input.now, timeUpdated: input.now })
-      .onConflictDoUpdate({ target: JhPlanTable.id, set: { goal: input.goal, status: input.status, state, timeUpdated: input.now } })
+      .values({
+        id: input.id,
+        goal: input.goal,
+        status: input.status,
+        state,
+        timeCreated: input.now,
+        timeUpdated: input.now,
+      })
+      .onConflictDoUpdate({
+        target: JhPlanTable.id,
+        set: { goal: input.goal, status: input.status, state, timeUpdated: input.now },
+      })
       .run()
       .pipe(Effect.orDie)
     // artifacts: REPLACE (latest snapshot wins), each body bounded by MAX_ARTIFACT_BYTES
@@ -179,16 +192,35 @@ export function save(db: Db, input: { id: string; goal: string; status: string; 
   })
 }
 
-export function load(db: Db, id: string): Effect.Effect<{ goal: string; status: string; state: JhEngine.State } | undefined> {
+export function load(
+  db: Db,
+  id: string,
+): Effect.Effect<{ goal: string; status: string; state: JhEngine.State } | undefined> {
   return Effect.gen(function* () {
     const plan = yield* db.select().from(JhPlanTable).where(eq(JhPlanTable.id, id)).get().pipe(Effect.orDie)
     if (!plan) return undefined
-    const artifactRows = yield* db.select().from(JhArtifactTable).where(eq(JhArtifactTable.planID, id)).all().pipe(Effect.orDie)
-    const logRows = yield* db.select().from(JhLogTable).where(eq(JhLogTable.planID, id)).orderBy(asc(JhLogTable.seq)).all().pipe(Effect.orDie)
+    const artifactRows = yield* db
+      .select()
+      .from(JhArtifactTable)
+      .where(eq(JhArtifactTable.planID, id))
+      .all()
+      .pipe(Effect.orDie)
+    const logRows = yield* db
+      .select()
+      .from(JhLogTable)
+      .where(eq(JhLogTable.planID, id))
+      .orderBy(asc(JhLogTable.seq))
+      .all()
+      .pipe(Effect.orDie)
     const s = plan.state as SerializedState
     const state: JhEngine.State = {
       tree: { root: s.tree.root as JhStep.StepID, nodes: new Map(s.tree.nodes.map((n) => [n[0], n[1]])) },
-      artifacts: artifactRows.map((r) => ({ id: r.artifactID, type: r.type as JhArtifact.Stored["type"], hash: r.hash, content: r.content })),
+      artifacts: artifactRows.map((r) => ({
+        id: r.artifactID,
+        type: r.type as JhArtifact.Stored["type"],
+        hash: r.hash,
+        content: r.content,
+      })),
       log: logRows.map((r) => r.entry as JhLog.Sequenced),
       telemetry: new Map(s.telemetry.map((t) => [t[0], t[1]])),
     }
@@ -240,7 +272,10 @@ export function purgeExpired(db: Db, input: { now: number; ttlMs?: number }): Ef
       .all()
       .pipe(Effect.orDie)
     if (rows.length === 0) return 0
-    yield* deletePlans(db, rows.map((r) => r.id))
+    yield* deletePlans(
+      db,
+      rows.map((r) => r.id),
+    )
     return rows.length
   })
 }
@@ -264,7 +299,10 @@ export function purgeSession(db: Db, sessionID: string): Effect.Effect<number> {
       .all()
       .pipe(Effect.orDie)
     if (rows.length === 0) return 0
-    yield* deletePlans(db, rows.map((r) => r.id))
+    yield* deletePlans(
+      db,
+      rows.map((r) => r.id),
+    )
     return rows.length
   })
 }

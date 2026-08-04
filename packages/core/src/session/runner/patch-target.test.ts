@@ -48,7 +48,9 @@ describe("toolTargetKey with a patch body", () => {
 
   test("the envelope outranks a stray `path` field — the envelope is the more specific answer", () => {
     const withPath = JSON.stringify({ patchText: "*** Add File: src/a.ts\n+x", path: "unrelated.ts" })
-    expect(toolTargetKey("apply_patch", withPath)).toBe(toolTargetKey("apply_patch", patch("*** Add File: src/a.ts\n+y")))
+    expect(toolTargetKey("apply_patch", withPath)).toBe(
+      toolTargetKey("apply_patch", patch("*** Add File: src/a.ts\n+y")),
+    )
   })
 
   test("an unparseable patch body still falls back to raw args rather than throwing", () => {

@@ -44,7 +44,14 @@ async function loadFacts(): Promise<Triple[]> {
   }
   // Generate in-process (mirror of generate-rockfacts, seed-locked, smaller).
   const gen = Bun.spawnSync(
-    ["bun", new URL("./generate-rockfacts.ts", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"), "--out", "/dev/stdout", "--bands", "60"],
+    [
+      "bun",
+      new URL("./generate-rockfacts.ts", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"),
+      "--out",
+      "/dev/stdout",
+      "--bands",
+      "60",
+    ],
     { stdout: "pipe", stderr: "pipe" },
   )
   const out = gen.stdout.toString()
@@ -154,7 +161,10 @@ function splitArgs(inner: string): string[] {
 // ── Datalog parser (conjunctive query: `?- p1, p2, ... .` with fact/3 literals) ───────────
 // Accept forms: fact(S, "member_of", Band)  — uppercase/`_`-leading = var, quoted = const.
 function parseDatalog(query: string): { patterns: Pattern[]; select: string[] } {
-  const body = query.replace(/^\s*\?-/, "").replace(/\.\s*$/, "").trim()
+  const body = query
+    .replace(/^\s*\?-/, "")
+    .replace(/\.\s*$/, "")
+    .trim()
   const literals = body.match(/fact\s*\(([^)]*)\)/gi) ?? []
   const patterns: Pattern[] = []
   const varsInOrder: string[] = []
@@ -195,7 +205,14 @@ function parseSparql(query: string): { patterns: Pattern[]; select: string[] } {
   }
   const select =
     projected === "*"
-      ? [...new Set(patterns.flatMap((p) => [p.s, p.p, p.o]).filter((t) => t.kind === "var").map((t) => (t as { name: string }).name))]
+      ? [
+          ...new Set(
+            patterns
+              .flatMap((p) => [p.s, p.p, p.o])
+              .filter((t) => t.kind === "var")
+              .map((t) => (t as { name: string }).name),
+          ),
+        ]
       : (projected.match(/\?(\w+)/g) ?? []).map((v) => v.slice(1))
   return { patterns, select }
 }
@@ -262,14 +279,16 @@ function buildQuestions(triples: Triple[]): Question[] {
   for (const m of musicians) {
     const name = get(m, "name")
     const band = get(m, "member_of")
-    if (name && band) questions.push({ text: `Which band is the musician "${name}" a member of?`, answers: [band], hops: 1 })
+    if (name && band)
+      questions.push({ text: `Which band is the musician "${name}" a member of?`, answers: [band], hops: 1 })
   }
   for (const b of bands) {
     const name = get(b, "name")
     const city = get(b, "origin_city")
     const founded = get(b, "founded_in")
     if (name && city) questions.push({ text: `In which city was the band "${name}" formed?`, answers: [city], hops: 1 })
-    if (name && founded) questions.push({ text: `In which year was the band "${name}" founded?`, answers: [founded], hops: 1 })
+    if (name && founded)
+      questions.push({ text: `In which year was the band "${name}" founded?`, answers: [founded], hops: 1 })
   }
 
   // 2-hop join: the founding city of the band a given musician plays in (member_of is a NAME,
@@ -281,7 +300,11 @@ function buildQuestions(triples: Triple[]): Question[] {
     const city = bandSlug ? get(bandSlug, "origin_city") : undefined
     // Unambiguous 2-hop: "origin_city" only (avoid "formed" which reads as founded_in/year).
     if (name && city)
-      questions.push({ text: `What is the origin_city of the band that "${name}" is a member of?`, answers: [city], hops: 2 })
+      questions.push({
+        text: `What is the origin_city of the band that "${name}" is a member of?`,
+        answers: [city],
+        hops: 2,
+      })
   }
   return questions
 }
@@ -316,7 +339,9 @@ async function authorQuery(language: string, question: string): Promise<string> 
       max_tokens: 2048,
       messages: [{ role: "user", content: PROMPTS[language]!(question) }],
     }),
-  }).then((r) => r.json()).catch(() => undefined)
+  })
+    .then((r) => r.json())
+    .catch(() => undefined)
   return stripFences((res as any)?.choices?.[0]?.message?.content ?? "")
 }
 
@@ -327,7 +352,11 @@ function correct(got: string[], answers: string[]): boolean {
 }
 
 // ── run ──────────────────────────────────────────────────────────────────────────────────
-if (!(await fetch(`${VLLM}/models`).then((r) => r.ok).catch(() => false))) {
+if (
+  !(await fetch(`${VLLM}/models`)
+    .then((r) => r.ok)
+    .catch(() => false))
+) {
   console.error("model backend not reachable at " + VLLM)
   process.exit(1)
 }
@@ -338,12 +367,18 @@ const allQuestions = buildQuestions(triples)
 // Deterministic spread across 1-hop and 2-hop.
 const oneHop = allQuestions.filter((q) => q.hops === 1)
 const twoHop = allQuestions.filter((q) => q.hops === 2)
-const pickEvery = <T>(xs: T[], k: number) => (xs.length <= k ? xs : xs.filter((_, i) => i % Math.floor(xs.length / k) === 0).slice(0, k))
+const pickEvery = <T>(xs: T[], k: number) =>
+  xs.length <= k ? xs : xs.filter((_, i) => i % Math.floor(xs.length / k) === 0).slice(0, k)
 const questions = [...pickEvery(oneHop, Math.ceil(N * 0.6)), ...pickEvery(twoHop, Math.floor(N * 0.4))]
-console.log(`evaluating ${questions.length} questions (${questions.filter((q) => q.hops === 1).length} 1-hop, ${questions.filter((q) => q.hops === 2).length} 2-hop) × 3 languages\n`)
+console.log(
+  `evaluating ${questions.length} questions (${questions.filter((q) => q.hops === 1).length} 1-hop, ${questions.filter((q) => q.hops === 2).length} 2-hop) × 3 languages\n`,
+)
 
 const languages = ["sql", "datalog", "sparql"] as const
-const score: Record<string, { ok: number; total: number; ok1: number; total1: number; ok2: number; total2: number; errors: number }> = {}
+const score: Record<
+  string,
+  { ok: number; total: number; ok1: number; total1: number; ok2: number; total2: number; errors: number }
+> = {}
 for (const lang of languages) score[lang] = { ok: 0, total: 0, ok1: 0, total1: 0, ok2: 0, total2: 0, errors: 0 }
 const samples: any[] = []
 
@@ -358,7 +393,9 @@ for (const question of questions) {
       else {
         const parsed = lang === "datalog" ? parseDatalog(query) : parseSparql(query)
         if (parsed.patterns.length === 0) throw new Error("no patterns parsed")
-        const selectVar = parsed.select[parsed.select.length - 1] ? [parsed.select[parsed.select.length - 1]!] : parsed.select
+        const selectVar = parsed.select[parsed.select.length - 1]
+          ? [parsed.select[parsed.select.length - 1]!]
+          : parsed.select
         // Answer var = the LAST distinguished variable (the one the question asks for); for
         // multi-var conjunctive queries the unknown is typically introduced last.
         const rows = joinBGP(triples, parsed.patterns, parsed.select.length ? parsed.select : selectVar)

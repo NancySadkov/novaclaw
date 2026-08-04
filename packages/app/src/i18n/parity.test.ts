@@ -178,7 +178,9 @@ function compare(base: Dict, locale: Dict): Report {
   }
 
   // Rule 4, over shared keys only, grouped by sibling prefix.
-  const shared = localeKeys.filter((key) => key in base && typeof locale[key] === "string" && typeof base[key] === "string")
+  const shared = localeKeys.filter(
+    (key) => key in base && typeof locale[key] === "string" && typeof base[key] === "string",
+  )
   const groups = new Map<string, string[]>()
   for (const key of shared) {
     const group = siblingGroup(key)
@@ -194,8 +196,10 @@ function compare(base: Dict, locale: Dict): Report {
       for (const name of placeholders(base[key] as string)) baseSet.add(name)
       for (const name of placeholders(locale[key] as string)) localeSet.add(name)
     }
-    if (!sameSet(baseSet, localeSet)) placeholder.push(`${group}.* — en {{${show(baseSet)}}} vs locale {{${show(localeSet)}}}`)
-    else if (keys.some((key) => !sameSet(placeholders(base[key] as string), placeholders(locale[key] as string)))) moves++
+    if (!sameSet(baseSet, localeSet))
+      placeholder.push(`${group}.* — en {{${show(baseSet)}}} vs locale {{${show(localeSet)}}}`)
+    else if (keys.some((key) => !sameSet(placeholders(base[key] as string), placeholders(locale[key] as string))))
+      moves++
   }
 
   return {

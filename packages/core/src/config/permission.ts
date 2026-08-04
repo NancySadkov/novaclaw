@@ -93,13 +93,13 @@ function normalizeAction(action: string) {
 // each agent's `permissions`. An optional legacy `tools` map (a `{ tool: boolean }` allow/deny record)
 // is expanded first; write/patch collapse onto `edit`.
 export function ruleset(info?: Info, tools?: Readonly<Record<string, boolean>>) {
-  const rules: Array<{ action: string; resource: string; effect: Action }> = globalThis.Object.entries(
-    tools ?? {},
-  ).map(([action, enabled]) => ({
-    action: normalizeAction(action),
-    resource: "*",
-    effect: enabled ? ("allow" as const) : ("deny" as const),
-  }))
+  const rules: Array<{ action: string; resource: string; effect: Action }> = globalThis.Object.entries(tools ?? {}).map(
+    ([action, enabled]) => ({
+      action: normalizeAction(action),
+      resource: "*",
+      effect: enabled ? ("allow" as const) : ("deny" as const),
+    }),
+  )
   for (const [action, rule] of globalThis.Object.entries(info ?? {})) {
     if (!rule) continue
     if (typeof rule === "string") {

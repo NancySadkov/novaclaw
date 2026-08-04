@@ -321,8 +321,7 @@ const applyConfig = (config: Partial<Config.Info>) =>
  * *distinct* layer build of `:memory:` is a separate, private database (verified directly — a second
  * top-level build reports `isEmpty === true` after the first has written).
  */
-const applyConfigScoped = (config: Partial<Config.Info>) =>
-  applyConfig(config).pipe(Effect.provide(configStores))
+const applyConfigScoped = (config: Partial<Config.Info>) => applyConfig(config).pipe(Effect.provide(configStores))
 
 /**
  * Async flavour: build the store layers AND the Config service in the SHARED memo map.

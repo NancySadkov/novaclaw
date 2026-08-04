@@ -105,7 +105,8 @@ export const ShellApi = HttpApi.make("shell")
           OpenApi.annotations({
             identifier: "shell.offline",
             summary: "Offline layer status",
-            description: "The airgap posture: how many of the 9 offline layers are active, with per-layer detail (OFF-C).",
+            description:
+              "The airgap posture: how many of the 9 offline layers are active, with per-layer detail (OFF-C).",
           }),
         ),
         HttpApiEndpoint.post("provision", `${root}/provision`, {

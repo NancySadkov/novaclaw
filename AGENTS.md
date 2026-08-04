@@ -15,7 +15,7 @@ through a shell-like UI (task manager, launcher, apps).
 2. **A user-friendly HTML UI** — the desktop (Electron) and web apps that make driving agents
    pleasant for non-experts. NovaClaw is **HTML-UI-only**: there is no interactive terminal UI, and
    the CLI is **headless-only** (`serve`, one-shot `run`, health, tests). See the plan repo's
-   AGENTS.md → *Identity & mission*.
+   AGENTS.md → _Identity & mission_.
 
 Everything else is deliberately **not** kernel: LSP servers, code indexers, editor
 integrations, and similar developer services are things an **agent sets up for itself** when
@@ -25,7 +25,7 @@ spawn, MCP, the app registry) to host such capabilities — it does not bundle t
 doubt about a feature: if it isn't kernel or UI, it's an app.
 
 NovaClaw runs entirely against local models (e.g. vLLM on a DGX Spark) — no paid APIs, no
-telemetry, no data egress. Cloud model endpoints are optional *devices* a user may add, never
+telemetry, no data egress. Cloud model endpoints are optional _devices_ a user may add, never
 dependencies.
 
 ## Repository layout
@@ -299,11 +299,11 @@ Per-session reads go through **`useSessionView(sessionID)`**
 persisted key for session X"). Don't hand-assemble these from the raw contexts below; the facade
 exists so picking a wrong context can't compile. What each raw context owns:
 
-| Context | Owns |
-|---|---|
-| `useServerSDK()` | the server connection: `scope`, HTTP `client`, the SSE event tap |
-| `useServerSync()` | server-scoped stores: the canonical **session record store** (`session.get/lineage/status`, P2 control-event folds), `data.project`, notifications plumbing, `child(dir)` directory stores, `queryOptions` |
-| `useSDK()` | the ROUTE's directory-scoped client: `directory`, dir-bound HTTP `client` |
-| `useSync()` | the route's directory-sync view over serverSync: `data.*` (config/agent/command + session-field passthroughs), dir-scoped `session.{fetch,archive,…}` |
-| `global.ensureServerCtx(conn)` | multi-server surfaces ONLY (home lists, pickers): a NON-route server's sdk/sync/projects — never for the open session view |
-| `Persist.*` | storage addressing; per-session keys ONLY via the facade's `persistTarget`; draft-tab state via `Persist.draft(draftID, …)` (deleted with the tab; owned by prompt/tabs contexts) |
+| Context                        | Owns                                                                                                                                                                                                       |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `useServerSDK()`               | the server connection: `scope`, HTTP `client`, the SSE event tap                                                                                                                                           |
+| `useServerSync()`              | server-scoped stores: the canonical **session record store** (`session.get/lineage/status`, P2 control-event folds), `data.project`, notifications plumbing, `child(dir)` directory stores, `queryOptions` |
+| `useSDK()`                     | the ROUTE's directory-scoped client: `directory`, dir-bound HTTP `client`                                                                                                                                  |
+| `useSync()`                    | the route's directory-sync view over serverSync: `data.*` (config/agent/command + session-field passthroughs), dir-scoped `session.{fetch,archive,…}`                                                      |
+| `global.ensureServerCtx(conn)` | multi-server surfaces ONLY (home lists, pickers): a NON-route server's sdk/sync/projects — never for the open session view                                                                                 |
+| `Persist.*`                    | storage addressing; per-session keys ONLY via the facade's `persistTarget`; draft-tab state via `Persist.draft(draftID, …)` (deleted with the tab; owned by prompt/tabs contexts)                          |

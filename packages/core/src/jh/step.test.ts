@@ -38,7 +38,13 @@ describe("StepDraft codec", () => {
   })
 
   test("minimal atomic draft decodes (only goal/size/success/tool/args)", () => {
-    const draft = decode({ goal: "note the plan", size: "atomic", success: "records a choice", tool: "note", args: { text: "hi" } })
+    const draft = decode({
+      goal: "note the plan",
+      size: "atomic",
+      success: "records a choice",
+      tool: "note",
+      args: { text: "hi" },
+    })
     expect(draft.size).toBe("atomic")
     expect(draft.research_needed).toBeUndefined()
     expect(draft.check).toBeUndefined()
@@ -75,7 +81,17 @@ describe("StepDraft codec", () => {
   })
 
   test("TOLERANCE: null-valued optional fields decode (small models emit `null` for absent fields)", () => {
-    const draft = decode({ goal: "g", size: "atomic", tool: "note", args: {}, substeps: null, consumes: null, check: null, difficulty_prior: null, research_needed: null })
+    const draft = decode({
+      goal: "g",
+      size: "atomic",
+      tool: "note",
+      args: {},
+      substeps: null,
+      consumes: null,
+      check: null,
+      difficulty_prior: null,
+      research_needed: null,
+    })
     expect(draft.substeps).toBeNull()
     expect(draft.check).toBeNull()
     // downstream `?? default` collapses null and undefined
@@ -84,7 +100,11 @@ describe("StepDraft codec", () => {
   })
 
   test("TOLERANCE: `success` is optional (it is human legibility; the gate is `check` — D4)", () => {
-    const draft = decode({ goal: "g", size: "needs_decomposition", substeps: [{ goal: "a", size: "atomic", tool: "note", args: {} }] })
+    const draft = decode({
+      goal: "g",
+      size: "needs_decomposition",
+      substeps: [{ goal: "a", size: "atomic", tool: "note", args: {} }],
+    })
     expect(draft.success).toBeUndefined()
     expect(draft.substeps?.[0]?.goal).toBe("a")
   })
@@ -101,7 +121,11 @@ describe("StepDraft codec", () => {
     expect(coerced.produces).toEqual([{ id: "pi.c", type: "file" }])
     expect(coerced.consumes).toEqual([{ id: "add.c", type: "file" }])
     // recurses into a lone substep and decodes cleanly
-    const nested: any = JhStep.coerceDraftShape({ goal: "r", size: "needs_decomposition", substeps: { goal: "a", size: "atomic", tool: "note", args: {}, produces: { id: "x", type: "note" } } })
+    const nested: any = JhStep.coerceDraftShape({
+      goal: "r",
+      size: "needs_decomposition",
+      substeps: { goal: "a", size: "atomic", tool: "note", args: {}, produces: { id: "x", type: "note" } },
+    })
     expect(Array.isArray(nested.substeps)).toBe(true)
     const draft = decode(nested)
     expect(draft.substeps?.[0]?.produces).toEqual([{ id: "x", type: "note" }])
@@ -110,7 +134,9 @@ describe("StepDraft codec", () => {
   test("codec REJECTS missing goal, size:'huge', and an unknown check type", () => {
     expect(() => decode({ size: "atomic", success: "s", tool: "note", args: {} })).toThrow()
     expect(() => decode({ goal: "g", size: "huge", success: "s" })).toThrow()
-    expect(() => decode({ goal: "g", size: "atomic", success: "s", tool: "note", args: {}, check: { type: "nope" } })).toThrow()
+    expect(() =>
+      decode({ goal: "g", size: "atomic", success: "s", tool: "note", args: {}, check: { type: "nope" } }),
+    ).toThrow()
   })
 })
 
@@ -119,37 +145,91 @@ describe("structuralIssues", () => {
     issues.find((i) => i.code === code)
 
   test("empty_goal (error, path '')", () => {
-    const issue = has(JhStep.structuralIssues({ goal: "   ", size: "atomic", tool: "note", args: {}, success: "s", check: { type: "artifact_present" } }), "empty_goal")
+    const issue = has(
+      JhStep.structuralIssues({
+        goal: "   ",
+        size: "atomic",
+        tool: "note",
+        args: {},
+        success: "s",
+        check: { type: "artifact_present" },
+      }),
+      "empty_goal",
+    )
     expect(issue).toMatchObject({ severity: "error", path: "" })
   })
 
   test("atomic_with_substeps (error, path '')", () => {
-    const issue = has(JhStep.structuralIssues({ goal: "g", size: "atomic", tool: "note", args: {}, success: "s", check: { type: "artifact_present" }, substeps: [cleanLeaf] }), "atomic_with_substeps")
+    const issue = has(
+      JhStep.structuralIssues({
+        goal: "g",
+        size: "atomic",
+        tool: "note",
+        args: {},
+        success: "s",
+        check: { type: "artifact_present" },
+        substeps: [cleanLeaf],
+      }),
+      "atomic_with_substeps",
+    )
     expect(issue).toMatchObject({ severity: "error", path: "" })
   })
 
   test("compound_without_substeps (error, path '')", () => {
-    const issue = has(JhStep.structuralIssues({ goal: "g", size: "needs_decomposition", success: "s" }), "compound_without_substeps")
+    const issue = has(
+      JhStep.structuralIssues({ goal: "g", size: "needs_decomposition", success: "s" }),
+      "compound_without_substeps",
+    )
     expect(issue).toMatchObject({ severity: "error", path: "" })
   })
 
   test("atomic_missing_tool (error)", () => {
-    const issue = has(JhStep.structuralIssues({ goal: "g", size: "atomic", args: {}, success: "s", check: { type: "artifact_present" } }), "atomic_missing_tool")
+    const issue = has(
+      JhStep.structuralIssues({
+        goal: "g",
+        size: "atomic",
+        args: {},
+        success: "s",
+        check: { type: "artifact_present" },
+      }),
+      "atomic_missing_tool",
+    )
     expect(issue).toMatchObject({ severity: "error", path: "" })
   })
 
   test("compound_with_tool (error)", () => {
-    const issue = has(JhStep.structuralIssues({ goal: "g", size: "needs_decomposition", tool: "note", success: "s", substeps: [cleanLeaf] }), "compound_with_tool")
+    const issue = has(
+      JhStep.structuralIssues({
+        goal: "g",
+        size: "needs_decomposition",
+        tool: "note",
+        success: "s",
+        substeps: [cleanLeaf],
+      }),
+      "compound_with_tool",
+    )
     expect(issue).toMatchObject({ severity: "error", path: "" })
   })
 
   test("atomic_missing_args (error)", () => {
-    const issue = has(JhStep.structuralIssues({ goal: "g", size: "atomic", tool: "note", success: "s", check: { type: "artifact_present" } }), "atomic_missing_args")
+    const issue = has(
+      JhStep.structuralIssues({
+        goal: "g",
+        size: "atomic",
+        tool: "note",
+        success: "s",
+        check: { type: "artifact_present" },
+      }),
+      "atomic_missing_args",
+    )
     expect(issue).toMatchObject({ severity: "error", path: "" })
   })
 
   test("atomic_missing_check (WARNING)", () => {
-    const issue = has(JhStep.structuralIssues({ goal: "g", size: "atomic", tool: "note", args: {}, success: "s" }), "atomic_missing_check")
+    const issue = has(
+      JhStep.structuralIssues({ goal: "g", size: "atomic", tool: "note", args: {}, success: "s" }),
+      "atomic_missing_check",
+    )
     expect(issue).toMatchObject({ severity: "warning", path: "" })
   })
 

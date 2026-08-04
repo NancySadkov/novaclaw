@@ -54,8 +54,6 @@ describe("ConfigProviderPreset", () => {
     expect(decoded.name).toBeUndefined()
     // The closed adapter set is baked into the schema: a runtime "fix" can never invent a
     // fourth channel (no vendor npm ever loads by name).
-    expect(() =>
-      Schema.decodeUnknownSync(ConfigProviderPreset.Info)({ api: "@ai-sdk/some-vendor" }),
-    ).toThrow()
+    expect(() => Schema.decodeUnknownSync(ConfigProviderPreset.Info)({ api: "@ai-sdk/some-vendor" })).toThrow()
   })
 })

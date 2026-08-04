@@ -40,7 +40,7 @@ const builtIns = Layer.effectDiscard(
           // git-bash) the model MUST be told, or it writes POSIX at cmd.exe and the task dies of
           // unrelated-looking errors — measured 2026-07-26: the same π prompt scored 1/100 digits under
           // a silent cmd.exe and 100/100 under bash.
-          ...(Shell.bashFallbackNote() ? [`  ${Shell.bashFallbackNote()}`] : []),
+          ...(Shell.shellFallbackNote() ? [`  ${Shell.shellFallbackNote()}`] : []),
           ...resourceLines.map((line) => `  ${line}`),
           ...peerLines,
           "</env>",

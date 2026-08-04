@@ -171,14 +171,7 @@ describe("the sweep", () => {
     // or a special-cased arm folded into a row it cannot express — so pin WHICH form each key uses.
     // Moving one is legitimate; doing it without noticing is what this line prevents.
     expect([...LITERAL_ROUTED].sort()).toEqual(["default_agent", "model", "models"])
-    expect([...TABLE_ROUTED].sort()).toEqual([
-      "agents",
-      "commands",
-      "plugins",
-      "providers",
-      "references",
-      "skills",
-    ])
+    expect([...TABLE_ROUTED].sort()).toEqual(["agents", "commands", "plugins", "providers", "references", "skills"])
   })
 
   test("every routed key is a real Config.Info key", () => {
@@ -204,8 +197,7 @@ describe("every Config.Info key routes, or is on the ledger", () => {
   test("the ledger can only SHRINK — a routed or vanished entry must be deleted from it", () => {
     const stale: string[] = []
     for (const [key, reason] of ConfigStoreWrite.NOT_ROUTED_KEYS) {
-      if (!CONFIG_INFO_KEYS.includes(key))
-        stale.push(`${key} (no longer a Config.Info key — drop the ledger entry)`)
+      if (!CONFIG_INFO_KEYS.includes(key)) stale.push(`${key} (no longer a Config.Info key — drop the ledger entry)`)
       else if (ROUTED.has(key)) stale.push(`${key} (now routes into a store — drop the ledger entry)`)
       if (reason.trim().length < 40)
         stale.push(`${key} (the ledger entry has no real reason — say why the key is accepted and discarded)`)

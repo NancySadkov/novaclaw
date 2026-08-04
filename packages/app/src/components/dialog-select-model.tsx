@@ -119,7 +119,11 @@ const ModelList: Component<{
             gutter={12}
             openDelay={0}
             value={
-              <ModelTooltip model={tooltipModel} latest={item.latest} free={isFree(item.provider.id, modelCost(item))} />
+              <ModelTooltip
+                model={tooltipModel}
+                latest={item.latest}
+                free={isFree(item.provider.id, modelCost(item))}
+              />
             }
           >
             {node}

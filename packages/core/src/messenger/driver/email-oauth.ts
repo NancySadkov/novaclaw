@@ -26,7 +26,11 @@ export const parseDeviceCode = (body: unknown): DeviceCodeStart => {
   const userCode = value["user_code"]
   const verificationUri = value["verification_uri"] ?? value["verification_url"]
   if (typeof deviceCode !== "string" || typeof userCode !== "string" || typeof verificationUri !== "string")
-    throw new Error(typeof value["error"] === "string" ? String(value["error_description"] ?? value["error"]) : "malformed device-code response")
+    throw new Error(
+      typeof value["error"] === "string"
+        ? String(value["error_description"] ?? value["error"])
+        : "malformed device-code response",
+    )
   const interval = typeof value["interval"] === "number" ? value["interval"] : 5
   const expiresIn = typeof value["expires_in"] === "number" ? value["expires_in"] : 900
   return { deviceCode, userCode, verificationUri, interval, expiresIn }
@@ -47,7 +51,8 @@ export const parseTokenResponse = (body: unknown, nowMs: number): PollResult => 
   // The device-code poll states (RFC 8628 §3.5): pending/slow_down are NORMAL waits; the rest end it.
   if (error === "authorization_pending") return { kind: "pending" }
   if (error === "slow_down") return { kind: "slow-down" }
-  if (error === "authorization_declined") return { kind: "error", message: "You declined the sign-in.", retryable: false }
+  if (error === "authorization_declined")
+    return { kind: "error", message: "You declined the sign-in.", retryable: false }
   if (error === "expired_token")
     return { kind: "error", message: "The sign-in code expired — start again.", retryable: false }
   return { kind: "error", message: description, retryable: false }

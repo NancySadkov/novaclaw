@@ -19,7 +19,9 @@ function decode(tools: string[], events: ReadonlyArray<Record<string, unknown>>)
 }
 
 const startCall = (name: string) => ({
-  choices: [{ delta: { tool_calls: [{ index: 0, id: "call_1", function: { name, arguments: "" } }] }, finish_reason: null }],
+  choices: [
+    { delta: { tool_calls: [{ index: 0, id: "call_1", function: { name, arguments: "" } }] }, finish_reason: null },
+  ],
 })
 const argsDelta = (args: string) => ({
   choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: args } }] }, finish_reason: null }],
@@ -46,20 +48,14 @@ describe("openai-chat — truncated streamed args self-repair (1O/A4)", () => {
   test("a fragment split across deltas is accumulated by index before the parse attempt", () => {
     let events: LLMEvent[] = []
     expect(() => {
-      events = decode(
-        ["write"],
-        [startCall("write"), argsDelta('{"path":"a",'), argsDelta('"content":"zzzz'), length],
-      )
+      events = decode(["write"], [startCall("write"), argsDelta('{"path":"a",'), argsDelta('"content":"zzzz'), length])
     }).not.toThrow()
     expect(toolCalls(events).length).toBe(1)
     expect(truncatedArgsMessage(toolCalls(events)[0].input)).toBeDefined()
   })
 
   test("a COMPLETE structured call is unaffected — no sentinel, real input decoded", () => {
-    const events = decode(
-      ["write"],
-      [startCall("write"), argsDelta('{"path":"a.ts","content":"ok"}'), length],
-    )
+    const events = decode(["write"], [startCall("write"), argsDelta('{"path":"a.ts","content":"ok"}'), length])
     const calls = toolCalls(events)
     expect(calls.length).toBe(1)
     expect(truncatedArgsMessage(calls[0].input)).toBeUndefined()
@@ -74,7 +70,14 @@ describe("openai-chat — tool-call id hardening (1O/A4 adjacent)", () => {
     const events = decode(
       ["read"],
       [
-        { choices: [{ delta: { tool_calls: [{ index: 0, function: { name: "read", arguments: '{"path":"a"}' } }] }, finish_reason: null }] },
+        {
+          choices: [
+            {
+              delta: { tool_calls: [{ index: 0, function: { name: "read", arguments: '{"path":"a"}' } }] },
+              finish_reason: null,
+            },
+          ],
+        },
         tool_calls,
       ],
     )
@@ -88,7 +91,14 @@ describe("openai-chat — tool-call id hardening (1O/A4 adjacent)", () => {
     const events = decode(
       ["read"],
       [
-        { choices: [{ delta: { tool_calls: [{ index: 0, id: "", function: { name: "read", arguments: '{"path":"a"}' } }] }, finish_reason: null }] },
+        {
+          choices: [
+            {
+              delta: { tool_calls: [{ index: 0, id: "", function: { name: "read", arguments: '{"path":"a"}' } }] },
+              finish_reason: null,
+            },
+          ],
+        },
         tool_calls,
       ],
     )
@@ -101,8 +111,22 @@ describe("openai-chat — tool-call id hardening (1O/A4 adjacent)", () => {
     const events = decode(
       ["read"],
       [
-        { choices: [{ delta: { tool_calls: [{ index: 0, id: "call_real", function: { name: "read", arguments: '{"pa' } }] }, finish_reason: null }] },
-        { choices: [{ delta: { tool_calls: [{ index: 0, id: "call_other", function: { arguments: 'th":"a"}' } }] }, finish_reason: null }] },
+        {
+          choices: [
+            {
+              delta: { tool_calls: [{ index: 0, id: "call_real", function: { name: "read", arguments: '{"pa' } }] },
+              finish_reason: null,
+            },
+          ],
+        },
+        {
+          choices: [
+            {
+              delta: { tool_calls: [{ index: 0, id: "call_other", function: { arguments: 'th":"a"}' } }] },
+              finish_reason: null,
+            },
+          ],
+        },
         tool_calls,
       ],
     )
@@ -118,8 +142,22 @@ describe("openai-chat — tool-call id hardening (1O/A4 adjacent)", () => {
     const events = decode(
       ["read"],
       [
-        { choices: [{ delta: { tool_calls: [{ index: 0, function: { name: "read", arguments: '{"pa' } }] }, finish_reason: null }] },
-        { choices: [{ delta: { tool_calls: [{ index: 0, id: "call_late", function: { arguments: 'th":"a"}' } }] }, finish_reason: null }] },
+        {
+          choices: [
+            {
+              delta: { tool_calls: [{ index: 0, function: { name: "read", arguments: '{"pa' } }] },
+              finish_reason: null,
+            },
+          ],
+        },
+        {
+          choices: [
+            {
+              delta: { tool_calls: [{ index: 0, id: "call_late", function: { arguments: 'th":"a"}' } }] },
+              finish_reason: null,
+            },
+          ],
+        },
         tool_calls,
       ],
     )

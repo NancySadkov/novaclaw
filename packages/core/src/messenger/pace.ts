@@ -61,11 +61,7 @@ export interface Pacer {
    *  delay for `text`, perform `send`, then a small gap before releasing. Serializes ALL sends.
    *  `perCall` overrides the typing speed / clamps for THIS message (per-account setting, §2.3) —
    *  the serialization ("one hand") stays global no matter what. */
-  readonly paced: <A, E, R>(
-    text: string,
-    send: Effect.Effect<A, E, R>,
-    perCall?: PaceOptions,
-  ) => Effect.Effect<A, E, R>
+  readonly paced: <A, E, R>(text: string, send: Effect.Effect<A, E, R>, perCall?: PaceOptions) => Effect.Effect<A, E, R>
 }
 
 /** Build a process-global pacer. `sleep` is injectable so tests run instantly while still proving

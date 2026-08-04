@@ -89,9 +89,7 @@ describe("WebGovernor.guard", () => {
         for (let i = 0; i < 3; i++) yield* first.service.guard({ url: `https://example.com/${i}`, fetch: ok })
         // A brand-new governor — i.e. a restart. It must NOT get a fresh allowance.
         const second = governor(db, limits)
-        return yield* second.service
-          .guard({ url: "https://example.com/after-restart", fetch: ok })
-          .pipe(attempt)
+        return yield* second.service.guard({ url: "https://example.com/after-restart", fetch: ok }).pipe(attempt)
       }),
     )
     expect(out.ok).toBe(false)

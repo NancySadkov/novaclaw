@@ -80,7 +80,7 @@ export const SettingsGeneralV2: Component<{
   const [shells] = createResource(
     () =>
       serverSdk()
-        .client.pty.shells()
+        .client.v2.pty.shells()
         .then((res) => res.data ?? [])
         .catch(() => [] as ShellOption[]),
     { initialValue: [] as ShellOption[] },
@@ -156,7 +156,8 @@ export const SettingsGeneralV2: Component<{
   // OFF-C — the N/9 airgap-layer indicator (refetches when offline mode is toggled).
   const offlineEnabled = createMemo(() => (serverSync().data.config as { offline?: boolean }).offline === true)
   const [offline] = createResource(
-    () => (shellConn() && shellRouteDir() ? { conn: shellConn()!, d: shellRouteDir()!, on: offlineEnabled() } : undefined),
+    () =>
+      shellConn() && shellRouteDir() ? { conn: shellConn()!, d: shellRouteDir()!, on: offlineEnabled() } : undefined,
     ({ conn, d }) => offlineStatus(conn.http, { directory: d }).catch(() => undefined),
   )
   const offlineLabel = createMemo(() => {
@@ -269,10 +270,7 @@ export const SettingsGeneralV2: Component<{
           <SettingsRowV2
             title={language.t("settings.general.row.instance.title")}
             description={
-              <Show
-                when={tempSwitched()}
-                fallback={language.t("settings.general.row.instance.description")}
-              >
+              <Show when={tempSwitched()} fallback={language.t("settings.general.row.instance.description")}>
                 <span class="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                   <span>
                     {language.t("settings.general.row.instance.temporary", {
@@ -350,12 +348,7 @@ export const SettingsGeneralV2: Component<{
         >
           <Show when={(bundle.latest as ShellStatus | undefined)?.provisionSupported}>
             <div data-action="settings-shell-bundle-provision">
-              <ButtonV2
-                size="small"
-                variant="outline"
-                disabled={provisioning()}
-                onClick={() => void provisionShell()}
-              >
+              <ButtonV2 size="small" variant="outline" disabled={provisioning()} onClick={() => void provisionShell()}>
                 {provisioning()
                   ? language.t("settings.general.row.shellBundle.provisioning")
                   : (bundle.latest as ShellStatus | undefined)?.bundle
@@ -624,7 +617,10 @@ export const SettingsGeneralV2: Component<{
             row already makes — the posture is a field on that response, so this section adds no
             request of its own and no second probe. `jail` is absent on an instance older than this
             screen, which the section reports rather than papers over. */}
-        <SettingsConfinementSection status={bundle.latest as ShellStatusWithJail | undefined} loading={bundle.loading} />
+        <SettingsConfinementSection
+          status={bundle.latest as ShellStatusWithJail | undefined}
+          loading={bundle.loading}
+        />
 
         <NotificationsSection />
 

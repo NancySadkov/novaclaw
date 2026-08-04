@@ -36,10 +36,7 @@ export function agentColor(name: string, custom?: string) {
  * the message list for the last user message's `agent` field) — native user messages don't
  * carry `agent`, so derive the color from the session's current agent directly (F1e S5).
  */
-export function sessionAgentColor(
-  agent: string | undefined,
-  agents: readonly { name: string; color?: string }[],
-) {
+export function sessionAgentColor(agent: string | undefined, agents: readonly { name: string; color?: string }[]) {
   if (!agent) return undefined
   return agentColor(agent, agents.find((a) => a.name === agent)?.color)
 }

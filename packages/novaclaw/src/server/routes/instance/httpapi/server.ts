@@ -48,6 +48,7 @@ import { Credential } from "@novaclaw/core/credential"
 import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
+import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { CalendarScheduler } from "@novaclaw/core/schedule/scheduler"
 import { RecipeBuiltin } from "@novaclaw/core/recipe-builtin"
 import { LocalModelRuntime } from "@/local-model/runtime"
@@ -71,7 +72,6 @@ import { Ripgrep } from "@novaclaw/core/ripgrep"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionTags } from "@novaclaw/core/session/tags"
-import * as SessionExecutionLocal from "@novaclaw/core/session/execution/local"
 import { lazy } from "@/util/lazy"
 import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@novaclaw/server/cors"
 import { serveUIEffect } from "@/server/shared/ui"
@@ -82,11 +82,9 @@ import { PublicApi } from "./public"
 import {
   authorizationLayer,
   authorizationRouterMiddleware,
-  ptyConnectAuthorizationLayer,
   serverAuthorizationLayer,
 } from "./middleware/authorization"
 import { EventApi } from "./groups/event"
-import { PtyConnectApi } from "./groups/pty"
 import { eventHandlers } from "./handlers/event"
 import { configHandlers } from "./handlers/config"
 import { controlHandlers } from "./handlers/control"
@@ -100,12 +98,12 @@ import { registryHandlers } from "./handlers/registry"
 import { memoryHandlers } from "./handlers/memory"
 import { mcpHandlers } from "./handlers/mcp"
 import { providerHandlers } from "./handlers/provider"
-import { ptyConnectHandlers, ptyHandlers } from "./handlers/pty"
 import { questionHandlers } from "./handlers/question"
 import { shellHandlers } from "./handlers/shell"
 import { syncHandlers } from "./handlers/sync"
 import { handlers } from "@novaclaw/server/handlers"
 import { ServerLocationServiceMap } from "@/location-service-map"
+import { SessionExecutionWorker } from "@/session-worker/execution"
 import { layer as locationLayer } from "@novaclaw/server/location"
 import { sessionLocationLayer } from "@novaclaw/server/middleware/session-location"
 import { schemaErrorLayer as v2SchemaErrorLayer } from "@novaclaw/server/middleware/schema-error"
@@ -143,12 +141,10 @@ const cors = (corsOptions?: CorsOptions) =>
 // Route tree:
 // - rootApiRoutes: typed /global/* and control routes; auth is declared by RootHttpApi.
 // - eventApiRoutes: typed SSE route with instance routing context and its existing API contract.
-// - ptyConnectApiRoutes: typed WebSocket upgrade route with ticket-aware auth.
 // - instanceApiRoutes: remaining typed instance routes.
 // - uiRoute: raw catch-all fallback; auth is router middleware so public static assets can bypass it.
 const authOnlyRouterLayer = authorizationRouterMiddleware.layer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
 const httpApiAuthLayer = authorizationLayer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
-const ptyConnectHttpApiAuthLayer = ptyConnectAuthorizationLayer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
 const workspaceRoutingLive = workspaceRoutingLayer.pipe(Layer.provide(Socket.layerWebSocketConstructorGlobal))
 const rootApiRoutes = HttpApiBuilder.layer(RootHttpApi).pipe(
   Layer.provide([controlHandlers, controlPlaneHandlers, globalHandlers]),
@@ -158,10 +154,6 @@ const rootApiRoutes = HttpApiBuilder.layer(RootHttpApi).pipe(
 const eventApiRoutes = HttpApiBuilder.layer(EventApi).pipe(
   Layer.provide(eventHandlers),
   Layer.provide([httpApiAuthLayer, workspaceRoutingLive, instanceContextLayer]),
-)
-const ptyConnectApiRoutes = HttpApiBuilder.layer(PtyConnectApi).pipe(
-  Layer.provide(ptyConnectHandlers),
-  Layer.provide([ptyConnectHttpApiAuthLayer, workspaceRoutingLive, instanceContextLayer]),
 )
 const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
   Layer.provide([
@@ -173,7 +165,6 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     registryHandlers,
     memoryHandlers,
     mcpHandlers,
-    ptyHandlers,
     questionHandlers,
     providerHandlers,
     shellHandlers,
@@ -249,6 +240,7 @@ const app = LayerNode.group([
   // The EEVDF scheduler — a per-instance singleton, listed here so the HTTP diagnostics handler and the
   // location-scoped runner share ONE ledger (two builds would report different worlds).
   SessionScheduler.node,
+  SessionExecutionAttempt.node,
   Auth.node,
   Config.node,
   Env.node,
@@ -357,7 +349,6 @@ export function createRoutes(
   return Layer.mergeAll(
     rootApiRoutes,
     eventApiRoutes,
-    ptyConnectApiRoutes,
     instanceRoutes,
     serverRoutes,
     docRoute,
@@ -392,12 +383,16 @@ export function createRoutes(
     Layer.provideMerge(CalendarScheduler.layer),
     Layer.provide(
       SessionV2.defaultLayer.pipe(
-        Layer.provide(SessionExecutionLocal.defaultLayer),
+        // Every admitted server drain crosses a disposable worker process. The local executor is
+        // retained in core for non-server embeddings/tests, but is deliberately unreachable here.
+        Layer.provide(SessionExecutionWorker.defaultLayer),
         // V2 runner's location services, with MCP tools injected: replace core's empty
         // ExternalToolSource node with the novaclaw MCP-backed one so searxng et al. appear.
         Layer.provide(sharedLocationServiceMap),
       ),
     ),
+    // Recovery controls call the same worker executor directly to resume a paused durable queue.
+    Layer.provide(SessionExecutionWorker.defaultLayer),
     // The SAME map instance serves the HTTP routes' LocationMiddleware. Two separate maps here
     // means two per-location PermissionV2 instances — a runner's pending ask could then never be
     // settled over HTTP (the reply route would look in the wrong instance's pending map).

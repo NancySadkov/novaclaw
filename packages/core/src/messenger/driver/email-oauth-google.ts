@@ -15,7 +15,8 @@ import type { TokenSet } from "./email"
 const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 
-const base64url = (bytes: Buffer): string => bytes.toString("base64").replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "")
+const base64url = (bytes: Buffer): string =>
+  bytes.toString("base64").replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "")
 
 /** A fresh PKCE code verifier — 32 random bytes, base64url (43 chars, RFC 7636 unreserved set). */
 export const generateCodeVerifier = (): string => base64url(randomBytes(32))
@@ -114,7 +115,11 @@ export interface AuthCodeClient {
     readonly redirectUri: string
     readonly loginHint?: string
   }) => string
-  readonly exchangeCode: (params: { readonly code: string; readonly codeVerifier: string; readonly redirectUri: string }) => Promise<TokenSet>
+  readonly exchangeCode: (params: {
+    readonly code: string
+    readonly codeVerifier: string
+    readonly redirectUri: string
+  }) => Promise<TokenSet>
   readonly refresh: (refreshToken: string) => Promise<TokenSet>
 }
 
@@ -134,7 +139,14 @@ const postForm = async (fields: Record<string, string>): Promise<unknown> => {
 
 export const make = (config: AuthCodeConfig): AuthCodeClient => ({
   buildAuthorizeUrl: ({ state, codeChallenge, redirectUri, loginHint }) =>
-    buildAuthorizeUrl({ clientId: config.clientId, scopes: config.scopes, state, codeChallenge, redirectUri, loginHint }),
+    buildAuthorizeUrl({
+      clientId: config.clientId,
+      scopes: config.scopes,
+      state,
+      codeChallenge,
+      redirectUri,
+      loginHint,
+    }),
   exchangeCode: async ({ code, codeVerifier, redirectUri }) =>
     parseGoogleToken(
       await postForm({

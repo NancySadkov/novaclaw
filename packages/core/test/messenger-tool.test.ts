@@ -28,27 +28,47 @@ import { toolIdentity, executeTool } from "./lib/tool"
 
 describe("MessengerTool.buildModerationAct", () => {
   test("delete and pin require a message id", () => {
-    expect(MessengerTool.buildModerationAct({ act: "delete", message: "m1" })).toEqual({ act: "delete", messageID: "m1" })
+    expect(MessengerTool.buildModerationAct({ act: "delete", message: "m1" })).toEqual({
+      act: "delete",
+      messageID: "m1",
+    })
     expect(MessengerTool.buildModerationAct({ act: "pin", message: "m2" })).toEqual({ act: "pin", messageID: "m2" })
-    expect(MessengerTool.buildModerationAct({ act: "delete" })).toEqual({ error: expect.stringContaining("message id") })
-    expect(MessengerTool.buildModerationAct({ act: "pin", message: "  " })).toEqual({ error: expect.stringContaining("message id") })
+    expect(MessengerTool.buildModerationAct({ act: "delete" })).toEqual({
+      error: expect.stringContaining("message id"),
+    })
+    expect(MessengerTool.buildModerationAct({ act: "pin", message: "  " })).toEqual({
+      error: expect.stringContaining("message id"),
+    })
   })
 
   test("ban, kick, and mute require a user id; mute carries an optional seconds", () => {
     expect(MessengerTool.buildModerationAct({ act: "ban", user: "u9" })).toEqual({ act: "ban", userID: "u9" })
     expect(MessengerTool.buildModerationAct({ act: "kick", user: "u8" })).toEqual({ act: "kick", userID: "u8" })
-    expect(MessengerTool.buildModerationAct({ act: "mute", user: "u7", seconds: 300 })).toEqual({ act: "mute", userID: "u7", seconds: 300 })
+    expect(MessengerTool.buildModerationAct({ act: "mute", user: "u7", seconds: 300 })).toEqual({
+      act: "mute",
+      userID: "u7",
+      seconds: 300,
+    })
     expect(MessengerTool.buildModerationAct({ act: "mute", user: "u7" })).toEqual({ act: "mute", userID: "u7" })
     expect(MessengerTool.buildModerationAct({ act: "ban" })).toEqual({ error: expect.stringContaining("user id") })
     // A fractional seconds floors to a whole second.
-    expect(MessengerTool.buildModerationAct({ act: "mute", user: "u7", seconds: 90.7 })).toEqual({ act: "mute", userID: "u7", seconds: 90 })
+    expect(MessengerTool.buildModerationAct({ act: "mute", user: "u7", seconds: 90.7 })).toEqual({
+      act: "mute",
+      userID: "u7",
+      seconds: 90,
+    })
   })
 
   // Queue moderation (Reddit): approve puts a removed item back; lock closes the chat the op
   // already names, so it asks for no ids at all.
   test("approve needs the item; lock targets the chat and needs nothing", () => {
-    expect(MessengerTool.buildModerationAct({ act: "approve", message: "t1_x" })).toEqual({ act: "approve", messageID: "t1_x" })
-    expect(MessengerTool.buildModerationAct({ act: "approve" })).toEqual({ error: expect.stringContaining("message id") })
+    expect(MessengerTool.buildModerationAct({ act: "approve", message: "t1_x" })).toEqual({
+      act: "approve",
+      messageID: "t1_x",
+    })
+    expect(MessengerTool.buildModerationAct({ act: "approve" })).toEqual({
+      error: expect.stringContaining("message id"),
+    })
     expect(MessengerTool.buildModerationAct({ act: "lock" })).toEqual({ act: "lock" })
   })
 
@@ -187,7 +207,9 @@ const emptyStoreLayer = Layer.mock(MessengerStore.Service)({
 /** A store that cannot answer. The `UnavailableError` is real, not a bare `Effect.fail(…)`, so the
  *  tool is exercised against the exact failure `messenger-store.test.ts` proves sqlite produces. */
 const unreadable = () =>
-  Effect.fail(new MessengerStore.UnavailableError({ read: "listAccounts()", detail: "no such table: messenger_account" }))
+  Effect.fail(
+    new MessengerStore.UnavailableError({ read: "listAccounts()", detail: "no such table: messenger_account" }),
+  )
 const unreadableStoreLayer = Layer.mock(MessengerStore.Service)({
   listAccounts: unreadable,
   bindingsForSession: unreadable,
@@ -648,14 +670,12 @@ const filesMatching = (files: readonly { readonly path: string; readonly text: s
     .sort()
 
 const sourceFiles = (dir: string, base = dir): { path: string; text: string }[] =>
-  nodeFs
-    .readdirSync(dir, { withFileTypes: true })
-    .flatMap((entry) => {
-      const full = nodePath.join(dir, entry.name)
-      if (entry.isDirectory()) return sourceFiles(full, base)
-      if (!entry.name.endsWith(".ts")) return []
-      return [{ path: nodePath.relative(base, full).replaceAll("\\", "/"), text: nodeFs.readFileSync(full, "utf8") }]
-    })
+  nodeFs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = nodePath.join(dir, entry.name)
+    if (entry.isDirectory()) return sourceFiles(full, base)
+    if (!entry.name.endsWith(".ts")) return []
+    return [{ path: nodePath.relative(base, full).replaceAll("\\", "/"), text: nodeFs.readFileSync(full, "utf8") }]
+  })
 
 /** `\b` on both sides so "initiated"/"initiates" in unrelated prose is not counted. */
 const INITIATE = /\binitiate\b/

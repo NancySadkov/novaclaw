@@ -20,8 +20,7 @@ const emptyPatch = (file: string) => formatPatch(structuredPatch(file, file, "",
 const nums = (list: Git.Stat[]) =>
   new Map(
     list.map(
-      (item) =>
-        [item.file, { additions: item.additions, deletions: item.deletions, binary: item.binary }] as const,
+      (item) => [item.file, { additions: item.additions, deletions: item.deletions, binary: item.binary }] as const,
     ),
   )
 

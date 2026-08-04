@@ -32,7 +32,10 @@ const makeFakeGateway = () => {
       { id: string; type: number; name: string; parent_id: string }[]
     >,
     // Messages a channel returns to `GET /channels/:id/messages?after=…` (newest-first, like Discord).
-    backfill: {} as Record<string, { id: string; channel_id: string; author: { id: string; username: string }; content: string }[]>,
+    backfill: {} as Record<
+      string,
+      { id: string; channel_id: string; author: { id: string; username: string }; content: string }[]
+    >,
   }
   let handlers: Parameters<DiscordSocketFactory>[1] | undefined
   const push = (frame: unknown) => handlers?.onMessage(JSON.stringify(frame))
@@ -49,7 +52,8 @@ const makeFakeGateway = () => {
     })
     const json = (body: unknown, status = 200) =>
       new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
-    if (url.endsWith("/users/@me")) return state.reject401 ? json({ message: "401: Unauthorized" }, 401) : json({ id: "bot-1", username: "nova" })
+    if (url.endsWith("/users/@me"))
+      return state.reject401 ? json({ message: "401: Unauthorized" }, 401) : json({ id: "bot-1", username: "nova" })
     if (url.endsWith("/users/@me/guilds")) return json(state.guilds)
     const guildChannels = url.match(/\/guilds\/([^/]+)\/channels$/)
     if (guildChannels) return json(state.channels[guildChannels[1]!] ?? [])
@@ -58,7 +62,9 @@ const makeFakeGateway = () => {
     const channel = url.match(/\/channels\/([^/]+)$/)
     if (channel) {
       const id = channel[1]!
-      const thread = Object.values(state.activeThreads).flat().find((t) => t.id === id)
+      const thread = Object.values(state.activeThreads)
+        .flat()
+        .find((t) => t.id === id)
       if (thread) return json({ ...thread, guild_id: "g1" })
       return json({ id, type: 0, name: "support", guild_id: "g1" })
     }
@@ -71,7 +77,8 @@ const makeFakeGateway = () => {
     if (/\/channels\/[^/]+\/messages\/[^/]+$/.test(url) && method === "DELETE") return json({}, 200)
     if (/\/channels\/[^/]+\/pins\/[^/]+$/.test(url) && method === "PUT") return json({}, 200)
     if (/\/guilds\/[^/]+\/bans\/[^/]+$/.test(url) && method === "PUT") return json({}, 200)
-    if (/\/guilds\/[^/]+\/members\/[^/]+$/.test(url) && (method === "DELETE" || method === "PATCH")) return json({}, 200)
+    if (/\/guilds\/[^/]+\/members\/[^/]+$/.test(url) && (method === "DELETE" || method === "PATCH"))
+      return json({}, 200)
     if (url.startsWith("https://cdn.example/")) return new Response(new TextEncoder().encode("cdn-bytes"))
     return json({}, 404)
   }
@@ -152,11 +159,20 @@ describe("DiscordDriver", () => {
       yield* Effect.scoped(
         Effect.gen(function* () {
           const connection = yield* connect(fake, { onCursor: (value) => cursors.push(value) })
-          yield* eventually(() => fake.state.wsSent, (sent) => sent.some((f) => f.op === 2), "IDENTIFY sent")
+          yield* eventually(
+            () => fake.state.wsSent,
+            (sent) => sent.some((f) => f.op === 2),
+            "IDENTIFY sent",
+          )
           const identify = fake.state.wsSent.find((f) => f.op === 2)?.d as { intents: number; token: string }
           expect(identify.token).toBe("bot-token")
           expect(identify.intents & 32768).toBe(32768) // MESSAGE CONTENT
-          fake.push({ op: 0, s: 1, t: "READY", d: { session_id: "sess-9", resume_gateway_url: "wss://resume.example", user: { id: "bot-1" } } })
+          fake.push({
+            op: 0,
+            s: 1,
+            t: "READY",
+            d: { session_id: "sess-9", resume_gateway_url: "wss://resume.example", user: { id: "bot-1" } },
+          })
           // A guild message with an attachment, then our own echo, then a DM.
           fake.push({
             op: 0,
@@ -168,14 +184,28 @@ describe("DiscordDriver", () => {
               guild_id: "g1",
               author: { id: "u9", username: "alice" },
               content: "here's the crash log",
-              attachments: [{ id: "a1", filename: "crash.txt", size: 42, url: "https://cdn.example/a1", content_type: "text/plain" }],
+              attachments: [
+                {
+                  id: "a1",
+                  filename: "crash.txt",
+                  size: 42,
+                  url: "https://cdn.example/a1",
+                  content_type: "text/plain",
+                },
+              ],
             },
           })
           fake.push({
             op: 0,
             s: 3,
             t: "MESSAGE_CREATE",
-            d: { id: "m2", channel_id: "c-support", guild_id: "g1", author: { id: "bot-1", username: "nova" }, content: "on it" },
+            d: {
+              id: "m2",
+              channel_id: "c-support",
+              guild_id: "g1",
+              author: { id: "bot-1", username: "nova" },
+              content: "on it",
+            },
           })
           fake.push({
             op: 0,
@@ -225,10 +255,19 @@ describe("DiscordDriver", () => {
       yield* Effect.scoped(
         Effect.gen(function* () {
           const connection = yield* connect(fake, {
-            cursor: { sessionID: "sess-9", seq: 41, resumeURL: "wss://resume.example", anchors: { "c-support": "m10" } },
+            cursor: {
+              sessionID: "sess-9",
+              seq: 41,
+              resumeURL: "wss://resume.example",
+              anchors: { "c-support": "m10" },
+            },
             onCursor: (value) => cursors.push(value),
           })
-          yield* eventually(() => fake.state.wsSent, (sent) => sent.some((f) => f.op === 6), "RESUME sent")
+          yield* eventually(
+            () => fake.state.wsSent,
+            (sent) => sent.some((f) => f.op === 6),
+            "RESUME sent",
+          )
           const resume = fake.state.wsSent.find((f) => f.op === 6)?.d as { session_id: string; seq: number }
           expect(resume.session_id).toBe("sess-9")
           expect(resume.seq).toBe(41)
@@ -262,7 +301,7 @@ describe("DiscordDriver", () => {
       const posts = fake.state.restCalls.filter((call) => call.method === "POST")
       const textPosts = posts.filter((call) => !call.form)
       expect(textPosts.length).toBeGreaterThan(1)
-      for (const post of textPosts) expect(((post.body as { content: string }).content).length).toBeLessThanOrEqual(2000)
+      for (const post of textPosts) expect((post.body as { content: string }).content.length).toBeLessThanOrEqual(2000)
       expect(posts.some((call) => call.form)).toBe(true)
     }),
   )
@@ -289,7 +328,9 @@ describe("DiscordDriver", () => {
       expect(seen("DELETE", /\/guilds\/g1\/members\/u8$/)).toBe(true)
       const mute = calls.find((c) => c.method === "PATCH" && /\/guilds\/g1\/members\/u7$/.test(c.url))
       expect(mute).toBeDefined()
-      expect(typeof (mute!.body as { communication_disabled_until?: unknown }).communication_disabled_until).toBe("string")
+      expect(typeof (mute!.body as { communication_disabled_until?: unknown }).communication_disabled_until).toBe(
+        "string",
+      )
     }),
   )
 
@@ -344,13 +385,23 @@ describe("DiscordDriver", () => {
       yield* Effect.scoped(
         Effect.gen(function* () {
           const connection = yield* connect(fake)
-          yield* eventually(() => fake.state.wsSent, (sent) => sent.some((f) => f.op === 2), "IDENTIFY sent")
+          yield* eventually(
+            () => fake.state.wsSent,
+            (sent) => sent.some((f) => f.op === 2),
+            "IDENTIFY sent",
+          )
           fake.push({ op: 0, s: 1, t: "READY", d: { session_id: "sess-1", user: { id: "bot-1" } } })
           fake.push({
             op: 0,
             s: 2,
             t: "MESSAGE_CREATE",
-            d: { id: "m9", channel_id: "t-crash", guild_id: "g1", author: { id: "u5", username: "dave" }, content: "it crashes when I save" },
+            d: {
+              id: "m9",
+              channel_id: "t-crash",
+              guild_id: "g1",
+              author: { id: "u5", username: "dave" },
+              content: "it crashes when I save",
+            },
           })
           yield* connection.inbound.pipe(
             Stream.take(1),
@@ -388,7 +439,11 @@ describe("DiscordDriver", () => {
         Effect.gen(function* () {
           // No resume session (a real sleep invalidates it) but a durable anchor at m10 → backfill.
           const connection = yield* connect(fake, { cursor: { anchors: { "c-support": "m10" } } })
-          yield* eventually(() => fake.state.wsSent, (sent) => sent.some((f) => f.op === 2), "fresh IDENTIFY (not resume)")
+          yield* eventually(
+            () => fake.state.wsSent,
+            (sent) => sent.some((f) => f.op === 2),
+            "fresh IDENTIFY (not resume)",
+          )
           yield* connection.inbound.pipe(
             Stream.take(2),
             Stream.runForEach((event) => Effect.sync(() => received.push(event))),
@@ -396,20 +451,38 @@ describe("DiscordDriver", () => {
         }),
       )
       // The REST fetch used the anchor as `after`, and the two missed messages arrive in ORDER.
-      expect(fake.state.restCalls.some((call) => /\/channels\/c-support\/messages\?after=m10/.test(call.url))).toBe(true)
-      expect(received.map((event) => (event.kind === "message" ? event.text : undefined))).toEqual(["first while away", "second while away"])
+      expect(fake.state.restCalls.some((call) => /\/channels\/c-support\/messages\?after=m10/.test(call.url))).toBe(
+        true,
+      )
+      expect(received.map((event) => (event.kind === "message" ? event.text : undefined))).toEqual([
+        "first while away",
+        "second while away",
+      ])
     }),
   )
 
   it.live("with a valid resume session, the gateway replay is trusted — no REST backfill burst", () =>
     Effect.gen(function* () {
       const fake = makeFakeGateway()
-      fake.state.backfill["c-support"] = [{ id: "m11", channel_id: "c-support", author: { id: "u9", username: "alice" }, content: "should not be pulled" }]
+      fake.state.backfill["c-support"] = [
+        {
+          id: "m11",
+          channel_id: "c-support",
+          author: { id: "u9", username: "alice" },
+          content: "should not be pulled",
+        },
+      ]
       yield* Effect.scoped(
         Effect.gen(function* () {
           // A resume session PRESENT → the gateway replays the gap; a REST burst would double-deliver.
-          yield* connect(fake, { cursor: { sessionID: "sess-9", seq: 5, resumeURL: "wss://resume.example", anchors: { "c-support": "m10" } } })
-          yield* eventually(() => fake.state.wsSent, (sent) => sent.some((f) => f.op === 6), "RESUME, not backfill")
+          yield* connect(fake, {
+            cursor: { sessionID: "sess-9", seq: 5, resumeURL: "wss://resume.example", anchors: { "c-support": "m10" } },
+          })
+          yield* eventually(
+            () => fake.state.wsSent,
+            (sent) => sent.some((f) => f.op === 6),
+            "RESUME, not backfill",
+          )
           yield* Effect.sleep(Duration.millis(50)) // give any (unwanted) backfill a chance to fire
         }),
       )
@@ -428,7 +501,9 @@ describe("DiscordDriver", () => {
       )
       const posts = fake.state.restCalls.filter((call) => call.method === "POST" && !call.form)
       expect(posts.length).toBeGreaterThan(1)
-      const references = posts.map((call) => (call.body as { message_reference?: { message_id: string } }).message_reference)
+      const references = posts.map(
+        (call) => (call.body as { message_reference?: { message_id: string } }).message_reference,
+      )
       expect(references[0]).toEqual({ message_id: "m1", fail_if_not_exists: false } as never)
       // A five-deep quote chain reads awful — only the opening chunk quotes.
       expect(references.slice(1).every((reference) => reference === undefined)).toBe(true)

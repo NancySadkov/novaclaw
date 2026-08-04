@@ -75,16 +75,12 @@ export const layer = Layer.effect(
         //
         // Merge order matches tool_manual's (config ▷ session, session wins) via the same resolver,
         // so the prompt lists exactly the set that tool resolves.
-        const session = yield* Effect.tryPromise(() =>
-          listSessionRecipes(sessionID, { root: sessionStoreRoot }),
-        ).pipe(
+        const session = yield* Effect.tryPromise(() => listSessionRecipes(sessionID, { root: sessionStoreRoot })).pipe(
           // listSessionRecipes already answers [] for every read/parse fault by design, so the only
           // reachable failure here is a malformed session id — a caller bug, not a fault of the
           // store. Name it and continue: a prompt missing its session recipes must not fail a turn.
           Effect.catch((cause) =>
-            Effect.logWarning("adhoc session recipes unreadable", { sessionID, cause }).pipe(
-              Effect.as([] as Recipe[]),
-            ),
+            Effect.logWarning("adhoc session recipes unreadable", { sessionID, cause }).pipe(Effect.as([] as Recipe[])),
           ),
         )
         const available = mergeRecipes(yield* configured(), session).map((recipe) => ({
@@ -97,10 +93,9 @@ export const layer = Layer.effect(
           load: Effect.succeed(available),
           baseline: render,
           update: (_previous, current) =>
-            [
-              "The available ad-hoc tools have changed. This list supersedes the previous one.",
-              render(current),
-            ].join("\n"),
+            ["The available ad-hoc tools have changed. This list supersedes the previous one.", render(current)].join(
+              "\n",
+            ),
           removed: () => "Ad-hoc tool guidance is no longer available. Do not use previously listed recipes.",
         })
       }),

@@ -3,8 +3,20 @@ import type { JhStep } from "./step"
 import { JhTree } from "./tree"
 
 const id = (s: string): JhStep.StepID => s as JhStep.StepID
-const leaf = (goal: string): JhStep.StepDraft => ({ goal, size: "atomic", tool: "note", args: {}, success: "ok", check: { type: "artifact_present" } })
-const compound = (goal: string, substeps: JhStep.StepDraft[]): JhStep.StepDraft => ({ goal, size: "needs_decomposition", success: "ok", substeps })
+const leaf = (goal: string): JhStep.StepDraft => ({
+  goal,
+  size: "atomic",
+  tool: "note",
+  args: {},
+  success: "ok",
+  check: { type: "artifact_present" },
+})
+const compound = (goal: string, substeps: JhStep.StepDraft[]): JhStep.StepDraft => ({
+  goal,
+  size: "needs_decomposition",
+  success: "ok",
+  substeps,
+})
 
 const mustAttach = (t: JhTree.Tree, parent: JhStep.StepID, drafts: JhStep.StepDraft[], maxDepth = 4): JhTree.Tree => {
   const r = JhTree.attach(t, parent, drafts, maxDepth)
@@ -36,7 +48,11 @@ describe("JhTree", () => {
   })
 
   test("nested attach → grandchildren root.2.1 etc.; middle node expanded", () => {
-    const t = mustAttach(JhTree.create(leaf("root")), JhTree.ROOT_ID, [leaf("a"), compound("b", [leaf("b1"), leaf("b2")]), leaf("c")])
+    const t = mustAttach(JhTree.create(leaf("root")), JhTree.ROOT_ID, [
+      leaf("a"),
+      compound("b", [leaf("b1"), leaf("b2")]),
+      leaf("c"),
+    ])
     expect(JhTree.get(t, id("root.2"))!.status).toBe("expanded")
     expect(JhTree.get(t, id("root.2.1"))!.depth).toBe(2)
     expect(JhTree.get(t, id("root.2.1"))!.status).toBe("pending")
@@ -62,7 +78,11 @@ describe("JhTree", () => {
   })
 
   test("nextPending preorder order across commits", () => {
-    let t = mustAttach(JhTree.create(leaf("root")), JhTree.ROOT_ID, [leaf("a"), compound("b", [leaf("b1"), leaf("b2")]), leaf("c")])
+    let t = mustAttach(JhTree.create(leaf("root")), JhTree.ROOT_ID, [
+      leaf("a"),
+      compound("b", [leaf("b1"), leaf("b2")]),
+      leaf("c"),
+    ])
     const seq: string[] = []
     for (;;) {
       const n = JhTree.nextPending(t)
@@ -81,7 +101,11 @@ describe("JhTree", () => {
   })
 
   test("allChildrenCommitted false→true; ancestors(root.2.1) = [root, root.2]", () => {
-    let t = mustAttach(JhTree.create(leaf("root")), JhTree.ROOT_ID, [leaf("a"), compound("b", [leaf("b1"), leaf("b2")]), leaf("c")])
+    let t = mustAttach(JhTree.create(leaf("root")), JhTree.ROOT_ID, [
+      leaf("a"),
+      compound("b", [leaf("b1"), leaf("b2")]),
+      leaf("c"),
+    ])
     expect(JhTree.allChildrenCommitted(t, id("root.2"))).toBe(false)
     t = JhTree.setStatus(t, id("root.2.1"), "committed")
     expect(JhTree.allChildrenCommitted(t, id("root.2"))).toBe(false)

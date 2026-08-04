@@ -19,8 +19,8 @@ describe("js tool toModelOutput", () => {
   })
 
   test("timeout keeps any prior console output", () => {
-    expect(
-      toModelOutput({ ok: false, error: "Execution timed out after 5s", timedOut: true, logs: ["step 1"] }),
-    ).toBe("step 1\nError: Execution timed out after 5s")
+    expect(toModelOutput({ ok: false, error: "Execution timed out after 5s", timedOut: true, logs: ["step 1"] })).toBe(
+      "step 1\nError: Execution timed out after 5s",
+    )
   })
 })

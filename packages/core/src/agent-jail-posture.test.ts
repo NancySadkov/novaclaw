@@ -21,8 +21,12 @@ import type { SessionType } from "./session/config-resolve"
 //   4. `probe()` and `posture()` share ONE cache, i.e. one `bwrap` spawn per process.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-const exited = (status: number): AgentJail.ProbeRunner => () => ({ kind: "exited", status })
-const unavailable = (detail?: string): AgentJail.ProbeRunner => () => ({ kind: "unavailable", detail })
+const exited =
+  (status: number): AgentJail.ProbeRunner =>
+  () => ({ kind: "exited", status })
+const unavailable =
+  (detail?: string): AgentJail.ProbeRunner =>
+  () => ({ kind: "unavailable", detail })
 const never: AgentJail.ProbeRunner = () => {
   throw new Error("the probe runner must not be called on a platform with no backend")
 }
@@ -102,12 +106,8 @@ describe("AgentJail posture", () => {
       const plan = AgentJail.bashPlan(backend)
       expect(plan.attended).toBe(AgentJail.decideBash({ rootType: "interactive", backend }))
       expect(plan.unattended).toBe(AgentJail.decideBash({ rootType: "goal-oriented", backend }))
-      expect(plan.unattendedSafeMode).toBe(
-        AgentJail.decideBash({ rootType: "goal-oriented", backend, safeMode: true }),
-      )
-      expect(plan.untrusted).toBe(
-        AgentJail.decideBash({ rootType: "interactive", backend, hostileInput: true }),
-      )
+      expect(plan.unattendedSafeMode).toBe(AgentJail.decideBash({ rootType: "goal-oriented", backend, safeMode: true }))
+      expect(plan.untrusted).toBe(AgentJail.decideBash({ rootType: "interactive", backend, hostileInput: true }))
     }
   })
 

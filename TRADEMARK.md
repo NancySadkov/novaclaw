@@ -66,5 +66,5 @@ through [novaclaw.app](https://novaclaw.app).
 
 ---
 
-*NovaClaw is not affiliated with or endorsed by the opencode project. See [NOTICE](NOTICE) for
-third-party attribution.*
+_NovaClaw is not affiliated with or endorsed by the opencode project. See [NOTICE](NOTICE) for
+third-party attribution._

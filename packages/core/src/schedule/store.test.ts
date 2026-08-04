@@ -166,7 +166,12 @@ describe("CalendarStore", () => {
       Effect.gen(function* () {
         const a = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "a" }, MAR10_0800)
         const b = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "b" }, MAR10_0800)
-        yield* CalendarStore.recordFire(db, { scheduleId: a.id, occurrenceMillis: 100, firedAt: 100, status: "spawned" })
+        yield* CalendarStore.recordFire(db, {
+          scheduleId: a.id,
+          occurrenceMillis: 100,
+          firedAt: 100,
+          status: "spawned",
+        })
         yield* CalendarStore.recordFire(db, { scheduleId: b.id, occurrenceMillis: 200, firedAt: 200, status: "error" })
         return yield* CalendarStore.recentFires(db)
       }),
