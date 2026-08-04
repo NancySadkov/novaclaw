@@ -31,7 +31,9 @@ import { SessionRunner } from "./session/runner/index"
 import { SessionScheduler } from "./session/scheduler"
 import { SessionStore } from "./session/store"
 import { SessionCompactionRequest } from "./session/compaction-request"
+import { SessionBootRecovery } from "./session/boot-recovery"
 import { SessionExecution } from "./session/execution"
+import { SessionExecutionAttempt } from "./session/execution-attempt"
 import { SessionRunCoordinator } from "./session/run-coordinator"
 import { makeGlobalNode } from "./effect/app-node"
 import { LocationServiceMap } from "./location-service-map"
@@ -499,6 +501,7 @@ export const layer = Layer.effect(
     const events = yield* EventV2.Service
     const projects = yield* ProjectV2.Service
     const execution = yield* SessionExecution.Service
+    const attempts = yield* SessionExecutionAttempt.Service
     const scheduler = yield* SessionScheduler.Service
     const store = yield* SessionStore.Service
     const locations = yield* LocationServiceMap.Service
@@ -512,6 +515,11 @@ export const layer = Layer.effect(
     // attach; a second SessionV2 in one process would silently steal the spawner's executor — the
     // same "never a second SessionV2" rule httpapi/server.ts already enforces by ordering.
     yield* (yield* SessionRunCoordinator.Wake).attach(execution.wake)
+    // …and having adopted an executor, re-drive what the PREVIOUS process left durable and
+    // unfinished: abandoned execution leases, and queued prompts nothing in memory will promote.
+    // Here rather than in an executor because there are two of them (worker in production, local
+    // in core) and only one had ever swept — see `session/boot-recovery.ts`.
+    yield* SessionBootRecovery.start({ db, store, attempts, execution })
     const isDurableSessionEvent = Schema.is(SessionEvent.Durable)
     const decode = SessionMessageRead.decodeRow
 
@@ -1150,6 +1158,10 @@ export const defaultLayer = layer.pipe(
   // is impossible here — there is only one `wakeLayer`.
   Layer.provide(SessionRunCoordinator.wakeLayer),
   Layer.provide(SessionStore.defaultLayer),
+  // Boot recovery reclassifies abandoned leases, so it needs the SAME attempt service the executor
+  // writes through. Provided as the shared module-level layer object (like SessionStore above), so
+  // Layer memoization gives this and `SessionExecutionWorker.defaultLayer` one instance, not two.
+  Layer.provide(SessionExecutionAttempt.defaultLayer),
   Layer.provide(SessionProjector.defaultLayer),
   Layer.provide(EventV2.defaultLayer),
   Layer.provide(Database.defaultLayer),
@@ -1181,6 +1193,7 @@ export const node = makeGlobalNode({
     EventV2.node,
     ProjectV2.node,
     SessionExecution.node,
+    SessionExecutionAttempt.node,
     SessionRunCoordinator.wakeNode,
     SessionScheduler.node,
     SessionStore.node,

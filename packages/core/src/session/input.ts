@@ -243,6 +243,32 @@ export const listPending = Effect.fn("SessionInput.listPending")(function* (
   return rows
 })
 
+/**
+ * Every session holding durable QUEUED input that has not been promoted yet.
+ *
+ * Admission is durable and waking is not: a prompt admitted with `delivery: "queue"` survives a
+ * process restart, while the coordinator that would have run it is in-memory and dies with the
+ * process. Nothing polled or swept, so a queued turn was silently lost — see
+ * `SessionBootRecovery`, which is this query's only caller.
+ *
+ * ⚠️ Deliberately QUEUE-only. A pending `steer` is a harness interjection for a turn that no longer
+ * exists; it is promoted at the cutoff of whatever turn runs next (`promoteSteers`), so it never
+ * needs a turn started on its behalf — and starting one would resurrect an agent on the strength of
+ * a leftover nudge nobody asked for.
+ */
+export const sessionsWithPendingQueue = Effect.fn("SessionInput.sessionsWithPendingQueue")(function* (
+  db: DatabaseService,
+) {
+  const rows = yield* db
+    .selectDistinct({ sessionID: SessionInputTable.session_id })
+    .from(SessionInputTable)
+    .where(and(isNull(SessionInputTable.promoted_seq), eq(SessionInputTable.delivery, "queue")))
+    .orderBy(asc(SessionInputTable.session_id))
+    .all()
+    .pipe(Effect.orDie)
+  return rows.map((row) => SessionSchema.ID.make(row.sessionID))
+})
+
 export const equivalent = (
   input: Admitted,
   expected: {

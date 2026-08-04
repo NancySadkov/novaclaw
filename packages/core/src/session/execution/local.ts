@@ -12,7 +12,6 @@ import { SessionExecution } from "../execution"
 import { SessionExecutionAttempt } from "../execution-attempt"
 
 const HEARTBEAT_INTERVAL = Duration.seconds(5)
-const STALE_AFTER_MS = 30_000
 
 /** Current-process routing for implicit-local Locations. Future remote placement belongs here. */
 export const layer = Layer.effect(
@@ -23,11 +22,11 @@ export const layer = Layer.effect(
     const events = yield* EventV2.Service
     const attempts = yield* SessionExecutionAttempt.Service
     const ownerID = `host_${crypto.randomUUID()}`
-    // A prior host cannot clean up after its own death. Sweep after a grace window and keep sweeping:
-    // a replacement may start before the dead host's last heartbeat is old enough to classify.
-    yield* attempts
-      .recoverStale(Date.now() - STALE_AFTER_MS)
-      .pipe(Effect.repeat(Schedule.spaced(Duration.seconds(10))), Effect.forkScoped)
+    // ⚠️ The stale-lease sweep used to be forked HERE, and that is exactly why it never ran in
+    // production: this layer has no production caller (the server binds `SessionExecutionWorker`
+    // and a test pins that it does), so a dead host's leases were reclassified in tests only. It
+    // now lives at the seam an instance adopts ANY executor — `session/boot-recovery.ts`, started
+    // by `SessionV2`'s layer — and must not move back down into one implementation.
     const coordinator = yield* SessionRunCoordinator.make<SessionSchema.ID, SessionRunner.RunError>({
       drain: Effect.fnUntraced(function* (sessionID: SessionSchema.ID, force) {
         const session = yield* store.get(sessionID)

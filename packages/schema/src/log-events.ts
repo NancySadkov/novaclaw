@@ -1109,6 +1109,22 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  /** Boot recovery: queued prompts a dead process left un-promoted, handed back to the executor. */
+  "session.input.abandoned.resumed": {
+    level: "info",
+    message: "resumed queued input a previous process left behind",
+    attributes: { "session.resumed": "count", "session.handedOff": "count" },
+    content: "none",
+    file: "packages/core/src/session/boot-recovery.ts",
+  },
+  /** Boot recovery: execution leases whose owner stopped heartbeating, reclassified for the UI. */
+  "session.lease.stale.recovered": {
+    level: "info",
+    message: "reclassified execution leases abandoned by a dead host",
+    attributes: { "session.recovered": "count" },
+    content: "none",
+    file: "packages/core/src/session/boot-recovery.ts",
+  },
   "session.memory.extract.empty": {
     level: "warn",
     message: "memory extraction: model returned an empty completion",
