@@ -1,0 +1,50 @@
+[data-component="icon"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  /* resize: both; */
+  aspect-ratio: 1/1;
+  color: var(--icon-base);
+
+  &[data-size="small"] {
+    width: 16px;
+    height: 16px;
+  }
+
+  &[data-size="normal"] {
+    width: 20px;
+    height: 20px;
+  }
+
+  &[data-size="medium"] {
+    width: 24px;
+    height: 24px;
+  }
+
+  &[data-size="large"] {
+    width: 24px;
+    height: 24px;
+  }
+
+  /* Display sizes for launcher tiles / hero surfaces (the small sizes above are for chrome). */
+  &[data-size="xl"] {
+    width: 32px;
+    height: 32px;
+  }
+
+  &[data-size="2xl"] {
+    width: 40px;
+    height: 40px;
+  }
+
+  &[data-size="3xl"] {
+    width: 56px;
+    height: 56px;
+  }
+
+  [data-slot="icon-svg"] {
+    width: 100%;
+    height: auto;
+  }
+}

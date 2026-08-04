@@ -1,0 +1,380 @@
+import type {
+  Config,
+  NovaclawClient,
+  Path,
+  PermissionV2Request,
+  QuestionRequest,
+  SessionV2Info as Session,
+} from "@novaclaw/sdk/v2/client"
+import { showToast } from "@/utils/toast"
+import { getFilename } from "@novaclaw/core/util/path"
+import { retry } from "@novaclaw/core/util/retry"
+import { batch } from "solid-js"
+import { produce, reconcile, type SetStoreFunction, type Store } from "solid-js/store"
+import type { State, VcsCache } from "./types"
+import type { ServerSession } from "../server-session"
+import { cmp, normalizeAgentList, normalizeProviderList } from "./utils"
+import { formatServerError, isMissingDirectoryError } from "@/utils/server-errors"
+import type { Translator } from "@/context/language"
+import { CancelledError, QueryClient, queryOptions } from "@tanstack/solid-query"
+import { loadMcpQuery } from "../server-sync"
+import { NormalizedProviderListResponse } from "@novaclaw/session-ui/context"
+import { ScopedKey, type ServerScope } from "@/utils/server-scope"
+
+type GlobalStore = {
+  ready: boolean
+  path: Path
+  provider: NormalizedProviderListResponse
+  config: Config
+  reload: undefined | "pending" | "complete"
+}
+
+function waitForPaint() {
+  return new Promise<void>((resolve) => {
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      resolve()
+    }
+    const timer = setTimeout(finish, 50)
+    if (typeof requestAnimationFrame !== "function") return
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        clearTimeout(timer)
+        finish()
+      }, 0)
+    })
+  })
+}
+
+// A TanStack cancellation is not a failure: the SSE-reconnect recovery invalidates a scope with
+// cancelRefetch, which cancels any in-flight fetch before re-running it — surfacing that as an
+// error toast would report the RECOVERY as a fault.
+export function isCancelledError(error: unknown) {
+  return error instanceof CancelledError
+}
+
+function errors(list: PromiseSettledResult<unknown>[]) {
+  return list
+    .filter((item): item is PromiseRejectedResult => item.status === "rejected")
+    .map((item) => item.reason)
+    .filter((reason) => !isCancelledError(reason))
+}
+
+const providerRev = new Map<string, number>()
+
+export function clearProviderRev(scope: ServerScope, directory: string) {
+  providerRev.delete(ScopedKey.from(scope, directory))
+}
+
+function runAll(list: Array<() => Promise<unknown>>) {
+  return Promise.allSettled(list.map((item) => item()))
+}
+
+function showErrors(input: {
+  errors: unknown[]
+  title: string
+  translate: Translator
+  formatMoreCount: (count: number) => string
+}) {
+  if (input.errors.length === 0) return
+  const message = formatServerError(input.errors[0], input.translate)
+  const more = input.errors.length > 1 ? input.formatMoreCount(input.errors.length - 1) : ""
+  showToast({
+    variant: "error",
+    title: input.title,
+    description: message + more,
+  })
+}
+
+export const loadGlobalConfigQuery = (scope: ServerScope, sdk: NovaclawClient) =>
+  queryOptions({
+    queryKey: [scope, "config"],
+    queryFn: () => retry(() => sdk.global.config.get().then((x) => x.data!)),
+  })
+
+export async function bootstrapGlobal(input: {
+  serverSDK: NovaclawClient
+  scope: ServerScope
+  requestFailedTitle: string
+  translate: Translator
+  formatMoreCount: (count: number) => string
+  setGlobalStore: SetStoreFunction<GlobalStore>
+  queryClient: QueryClient
+}) {
+  const slow = [
+    () => input.queryClient.fetchQuery(loadGlobalConfigQuery(input.scope, input.serverSDK)),
+    () => input.queryClient.fetchQuery(loadProvidersQuery(input.scope, null, input.serverSDK)),
+    () => input.queryClient.fetchQuery(loadPathQuery(input.scope, null, input.serverSDK)),
+  ]
+  await runAll(slow)
+  // showErrors({
+  //   errors: errors(),
+  //   title: input.requestFailedTitle,
+  //   translate: input.translate,
+  //   formatMoreCount: input.formatMoreCount,
+  // })
+}
+
+function groupBySession<T extends { id: string; sessionID: string }>(input: T[]) {
+  return input.reduce<Record<string, T[]>>((acc, item) => {
+    if (!item?.id || !item.sessionID) return acc
+    const list = acc[item.sessionID]
+    if (list) list.push(item)
+    if (!list) acc[item.sessionID] = [item]
+    return acc
+  }, {})
+}
+
+export function mergeSession(setStore: SetStoreFunction<State>, session: Session) {
+  setStore("session", (list) => {
+    const next = list.slice()
+    const idx = next.findIndex((item) => item.id >= session.id)
+    if (idx === -1) return [...next, session]
+    if (next[idx]?.id === session.id) {
+      next[idx] = session
+      return next
+    }
+    next.splice(idx, 0, session)
+    return next
+  })
+}
+
+function warmSessions(input: {
+  ids: string[]
+  store: Store<State>
+  setStore: SetStoreFunction<State>
+  sdk: NovaclawClient
+}) {
+  const known = new Set(input.store.session.map((item) => item.id))
+  const ids = [...new Set(input.ids)].filter((id) => !!id && !known.has(id))
+  if (ids.length === 0) return Promise.resolve()
+  return Promise.all(
+    ids.map((sessionID) =>
+      retry(() => input.sdk.v2.session.get({ sessionID })).then((x) => {
+        const session = x.data?.data
+        if (!session?.id) return
+        mergeSession(input.setStore, session)
+      }),
+    ),
+  ).then(() => undefined)
+}
+
+export const loadProvidersQuery = (scope: ServerScope, directory: string | null, sdk: NovaclawClient) =>
+  queryOptions({
+    queryKey: [scope, directory, "providers"],
+    queryFn: () => retry(() => sdk.provider.list().then((x) => normalizeProviderList(x.data!))),
+  })
+
+export const loadAgentsQuery = (scope: ServerScope, directory: string | null, sdk: NovaclawClient) =>
+  queryOptions({
+    queryKey: [scope, directory, "agents"],
+    queryFn: () => retry(() => sdk.app.agents().then((x) => normalizeAgentList(x.data))),
+  })
+
+export const loadPathQuery = (scope: ServerScope, directory: string | null, sdk: NovaclawClient) =>
+  queryOptions<Path>({
+    queryKey: [scope, directory, "path"],
+    queryFn: () => retry(() => sdk.path.get().then((x) => x.data!)),
+  })
+
+export async function bootstrapDirectory(input: {
+  directory: string
+  scope: ServerScope
+  mcp: boolean
+  sdk: NovaclawClient
+  store: Store<State>
+  setStore: SetStoreFunction<State>
+  vcsCache: VcsCache
+  loadSessions: (directory: string) => Promise<void> | void
+  translate: Translator
+  global: {
+    config: Config
+    path: Path
+    provider: NormalizedProviderListResponse
+  }
+  queryClient: QueryClient
+  session?: ServerSession
+  onDirectoryMissing?: (directory: string) => void
+}) {
+  const wasMissing = input.store.status === "missing"
+  const loading = input.store.status !== "complete"
+  const seededPath = input.global.path.directory === input.directory ? input.global.path : undefined
+  // Seed the QUERY cache, never the store: `State.path` is a getter over the per-directory
+  // path query (child-store.ts), so a store write can't land — Solid merges it into the
+  // query's own store proxy instead, which is exactly the dev "Cannot mutate a Store
+  // directly" warn with the write silently swallowed. setQueryData is what the getter reads.
+  if (seededPath) {
+    const pathOptions = loadPathQuery(input.scope, input.directory, input.sdk)
+    if (!input.queryClient.getQueryData(pathOptions.queryKey)) {
+      input.queryClient.setQueryData(pathOptions.queryKey, seededPath)
+    }
+  }
+  if (Object.keys(input.store.config).length === 0 && Object.keys(input.global.config).length > 0) {
+    input.setStore("config", reconcile(input.global.config, { merge: false }))
+  }
+  if (loading && !wasMissing) input.setStore("status", "partial")
+
+  const revKey = ScopedKey.from(input.scope, input.directory)
+  const rev = (providerRev.get(revKey) ?? 0) + 1
+  providerRev.set(revKey, rev)
+  void (async () => {
+    if (!seededPath) {
+      try {
+        const response = await input.sdk.path.get()
+        const path = response.data
+        if (path) input.queryClient.setQueryData(loadPathQuery(input.scope, input.directory, input.sdk).queryKey, path)
+        if (wasMissing) input.setStore("status", "partial")
+      } catch (error) {
+        if (isCancelledError(error)) return
+        if (isMissingDirectoryError(error)) {
+          input.setStore("status", "missing")
+          if (!wasMissing) {
+            if (input.onDirectoryMissing) input.onDirectoryMissing(input.directory)
+            if (!input.onDirectoryMissing)
+              showToast({
+                title: input.translate("toast.project.directoryMissing.title"),
+                description: input.translate("toast.project.directoryMissing.description", {
+                  directory: input.directory,
+                }),
+              })
+          }
+          return
+        }
+        console.error("Failed to check project directory", error)
+        showToast({
+          variant: "error",
+          title: input.translate("toast.project.reloadFailed.title", { project: getFilename(input.directory) }),
+          description: formatServerError(error, input.translate),
+        })
+        return
+      }
+    }
+
+    const slow = [
+      () => Promise.resolve(input.loadSessions(input.directory)),
+      () =>
+        input.queryClient
+          .ensureQueryData(loadAgentsQuery(input.scope, input.directory, input.sdk))
+          .then((data) => input.setStore("agent", data)),
+      () =>
+        retry(() => input.sdk.config.get().then((x) => input.setStore("config", reconcile(x.data!, { merge: false })))),
+      () =>
+        retry(() =>
+          input.sdk.v2.session.active().then(async (x) => {
+            // Native /active reports {type:"running"}; the store vocabulary is "busy".
+            const statuses: Record<string, { type: "busy" }> = Object.fromEntries(
+              Object.keys(x.data?.data ?? {}).map((sessionID) => [sessionID, { type: "busy" as const }]),
+            )
+            if (input.session) {
+              await Promise.all(
+                Object.keys(statuses).map((sessionID) => input.session!.resolve(sessionID).catch(() => undefined)),
+              )
+              input.session.set(
+                "session_status",
+                produce((draft) => {
+                  for (const sessionID of Object.keys(draft)) {
+                    if (statuses[sessionID]) continue
+                    if (input.session?.get(sessionID)?.location.directory === input.directory) delete draft[sessionID]
+                  }
+                }),
+              )
+              for (const [sessionID, status] of Object.entries(statuses)) {
+                input.session.set("session_status", sessionID, reconcile(status))
+              }
+            }
+            if (!input.session) input.setStore("session_status", statuses)
+          }),
+        ),
+      () =>
+        retry(() =>
+          input.sdk.vcs.get().then((x) => {
+            const next = x.data ?? input.store.vcs
+            input.setStore("vcs", next)
+            if (next) input.vcsCache.setStore("value", next)
+          }),
+        ),
+      input.mcp && (() => retry(() => input.sdk.command.list().then((x) => input.setStore("command", x.data ?? [])))),
+      () =>
+        retry(() =>
+          // F1e S6: pending asks bootstrap from the native V2 request list (the V1 /permission
+          // merge route is no longer consumed by the app; it retires with S7).
+          input.sdk.v2.permission.request.list({ location: { directory: input.directory } }).then((x) => {
+            const pending = x.data?.data ?? []
+            const ids = pending.map((perm) => perm?.sessionID).filter((id): id is string => !!id)
+            const grouped = groupBySession(
+              pending.filter((perm): perm is PermissionV2Request => !!perm?.id && !!perm.sessionID),
+            )
+            const warm = input.session
+              ? Promise.all(ids.map((sessionID) => input.session!.resolve(sessionID))).then(() => undefined)
+              : warmSessions({ ids, store: input.store, setStore: input.setStore, sdk: input.sdk })
+            return warm.then(() =>
+              batch(() => {
+                const current = input.session?.data.permission ?? input.store.permission
+                for (const sessionID of Object.keys(current)) {
+                  if (grouped[sessionID]) continue
+                  if (input.session?.get(sessionID)?.location.directory !== input.directory) continue
+                  if (input.session) input.session.set("permission", sessionID, [])
+                  if (!input.session) input.setStore("permission", sessionID, [])
+                }
+                for (const [sessionID, permissions] of Object.entries(grouped)) {
+                  const value = reconcile(
+                    permissions.filter((p) => !!p?.id).sort((a, b) => cmp(a.id, b.id)),
+                    { key: "id" },
+                  )
+                  if (input.session) input.session.set("permission", sessionID, value)
+                  if (!input.session) input.setStore("permission", sessionID, value)
+                }
+              }),
+            )
+          }),
+        ),
+      () =>
+        retry(() =>
+          input.sdk.question.list().then((x) => {
+            const ids = (x.data ?? []).map((question) => question?.sessionID).filter((id): id is string => !!id)
+            const grouped = groupBySession((x.data ?? []).filter((q): q is QuestionRequest => !!q?.id && !!q.sessionID))
+            const warm = input.session
+              ? Promise.all(ids.map((sessionID) => input.session!.resolve(sessionID))).then(() => undefined)
+              : warmSessions({ ids, store: input.store, setStore: input.setStore, sdk: input.sdk })
+            return warm.then(() =>
+              batch(() => {
+                const current = input.session?.data.question ?? input.store.question
+                for (const sessionID of Object.keys(current)) {
+                  if (grouped[sessionID]) continue
+                  if (input.session?.get(sessionID)?.location.directory !== input.directory) continue
+                  if (input.session) input.session.set("question", sessionID, [])
+                  if (!input.session) input.setStore("question", sessionID, [])
+                }
+                for (const [sessionID, questions] of Object.entries(grouped)) {
+                  const value = reconcile(
+                    questions.filter((q) => !!q?.id).sort((a, b) => cmp(a.id, b.id)),
+                    { key: "id" },
+                  )
+                  if (input.session) input.session.set("question", sessionID, value)
+                  if (!input.session) input.setStore("question", sessionID, value)
+                }
+              }),
+            )
+          }),
+        ),
+      input.mcp && (() => input.queryClient.fetchQuery(loadMcpQuery(input.scope, input.directory, input.sdk))),
+      () => input.queryClient.fetchQuery(loadProvidersQuery(input.scope, input.directory, input.sdk)),
+    ].filter(Boolean) as (() => Promise<any>)[]
+
+    await waitForPaint()
+    const slowErrs = errors(await runAll(slow))
+    if (slowErrs.length > 0) {
+      console.error("Failed to finish bootstrap instance", slowErrs[0])
+      const project = getFilename(input.directory)
+      showToast({
+        variant: "error",
+        title: input.translate("toast.project.reloadFailed.title", { project }),
+        description: formatServerError(slowErrs[0], input.translate),
+      })
+    }
+
+    if (loading && slowErrs.length === 0) input.setStore("status", "complete")
+  })()
+}

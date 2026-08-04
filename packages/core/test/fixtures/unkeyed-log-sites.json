@@ -1,0 +1,138 @@
+[
+  {
+    "name": "packages/core/src/adhoc-tools/guidance.ts :: Effect.logWarning(\"adhoc session recipes unreadable\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/config.ts :: Effect.logWarning(notice)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/config/plugin/external.ts :: Effect.logDebug(\"skipping external plugins (--pure)\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/event.ts :: Effect.logError(\"Event listener failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/jh/store.ts :: Effect.logWarning(\"jh artifact body over the size cap — refused, not truncated\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/location-services.ts :: Effect.logInfo(\"booting location services\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/models-dev.ts :: Effect.logError(\"Failed to fetch models.dev\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/reference.ts :: Effect.logWarning(\"failed to materialize reference\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/ripgrep/binary.ts :: Effect.logInfo(\"downloading ripgrep\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/schedule/scheduler.ts :: Effect.logError(\"calendar-scheduler tick failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/compaction.ts :: Effect.logInfo(\"compaction prune planned\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/execution/local.ts :: Effect.logError(\"Failed to drain Session\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/history.ts :: Effect.logWarning(\"stale session compaction rejected\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/run-coordinator.ts :: Effect.logWarning(\"session wake dropped — no executor attached; queued input will not run\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/spawner.ts :: Effect.logWarning(\"adhoc-tool copy-on-spawn failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/settings-config-seed.ts :: Effect.logWarning(formatSkippedNotice(skipped))",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/snapshot.ts :: Effect.logWarning(\"failed to capture snapshot\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/tool-catalogue-guidance.ts :: Effect.logWarning(\"tool catalogue index unavailable; continuing with the live manifest\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/global-lifecycle.ts :: Effect.logWarning(\"global disposal failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/groups/config.ts :: Effect.logWarning(\"config PATCH refused: unknown top-level key\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/handlers/event.ts :: Effect.logInfo(\"event connected\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/handlers/event.ts :: Effect.logInfo(\"event disconnected\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/handlers/file.ts :: Effect.logInfo(\"find file\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/handlers/global.ts :: Effect.logInfo(\"global event connected\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/handlers/global.ts :: Effect.logInfo(\"global event disconnected\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/lifecycle.ts :: Effect.logWarning(\"instance disposal failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/middleware/error.ts :: Effect.logError(\"failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/middleware/schema-error.ts :: Effect.logWarning(\"schema rejection\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/server.ts :: Effect.logInfo(\"seeded recipes\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/server.ts :: Effect.logWarning(\"mDNS enabled but hostname is loopback; skipping mDNS publish\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/shared/fence.ts :: Effect.logInfo(\"state fully synced\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/shared/fence.ts :: Effect.logInfo(\"waiting for state\")",
+    "count": 1
+  },
+  {
+    "name": "packages/server/src/handlers/message.ts :: Effect.logError(\"failed to decode session message\")",
+    "count": 1
+  },
+  {
+    "name": "packages/server/src/middleware/schema-error.ts :: Effect.logWarning(\"schema rejection\")",
+    "count": 1
+  }
+]

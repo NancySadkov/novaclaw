@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig.json",
+  "extends": "@tsconfig/node22/tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "module": "nodenext",
+    "declaration": true,
+    "moduleResolution": "nodenext",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "composite": true,
+    "rootDir": "src",
+    // ⚠️ PINNED, and it is a load-bearing pin rather than tidiness — do not delete it.
+    //
+    // With `types` unset, TypeScript auto-includes EVERY package under `node_modules/@types`, walking
+    // up to the workspace root. `@types/bun` is now a devDependency of this package (it is what
+    // `tsconfig.bun.json` needs), so without this line the `src` program silently gains the `Bun`
+    // global — measured 2026-07-29: `export const v: string = Bun.version` compiled GREEN under these
+    // exact options before the pin, and errors after it.
+    //
+    // That matters because `src` is the BROWSER-FACING half. `test/zero-runtime-dependencies.test.ts`
+    // guards the import graph, and a global is not an import — `Bun.file(…)` in `src` would pass both
+    // the typecheck and that guard while making the barrel unusable in a renderer. The types a half
+    // may see are part of its contract, so both halves state them: `node` here, `node` + `bun` there.
+    "types": ["node"]
+  },
+  // ⚠️ `src` ONLY here, and that is deliberate rather than an oversight — the package has TWO halves
+  // with different type environments, and they are compiled by two projects.
+  //
+  // Unlike every other workspace package (which extends `@tsconfig/bun` and typechecks its whole
+  // directory), this half is NODE/browser-flavoured: `src` must stay importable from the renderer and
+  // carry zero runtime dependencies (todo.md → *Standing architecture decisions*, pinned by
+  // `test/zero-runtime-dependencies.test.ts`).
+  //
+  // The package's other directories are Bun-flavoured — `test/**` imports `bun:test` and
+  // `script/build.ts` uses `import { $ } from "bun"`, `Bun.file` and top-level await — and they are
+  // covered by `tsconfig.bun.json`, which `bun run typecheck` runs as its second command. Until
+  // 2026-07-29 they were covered by NOTHING: this `include` left them out, bun type-STRIPS rather
+  // than type-checks, so every assertion in `test/**` could pass while `tsgo` failed. It did fail —
+  // three errors, all in `script/publish.ts`, which is now deleted (below).
+  //
+  // Two files that used to live under this hole are DELETED rather than compiled (2026-07-29, owner:
+  // *per our vision we discard all the cruft*):
+  //   · `example/example.ts` — nothing referenced it, nothing shipped it (`files: ["dist"]`, and
+  //     `exports` points into `src`), and it had just been rewritten against a generated signature
+  //     with no compiler to check the result: a usage sample that reads as verified and is not.
+  //   · `script/publish.ts` — an npm publish script for a package we never publish (*no npm, ever*),
+  //     invoked by nothing, and it could not have worked: it cast the manifest to
+  //     `{ name, version }` and shelled `npm view ${name}@${version}`, but this manifest has no
+  //     `version` field BY RULE (one source of truth, enforced by a test), so it probed
+  //     `@novaclaw/sdk@undefined`. Its two siblings in `packages/plugin` and `packages/ui` carried
+  //     the identical cast and went with it. Typechecking dead code is not the same as owning it.
+  "include": ["src"]
+}

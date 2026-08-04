@@ -1,0 +1,42 @@
+NovaClaw
+Copyright (c) 2025-2026 Nancy Sadkov. All rights reserved.
+
+NovaClaw is licensed under the Functional Source License, Version 1.1, with an
+Apache 2.0 Future License (FSL-1.1-ALv2). Free for any purpose that is not a
+Competing Use; each release additionally becomes available under the Apache
+License 2.0 two years after that release. See the LICENSE file for the full
+terms and for the additional permissions that apply to third-party apps,
+recipes, and output.
+
+The NovaClaw name and logo are not licensed with the code; see TRADEMARK.md.
+
+================================================================================
+Third-party components
+================================================================================
+
+NovaClaw is built on a fork of opencode, used under the terms of the MIT License:
+
+    opencode
+    Copyright (c) 2025 opencode
+    SPDX-License-Identifier: MIT
+    Full license text: licenses/opencode-LICENSE-MIT.txt
+
+The documentation package (packages/docs) is based on a Mintlify template:
+
+    Mintlify starter template
+    Copyright (c) 2023 Mintlify
+    SPDX-License-Identifier: MIT
+    Full license text: packages/docs/LICENSE
+
+NovaClaw Windows distributions embed the w64devkit development environment:
+
+    w64devkit 2.9.0
+    Copyright Chris Wellons and contributors
+    Components are distributed under their respective open-source licenses
+    Notice and redistribution details: licenses/w64devkit-NOTICE.md
+    MinGW-w64 notices are retained at third-party/w64devkit/COPYING.MinGW-w64-runtime.txt
+
+NovaClaw also depends on numerous third-party open-source packages, each
+distributed under its own license. Refer to the individual package licenses
+under node_modules and to the dependency manifests (package.json / bun.lock)
+for the complete list and terms.

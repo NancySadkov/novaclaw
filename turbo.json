@@ -1,0 +1,33 @@
+{
+  "$schema": "https://v2-8-13.turborepo.dev/schema.json",
+  "globalEnv": ["CI", "NOVACLAW_DISABLE_SHARE"],
+  "globalPassThroughEnv": ["CI", "NOVACLAW_DISABLE_SHARE"],
+  "tasks": {
+    "typecheck": {},
+    "build": {
+      "dependsOn": [],
+      "outputs": ["dist/**"]
+    },
+    "novaclaw#test": {
+      "dependsOn": ["^build"],
+      "outputs": [],
+      "passThroughEnv": ["*"]
+    },
+    "@novaclaw/core#test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@novaclaw/app#test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@novaclaw/ui#test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@novaclaw/session-ui#test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    }
+  }
+}

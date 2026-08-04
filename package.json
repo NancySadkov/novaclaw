@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "novaclaw",
+  "version": "0.1.57",
+  "description": "NovaClaw — a local-first, model-agnostic AI agent OS",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.14",
+  "scripts": {
+    "dev": "bun run --cwd packages/novaclaw --conditions=browser src/index.ts",
+    "dev:desktop": "bun --cwd packages/desktop dev",
+    "dev:web": "bun --cwd packages/app dev",
+    "lint": "oxlint",
+    "typecheck": "bun turbo typecheck",
+    "hooks:install": "bun run script/install-hooks.ts",
+    "version:sync": "bun run script/sync-version.ts",
+    "test": "bun run script/test.ts",
+    "test:full": "bun run script/test.ts --full"
+  },
+  "workspaces": {
+    "packages": [
+      "packages/*",
+      "packages/sdk/js",
+      "script"
+    ],
+    "catalog": {
+      "@effect/opentelemetry": "4.0.0-beta.83",
+      "@effect/platform-node": "4.0.0-beta.83",
+      "@effect/sql-sqlite-bun": "4.0.0-beta.83",
+      "@types/bun": "1.3.13",
+      "@types/cross-spawn": "6.0.6",
+      "@tanstack/solid-virtual": "3.13.28",
+      "@shikijs/stream": "4.2.0",
+      "@kobalte/core": "0.13.11",
+      "@types/luxon": "3.7.1",
+      "@types/node": "24.12.2",
+      "@types/semver": "7.7.1",
+      "@tsconfig/node22": "22.0.2",
+      "@tsconfig/bun": "1.0.9",
+      "@pierre/diffs": "1.2.10",
+      "@solid-primitives/storage": "4.3.3",
+      "@tailwindcss/vite": "4.1.11",
+      "diff": "8.0.2",
+      "dompurify": "3.3.1",
+      "drizzle-kit": "1.0.0-rc.2",
+      "drizzle-orm": "1.0.0-rc.2",
+      "effect": "4.0.0-beta.83",
+      "cross-spawn": "7.0.6",
+      "fuzzysort": "3.1.0",
+      "luxon": "3.6.1",
+      "marked": "17.0.1",
+      "marked-shiki": "1.2.1",
+      "remend": "1.3.0",
+      "@playwright/test": "1.59.1",
+      "semver": "7.7.4",
+      "typescript": "5.8.2",
+      "@typescript/native-preview": "7.0.0-dev.20251207.1",
+      "zod": "4.1.8",
+      "remeda": "2.26.0",
+      "shiki": "4.2.0",
+      "solid-list": "0.3.0",
+      "tailwindcss": "4.1.11",
+      "vite": "7.1.4",
+      "@solidjs/meta": "0.29.4",
+      "@solidjs/router": "0.15.4",
+      "solid-js": "1.9.10",
+      "vite-plugin-solid": "2.11.10",
+      "@lydell/node-pty": "1.2.0-beta.12"
+    }
+  },
+  "devDependencies": {
+    "@tsconfig/bun": "catalog:",
+    "@types/mime-types": "3.0.1",
+    "@typescript/native-preview": "catalog:",
+    "oxlint": "1.60.0",
+    "oxlint-tsgolint": "0.21.0",
+    "prettier": "3.6.2",
+    "turbo": "2.8.13"
+  },
+  "dependencies": {
+    "@novaclaw/plugin": "workspace:*",
+    "@novaclaw/script": "workspace:*",
+    "@novaclaw/sdk": "workspace:*",
+    "typescript": "catalog:"
+  },
+  "author": "Nancy Sadkov",
+  "license": "SEE LICENSE IN LICENSE",
+  "prettier": {
+    "semi": false,
+    "printWidth": 120
+  },
+  "trustedDependencies": [
+    "esbuild",
+    "protobufjs",
+    "electron"
+  ],
+  "overrides": {
+    "@types/bun": "catalog:",
+    "@types/node": "catalog:"
+  },
+  "patchedDependencies": {
+    "@ff-labs/fff-bun@0.9.4": "patches/@ff-labs%2Ffff-bun@0.9.4.patch",
+    "@npmcli/agent@4.0.2": "patches/@npmcli%2Fagent@4.0.2.patch",
+    "@silvia-odwyer/photon-node@0.3.4": "patches/@silvia-odwyer%2Fphoton-node@0.3.4.patch",
+    "solid-js@1.9.10": "patches/solid-js@1.9.10.patch",
+    "pacote@21.5.1": "patches/pacote@21.5.1.patch",
+    "@tanstack/solid-virtual@3.13.28": "patches/@tanstack%2Fsolid-virtual@3.13.28.patch",
+    "@pierre/trees@1.0.0-beta.4": "patches/@pierre%2Ftrees@1.0.0-beta.4.patch",
+    "@modelcontextprotocol/sdk@1.29.0": "patches/@modelcontextprotocol%2Fsdk@1.29.0.patch",
+    "@tanstack/virtual-core@3.17.0": "patches/@tanstack%2Fvirtual-core@3.17.0.patch",
+    "effect@4.0.0-beta.83": "patches/effect@4.0.0-beta.83.patch"
+  }
+}

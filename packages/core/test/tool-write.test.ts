@@ -1,0 +1,366 @@
+import fs from "fs/promises"
+import path from "path"
+import { fileURLToPath } from "url"
+import { describe, expect, test } from "bun:test"
+import { Effect, Layer } from "effect"
+import { FileMutation } from "@novaclaw/core/file-mutation"
+import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { LayerNode } from "@novaclaw/core/effect/layer-node"
+import { FSUtil } from "@novaclaw/core/fs-util"
+import { Location } from "@novaclaw/core/location"
+import { LocationMutation } from "@novaclaw/core/location-mutation"
+import { PermissionV2 } from "@novaclaw/core/permission"
+import { AbsolutePath } from "@novaclaw/core/schema"
+import { SessionV2 } from "@novaclaw/core/session"
+import { ToolRegistry } from "@novaclaw/core/tool/registry"
+import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
+import { WriteTool } from "@novaclaw/core/tool/write"
+import { location } from "./fixture/location"
+import { tmpdir } from "./fixture/tmpdir"
+import { testEffect } from "./lib/effect"
+import { toolIdentity, executeTool, settleTool, toolDefinitions } from "./lib/tool"
+
+const sessionID = SessionV2.ID.make("ses_write_tool_test")
+const assertions: PermissionV2.AssertInput[] = []
+const writes: string[] = []
+let denyAction: string | undefined
+let onAssert: ((input: PermissionV2.AssertInput) => Promise<void>) | undefined
+
+const permission = Layer.succeed(
+  PermissionV2.Service,
+  PermissionV2.Service.of({
+    assert: (input) =>
+      Effect.promise(async () => {
+        assertions.push(input)
+        await onAssert?.(input)
+      }).pipe(
+        Effect.andThen(
+          input.action === denyAction ? Effect.fail(new PermissionV2.DeniedError({ rules: [] })) : Effect.void,
+        ),
+      ),
+    ask: () => Effect.die("unused"),
+    reply: () => Effect.die("unused"),
+    get: () => Effect.die("unused"),
+    forSession: () => Effect.die("unused"),
+    list: () => Effect.die("unused"),
+  }),
+)
+
+const reset = () => {
+  assertions.length = 0
+  writes.length = 0
+  denyAction = undefined
+  onAssert = undefined
+}
+
+const filesystem = Layer.effect(
+  FSUtil.Service,
+  Effect.gen(function* () {
+    const fs = yield* FSUtil.Service
+    return FSUtil.Service.of({
+      ...fs,
+      writeWithDirs: (target, content, mode) =>
+        fs.writeWithDirs(target, content, mode).pipe(Effect.tap(() => Effect.sync(() => writes.push(target)))),
+      writeFileString: (target, content, options) =>
+        fs.writeFileString(target, content, options).pipe(Effect.tap(() => Effect.sync(() => writes.push(target)))),
+    })
+  }),
+).pipe(Layer.provide(LayerNode.compile(FSUtil.node)))
+
+const withTool = <A, E, R>(directory: string, body: (registry: ToolRegistry.Interface) => Effect.Effect<A, E, R>) => {
+  const activeLocation = Layer.succeed(
+    Location.Service,
+    Location.Service.of(location({ directory: AbsolutePath.make(directory) })),
+  )
+  return Effect.gen(function* () {
+    return yield* body(yield* ToolRegistry.Service)
+  }).pipe(
+    Effect.provide(
+      AppNodeBuilder.build(
+        LayerNode.group([
+          ToolRegistry.node,
+          ToolRegistry.toolsNode,
+          LocationMutation.node,
+          FileMutation.node,
+          WriteTool.node,
+        ]),
+        [
+          [FSUtil.node, filesystem],
+          [Location.node, activeLocation],
+          [PermissionV2.node, permission],
+          [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+        ],
+      ),
+    ),
+  )
+}
+
+const call = (input: typeof WriteTool.Input.Type, id = "call-write") => ({
+  sessionID,
+  ...toolIdentity,
+  call: { type: "tool-call" as const, id, name: "write", input },
+})
+
+const it = testEffect(Layer.empty)
+
+describe("WriteTool", () => {
+  it.live("registers and creates a relative file through FileMutation once", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) =>
+          Effect.gen(function* () {
+            expect((yield* toolDefinitions(registry)).map((tool) => tool.name)).toEqual(["write"])
+            const settled = yield* settleTool(registry, call({ path: "src/new.txt", content: "created" }))
+            expect(settled).toEqual({
+              result: { type: "text", value: "Created file successfully: src/new.txt" },
+              output: {
+                structured: {
+                  operation: "write",
+                  target: path.join(yield* Effect.promise(() => fs.realpath(tmp.path)), "src", "new.txt"),
+                  resource: "src/new.txt",
+                  existed: false,
+                },
+                content: [{ type: "text", text: "Created file successfully: src/new.txt" }],
+              },
+            })
+            expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "src", "new.txt"), "utf8"))).toBe(
+              "created",
+            )
+            expect(assertions).toMatchObject([{ sessionID, action: "create", resources: ["src/new.txt"], save: ["*"] }])
+            expect(writes).toEqual([path.join(yield* Effect.promise(() => fs.realpath(tmp.path)), "src", "new.txt")])
+          }),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("overwrites a relative existing file and reports that it wrote the file", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return Effect.promise(() => fs.writeFile(path.join(tmp.path, "existing.txt"), "before")).pipe(
+          Effect.andThen(
+            withTool(tmp.path, (registry) => settleTool(registry, call({ path: "existing.txt", content: "after" }))),
+          ),
+          Effect.andThen((settled) =>
+            Effect.gen(function* () {
+              expect(settled.result).toEqual({ type: "text", value: "Wrote file successfully: existing.txt" })
+              expect(settled.output?.structured).toMatchObject({ resource: "existing.txt", existed: true })
+              expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "existing.txt"), "utf8"))).toBe(
+                "after",
+              )
+              expect(writes).toHaveLength(1)
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("preserves exactly one BOM when overwriting existing files", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        const preserved = path.join(tmp.path, "preserved.txt")
+        const deduplicated = path.join(tmp.path, "deduplicated.txt")
+        return Effect.promise(() =>
+          Promise.all([fs.writeFile(preserved, "\uFEFFbefore"), fs.writeFile(deduplicated, "\uFEFFbefore")]),
+        ).pipe(
+          Effect.andThen(
+            withTool(tmp.path, (registry) =>
+              Effect.gen(function* () {
+                yield* settleTool(registry, call({ path: "preserved.txt", content: "after" }, "call-preserved"))
+                yield* settleTool(
+                  registry,
+                  call({ path: "deduplicated.txt", content: "\uFEFFafter" }, "call-deduplicated"),
+                )
+
+                expect(yield* Effect.promise(() => fs.readFile(preserved, "utf8"))).toBe("\uFEFFafter")
+                expect(yield* Effect.promise(() => fs.readFile(deduplicated, "utf8"))).toBe("\uFEFFafter")
+              }),
+            ),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("refuses to overwrite an existing file changed during permission approval", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        const target = path.join(tmp.path, "raced.txt")
+        return Effect.promise(() => fs.writeFile(target, "before")).pipe(
+          Effect.andThen(
+            withTool(tmp.path, (registry) => {
+              onAssert = async (input) => {
+                if (input.action === "write") await fs.writeFile(target, "changed by the user")
+              }
+              return settleTool(registry, call({ path: "raced.txt", content: "agent overwrite" }))
+            }),
+          ),
+          Effect.andThen((settled) =>
+            Effect.gen(function* () {
+              expect(settled.result).toEqual({
+                type: "error",
+                value: "File changed after permission approval. Read it again before writing.",
+              })
+              expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("changed by the user")
+              expect(writes).toEqual([])
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("refuses to replace a new file that appears during permission approval", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        const target = path.join(tmp.path, "appeared.txt")
+        return withTool(tmp.path, (registry) => {
+          onAssert = async (input) => {
+            if (input.action === "create") await fs.writeFile(target, "created by the user")
+          }
+          return settleTool(registry, call({ path: "appeared.txt", content: "agent overwrite" }))
+        }).pipe(
+          Effect.andThen((settled) =>
+            Effect.gen(function* () {
+              expect(settled.result).toEqual({
+                type: "error",
+                value: "File changed after permission approval. Read it again before writing.",
+              })
+              expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("created by the user")
+              expect(writes).toEqual([])
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("accepts an absolute file path inside the active Location", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        const target = path.join(tmp.path, "absolute.txt")
+        return withTool(tmp.path, (registry) => executeTool(registry, call({ path: target, content: "inside" }))).pipe(
+          Effect.andThen((result) =>
+            Effect.gen(function* () {
+              expect(result).toEqual({ type: "text", value: "Created file successfully: absolute.txt" })
+              expect(assertions.map((input) => input.action)).toEqual(["create"])
+              expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("inside")
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("approves an explicit external absolute path before edit", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => Promise.all([tmpdir(), tmpdir()])),
+      ([active, outside]) => {
+        reset()
+        const target = path.join(outside.path, "external.txt")
+        return withTool(active.path, (registry) =>
+          settleTool(registry, call({ path: target, content: "external" })),
+        ).pipe(
+          Effect.andThen((settled) =>
+            Effect.gen(function* () {
+              const canonicalTarget = path.join(yield* Effect.promise(() => fs.realpath(outside.path)), "external.txt")
+              const resource = canonicalTarget.replaceAll("\\", "/")
+              const save = path.join(yield* Effect.promise(() => fs.realpath(outside.path)), "*").replaceAll("\\", "/")
+              expect(assertions.map((input) => input.action)).toEqual(["external_directory_write", "create"])
+              expect(assertions[0]).toMatchObject({
+                resources: [resource],
+                save: [save],
+                metadata: { targets: [resource] },
+              })
+              expect(assertions[1]).toMatchObject({ resources: [resource], save: ["*"] })
+              expect(settled.output?.structured).toMatchObject({
+                target: canonicalTarget,
+                resource: canonicalTarget.replaceAll("\\", "/"),
+                existed: false,
+              })
+              expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("external")
+              expect(writes).toEqual([canonicalTarget])
+            }),
+          ),
+        )
+      },
+      ([active, outside]) =>
+        Effect.promise(() =>
+          Promise.all([active[Symbol.asyncDispose](), outside[Symbol.asyncDispose]()]).then(() => undefined),
+        ),
+    ),
+  )
+
+  it.live("does not write when external_directory or edit approval is denied", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => Promise.all([tmpdir(), tmpdir()])),
+      ([active, outside]) =>
+        Effect.gen(function* () {
+          const external = path.join(outside.path, "denied.txt")
+          reset()
+          denyAction = "external_directory_write"
+          expect(
+            yield* withTool(active.path, (registry) =>
+              executeTool(registry, call({ path: external, content: "blocked" })),
+            ),
+          ).toMatchObject({ type: "error" })
+          expect(assertions.map((input) => input.action)).toEqual(["external_directory_write"])
+          expect(writes).toEqual([])
+
+          reset()
+          denyAction = "create"
+          expect(
+            yield* withTool(active.path, (registry) =>
+              executeTool(registry, call({ path: "denied.txt", content: "blocked" })),
+            ),
+          ).toMatchObject({ type: "error" })
+          expect(assertions.map((input) => input.action)).toEqual(["create"])
+          expect(writes).toEqual([])
+        }),
+      ([active, outside]) =>
+        Effect.promise(() =>
+          Promise.all([active[Symbol.asyncDispose](), outside[Symbol.asyncDispose]()]).then(() => undefined),
+        ),
+    ),
+  )
+})
+
+test("keeps the locked write schema, semantics docstring, and deferred UX TODOs visible", async () => {
+  const source = (await fs.readFile(new URL("../src/tool/write.ts", import.meta.url), "utf8")).replaceAll("\r\n", "\n")
+  const definition = await Effect.runPromise(
+    withTool(path.dirname(fileURLToPath(import.meta.url)), (registry) => toolDefinitions(registry)),
+  )
+  const schema = definition[0]?.inputSchema as { readonly properties?: Record<string, unknown> }
+
+  expect(Object.keys(schema.properties ?? {}).sort()).toEqual(["content", "path"])
+  expect(source).toContain(
+    "absolute external paths retain mutation capability through a separate\n * external_directory approval before edit approval.",
+  )
+  for (const todo of [
+    "Revisit whether model-facing mutation schemas should prefer absolute `filePath` naming for trained-in compatibility after evaluating model behavior.",
+    "Add formatter integration after V2 formatter runtime exists.",
+    "Publish watcher/file-edit events after V2 watcher integration exists.",
+    "Add snapshots / undo after design exists.",
+  ]) {
+    expect(source).toContain(`TODO: ${todo}`)
+  }
+})

@@ -1,0 +1,172 @@
+import { describe, expect } from "bun:test"
+import { Effect, Layer } from "effect"
+import * as TestClock from "effect/testing/TestClock"
+import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { LayerNode } from "@novaclaw/core/effect/layer-node"
+import { Location } from "@novaclaw/core/location"
+import { FSUtil } from "@novaclaw/core/fs-util"
+import { Global } from "@novaclaw/core/global"
+import { AbsolutePath } from "@novaclaw/core/schema"
+import { SystemContext } from "@novaclaw/core/system-context"
+import { Shell } from "@novaclaw/core/shell"
+import { SystemContextBuiltIns } from "@novaclaw/core/system-context/builtins"
+import { SystemContextRegistry } from "@novaclaw/core/system-context/registry"
+import { ResourcePressureContext } from "@novaclaw/core/resource-pressure-context"
+import { makeGlobalNode } from "@novaclaw/core/effect/app-node"
+import { location } from "../fixture/location"
+import { testEffect } from "../lib/effect"
+
+const directory = AbsolutePath.make(FSUtil.resolve("/repo/packages/core"))
+const projectDirectory = AbsolutePath.make(FSUtil.resolve("/repo"))
+const instructionFile = FSUtil.resolve("/repo/AGENTS.md")
+const timestamp = Date.parse("2026-06-03T12:00:00.000Z")
+const localDate = (time: number) => new Date(time).toDateString()
+const locationLayer = Layer.succeed(
+  Location.Service,
+  Location.Service.of(
+    location(
+      { directory },
+      { projectDirectory, vcs: { type: "git", store: AbsolutePath.make(FSUtil.resolve("/repo/.git")) } },
+    ),
+  ),
+)
+const builtInsNode = LayerNode.group([SystemContextBuiltIns.node, SystemContextRegistry.node])
+const it = testEffect(
+  AppNodeBuilder.build(builtInsNode, [
+    [Location.node, locationLayer],
+    [Global.node, Global.layerWith({ config: "/global" })],
+  ]),
+)
+const instructionFS = Layer.effect(
+  FSUtil.Service,
+  FSUtil.Service.pipe(
+    Effect.map((fs) =>
+      FSUtil.Service.of({
+        ...fs,
+        up: () => Effect.succeed([instructionFile]),
+        readFileStringSafe: (path) => Effect.succeed(path === instructionFile ? "Be precise." : undefined),
+      }),
+    ),
+  ),
+).pipe(Layer.provide(LayerNode.compile(FSUtil.node)))
+const itWithInstructions = testEffect(
+  AppNodeBuilder.build(builtInsNode, [
+    [Location.node, locationLayer],
+    [FSUtil.node, instructionFS],
+    [Global.node, Global.layerWith({ config: "/global" })],
+  ]),
+)
+let resourceLines: ReadonlyArray<string> = []
+const resourcePressureNode = makeGlobalNode({
+  service: ResourcePressureContext.Service,
+  layer: Layer.succeed(
+    ResourcePressureContext.Service,
+    ResourcePressureContext.Service.of({
+      lines: () => Effect.sync(() => resourceLines),
+      inspect: () => Effect.succeed(["Resource pressure: ok."]),
+    }),
+  ),
+  deps: [],
+})
+const itWithResourcePressure = testEffect(
+  AppNodeBuilder.build(builtInsNode, [
+    [Location.node, locationLayer],
+    [Global.node, Global.layerWith({ config: "/global" })],
+    [ResourcePressureContext.node, resourcePressureNode],
+  ]),
+)
+
+describe("SystemContextBuiltIns", () => {
+  it.effect("loads location-scoped environment and host-local date context", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(timestamp)
+      const context = yield* SystemContextRegistry.Service
+      const initialized = yield* SystemContext.initialize(yield* context.load())
+
+      expect(initialized.baseline).toBe(
+        [
+          "Here is some useful information about the environment you are running in:",
+          "<env>",
+          `  Working directory: ${directory}`,
+          `  Workspace root folder: ${projectDirectory}`,
+          "  Is directory a git repo: yes",
+          `  Platform: ${process.platform}`,
+          `  Shell: ${Shell.agentDefault()}`,
+          ...(Shell.shellFallbackNote() ? [`  ${Shell.shellFallbackNote()}`] : []),
+          "</env>",
+          "",
+          `Today's date: ${localDate(timestamp)}`,
+        ].join("\n"),
+      )
+    }),
+  )
+
+  itWithResourcePressure.effect("reconciles live resource headroom without rebuilding the location", () =>
+    Effect.gen(function* () {
+      resourceLines = []
+      const context = yield* SystemContextRegistry.Service
+      const initialized = yield* SystemContext.initialize(yield* context.load())
+
+      resourceLines = ["Memory headroom is low. Use resource_status for live detail."]
+      const refreshed = yield* SystemContext.reconcile(yield* context.load(), initialized.snapshot)
+
+      expect(refreshed).toMatchObject({ _tag: "Updated" })
+      if (refreshed._tag !== "Updated") return
+      expect(refreshed.text).toContain("The environment you are running in is now:")
+      expect(refreshed.text).toContain("  Memory headroom is low. Use resource_status for live detail.")
+      expect(refreshed.text).not.toContain("Resource pressure: ok")
+    }),
+  )
+
+  it.effect("reconciles the date without repeating unchanged environment context", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(timestamp)
+      const context = yield* SystemContextRegistry.Service
+      const initialized = yield* SystemContext.initialize(yield* context.load())
+
+      yield* TestClock.setTime(timestamp + 24 * 60 * 60 * 1000)
+      const refreshed = yield* SystemContext.reconcile(yield* context.load(), initialized.snapshot)
+
+      expect(refreshed).toMatchObject({
+        _tag: "Updated",
+        text: `Today's date is now: ${localDate(timestamp + 24 * 60 * 60 * 1000)}`,
+      })
+    }),
+  )
+
+  it.effect("does not update again within the same local calendar day", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(timestamp)
+      const context = yield* SystemContextRegistry.Service
+      const initialized = yield* SystemContext.initialize(yield* context.load())
+
+      yield* TestClock.setTime(timestamp + 60 * 60 * 1000)
+      expect(yield* SystemContext.reconcile(yield* context.load(), initialized.snapshot)).toEqual({ _tag: "Unchanged" })
+    }),
+  )
+
+  itWithInstructions.effect("composes ambient instructions after built-in context", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(timestamp)
+      const context = yield* SystemContextRegistry.Service
+
+      expect((yield* SystemContext.initialize(yield* context.load())).baseline).toBe(
+        [
+          "Here is some useful information about the environment you are running in:",
+          "<env>",
+          `  Working directory: ${directory}`,
+          `  Workspace root folder: ${projectDirectory}`,
+          "  Is directory a git repo: yes",
+          `  Platform: ${process.platform}`,
+          `  Shell: ${Shell.agentDefault()}`,
+          ...(Shell.shellFallbackNote() ? [`  ${Shell.shellFallbackNote()}`] : []),
+          "</env>",
+          "",
+          `Today's date: ${localDate(timestamp)}`,
+          "",
+          `Instructions from: ${instructionFile}\nBe precise.`,
+        ].join("\n"),
+      )
+    }),
+  )
+})

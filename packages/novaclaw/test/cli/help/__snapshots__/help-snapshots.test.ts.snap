@@ -1,0 +1,554 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw mcp --help 1`] = `
+"nova-cli mcp
+
+manage MCP (Model Context Protocol) servers
+
+Commands:
+  nova-cli mcp add [name]     add an MCP server
+  nova-cli mcp list           list MCP servers and their status                        [aliases: ls]
+  nova-cli mcp auth [name]    authenticate with an OAuth-enabled MCP server
+  nova-cli mcp logout [name]  remove OAuth credentials for an MCP server
+  nova-cli mcp debug <name>   debug OAuth connection for an MCP server
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw run --help 1`] = `
+"nova-cli run [message..]
+
+run novaclaw with a message
+
+Positionals:
+  message  message to send                                                     [array] [default: []]
+
+Options:
+  -h, --help                          show help                                            [boolean]
+  -v, --version                       show version number                                  [boolean]
+      --print-logs                    print logs to stderr                                 [boolean]
+      --log-level                     log level [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure                          run without external plugins                         [boolean]
+      --home                          instance home directory — config, data, state and cache all
+                                      live here (NOVACLAW_HOME)                             [string]
+      --command                       the command to run, use message for args              [string]
+  -c, --continue                      continue the last session                            [boolean]
+  -s, --session                       session id to continue                                [string]
+      --fork                          fork the session before continuing (requires --continue or
+                                      --session)                                           [boolean]
+  -m, --model                         model to use in the format of provider/model          [string]
+      --agent                         agent to use                                          [string]
+      --format                        format: default (formatted) or json (raw JSON events)
+                                          [string] [choices: "default", "json"] [default: "default"]
+  -f, --file                          file(s) to attach to message                           [array]
+      --title                         title for the session (uses truncated prompt if no value
+                                      provided)                                             [string]
+      --attach                        attach to a running novaclaw server (e.g.,
+                                      http://localhost:4096)                                [string]
+  -p, --password                      basic auth password (defaults to NOVACLAW_SERVER_PASSWORD)
+                                                                                            [string]
+  -u, --username                      basic auth username (defaults to NOVACLAW_SERVER_USERNAME or
+                                      'novaclaw')                                           [string]
+      --dir                           directory to run in, path on remote server if attaching
+                                                                                            [string]
+      --port                          port for the local server (defaults to random port if no value
+                                      provided)                                             [number]
+      --variant                       model variant (provider-specific reasoning effort, e.g., high,
+                                      max, minimal)                                         [string]
+      --thinking                      show thinking blocks                                 [boolean]
+      --dangerously-skip-permissions  auto-approve permissions that are not explicitly denied
+                                      (dangerous!)                        [boolean] [default: false]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw debug --help 1`] = `
+"nova-cli debug
+
+debugging and troubleshooting tools
+
+Commands:
+  nova-cli debug config        show resolved configuration
+  nova-cli debug rg            ripgrep debugging utilities
+  nova-cli debug file          file system debugging utilities
+  nova-cli debug skill         list all available skills
+  nova-cli debug snapshot      snapshot debugging utilities
+  nova-cli debug startup       print startup timing
+  nova-cli debug agent <name>  show agent configuration details
+  nova-cli debug v2            debug v2 catalog and built-in plugins
+  nova-cli debug info          show debug information
+  nova-cli debug paths         show global paths (data, config, cache, state)
+  nova-cli debug wait          wait indefinitely (for debugging)
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw providers --help 1`] = `
+"nova-cli providers
+
+manage AI providers and credentials
+
+Commands:
+  nova-cli providers list               list providers and credentials                 [aliases: ls]
+  nova-cli providers login [url]        log in to a provider
+  nova-cli providers logout [provider]  log out from a configured provider
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw agent --help 1`] = `
+"nova-cli agent
+
+manage agents
+
+Commands:
+  nova-cli agent create  create a new agent
+  nova-cli agent list    list all available agents
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw serve --help 1`] = `
+"nova-cli serve
+
+starts a headless novaclaw server
+
+Options:
+  -h, --help         show help                                                             [boolean]
+  -v, --version      show version number                                                   [boolean]
+      --print-logs   print logs to stderr                                                  [boolean]
+      --log-level    log level                  [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure         run without external plugins                                          [boolean]
+      --home         instance home directory — config, data, state and cache all live here
+                     (NOVACLAW_HOME)                                                        [string]
+      --port         port to listen on                                         [number] [default: 0]
+      --hostname     hostname to listen on                           [string] [default: "127.0.0.1"]
+      --mdns         enable mDNS service discovery (defaults hostname to 0.0.0.0)
+                                                                          [boolean] [default: false]
+      --mdns-domain  custom domain name for mDNS service (default: novaclaw.local)
+                                                                [string] [default: "novaclaw.local"]
+      --cors         additional domains to allow for CORS                      [array] [default: []]
+      --supervise    restart the server automatically if it crashes (--no-supervise runs it bare)
+                                                                           [boolean] [default: true]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw web --help 1`] = `
+"nova-cli web
+
+start novaclaw server and open web interface
+
+Options:
+  -h, --help         show help                                                             [boolean]
+  -v, --version      show version number                                                   [boolean]
+      --print-logs   print logs to stderr                                                  [boolean]
+      --log-level    log level                  [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure         run without external plugins                                          [boolean]
+      --home         instance home directory — config, data, state and cache all live here
+                     (NOVACLAW_HOME)                                                        [string]
+      --port         port to listen on                                         [number] [default: 0]
+      --hostname     hostname to listen on                           [string] [default: "127.0.0.1"]
+      --mdns         enable mDNS service discovery (defaults hostname to 0.0.0.0)
+                                                                          [boolean] [default: false]
+      --mdns-domain  custom domain name for mDNS service (default: novaclaw.local)
+                                                                [string] [default: "novaclaw.local"]
+      --cors         additional domains to allow for CORS                      [array] [default: []]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw models --help 1`] = `
+"nova-cli models [provider]
+
+list all available models
+
+Positionals:
+  provider  provider ID to filter models by                                                 [string]
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]
+      --verbose     use more verbose model output (includes metadata like costs)           [boolean]
+      --refresh     refresh the models cache from models.dev                               [boolean]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw stats --help 1`] = `
+"nova-cli stats
+
+show token usage and cost statistics
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]
+      --days        show stats for the last N days (default: all time)                      [number]
+      --tools       number of tools to show (default: all)                                  [number]
+      --models      show model statistics (default: hidden). Pass a number to show top N, otherwise
+                    shows all
+      --project     filter by folder (default: all; empty string: the current repo root)    [string]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw export --help 1`] = `
+"nova-cli export [sessionID]
+
+export session data as JSON
+
+Positionals:
+  sessionID  session id to export                                                           [string]
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]
+      --sanitize    redact sensitive transcript and file data                              [boolean]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw import --help 1`] = `
+"                                         
+█▀▀▄ █▀▀█ █  █ █▀▀█ █▀▀▀ █    █▀▀█ █   █
+█  █ █  █ █  █ █▀▀█ █    █    █▀▀█ █ █ █
+▀  ▀ ▀▀▀▀  ▀▀  ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀▀
+
+Commands:
+  nova-cli completion          generate shell completion script
+  nova-cli mcp                 manage MCP (Model Context Protocol) servers
+  nova-cli run [message..]     run novaclaw with a message
+  nova-cli debug               debugging and troubleshooting tools
+  nova-cli providers           manage AI providers and credentials                   [aliases: auth]
+  nova-cli agent               manage agents
+  nova-cli serve               starts a headless novaclaw server
+  nova-cli web                 start novaclaw server and open web interface                [default]
+  nova-cli models [provider]   list all available models
+  nova-cli stats               show token usage and cost statistics
+  nova-cli export [sessionID]  export session data as JSON
+  nova-cli pr <number>         fetch and checkout a GitHub PR branch, then run novaclaw
+  nova-cli session             manage sessions
+  nova-cli db                  database tools
+
+Options:
+  -h, --help         show help                                                             [boolean]
+  -v, --version      show version number                                                   [boolean]
+      --print-logs   print logs to stderr                                                  [boolean]
+      --log-level    log level                  [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure         run without external plugins                                          [boolean]
+      --home         instance home directory — config, data, state and cache all live here
+                     (NOVACLAW_HOME)                                                        [string]
+      --port         port to listen on                                         [number] [default: 0]
+      --hostname     hostname to listen on                           [string] [default: "127.0.0.1"]
+      --mdns         enable mDNS service discovery (defaults hostname to 0.0.0.0)
+                                                                          [boolean] [default: false]
+      --mdns-domain  custom domain name for mDNS service (default: novaclaw.local)
+                                                                [string] [default: "novaclaw.local"]
+      --cors         additional domains to allow for CORS                      [array] [default: []]
+"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw pr --help 1`] = `
+"nova-cli pr <number>
+
+fetch and checkout a GitHub PR branch, then run novaclaw
+
+Positionals:
+  number  PR number to checkout                                                  [number] [required]
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw session --help 1`] = `
+"nova-cli session
+
+manage sessions
+
+Commands:
+  nova-cli session list                list sessions
+  nova-cli session delete <sessionID>  delete a session
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw db --help 1`] = `
+"nova-cli db
+
+database tools
+
+Commands:
+  nova-cli db [query]     run a SQL query against the instance database                    [default]
+  nova-cli db path        print the database path
+
+Positionals:
+  query  SQL query to execute                                                               [string]
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]
+      --format      Output format                 [string] [choices: "json", "tsv"] [default: "tsv"]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw mcp list --help 1`] = `
+"nova-cli mcp list
+
+list MCP servers and their status
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw mcp add --help 1`] = `
+"nova-cli mcp add [name]
+
+add an MCP server
+
+Positionals:
+  name  name of the MCP server                                                              [string]
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]
+      --url         URL for a remote MCP server                                             [string]
+      --env         environment variable for a local MCP server (KEY=VALUE)                  [array]
+      --header      HTTP header for a remote MCP server (KEY=VALUE)                          [array]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw mcp auth --help 1`] = `
+"nova-cli mcp auth [name]
+
+authenticate with an OAuth-enabled MCP server
+
+Commands:
+  nova-cli mcp auth list  list OAuth-capable MCP servers and their auth status         [aliases: ls]
+
+Positionals:
+  name  name of the MCP server                                                              [string]
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw mcp logout --help 1`] = `
+"nova-cli mcp logout [name]
+
+remove OAuth credentials for an MCP server
+
+Positionals:
+  name  name of the MCP server                                                              [string]
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw providers list --help 1`] = `
+"nova-cli providers list
+
+list providers and credentials
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw providers login --help 1`] = `
+"nova-cli providers login [url]
+
+log in to a provider
+
+Positionals:
+  url  novaclaw auth provider                                                               [string]
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]
+  -p, --provider    provider id or name to log in to (skips provider selection)             [string]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw providers logout --help 1`] = `
+"nova-cli providers logout [provider]
+
+log out from a configured provider
+
+Positionals:
+  provider  provider id or name to log out from                                             [string]
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw agent create --help 1`] = `
+"nova-cli agent create
+
+create a new agent
+
+Options:
+  -h, --help                  show help                                                    [boolean]
+  -v, --version               show version number                                          [boolean]
+      --print-logs            print logs to stderr                                         [boolean]
+      --log-level             log level         [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure                  run without external plugins                                 [boolean]
+      --home                  instance home directory — config, data, state and cache all live here
+                              (NOVACLAW_HOME)                                               [string]
+      --path                  directory path to generate the agent file                     [string]
+      --description           what the agent should do                                      [string]
+      --mode                  agent mode            [string] [choices: "all", "primary", "subagent"]
+      --permissions, --tools  comma-separated list of permissions to allow (default: all).
+                              Available: "bash, read, edit, explore, webfetch, todowrite, websearch,
+                              skill"                                                        [string]
+  -m, --model                 model to use in the format of provider/model                  [string]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw agent list --help 1`] = `
+"nova-cli agent list
+
+list all available agents
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw session list --help 1`] = `
+"nova-cli session list
+
+list sessions
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]
+  -n, --max-count   limit to N most recent sessions                                         [number]
+      --format      output format             [string] [choices: "table", "json"] [default: "table"]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw session delete --help 1`] = `
+"nova-cli session delete <sessionID>
+
+delete a session
+
+Positionals:
+  sessionID  session ID to delete                                                [string] [required]
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw db path --help 1`] = `
+"nova-cli db path
+
+print the database path
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --home        instance home directory — config, data, state and cache all live here
+                    (NOVACLAW_HOME)                                                         [string]"
+`;

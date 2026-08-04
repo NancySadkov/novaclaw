@@ -1,0 +1,21 @@
+{
+  // Second typecheck pass, for the TEST files only.
+  //
+  // WHY A SECOND PROJECT. The test files need `@types/bun` (they import `bun:test` and touch `Bun.*`),
+  // but adding "bun" to the main project's `types` breaks production code: Bun's global `fetch` type
+  // lacks `preconnect`, so `src/renderer/index.tsx` stops compiling. Splitting the two is the only way
+  // to have both — tests typechecked WITH bun's globals, renderer/main typechecked without them.
+  //
+  // Run by `bun run typecheck` as pass 2. Not a reference of the main project: the two disagree about
+  // globals on purpose, which is exactly what a separate project expresses.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "electron", "bun"],
+    "noEmit": true,
+    "composite": false
+  },
+  "references": [],
+  "include": ["src/**/*.test.ts", "electron-builder.config.test.ts"],
+  // Must be reset: `extends` inherits the parent's exclude, which is exactly these files.
+  "exclude": []
+}

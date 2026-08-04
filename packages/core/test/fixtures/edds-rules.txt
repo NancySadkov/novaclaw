@@ -1,0 +1,3097 @@
+
+
+
+
+by Nancy Sadkov (https://nancygold.itch.io/edds)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Rulebook v2.1.0 (2026-07-10)
+
+Changes in v2.1.0:
+* Returning from or losing a travel adventure no longer costs XP.
+  (The destination still becomes RISKY: +5 tiles to reach it.)
+* Mid-campaign recruits cost the party 1 LORE + 10 XP and never claim
+  FOUNDER unless the party has none.
+* Editorial: typos and encoding artifacts fixed, unreadable tables
+  re-typeset, stale page references replaced with section names.
+Table of Contents
+CORE RULES	3
+D20 MONSTER TYPE	8
+TASK	9
+D20 SKILL	9
+DAILY CHASE	9
+HERO TAGS	11
+D20 PROP	12
+D20 MUNDANE ITEM	15
+D20 TREASURE	17
+TRADING ITEMS BETWEEN HEROES	18
+ITEM IDENTIFICATION	18
+CITY ADVENTURE	19
+D20 NPC	21
+PRISON BREAK	29
+D6 GLOBAL ISSUE	31
+D20 FAMILY	33
+RECURRING NPC	34
+D20 INVENTIVE SOLUTION	35
+SPECIAL POWERS	36
+WILDS	37
+PLAINS/HILLS ADVENTURE	37
+FOREST/SWAMP ADVENTURE	39
+DESERT ADVENTURE	43
+NETHERELM ADVENTURE	44
+UMBRATH ADVENTURE	45
+D20 HOSPITALITY ADVENTURE	45
+FINDING FAMILIAR	45
+SHIP OWNERSHIP	46
+AIRSHIP	46
+D12 DWELLERS	47
+D20 BOSS	51
+D20 LEGENDARY ITEM	52
+DUNGEONS OF NYMARA	55
+FIVE ROOM DUNGEON	57
+VOIDFARING	59
+YOU ARE VICTORIOUS!	59
+AMULET OF YENDOR (read if got one)	60
+TARRASQUE	60
+DIFFICULTY OPTIONS	60
+D20 COMMON SPELL	61
+D20 MOTIVATION	63
+D20 RITUAL SPELLS	65
+PLAYING DRAGON	67
+EPIC SCALE RULES	68
+SHADOWEAVE	68
+REAL ESTATE	69
+ENEMY STATES	69
+PARLEY	69
+ARMIES	70
+ABANDONMENT	70
+APOTHEOSIS	71
+D6 LESSER ERRAND	71
+HERO GENERATION	73
+D20 BOND	75
+D20 TORMENT	79
+D20 FLAW	82
+D20 TALENT	83
+D6 DISABILITY	84
+ALLIES	90
+TAGS REFERENCE	91
+D6 CITY TASK	95
+D20 MAP	96
+
+CORE RULES
+                          CONVENTIONS AND THE TAG SYSTEM
+                    Easy Dungeon Delver Sandbox (EDDS) presents board game
+   rules for the 5e style fantasy RPGs. Ready your d20 dice, pen and paper!
+  Use D20 Map to roll dice other than d20. D20 Name means rolling d20 to pick an entry from the table in respective section. N+ means N or more.
+`DifficultyType SkillName to X` - Task with one of the D20 Skills, where success allows you do X. E.g. "REAL to find pawn shop" - medium difficulty on random D20 Skill, passing which gets hero to a pawn shop. Or `HARD Survival to cross desert` - this one has specific skill - Survival. 
+When instructed to `gain TAG`, write TAG into the party sheet. Party - all heroes. But if it says `HERO gains TAG`, the tag goes into that hero's sheet.
+We check presence of these tags on the party by the `If TAG` conditions. And on a hero by `If HERO has TAG`. "Tag" is the same as "token".
+When instructed to `lose TAG`, cross out a single TAG from the sheet, proceeding as if the party no longer has it. Several same name tags allowed: E.g. multiple MONTH/FULFILED/INFAMY/RATION tags.
+If tag adds/suppresses a tag temporarily, the suppression beats addition. 
+Disadvantage: roll twice - pick worst. Advantage: roll twice - pick best.
+STARTING THE CAMPAIGN
+Gain NORMAL (or see DIFFICULTY OPTIONS).
+Each player generates a hero (see HERO GENERATION).
+Each hero rolls d20: the one with the highest roll gains FOUNDER, who acts first in the turn order. Heroes start at a random Area (see below).
+Finally each hero rolls D20 Bond, determining their origin and motive.
+You're officially in the world of Nymara! 
+AREA of world map has D6 Ways to other areas + the way used to enter it.
+D6 WAYS:  1. N+SW;   2. S+NE;   3. W+SE;   4. E+NW.   5. Dungeon.
+                 6. Continues in the direction it was explored from
+      If SW/NE/SE/NW in a new area leads to area accessible in other way,
+      discard this way from the new tile, while N/E/S/W gets connected.
+Area has Remoteness (starting area has 0), and new area has Remoteness of
+ the area it was first traveled from plus 1.
+Area has a biome. If N/E/S/W way is explored and
+non-city, inherit its biome, otherwise roll D20 Biome:
+1-3. Plains.   4-5. Hills. Only INFORMED can enter
+6-8. City (or Sea if adjacent to other city).
+        City has biome of the area it explored from.
+        Roll d20 for city size: 1-10. SMALL; 11-17. MEDIUM. 18-20. LARGE.
+9-10. Forest. Only INFORMED can enter
+11-12. Swamp if explored from Plains/Sea/Forest; else - Desert.
+            Only PREPARED can enter
+13-14. Mountain. Only PREPARED can enter.
+15-20. If adjacent to a city then Sea and needs SHIP to enter.
+            Else inherits biome of the adjacent explored area.
+If no City exists anywhere when an area of Remoteness 2 is generated,
+   that area is a City instead (roll its size normally). This keeps the
+   first city - where trade, quests and services live - within reach.
+Areas NW and NE from any mountain are Frozen: need PREPARED to enter.
+No unexplored ways? - Most north-west area has unexplored D6 Ways.
+Unexplored area north of any mountain always leads to Netherelm.
+Unexplored SW/SE areas from Netherelm always lead to Umbrath.
+To TRAVEL to adjacent target Area do the WILDS or CITY ADVENTURE section.
+If daily chase enemies reached you, they spawn on the Start Tile.
+Once you've explored the current area Remoteness number of tiles, spend RATION while having INFORMED/PREPARED/SHIP (if the target biome needs them), you enter the target area, and the day ends. If lose adventure or return, the day ends too.
+The target area biome gets known only after exploring the Remoteness tiles.
+By spending 1xp, heroes can leave travel adventure the way they came.
+RISKY AREA (bad weather, bandits, etc...)
+If you return from or lose the travel adventure, the destination area
+becomes RISKY: you must explore +5 more tiles to reach it. Returning or
+losing costs no XP. Only one area is RISKY at a time - it stays RISKY
+until another non-adjacent area becomes RISKY.
+PREPARE: spend 10 XP to gain PREPARED, but lose all items/gp.
+D20 DUNGEON: resides at the next explored mountain. follow Adventure rules, but spawn monsters from D12 Dwellers, and BOSS is a D20 Boss.
+Once the BOSS is defeated, get D20 Legendary Item.
+
+D6 BIOME: 1. Plains,  2. Forest,   3. Mountains,
+                    4. Desert, 5. Frozen,  6. Netherelm
+                             ADVENTURE
+          When heroes enter a location at the world map area, roll
+          D20 Tile to place the Start Tile. Spawn heroes there.
+   The Start Tile doesn't grant XP, but heroes can leave adventure from it.
+   Tile is a place/room, containing characters and props.
+SEQUENCE OF PLAY
+Heroes take turns clockwise starting with the FOUNDER.
+Each hero turn consists of Hero Phase followed by the Enemy Phase.
+A turn is all phases combined: hero phase, AI phase, etc..,
+A round is all heroes turns combined. `Actor` is a hero, a foe or an NPC.
+1. Hero Phase. Hero can either act (use power) or move to adjacent tile.
+    Single bonus actions (e.g throwing an item) is free.
+    To attack roll D20 Attack and, if hit, give target HURT tags:
+      HIT STRENGTH |  FRAIL TARGET | NORMAL TARGET | TOUGH TARGET
+      MEEK         |  none         | none          | none
+      PUNY         |  2x HURT      | 1x HURT       | 1x HURT
+      NORMAL       |  3x HURT      | 2x HURT       | 1x HURT
+      STRONG       |  4x HURT      | 3x HURT       | 2x HURT
+   Powers can override actor's natural strength (puny, strong, default).
+   Actor HURT above 3 (6 if EPIC) gains COMA instead of more HURT.
+   COMA hero can't act, but spend 2XP + 1 SURGE to discard 2 HURT and
+   COMA. Actor leaving tile suffers default strength attack from its foes.
+2. Exploration Phase. Instead of acting, hero can explore 1 adjacent tile:
+    * Roll D20 Tile and draw it on your map, moving the hero to this tile.
+    * Assigning AI of spawned monster to this hero.
+    * On monster spawn, heroes gain its CR amount of XP.
+       XP models dungeon knowledge, and CR stands for Challenge Rating.
+    * A hero with ranged powers ([R] in name) can use 1 ranged power now.
+3. Pick Formation: front-row or in the back-row. Non-PHASED Front-row
+     heroes shield back-row from enemy's melee D20 Attack.
+     Frontrow [R] attack has disadvantage outside of exploration phase.
+4. AI Phase. Hero's player performs AI of the foes assigned on exploration.
+    Foe without a hero on its tile will pursue the hero controlling it's AI.
+    Heroes can do Chase to unassign foes (idle till another hero enters tile). 
+LOSING ADVENTURE
+If all heroes have COMA, they lose the adventure:
+  * Heroes gain 1 SURGE, while each hero loses COMA and 2 HURT
+  * If INFORMED, lose informed, else lose RATION (no ration - lose 1/2 gp).
+            * If PRACTICE, gain 3 SURGEs, else gain RECKLESS.
+D20 ATTACK
+1. Miss and actor gains Disadvantage.
+2. Hit if non-HARD/ABSURD and actor agrees to gain HURT,
+    The AI of XP1 and XP2 monsters must agree.
+3. Hit SLOW, HURT, EASY or ILL target
+4. Hit unless AGILE target.
+5. Hit if actor AGILE or EASY target.
+6. Hit if ally is front-row on this tile.
+7-8. Hit unless THICK (e.g. hide armor).
+9. Hit unless HARD, ABSURD or THICK target.
+10-11. Hit unless target INFORMED.
+12-14. Hit if actor INFORMED
+15-16. Hit unless target FULFILED or spends 2 XP.
+17-18. Hit unless target spends 2 XP (e.g. take cover).
+19. Hit unless SLOW actor or SMALL, HARD or ABSURD target.
+20. Hit non-ABSURD target, which, unless actor SLOW, gains Disadvantage.
+21-30. Hit if actor FULFILED or target has 2 HURT.
+Notes: * CR N monsters can spend up to N XP to modify it's roll.
+* To-Hit (default 1) - XP amount actor can spend to modify their roll.
+* AC (default 1) - XP amount target can spend to modify actor's roll.
+* Actor spends first. WISE monster spawns with XP equivalent to its CR.
+* +N weapon/armor increases to-hit / AC by N.
+* Advantage: Roll 2x, hit if any of the rolls hit.
+* Attacks to HIDDEN target get Disadvantage: hit only when both rolls hit.
+* Spend target's CR amount of XP and do REAL Task to PUNY hit the target.
+* Attack roll against BOUND target can get extra +1/-1, without XP.
+* If hero with DOOM rolls 19,20, make roll 1,
+  At this moment hero can spend 10 XP (5 if CLEVER) to lose 1 DOOM. 
+* When attacking TASK entities, weapon bonuses don't apply.
+SPENDING XP (gained for spawning monsters, exploring tiles, and quests)
+XP is shared among all heroes. Spend 10 XP (5 if CLEVER) to gain BRACED. Do Study cr1 frail insight task to give all monsters of the target's type the KNOWN tag till the next camping. Hero gains 2x the XP for spawning KNOWN monsters. Actor gains 1 XP each time it fails D20 Attack on odd roll.
+On a natural roll of 19+ (attack or skill test), an actor with 10+ XP banked (8 if FULFILED) gains INFORMED.
+Hero can also become INFORMED by spending 20XP.
+Such actor can spend extra +1 XP to modify D20 Attack.
+INFORMED actor with FOCUS above target's CR is guaranteed hit. And can spend KNOWN target's CR XP for permanent attack Advantage to it.
+Expertise: INFORMED hero who rolled 20 on attack, can act again.
+
+                                         D20 TILE
+                             Index a d20 roll into the below table.
+                   Exploring a tile grants you 1 XP, in addition to monster's CR XP.
+     Tile has D4 Exits to other areas, + the way used to enter it.
+         D4 EXITS:  1. N+SW;  2. S+NE; 3. W+SE; 4. E+NW.
+    No unexplored exits? - Most north-west tile has unexplored exit.
+    The KEY is valid only for this adventure.
+    The adventure resets each time you retry it.
+    See MONSTER SPAWNING when the result includes monsters.
+First roll d6: 1. You know tile's content before entering.
+2-3. If you're HIDING, same as 1, else monsters from there come to your tile. 4-6. Exploring hero enters the tile.
+If d6 is odd, the tile also has a D20 Dungeon/D20 Wilds Prop
+1. D20 Boss tile. If Wilds: Spawn monsters with +5 to spawn roll.
+   If Dungeon: Hero entering this tile gains KEY for this adventure.
+   if no boss/already found/defeted, spawn monsters with +5 to spawn roll.
+2. Random Wilds D6 Biome monsters.
+3. Random D12 Dwellers monsters
+4-7. DWELLING. Spawn monsters.
+8. AMBUSH. Spawn monsters - each with HIDING.
+9. ENCOUNTER. D20 Encounter unless Sea adventure.
+10-11. Ways forward are locked. REAL task to open them.
+12-13. Ways forward is d6: 1-2. Flooded (be SWIMMER), 3-4. Chasm (be FLYER), 5-6. Elevated (be CLIMBER).
+       Spend surge or have that tag to use these ways.
+14-15. Ways back is d6: 1-2. Flooded (be SWIMMER), 3-4. Chasm (be FLYER), 5-6. Elevated (be CLIMBER).
+       Spend surge or have that tag to use the way.
+16. CRAMPED. Ways forward block LARGE or GIANT from passing
+17. TIGHT (Dungeon only). Ways forward allows only SMALL actors entering.
+18. PUZZLE. Way back locks once 1st hero enters. To open be INFORMED.
+19. TRAP. If Wilds: D6 Animal. Kill it to gain RATION
+    If Dungeon: Way back closes once 1st hero enters. To open have KEY,
+    or have Sleight trained.
+20. TREASURY. If Wilds: D6 Animal. Kill it to gain RATION
+    If Dungeon: Has a Vault prop with d20+10 gp. Needs KEY to open.
+            STRONG fighter can spend 2 SURGEs to open vault.
+ESCAPING
+To escape monsters, pick exit and roll a D20 Skill, do Task on that
+skill to allow all heroes moving there, while monsters losing PURSUER.
+The task is EASY if all monsters have CR < 3. If hero misses task, reroll its D20 Skill.
+ELEVATION
+The edge connecting the tiles has cliff-like elevation.
+Be FLYER/CLIMBER to enter. Spend lander to gain CLIMBER.
+If have rope do REAL Athletics to gain CLIMBER.
+Else, HARD Athletics to gain CLIMBER.
+REST
+If no monster on adjacent tile, a hero can spend 3 XP to lose 1 TIRED and regains one daily power. At a DARK tile/area the cost is 5 XP, unless any hero has FIRE. Hero can't Rest in city adventure (pesky guards). On the world map Rest advances time to the next day.
+MONSTER SPAWNING
+If travel adventure, monsters spawn from Wilds, else - D12 Dwellers
+In both cases add count of N explored tiles to the spawn d6 table roll.
+If N is above 16, spawn monsters with N=16, i.e. d6 + 16.
+Once told to spawn monsters, keep spawning while the double of their total CR is below the N. I.e. if we explored N=10 tiles, the single tile spawn can result in cr6 monster, or cr2 and cr3 monsters ((2+3)*2=10),
+but not cr6 and cr5 monsters.
+D20 MONSTER TYPE
+    1-2 Aberrant
+     3-4 Fey
+    5-6 Beast
+    7-8 Undead
+  9-10 Demon
+11-12 Plant
+13-14 Reptile
+15-16 Gizmo
+17-18 Spirit
+19-20 Humanoid
+  Note: all Giants and Dragons are LARGE.
+TASK
+                             A Task is an entity like a monster, but represents a problem the
+                     heroes are trying to solve. Task doesn't attack on its own, but
+    auto-attacks the hero who misses it. Task's hit inflicts TIRED.
+  EASY (E), REAL (R), HARD (H), ABSURD (A) - the task difficulty.
+Task lists one or more D20 Skills, dictating which abilities and skill
+training affects the strength against it. So a hero trained in Medicine
+is STRONG against "Minor Illness. cr1 frail growing medicine task.".
+If no skill specified, roll a random D20 Skill.
+EASY tasks are CR1, PUNY and FRAIL unless overruled.
+Actor without D6 Ability listing task's skill is PUNY against the task.
+Actor with a D6 Lapse listing task's skill has Disadvantage against it.
+E.g. CRAZY hero is PUNY and has Disadvantage to above Minor Illness task.
+Non-TRAINED actor is MEEK against HARD/ABSURD tasks.
+Task can't be attacked with usual powers - no kicking/fireballing illness.
+By default hero can spend 1 XP to modify task attack roll by +1.
+If powers/item gives +N to skill/action, you can spend extra N XP to modify.
+If you miss task rolling 1-2, you can spend 5 XP to gain training in the skill.
+You can spend N SURGEs to overcome a CR N task.
+Example: Seeking governor audience cr1 persuasion task. Roll 13 into D20 Attack - failure because hero is non-INFORMED - task auto-hits you with normal hit - 2 TIRED (1 converts to HURT). You attack again rolling 1 - task hits you with 2 more TIRED, but hero spends 5XP, to gain PERSUASION tag. E.g. reflect on the failure: next time do better. 
+D20 SKILL
+1. Acrobatics
+6. History
+11. Nature
+16. Perception
+2. Taming
+7. Insight
+12. Sleight
+17. Stealth
+3. Arcana
+8. Intimidation
+13. Performance
+18. Survival
+4. Athletics
+9. Investigation
+14. Persuasion
+19. Constitution
+5. Deception
+10. Medicine
+15. Religion
+20. Concentration
+ Concentration is the skill to focus attention for long periods of time.
+DAILY CHASE
+Chase to catch NPC / sabotage the villain's plan this day.
+d4 tracks distance (starts random).  If chase is in progress, before each
+camping heroes do REAL task to increase distance by 1. If heroes fail task,
+ decrease it. If distance is 0, the heroes chase failed and any global pursuers
+              will spawn on the 1st tile of the next adventure
+SKILL RELATED ACTIONS
+Having any training in specific skills, unlocks additional
+at-will actions:
+Cache: If you're risking to lose your items, spend 5 XP to make a cache at some world map area, storing any gp or items you carry. To retrieve the cache, be PREPARED, and at that area spend 5 XP to do EASY Survival.
+Cure Illness: If PREPARED, do REAL Medicine task to lose ILL
+Lore: when starting adventure do REAL History task to gain 5 XP.
+Panhandling: If 3+ NPC on a tile, do EASY Performance to gain TRIFLE, REAL to gain 1gp. Can be done once per tile.
+Pickpocket: do REAL Sleight task to pickpocket a non-Hostile/non-Annoyed NPC for its wage. 
+Pray: Spend 10 XP and do HARD Religion to gain FAVOR
+Tossing:  A STRONG hero can do REAL Athletics to toss non-LARGE target within 2 tiles. Ally thrown onto foe can use 1 at-will power against that foe.
+Mounting: A LARGE humanoid can ride a MOUNT ally, like horse.
+Mounting and dismounting takes an action. Attacks against mount hero go
+to the mount. Mount can't use daily powers, while carrying hero.
+CAMPING
+If have 5 XP (and during adventure INFORMED + no monsters on tile), the heroes can return from current adventure, sleep and regain daily powers and end the day.
+* Unless heroes have 15 or more XP, lose INFORMED
+* For each 5 XP gain a SURGE and each hero loses HURT.
+* Lose any surge over 3 + level-ups count.
+* Lose 1/2 XP, all TIRED and RATIONs above 3.
+* Swap Powers and flip on all the daily powers.
+* Increase the days counter (1 when the game begins, use d20).
+* If the days counter became 21, see New Month section.
+NEW MONTH
+Set days counter to 1 and Gain MONTH (see Game Over section)
+Lawful hero with INFAMY loses FAVOR and gains DOOM.
+Lose RATION or lose PREPARED, INFORMED and all SURGES.
+ Note:  Our month has 20 days to simplify the rules. Days 3, 6, 9, 12,
+             15 and 20 start at nighttime (22:00), which favors the night beings.
+             Use D20 Map to map d20 day to 1-30 range.
+
+HERO TAGS
+                           CR: Hero is cr2, FULFILED hero - 3, EPIC - 5.
+                                INFORMED hero has +2 to CR.
+   FIRE: strips DARK from tiles and areas. On dungeon/night time
+  exploration, this actor gains 2x XP, but also explores all adjacent tiles.
+  Non-innate FIRE can be lost as at-will action.
+DARK: any dungeon or nighttime wilds tile. DARK tile foes spawn HIDING.
+FOCUS(max 9): Spent for specific acts. Instead of acting, Spend 1 XP to gain 1 FOCUS. Lose 1 FOCUS if gain HURT. Lose all FOCUS if leave tile. Monsters prioritize attacking the hero with the most FOCUS tags.
+FULFILED: If have 2 or more FULFILED, you gain RENOWN.
+    If hero leaves/dies, re-assign its FULFILED tags to other heroes.
+   The goal of the game is to amass 10 FULFILED tags among all heroes.
+LICH: This hero is UNDEAD and HEALING. For 10gp LICH can plant its Phylactery at specific dungeon area. The heroes can teleport there instead of losing adventure.
+DOOM (max 3): How hard hero resists their fate.
+ESSENCE: Godhod (see Apotheosis). You gain extra SURGE on camping.
+FAVOR (max 3): spend 5XP and FAVOR to lose DOOM/MENTAL/ILL/3 TIRED and gain as many SURGEs as it has Levels. FULFILED hero Also loses DOOM when gains FAVOR.
+INFAMY:  Disadvantage to any task at any non-SMALL city.
+INFESTED: If HURT, on roll 1, you die (parasite hatches) - make new hero, transfering FULFILED tags. To lose INFESTED do TOUGH Medicine task.
+PREPARED:  You came prepared. Lose PREPARED to gain 2 SURGEs.
+RENOWN: Advantage on Persuasion inside city, or Disdvantage if INFAMY.
+If the INVESTED plus DEPOSITED money exceed 100gp, gain RENOWN.
+TRIFLE (max 3): Gain each time buy/sell anything for gp.
+TIRED: how tired is the hero. Gain HURT instead of any TIRED tag over 3.
+VOIDLICH: learn 4 more Epic and Ritual Spells, if gain 1 FOCUS, gain 2.
+WORN: If 4+ WORN, lose WORN tags, and if no basic/magic armor/weapon gain HURT, otherwise lose basic weapon/armor.
+CITY:WANTED: Heroes are wanted at specific city. Talk Disadvantage + Hostile guards at this city while that hero is in the party. On world map once a month per city, hero has innate action Spread False Trail:
+HARD Deception to lose 1 INFAMY and WANTED at this city.
+CITY:PATRON: 1st trade each month is free. Can open a business (see Real
+           Estate). You don't get task Disadvantage / arrested or INFAMY
+              at this city.
+             CITY:FRIEND: Heroes can visit friend's house at this city (2xp).
+                     Heroes have advantage to rolls against their friend.
+D20 PROP
+Placed upon exploring specific tiles. To use a prop, the Hero
+should be on its tile and spend an action, making the prop USED.
+Prop use gives 1 XP.
+D20 DUNGEON PROP
+1. Alchemist's Bench. Random D10 Flask item.
+2. Altar: Heroes lose MENTAL. CLERIC regains daily power.
+3. Bookcase: MAGE regains daily power.
+4-5. Chest (Locked): Hero can unlock do cr4 HARD tough athletics sleight.
+Opening grants 2x D20 Treasure.
+6. Closet: ROGUE regains a daily power.
+7. Fireplace: Heroes lose all TIRED and BOUND.
+8. Mirror: Reveal 3 tiles, without spawning monsters
+9. Sarcophagus. Roll d20: 1-8. A monster, 9-20. Roll a D20 Treasure.
+10. Statue: Roll d20. 1-7 = gain DOOM; 8-20 = gain FAVOR.
+11. Table: Roll d20: 1-10 = gain HURT; 11-20 = lose 2 HURT
+12. Throne: Roll d20: 1-10 = gain HURT; 11-20 = gain SURGE.
+13. Torture Rack: Roll a monster - your ally till the end of adventure.
+14. Weapon Rack: FIGHTER regains daily power,
+      All heroes lose UNARMED, UNARMORED and 1 WORN.
+15. Lever. Roll d4:
+      1. Opens Doors. Gain KEY.
+      2. Closes water. Exits lose FLOODED, new exits - non-FLOODED.
+      3. Draw Bridges. Exits lose CHASM, new exits - non-CHASM.
+      4. Enable Elevators. Exits lose ELEVATED, new exits - non-ELEVATED.
+16. Secret Stash. Do tough investigation task to gain 10gp.
+17. Secret Exit. Do tough investigation task to return to world map.
+18. Secret Way. Do tough investigation task to roll d4
+    1-2. Next explored room is the BOSS room.
+    3-4. Next explored room is the TREASURY room.
+19-20. Mimic cr1 puny binder hunter hidden disguised trapper aberrant
+
+
+D20 WILDS PROP
+                             Appear in the wilds adventures. E.g. plains/forest.
+                  
+    1. Runestone. Heroes lose MENTAL. Druid regains daily power.
+  2-3. Tree stump. Roll d4: 1. D20 Treasure; 2. Monsters.
+ 4-5. Tree with a hollow. d4: 1. d20 xp; D20 Treasure; 3. Monsters.
+6. Bridge. All unexplored exits beside the ones on this tile turn FLOODED.
+7. Spring. Lose all TIRED and ILL.
+8. Ruins. Entrance to Five Room Dungeon. Going there ends this adventure.
+9. Camp Tent. d4 D20 NPC with Odd default mood.
+     The tent has 2 D20 Treasures, but NPCs get GUARD if hero uses it.
+10. Portal. Informed DRUID can teleport allies on the destination.
+11. Pit/Hole/Cave. If used, roll d20:
+    1-5. Spawn monster from D6 Biome (add d20 to its roll).
+    6-20. D20 Treasure  (add d20 to roll).
+12. Cliffs. All unexplored exits beside the ones on this tile turn ELEVATED.
+13. Mushrooms. If used, roll d20: 1-10. ILL+MENTAL. 11-15. RATION.
+        16-20. Lose all TIRED and HURT. 16-20. Gain 1 FAVOR. 
+        DRUID hero can identify the mushrooms.
+14, Chasm. All unexplored exits beside the ones on this tile turn CHASMS.
+15-17. Nothing.
+18-20. Bush. Everyone is ROWBUST on this tile
+             On use, gain d4: 1-2. ILL, 2. RATION
+D10 HOUSE PROP
+If hero uses a house, any NPC on tile becomes GUARD.
+1. Mirror. Player picks any D20 NPC type to spawn.
+2. Table. Roll d20: 8-15. Gain d10 XP. 16-20 has RATION.
+3. Bed. Allows Camping, without paying for inn or leaving city.
+4. Fireplace: Heroes lose all TIRED and BOUND.
+5. Cupboard. Roll d20: 8-15. Gain d10 XP. 16-20: D20 Treasure
+6. Boxes. Hold D20 Treasure.
+7. Trinket worth d4 gp. E.g. silver plates or mounted animal head.
+8-10. Nothing.
+D20 CITY PROP
+1. Sewer Grate If medium/large city (reroll if small).
+    Start Sewer Biome adventure,  upon find BOSS or KEY tiles,
+    you reach the destination of the enclosing city adventure.
+2. Fountain. Spend TRIFLE to lose 1 DOOM
+3. Cart/wagon. Holds D20 Treasure. If used, tile NPCs gain GUARD.
+4. Statue. Spend 10 XP to gain 1 FAVOR.
+5-6. d4-1 Robber(s) cr1 hiding slow puny trapper hunter humanoid. hostile.
+7. Goat cr0 meek frail beast. Killing gives ration, but tile NPCs gain GUARD
+8. d4 Dogs cr1 frail puny binder hunter pursuer beast. Roll d20:
+       1-5. Start Hostile; 16-20. Friendly;
+       6-15. PURSUERs who turn hostile if any NPC on tile is Annoyed.
+9. Boxes. Holds 2 D20 Treasure. If used, tile NPCs gain GUARD
+10. Bulletin Board. If used, spawn d4 TROUBLED D20 NPCs with quests.
+11. Wall. All unexplored exits beside the ones on this tile turn ELEVATED.
+12. Bridge All unexplored exits beside the ones on this tile turn FLOODED.
+13. Gibbet Cage. If used, gain INFAMY and spawn a SOLICITING prisoner NPC,
+     who gives d20 XP and their gp as a reward.
+14. City Bell. Explore adjacent tiles, move NPCs from adjacent tiles here.
+15. Pillory. Lose 10XP and donate 10gp to lose 1 INFAMY+WANTED.
+16. Narrow. Unexplored exits beside the ones on this tile turn CRAMPED.
+17-20. Trash Pile. You can rummage through it once. Roll d20:
+       1-5. Gain ILL+HURT
+     6-15. Nothing
+   16-20. You found a D20 Treasure
+
+D20 MUNDANE ITEM
+                            Such item costs d10 gp. ARTIFICER can pay vending
+                   blacksmith 4gp and do REAL Arcana to enchant the item, making
+   it weightless - no carrying capacity decrease. Using item takes action.
+1. Iron bar / Saw / Hammer / Spade. +2 to Intimidation.
+* Allows REAL Athletics to remove TIGHT and TRAP exit blocks.
+2. Rope. Do REAL Athletics to go through ELEVATED exit.
+* Do REAL Sleight to gain BINDER till leave this tile.
+3. Gadget / Coil / Fishing line and hook. +3 Sleight, +2 Investigation
+4. Bucket/Pot. +2 Deception, +2 Investigation
+* Remove flammable property from a tile.
+* Immune to the first BLASTER attack from any SERPENT monster.
+* Use fire elemental: instantly dies
+* Spend to gain SHOCKER  and make any cr1-3 monster MENTAL.
+5. Torch/Lantern. Use to gain FIRE.
+6. Bag/Backpack/Sack. Advantage on Survival task.
+* Increases hero's carrying capacity by 3. One sack per hero.
+7. Utensils / Shears / Knife. +1 Sleight of Hand, +1 Survival
+* Advantage to Break Free task.
+* Spend to do gain 5 XP.
+7. Herbs. When used, roll d20: 1-5. gain HURT; 6-10. lose 3 HURT.
+                 11-20. lose MENTAL.
+   Do EASY Nature to roll what herbs do before using them.
+8. Ladder. Makes hero SLOW but allows to ignore ELEVATION.
+9. Musical instrument. +3 Performance, +1 Taming
+10. Antidote. All heroes on tile lose ILL.
+11. Small Mirror. +1 Perception, +2 Persuasion
+12. Garment. Advantage to Persuasion if garment costs more than 8gp
+13. Blanket / Cloak. Advantage to Stealth, If no NPC or monster within 1 tile
+ * Spend to gain SHOCKER and make non-LARGE/EPIC target MENTAL.
+14. Food. gain RATION
+15. Trinket. Worthless item you can only sell. Spend to gain 1 XP.
+16. Donkey cr1 puny beast
+ * Increases owner carry limit by 7. Max one donkey for all heroes.
+  
+17. Scroll. Roll d20:
+  1-10. D20 Cantrip Scroll
+  11-15. Scroll with D20 Common Mage Spell
+  16-20. Scroll with D20 Common Cleric Spell
+  If scroll costs less than 4gp, there is a 50% chance the cast will fail.
+18-19. D10 Flask (see next page)
+20. D6 Toolkit
+D6 TOOLKIT
+Each toolkit costs 4gp. Unusable if share tile with a monster.
+Having training in the use of these tools allows doing EASY task and spending 2 days to produce Trinket, which you can sell.
+1. Alchemist Kit. Each Alchemist kit has d20 uses and can't be recharged
+* Do REAL Investigation to create Antidote or D10 Flask.
+  On failure roll d20: 1-5. Alchemist Kit explodes: lose it and gain 2 HURT.
+* Do REAL Investigation to perform a D20 Cantrip
+2. Carpentry Kit. +1 Investigation.
+* Unless at desert/city/dungeon: do REAL task to craft ladder, bucket, torch.
+* Unless at city, spend 15 XP to do epic tough survival task to build a cabin.
+  Cabin replaces the usual campfire prop, and stores up to 30 items.
+  Existence of cabin at area gives +1xp per explored tile.
+  Each time you re-enter the area, roll d20:
+    1. It hosts now d4 D20 NPCs. Each with Odd default mood.
+        They gain GUARD if you use cabin to get back your items.
+    2. Items got plundered.
+    3. Cabin is no longer here.
+3. Masonry Kit. +2 Investigation.
+* Allows HARD Investigation to create extra exit (one per tile)
+* Allows REAL Investigation to remove Elevation from tile exit.
+4. Smith Tools. +1 Investigation
+* Do REAL Investigation to remove all WORN
+* Do HARD Investigation to gain POLISH
+* Do REAL to craft a Gadget mundane item.
+* If trained Investigation, spend to open Vault without a KEY.
+5. Scribe Kit. +2 Investigation.
+* Scribe a scroll with a D20 Common Spell you know.
+  That spell could be used without flipping a daily power
+* Pick NPC and do REAL History to forge document, giving you +d20 Persuasion against that NPC. After you used forged document, roll d20:
+  1-10. NPC becomes Annoyed on the next day. If NPC was Official or Lord,
+    you also gain 2 INFAMY and WANTED that day.
+6. Adventurer's Backpack:
+* Spend 5 XP and do REAL Survival to gain PREPARED.
+D10 FLASK
+                            Flasks are spent on use. Target yourself or ally on your tile.
+                            1-2. Lesser Potion of Healing (2gp): lose 3 HURT
+                            3-4. Potion of Recovery (5gp): Discard MENTAL and ILL.
+    5. Oil Flask (4gp). Spend to make this/adjacent tile Flammable.
+    6. Dreammist. Lose a level to d20: 1-10: reroll D20 Flaw, else - Virtue.
+         Do REAL Deception to sell it to any vending mood NPC for d10 gp,
+         but gain WANTED the next day. You can report NPC selling you this.
+    7. Potion of Stamina (TRIFLE). Lose 2 TIRED.
+    8. Potion of Speed (1gp). Till Camping act 2 times/turn with Disadvantage
+      to any roll. If get Disadvantage - act once. Advantage? - no Disadvatage.
+    9. Potion of Rejuvenation (2gp) Flip one of your used powers.
+  10. Potion of Healing (5gp). Lose all HURT and gain 2 SURGEs.
+D20 TREASURE
+You add the unspent XP to this roll. Unless overruled, items are usable at any moment during Hero Phase, don't consume action/attack/move. Discard potions and scrolls after use. 
+1-20: D20 Mundane Item
+22. Roll d4: 1. Bracers of Defense (10gp): Blocks the 1st hit after each camp
+   2. Elven Cloak (10gp): Spend tile monster's CR XP to Escape.
+   3. Diary (20gp, can't be sold): Level up the hero and discard.
+   4. Lucky Charm (12gp): Use on any dice roll. Make it succeed.
+23-25. Minor Precious Item (10gp):
+29. Roll d4: 1. +1 Magic Armor (20gp): +2 to modify foe's attack.
+                    2. +1 Magic Weapon (20gp): +2 to-hit against adjacent target.
+                    3. +1 Bow (20gp): +1 to-hit against non-adjacent target.
+                    4. Boots of Striding (20gp): Allows moving twice.
+32-33. Precious Item (20gp): worthless item you can only sell.
+36. Major Precious Item (40gp): worthless item you can only sell.
+38. Ring of Shooting Stars (40gp): Any monster on tile gains 2 HURT. Flip off after use till next day.
+39. Rare Magic Item. Roll d6: 
+    1. Gauntlets of Ogre Power (40gp): +1 HURT to you melee attack.
+    2. Pearl of Power (40gp): Flip on one of your used powers or items.
+        Flip this item off after use till next camping.
+    3. +2 Magic Weapon (30gp): +3 to-hit with melee attacks.
+   4. Staff of the Elements - 30gp: +3 to-hit  with ranged attacks
+            Usable only by mages.
+ITEMS CARRY LIMIT
+In dungeon hero can carry unlimited number of items.
+But on world map normal hero is limited by 5 items, PUNY - 3,
+STRONG - 8. Any item above adds extra 5 XP to travel requirements.
+TRADING ITEMS BETWEEN HEROES
+Each hero tracks an empathy trade balance value (starts at 0).
+Giving an item to another hero: the balance decreases by the item's GP cost. The receiving hero's balance increases by the item's GP cost.
+Finding loot: If the balance is negative, reduce the deficit by the loot's GP value (balance moves toward 0, but not above 0).
+Camping increases negative balance by 1 (moves 1 closer to 0).
+A hero with negative balance refuses to give items to other heroes.
+Note: the ownership of dropped items is maintained.
+Example: Hero A (balance 0) gives a 50gp sword to Hero B (balance 0). Now A has balance -50, B has balance +50. Hero A can't give anything until their balance recovers. If A finds a 20gp treasure, balance goes from -50 to -30. Each camp also recovers 1, so -30 -> -29.
+CRAFTING
+Given unconscious monster, hero can do REAL Survival to
+obtain that monster's material item whose crafting value
+equals monster CR. The monster dies in the process.
+Back at city, an Artificer scholar can convert 4 crafting items into a D20 Treasure, where you add total crafting items value to the d20 roll.
+ITEM IDENTIFICATION
+When you equip unidentified item which costs 20+ gp roll d20: 1-5, the item is cursed, and must roll D20 Torment, which lasts till item is removed. Cursed item can be removed at temple, discarding that torment. Find appropriate Scholar or do HARD History to identify if the item.
+ITEM ACTIONS
+Throwing Items:  As bonus action hero can throw carried item, making target lose its turn on hit (use D20 Attack for resolution).
+Flammable: Oil Flask makes tile flammable. FIRE entity auto ignites a flammable tile, which now AGILE attacks each resident at start of
+that resident's phase. If tile has water, discard flammable mark,
+Fire Poke: Lose FIRE to gain SHOCKER and make MENTAL any non-EPIC BEAST.
+CITY ADVENTURE
+                            Like normal Adventure, but place City Tiles.
+     Upon entering city area, lose all PREPARED and SHIP tags.
+  If WANTED, Disadvantage to any task (see Arrest if lose city adventure).
+If you attack NPC and the 1st attack roll is 1-2, the NPC is ODD - roll D20 Twist, Good hero gains 1 DOOM for any non-EVIL NPC killed. At night all non-Guard NPCs are drunkards (if 1-10), or thugs (11-20).
+CITY TILES: Follow normal D20 Tile layout, but props come out of  D20 City Prop, and only AMBUSH/ENCOUNTER tiles spawn monsters (D12 Dwellers civilized biome). When hero explores a new tile, they are given choice to spend XP making next tile...
+* City Entrance (start here). If WANTED + MEDIUM/LARGE, exits are
+   ELEVATED and tile has d4 Guards (d6 if LARGE).
+* Street (0 XP, default). Usual D20 Tile, but every exit needs D6 City
+   Task to unlock. If even D20 Tile, spawn 1 D20 NPC.
+* Family House (2 XP). Has all hero's relatives if this is hero's home city.
+* House (3 XP). Each house has d4 NPCs and D20 House Prop.
+* Questgiver House (5 XP). Has a TROUBLED NPC.
+* Tavern (10 XP) Innkeeper Special NPC and LEISURE 5 D20 NPCs.
+* Center (6 XP) d6+2 of D20 NPCs and 2 D20 City Prop
+* Lord's Castle Gate (12XP, MEDIUM/LARGE city only).The gate is closed:
+     exit is Elevation.  If LARGE the gate has 5 guards, MEDIUM - 3.
+     Gate has exit to a D20 Civilized Adventure, whose BOSS is the Lord
+     Special NPC. If the RENOWN or succeed ABSURD Persuasion, heroes
+     get transferred directly to the lord's tile.
+* Travel Guild (6XP) Portmaster Special NPC and d4 Stranger NPCs.
+City can have unlimited number of houses and streets, but all other locations are unique.
+NPC INTERACTION OPTIONS
+If NPC is BUSY/HOSTILE/ANNOYED/NOISY, only the Distract option is available. Noisy NPC makes other NPC on tile NUMB.
+For CAPTIVE NPC only Free and Interrogate options are available.
+Options beside Chat and Distract can be done only once.
+* Study cr1 frail insight task. Make NPC KNOWN, roll NPC's D20 Gender/Orientation, learn D20 Faction and alignment (see D20 Map).
+* Trade (if VENDING) cr1 frail persuasion task. Allows trading for a single
+    Wares item. If you buy/sell anything, gain TRIFLE (small change money).
+    Vending NPC can buy any item for 1/2 price, if have the gp.
+             * Appraise tough persuasion task to gain 1gp discount on this tile
+                and if item costs 1gp, it now costs TRIFLE.
+* Chat (no task if LEISURE) cr1 frail random-skill task.
+   You gain 2XP, NPC loses LEISURE.
+   Roll D20 Mood for the NPC.
+   1. NPC is ODD - roll D20 Twist.
+   2. NPC is NOISY now.
+   3-4. NPC is BUSY now.
+   5-9. NPC becomes ANNOYED (or GUARD if already annoyed),
+          and guards within 1 tile gain PURSUER.
+   10-11. NCP gains VENDING.
+   12-13. NPC is FUNDRAISER
+   14. NPC is SOLICITING
+   15-20. NPC is TROUBLED
+* Extort cr1 tough intimidation task. That NPC's gp.
+* Defraud cr2 deception task. Get NPC's GP.
+* Intimidate cr2 intimidation task. NPC becomes TIMID.
+  If this task gives you HURT, the NPC becomes Hostile.
+* Investigate cr2 tough investigation task. Once task is done, Roll d20:
+   1-10. NPC is ODD - roll D20 Twist.
+* Hire (if SOLICITING) cr1 persuasion task. See Hiring NPC.
+* Donate (if FUNDRAISER) Give NPC it's salary gp for XP 5x that gp.
+* Quest (if TROUBLED) NPC has D20 Quest for you.
+* Share Drink (if drunkard or at tavern).
+    Spend BOOZE to gain 4 xp and auto pass the Chat task. 
+* Distract cr2 persuasion intimidation deception task.
+  You gain 4 XP, NPC loses BUSY/HOSTILE/ANNOYED/NOISY
+  If you miss this task, rolling 1-3, NPC is ODD - roll D20 Twist.
+* Help (if BUSY). Spend 5XP to gain their wage gp
+* Report (ODD+PROVEN NPC) Spawns a Guard and makes the NPC
+   CAPTIVE, while you gain NPC's wage gp.
+   Lawful hero gains FAVOR for reporting NPC, but chaotic gains DOOM.
+   Note: You can't report lord, noble or official.
+* Steal (once per NPC). cr2 sleight task. Get that NPC's single wares item.
+* Bribe (If  know NPC's faction). Pay bribe gp to gain 4x that gp XP.
+* Deceive. cr2 deception task. If any two NPC's on tile have different
+   factions, give all NPCs on tile gain BRAWLER. Good heroes gain DOOM.
+* Interrogate (CAPTIVE NPC or monster if know monster language)
+  Intimidation task to gain 4*CR XP. Undead (beside liches/vampires),
+  gizmo, beasts can't be interrogated. Good heroes gain DOOM from this act.
+* Free. CAPTIVE npc/monster disappears. Non-evil heroes lose DOOM.
+D20 NPC
+                            The N gp is the NPC's wage and gp they carry. 
+                            Each NPC is cr1 humanoid and has a random D6 Lapse.
+  1. Beggar puny 1gp fundraiser rebel. D20 Skill.
+   * Impoverished or older person who fails to provide for itself.
+   * Wares: see Agent Services
+2. Drunkard 2gp leisure D20 Skill rebel.
+* Lose BOOZE to gain Advantange to D20 Talk to Drunkard.
+3. Preacher 3gp noisy religion zealot.
+* Wares: See Temple Wares section below.
+4. Performer agile 3gp noisy fundraiser performance rebel.
+* Street artist. Draws crowds and rumors.
+* When spawned, add additional d3 NPCs (per Performer) to the tile.
+5. Servant 5gp busy sleight loyalist. - A tired slave or a maid on errand.
+6-7. Guard tough puny coward 4gp busy perception loyalist spawns(guard)
+* Becomes Hostile (see Special Mood), if shares tile and you:
+  * WANTED at this city or INFAMY, but no Disguised condition.
+  * Cast non-cantrip spells on the same tile, without a PATRON,
+* Guards at SMALL/PATRON cities ignore INFAMY if not WANTED locally.
+8. Farmer 7gp vending nature separatist.
+* Brings goods to market. May have rural news.
+* Wares: RATION (1gp).
+9. Forager 6gp vending survival separatist.
+* Hunter/Fisherman/Herbalist. Tells tales of beasts and wilderness.
+* Wares: 2x RATION (3gp), Learn Monster Language (4gp see Monster Talk)
+10. Scholar, 10gp busy vending investigation aloof
+* Wares: D20 Scholar Service
+11. Blacksmith strong 8gp busy athletics pragmatic. Wares:
+ * Repair (1gp). Lose all WORN.
+ * Basic Weapon (5gp). Lose UNARMED.
+ * Basic Armor (5gp). Lose UNARMORED.
+ * Polish Equipment (10 gp). Gain POLISH.
+ * Enchant (10gp): HARD Arcana to stop item from going WORN.
+12. Artisan 2+d10 gp busy D20 Skill pragmatic
+ * Wares: see Artisan Wares section below
+16. Thug strong d10 gp annoyed intimidation pragmatic
+   * Rough looking person; Instead of Afraid becomes Hostile
+   * Wares: random D20 NPC wares.
+  13. Official valued social 10gp annoyed insight loyalist.
+                * Wares:  * Lose this city's WANTED and 1 INFAMY (10gp)
+                * Audience with Lord (10gp). Spawns Lord and 3 guards.
+14. Noble valued clever 12gp annoyed history loyalist.
+* LEISURE if you got 8+ gp garment D20 Mundane Item 
+* Wares: Offers estate for 60gp at D20 Map / DIR location.
+         Estate is considered a cleared D20 Dungeon.
+         You must spend additional 100gp to establish a Stronghold there.
+15. Merchant social d20 gp vending persuasion pragmatic
+* Wares: roll d20 modifier M, then roll 5 times D20 Treasure with M.
+17. Adventurer d10 gp soliciting aloof. Run Hero Generation if interact.
+* A mercenary or an aspiring adventurer.
+* Wares: random D20 NPC wares.
+18. Stranger odd D20 Skill aloof, Hidden Stats
+ * Unusual accent or attire. Assumes stats of D20 NPC on interaction.
+ * Wares: D20 Treasure with d20 roll as modifier.
+19-20. Child trifle gawky puny valued timid easy busy stealth aloof.
+ * Wares: see Agent Services
+ * If starts/becomes Annoyed, roll d20, 1-10: it is also PURSUER.
+SPECIAL NPC (have special spawn rules)
+Innkeeper easy 4gp vending insight pragmatic
+  * Wares: Innkeeper Wares (see Vendors and Wares)
+Portmaster, Vending,Pragmatic,4gp: organizes sea travel. Wares:
+  * Lease a Ship (6gp): gain SHIP.
+  * Buy an OWNSHIP (200gp) with QUALITY of 5. See Ship Ownership.
+Prop immobile leisure aloof gizmo. A sentient item or a prop.
+ * It has D20 Talent/Virtue/Flaw. Discover once owner rolls 1 or 20.
+Lord social valued wise 40gp busy insight persuasion deception loyalist.
+* You can only gain audience with lord if you have a PATRON at this city.
+* Wares:  * Gain PATRON in this city (60gp). See Real Estate.
+                * Gain ownership over this city for a MONTH:
+                * 100gp - small city, 200gp - medium, 400gp - large city.
+D20 FACTION (To change known NPC's faction, do TOUGH persuasion task)
+Learning NPC's faction unlocks bribery action at them.
+    1-2. Loyalist. Bribe costs 4x wage.
+    3-4. Zealot. Can't be bribed.
+    5-6. Aloof. Bribe costs 2x wage
+    7-8. Pragmatic.  Bribe costs its wage.
+  9-10. Separatist. No bribe required. You get 4xp for free.
+11-12. Rebel. No bribe required. You get 8xp for free.
+13-20. Expected default faction. Aloof if unstated.
+
+                                               D20 TWIST
+                            Once NPC gains ODD, do its D20 Twist Reveal section.
+                            Unless NPC is KNOWN do Aware section too, targeting
+                            the active hero. Solve task becomes possible.
+
+1. Blackmailer. Reveal: heroes lose all XP.
+  Aware: Either hero gives all gp. or NPC escapes + all other NPCs are
+    ANNOYED till the next camping, while daily chase distance is set to 0.
+  Solve (HARD): blackmail them back, gaining d20 gp.
+2. Cultist. Worships some evil god, or prepares a revolution.
+  Reveal: All NPCs on this tile have Cultist D20 Twist.
+  Aware: All cultists are now Hostile.
+  Solve (REAL): Leaves the cult, you gain d10 XP
+3. Deranged. E.g. mentally ill, drug abuser, etc...
+  Reveal: It gains EPIC.
+  Aware: Becomes Hostile.
+  Solve (REAL): seeks mental help, you gain 4XP and its wage.
+4. Emissary. E.g. spy, saboteur or informant for some faction.
+  Reveal: For each Hero but FOUNDER roll d20,
+               1-2 = that hero serves the same faction,  and leaves unless LOYAL.
+  Aware: Heroes lose all SURGEs, while the NPC disappears.
+  Solve (REAL): uncovering the spy gives you d20 gp reward;
+5. Fence. Buys stolen goods.
+  Reveal: All other NPCs on this tile are now ODD.
+  Aware: Disappears.
+  Solve (EASY):  * Lose TITHE (sell stolen goods) to gain d20 gp.
+                          * Lose TRIFLE to buy Thieves Tools
+6. Hustler. Swindler, pimp, etc...
+   Aware: Every hero loses 1/2 their gp.
+   Solve (REAL): you learn about a fraud scheme - gain d20 XP
+7. Monster (in Disguise).
+  Reveal: you know it's HARD EPIC and it's D12 Dweller monster type.
+  Aware: Replace this NPC with actual monster.
+              The monsters consider NPCs to be foes.
+  Solve (Monster Talk): Gain its NPC wage + d20 XP and it disappears.
+
+8. NPC is MENTAL
+  Reveal: The next ODD NPC is responsible for the curse.
+               If the NPC gets reported or in COMA, gain CURE
+  Aware: Disappears.
+  Solve (no MENTAL/have CURE): lose CURE, gain 20 XP and 2x their wage.
+9. Smuggler. Aware: Escapes.
+  Solve (REAL): The Nexus job (see NPC Specific Quest).
+10. Thief. Aware: Hero loses all treasures. The NPC disappears.
+  Solve (EASY): lose TRIFLE to gain TITHE (stolen goods).
+11-12. Brawler.  Aware: All NPCs on tile gain BRAWLER
+  Solve (REAL): re-roll the mood of all NPCs on tile.
+13-20. No twist. NPC becomes ANNOYED (or GUARD if already
+             annoyed), and guards within 1 tile gain PURSUER.
+A PSION hit at 3 can, instead of damage, make the NPC ODD.
+Wish spell or PSION hit at 6 allow you to pick the Twist and Faction.
+TRACKING NPC
+Do investigation task to respawn the NPC who stole your gp or treasure. If you now report or put this NPC into COMA, you regain the stolen stuff. 
+PROMOTING NPC
+Non-hero hired NPC can be promoted (10gp) to a D6 Class hero (see hero generation).
+SIDEKICKS
+Sidekick is an NPC traveling with a hero who recruited it. Unless overruled. A sidekick  can be ordered to stay at specific city or rejoined with the hero. The party can't have more than 4 sidekicks.
+ADVANCEMENT TOKENS
+Offered by scholars. Lv.N hero can have up to N advancement tokens. The next token of  same type costs 2x more.
+Reroll (18gp): reroll any die rolled during your Hero Phase.
+Reroll Odd (30gp): you can keep rerolling as long as the roll is odd.
+Extra Hurt (16gp): used after you hit deal 1 extra HURT.
++5 Attack: used after you roll a die to add/subtract a value in 1-5 range.
+Heal (12gp): use to lose HURT.
+Recharge (14gp): recharge any Power or Treasure, enabling another use.
+Advancement token use takes no an action.
+Used token is disabled till next action next Camping.
+
+VENDORS AND WARES
+                             NPC specifies no wares? - has one D20 Treasure + xp/5
+                   SMALL city vendors don't sell/buy items costing more than 5gp.
+    MEDIUM - 15gp. Inappropriate items are replaced with 15. Trinket.
+  You can Sell Items at a half of their price. You can't sell for more than
+ NPC's wage (3x wage if merchant), but can barter for wares NPCs have.
+INNKEEPER WARES (The d4 and d6 gp once rolled persist till end of adventure)
+* Buy Food (d4 gp): the party gains RATION
+* Buy Drink (1gp): gain BOOZE, spent o auto-pass the 1st talk to tavern NPC
+* Ask about Rumor (TRIFLE): gain d6 XP (once a day)
+* Rent a Room (d6 gp): end adventure, regaining all SURGEs.
+ARTISAN WARES (Roll d20 to see what this specific artisan offers)
+1-10.  Supplies (6gp): the party gains PREPARED.
+11-12. Sells single D6 Toolkit (10gp)
+13-15. Prepare Against D6 Biome (4gp). +4 to any roll at that biome,
+            1 biome at time max.  Lose it if lost PREPARED.
+16-17. Weapon (2gp): extra 1 HURT against D20 Monster Type
+19-20. Armor (20gp): D20 Monster Type deals PUNY damage to wearer.
+TEMPLE WARES
+* Pray: TRIFLE and REAL Religion task to gain FAVOR.
+* Heal (2gp). Remove BOUND/MENTAL/ILL/INFESTE/DHURT (all heroes)
+* Determine Hero's Alignment (4gp): Roll into D20 Map.
+* Remove Cursed Item (10gp).
+* Donate D20 Legendary Item to gain 3 FAVOR.
+HIRING NPC
+Hiring soliciting NPC is 2x its wage. Some NPCs join for free. NPC gives Advantage to the skill it lists. Pay NPC's wage each month or they leave
+D20 SCHOLAR SERVICE
+Each scholar offers a single service type. If you hire the
+scholar, you will have access to their service between adventures.
+1-2. Adventurer's Guild. Trains heroes.
+   * Overcome Lapse (30gp). FULFILED hero can lose any lapse.
+   * Multiclass (20gp, once per hero): can equip powers of other D6 Class.
+      You can pick 1 power now, and later through Learn New Hero Power,
+3-4. Mentor. Teaches new Hero Power (2gp * number of powers you know):
+   Roll into D12 Class Power to see what power this scholar teaches.
+   Also sells Advancement Token. See respective section.
+5-6. Arena. Once per city, given M ARENAWIN tags,
+  fight against CR=(M+2)*4 monsters from random D12 Dwellers biome.
+  If won, gain ARENAWIN and gp in the CR amount multiplied by 4.
+7-8. University.
+  * Train D20 Skill (5gp). Must have D6 Ability supporting the skill.
+  * Hire Engineer (7gp). Gain ENGINEER (see D20 Inventive Solution)
+  * Artificer Training (20gp). Gain ARTIFICER: +5 to crafting
+       D20 Treasure roll and using Carpenter's Tool.
+   * Learn Investment (20gp): gain INVESTOR.
+9-10. Magic Guild. Learn random D20 Common Mage Spell (10gp).
+   Learn Random Ritual Spell (40gp), A scholar teaches 1 specific spell
+       D20 Ritual. MAGE can know only 2 such spells, but FULFILED - 3.
+11-12. Thieves Guild.
+   * Information (1gp): gain INFORMED
+   * Learn Scouting (20gp) gain SCOUT.
+13-14. Casino. Allows Gamble (6gp). Roll d20 to determine prize:
+    0-15 nothing, 16-17 - 10gp, 18 - 20gp, 19 - 30gp, 20 - 40gp
+15-16. Bank Deposit/Withdraw: Each hero has private deposit and cities
+   share the bank system. Withdrawing money costs 1 gp per 10gp withdrawn. 
+   If the deposited money by all heroes exceeds 100gp,  gain RENOWN.
+   INVESTOR hero has 10%/month growth on the deposited money.
+17-18. Temple.  * Temple Wares (see previous page)
+                            * Blessing (20gp). Once per hero. +1 max surges.
+19-20. Expert. Identify an Item (10gp). Say if item is cursed or not,
+        and the D20 Torment associated with it.
+
+At MEDIUM and LARGE city, heroes can place a house with specific scholar for 12XP. Each such house has scholar NPC and 2 guards.
+                                        D20 QUEST
+                            Once succeed quest, gain quest giver wage gp and 6XP.
+                         Refuse reward? - Gain extra 6 XP
+    1. Lost a Pet (next D20 NPC roll 17+ is their pet instead).
+      Pet is NUMB and PURSUER (till on the same tile as this NPC).
+      Goal: Bring pet to the NPC's tile.
+2. Bullied by other NPCs (next D20 NPC roll 16+ is gang leader).
+  Other NPCs on the gang leader's tile are part of the gang.
+  Each gangster's a Thug with Odd default Mood.
+  Goal: report, TIMID or COMA the gang leader.
+3. Infestation. The Epic Rats Swarm spawns.
+  Goal: defeat Rats Swarm cr3 epic agile epic swarm vorous binder beast
+4. Refugee needs getting to any other city. Once there alive, gain 2*d20 gp.
+5. Lost. Goal: do cr1 investigation task to show them direction.
+6. Accused for what other NPC did (next NPC roll 16+ is culprit).
+  The culprit's default Mood is Odd.
+  Goal: Report that NPC to a guard (see above).
+7. Demonic Possession cr4 dementer charmer arcane religion task
+   for extra d12 gp and d20 xp.
+8. Plague spreading on the streets. All heroes gain ILL.
+  Goal: do cr3 growing blaster medicine task to gain d20*2 gp
+9. Monster EPIC D12 Dwellers monster spawns. Goal: defeat the monster.
+10. Minor Illness cr1 frail growing medicine task for extra d10 gp
+11. Present. Give this NPC a trinket for d20 XP.
+12. Detective Quest. See next page.
+13. Missing NPC Quest. Do adventure  adjacent Wilds area - 8th tile will have that NPC with PURSUER tag. Get that NPC to the start tile for 20gp
+14-20. See NPC Specific Quest
+DETECTIVE QUEST
+Find the culprit. Now when chat to NPC, you also learn clue about culprit, roll d4: 1.Old, 2.Burly, 3.Poor, 4.Merry. Each NPC can give a single clue,
+but if that NPC is ODD the clue at that position can't be known. Once you
+think you have enough clues (according to next page table), pick and report that NPC, then roll d2 to determine missing clues. If you had all clues or guessed right, collect 20 gp and 10xp. Otherwise spawn actual culprit ODD D20 NPC and do its Reveal and Aware.
+
+CULPRIT       OLD   BURLY  POOR   MERRY
+Drunkard      Yes   Yes    Yes    Yes
+Blacksmith    Yes   Yes    No     Yes
+Official      Yes   Yes    No     No
+Scholar       Yes   No     No     No
+Merchant      Yes   No     No     Yes
+Beggar        Yes   No     Yes    No
+Preacher      Yes   No     Yes    Yes
+Forager       No    No     No     No
+Performer     No    No     No     Yes
+Child         No    No     Yes    Yes
+Servant       No    No     Yes    No
+Farmer        No    Yes    Yes    Yes
+Thug          No    Yes    Yes    No
+Noble         No    Yes    No     Yes
+Guard         No    Yes    No     No
+No match? - It is the closest: Stranger
+NPC TASK ADVANTAGE 
+Gain advantage against any specific task, if you share tile with NPC you did Chat task with and know it's alignment, and the NPC is:
+* LAWFUL: Persuasion Advantage, unless you're CRAZY.
+* CHAOTIC: Deception Advantage, unless you're WISE.
+* GOOD: Advantage to this NPC's tasks if you HURT, FRAIL or has 3 TIRED.
+* EVIL: Intimidation Advantage if actor is not HURT, FRAIL or has 3 TIRED.
+* FRAIL/PUNY: Advantantage against this NPC's Intimidation tasks.
+* CRAZY: Advantage against this NPC's tasks if you're CLEVER.
+* DUMB: Advantage against this NPC's tasks if you're WISE.
+* LONER: Disadvantage to this NPC's tasks unless you're SOCIAL.
+
+                                      NPC SPECIFIC QUEST
+                            See this section when rolled 15-20 on D20 Quest.
+                       * Drunkard/Innkeeper. TREASURY in the next dungeon you
+                          explore has a legendary item.
+ * Merchant:  seeks mercenaries to deliver goods to next explored city.
+   If accepted, gain GOODS. Once there, lose GOODS, collect 30gp reward.
+   Merchant pays for any SHIP you lease.  Can't have more than 1 GOODS.
+   While you have GOODS,  add +2 to monster spawn rolls
+   If you throw away the GOODS, gain INFAMY.
+* Fence/Smuggler D20 Twist: The Nexus seeks mercenaries to smuggle
+   CARGO. Same as the below Merchant quest, but payment is 60gp.
+   Upon accepting any Nexus job, gain 1 INFAMY.
+   If already completed a smuggle, this NPC also has offer quests:
+   1. Assassinate  a powerful random hero, who spawns here and is EPIC and
+      INFORMED  (see Hero Generation). Payment is the is 10+d10 gp.
+   2. Buy d10 Dreammist flasks (1 gp each). See D20 Mundane Item.
+* Guard. Report 2 ODD NPCs for extra d20 gp.
+* Official. You learned something which may interest officials at next city.
+   Once at newly explored city speak with officials to gain d20 gp.
+* Noble. defeat BOSS at the next explored dungeon for 40gp 
+* Thug. Roll d20;
+   1-10. Do Prison Break to free d4 Thugs, who once freed are your friends.
+   11-20. A person is held for ransom at the next dungeon.
+            Once there see Dungeons of Nymara / BNDTHDOUT.
+* Artisan. Spend 2gp to bring ARTWORK to next city for 20gp reward.
+  The ARTWORK can be sold for 1gp and good heroes gaining DOOM.
+* Any other NPC. Help completing task with that NPC's skill.
+  E.g.  Athletics task for Blacksmith.
+PRISON BREAK
+1. Do tough survival task to break into D12 Dwellers / D20 Civilized.
+2. Fight through d10+5 Tiles, to find the inmate(s).
+3. 3 monsters spawn chasing you. do task athletic task to escape prison.
+D20 HOSPITALITY ADVENTURE
+9-20. No Adventure. It was just a cheap place.
+1-2. You got drugged and kidnapped - lost 10 days and move to last RISKY
+     area (current area if none is risky), with adventure started with no return from 
+     the start tile.
+            3-4. A D20 Boss monster spawns with DISGUISED tag.
+            5-8. Gain 1 HURT after resting due to unhealthy conditions.
+CITY ACTIVITIES
+RESTING FOR CHEAP
+Talk with any VENDING NPC, the next house will have NPC
+offering cheap rest (for TRIFLE): Do Camping, but next day you roll into D20 Hospitality Adventure (see previous page).
+PURSUER GUARDS
+If you make anyone Annoyed, you have two options: resist or the guards pursuing hero will beat the hero (HURT per guard), confiscating carried gp.
+KILLING NPC
+If any NPC is present within 1 tile, the non-Guard NPCs within 1 tile are Afraid, while you gain 1 INFAMY and WANTED (at this city), unless proven the NPC's D20 Twist or it attacked you first. Loot corpse for NPC's wage.
+Killing non-ODD NPC gives 3 DOOM to each GOOD hero. 
+FINDING SPECIFIC D20 NPC (LARGE cities only)
+Talk to a Leisure/Vending  NPCs. Instead of that NPC rerolling mood, the next explored tile will have the NPC type you're looking for.
+AGENT SERVICES
+Pay TRIFLE to Child/Beggar in a Leisure/Vending mood to hire it as a hero (till end of adventure). This agent can't attack, but can talk and buy, taking all the blame for the actions. The agent suffers negative results from Twist's reveal, e.g. guard PURSUER.
+PROSTITUTION
+Given a non-LAWFUL hero for an LEISURE NPC do performance task. On success roll NPC's D20 Gender/Orientation, and if NPC's orientation matches hero's gender, gain NPC's gp. Otherwise NPC becomes ANNOYED. 
+Note: hero learns NPC's orientation by Study talk option.
+ARREST
+On arrest, all your gp and items are confiscated, you're thrown into closest city jail. For the N of INFAMY tags, you're fined: N*40gp.
+If the confiscated property covers that sum, you're released. Else you're sentenced to N*2 months of prison, On release lose all INFAMY, gain 1 DOOM and lose a level.
+PRISON ESCAPE
+Once a month, the arrested heroes can attempt escape, spawning at full health without weapons in a Civilized D12 dungeon and must go through d8 + INFAMY*2 count tiles of it to escape and spawn at this area's camp site.
+D20 CITY ISSUE
+                             Each time you roll 1 in any city, roll here,
+                     record current city and the issues letters as you get them.
+    1-4. V = Vanished People. Roll 3 times into D20 NPC.
+                   These NPC types are no longer present - don't spawn them.
+    5-8. O = Odd Activity/Symbols (Disadvantage to any talk).
+  9-12. D = Disrupted Trade/Services (vendors have 2x prices).
+13-16. S = Strangers Spotted (all NPCs have Odd default mood).
+17-20. N = No issue bit this time.
+Once got 4 letters, all the cities with issues gain City Villain Plot (see next page) with issue bits corresponding to collected letters. Now once you roll 1, the Effect section of the plot triggers, while you start assembling a new set of 4 letters.
+While having 4 letters, but before d20 rolls 1, do tough task to block the Effect in the City Villain Plot.
+After d20 rolls 1, while having 4 letters, heroes can do Five Room Dungeon to defeat D20 Boss clearing all issues from these cities and gain FULFILED and 2 LORE. That dungeon Hall's always has a D20 Boss.
+If you get 2+ city villain plots at once, roll D6 Global Issue. It will disappear, once less than 2 city issues.
+D6 GLOBAL ISSUE
+1. World Conflict: each city has 50% of  conflict: NPCs have no gp.
+    Yet other cities are got richer: NPC have 2x the gp, services cost 2x the gp.
+2. Dragons from different biomes are roaming the countryside.
+    Upon starting D6 Biome adventure, roll d20:
+    1-10: spawn a dragon from another D6 Biome.
+3. Giants from different biomes are pillaging the countryside.
+   On a city visit, roll D20: 1-10. A D6 Biome giant at the entrance.
+4. D6 Biomes is spreading. All odd X areas are now that biome.
+5. Cataclysm: Disadvantage to any travel.
+6. Invasion: each time you leave city, roll d20:
+    1-10. Spawn d8 of D12 Dwellers monsters on your tile.
+
+CITY VILLAIN PLOT
+For each issue letter write 1 (random if missing) and match
+the reveal, doing REAL Chase to avoid its Effect.
+   V O D S  REVEAL
+   0 0 0 0  You're on a false trail.  Effect: gain MONTH.
+   0 1 0 0  Villain brainwashes locals. Preachers are EPIC + GUARD
+      Effect: All NPCs are GUARD
+   0 1 0 1  A portal spawns minions. NPC are all BUSY
+      Effect: Instead of Stranger NPCs, spawn D12 Dwellers monsters
+                 which attack NPCs, and if none - you.
+   0 1 1 0  Insurgency. All NPCs are ANNOYED
+      Effect: All NPC gain BRAWLER
+   0 1 1 1  Economic sabotage. All Artisans and Merchants are now Beggars.
+      Effect: You can't buy anything.
+   0 0 1 0   Overtaxed economy. All NPCs are ANNOYED
+                  Leaving city during day REAL at entrance to avoid paying 10gp.
+      Effect:  Vendors have 2x prices for all services
+   0 0 1 1  Minions ravage countryside. All Farmers are now Beggars.
+      Effect: City no longer sells food or booze. 
+   0 0 0 1  Villain is preparing invasion. All NPCs are ANNOYED.n
+      Effect:  All NPCs are GUARD 
+   1 1 1 1  Villain has full control. Instead of NPCs spawn D12 Dwellers.
+      Effect: All Guards are HOSTILE.
+   1 1 1 0  Villain eliminates competitors. You can't sell anything.
+      Effect: Instead of 1st Stranger, spawn D20 Boss,
+                 which came for you personally.
+   1 1 0 1  Villain led minions sacrifice locals. NPC are all BUSY
+      Effect: The vanished NPC types now spawn EPIC D12 Dwellers instead.
+   1 1 0 0  Villain in power performs sacrifices. NPC are all BUSY
+      Effect: Instead of children and beggars, spawn Pursuer Guards.
+   1 0 1 1  Mionions infiltrated the government. Loyalists are GUARD.
+      Effect: All Guards and Officials spawn Hostile.
+   1 0 1 0  Villain's thugs rob shops. Artisans/Merchants are ANNOYED
+      Effect: Thugs/Beggars have Brawling if share tile with Merchant/Artisan
+   1 0 0 1  Villain led minions kidnap people. NPCs have Loyalist default.
+      Effect: Disadvantage to any Talk task.
+   1 0 0 0  Villain lures people to nearest forest.
+      Effect: Instead of Forager D20 NPC spawn D6 Forest Monster,
+                  adding explored tiles count to the roll.
+
+D20 FAMILY
+                            For Roll here to see what relatives the hero or NPC has.
+                   1. SPOUSE - has wife/husband
+                   2. PARENT - has a child
+                   3. PROGENY - has father+ mother
+                   4. SIBLING - has a broth/sister
+                   5-6. SPOUSE+PARENT
+                   7-8. SPOUSE+PROGENY
+                   9-10. SIBLING+SPOUSE
+                   11-12. SIBLING+PARENT
+                   13-14. SIBLING+PROGENY
+                   15. SPOUSE+PROGENY+PARENT
+                  16. SIBLING+SPOUSE+PARENT
+                  17. SIBLING+SPOUSE+PROGENY
+                  18. SIBLING+SPOUSE+PROGENY+PARENT
+                  19-20. NONFAMILIAL - no family
+Hero has D20 Family at their home city and they spawn at their family house. Hero has advantage to all tasks against its relatives.
+To learn about NPC's family do tough deception investigation task. Knowing about NPC's family gives advantage to intimidation and deception against said NPC. If you have CAPTIVE NPC and know about their family you can gets ransom for that NPC equivalent to NPC's 10x wage - NPC disappears.
+Given that hero knows about all NPC's relatives and NPC has no spouse, that hero might attempt to court that NPC to enter romance by doing tough persuasion deception task. The spouse initially joins the heroes, unless dismissed, in which case it can be summoned at that hero's home city and asked to rejoin.
+If the hero is a SPOUSE and/or PARENT, and the spouse/children don't travel with the hero, the hero can visit home city, giving the spouse/children 2x their wage to gain 3 FAVOR once a month.
+D20 GENDER/ORIENTATION
+Roll here to determine character's gender and orientation,
+driving sex work (see below) and romantic relationships.
+If gender is already known, keep rerolling till roll matches the gender.
+                   1-7. Male. Attracted to females. 
+                     8-9. Male. Attracted to males and females.
+                     10. Male. Attracted to males.
+                     11. Female. Attracted to females. 
+                     12-13. Female. Attracted to males and females.
+                     14-20. Female. Attracted to males. 
+RECURRING NPC
+When you visit tavern or meet NPC in the wilds, roll d6:
+     1-5. Nothing. 6. One of the NPCs is a Recurring NPC.
+Each time you spawn them, roll d20 and keep record what you accepted:
+1-5. They offer you D20 Legendary Item, telling it will help on your journey.
+ 6-10. They offer to teach you uncovering your secret D20 Talent.
+           Unless you already have 3+ D20 Talents
+11-15. They tell D20 Prophecy. If it gets fulfiled, the hero who spoke with
+    them gains FULFILED and FAVOR tag.
+16-18. If you accepted any of their gifts, roll D6 Global Issue,
+    they reveal to serve your enemy:
+    * If they gave you legendary item, lose it and gain D20 Torment.
+    * If they uncovered your talent, lose it and gain D20 Flaw.
+    * If you fulfiled their prophecy, lose FULFILED and gain max DOOM.
+    * The Flaw, Torment and the global issue end when you defeat D20
+      Dungeon BOSS, behind them. The BOSS will be helped by that NPC.
+19-20. They are an actual benefactor. Keep whatever they gave you.
+    Roll D6 Global Issue, which ends when you defeat D20 Dungeon BOSS,
+    behind it. This NPC offers to join to help with that issue.
+If you roll a gift they already gave you, re-roll. If you roll 16-20, but haven't accepted any of their gifts - re-roll. World has single such recurring NPC.
+
+RAID
+If at small city, 1 FAVOR to start City adventure, except the monsters spawn from the D12 Dwellers Civilized Biome. If you defeat 20 CR of the monsters, gain 4 INFAMY, PREPARED, 3 RATION, and d20 gp.
+D20 INVENTIVE SOLUTION
+                            On world map, if have ENGINEER, roll here to   see what
+                         solutions exist to help clearing picked area.
+     Unless overruled the effect stays active till next Camping. The solution
+  costs 3+d20 gp. After solution is greenlit and money paid, advance time by 5 days. Note: the inventive solution for specific area and its price adventure stay the same during single playthrough. 
+1. Divert a river to flood the dungeon.  Non swimmer/plant/undead/gadget there die and dungeon tiles are now FLOODED.
+2. Poison water/food/air supply (10+d20*5 gp).
+   Heroes gain VENOMOUS, and all monsters (besside Undead and Gizmo)
+   in the adventure spawn ILL.
+3. Collapse. Any monster there with 2 HURT, except undead, gizmo, plants, demons, serpents and spirits.
+4. Bribe monsters to betray the BOSS.
+   cr1-3 monsters spawn CHARMED, beside undead, gizmo and plants.
+5. Bypass route to the BOSS. 1st explored tile is the BOSS tile.
+6. Install smoke pumps to blind enemies.
+   Monsters, beside undead and plants are Mental while you are BLINDING.
+7. Create distraction outside of dungeon.
+   For each spawned monster, roll d20: 1-10. It is defeated.
+8. Closest city provides d20 guards to clear dungeon (d20*5gp).
+   You must success talk with the Lord.
+9. Prepare for Terrain. You ignore difficult terrain penalty there.
+10. Monitor the dungeon. You know in advance the dungeon layout,
+       its monster spawns. Once in dungeon, explore adjacent tiles at will,
+       without giving spawned monsters PURSUER.
+11. Harm BOSS. BOSS spawns with 4 HURT (non-epic just dies).
+12. Wait when the BOSS is away. The boss tile will have no BOSS,
+      but will have all the goodies, including KEY.
+13-20. No solution.
+SPECIAL POWERS
+These are assigned based of the characters backstories.
+Attack items like WHIP and HANDGUN work as at-will powers.
+AMORPHIC: Hero has extra D6 Ability, but all D6 Abilities reroll monthly.
+COMPASS: sea travel adventure requires exploring 1/2 less tiles
+DRAGONSLAYER: spend daily power to use hero's at-will power to kill any REPTILE on a successful hit. Note: Kobolds are considered dragons.
+ENTREPRENEUR: You gain double profit from goods delivery, smuggle,
+and business (see Real Estate). You also have Advantage to Persuasion.
+ESTATE: you get d20 gp at start of each month.
+HANDGUN: A glock pistol and 6 BULLETs (+4 to-hit, 4 HURT).
+HOVERBOARD: can get back the moment you enter elevation/flooded tile,  
+KATANA: Before your melee attack, you can decide to use katana.
+On hit the target dies. On miss the katana breaks.
+Each time you discover new city, roll d4: 1-2. can buy new katana (8gp).
+MOTION_TRACKER: Can explore tile without visiting and spawned monsters are non-PURSUERS.
+PSION: specify D and roll d6: on a roll of D or above, the target suffers hit based of D: 1-2. MEEK. 2-3. PUNY; 3. CHARMED. 4. NORMAL; 5. STRONG;  Of failure you gain TIRED. Target's ally PSION, can get TIRED instead of target's HURT. AI uses d6 to pick D. To psion a Task, have its skill training.
+RAGESTRIKE: Gain HURT to attack 3 times.
+VAMPIRE: For every kill, lose HURT. At the start of every night you lose all HURT and TIRED. At night / indoor / Umbrath, gain +1 to rolls + UNDEAD, but Disadvantage at day. Kill NPC once a month or lose level + DOOM.
+WEREWOLF: When begin night adventure, do REAL task to stop becoming werewolf: agile tough strong quick, healing, but dumb and crazy.
+WHIP:  you have HUNTER and your hit gives target BOUND. 
+SOULBINDER: gain tags of killed foe till another kill or the next camping.
+TALENTED: you can spend FAVOR to gain INFORMED.
+TIMEUNWIND: Instead of losing an adventure, just return to world map with all the heroes at full health, and MENTAL/BOUND/ILL removed.
+After use, do EASY task to avoid losing this ability forever.
+SCOUT: do Investigation task to see adjacent room contents. INFORMED SCOUT can do EASY Investigation instead. Scout can also spend 10 XP to see adjacent area's biome+ways without exploring the tiles.
+
+WILDS
+PLAINS/HILLS ADVENTURE
+      "On hit" - when the monster hits. 
+      "On spawn" - when the monster spawns.
+      "On activation" - when the monster starts its phase.
+       The `dN` before monster name is the spawn count.
+ D6 PLAINS ANIMAL
+If night, for 1-5 animals roll d20: 1-5 - it is an Earthmaw instead
+1. Gopher cr1 meek timid easy agile frail beast
+2. Fox cr1 timid agile frail puny beast
+3. Axe Beak cr1 timid agile frail beast
+4. Auroch cr1 timid tough agile beast sus(Gorgon)
+5. d4 Wild Dog cr1 agile puny beast
+6. Tiger cr2 tough beast sus(Green Hag)
+D6 PLAINS MONSTER: Given N explored tiles, roll d6 + N. At night, add 4.
+1-4. No monsters on this tile.
+5. d4 Bandit cr1 easy hiding slow puny humanoid
+6. Spawn from D20 Goblin (see D12 Dwellers)
+8. Spawn from D20 Undead (see D12 Dwellers)
+9. Earthmaw cr2 hiding hunter binder acid beast
+11. Landshark cr3 tough fast hiding beast.
+12. Spawn from D20 Orc (see D12 Dwellers)
+13. Redcap cr3 epic strong tough hard rager late fey
+14. Banshee cr3 tough scary messy blaster dementer undead
+16. Gloomcoil cr5 epic hiding agile beast 
+18. Gorgon cr5 epic hard agile strong binder paralyzer beast
+19. Young Black Dragon cr5 epic hard agile strong acid flyer blaster reptile
+20. Ettin cr5 tough easy slow strong kicker rager giant.
+COMMON WILDS MONSTERS
+Green Hag cr2 hard agile ranged swimmer dread charmer shaman fey
+Night Hag cr5 tough hard thick toxic venomous caster demon.
+Werewolf cr3 tough agile healing fast humanoid
+Wereboar cr3 tough strong coated humanoid
+Werebear cr3 tough strong epic humanoid
+
+D20 ENCOUNTER
+1-2. Powerful Beast. Spawn a monster with +17 roll.
+3-4. Lost Caravan. d4 D20 NPCs in Troubled mood, asking you escorting them to 1st city. If you do, gain 2x their salary + FRIEND in this city.
+5-6. Ambush. Spawn d10 XP of D12 Biome monsters on the adjacent tile.
+7-9. Recurring NPC.
+10-11. Wilds Foragers. See below.
+12-13. Farm. d6 farmer type NPCs. Wares: Camping (1gp)
+14. Hermit. Sage NPC with Odd mood.
+15-16. Travelers. d6 Stranger NPCs.
+17-18. Mystical site. If heroes' enter it, roll d20: 1-5. Gain DOOM. 6-10.
+     Lose FAVOR. 11-15. Lose DOOM. 16-20. Gain FAVOR.
+19-20. Abandoned Hamlet. You're lost in the middle.
+   * Explore d8 tiles of Undead D12 Dwellers to end adventure now.
+WILDS FORAGERS
+d4 Forager D20 NPCs with Odd default mood. All are PURSUERs.
+* If you kill them, the last one escapes (if succeeds, gain INFAMY).
+* These NPCs will move towards any animal and attack it.
+* If they kill animal, they take its PELTs and the RATION part.
+* If night when 5+ tiles are explored / you hit one / have SEEING,
+  roll d20: 1-5 they turn into were- d3: 1.wolf, 2.boar, 3.bear
+Note: on sea biome they instead turn into were-d3: 1. Shark, 2. Crab, 3. Ray
+
+FOREST/SWAMP ADVENTURE
+
+
+    D6 ANIMAL
+     If Swamp, replace Bear with Giant Crocodile. If night, for wolf/boar/bear
+     roll d20: 1-5 - it is were- wolf/boar/bear instead.
+1. Hare cr1 timid meek easy agile frail beast
+2. Badger cr1 timid agile frail puny beast
+3. Boar cr1 timid agile frail beast
+4. Elk cr1 timid agile puny beast
+5. d4 Wolf cr1 agile puny beast
+6. Bear cr2 tough beast sus(Green Hag)
+Giant Crocodile: cr4 tough thick swimmer binder vorous beast.
+FOREST MONSTER: Given N explored tiles, roll d6 + N. At night, add 4.
+1-4. No monsters on this tile.
+5. Phase Hound cr1 agile warper fey
+6. d2 Pixie cr1 puny frail agile hiding ranged tiny flyer sicker morpher fey
+7. d2 Satyr cr2 agile ranged spawner fey
+8. d2 Will-o'-Wisp cr3 agile hard vampiric undead
+9. Unicorn cr3 calm agile tough protector fey
+10. d2 Dryad cr2 puny hiding nullyfier charmer dementer coated fey
+              spawns(unicorn)
+11. Redcap cr3 epic strong tough hard rager tardy fey
+13. Spawn from D20 Spider (see D12 Dwellers)
+14. Spawn from D20 Sewer (see D12 Dwellers)
+15. d2 Ursowl cr3 tough hard agile strong beast
+17. Phase Cat cr4 tough agile quick mirrored hard thick beast
+18. Treant cr5 hiding strong wise large mire coated leader plant
+19. Young Green Dragon cr5 tough strong thick agile informed
+                                           foul hard swimmer large sicker flyer reptile
+21. Fog Giant cr6 epic tough thick strong hunter hard large chiller
+                        foul sicker giant
+
+SEA ADVENTURE
+Start Tile is your ship, and you have a 4-hero capacity boats.
+Every tile outside the one with your boat and ship are FLOODED.
+Fish/monsters are all SWIMMERs. NPCs have own boats.
+D6 SEA ANIMAL
+If night, for entries Crab/Octopus/Shark roll d20, 1-5: it's a Were- crab/octopus/shark instead (see Sea Monsters).
+1. Flying Fish cr1 timid meek easy agile frail beast
+2. Crab cr1 timid puny beast
+3. Octopus cr1 timid agile frail beast
+4. Quipper cr1 timid agile puny beast
+5. d4 Shark cr1 agile puny beast
+6. Giant Tuna cr2 tough beast sus(Sea Hag)
+SEA MONSTER: Given N explored tiles, roll d6 + N. At night, add 4.
+1-4. No monsters on this tile.
+5. Seawolf cr1 easy agile puny beast 
+6. Sea Sprite cr1 frail slow hiding hunter binder fey 
+7. d2 Siren: cr2 agile puny dread charmer fey
+8. Will-o'-Deep cr3 epic tough agile firefrail undead
+9. Sea Unicorn cr3 calm swimmer agile tough protector fey
+10. Naiad cr2 slow puny hiding nullyfier dementer charmer mire fey
+                 spawns(Sea Unicorn)
+12. Merrow cr3 slow strong kicker beast
+13. Sea Spawn cr3 tough slow toxic beast.
+14. Gillfiend Warrior cr4 tough agile kicker butcher humanoid
+                                      spawns(Gillfiend cr1 frail humanoid)
+16. Coral Golem cr5 epic hard slow strong binder toxic
+                             large firefrail leader plant.
+18. Young Sea Serpent cr5 epic hard agile strong blaster large reptile.
+20. Storm Giant cr6 epic tough strong large ranged blaster large giant
+Sea Hag cr2 tough hard agile ranged swimmer scary dread fey
+Wereshark cr3 tough agile regenerating humanoid. Attacks twice.
+Werecrab cr3 coated humanoid
+Wereray:  cr3 tough strong epic humanoid
+FROZEN ADVENTURE
+
+
+   D6 FROZEN ANIMAL
+If night, for wolf/boar roll d20: 1-5 - it is winterwolf/yeti instead.
+1. Penguin cr1 timid meek easy agile frail beast.
+2. Arctic Fox cr1 timid agile frail puny beast
+3. Deer cr1 timid agile frail beast
+4. Muskox cr1 timid agile puny beast
+5. d4 Wolf cr1 agile puny beast
+6. Polar Bear cr2 tough beast sus(Bheur)
+Bheur cr4 tough hard slow chiller slower fey 
+FROZEN MONSTER: Given N explored tiles, roll d6 + N. At night, add 4.
+1-4 No monsters on this tile.
+5. Iceling cr1 frail agile puny firefrail fey
+6. d2 Ice Mephit cr1 frail puny gawky blaster hiding explosive spirit
+7. d2 Winterling cr2 puny toxic weakener fey
+8. d2 Chilling Glow cr2 frail agile growing aberrant.
+10. Spawn from D20 Orc (see D12 Dwellers)
+12. Yeti cr3 tough agile easy pyrophobic binder beast.
+14. d2 Winter Wolf cr4 tough agile water blaster beast
+16. Ice Troll cr5 epic thick slow kicker strong firefrail giant
+18. Mammoth cr5 epic thick agile strong binder hunter messy large beast
+19. Young White Dragon cr5 epic agile strong blaster flyer chiller
+                                           slower reptile
+20. Frost Giant. See D20 Boss.
+
+MOUNTAIN ADVENTURE
+All diagonal exits are Elevated.
+D6 MOUNTAIN ANIMAL
+ If night, for ram/eagle/lynx roll d20: 1-5 - it is a 12. Manticore instead
+1. Swarm of Bats cr1 timid meek easy agile sicker swarm beast.
+2. Snake cr1 timid meek frail toxic beast.
+3. Goat cr1 timid agile frail puny beast
+4. Ram cr1 timid agile frail beast
+5. d4 Eagle cr1 agile puny beast
+6. Lynx cr2 tough agile binder hunter beast sus(Night Hag)
+MOUNTAIN MONSTER: Given N explored tiles, roll d6 + N. If night add 4
+1-4 No monsters on this tile.
+5. d4 Living Shrub cr1 easy frail puny hiding plant
+6. Spawn from D20 Goblin (see D12 Dwellers)
+7. Harpy cr2 agile ranged easy flyer charmer dementer humanoid.
+8. Spawn from D20 Kobold (see D12 Dwellers)
+10. Troll cr3 thick tough fast mire giant.
+10. Spawn from D20 Orc (see D12 Dwellers)
+12. Manticore cr4 tough ranged flyer fast beast
+14. d2 Ogre cr4 tough slow ranged strong messy giant
+16. Griffon cr5 tough agile flyer hard strong beast.
+18. Young Roc cr5 flyer agile epic strong beast
+20. Young Red Dragon cr5 epic strong flyer fire blaster reptile
+         spawns(D20 Kobold)
+21. Stone Giant cr6 epic strong ranged thick kicker hard giant
+
+DESERT ADVENTURE
+
+
+   D6 DESERT ANIMAL
+ 1. Lizard cr1 timid meek easy agile frail beast.
+2. Scorpion cr1 timid meek frail venomous toxic beast.
+3. Desert Jackal cr1 timid agile frail puny beast.
+4. Camel cr1 timid agile puny beast.
+5. d4 Hyena cr1 agile puny beast
+6. Lion cr2 tough beast sus(Lamia)
+DESERT MONSTER: Given N explored tiles, roll d6 + N. If night add 4:
+1-4 No monsters on this tile.
+5. Swarm of Insects cr1 agile toxic vorous binder swarm beast.
+6. Dust Mephit cr1 slow puny hiding weakening toxic
+                         blaster explosive spirit
+7. Spawn from D20 Undead (see D12 Dwellers)
+9. Cockatrice cr2 easy binder paralyzer beast
+10. Spawn from D20 Vyperkin (see D12 Dwellers)
+11. Lamia cr4 tough slow climber toxic beast. Puny from ILL foes.
+12. Gnoll Chieftain cr3 tough puny fast humanoid
+       spawns(Gnoll cr1 agile puny humanoid)
+14. Skeletal Naga cr4 epic slow archmage undead.
+15. Medusa cr5 epic ranged venomous toxic chiller paralyzer reptile.
+16. Greater Basilisk cr5 epic hard strong binder paralyzer reptile
+18. Living Sandstorm cr5 epic agile puny hiding blaster spirit
+19. Young Blue Dragon cr5 epic shocker agile blaster
+                                         dementer flyer reptile
+21. Sand Giant cr6 epic slow thick hard strong dread stalker giant
+NETHERELM ADVENTURE
+D6 NETHERELM ANIMAL
+1. Swarm of Bats cr1 timid meek easy agile sicker swarm beast.
+2. Cave Rat cr1 timid frail puny beast.
+3. Deep Rothe cr1 timid agile frail puny beast
+4. Darkmantle cr1 timid agile frail weakener dread beast.
+5. d4 Cavvekan cr1 agile puny beast
+6. Hunting Drake cr2 tough agile quick binder reptile sus(Otyugh)
+NETHERELM MONSTER: Given N explored tiles, roll d6 + N:
+1-4 No monsters on this tile.
+5. Swarm of Spiders cr1 climber toxic vorous binder foul swarm beast.
+6. Spawn from D20 Drow (see D12 Dwellers)
+8. d4 Myconid cr1 tough slow hunter toxic engulfer foul firefrail plant.
+9. d2 Minotaur cr3 tough agile binder hunter rager aberrant. 
+10. Hook Horror cr4 tough hard thick agile quick hunter aberrant.
+12. Acid Ooze cr4 tough vorous engulfer climber binder caustic acid beast.
+13. Otyugh c4 tough strong binder hunter aberrant:
+14. Spawn from D20 Aberrant (see D12 Dwellers)
+16. Spawn from D20 Drow (see D12 Dwellers)
+18. Umber Hulk cr4 tough agile hard strong confuser dementer beast.
+19. Aboleth cr5 tough agile vampiric ranged puny dementer fast scary
+      sicker aberrant
+20. Allseer. See D20 Boss, but this one isn't BOSS
+21. Hunched Giant cr5 blocker epic hard thick strong binder hunter giant
+23. Young Purple Worm cr6 epic thick hiding binder vorous
+                                          foul sicker warper beast
+
+UMBRATH ADVENTURE
+                           Accessed by Gate spell, or by traveling though Netherelm
+                      tiles. Umbrath plane has the layout and the Biomes of the
+    related material plane area, yet all monsters are HIDING, while any
+  canine/feline, dragon and giant get replaced with Shadow Mastiff, Shadow
+ Dragon, and Death Giant.
+Shadow Mastiff cr2 hiding hunter binder butcher beast.
+Young Shadow Dragon cr5 epic hiding hard toxic blaster plague reptile.
+Death Giant cr6 epic strong hard ranged agile hiding dementer bane giant
+FINDING FAMILIAR
+Mages can do taming task to make cr1 Mephit their familiar (one familiar at time),  Can Druids do same with Beasts, Clerics - with Spirits.
+INFORMED hero can also tame cr2 familiars.
+Familiar is a permanent ally. If familiar dies, you gain 1 HURT.
+You can pickup the familiar in your inventory (counts toward item limit), which prevents it from being harmed. A hero can possess their familiar,
+which moves the familiar instead of hero, while hero can't act, and familiar can do any task, hero can do. Unpossessing familiar takes familiar's action.
+SHIP OWNERSHIP
+This section concerns with owning your own ship as
+opposed to leasing one. OWNSHIP here prevents you from losing
+SHIP when enter a city.
+RAFT
+Stranded on an island? - Spend 5 XP, do REAL Survival, then do REAL Navigation to gain SHIP, but lose PREPARED and all items/gp.
+HIJACKING A SHIP
+This is available when you are at Sea area and have SHIP, but without OWNSHIP. Gain 6 INFAMY if you start this adventure. The hijack ship adventure proceeds like normal sea adventure, except the monsters spawn from the D12 Dwellers Civilized Biome. If you defeat 20 CR of the monsters, the adventure ends and you gain OWNSHIP, which prevents you from losing the SHIP when you enter a city.
+SHIP DAMAGE
+OWNSHIP has associated DAMAGE, starting at 0. If damage reaches 5, the ship sinks (lose OWNSHIP), and you must move the party to the closest port city. Losing sea adventure increases the DAMAGE by 1. Damage can be lost at any port for 10gp.
+PIRACY
+If at sea, spend 1 FAVOR to start Sea adventure, except the monsters spawn from the D12 Dwellers Civilized Biome. If you defeat 20 CR of the monsters, the adventure ends and you to 20 + d20*2 gp and gain 4 INFAMY.
+AIRSHIP
+If you have OWNSHIP, sacrifice Legendary Item and cast either Alter, Weather Control or Wish to turn it into an airship.
+Travel adventure requires exploring 1/2 less tiles.
+D12 DWELLERS
+                            After exploring d20 tiles of travel adventure, do REAL
+                   Investigation to roll d20: 11-20 - area has no dungeon; 1-10:
+1
+CIVILIZED
+6
+ORC
+2
+GOBLIN
+7
+LABORATORY
+3
+DEMON
+8
+SPIDER
+4
+ABERRANT
+9
+SNAKE
+5
+KOBOLD
+10
+UNDEAD
+11
+DROW
+12
+SEWER
+D20 CIVILIZED
+To determine what race operates it, roll d4:
+1. Human. If two human monsters alive, instead of CR=1 human spawn a:
+    Guard Dog cr1 easy frail puny helper binder beast
+2. Elf. Everyone is ranged and gets Advantage against non-Ranged.
+3. Dwarf. Everyone is TOUGH
+4. Gnome/Halfling. Everyone is FRAIL, but AGILE and CLEVER
+1-6. Militia cr1 frail puny humanoid
+7-11. Soldier cr1 puny ranged humanoid
+12-15. Veteran cr2 tough puny ranged humanoid
+16-17. Mage cr3 ranged hard frail puny charger binder humanoid
+18-19. Cleric cr3 tough puny easy healer humanoid.
+20. Sergeant cr4 tough agile informed leader humanoid
+D20 GOBLIN
+1-6. Goblin cr1 frail puny agile ranged humanoid.
+7-11. Wolf cr1 frail puny agile hunter binder beast.
+* Allies have Advantage attacking BOUND foes.
+12-15. Hobgoblin cr2 puny humanoid. STRONG if any allies on tile.
+16-17. Bugbear cr3 tough thick ranged humanoid
+18-19. Troll cr3 epic agile healing rager firefrail giant
+20. Ogre cr4 tough strong thick slow ranged messy dumb giant
+D20 DEMON
+All NULLIFIER and Immune to MENTAL
+1-6. Cultist cr1 frail puny weakener toxic humanoid
+7-11. Wretchling cr2 puny agile quick venomous toxic sicker demon
+12-15. Hell Legionary cr1 tough ranged puny fast protector demon
+16-17. Hell Hound cr3 agile helper butcher blaster demon
+18-19. Vrock cr5 tough puny agile flyer binder hunter
+                        sicker venomous demon
+20. Cambion cr5 epic hard strong thick agile ranged dread charmer demon
+D20 ABERRANT
+1-6. Young Mindeater cr1 puny frail dementer weakener warper aberrant
+7-11. Psychic Rats cr3 tough dementer swarm vorous stalker
+          binder aberrant
+12-15. Mindeater cr2 puny tough dementer charmer puppeteer aberrant
+16-17. Mindtrap cr4 tough puny agile blaster confuser dementer aberrant
+18-19. Mindweaver cr4 tough psion dementer shocker doomer aberrant
+20. Overmind cr5 tough hunter shocker immobile
+                         foul psion charger binder aberrant. 
+
+D20 KOBOLD
+1-6. Kobold cr1 agile frail puny ranged fire hunter reptile
+7-11. Kobold Trapmaker cr1 frail puny binder reptile
+12-15. Winged Kobold cr2 flyer frail puny agile hard hunter reptile
+16-17. Kobold Dragonshield cr2 agile informed hard puny fast protector reptile
+18-19. Red Drake cr3 tough thick rager messy reptile
+20. Kobold Sorcerer cr4 agile informed ranged puny rager caster reptile
+.
+                                      D20 ORC
+                                 1-6. Orc cr1 slow dumb ranged humanoid
+                           7-11. War Boar cr1 agile frail puny rager beast
+     12-15. Orc Shaman cr2 inciter ranged shaman frail puny humanoid
+  16-17. Orc Butcher cr2 ranged thick binder hunter messy humanoid
+18-19. Orog cr3 tough thick hard ranged humanoid
+20. Orc War Chief cr4 epic agile strong leader humanoid
+D20 LABORATORY
+1-6. Apprentice cr1 frail puny ranged caster humanoid.
+7-11. Flying Sword cr1 flyer frail agile hiding gizmo
+12-15. Mephit cr2 hiding slow explosive puny frail warper blaster
+16. Air Elemental cr4 agile hiding phased puny hunter pure free spirit
+17. Fire Elemental cr5 tough phased binder vorous fire free hazard spirit
+18. Water Elemental cr6 phased epic binder hunter firefrail free spirit
+19. Earth Elemental cr6 epic slow hiding strong spirit
+20. Golem cr6 epic hard thick rager nullifier pure lucid gizmo
+D20 SPIDER
+1-6. Giant Spider cr1 frail puny climber agile toxic venomous beast
+7-11. Spiders Swarm cr2 climber binder vorous strong toxic swarm beast
+12-15. Phase Spider cr3 climber hiding toxic venomous beast
+16-17. Spiderkin cr3 climber frail toxic humanoid spawns(Spiders Swarm)
+18-19. Acid Spider cr4 tough hiding climber binder hunter acid beast
+20. Spider Matriarch cr5 epic climber toxic venomous hunter beast
+                                     spawns(D20 Spider)
+D20 SNAKE
+1-6. Giant Snake cr1 toxic quick agile puny frail venomous beast
+7-11. Snake Swarm cr3 tough agile strong vorous  binder swarm beast
+12-15. Vyperkin Priest cr3 ranged blaster healer caster humanoid
+16-17. Werevyper cr3 tough strong ranged toxic venomous beast
+18-19. Constrictor cr3 strong thick tough binder vorous beast
+20. Vyperkin Abomination cr5 epic tough toxic venomous beast
+
+D20 UNDEAD
+1-6. Skeleton cr1 puny frail ranged undead
+7-11. Zombie cr2 undead slow
+12-15. Ghoul cr2 undead binder hunter puny vampiric undead
+16-17. Shadow cr2 undead hiding shocker firefrail dementer
+                          warper retributor undead
+18-19. Wraith cr3 dark phased scary firefrail doomer dementer undead
+20. Lesser Vampire cr4 epic quick agile thick vampiric undead
+D20 DROW (Drow humanoids are immune to MENTAL)
+1-6. Spawn from D20 Spider biome instead
+7-11. Drow cr1 agile ranged frail puny toxic venomous humanoid
+12-15. Cavvekan cr1 agile quick frail puny beast
+16-17. Hunting Drake cr2 agile quick reptile
+18-19. Shrieker cr2 meek puny thick toxic blocker spawner plant
+20. Drider cr4 epic climber ranged quick agile toxic foul humanoid
+D20 SEWER
+1-6. Giant Rat cr1 timid frail puny agile beast
+7-11. Swarm of Rats cr2 agile epic vorous binder swarm beast
+12-15. Gray Ooze cr1 tough puny binder vorous acid messy beast
+16-17. Wererat cr2 hiding ranged humanoid
+18-19. Carrion Crawler cr3 tough puny climber foul toxic venomous beast
+20. Caustic Cube cr4 tough trapper thick vorous binder engulfer acid beast
+
+D20 BOSS
+                         Each one has BOSS, follows generic rules and can have any 
+                   D20 Motivation except 20 - Ritual. Can freely talk to them
+  without knowing the language.
+1. Sphinx cr7 epic wise warder paralyzer binder kicker large lucid free
+                 pure dread doomer spirit
+2. Death Knight cr6 epic quick agile blaster binder shocker thick undead
+3. Deep Crow cr5 epic flyer large hunter binder kidnapper beast
+4. Dragon Turtle cr7 epic tough thick large hiding blaster kicker reptile
+5. Kongorath cr5 epic tough large climber binder hunter kicker demon
+6. Allseer cr6 epic tough thick agile paralyzer confuser weakener
+                 large blaster foul vulnerable curser aberrant
+7. Chimera cr5 epic blaster large rager beast
+8. Fire Giant cr6 epic thick slow tough large ranged strong rager fire
+9. Frost Giant cr6 epic thick slow tough large ranged strong kicker water
+10. Balor cr6 epic tough large thick agile strong binder charmer demon
+11. Lich cr5 epic wise ranged mirrored nullifier archmage undead
+12. Hill Giant cr5 epic tough large ranged trapper hunter giant
+13. Hydra cr6 tough thick growing rising beast
+14. Iron Golem cr6 epic thick absurd nullifier toxic venomous gizmo
+15. Kirin cr6 epic strong thick blaster kicker spirit
+16. Marilith cr6 epic wise absurd agile quick demon
+17. Nalfeshnee cr6 epic tough strong thick large
+         nullifier blaster dementer scary demon
+18. Voidspine cr6 nullifier psion absurd binder infester aberrant
+19. Storm Giant cr6 epic tough strong large ranged blaster large giant
+20. Voidlich cr7 wise tough ranged thick informed absurd
+                      retributor archmage spawner charger warper undead
+
+NEMESIS MONSTERS
+If hero with DOOM defeats a monster on odd roll, and has no NEMESIS, this monster becomes a nemesis monster. Now each time hero rolls natural 1 and has DOOM, spawn nemesis with NEMESIS+EPIC tags. 
+
+D20 LEGENDARY ITEM
+Roll D6 Item Type.  After that determine who can use it.
+Roll d4 three separate times - each roll of 1 adds a restriction:
+* only a specific D8 Race can use it;
+* usable only by chaotic/neutral/lawful (roll D20 Map);
+* the item is Sentient (see Prop at Special NPC section).
+If you already have/had an item with such adjective, reroll it, but this time with additional D20 Accessory Adjective, if again you had such adjective, take 20+d20 gp instead. Each such item costs 40 + d20 gp.
+D6 ITEM TYPE
+Hero can have only a single specific d6 item type equipped at time.
+1. Melee Weapon: +2 to-hit magic weapon. Roll D12 Weapon Adjective.
+   Roll D6 Class: if FIGHTER/CLERIC, then only this class can use it.
+2. Ranged Weapon with d3 range. Roll D12 Weapon Adjective.
+   Roll D6 Class: if FIGHTER/ROGUE, then only this class can use it.
+3. Consumable. Roll D12 Consumable. If d4 is 1/2, only MAGE can use it
+4. Armor: Roll D6 Armor Adjective
+   Roll D6 Class: if FIGHTER/CLERIC, then only this class can use it.
+5. Accessory. Roll D20 Accessory Adjective
+   If d4 is 1 or 2, then only MAGE can use it.
+6. Key: Roll D6 Key Item
+D6 KEY ITEM
+1-2. Eldath Scrolls. Mandatory prerequisite for casting Epic Spells.
+3-4. Codex of the Pale Eclipse: describes spells/rituals to become Lich,
+  Death Knight, Vampire, Werewolf, Voidlich, etc..
+5-6. Umbral Seed. Consumed to move a area to Umbrath. See Planar Rift
+epic spell. You gain control over any SMALL city on that area.
+
+                                         D20 ACCESSORY ADJECTIVE
+                               1. Protective. -2 to attack rolls of D20 Monster Type
+                         2. Freedom. Immune to KICKER and BOUND
+                     3. Haste. +2 to-speed
+    4. All-Purpose. Get +2 to any task.
+ 5. D6 Class Utility. Random Utility Power of a specific class, but any class
+    can equip this item.
+6. Mind. Advantage on all non at-will attacks, and spells.
+7. D20 Skill Manual. Advantage on using said skill.
+8. Invisibility. Gains HIDDEN against cr1-3 monsters.
+9. Evasion. +1 AC
+10. Sending. Wearer has SENDER.
+11. Immunity. d4: 1. MENTAL;  2. FIRE;  3. WATER;  4. ACID/CAUSTIC.
+12. Conjuration. Summon D12 Dwellers monster till next Camping. Recharges on camping.
+13. Holding. Store any number of items. Take out one item per day.
+14. D20 Skill Proficiency. Sets that skill 15, if it is below.
+15. Clockwork. Once/day, change a dice roll this hero does to 20.
+16. Chronomaster. Once a day cast Time Stop ritual spell.
+17. Pocket Stronghold. Use to place a Stronghold (see Real Estate) at
+    current area. Further uses move it to a new area.
+18. Creation. Once a day creates D20 Mundane Item.
+19. Scholar's. -2 to XP to level up.
+20. Vigor. Wearer is TOUGH and immune to ILL.
+BASIC EQUIPMENT
+If you roll 1 on attack or foe rolls 20 attacking you, gain WORN.
+Each time your WORN gets over 3, lose all WORN and check current d20:
+* Odd and your weapon is non-magic/legendary, gain UNARMED;
+  UNARMED hero can't spend XP to modify attack roll.
+* Even and your armor is non-magic/legendary, gain UNARMORED.
+  UNARMORED hero  can't spend XP to modify foe's attack roll.
+If got UNARMED/UNARMORED already having it, gain 3 WORN + 1 HURT.
+You can pay 2 gp to vending mood Blacksmith to lose all WORN (Repair).  Smith Tools, Mending cantrip - too remove WORN.
+If have POLISH, lose POLISH instead of basic weapon/armor.
+if hero defeats a humanoid entity with roll 20 hit, the hero loses UNARMED
+  and UNARMORED - found appropriate equipment.
+D6 ARMOR ADJECTIVE
+1. Adamantine. +3 to AC, immunity to critical hits.
+     Can't use ROGUE and MAGE's utility/daily powers.
+2. Mithral. +2 to AC.
+3. Winged. Wearer has FLYER condition 
+4. Archmage's. +1 to AC, +2 to number of equippable powers.
+5-6. Roll D20 Accessory Adjective instead
+D12 WEAPON ADJECTIVE
+1. Bane. 2x HURT Against D20 Monster Type
+2. Vorpal. On a melee roll of 18+, a target with a single head dies.
+3. D20 Skill Master. If trained skill, Advantage on task with that skill.
+4. Oath. Gain 4x the XP when D20 Monster Type spawns Once per day,
+   hero can change picked monster type.
+5. Vampiric. You're VAMPIRIC while have this weapon.
+6. Equalizer. Foes lose strong/puny/tough/frail tags.
+7. Avenger. 2x damage against evil D20 Map Alignment.
+8. Force. On hit target of hero size or below is moved 1 tile away.
+9. Champion. If you kill with 19+ roll, gain FAVOR.
+10. Martyr's. Gain 1 HURT to deal 3x the HURT.
+11. Bloodthirsty. On hit, deal extra HURT for each HURT the wielder has.
+12. Doom. Extra HURT for each DOOM the wielder has.
+D12 CONSUMABLE
+1. Wand. d10 charges of D20 Common Mage Spell
+   If d4 is 1-2, only MAGE can use it.
+2. Symbol. d10 charges of D20 Common Cleric Spell
+   If d4 is 1-2, only CLERIC can use it.
+3. Tablet. d4 uses of a D20 Ritual Spell
+   Roll D6 Class: if MAGE/CLERIC, then only this class can use it.
+4. Ambrosia. Using it gives you ESSENCE.
+5. Panacea. Removes all HURT, MENTAL, ILL, BOUND and INFESTED.
+6. D20 Map / Alignment Purger. d8 charges, 10 to hit, kills any creature of that alignment, if it has 1+ HURT. Determines unknown alignment on hit.
+7. Hermetic Tome. Mage can Learn additional ritual spell.
+8. Eye of Allseer. The hero who consumed it gains SEEING.
+9. Elixir. The actor who consumed it can't be ILL.
+10. Overmind's Brainstem. The hero who consumed it can't be MENTAL.
+11. Relic. Single charge of a D20 Epic Spell
+12. Providence Potion. Consumer loses 3 DOOM + gains 3 FAVOR.
+
+DUNGEONS OF NYMARA
+                            Once you have appropriate tag, the next Netherelm area
+                       will have associated dungeon. Boss disappears forever on win.
+    Most dungeons follow standard Adventure rule with D12 Dwellers,
+  but with a custom BOSS, defeating whom wins Adventure + gets you Loot.
+ABMN. This abandoned mine is now a hot giant centipede lair.
+* Blazarthron cr6 epic thick slow large vorous binder hazard beast
+* Loot: gain ESTATE (the Mine now generates 10gp / MONTH).
+DVSL. Derelict Voidfarer Vessel crash site hosts a:
+* Brood Queen cr6 epic large thick agile healing caustic acid aberrant
+  spawns(cr1 agile frail easy meek binder infester aberrant)
+* Loot: broken Voidfarer Vessel (20gp to fix). See Voidfaring.
+BNDTHDOUT. A prisoner is held captive by a bandit chieftain.
+* Spawn from D20 Civilized (see D12 Dwellers)
+   The first treasury tile has the prisoner. Enter it to win.
+* Chieftain cr5 epic puny leader spawner humanoid
+* Loot: 40gp and gain PATRON in prev city for saving a noble NPC prisoner.
+STWR. Psionic crossing to Vocennta's Shadow Tower in Umbrath.
+* Vocennta cr7 wise tough psion thick informed hard spawner warper undead
+* Loot: 2x D20 Legendary Item
+KGHM. Deep Dwarf city of Kraghal overtaken by Demogorgon.
+* Spawn from D20 Civilized / Dwarf (see D12 Dwellers)
+   All dwarves are MENTAL and have CONFUSER.
+   If you cure MENTAL, they get Lost D20 Motivation.
+* Demogorgon cr7 epic tough strong wise agile confuser dementer demon
+* Loot: D20 Legendary Item
+CMC. Cave served as a lair for a green dragon, who found that entrance is
+engulfed by a massive caustic ooze: Acid Monolith:
+   cr6 epic trapper thick vorous binder engulfer foul toxic caustic acid beast
+  * Loot: D20 Legendary Item
+IVLC. This volcano awoke together with the...
+* Phoenix cr6 epic flyer thick agile explosive large blaster hazard fire spirit
+* Each adjacent creature on its phase end does EASY to avoid 1 damage
+* Loot:  PATRON in the next city area you discover.
+MLST. Maelstrom on this Sea area has * Kraken cr8 epic  tough ranged thick
+    strong large swimmer binder hunter agile kicker beast
+ * Loot: Eye of Allseer D20 Legendary Item
+                   VHLD: Veilhold safekeeps dangerous magical relics.
+                      * Spawn from D20 Laboratory;  * Loot: D20 Legendary Item
+                      * Planetar cr6 epic strong tough informed fire spirit
+NHC. Dense forest harbors a coven of three night hags.
+* Grimwyrd cr4 tough toxic scary demon.
+* Nycthira cr4 tough caster spawner scary venomous demon.
+* Silkvein cr4 tough disguised scary dementer demon.
+* Loot: D20 Legendary Item
+PRMD. A desert tomb of Eldath vizier who fed his people to Voidspines:
+* Spawn from D20 Spider (see D12 Dwellers); Loot: D20 Legendary Item
+* Vizier Mummy cr6 epic phased caster undead
+CRPL. Suspended in Umbrath, this crystal palace hosts Nevzar En'rogg.
+* Spawn from D20 Demon (see D12 Dwellers)
+* Nevzar En'rogg  cr7 epic vampiric spawner archmage demon
+* Loot: Amulet of Yendor (see Amulet of Yendor section).
+RSGT. The ruins of sun goddess' temple are now infested by orcs and nagas
+* Spawn from D20 Orc (see D12 Dwellers); * Loot: D20 Legendary Item
+* 2x Dark Nagas: cr5 caster aberrant
+OSWRM. The Ossuary of Worms. Loot: D20 Legendary Item
+* Spawn from D20 Undead, but on 12+ spawn
+     Soul Borer cr1 absurd frail puny agile flyer gizmo
+* Fleshweaver cr6 epic thick disguised binder infester spawner aberrant
+AELR. The Ancient Eldath Ruins became a home for Mother Brain.
+* Spawn from D20 Aberrant (see D12 Dwellers)
+* Mother Brain cr6 epic tough immobile ranged psion spawner aberrant
+* Loot: D20 Legendary Item
+SRPTMPL. The Serpent Temple run by worshippers led by Dulsa Thoom
+* Spawn from D20 Civilized. * Loot: D20 Legendary Item
+* Dulsa Thoom cr6 epic toxic venomous spawner dementer
+                          charmer humanoid
+
+FIVE ROOM DUNGEON
+                            Such dungeon is persistent and has just 5 rooms,
+                      arranged as...
+                         1. D8 Entrance, leads to Passage A and Passage B
+                         2. D10 Passage A. Leads to D8 Hall 
+                         3. D10 Passage B. Leads to D8 Hall 
+                         4. D8 Hall. Leads to D20 Treasury
+                         5. D20 Treasury, may hold something of interest to you.
+                     Each ROOM has challenge blocking exit to the next room.
+D8 ENTRANCE
+1. d6 monsters from from the D12 Dwellers
+2. D20 Boss guarding the entrance.
+3. HARD Task required to enter. Can be attempted once a month.
+4. Requires a KEY from the next dungeon to enter.
+5. Need hero/NPC with with specific trained D20 Skill to proceed.
+6. To enter, talk first to NPC, trackable at previous city. Succeed talk task.
+7. To enter, have specific D20 Mundane Item worth at least d10 gp 
+8. Spend 1 FAVOR.
+D8 PASSAGE A/B
+Upon entering the room, roll into D12 Trick below
+1. d8 monsters from from the D12 Dwellers
+2. Do HARD Task to avoid D6 Entrance condition blocking exit to Hall.
+3. Needs D20 NPC type to unlock exit to Hall.
+4. Needs a hero or NPC with any of 5 D20 Virtue to proceed
+5. Needs a hero or NPC with any of 5 D20 Flaw to proceed
+6. Only those with 2 FAVOR can proceed
+7. Only those with 3 DOOM can proceed
+8. The door to D6 Hall is locked from inside. See Locked Doors and Traps.
+D8 HALL
+1. Do HARD task to defeat D20 Boss.
+2. Do HARD task to unlock exit to D20 Treasury.
+3. Needs 10 XP to unlock exit to D20 Treasury.
+4. Spawn 2x D6 Biome monsters with +15 to roll.
+5. Need casting Wish or Gate to proceed.
+6. Need a FULFILED hero to proceed.
+7. Only a hero who has any D20 Legendary Item can enter.
+8. Oracle demands D20 Prophecy to come true in a month.
+     Or the D20 Treasury is locked permanently.
+D12 TRICK
+1. If stay here for 5+ turns the adventure is lost.
+2. Door closes behind you. Do HARDAthletics to open it.
+3. Too small. Only SMALL entities can pass the exit to Hall.
+4. Exit to Hall is Elevated.
+5. Do HARD task to avoid spawning d8 monsters.
+6. Place two D20 Prop. Both accessible from this room.
+7. Each round you spend here, gain 1 DOOM or lose 1 FAVOR
+8. Each round you spend here, gain HURT
+9. Exit to hall needs Shape Water cast or a FLYER or SWIMMER hero/NPC.
+10. Any hero who enters gains 2 HURT
+11. Any hero who enters gains MENTAL+ILL+BOUND.
+12. Each round here spends here spawns a monster.
+D20 TREASURY
+1-2. Roll d20: 1-10. D20 Legendary Item; 11-20. d20 * 6gp
+3. Roll d20,
+   1-10. Scroll teaching D20 Ritual Spell
+   11-20. Cursed D20 Legendary Item (D20 Torment while you carry it)
+4. 1st entering hero is awarded by ESSENCE for freeing a deity.
+5-16. This roll multiplied by 5gp.
+17. D6 NPCs held captive, without gp or wares.
+   Each of these NPCs moves to a previously visited city,
+   Once home, each will reward you with 2x their salary.
+   If any of them is a Noble, gain PATRON at their city.
+18. 2x D20 Treasure + 20.
+19. This place can be used as a Stronghold (see Real Estate).
+20. Place of redemption. Each time you visit it, lose all DOOM tags.
+
+VOIDFARING
+                            To obtain a voidfarer vessel, either have OWNSHIP and
+                   cast Voidsail epic spell on it, or cast Gate ritual spell to appear
+   at the LARGE city of Starhaven, where such ship can be traded for 3
+  legendary items.
+Once you've a voidfarer vessel, as a daily action do REAL Arcana task to take off from the surface of Nymara or Starhaven into The Void. In The Void, do Arcana task to disembark again at any Nymara area or Starhaven. If you roll 1-2 while failing the task, voidfare crash-lands.
+Fixing crashlanded voidfarer requires paying 20gp to a Merchant NPC at a LARGE city for spare voidfarer parts.
+If you disembark at or adjacent to a city on Nymara, without having a PATRON there, your voidfarer will be confiscated.
+At Starhaven you can board a voidfarer taxi (10gp) which can disembark you like a voidfarer you own. You can as well attempt to hijack it.
+The rules are same as for hijacking a ship, except foes are all EPIC.
+YOU ARE VICTORIOUS!
+Read this section when heroes have 10 FULFILED tags.
+  "You are victorious! The heroes have accomplished their goals."
+Don't forget to record the Gallantry Points and the number of days it took to
+complete the campaign, as well as the achievements:
+DEITY: win the game on HONORABLE IMPOSSIBLE
+DEMIGOD: win the game on IMPOSSIBLE. 
+HONORABLE_READY: win the game without having a single RECKLESS tag.
+NORMIE: win the game without any Special Powers.
+RICH: win the game with 400 gp.
+SOLOIST: win the game with a single hero.
+GAMEOVER: If the party has too many MONTHs, the game is lost:
+   * On PRACTICE gain GAMEOVER upon getting 60 MONTH tags.
+   * On NORMAL gain GAMEOVER upon getting 40 MONTH tags.
+   * On DIFFICULT gain GAMEOVER upon getting 30 MONTH tags.
+   * On IMPOSSIBLE gain GAMEOVER upon getting 20 MONTH tags.
+ If GAMEOVER, read: "All is lost. The heroes couldn't fulfill their destinies."
+AMULET OF YENDOR (read if got one)
+      "Beware! Mortals shouldn't be toying with this item.
+       It doesn't belong to Nymara..." - Mentor
+Now you can surrender the amulet to Mentor and stop reading this section.
+Rumored to be the key to godhood, the amulet has alignment, identifiable at a large city for 4gp, just like the Hero's one. When identified, the amulet can be used as an once per camping power based of amulet/hero alignment:
+* Evil: if hero is EVIL, kill any GOOD non-EPIC foe wearing hero hits,
+* Neutral: gives all neutral heroes Phased.
+* Good: fully heal the good heroes.
+Flip off the amulet after use, and on Camping face up again.
+A Hero can instantly gain FULFILED if that hero sacrifices the amulet at
+the altar of the god matching the Hero's alignment, located at:
+* Good: the next explored LARGE city.
+* Neutral: the next explored Sea area.
+* Evil:  the next explored Netherelm area.
+After 1st time using the amulet, using hero gains D20 Torment / 12. Tiamat.
+Tiamat, seeking the lost trinket from her hoard and now knows about you.
+Maybe you should have surrendered that amulet to Mentor?...
+TARRASQUE
+Nymara's most dreaded monster awakens once a century,
+Spawns at any city entrance, attacking heroes and NPCs.
+Tarrasque cr9 epic strong tough slow absurd ranged vorous binder
+                 2surge healing toxic venomous blaster army beast
+* Loot: two D20 Legendary Items and ESSENCE
+DIFFICULTY OPTIONS
+The difficulty limits the time you have to gain FULFILED.
+* PRACTICE: the heroes are almost guaranteed to win.
+* NORMAL: with some effort you can win on their 1st attempt.
+* DIFFICULT: start with 3 DOOM.
+* IMPOSSIBLE: heroes start with INFAMY, DOOM,  and D20 Torment.
+Optional difficulty tags:
+* MOTIVATED: exploration spawned monsters have D20 Motivation
+* SCARRED: rules from the D6 Disability section are active.
+* IDENT: enables mechanics from the Item Identification section.
+* HONORABLE: If all heroes gain COMA, gain GAMEOVER
+D20 COMMON SPELL
+                          Mage learns common spells from scholar NPCs, but level N
+                    cleric gets N random D20 Cleric Spells.
+  To cast common spell at any moment, spend 6XP (4XP if INFORMED).
+  Unless overruled, effects, including summons, persist till Camping.
+ The (N Skill) defines how much HURT it deals to task entity. 
+D20 CLERIC SPELL
+1. Animal Bond (2 Taming): roll d20 if cast at animal:
+   1-5 nothing; 6-15 it is defeated; 16-20 - it joins till the end of adventure.
+2. Divination (2 Religion): Explore adjacent tiles, spawning no-monsters.
+3. Cause Fear (2 Intimidation): you gain SCARY, CR 1-4 target - MENTAL
+4. Create Food (1 Taming): Gain RATION.
+5. Commune with Nature (2 Nature): 2x XP from exploring/spawn.
+6. Destroy Undead: defeat CR 1-4 undead.
+7. Entangling Vines: Foes gain BOUND, you gain - HUNTER.
+8. Freedom of Movement:  Target gains FREE.
+9. Fox Cunning (1 Arcana/History/Survival): Reroll spawned monsters.
+10. Guidance. Task becomes FRAIL, while monster loses TOUGH.
+11. Hold Person (1 Intimidation): cr1-4 foe is BOUND, you're PARALYZER
+12. Meld into Environment (1 Stealth): Move all foes to picked exit.
+13. Legend Lore (2 History): Identify all items.
+     Replace each trinket with D20 Treasure.
+14. Restoration(2 Medicine): you and allies lose ILL.
+15. Regenerate: target gains HEALING.
+16. Empowerment: heroes hits to monsters/tasks are STRONG, till leave tile.
+17. Divine Voice (2 Performance): target gains MENTAL, you gain SHOCKER.
+18. Weather Control (2 Survival): Specific monster (E.g. all kobolds) won't
+       spawn till next camping.
+19. True Seeing (2 Perception): target gains SEEING
+20. Zone of Truth (2 Insight): you and allies lose MENTAL.
+
+
+
+D20 MAGE SPELL
+1. Alter (1 Athletics/Perception/Survival): target is Swimmer+Climber
+2. Banish: cr1-4 SPIRIT disappears.
+3. Arcane Hand (do EASY to +10 Athletics/Intimidation/Performance):
+   Summons Arcane Hand ally on your tile.
+4. Charm Person (2 Persuasion): cr1-4 target gains CALM.
+5. Counterspell (1 Arcana): Target gains NULLIFIER.
+6. Detect Magic (2 Arcana): Target gains LUCID.
+7. Mindread( 1 Deception/Persuasion/Intimidation): Target gains GAWKY.
+8. Disguise (2 Deception): Target gains DISGUISED.
+9. Fly (1 Acrobatics): Target gains FLYER.
+10. Haste (2 Acrobatics/Performance): Target gains FAST..
+11. Invisibility (2 Stealth): Target gains HIDING.
+12. Floating Leap (2 Acrobatics): Get through elevated/chasm exit.
+13. Sanctuary: target gains BOUND, you gain SHELTER.
+14. Phantom Steed: summons Phantom Steed mount ally (See Mounting).
+15. Ray of Sickness: All foes are ILL and you gain VENOMOUS.
+16. Enlarge/Reduce (2 Athletics): ally target becomes STRONG, foe - PUNY
+17. Misty Step (1 Stealth): caster escape to picked exit.
+18. Sending. Target gains SENDER can act on your ally's tile.
+19. Telekinesis  (2 Sleight/Acrobatics): gain KICKER+PROTECTOR
+20. Summon. Lose SURGE and spawn a D12 Dwellers monster as ally.
+
+D20 MOTIVATION
+                           Hero can talk to a motivated monster (see Monster Talk).
+                     Such monsters start with respective Tags.
+   Beasts always have 11. Hungry motivation, unless you rolled 7-17.
+ Spirits always have 12. Gizmos always have 13. Undead always have 14. 
+1. Dweller. GUARD HUNTER TRAPPER.
+    Talk (Persuasion): gains CALM (CHARMED if INFORMED hero)
+2. Assassins. Tags:  DISGUISED HUNTER BINDER
+    Talk (Persuasion):  disappear if you pay CR amount of gp,
+3. Insane. MENTAL. Talk (cure MENTAL): becomes 8. Lost.
+4. Fanatics. EXPLOSIVE. Talk (Deception): gains TIMED CALM
+5. Patrol. ESCAPER. Talk (Deception): TIMED CALM +lose ESCAPER
+6. Thieves. COWARD THIEF. Talk (give 2gp or any item): disappear.
+7. Probing. COWARD BUTCHER. Talk (Intimidation): disappear.
+8. Lost. GUARD. Talk (Persuasion):  CALM PURSUER.
+9. Hunter. HIDDEN HUNTER TRAPPER.  Talk (Intimidation): disappear
+10. Guardians. GUARD. Talk (Deception):  CALM.
+11. Hungry. RAGER BUTCHER. Talk (lose RATION): disappear.
+12. Summoned. SPIRIT. Talk (Arcana / Banish cast): disappear.
+13. Mindless GIZMO. Talk (Investigation): CHARMED.
+14. Mindless UNDEAD. Talk (Arcana/Religion): CHARMED.
+15. Prisoners. BOUND CALM. Talk (lose BOUND): CHARMED.
+16. Mimics. DISGUISED. Talk(hurt/got seeing): replace with other monster.
+17. Seeks revenge. NEMESIS. Talk (Persuasion): CALM.
+18. Seeks worthy foe. CHAMPION. Talk (Deception): disappear.
+19. Sentry. SPAWNER. Talk (Deception): CALM
+20. Performing a ritual. ARCHMAGE. 
+        Talk (Arcana/Performance/Lore): they gain max TIRED.
+PSION at 3 can instead of damage re-roll the motivation. Wish spell or PSION at 6 allow you to pick any motivation.
+MONSTER TALK
+Any Forager NPC can teach you monster language (4gp). D20 Motivation has Talk options. To talk do REAL task with list D20 Skill. If you don't know monster language then the task has Disadvantage. If monster is BOSS, then the task is HARD. Note: goblin hero by default has no Disadvantage and with language training has Advantage.
+D20 CANTRIP
+On camping Lv N MAGE gets N random cantrips, usable
+by spending FOCUS and gaining 1 TIRED, as at-will powers.
+The (N Skill) is the HURT dealt to task, when used at a task.
+ Unless overruled, the effect lasts till heroes leave tile.
+1. Chill Touch: gain WATER SLOWER BINDER HUNTER
+2. Create Bonfire (1 Survival). Each hero gains FIRE and all tiles around
+     lose DARK and get explored. Heroes can rest here for 1 XP.
+3. Dancing Lights (1 Performance/Deception).
+    Summon cr0 MEEK FRAIL decoy ally
+4. Eldritch Blast[R]. Spend FOCUS to inflict HURT
+    You don't lose remaining FOCUS tags. See Ritual Spells.
+5. Friends (3 Persuasion, NPCs on tile gain ANNOYED). Target is MENTAL.
+6. Gust (1 Deception). TINY/SMALL foes gain GAWKY.
+7. Light. Caster gains FIRE till next camping.
+8. Mending (1 Investigation). Target loses 1 WORN (+ 2 HURT if Gizmo).
+9. Message (1 Stealth/Deception if ally on tile). Gain LEADER+GAWKY.
+10. Minor Illusion. Target gains MENTAL, you - CONFUSER.
+11. Prestidigitation (1 Deception/Performance/Sleight). Target is SLOW
+12. Ray of Frost[R]:  +4 to-hit, 2 HURT, WATER hit
+13. Resistance. Gain HAZARD and GAWKY.
+14. Ward. If good gain WARD_EVIL, if evil gain WARD_GOOD, else - both.
+15. Shape Water (1 Deception). Remove Flooded from exits+gain WATER.
+16. Shocking Grasp. Gain SHOCKER DEMENTER
+17. Spare the Dying.  Target loses COMA.
+18. Thaumaturgy (1 Intimidation/Religion/Deception). Gain 5 FOCUS
+19. Toll the Dead. Gain BUTCHER.
+20. True Strike. gain HUNTER+BINDER.
+
+D20 RITUAL SPELLS
+                            Mage can learn ritual spell from a specific Scholar.
+                  Cleric learns random ritual spell each time it gains FULFILED.
+     In addition, any cleric knows Resurrection spell.
+Casting D20 Ritual Spell at a city without PATRON makes all guards hostile.
+To cast such ritual spell, a FULFILED PREPARED INFORMED Cleric/Mage knowing this spell must spend R FOCUS, lose 1 FAVOR, gain 1 HURT.
+R is the FOCUS you had while casting this spell. For AI casters, R is their HURT count + 1. A NULLIFIER targeted by D20 Ritual can spend R XP to evade its effect. For hero, R can't be above hero's level.
+Unless overruled, the effect lasts till next camping. AI caster = monster.
+0. Resurrection (cleric only). Gain 5 SURGEs.
+   A cleric eligible to cast Resurrection, can use SURGE at Sarcophagus prop
+   to resurrect a dead hero as Adventurer NPC.
+1. None. You don't cast / learn any spell.
+2. Absolute Immunity. * If monster: Cast on itself. Else, Target gains
+    R INDOMITABLE tags.
+3. Greater Scry. * If AI caster: Explores R tiles, spawning monsters. Else,
+  Gain R*5 XP and explore R dungeon tiles, without entering them.
+  Spawned monsters have no PURSUER.
+4. Antimagic Field. You and R-1 allies gain NULLIFIER till next Camping.
+5. Dominate. Gain DREAD CHARMER, while a CR<=R foes are MENTAL.
+6. Lifeblend. If the CR of non-Undead/Gadget is below R, they merge into Aberrant has the tags of each. Roll: 1-5 - hostile; 6-20 - it is ally.
+7. Astral Projections. Move backrow, gain BOUND+MENTAL and spawn R projections of you. They acts as a hero, but die any hit with roll 11+. If projection dies, owner gains HURT. While any projection is alive you're IMMOBILE. You can dismiss the all at once projections at-will, and if done at the owner's tile, owner loses MENTAL+BOUND. Projections can hit PHASED foes without spending XP.
+8. Demiplane. Pick tile's side and open/replace exit to the demiplane tile,
+   persistent and unique for each caster. Move all actors and items from
+   current tile there - they persist visits.
+    * Caster can banish upto R foes from the demiplane.
+    * This exit replace any other exit from/to this demiplane.
+    * The caster can add/remove CHASM to the exit from the demiplane.
+    * If AI caster: banishes all but the weakest foe from Deminplane.
+           9. Clone. At end of next R campings, you will gain CLONE.
+               10. Curse.  R foes gain MENTAL+ILL+BOUND+3 DOOM.
+                     11. Soulrend. Kills R targets whose CR is at/below R.
+12. Foresight. Allies gain SEER, SEEING, INFORMED
+                         on next R campings.
+13. Gate. Pick one:
+    * Summon ally monsters of total CR <= R.
+    * Kill/Banish all Demon/Spirit foes, if total CR <= R.
+    * Teleport to any visited city or to Starhaven.
+    * If AI caster: summons monsters.
+14. Summon Radiant Sphere cr6 puny epic phased warper weakener
+                                                  anomalous dying spirit.
+* Sphere gains R INDOMITABLE tags.
+* Monster's AI prioritizes attacking heroes.
+15. Reverse Gravity. Allies gain Flyer for next R Campings. Foes lose Flyer.
+16. Soul Cage. Target with CR <= R falls into COMA, while you get a soul
+  gem. Now by spending its CR XP, you can use this soul gem to spawn
+  target as an Undead ally. If target uses 2 SURGEs, you lose the soul gem.
+17. Time Stop. All but caster can't act for R rounds.
+18. True Polymorph. Target with CR < R gets turned for R days into a monster you seen before. If AI caster: random  current biome monster.
+19. Weird. Allies gain SCARY, while CR <= R foes gain MENTAL. 
+20. Wish. Roll d20 and if it is at/below R, you pick wish (else d20 picks).
+  WISE caster can spend R XP to subtract R from this roll.
+  CRAZY caster needs 9 FOCUS to cast Wish and roll is always random.
+    1. R targets lose all HURT and TIRED, as well as MENTAL, ILL, BOUND.
+    2. R targets gain 3 HURT.
+    3. Teleport heroes to an explored world map area of their choice.
+    4. Cast any other D20 Ritual Spell
+    5. Gain R*20 gp.
+    6. Gain R D20 Treasures
+    7. Gain D20 Legendary item
+    8. Recharge all powers and items.
+    9. Gain ESSENCE.
+  10. Gain permanent FLYER.
+  11. Lose all DOOM and gain 3 FAVOR.
+  12. Gain permanent HEALING (R must be 9).
+  13. Gain permanent HIDING (R must be 9).
+  14. Gain R powers of any classes.
+  15. Banish monsters whose total CR is below R.
+  16. Get training in R skills.
+  17. Gain any D6 Ability.
+  18. Lose any D6 Lapse.
+  19. Gain permanent NULLIFIER.
+  20. Gain PISON and SEEING.
+PLAYING DRAGON
+                           Generate dragon as usual hero, without a race.
+                    Instead of D20 Bond, you roll D5 Dragon Type. Begin as a
+   wyrmling and upon reaching Lv.3 gain EPIC, becoming young. Once FULFILED, you're adult dragon and can re-roll once a day the roll which will otherwise kill you.
+Dragon has access to additional daily powers:
+* Dragon Breath (young/adult) all on tile: +3 to-hit, your strength hit.
+   Depending on dragon type, it also inflicts MENTAL, BOUND or ILL.
+   Adult dragon can gain TIRED to recharge breath..
+* Fly (young/adult). Gain TIRED to gain FLYER till you leave the tile.
+* Wing Buffet (adult only). Move all but one opponents to other tiles.
+* Human Form. Morph into a human. Lasts for the rest of the day,
+  or until you cancel it. You don't have access to your dragon powers
+  and lose EPIC.
+Dragon has no penalty without weapon/armor, which it can wear only in human form.
+If dragon visits a city not in a human form, all NPCs will be Hostile. You can hire only evil NPCs as a dragon. Red dragon can create lair in a city, which requires first murdering its lord. The dragon will then be considered the new city lord.
+As a dragon, you can build 1 stronghold, called "lair", at your biome's area. That will cost you 80gp. At your lair, you're INFORMED and EPIC.
+Unless wyrmling, in your lair, you can lay egg (20gp), which in a month hatches into a wyrmling, which is basically an additional life for you. I.e., if you have wyrmling, you don't lose anything on defeat, beside 1 of your wyrmlings. You can bring only 1 of your wyrmlings - rest stays at your lair.
+You can have up to 10 wyrmlings at your lair.
+While the egg is unhatched, on days 5, 10, 15 and 20 you have to roll for D12 Dwellers monster, whose total CR is equivalent to month's day.
+
+
+D5 DRAGON TYPE
+Gain FULFILED upon completing the associated goal.
+All dragons are considered flying mounts: DC3 1st travel this day.
+1. Blue. +2 to any roll in desert. You're SHOCKER. Your breath inflicts MENTAL.
+   Every day your wyrmling kills NPC, it lose 3 HURT and you lose DOOM.
+   Goal: Produce 10 Wyrmlings. Ensure each participates in a battle against
+             a cr5+ monster, which should be defeated there.
+2. Green. +2 to any roll in forest. Your breath is ILL. You're VENOMOUS.
+   You get PREPARED for killing 3 NPCs on a single day.
+   You can enter water without penalty.
+   Goal: Recruit 100XP army of monsters.
+3. Red. +2 to any roll in mountains and Netherelm.
+   You are SCARY and your breath inflicts MENTAL.
+   The 1st time you kill the lord at each city, you get 5x its gp.
+   Fire-resistant: immune to flammable tiles, reroll once any fire..
+   Goal: Amass 1000 gp.
+4. Black. +2 to any roll in swamp and plains. Your breath is MENTAL.
+   You're CONFUSER. You get FAVOR for killing 10 NPCs on a single day.
+   Can enter elevated tiles without penalty or DC.
+   Goal: Become a lich. You know D20 Area having Five Room Dungeon,
+             holding Codex of the Pale Eclipse in the final room.
+5. White. +2 to any roll in snow/tundra. Your breath inflicts BOUND.
+   You're HUNTER. You get RATION for killing 3 NPCs on a single day.
+   Can travel over sea without a SHIP.
+   Goal: Kill 2x of each biome's giant type.
+
+
+EPIC SCALE RULES
+                           This chapter involves city and army management, as well as
+                      some more powerful hero abilities.
+  SHADOWEAVE
+ A hero who has Umbral Seed can cast Astral Projection to gain SHADOWEAVER - an ability to cast Epic Spells.
+LICH TRANSFORMATION
+A FULFILED hero can become a Lich who is Undead and immune to Aged. Obtain a copy of  Codex of the Pale Eclipse, either accidentally or by casting Greater Scry (The dungeon there has 20 XP of monsters, and a Voidlich at the end has the book). Once you possess it, at a LARGE city buy a Phylactery vessel (40gp). Now either hero or ally must cast Soul Cage on the hero, who gains LICH, also getting a FULFILED tag.
+VOIDLICH TRANSFORMATION
+A SHADOWEAVER LICH can gain VOIDLICH by casting Demiplane on it. 
+REAL ESTATE
+Hero can own businesses, strongholds and even cities.
+BUSINESS: Establish at a city with a PATRON by paying 60gp to an official NPC in Vending mood. Income is 5gp for a small city, 10gp/month - medium city, 15gp - large city. 1 business per city. You get 2x the gp from a city you own.
+STRONGHOLD: Establish (100gp) at a D20 Dungeon with a defeated BOSS. Stronghold allows you to recruit and control armies (see Armies).
+CITY: A city you control brings you income:  5gp for SMALL city, 20gp for MEDIUM, and 40gp for LARGE. A large city also serves a stronghold. Player can capture city through starting a city adventure, where street tiles spawn D12 Dwellers Civilized monsters each with ARMY tag, and defeating N CR of them where N equals city's income gp.
+ARMIES
+Army is a normal monster with an ARMY tag.
+Some monsters, like Tarrasque, are single-unit armies.
+If you are at stronghold you can recruit a new army, which joins as a hero.
+To recruit, do REAL History task and pay its CR*30 gp.
+By default you can recruit only militia:
+   Militia cr2 puny frail slow human army
+If you possess Eldath Scrolls, you can also do HARD Arcana to hire mages.
+   Mage cr3 ranged puny frail ranged caster human army
+Heroes can't have more CR of armies than their max surges.
+ARMY has monthly gp upkeep equal 2x its CR.
+If you have an ARMY, you can plunder gp from the current city equal to its income (once a month), but that immediately spawns enemy armies. 
+Upon plundering gain 2 INFAMY tags.
+ENEMY ARMIES
+Given that you control N cities, Every MONTH, CR N of D12 Dweller Civilized ARMYs will add to your daily chase. With less than 3 INFAMY, the heroes can do HARD History to discard currently chasing armies (sign truce). If you lose an adventure while on tile with these armies, lose all your captured cities
+ABANDONMENT
+As a world map action, a Hero may leave. Chaotic Evil/Neutral
+hero will also attempt to rob the party REAL (Advantage if ROGUE):
+Pass:  steal all the gold and items this hero can carry.
+Fail: you got caught, losing all its gold and items.
+In all cases, you get all the FULFILED tags, move to adjacent area
+and can now proceed solo or gather other party. Abandoned party
+can track such hero by HARD Survival or by paying Fence/Smuggler 30gp.
+Do HARD Survival to track and fight this hero.
+
+EPIC SPELLS
+                           A GOD (or a FULFILED MAGE with Eldath Scrolls) can
+                    learn random epic spell (100gp) from the Magic Guild scholar
+    at a LARGE city by spending 5 LORE. Casting epic spell requires
+  spending D20 Legendary Item or spending 3 FAVOR or spending 3 levels.
+1. Power Binding. You can now cast epic spells by spending 40gp instead of sacrificing a legendary item.
+2. Planar Rift. Turn area into Umbrath, and Umbrath area into a normal area. Alternately open permanent path to another plane: the current area will have an open gate to this plane's start area.
+3. Epic Dominate. Gain control over the target city. But you lose 1 level for SMALL city, 2 - for MEDIUM, and 4 for LARGE. If not enough levels, dominate fails.
+4. Epic Gate. Summon a random D12 Dwellers biome monster with ARMY tag under your command. You lose a number of levels equivalent to this monster CR. Down to lv. 1.  If monster has more CR than your levels, it instead becomes hostile and joins the daily chasers.
+5. Epic Foresight. Target gains Advantage for all tasks and attacks untill the next lost adventure.
+6. Physical Immunity. You start each adventure with a count of INDOMITABLE tags equivalent to unused surges.
+7. Create Legendary Item. Create D20 Legendary Item of your choice.
+8. Death Wind. All cr1 and cr2 creatures in this area die,
+    but you gain 3 INFAMY.
+9. Antigravity. If have stronghold, you can access it from any area.
+   I.e. it is flying above you and you can recruit the armies anywhere.
+10. Terraform. Doubles the income you get from city and business in
+      this area.
+
+11. Volcano. All daily chasing enemies die, but the area
+     turns into mountains and you gain 3 INFAMY.
+12. Voidsail. If have OWNSHIP, gain VOIDFARER.
+13. Void Breach. Allows one travel to other Void Sphere, as well as sealing Nymara's sphere from voidfaring.
+14. Epic Invisibility. You can decide if you want to face daily chasers who reached you.
+15. Longevity. Sacrifices entire city (replace it with desert), but your maximum number of SURGEs increases by 3.
+16. Earthfast. At your stronghold area creates underground complex,
+You can place CAPTIVE monsters there. These monsters can be recruited at will. Hire cost: is monster's CR gp, or 20*CR for hiring as an ARMY.
+17. Create Life. Creates a monster which has 10 random tags from the Tags Reference, and joins you as ally.
+18. Imbue Fertility. If at plains area, creates a SMALL city. Increases city's size (SMALL->MEDIUM->LARGE).
+19. Beckoning Death. If area is city, it is replaced with desert and D12 Dwellers Undead Zombie ARMY joins you (1 army for small city, 2 - for medium, 4 - for large), while you gain 10 INFAMY.
+20. Ascend. Gain ESSENCE (and become GOD if not already one),
+   but lose 4 levels.
+APOTHEOSIS
+                            A Lv.8 hero with ESSENCE gains GOD tag in a random
+                      D4 Domain (1. Life, 2. Death, 3. Order, 4. Chaos).
+     GOD has EPIC tag and and extra SURGE per each ESSENCE it has.
+ God can cast epic spells and can pick any monster defeated this adventure to be its avatar. Once per adventure you can transform into that avatar, until you cancel it or gain COMA.
+As a lesser god you're subject to the greater deity of your domain, and competing with other lesser gods. Lesser god's goal is access to all domains. 
+At MONTH's start, the greater deity assigns you a D6 Lesser Task, unique for each Domain. If got have several domains, you can pick whose domain's errand to do, while discarding the others. If you fail the task, you lose 1 ESSENCE or domain, or, if none, you lose your GOD tag, ceasing being god.
+Completing, awards you with ESSENCE tag. You can spend 3 ESSENCE tags to pick additional domain. Spend 1 ESSENCE to learn a new Epic/Ritual spell or to cast a known one.
+OBTAINING 1 ESSENCE
+1. Build Temple (1000gp) at any city you own or have PATRON.
+2. Gain ESPECIFIC from by defeating specific monsters.
+3. If VOIDLICH, cast Wish to rob lesser god of its ESSENCE.
+4. Complete a D6 Lesser Errand (must be GOD already)
+D6 LESSER ERRAND
+All foes and tasks during errand are HARD.
+"Each NPC" means all NPC at city center and inn.
+CHAOS ERRAND
+1. Spark Collapse. Seed new D20 City Issue. Chat with 3 Beggars, 3 Children, 3 Drunkards, 3 Preachers and 3 Servants.
+2. Desecrate a Relic. Spend relic to cast Beckoning Death, Death Wind or Volcano epic spell.
+3. Seed Corruption. Bribe at least 3 Official NPCs with 20gp, when they are in Vending mood.
+4. Summon Monsters. Cast Epic Gate spell.
+5. Seed Discord. Pay 10gp to at least 6 Performer NPCs in Vending mood to promote madness in their art.
+6. Kill Lesser Deity. A D20 Boss with ARMY tag spawns next adventure.
+   Defeat it
+DEATH ERRAND
+1. Judge. A Celestial and a Demon contest a soul.
+  Resolve dispute by having 40xp at a single moment.
+2. Sanction a D20 Boss defies death at the next explored dungeon area,
+    it is UNDEAD and has 2 SURGES. Defeat this boss.
+3. Escort a Soul. A random hero joins you. Ensure this hero reaches Lv.3
+  and then dies to a cr5+ monster.
+4. Silence the Dead. The next D6 Biome adventure has all
+  monsters UNDEAD and proceeds until you defeat a cr5+ monster or die.
+5. Close Rift. Cast Planar Rift.
+6. Collect Souls. Kill 10 Stranger NPCs.
+ORDER ERRAND
+1. Enforce. Explore a new city and cast Epic Dominate at it.
+2. Deliver Edict. Talk with 12 Preacher NPCs.
+3. Punish. The next cr5+ monster will instead be Planetar (VHLD dungeon
+   boss stats + 2 SURGEs). Defeat it.
+4. Mediate. At each of 2 cities talk to 2 Nobles and 2 Officials.
+5. Sanctify Prophecy. Cast Epic Foresight.
+6. Mentor. A hero joins you until you collect 40xp, while it is not in COMA.
+LIFE ERRAND
+1. Sanctify Growth. Do Desert Adventure, exploring 20 tiles to plant seeds.
+2. End Plague. Do City Adventure at D20 City, neutralizing all NPCs
+   with the Odd Mood. Attacking any NPC first will fail this task.
+3. Protect Birth. Forest biome Unicorn monster joins you, until you gain at least 30xp, while it isn't in COMA. Lose all XP if unicorn gains COMA.
+4. Sanctify Life. Cast Create Life.
+5. Promote Fertility. Turn your stronghold into a SMALL city (400gp)
+6. Restore Land. Cast Terraform.
+
+HERO GENERATION
+                         Start with picking D6 Class, D8 Race, D6 Ability and a
+                    random D6 Lapse from the tables below.
+Mid-campaign, the party can add a new hero the same way by spending
+1 LORE and 10 XP. Mid-campaign joiners never claim FOUNDER unless the
+party has none.
+   Hero starts with 3 known powers, matching picked class. The rest can be
+ learned from scholar NPCs, teaching D12 Class Power.
+Unless range specified, target monster on the current tile. 
+Reminder: move monster toward you when you attack it with ranged power.
+D12 CLASS POWER ([R] means hero is RANGED when using this power.)
+At Camping, hero can equip up to 5 powers (DUMB - 3, CLEVER - 8).
+If power doesn't specify damage, assume hero's one (STRONG, PUNY...).
+Utility powers can be used at any moment. Flip daily powers after use. Spend FAVOR to recharge any daily or utility power. 
+ 1. D8 FIGHTER AT-WILL 
+ 2. D8 FIGHTER UTILITY
+ 3. D5 FIGHTER DAILY
+ 4. D8 CLERIC AT-WILL
+ 5. D10 CLERIC UTILITY
+ 6. D8 CLERIC DAILY
+ 7. D10 ROGUE AT-WILL
+ 8. D8 ROGUE UTILITY
+ 9. D6 ROGUE DAILY
+10. D6 MAGE AT-WILL
+11. D8 MAGE UTILITY
+12. D6 MAGE DAILY
+D6 CLASS
+Class determines what D12 Class Power hero can equip and bonuses:
+1. Fighter: on even roll with melee weapon, gain TIRED to act again.
+2. Rogue: on even roll with ranged weapon, gain TIRED to act again.
+                  Can attack from backrow with non-[R] powers.
+3. Cleric:  when gain INFORMED, recharge 1 daily power.
+4. Mage: gain TIRED and spend 5XP to recharge your daily power.
+5. Monk: can spend 1 XP to lose TIRED.
+6. Druid: can spend 5XP to lose 1 HURT.
+Note: unless overruled monsters and NPCs get random D6 Classes.
+D8 RACE
+A mixed race hero can't have a D6 Ability tag, but rolls D8 Race 2 times. 
+Any hero of a given race can equip its powers. Roll d4 here for NPC's race.
+1. Human. -4 XP to level up or train a D20 Skill.
+2. Dwarf. Can equip Resilience daily power: lose 3 HURT.
+3. Elf. Can spend SURGE to gain 5 XP. Can gain TIRED to lose MENTAL.
+4. Halfling.  Same-tile ally can take hit meant for you.
+5. Goblin. Advantage to monster talk. Spend 10 XP to gain RATION.
+6. Dragonkin. Breath: spend 1XP to attack everyone on hero's tile.
+ 7. Godborn. Gain ESSENCE. 
+  8. Wingfolk. Gain FLYER.
+
+D6 ABILITY
+1. STRONG. The default hit strength. Can carry 8 items.
+   Skills: Athletics
+2. TOUGH. Can survive STRONG hit. Instead of HURT can gain TIRED.
+   Loses ILL on Camping. Skills: Constitution.
+3. AGILE. 
+   When gain 2 TIRED, gain 1 instead.
+   Skills: Acrobatics / Sleight / Stealth / Concentration
+4. WISE. On camping loses MENTAL, while party gains extra 1XP per
+    explored tile, while explored tiles count is above XP.
+   Skills: Taming / Insight / Medicine / Perception / Survival
+5. CLEVER. Can equip 8 powers instead of 5. Can spend 5 XP to reroll dice.
+   Skills: Arcana / History / Investigation / Nature / Religion
+6. SOCIAL. Can transfer HURT/TIRED/DOOM tags to other hero.
+   Skills: Deception / Intimidation / Performance / Persuasion
+D6 LAPSE
+These cancel the respective numbered D6 Ability.
+1. PUNY. The default hit strength. Can carry only 3 items. Skills: Athletics
+2. FRAIL. Dies to single non-PUNY hit. Skills: Constitution.
+   If ILL can't lose HURT on camp.
+3. SLOW. Doesn't gain 1 XP on odd D20 Attack rolls.
+   When gain HURT, also gain TIRED. Disadvantage on Escape to any hero.
+   Skills: Acrobatics / Sleight / Stealth
+4. CRAZY. Needs +5 more XP to gain INFORMED/Level-up or train skill.
+   Skills: Taming / Insight / Medicine / Perception / Survival
+5. DUMB. Can only equip 3 powers. Can't spend XP to re-roll dice.
+   Skills: Arcana / History / Investigation / Nature / Religion
+6. LONER.  if gets HURT on odd roll, 1 ally must get HURT too.
+   Skills: Deception / Intimidation / Performance / Persuasion
+TALENTS, FLAWS, VIRTUES AND ALIGNMENT
+Hero gains D20 Talent the moment they roll natural 1.
+Next time they roll 1, they gain D20 Virtue.  Hero gains D20 Flaw the moment they roll natural 20. Next time they roll 20,
+roll into D20 Map to determine their alignment (true neutral until then).
+LEVELING Lv.N hero can level-up on roll 19,20, by spending N LORE  and 4*N XP (5*N if DUMB). On each level-up, hero unlocks additional power. Each level N hero gives party N SURGEs on every camping to their shared pool. On Lv.4 hero gains additional D6 Ability. Heroes gain 1 shared LORE point for each newly explored world map area.
+On roll 1, hero with 2 FAVORs loses 2 FAVORS and gains 1 LORE.
+D20 BOND
+                           Only one hero storyline can be active at a time.
+                      FAVOR/DOOM rules here affect only the associated hero.
+   Each hero has D20 Descent and the first city hero visits is their home, which has all their D20 Family.
+At the beginning hero must complete their D20 Prologue.
+Once prologue ends, lose DOOM and gain max FAVOR, then return to home city to roll and complete D8 Catalyst, then roll D20 Journey.
+D20 PROLOGUE (events before the main adventure)
+To start prologue, do 2 campings and visit your home city. Then:
+1-5. Do two quests at home city.
+6-10. Dangerous chore. Lose adventure after spawning a CR 5+ monster.
+11-14. Seek Opportunities. Visit city other than your home city.
+15-16. Explore 6 dungeon tiles. A Mentor (FULFILED PROTECTOR level
+   3 hero) joins till D8 Catalyst or the month's end.
+17-20. Conscript. You got conscripted to the army. In next Wilds
+   Adventure, 2 militia allies join you - cr1 frail puny humanoid from
+   D20 Civilized / D12 Dwellers. Spawn monsters from that same biome.
+   If you leave, gain WANTED at home city, and INFAMY.
+   If you manage to explore 12 tiles, the adventure ends and you gain award:
+          Trinket D20 Mundane Item worth 10gp.
+    In any case, once adventure ends, got back to your home city.
+D20 DESCENT (background where you came from)
+Descent determines who you're at the game start, and what
+goal you must complete to gain FULFILED.
+1-5. Artisan Apprentice. Trained in 3 random D20 Skills.
+     Goal: do 10 tasks with each skill.
+6-8. Folk Hero. Advantage to talk tasks againt any NPC at home city.
+     Goal: complete 1 NPC quest at 5 cities.
+9-10. Noble Heir. Gain PATRON at home city and and trained in History.
+      You start with a 10gp worth Garment D20 Mundane Item.
+      Goal: gain a stronghold real estate.
+11-20. A stranger from a far away, without D20 Family
+       The 1st city you visit will become your home. See next page.
+11. A human person from Earth, transported to Nymara.
+  A person calling himself "Mentor" promises to return you
+  if you get him Amulet of Yendor, held by a powerful sorcerer
+  Nevzar En'rogg. Gain CRPL and HANDGUN. Goal: defeat Nevzar
+12. A samurai from far east looking for worthy opponents.
+    Gain KATANA. Goal: have 5 ARENAWIN tags.
+13. You survived voidfarer vessel crash. Aliens, who killed your team,
+    now threaten Nymara. Gain DVSL and MOTION_TRACKER.
+    Goal: defeat Brood Queen.
+14. An islander whose home was destroyed by a volcanic eruption.
+    Gain AMORPHIC and IVLC. Goal: defeat Phoenix
+15. A pirate whose ship was sunk by a Kraken, after eating your eye.
+   Gain MLST, COMPASS and 6gp. Goal: defeat Kraken
+   You know of a hidden treasure of 10+d10 gp at the first sea area explored.
+   Reroll it till sea. You need OWNSHIP to get there.
+16. A Redclaw agent investigating the aberrant infiltration of old ruins.
+    Gain SOULBINDER and AELR. Goal: defeat Mother Brain
+17. Time travel left you between a dragon's cave and caustic cube,
+    which ate your chronomancy device. Goal: defeat Acid Monolith
+    Gain CMC, HOVERBOARD and TIMEUNWIND.
+18. A psion, who escaped a US military facility by shifting to Nymara.
+    Now voidlich Vocennta wants you in her soul gem collection.
+    Gain PSION and STWR. Goal: defeat Vocennta.
+19. A vampire who left Umbrath for Nymara after a feud with your master.
+    Gain VAMPIRE. Goal: transfer a SMALL city to Umbrath, either
+    through Epic Spell or by Umbral Seed (can be found with Greater Scry).
+20. A slave escaped from deep dwarf city plagued by  Demogorgon's madness.
+     Gain KGHM. Goal: slay Demogorgon.
+D8 CATALYST         (event which incites your journey)
+1. Your home city got attacked. Roll d20:
+    1-10. Your D20 Family perished. 11-20. They are alive.
+   City streets now spawn D12 Dwellers biome monsters instead of tasks.
+   When you leave area, the city gets replaced by a random D6 Biome,
+   and the next city becomes your home.
+2. Something is tormenting your home city. Disadvantage to any task there,
+    until D20 Journey is complete, yet you have +5 Investigation bonus.
+3. Chance to prove yourself. You can spend lv-up XP to lose 1 DOOM.
+4. Stumbled upon a cursed D20 Legendary Item. Roll D20 Torment
+      Instead of journey. The item can be destroyed through epic spell.
+
+                               5.  Your FRIEND from home city is missing.
+                                  Upon completing D20 Journey, roll d20:
+                                  1-5. They're dead. Re-roll your D20 Virtue 
+                                6-10. They're aligned with enemy and daily chase you.
+                                  If you defeat them, reroll your D20 Flaw.
+                              11-20. Were Kidnapped/enslaved.
+                                   They are back home, and give you 10gp on 1st visit.
+6. Your have FRIEND at your home city, who needs your help.
+   If you're FRAIL, the contact offers join till D20 Journey is over.
+7-8. Got yourself into trouble. Roll D20 Torment, instead of D20 Journey.
+   If 5, you're also EXILED: gain 2 DOOM each time you revisit HOME city.
+   Lose EXILED. gain FULFILED when this torment is over.
+D20 JOURNEY (The catalyst event triggered your journey)
+Before rolling it, pay for BOOZE at a tavern - signifies the reveal to allies.
+The hero gains FULFILED once the associated goal is achieved
+See Dungeons section for the associated dungeon tags.
+Complete goal in 12 MONTHs or roll D6 Global Issue, which persists till journey is complete.
+1. You came into possession of a mine, which suffers bug infestation.
+   Gain ABMN. Goal: defeat Remorhaz
+2. You believe money can solve it. Goal: have 200gp
+   At a D20 City know an NPC who owes you 5 + d20 gp.
+   That NPC will appear on the 5th tile, in addition to other NPCs
+3. You've to see the world. Goal: visit all biome types and cities of all sizes.
+4. A shady sorceress promises to fix it if you steal a few Veilguard trinkets.
+   Gain VHLD. Goal: enter into treasury tile
+5. Ruins are the key! Gain WHIP. Visit D20 City. The 1st Scholar NPC there
+   happens to be a history professor, who asks to do archaeological research:
+   at each of 5 D20 Areaes, explore 10 tiles. Gain max FAVOR each time.
+   Afterwards speak with the professor: the Anauroch pyramid is culprit.
+   Gain PRMD. Goal: defeat Mummy Lord
+6. God trusted you with D4 Domain, D6 Lesser Task. Goal: Complete it 
+   to gain ESSENCE, and ability to cast a random D20 Ritual Spell.
+7. Tyrant must be stopped! At home city get to the lord,
+   who upon death transforms into D20 Generated Monster + 20.
+   Goal: defeat the monster.
+
+
+8. Pilgrimage will help! Goal: visit 20 D20 Areas,
+   gaining  FAVOR at each. Areas can be at sea.
+   Goal: visit all areas to gain FULFILED.
+9. Revolution at your home. Talk to every Beggar, Farmer and
+    Servant to  gain PATRON + max FAVOR.
+    Goal: Kill every guard/official/noble there.
+10. Giants are culprit! Speak to 3 Scholar NPCs at
+    3 D20 Cities, you can get training allowing you to deal
+    2x damage to giants. Goal: Kill a giant in each biome.
+11. Hunting animals will help. Goal: Kill every D6 Animal in every biome
+    beside Umbrath. Gain FAVOR for each new animal.
+12. Your eccentric relative disappeared at Starhaven, leaving an voidfarer
+    vessel at Starhaven's dry dock. See Voidfarer. Goal: rescue relative.
+    1. Pay Smuggler/Fence 20gp to learn about D20 NPC at D20 City,
+         who can smuggle you on voidfarer going to the city of Starhaven;
+    2. Travel to that city and locating that NPC.
+    3. Paying said NPC 40gp to smuggle you.
+    4. Once at Starhaven, pay 40gp parking fees.
+         At this point you have ownership over the voidfarer vessel.
+    5. Visit 3 FRIENDs, whom you have a the next 3 discovered cities.
+    6.  Travel through 5*N areas from respective place to meet
+          Nth of these contacts.
+    7. Once spoke with all contacts, Travel (D15 Arcana) to the asteroid,
+        and do the Prison Break section to free your relative.
+        You relative will stay at Starhaven.
+13. Cultists led by Dulsa Thoom responsible. Gain SRPTMPL.
+       Goal: defeat Dulsa Thoom
+14. Naga infestation enraged gods. Gain RSGT. Goal: defeat Dark Nagas
+15. Dream invading night hags. Gain: NHC. Goal: defeat Night Hags
+16. A mortician involved in disappearance of numerous people,
+      turned to be a Fleshweaver, turning reanimated corpses stolen from
+      the other planes into his slaves. Gain OSWRM. Goal: defeat Fleshweaver
+17. Local tyrant. Goal: kill the lord at your home city, who on death turns
+     into D20 Generated Monster, add 15 to its d20 roll.
+18. A monster rampaging countryside (see Tarrasque).
+      Goal: defeat Tarrasque, spawned at D20 Map Dir (home relative).
+19-20. Random Villain. Either cast Greater Scry, or talk with 3 innkeepers.
+     and succeed REAL Investigation to locate D20 Area, with the
+    villain: D20 Boss. Goal: kill it.
+D20 TORMENT
+                             Update chase scenes at the start of Camping.
+
+    1. Infamy.  Do daily chase to avoid gaining max DOOM and 5 INFAMY.
+        Goal: clean your name by completing a D20 Journey.
+2. Nemesis. A powerful D20 Boss with NEMESIS is chasing you.
+    Each time they defeat you, lose a level.
+3. Escaped slave. A group of 5 D20 NPCs with 2 SURGE are chasing you.
+    Each time they defeat you, lose a level, gain 10 days and appear at
+    D20 Area. Chasers stop chasing once you defeat them.
+4. You owe 200gp to The Nexus. You must pay 10gp each month,
+   or D20 Boss starts EASY Chase. If it defeats you, lose all your money and
+   items to cover the debt, and the chase repeats next month.
+5. Possessed. At day 20 of each month do REAL to avoid it gaining
+    control  over you. If it gains control, roll D20 Prophecy. You must
+    complete it till next 20th day or lose a level and gain 3 DOOM.
+    If you fail prophecy 5 times in a row, the possessor spawns and attacks:
+    Goal: Defeat D20 Boss who has 2 SURGEs.
+6. You're a rogue clone of another being, who now does DC 20 d20 Chase.
+   That person has your exact stats, but 5 SURGEs.
+   They act on every foe phase. If they defeat you, lose level, and reset chase.
+7. Chased by a D20 City Villain. You know 4 D20 City Issue bits so can
+   reveal the plot. All guards and officials at that city are hostile to you.
+   Until the issue is solved, an 5 armies of Militia are chasing you.
+   If you meet any Blackmailer, Smuggler or Emissary NPC, and let
+   them  live, this chase distance gets reduced to 1. Goal: defeat Villain.
+8.  At the end of every month you lose all money.  d6+4 NPCs spread along
+   D20 Cities are responsible. Goal: neutralize all of them.
+9.  You're responsible for mentoring an NPC, who travels with you
+   on a D20 Journey. The NPC maintains the same tile as you,
+   and monsters prioritize attacking NPC. Each time this NPC dies you
+   lose all FAVOR and gain max DOOM. Spend 15 XP to promote this NPC
+   to a hero, with Ability and Lapse. Goal: complete the journey, then
+   the NPC leaves you to settle at a D20 City. They're now your friend.
+10. A coven of night hags (same as NHC dungeon) from
+  D20 Area haunts your dream. Before each Camping,
+  do EASY task to avoid dream adventure, where this hero must
+  explore d8 tiles of D6 Biome. Other heroes can join only if  any hero
+  has PSION, or Divination + True Seeing, or Detect Thoughts +
+  Telekinesis. Damage and XP carries to real life, but no items. On defeat
+  you wake up with lost level and DOOM tags. The hags appear on the 6th
+  dream tile. Defeat hags at their area or in a dream to stop nightmares.
+11. Gain D20 Legendary Item. You've daily chase to avoid fighting heroes
+   total level CR of D12 Dwellers Undead minions, sent by a Lich, wanting
+   this. If you get defeated sharing tile with them, lose that Legendary Item.
+   If you defeat minions, the daily chase gets reset with new undead minions.
+   Goal: defeat Lich D20 Boss, who will spawn as a BOSS the next dungeon.
+         if you lost item, defeating Lich will give it back to you.
+12. You've daily Chase to avoid fighting Tiamat. Defeat Red, Green, Blue, White and Black dragons for their scales. After 1st dragon gain DRAGONSLAYER. Got all scales? A Blacksmith can forge armor (10gp)  which negates Tiamat's ARMY and SURGEs, and Tiamat's hit is now PUNY.
+Tiamat cr9 epic strong tough slow absurd ranged vorous binder large
+        2surge healing kicker confuser blaster archmage dread army reptile
+* Loot: ESSENCE and TMTDOWN tag
+Once defeated, Tiamat, won't ever attack you again.
+If Tiamat defeats you, the daily chase just resets.
+13-14. Curse. Each MONTH lose 1 FAVOR and gain 1 DOOM.
+   Goal: defeat 1 BOSS.
+15-16. For each DOOM tag you have, gain additional HURT on hit.
+   Goal: buy a SURGE Training from a Scholars D20 NPC.
+17-18. Trial. Can't enter city houses. Goal: defeat a foe in each D6 Biome
+19-20. This hero can't level-up. Goal:  defeat a foe in 3 D12 Dwellers.
+D20 VIRTUE
+                          Once the virtue's needs are met, gain PIOUS.  If have PIOUS, on
+                   month end? - Lose it and gain 2 FAVOR+15 XP.  NPC virtue
+    is learned on Study. NPC follows its virtue, if you succeed chat task.
+ 1. Just. Kill an evil NPC. Spend 5XP to detect if somebody is evil.
+   Lose PIOUS if kill non-evil NPC. If NPC, become hostile if hero is evil.
+2. Enlightened. Talk with 3 Scholar NPCs.
+   If NPC, hero can do History task to gain FAVOR.
+3. Guardian. Do 3 NPC quests. If NPC, joins till hero enter this/other city;
+4. Humble. Do 2 NPC quests, but refuse reward. If NPC, lose FUNDRAISER
+5. Honest. Do 3 persuasion tasks till HURT. If NPC, lose ODD.
+6. Cautious. Do adventure while having PREPARED, Torch and 3 RATIONs.
+     If NPC, heroes get Disadvantage to any task against you.
+7. Curious. Explore 4 new areas.
+   If NPC, instead of annoyed become Pursuer; hero has +10 History at you.
+8. Pacifist. Complete 3 travel adventures without killing anybody.
+   If NPC, disappear if ANNOYED.
+9. Respectful. Gain PIOUS on 1st month day. Lose it if any NPC on your tile becomes ANNOYED. If NPC, won't lose CALM, unless HURT.
+10. Generous. Spend 10gp on FUNDRAISER NPCs. 
+       If NPC, offer 4x the reward.
+11. Visionary. Roll D20 Prophecy - succeed it.
+       If NPC, hero hiring you automatically succeeds at prophecies.
+12. Stoic. Gain MENTAL, BOUND and ILL (together or separately)
+       If NPC, takes MENTAL/BOUND/ILL for the hiring hero, unless
+        already has such condition.
+13. Devout. Gain PIOUS on 1st month day, lose if gain DOOM or MENTAL.
+      If NPC, refuses to talk to hero without FAVOR.
+14. Brave. Start and succeed travel adventure while HURT and frontrow.
+     If NPC, takes HURT for the hiring hero.
+18. Loyal. Inform your faction's agent - 1st Stranger NPC.
+    If NPC, won't abandon hero if it fails to pay the wage, but gains DOOM.
+19. Merciful. Gain PIOUS on 1st month day. Don't kill any PUNY monster,
+    or NPC.  If NPC,  hiring hero gains 5 for escaping PUNY monster.
+20. Hardworking. Camp with 25 XP 3 times. If NPC, gives extra SURGE to heroes who camp with 25 XP.
+15. Clever. Succeed 5 Investigation tasks.
+    If NPC, Investigation advantage to hiring hero
+                  16. Extroverted. Succeed chat with 5 NPCs.
+                        If NPC, Persuasion advantage to hiring hero
+                 17. Athlete. Succeed 5 Athletics tasks.
+                        If NPC, Athletics advantage to hiring hero
+D20 FLAW
+Once the flaw's needs are met, gain INDULGED. Got INDULGED
+on month end? - lose it and gain 2 FAVOR,  otherwise - gain
+2 DOOM. To fail a task, attack it till it HURT you.  Learn NPC's flaw, if
+Study that NPC, or it is ANNOYED.  NPC follows its flaw if gets annoyed.
+1. Greedy. You wealth must be 10gp higher than the previous month.
+   If NPC, paying your salary money makes you LEISURE.
+2. Homesick. Visit your home city.
+   If NPC, joins and pays 4x its gp once at the next explored city.
+3. Careless. Chat to a 2 Stranger NPCs, without Study. Complete 2 travels
+   un-PREPARED. If NPC, hero gains Advantage on any Chat task.
+4. Impulsive. Gain INDULGED on month start. Lose if bound/non-frontrow.
+    If NPC, become GUARD.
+5. Preacher. Talk with 5 zealot NPCs doing REAL Religion task (preach).
+   If NPC, hero gains DOOM.
+6. Kleptomaniac. Pickpocket 3 NPCs. If NPC, steal hero's
+    gold or any item which costs more than hero has gold.
+7. Bhaalist. Kill 3 NPCs. If NPC - HOSTILE+EPIC+RAGER.
+8. Paranoid. Study 5 NPCs. Lose INDULGED if leave city un-PREPARED.
+   If NPC, hero can do EASY Intimidation to take your wage+Wares.
+9. Devious. Once a MONTH kill a hired NPC for 4x its wage and Wares. 
+   If NPC, heroes lose all XP.
+10. Coward. Gain INDULGED on month start. Lose if attack a strong target.
+    If NPC, hero can do Deception task to gain that NPC's wage and Wares.
+11. Introvert. Fail 3 Persuasion/Performance tasks. Lose INDULGED if
+   attack on a tile with other heroes. If NPC, hero has talk tasks Disadvantage.
+12. Lazy. Gain INDULGED on 1st month day.
+   Lose INDULGED if gain 20+ XP.
+   If NPC, pays 2x the normal amount for any quest you will do for them.
+13. Clumsy. Break item worth your level * 5gp.
+  If NPC, heroes have Advantage to Sleight against you.
+14. Liar. Do 5 Deception tasks. If NPC,  heroes lose all gp.
+15. Prejudiced. HURT 3 NPCs of different race. If NPC, become hostile.
+16. Obsessed. Buy 5x trinket Mundane Item. If NPC, pays 4x for trinkets.
+17. Mean. Fail 3 Intimidation tasks. If NPC, heroes lose a SURGE.
+18. Dependent. Gain INDULGED on 1st month day.
+    Always share a tile with other hero (even if in COMA).
+    If NPC, heroes have intimidation task Advantage on NPC's tile.
+19. Insane. Gain MENTAL 3 times. If NPC, gain MENTAL and get Hostile
+20. Festive. Share Drink 5 times. If NPC, gain LEISURE + give hero BOOZE
+D20 TALENT
+
+
+    1. Student. At D20 City, don't leave for 6 campings, every 2 campings
+   get training in one of your skills. Once done, gain D20 Skill Mastery in
+   one of the trained skills - you become a docent teaching it, employed at a
+   D20 City. Every month gain DOOM or do a lecture there: HARD task on
+   that skill to gain 20gp and FAVOR.
+   To change place of employment talk with 3 Scholar NPCs at another city
+2. Gain RAGESTRIKE.
+3. Gain WEREWOLF.
+4. Gain ENTREPRENEUR.
+5. At night gain HIDDEN upon entering a tile, but GAWKY during day.
+6. When you roll a natural 1, summon D20 Boss ally, without its EPIC.
+    This ally disappears next Camping. Its type stays same after 1st summon.
+7. Half-beast. +1 XP per tile in Forest/Mountains. No XP on city tiles.
+8. Psionic abilities. Gain PSION
+9. Deity Protege. If have no SURGES and there is a Hostile creature
+   on tile, spend FAVOR to cast Wish spell.
+10. Forgotten god heals you (lose all HURT) and grants you FAVOR tag.
+    They need a Herald. At each of 5 large cities, talk with a Performer
+    NPC in a Vending mood, paying 2gp to proclaim that god's return.
+    You gain FAVOR each time and FULFILED when task is completed.
+    As a cult leader. You can mobilize 1 NPCs at every such city.
+    The NPCs act as if hired normally, but don't ask money.
+11. Menace of D6 Biome. A robber or a forest protector.
+      Gain FAVOR for any NPC neutralized there. 
+      Failure earns you DOOM. 
+12. Petbound. You start with trained Taming.
+   Do REAL to get a single familiar (see finding familiar).
+   Now once a day you can replace an task skill with Taming.
+   If familiar dies, lose all FAVOR, gain max DOOM.
+   You can only get new familiar after you roll natural 20.
+13. Slimy. Spend FAVOR to lose all INFAMY.
+14. Scholar. Spend FAVOR to gain 50 XP.
+15. Prophet. You automatically succeeds at D20 Prophecy.
+16. Concentration. Spend FAVOR to double the attack/skill bonus to roll.
+17. Chameleon. Every 10 days spend FAVOR to re-roll D20 Flaw or Virtue.
+18. Doppelganger. Spend FAVOR to gain Disguised.
+19. Hiker. Spend FAVOR to be allowed to travel again after failed travel DC.
+20. Shapechanger. Spend FAVOR to turn into NPC / creature you spawned
+       today. Till next long rest you gain this creature's tags.
+D6 DISABILITY
+For a hero with N DOOM tags, if monster hits this hero rolling 20 or hero fails task with roll 1, then roll d10 and if it is below N, hero gains disability.
+Cast Wish or spend ESSENCE to discard all disabilities.
+1. Concussion. Gain CRAZY+DUMB.
+2. Lost Eye. Gain GAWKY, monsters got BLINDING to you. 
+3. Lost Arm.  Lose a Level and Gain PUNY. 
+4. Lost leg. Gain SLOW and on each Camping gain BOUND.
+5. Depression. Gain LONER. On each Camping gain MENTAL.
+6. Systemic. Gain FRAIL. Gain ILL on Camping.
+D20 PROPHECY
+Make a number N between 1 and 20. Spend 3x that XP and
+roll d20, if at or below N, you have succeeded.
+
+                                  D6 MAGE AT-WILL POWER
+                              1. Magic Missile[R]. Spend 2 FOCUS, target gains HURT
+                         2. Fire Arrow[R]. PUNY attack non-AGILE target.
+     3. Acid Mist[R]. Spend 3 FOCUS to STRONG BLASTER ACID attack
+          non-TOUGH foes
+  4. Etherealness. Spend 2 FOCUS to become PHASED until you leave tile.
+  5. Wizard Eye. Gain TIRED to spawn eye token. The eye is MEEK but
+      otherwise can do anything you can, and disappears after a single action. 
+ 6. Invisibility. Spend 2 XP to become HIDDEN until you leave this tile.
+D8 MAGE UTILITY POWER
+1. Lesser Illusion. Spend 5 XP to gain DISGUISED.
+2. Mirror Image. Spend 3 XP to gain MIRRORED.
+3. Cartomancer. Spend 3 XP to use random D12 Class daily power.
+4. Alarm. Mage can rest for just 1 XP (3 if night/dungeon and no light).
+5. Alacrity. Spend 2XP to use 2 (3 if INFORMED) different powers instead of 1
+6. Adept. Spend 1 XP before roll to make target take extra 2 HURT on hit.
+7. Antimagic.  For any non D20 Attack HURT, you can take TIRED instead.
+8. Versatility. Flip off a power to gain 3 FOCUS and flip on another power.
+
+D6 MAGE DAILY POWER
+1. Dimension Door. All monsters on tile lose PURSUER. Move all heroes to picked exit, you can act again.
+2. Fireball[R]. All non-THICK frontrow on tile suffer STRONG attack.
+3. Flaming Sphere. Spawn Flaming Sphere cr1 phased puny spirit. After 5 attacks, it disappears.
+4. Arcane Blast[R]. Gain N tired to do N PUNY attacks at once.
+5. Finger of Death. Mage spends 2 FOCUS to kill cr1-4 target,
+     or give 2 HURT to cr5+ target.
+6. Warmage Form. You gain STRONG, TOUGH and 3 fighter
+   powers for the duration of this adventure, but can't use mage's powers.
+   You can cancel this effect at will.
+
+D8 FIGHTER AT-WILL POWER
+1. True Strike: default attack.
+2. Double Strike: attack with Disadvantage, but twice.
+3. Charge. Explore tile 1 tile, move there and do PUNY attack:
+4. Evasive Strike. If target attacks and misses you, you hit it.
+5. Bow[R]: default strength attack.
+6. Ready Strike. Spend 2 XP to kill non-AGILE / non-TOUGH monster.
+7. Cautious Strike. You hit PUNY and only on even roll, but gain 1 XP.
+8. Risky Strike. Disadvantage attack, but kills non-TOUGH on 19,20.
+D8 FIGHTER UTILITY POWER
+1. Divert. You can take a monster card from another hero.
+       That monster now attacks you given a choice.
+2. Assist. You can take TIRED from another hero.
+3. Regroup. When a monster is spawned, move this and other heroes,
+    even if already moved this turn. For chase scene get +/- 2 bonus to rolls.
+4. Organize. Gain TIRED to allow another hero to re-roll any dice.
+5. Protect. When a hero on your tile is attacked, you become the target
+   instead, but the attack on you goes with Advantage.
+6. Persist. Gain HURT to re-roll a die.
+7. Stoicism. Gain 2 TIRED to lose HURT.
+8. Indomitable. Spend FAVOR to discard a hit killing you. 
+D5 FIGHTER DAILY POWER
+1. Taunt. Explore adjacent tile, move the 1st spawned monster to your tile
+     and STRONG attack it (miss: PUNY hit).
+     Other monsters spawned on explored tile are non-PURSUERS.
+2. Interpose. Move to a tile with target ally, without spending an action.
+3. Furious Strike. STRONG attack a monster. Miss: PUNY hit
+     Unless missed, the power starts enabled and you can act again this round.
+4. Comeback. lose 2 HURT, attack STRONG
+5. Leadership. Your foes can't act until you finish your next round.
+                                    D8 CLERIC AT-WILL POWER
+                              1. Strike: default strength attack.
+                        2. Spirit Shroud: PUNY, but on 18-20 any hero loses HURT.
+      3. Command. Gain 1 TIRED, the target attacks itself.
+   4. Spiritual Shield. A single target of your choice has THICK
+ 5. Detect Alignment. Spend 1 XP and roll into the D20 Map.
+   Hero of different alignment gets Advantage to opposite alignment target.
+6. Protect Against Alignment. Spend 1 FOCUS to make targets of known alignment CALM.
+7. Regeneration. Target gains HEALING. Use again to change target.
+8. Lay on Hands. If no enemy on tile, the target with 3 HURT loses 1.
+D10 CLERIC UTILITY POWER
+1. Life Transference. Gain HURT+TIRED, target loses 3 HURT.
+2. Perseverance. Can gain HURT to inflict 2 HURT to task.
+3. Virtue's Touch. Spend 10 XP to end menta/bound/ill for the target.
+4. Blessing. Heroes get Advantage to targets of yours opposite alignment.
+5. Armor of Faith. D20 Attacks to you get Disadvantage unless you acted.
+6. Turn Undead. Heroes have Advantage against any Undead.
+7. Deliverance. Spend 20 XP to lose DOOM.
+8. Martyrdom. Gain HURT, TIRED and 5 XP.
+9. Divine Intervention. When you use a SURGE, lose ILL/BOUND/MENTAL and all HURT.
+10. Wall of Faith. Spend 10 XP to escape to picked exit.
+D8 CLERIC DAILY POWER
+1. Harm: cr1-3 target gains 3 HURT, cr4 - 2 HURT, other targets - 1 HURT.
+2. Divine Word. All enemies within 2 tiles get PUNY hit +move 1 tile away.
+3. Healing Word. Each hero on your tile loses 1 HURT.
+4. Restoration: Each hero on your tile loses 1 status condition.
+5. Necromancy: Raises at full health a 1-4 cr monster as an undead ally with 1 HURT tag. The ally lasts till the next Camping, appearing on world map.
+6. Clairvoyance. Explore 5 tiles. The spawned monsters are not PURSUER
+7. Blade Barrier. Each foe on tile suffers PUNY attack on your activation.
+    Lasts till you leave tile.
+8. Cause Fear. All foes on tile gain MENTAL. You gain SCARY.
+
+D10 ROGUE AT-WILL POWER
+1. Sure Strike. Spend 3 FOCUS to hit target.
+2. Crossbow[R]. normal attack strength
+3. Gambler Strike. Hit - target gains 3 HURT. Miss - you gain HURT
+4. Hide. Spend 1 FOCUS to become HIDING until you get hit.
+5. Dash. Move 3 tiles, without triggering attacks of opportunity, if you do action during move, you turn ends immediately.
+6. Flee. Spend 2 XP (1 XP if INFORMED) to feely escape alone.
+7. Flanking Strike. If other hero on tile and non-AGILE target has no allies
+    on tile, Advantage attack target,
+8. Daggers[R]. If backrow, PUNY attack all non-THICK enemies on tile.
+9. Set Trap. Any hero can instead of move activate the trap:
+   everyone on tile takes PUNY attack. Trap is removed after triggering.
+   INFORMED rogue can set 2 traps at once, without deactivating previous.
+10. Poisoned Dart[R]: MEEK TOXIC attack with Advantage, but you are VENOMOUS while equip this power.
+D8 ROGUE UTILITY POWER
+1. Haste. Gain TIRED to act two times.
+2. Ruse. Bet if your next roll succeeds, if it does you get 4 XP, fails - TIRED.
+3. Dodge. Advantage against ranged attacks.
+4. Finesse. Attack with Disadvantage, but on hit target gains extra HURT.
+5. Cunning. Do deception task to give d4 HURT to a monster.
+6. Bardship. +2 to talk. You can cast Divine Voice (see Common Spells).
+7. Scouting. Before exploring a tile, do REAL Stealth to see its content.
+8. Reflexes. Spend 1 XP to move 1 tile, after a monster/encounter/trap is
+      spawn. Don't trigger traps / counter-attacks.
+D6 ROGUE DAILY POWER
+1. Fury of Blows (4x times): PUNY attack
+2. Hit and Run. STRONG attack non-AGILE enemy (miss: PUNY hit)
+             Hit or miss, you can move within 3 tiles.
+3. Shelter. Swap places with ally and act again.
+4. Retaliate. Gives 3 HARM to the last monster who hit you on this tile.
+5. Preparedness. If have ILL/MENTAL/BOUND, discard them and act again.
+6. Evasion. Foes can't attack you till your next round.  Doesn't take action.
+
+
+                                   D6 DRUID AT-WILL POWER
+                              1. Thorn Strike. Default strength attack.
+                        2. Shot Spines[R]. SLOW PUNY TOXIC attack, but
+                                 You are VENOMOUS, while equip this power.
+      3. Entangle[R]. MEEK BOUND attack; hero is HUNTER while equipped.
+  4. Nature Smith. Gain 2 TIRED to craft a 0gp D20 Mundane Item.
+ 5. Shape Earth. Spend 2XP to remove obstruction from tile exit.
+6. Insect Swarm. SLOW MEEK TOXIC BLASTER attack, but hero is SCAVENGER while equip this power.
+D4 DRUID UTILITY POWER
+1. Telekinesis. SLOW PUNY attack spawned monster.
+2. Nature's Bond. In a forest biome, when Druid gains 1 XP, gain 2 instead.
+3. Commune with Animals. Beasts/Animals are not hostile, unless attacked.
+    +2 XP when exploration spawns animals/beasts.
+4. Awareness: can enter secret tiles without spending XP, know the result of
+    this hero using a D20 Prop.
+D4 DRUID DAILY POWER
+1. Nature's Wrath. All foes on tile: SLOW STRONG attack (miss: PUNY HIT).
+2. Summon Animals. Summon d4 animal allies from D6 Biome. They disappear on next Camping.
+3. Charm Animal. cr1-3 (1-4 if informed) beast gains CHARMED PURSUER
+4. Animal Shape. While animal, you can't use other powers.
+   Turn back once the animal is dead, or you decide so.
+   Damage to animal form don't transfer to your human form.
+   Roll d20 to determine which animal you transform into
+   1-5.  Wolf cr1 agile puny beast
+   6-9. Boar cr2 easy binder paralyzer beast
+   10-15. Bear cr2 tough beast
+   16-18. Ursowl cr3 tough hard agile strong beast
+   19-20. Phase Cat cr4 tough agile quick mirrored hard thick beast
+D6 MONK AT-WILL POWER
+1. Punch. Default attack. Can be modified by up to 3 XP.
+2. Kick. default attack. On hit can move target 2 tiles away
+3. Fury of Blows (all enemies on tile). PUNY attack.
+4. Radian Bolt[R]. PUNY attack.
+5. Voidstep. Till your next attack, enemies have Disadvantage attacking you. 
+6. Astral Step. Become Invisible if no enemy within 2 tiles.
+D8 MONK UTILITY POWER
+1. Deflect Missile. Reroll any non-STRONG ranged hitting you.
+2. Radiant Shield. Monster hitting you in melee suffers PUNY attack.
+3. Purity of Body. Can't be ILL.
+4. Empty Body. Gain 2 TIRED to deflect any hit / ILL/MENTAL/BOUND.
+5. Still Mind. Can't be MENTAL.
+6. Premonition. Can act after exploring a tile.
+7. Resilience. Takes normal hit intead of strong, puny instead of normal.
+8. Serpent's Motion. You are CLIMBER and SWIMMER.
+D6 MONK DAILY POWER
+1. Blazing Arc. Default strength AGILE BLASTER KICKER attack.
+2. Thunder Fist. gain SHOCKER, all foes suffer default strength
+    MENTAL attack.
+3. Sunburst. Spend 3 FOCUS: all foes on tile gain 2 HURT.
+4. Mental Focus. +10 to any task (i.e. spend up to 10 xp to modify roll).
+5. Aetherstep. Move within 3 tiles and attack with Advantage.
+6. Transcendence. If has COMA, use this power and roll d20:
+   11-20 - you reappear with 1 HURT (no HURT if INFORMED).
+ALLIES
+Phantom Steed cr1 frail puny summoned spirit
+Arcane Hand cr1 frail flyer summoned spirit. Powers:
+* Punch: STRONG attack; Grasp: FEBLE + EASY Grappled.
+* Interpose: Takes HURT inplace of ally on the same tile.
+* Move: move within 2 tiles together any adjacent size=1 target.
+Pegasus cr4 tough strong agile flyer mount beast
+Pegasus is reachable through the Integrating Modules.
+its dungeon follows the D20 Dungeon setup. Do HARD Taming or
+Soul Cage to capture it.
+
+TAGS REFERENCE
+                              ACID: Inflicts WORN on hit
+                    ARCHMAGE: If TIRED count isn't above HURT,
+                    gain FOCUS. If have 3 FOCUS, gain TIRED and cast D20 Ritual
+ ANOMALOUS: if it misses frontrow foe, roll d4: 1. Inflicts ILL+MENTAL;
+      2. Inflicts d4-1 HURT; 3. Gains VENOMOUS; 4. Gains CONFUSER.
+ARMY: TOUGH, EPIC and has Advantage against any non-ARMY, which is
+    FRAIL, EASY and PUNY, and has Disadvantage. ARMY with COMA gets
+    replaced by non-ARMY without HURT or COMA.
+BANE: non-CLEVER MENTAL foes are PUNY and FRAIL while on its tile 
+BINDER: hits with BOUND
+BLASTER: If TIRED count isn't above HURT, gain TIRED and attack all frontrow foes (backrow if no frontrow)
+BRACED: fails D20 Attack / foes hits it - reroll once. Hit/evaded? - lose.
+BLINDING: if a MENTAL foe misses hit, move it on adjacent unexplored tile.
+BLOCKER: a foe entering your tile, can't leave this tile same way.
+BRAWLER: attacks anyone on tile. Lose BRAWLER if anyone on tile dies.
+BOSS: if it gets defeated, its allies will disappear and heroes gain 2 LORE.
+BUTCHER: Advantage against any HURT target
+CAPTIVE. backrow meek moves with captor. Lose captive if no front-row foes
+CALM: Doesn't attack. Unless got hit first (all NPCs by default).
+CASTER: If TIRED isn't above HURT, gain TIRED to cast D20 Mage Spell
+CAUSTIC: If attacked with non-magical weapon, attacker gains WEAR.
+CHAMPION: if non-STRONG/EPIC/TOUGH foes misses, go to adjacent tile.
+CHARGER: if any foe is bound, gains BANE+DEMENTER+STRONG+BLASTER
+CHARMED: Can't attack foes, but must attack ally. Loses CHARMED on hit. 
+CHARMER: if foe miss, each non-BOUND MENTAL foe attacks its ally/itself.
+CHILLER: if foe misses you, it gains BOUND.
+CLIMBER: Advantage attacking foes of larger size: tiny<small<medium<large.
+CLONE: If the clone has COMA, spawn real actor at the start tile.
+COATED: THICK, HARD and TOUGH unless HURT
+CONFUSER: MENTAL foes are MESSY
+COWARD: Always backrow. Moves to adjacent tile get hit or a STRONG foe.
+CURSER: on hit inflict d6: 1. MENTAL; 2. ILL; 3. BOUND; 4. DOOM
+DEMENTER: inflicts MENTAL on hit.
+DOOMER: gives DOOM on hit with roll 1-5
+DISGUISED: can't be hit. Lose it if hit foe/leave tile with foe / foe is SEEING.
+DREAD: if foe misses you, it gains MENTAL
+ DYING: Gains HURT each time it hits foe.
+             ENGULFER: A non-ranged foe who hits this actor gains BOUND.
+             EPIC: Needs 6 HURT to become Unconscious (normal just 3).
+ESCAPER: On death spawns monsters unless BOUND.
+EXPLOSIVE: On death everyone tile suffer attack:
+   STRONG if it was TOUGH, PUNY if FRAIL, else - NORMAL.
+FAST: attacks non-AGILE opponent twice.
+FIREFRAIL: FRAIL, PUNY and non-EPIC if any foe has FIRE.
+FLYER: Non-ranged[R] non-flyer attacks have Disadvantage
+FOUL: ILL foes must gain TIRED to target it.
+FREE: immune to BOUND
+GAWKY: Attacks with Disadvantage.
+GREEDY: disappears if given its CR gp.
+GROWING: gains a tag each time foe misses it, 
+      FRAIL -> NORMAL -> TOUGH -> EPIC -> COATED -> HEALING
+GUARD: attacks foes on its own tile but never pursues them (never gains PURSUER).
+HIDING: till it got hit, foes without SEEING have Disadvantage to it.
+HAZARD: foe who misses it with melee attack gains HURT
+HEALING: Each turn if TIRED < HURT, gains TIRED to lose 1 HURT
+HELPER: allies have Advantage attacking BOUND/ILL/MENTAL foes
+HUNTER: Advantage at BOUND foes, who cant move and have Disadvantage
+HURTPROOF: Can't gain HURT.
+INCITER: allies gain FAST
+INFESTER: on hit BOUND foe becomes INFESTED.
+IMMOBILE: can't move or pursue foes.
+INDOMITABLE: ignores hit, but loses 1 INDOMITABLE. 
+KICKER: when hits, move target to adjacent unexplored tile.
+LATE: loses PURSUER on hit; disadvantage against AGILE.
+LEADER: allies on its tile are TOUGH, INFORMED and have Advantage.
+LUCID: immune to MENTAL
+MOUNT: Can be mounted by smaller actor. See Mounting.
+NEMESIS: has Advantage against anyone with DOOM tag.
+MESSY: on miss hits frontrow or (if none) its own row ally.
+MIRE: EPIC and HEALING unless any foe on tile has FIRE.
+MIRRORED: attack Advantage, but attack on it has Disadvantage. If you
+hit this target, roll d20: 1-10 it is unhurt but loses MIRRORED. If any foes
+has SEEING, lose MIRRORED immediately.
+MORPHER: if ILL foes misses you, it turns into D6 Animal, while on this tile.
+NULLIFIER: foes have no CASTER on tile with you
+NUMB: can't talk or be talked to.
+PARASITE: can't be hit while any foe is ILL
+PARALYZER: BOUND foes can't attack or move, while on your tile.
+PHASED: spend 4 XP once or be cr4+/informed to target this entity.
+PLAGUE: non-LONER ILL foes are PUNY and FRAIL while on its tile
+
+                                 PRECISE: Attacks with Advantage
+                               PROTECTOR: gains TIRED instead of any ally being hit.
+                          PURE: immune to ILL.
+        PUPPETEER: can't be hit while any non-BOUND foe is MENTAL
+   PURSUER: no foe here but foe on adjacent tile - move there.
+                     A non-GUARD+non-CALM gains PURSUER on tile with a foe
+PSION: uses PSIONICS attack
+PYROPHOBIC: has Disadvantage if anyone has FIRE. 
+QUICK: foes are SLOW while on tile with you
+RISING: each time foe misses it gains a tag:
+      PUNY ->   BLASTER -> NORMAL -> STRONG -> FAST -> ARMY
+ROWBUST: Always frontrow. Can't move to backrow (even COWARD)
+RAGER: if has 2 HURT less than 3 TIRED, gain TIRED to attack twice.
+RANGED: Can attack backrow foes, protected by frontrow one.
+RETRIBUTOR: any HURT foe deals to you/allies is duplicated to foe.
+SCARY: MENTAL foe must gain DOOM and become ILL to attack it
+SCAVENGER: Advantage attacking ILL foes. Lose TIRED if hit ILL target.
+SEER: Foe misses you? - gain its CR XP. See Alignment, No task study NPC.
+SENDER: can spend 1 XP to spawn Channel entity, which is a HURTPROOF PURSUER for the target ally. While this ally isn't in COMA and you're on another tile, this Channel entity can act as if it was you.
+SHADOW: Each time it inflicts COMA, it spawns a Shadow D20 Undead ally.
+SHAMAN: if foe hits you, cast D20 Cantrip
+SHELTER: Bound actors cant be targeted / target non-self/task. Lose if exit.
+SHOCKER: MENTAL foes get Disadvantage on all rolls.
+SICKER: if foe misses you, it gains ILL.
+SLOWER: all BOUND foes are SLOW.
+SPAWNER: if foe misses you rolling 1-5, spawn current biome monster.
+SPAWNS(MonsterType): if foe misses you rolling 1-5, spawn MonsterType.
+SUS(MonsterType): unless any SEEING foe, 1st time any foe misses you
+                                rolling 1-5, turn into MonsterType
+SWARM: PUNY, FRAIL and loses VOROUS if HURT
+STALKER: has Advantage attacking MENTAL foes
+STILLER: bound foes lose blaster, can't use daily powers or inflict MENTAL.
+THICK: Can't be HURT by PUNY hits, unless attack roll is 15+
+THIEF: On hit steals d20 gp item or gp. If 2 HURT, gains ESCAPER.
+TIMID: Non-PURSUER. if you miss it, it moves to adjacent tile, exploring it.
+TIMED: loses CALM and gains PURSUER, if anyone at any tile rolls 1-3, 
+
+
+TOXIC: inflicts ILL on hit.
+TERRORIST: can't be hit while any foe is BOUND
+TRAPPER: foe on tile without 10XP or SEEING gains BOUND.
+UMBRAL: front-row foes (and unprotected back-row) lose FIRE.
+UNDEAD: Instead of PUNY hit gain TIRED.
+               Immune to AGED and ILL.
+VAMPIRIC: loses HURT if it hits non- contruct/undead/elemental
+VALUED: killing it gives 2 INFAMY, if it has alive ally on tile.
+VENOMOUS: ILL foes gain HURT when attack and miss any target.
+VULNERABLE: INFORMED actor can do task to kill it
+VOROUS: 1 BOUND foes gains HURT each time this monster activates.
+WARDER: mental foes disappear, but do task to reappear and lose mental
+WARD_EVIL/GOOD: actors of that alignment are PUNY and GAWKY.
+WARPER: Can attack protected backrow foe. AI prefers HURT and FRAIL.
+                 Ignores ELEVATED/FLOODED/CHASM on exits.
+WEAKENER: ILL foes are PUNY and FRAIL while on your tile.
+
+BOUND: Can't protect backrow allies. Foe gains +1 XP on each miss to it.
+                Ends on Camping, or by doing HARD Athletics task.
+                If INFORMED foe defeats you and there is no captive ally,
+                then lose COMA and 2 HURT, and gain CAPTIVE.
+ Note: If all allies are defeated, CAPTIVE heroes can escape through
+            Prison Escape rules.
+ILL: if TOUGH, ends on Camping. Undead/Gizmo are immune to ILL.
+MENTAL: Can't gain FOCUS.
+
+Note: MENTAL/BOUND/ILL - vulnerability markers. To inflict them, actor's TIRED must not be above HURT and actor gains TIRED. 
+MENTAL's charmer/hunter/stalker/etc.. affect allies, not foes.
+FIRE/WATER/RADIANT/ELDRICH/ACID - hit types.
+FIRE hit makes target lose WATER. WATER hit - lose FIRE.
+
+
+Interpret vague rules in a way benefiting monsters. 
+D6 CITY TASK
+                            Given N explored tiles, roll d6 + N. At night, add 4.
+     1-4. Open Lane  (no task - the way is clear)
+  5. Misdirection cr1 frail hiding investigation/insight
+6. Shopping Street cr1 greedy frail growing blocker persuasion/insight
+7. Slums cr2 tough sicker trapper weakener survival/medicine/insight
+8. Toll Gate cr2 greedy tough indomitable persuasion/intimidation
+9. Toxic Spill cr2 tough hazard caustic scavenger investigation/sleight
+10. Closing Passage cr3 frail blocker chiller growing acrobatics/athletics
+11. Quarantine Line cr3 tough foul scary medicine/deception/sleight
+12. Haunted Passage cr3 frail dread scary religion/performance
+13. Street Scuffle cr3 tough growing retributor intimidation/performance
+14. Hidden Passage cr3 agile mirrored phased investigation/survival
+15. Animal Herd cr4 tough indomitable healing acrobatics/athletics/taming
+16. Maze cr4 tough hiding mirrored survival/investigation
+17. Procession cr4 greedy army deception/insight/sleight
+18. Collapse cr5 epic thick hard hazard athletics/acrobatics
+19. Conflagration cr5 epic mire chiller hazard survival/acrobatics
+20+. Unrest cr6 indomitable retributor growing army
+            intimidation/persuasion/performance
+D20 MAP
+D20 | D3 D4 D5 D6 D7 D8 D9 D10 D12 D30 | DIR  | ALIGNMENT
+  1 |  1  1  1  1  1  1  1   1   1   1 | 6 W  | lawful good
+  2 |  1  1  1  1  1  1  1   1   2   3 | 6 E  | lawful good
+  3 |  1  1  1  1  2  2  2   2   3   4 | 5 NE | chaotic good
+  4 |  1  1  1  2  2  2  2   2   4   6 | 5 E  | chaotic good
+  5 |  1  1  2  2  3  3  3   3   4   7 | 5 SE | good
+  6 |  1  2  2  2  3  3  3   3   5   9 | 5 SW | good
+  7 |  2  2  2  3  3  3  4   4   5  10 | 5 W  | lawful
+  8 |  2  2  2  3  4  4  4   4   5  11 | 5 NW | lawful
+  9 |  2  2  3  3  4  4  4   5   6  12 | 4 NE | lawful
+ 10 |  2  2  3  3  4  4  5   5   6  14 | 4 E  | neutral
+ 11 |  2  3  3  4  4  5  5   6   6  15 | 4 SE | neutral
+ 12 |  2  3  3  4  5  5  5   6   7  17 | 4 SW | chaotic
+ 13 |  2  3  4  4  5  5  6   7   7  18 | 4 W  | chaotic
+ 14 |  2  3  4  4  5  6  6   7   8  20 | 4 NW | chaotic
+ 15 |  3  3  4  5  5  6  7   8   8  21 | 3 NE | evil
+ 16 |  3  4  4  5  6  6  7   8   9  23 | 3 E  | evil
+ 17 |  3  4  5  5  6  7  8   9   9  24 | 3 SE | chaotic evil
+ 18 |  3  4  5  6  6  7  8   9  10  26 | 3 SW | chaotic evil
+ 19 |  3  4  5  6  7  8  9  10  11  27 | 3 W  | lawful evil
+ 20 |  3  4  5  6  7  8  9  10  12  30 | 3 NW | lawful evil
+DIR - direction, usually relative to the current world map area.
+4SW means move 4 areas into south-west direction. If out of bounds, reroll.
+D8 WAY:  1. N,   2. NE,   3. E,   4. SE,  5. S,   6. SW,   7. W,   8. NW.
+D20 CITY: Assign each city a number. Do D20 Map to pick one.
+DIRSHIFT: 2x D20 Map/Dir from current Area, linking but not exploring areas.
+D20 AREA: DirShift from a D20 City (no city? - current area).
+
+

@@ -1,0 +1,48 @@
+{
+  "note": "Baseline for `bun run test`. `units` = tests bun reported SKIPPED per run unit; `failing` = failures PINNED as known, by name. Both are ratchets: any change fails the run and prints what moved. Pin only failures that are understood and filed — never to make a red go away. Seeded 2026-07-27 (v0.2.0 PREP Wave 0).",
+  "reasons": {
+    "novaclaw:server": "Pre-existing Windows-from-source failures in the promoted novaclaw:server unit. DO NOT un-pin on a single green run: measured 2026-07-28, SEVENTEEN of these flip between pass and fail across consecutive full-gate runs on an otherwise unchanged tree (they reported now-passing at 565s wall, then NEW FAILURE at 318s). They are FLAKY, not fixed — the unit boots a real server per suite and its runtime already swings +/-30%. Un-pinning them makes the next run red for the opposite reason. The ledger is the authority on the count; prose here drifts."
+  },
+  "units": {
+    "llm": 30,
+    "core": 88,
+    "novaclaw:server": 22,
+    "novaclaw:v2": 3,
+    "schema": 0,
+    "protocol": 0,
+    "effect-drizzle-sqlite": 0,
+    "http-recorder": 0,
+    "sdk-js": 0,
+    "session-ui": 0,
+    "ui": 0,
+    "app:unit": 0,
+    "app:browser": 0,
+    "desktop": 0,
+    "server": 0,
+    "novaclaw:config": 0,
+    "novaclaw:tool": 0
+  },
+  "failing": {
+    "novaclaw:server": [
+      "HttpApi SDK > matches generated SDK missing session errors",
+      "HttpApi SDK > uses the generated SDK for safe instance routes",
+      "HttpApi instance context middleware > falls back to the raw directory when URI decoding fails",
+      "HttpApi workspace routing middleware > uses directory query/header fallback when no workspace is selected",
+      "PublicApi OpenAPI v2 errors > documents nested legacy global sync events",
+      "PublicApi OpenAPI v2 errors > documents project not-found errors",
+      "PublicApi OpenAPI v2 errors > documents session busy errors",
+      "event HttpApi > delivers instance events after the initial event",
+      "instance HttpApi > emits a sync fence header for fixed-workspace mutations",
+      "instance HttpApi > returns typed not found bodies for missing projects",
+      "mcp HttpApi > returns unsupported OAuth error responses",
+      "mcp HttpApi > serves add, connect, and disconnect endpoints",
+      "mcp HttpApi > serves deterministic OAuth endpoints",
+      "mcp HttpApi > serves status endpoint",
+      "project directories and copies endpoints > lists directories and manages git worktree copies",
+      "promptAsync routes to the V2 native engine (F1b: one engine) > fresh session + model routes promptAsync to V2 (prompted on stream, busy→idle bracket, zero legacy rows)",
+      "v2 SDK error shape > 400 schema rejection: SDK extracts the field-level reason from the NamedError body",
+      "v2 location HttpApi > returns command and skill snapshots with resolved locations",
+      "workspace HttpApi > proxies remote workspace requests selected from session ownership"
+    ]
+  }
+}

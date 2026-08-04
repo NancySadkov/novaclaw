@@ -1,0 +1,33 @@
+# LF everywhere, on every platform. This repo has ZERO tracked .bat/.cmd (the one category that
+# requires CRLF), `.editorconfig` already mandates `end_of_line = lf`, and Prettier defaults to LF — so
+# the 185 CRLF files that existed before 2026-07-29 were a Windows-authoring artifact violating the
+# project's own standard, silently reformatted on every Prettier run. `text=auto` stores LF in the blob
+# on add (so CRLF cannot re-enter a commit for a text file); `eol=lf` forces LF on checkout regardless
+# of core.autocrlf/core.eol. `.githooks/pre-commit` CHECK 3 is the backstop. Measured, not guessed.
+* text=auto eol=lf
+
+packages/core/src/database/migration.gen.ts linguist-generated
+
+# Git hooks are run through `sh`. A CRLF shebang line makes sh report "bad interpreter" and the hook
+# then silently never runs — which is the exact failure mode `.githooks/` exists to remove, so pin the
+# line endings rather than relying on every clone having core.autocrlf=false.
+.githooks/** text eol=lf
+
+# Binary assets must never be line-ending normalized (a corrupted PNG test fixture cost us). `text=auto`
+# above already protects anything git detects as binary via the NUL heuristic; these are the extensions
+# where that detection is not worth trusting — an audio/native/font asset misread as text would corrupt.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.icns binary
+*.mp3 binary
+*.aac binary
+*.dll binary
+*.dylib binary
+*.so binary

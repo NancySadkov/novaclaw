@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "strict": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "emitDeclarationOnly": false,
+    "outDir": "node_modules/.ts-dist",
+    "types": ["vite/client", "node", "electron"]
+  },
+  "references": [{ "path": "../app" }],
+  "include": ["src", "package.json"],
+  // Test files are excluded HERE and typechecked by tsconfig.test.json instead — pass 2 of
+  // `bun run typecheck`. Before v0.2.0 PREP Wave 0 they were excluded and checked NOWHERE: ten files,
+  // in the package that shipped both packaging bugs. They cannot simply be folded in, because they
+  // need `@types/bun` and Bun's global `fetch` type lacks `preconnect`, which breaks
+  // `src/renderer/index.tsx`. Two projects is what "these disagree about globals" looks like.
+  "exclude": ["src/**/*.test.ts"]
+}

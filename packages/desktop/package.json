@@ -1,0 +1,73 @@
+{
+  "name": "@novaclaw/desktop",
+  "private": true,
+  "version": "0.1.57",
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "description": "NovaClaw — a local-first AI agent OS",
+  "homepage": "https://novaclaw.app",
+  "author": {
+    "name": "Nancy Sadkov",
+    "email": "112661214+NancySadkov@users.noreply.github.com"
+  },
+  "scripts": {
+    "typecheck": "tsgo -b && tsgo --noEmit -p tsconfig.test.json",
+    "test": "bun test src electron-builder.config.test.ts --only-failures",
+    "predev": "bun ./scripts/predev.ts",
+    "dev": "electron-vite dev",
+    "prebuild": "bun ./scripts/prebuild.ts",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "package": "electron-builder --config electron-builder.config.ts",
+    "package:mac": "electron-builder --mac --config electron-builder.config.ts",
+    "package:win": "electron-builder --win --config electron-builder.config.ts",
+    "package:linux": "electron-builder --linux --config electron-builder.config.ts",
+    "native:build": "bun install --cwd native"
+  },
+  "main": "./out/main/index.js",
+  "dependencies": {
+    "@ladybugdb/wasm-core": "0.18.2",
+    "@lydell/node-pty": "catalog:",
+    "@zip.js/zip.js": "2.7.62",
+    "effect": "catalog:",
+    "electron-context-menu": "4.1.2",
+    "electron-log": "^5",
+    "electron-store": "11.0.2",
+    "electron-updater": "6.8.9",
+    "electron-window-state": "^5.0.3",
+    "jsonc-parser": "3.3.1",
+    "marked": "^15"
+  },
+  "devDependencies": {
+    "@novaclaw/app": "workspace:*",
+    "@novaclaw/ui": "workspace:*",
+    "@solid-primitives/i18n": "2.2.1",
+    "@solid-primitives/storage": "catalog:",
+    "@solidjs/router": "0.15.4",
+    "@types/bun": "catalog:",
+    "@types/node": "catalog:",
+    "@typescript/native-preview": "catalog:",
+    "electron": "42.3.3",
+    "electron-builder": "26.15.2",
+    "electron-vite": "^5",
+    "solid-js": "catalog:",
+    "typescript": "~5.6.2",
+    "vite": "catalog:"
+  },
+  "optionalDependencies": {
+    "@lydell/node-pty-darwin-arm64": "1.2.0-beta.12",
+    "@lydell/node-pty-darwin-x64": "1.2.0-beta.12",
+    "@lydell/node-pty-linux-arm64": "1.2.0-beta.12",
+    "@lydell/node-pty-linux-x64": "1.2.0-beta.12",
+    "@lydell/node-pty-win32-arm64": "1.2.0-beta.12",
+    "@lydell/node-pty-win32-x64": "1.2.0-beta.12",
+    "@parcel/watcher-darwin-arm64": "2.5.1",
+    "@parcel/watcher-darwin-x64": "2.5.1",
+    "@parcel/watcher-linux-arm64-glibc": "2.5.1",
+    "@parcel/watcher-linux-arm64-musl": "2.5.1",
+    "@parcel/watcher-linux-x64-glibc": "2.5.1",
+    "@parcel/watcher-linux-x64-musl": "2.5.1",
+    "@parcel/watcher-win32-arm64": "2.5.1",
+    "@parcel/watcher-win32-x64": "2.5.1"
+  }
+}

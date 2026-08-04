@@ -1,0 +1,298 @@
+@import "@novaclaw/ui/styles/tailwind";
+@import "@novaclaw/session-ui/styles";
+@import "@novaclaw/ui/v2/styles/tailwind.css";
+@import "tw-animate-css";
+/* Color-scheme presets (uix.md §7). Nova (gold on purple) is the default, defined inline below
+   (data-app-theme absent); these override it under body[data-new-layout][data-app-theme="…"]. */
+@import "./themes/autumn.css";
+@import "./themes/summer.css";
+
+@font-face {
+  font-family: "JetBrainsMono Nerd Font Mono";
+  src: url("/assets/JetBrainsMonoNerdFontMono-Regular.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/assets/Inter.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+}
+
+@media (display-mode: standalone) {
+  /* WebKit excludes safe-area insets from dvh in installed apps. */
+  #root {
+    height: 100vh;
+  }
+}
+
+@layer components {
+  /* The `getting-started` / `getting-started-actions` container-query block that used to live here
+     is gone with the legacy shell (pages/layout.tsx) — it was the only thing rendering either
+     attribute, and a stylesheet keyed on a selector nothing emits is invisible dead weight. */
+
+  .home-session-group-header::before {
+    content: "";
+    position: absolute;
+    top: -12px;
+    left: 0;
+    width: 100%;
+    height: 12px;
+    background: var(--v2-background-bg-base);
+  }
+
+  .home-session-group-header::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 100%;
+    height: 16px;
+    pointer-events: none;
+    background: linear-gradient(
+      180deg,
+      var(--v2-background-bg-base) 0%,
+      color-mix(in srgb, var(--v2-background-bg-base) 92.0456%, transparent) 7.93%,
+      color-mix(in srgb, var(--v2-background-bg-base) 84.9947%, transparent) 14.14%,
+      color-mix(in srgb, var(--v2-background-bg-base) 78.6813%, transparent) 19%,
+      color-mix(in srgb, var(--v2-background-bg-base) 72.9394%, transparent) 22.85%,
+      color-mix(in srgb, var(--v2-background-bg-base) 67.6028%, transparent) 26.05%,
+      color-mix(in srgb, var(--v2-background-bg-base) 62.5055%, transparent) 28.95%,
+      color-mix(in srgb, var(--v2-background-bg-base) 57.4815%, transparent) 31.91%,
+      color-mix(in srgb, var(--v2-background-bg-base) 52.3647%, transparent) 35.27%,
+      color-mix(in srgb, var(--v2-background-bg-base) 46.989%, transparent) 39.4%,
+      color-mix(in srgb, var(--v2-background-bg-base) 41.1884%, transparent) 44.65%,
+      color-mix(in srgb, var(--v2-background-bg-base) 34.7969%, transparent) 51.36%,
+      color-mix(in srgb, var(--v2-background-bg-base) 27.6484%, transparent) 59.9%,
+      color-mix(in srgb, var(--v2-background-bg-base) 19.5767%, transparent) 70.62%,
+      color-mix(in srgb, var(--v2-background-bg-base) 10.416%, transparent) 83.87%,
+      transparent 100%
+    );
+  }
+
+  [data-slot="titlebar-update-loader"] {
+    display: block;
+    flex-shrink: 0;
+    margin: 1px;
+    width: 12px;
+    height: 12px;
+    border-radius: 9999px;
+    border: 2px solid color-mix(in srgb, var(--v2-icon-icon-accent) 30%, transparent);
+    border-top-color: var(--v2-icon-icon-accent);
+    animation: titlebar-update-loader-spin 0.67s linear infinite;
+    transform-origin: 50% 50%;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-slot="titlebar-update-loader"] {
+      animation: none;
+    }
+  }
+
+  @keyframes titlebar-update-loader-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes home-projects-fade-top {
+    from {
+      visibility: hidden;
+    }
+    to {
+      visibility: visible;
+    }
+  }
+
+  @keyframes home-projects-fade-bottom {
+    from {
+      visibility: visible;
+    }
+    to {
+      visibility: hidden;
+    }
+  }
+
+  [data-slot="home-projects-scroll"] {
+    timeline-scope: --home-projects-scroll;
+  }
+
+  [data-slot="home-projects-scroll"]::before,
+  [data-slot="home-projects-scroll"]::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    height: 16px;
+    pointer-events: none;
+    visibility: hidden;
+  }
+
+  [data-slot="home-projects-scroll"]::before {
+    top: 0;
+    background: linear-gradient(to bottom, var(--v2-background-bg-base), transparent);
+  }
+
+  [data-slot="home-projects-scroll"]::after {
+    bottom: 0;
+    background: linear-gradient(to top, var(--v2-background-bg-base), transparent);
+  }
+
+  @supports (animation-timeline: --home-projects-scroll) and (timeline-scope: --home-projects-scroll) {
+    [data-slot="home-projects-scroll"] .scroll-view__viewport {
+      scroll-timeline: --home-projects-scroll y;
+    }
+
+    [data-slot="home-projects-scroll"]::before {
+      animation: home-projects-fade-top linear both;
+      animation-timeline: --home-projects-scroll;
+      animation-range: 0 0.1px;
+    }
+
+    [data-slot="home-projects-scroll"]::after {
+      animation: home-projects-fade-bottom linear both;
+      animation-timeline: --home-projects-scroll;
+      animation-range: calc(100% - 1.1px) calc(100% - 1px);
+    }
+  }
+}
+
+/* ── NovaClaw "noble purple + gold" theme (B2) ──────────────────────────────────────────────────
+   App-wide remap of the v2 semantic design tokens to a deep-purple + gold palette. Every v2 component
+   reads these tokens, so overriding them here re-themes the whole new layout at once. Unlayered so it
+   wins over the `@layer theme` defaults; scoped to `[data-new-layout]` so the legacy layout is
+   untouched. Syntax-highlight + state (success/danger) colors are intentionally left alone. */
+body[data-new-layout] {
+  color-scheme: dark;
+
+  /* NovaClaw primitives — the one warm accent + the aurora, extracted so a color-scheme PRESET can
+     nominate its own (uix.md §7). Nova = gold on purple. A preset overrides these + the token field.
+     The primary-action recipe (hero ink, Start button, tour Next, ButtonV2 gold) flows from here. */
+  --nc-accent-solid: #e7b62f; /* hero accent + focus ring + bg-accent source */
+  --nc-accent-gradient: linear-gradient(155deg, #f4d06a, #e7b62f 55%, #c99a2e); /* THE eye anchor */
+  --nc-gold-gradient: var(--nc-accent-gradient); /* back-compat alias (ButtonV2 gold, tiles) */
+  --nc-ink: #1a1135; /* text/glyph on the accent */
+  --nc-aurora:
+    radial-gradient(110% 75% at 12% -8%, rgba(139, 92, 246, 0.3), transparent 62%),
+    radial-gradient(85% 70% at 100% 4%, rgba(231, 182, 47, 0.1), transparent 58%);
+  --nc-focus-ring-width: 2px;
+
+  /* Backgrounds — deep noble purple, layered */
+  --v2-background-bg-deep: #160f30;
+  --v2-background-bg-base: #201748;
+  --v2-background-bg-layer-01: #281d57;
+  --v2-background-bg-layer-02: #322568;
+  --v2-background-bg-layer-03: #3d2e7b;
+  --v2-background-bg-layer-04: #4a3890;
+  --v2-background-bg-inverse: #f2ecff;
+  --v2-background-bg-contrast: #e7ddff;
+  --v2-background-bg-button-neutral: #281d57;
+  --v2-background-bg-accent: var(--nc-accent-solid);
+
+  /* Text — light violet-white, gold accent */
+  --v2-text-text-base: #f3eeff;
+  --v2-text-text-muted: #bcaee0;
+  --v2-text-text-faint: #8b7db0;
+  --v2-text-text-inverse: #140c27;
+  --v2-text-text-contrast: #140c27;
+  --v2-text-text-accent: #f2c94c;
+  --v2-text-text-accent-hover: #f8d978;
+  --v2-text-text-code-accent: #f2c94c;
+
+  /* Icons */
+  --v2-icon-icon-base: #cabfe8;
+  --v2-icon-icon-muted: #8b7db0;
+  --v2-icon-icon-inverse: #140c27;
+  --v2-icon-icon-contrast: #1b1231;
+  --v2-icon-icon-accent: #f2c94c;
+  --v2-icon-icon-accent-hover: #f8d978;
+
+  /* Borders — subtle violet, gold focus */
+  --v2-border-border-muted: rgba(181, 158, 255, 0.08);
+  --v2-border-border-base: rgba(181, 158, 255, 0.15);
+  --v2-border-border-strong: rgba(181, 158, 255, 0.26);
+  --v2-border-border-focus: var(--nc-accent-solid);
+  /* Inverse border (on light/inverse surfaces) — the upstream default is grey-1000/100 (OS-coupled),
+     which left it un-themed; a deep-violet keeps it in the palette (uix.md §3 P2). */
+  --v2-border-border-inverse: rgba(20, 12, 39, 0.24);
+
+  /* Overlays — the defaults are LIGHT-mode (dark-alpha) values: on the purple base a hover overlay
+     was near-invisible and a scrim darkened nothing. Remap to light alphas / deep-purple scrim. */
+  --v2-overlay-simple-overlay-hover: rgba(216, 200, 255, 0.08);
+  --v2-overlay-simple-overlay-pressed: rgba(216, 200, 255, 0.14);
+  --v2-overlay-simple-overlay-contrast-hover: rgba(20, 12, 39, 0.24);
+  --v2-overlay-simple-overlay-contrast-pressed: rgba(20, 12, 39, 0.4);
+  --v2-overlay-simple-overlay-scrim: rgba(10, 6, 24, 0.6);
+  --v2-overlay-simple-tab-active-scrim: #20174800;
+  --v2-overlay-simple-tab-hover-scrim: #2a1f5c00;
+  --v2-overlay-simple-tab-scrim: #160f3000;
+  /* Depth-gradient (switch thumb + radio ring highlight) — the upstream default is pure white
+     (--v2-alpha-light-100), the "off-color white over purple" bug uix.md §2/P2 warns about. Retint to
+     the theme's violet-white so the thumb/ring sit IN the palette. */
+  --v2-overlay-gradient-depth-overlay-depth-top: rgba(243, 238, 255, 0.92);
+  --v2-overlay-gradient-depth-overlay-depth-bot: rgba(243, 238, 255, 0);
+
+  /* State chips — the light-mode pastels (green-100 backgrounds etc.) clash on deep purple; use the
+     dark-mode pairing (deep tinted bg, bright fg) so status colors sit IN the theme, not on it. */
+  --v2-state-bg-success: rgba(24, 74, 45, 0.55);
+  --v2-state-fg-success: #6fe39a;
+  --v2-state-border-success: rgba(73, 201, 112, 0.4);
+  --v2-state-bg-warning: rgba(104, 85, 43, 0.55);
+  --v2-state-fg-warning: #f2c94c;
+  --v2-state-border-warning: rgba(231, 175, 54, 0.4);
+  --v2-state-bg-danger: rgba(122, 31, 35, 0.55);
+  --v2-state-fg-danger: #ff8a93;
+  --v2-state-border-danger: rgba(217, 46, 60, 0.45);
+  --v2-state-bg-info: rgba(38, 63, 169, 0.5);
+  --v2-state-fg-info: #9db7ff;
+  --v2-state-border-info: rgba(118, 152, 253, 0.4);
+
+  /* Elevation — dark-mode shadow recipe (deep drop + light hairline) instead of the light-mode one,
+     so raised surfaces read as glass panes over the aurora rather than grey smudges. */
+  --v2-elevation-raised:
+    0px 2px 4px 0px rgba(8, 4, 20, 0.4), 0px 1px 2px 0px rgba(8, 4, 20, 0.35),
+    0px 0px 0px 0.5px rgba(216, 200, 255, 0.14), 0px -0.5px 0px 0px rgba(216, 200, 255, 0.06);
+  --v2-elevation-floating:
+    0px 8px 16px 0px rgba(8, 4, 20, 0.4), 0px 4px 8px 0px rgba(8, 4, 20, 0.35),
+    0px 0px 0px 0.5px rgba(216, 200, 255, 0.14), 0px -0.5px 0px 0px rgba(216, 200, 255, 0.06);
+  --v2-elevation-overlay:
+    0px 16px 32px 0px rgba(8, 4, 20, 0.45), 0px 8px 16px 0px rgba(8, 4, 20, 0.35),
+    0px 0px 0px 0.5px rgba(216, 200, 255, 0.16), 0px -0.5px 0px 0px rgba(216, 200, 255, 0.06);
+  --v2-elevation-button-neutral:
+    0px 1px 2px 0px rgba(8, 4, 20, 0.4), 0px 0px 0px 0.5px rgba(216, 200, 255, 0.18),
+    0px -0.5px 0px 0px rgba(216, 200, 255, 0.08);
+  --v2-elevation-button-contrast:
+    0px 1px 2px 0px rgba(8, 4, 20, 0.4), 0px 0px 0px 0.5px rgba(216, 200, 255, 0.35),
+    inset 0px 0px 0px 0px rgba(255, 255, 255, 0), inset 0px 0px 0px 0px rgba(255, 255, 255, 0),
+    0px -0.5px 0px 0px rgba(216, 200, 255, 0.25);
+  --v2-elevation-switch-off:
+    inset 0px -0.5px 0px 0px rgba(216, 200, 255, 0.1), inset 0px 0px 0px 0.5px rgba(216, 200, 255, 0.16);
+  --v2-elevation-switch-on:
+    inset 0px -0.5px 0px 0px rgba(216, 200, 255, 0.1), inset 0px 0px 0px 0.5px rgba(216, 200, 255, 0.16);
+  /* Small-element drop (switch thumb) — was OS-coupled (light-mode alpha-dark-40); a deep drop keeps
+     the thumb reading as a raised element on the purple track (uix.md §2/P2). */
+  --v2-elevation-elements: 0px 0.5px 1px 0px rgba(8, 4, 20, 0.5);
+
+  /* Illustration layers (empty states) — violet steps instead of grey */
+  --v2-illustration-illustration-layer-01: #322568;
+  --v2-illustration-illustration-layer-02: #3d2e7b;
+  --v2-illustration-illustration-layer-03: #4a3890;
+
+  /* Legacy (v1) token bridge — some dialogs still read these; keep them on-palette */
+  --surface-base: #201748;
+  --surface-base-hover: #2a1f5c;
+  --text-base: #f3eeff;
+  --text-strong: #ffffff;
+  --text-weak: #bcaee0;
+  --border-weak-base: rgba(181, 158, 255, 0.15);
+  --icon-base: #cabfe8;
+}
+
+/* A soft radial aurora over the deep-purple base, for depth (the "glow" of the glassmorphic look).
+   On `main` (transparent over bg-deep) so it isn't hidden behind an opaque layer. */
+body[data-new-layout] main {
+  background-image: var(--nc-aurora);
+}

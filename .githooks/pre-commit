@@ -1,0 +1,201 @@
+#!/bin/sh
+#
+# NovaClaw pre-commit — two BUILD-FREE checks, in the order they cost.
+#
+# WHY THIS FILE EXISTS. Until 2026-07-27 this repo's `core.hooksPath` pointed at `.husky/_`, a
+# directory that does not exist — inherited from the opencode fork and deleted since. So no hook had
+# ever run, and the project's own law (mechanical levers convert, informational ones only engage) was
+# applied to the dev loop and nowhere else. This is the mechanical edge.
+#
+# It must stay FAST and must never build or run the suite: a slow hook gets bypassed, and a bypassed
+# hook is worse than no hook because it also buys false confidence. Check 1 is a single `git diff`
+# plus awk (milliseconds, always). Check 2 runs only when a schema file is actually staged.
+#
+# Escape hatch, deliberately advertised in every refusal:  git commit --no-verify
+#
+# shellcheck shell=sh
+set -u
+
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+cd "$repo_root" || exit 0
+
+fail=0
+tmp_raw="${TMPDIR:-/tmp}/nc-precommit-raw.$$"
+tmp_real="${TMPDIR:-/tmp}/nc-precommit-real.$$"
+tab=$(printf '\t')
+
+# --------------------------------------------------------------------------------------------------
+# CHECK 1 — a staged file with mode 120000 (symlink) outside packages/app/public/
+#
+# AGENTS.md -> Known pitfalls #4, the INVISIBLE direction. A file can be committed with mode 120000
+# while its blob holds ordinary source. `core.symlinks` is off on Windows, so git checks it out as a
+# correct regular file: working tree, typecheck and build are all green here, while every Linux/macOS
+# clone gets a symlink whose target is a path made of source text — i.e. a broken file.
+# `packages/app/src/custom-elements.d.ts` shipped that way. The 13 entries under packages/app/public/
+# are legitimate symlinks and are allowed.
+#
+# We read the STAGED destination mode (field 2 of `git diff --cached --raw`), not the index-wide mode,
+# so the hook only refuses what THIS commit puts there. Deletions carry dst mode 000000 and drop out.
+# --------------------------------------------------------------------------------------------------
+if git rev-parse --verify -q HEAD >/dev/null 2>&1; then
+  against=HEAD
+else
+  # First commit in the repo: diff against the empty tree rather than a HEAD that does not exist.
+  against=$(git hash-object -t tree /dev/null)
+fi
+
+# Output lines are "<blob><TAB><path>". `$NF` is the DESTINATION path, which is also correct for
+# rename/copy entries (":<src> <dst> <sha> <sha> R100<TAB>old<TAB>new").
+staged_symlinks=$(
+  git diff --cached --raw --abbrev=40 "$against" | awk -F"$tab" '
+    {
+      split($1, meta, " ")
+      if (meta[2] != "120000") next
+      path = $NF
+      if (path ~ /^"?packages\/app\/public\//) next
+      print meta[4] "\t" path
+    }
+  '
+)
+
+if [ -n "$staged_symlinks" ]; then
+  fail=1
+  echo "" >&2
+  echo "pre-commit: REFUSING — staged file(s) have mode 120000 (symlink) outside packages/app/public/:" >&2
+  echo "" >&2
+  # printf, not echo: dash's echo expands backslash escapes, and git quotes unusual paths using them.
+  printf '%s\n' "$staged_symlinks" | while IFS="$tab" read -r blob path; do
+    printf '    %s\n' "$path" >&2
+  done
+  echo "" >&2
+  echo "  You cannot see this on Windows. core.symlinks is off here, so git checks the file out as an" >&2
+  echo "  ordinary file — working tree, typecheck and build all stay green — while every Linux/macOS" >&2
+  echo "  clone gets a symlink whose target is the file's own source text, i.e. a broken file." >&2
+  echo "  (AGENTS.md -> Known pitfalls #4. packages/app/src/custom-elements.d.ts shipped exactly this.)" >&2
+  echo "" >&2
+  echo "  Fix — re-register the SAME blob under mode 100644, then commit again:" >&2
+  echo "" >&2
+  echo "$staged_symlinks" | while IFS="$tab" read -r blob path; do
+    # The triple is quoted so a path containing spaces still copy-pastes correctly.
+    printf '    git update-index --add --cacheinfo "100644,%s,%s"\n' "$blob" "$path" >&2
+  done
+  echo "" >&2
+  echo "  If it really is an intended symlink, bypass with:  git commit --no-verify" >&2
+  echo "" >&2
+fi
+
+# --------------------------------------------------------------------------------------------------
+# CHECK 2 — schema drift, only when a drizzle schema file is staged.
+#
+# packages/core/drizzle.config.ts globs "./src/**/*.sql.ts" and "./src/**/sql.ts", so BOTH shapes
+# count (calendar.sql.ts and session/sql.ts alike). A drifted snapshot makes the sanctioned generator
+# emit ONE migration containing every backlogged delta -> CREATE TABLE on objects that already exist
+# -> throw inside applyOnly -> Effect.orDie -> boot death on every existing user database. Catching it
+# at the moment a schema file is staged is the cheapest possible place.
+#
+# stdin is redirected from /dev/null because drizzle-kit PROMPTS on a TTY (memory:
+# drizzle-migration-generator) and would otherwise hang the commit forever.
+# --------------------------------------------------------------------------------------------------
+# No --diff-filter: DELETING a schema file drops a table, which drifts the baseline exactly as much as
+# adding one, so a deletion has to run the check too.
+staged_sql=$(git diff --cached --name-only "$against" | grep -E '(^|/)([^/]*\.)?sql\.ts"?$')
+
+if [ -n "$staged_sql" ]; then
+  if command -v bun >/dev/null 2>&1; then
+    echo "pre-commit: a drizzle schema file is staged — checking the migration baseline..." >&2
+
+    run_migration_check() {
+      cd "$repo_root/packages/core" || return 1
+      # GNU `timeout` only; Windows' System32 timeout.exe fails --version, so this probe picks the
+      # right one or none. A hung commit is the failure mode that gets a hook uninstalled.
+      if timeout --version >/dev/null 2>&1; then
+        timeout 300 bun script/migration.ts --check </dev/null 2>&1
+      else
+        bun script/migration.ts --check </dev/null 2>&1
+      fi
+    }
+
+    check_output=$(run_migration_check)
+    check_status=$?
+
+    if [ "$check_status" -ne 0 ]; then
+      fail=1
+      echo "" >&2
+      if [ "$check_status" -eq 124 ]; then
+        echo "pre-commit: REFUSING — the migration check timed out after 300s." >&2
+        echo "  drizzle-kit most likely wanted to prompt. Run it by hand and answer it:" >&2
+      else
+        echo "pre-commit: REFUSING — the core database schema baseline is out of date:" >&2
+        echo "" >&2
+        printf '%s\n' "$check_output" | sed 's/^/    /' >&2
+      fi
+      echo "" >&2
+      echo "  A drifted snapshot makes the generator emit ONE migration holding every backlogged" >&2
+      echo "  delta — CREATE TABLE on tables that already exist — which throws inside applyOnly and" >&2
+      echo "  is Effect.orDie'd, i.e. boot death on every existing user database." >&2
+      echo "" >&2
+      echo "  Run:  cd packages/core && bun script/migration.ts" >&2
+      echo "  then stage packages/core/schema.json, the new migration and the regenerated files." >&2
+      echo "" >&2
+      echo "  Bypass (only if the baseline is being repaired in a separate commit):  git commit --no-verify" >&2
+      echo "" >&2
+    fi
+  else
+    # A hook that hard-fails because a tool is missing gets disabled wholesale. Warn loudly, pass.
+    echo "" >&2
+    echo "pre-commit: WARNING — a drizzle schema file is staged but 'bun' is not on PATH, so the" >&2
+    echo "  migration baseline check did NOT run. Verify before you push:" >&2
+    echo "" >&2
+    echo "    cd packages/core && bun script/migration.ts --check" >&2
+    echo "" >&2
+  fi
+fi
+
+# --------------------------------------------------------------------------------------------------
+# CHECK 3 — a staged text blob that contains CRLF.
+#
+# The tree is uniformly LF as of 2026-07-29 (`.gitattributes` `* text=auto eol=lf`, applied by a
+# `git add --renormalize` over the 185 remaining CRLF files). `text=auto` means git normalizes a text
+# file to LF in the blob on `add`, so CRLF should be unable to re-enter a commit at all — this check is
+# the BACKSTOP for the case where it slips past (a clone whose attributes were not applied, a file
+# force-added with `-c core.autocrlf=input` off, a generator that writes CRLF). It refuses the commit
+# and names the files, rather than letting a stray CR land and start the drift over again.
+#
+# ⚠️ This INVERTS the rule this check held until 2026-07-29. It used to be "a file that had CRLF must
+# KEEP CRLF" because the tree was deliberately mixed; normalization made that premise false, so
+# preserving it would have fought Prettier (which writes LF) on every commit forever. The failure it
+# originally guarded — a whole-file CRLF→LF flip burying a one-line edit — cannot recur now that HEAD
+# is already LF: there is no CRLF left to flip. Binary files are exempt (numstat reports `-`).
+# --------------------------------------------------------------------------------------------------
+cr=$(printf '\r')
+staged_crlf=$(
+  git diff --cached --numstat --diff-filter=ACM -- . 2>/dev/null |
+    while IFS="$(printf '\t')" read -r adds dels path; do
+      [ "$adds" = "-" ] && continue # binary per .gitattributes / git's NUL heuristic
+      if git show ":$path" 2>/dev/null | grep -qU "$cr" 2>/dev/null; then
+        printf '%s\n' "$path"
+      fi
+    done
+)
+
+if [ -n "$staged_crlf" ]; then
+  fail=1
+  echo "" >&2
+  echo "pre-commit: REFUSING — these staged text files contain CRLF; the tree is LF-only:" >&2
+  echo "" >&2
+  printf '%s\n' "$staged_crlf" | sed 's/^/    /' >&2
+  echo "" >&2
+  echo "  Since 2026-07-29 every tracked text file is LF ('.gitattributes' '* text=auto eol=lf'), and" >&2
+  echo "  '.editorconfig' already mandates it. A staged CRLF blob means the normalization did not apply" >&2
+  echo "  to your clone or a tool wrote CRLF. Almost always a script that read with universal newlines" >&2
+  echo "  and wrote back with newline='' — the same class, now in the other direction." >&2
+  echo "" >&2
+  echo "  Fix (converts to LF and re-stages):" >&2
+  echo "    git add --renormalize <file>   # or:  dos2unix <file> && git add <file>" >&2
+  echo "" >&2
+  echo "  Bypass (only if the CRLF is genuinely required — e.g. a new .bat, which also needs a" >&2
+  echo "  '*.bat text eol=crlf' rule in .gitattributes):  git commit --no-verify" >&2
+  echo "" >&2
+fi
+
+exit $fail

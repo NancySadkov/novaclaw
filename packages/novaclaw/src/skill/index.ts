@@ -1,0 +1,360 @@
+import { LayerNode } from "@novaclaw/core/effect/layer-node"
+import path from "path"
+import { Effect, Layer, Context, Schema } from "effect"
+import { NamedError } from "@novaclaw/core/util/error"
+import type { Agent } from "@/agent/agent"
+import { EventV2Bridge } from "@/event-v2-bridge"
+import { InstanceState } from "@/effect/instance-state"
+import { Global } from "@novaclaw/core/global"
+import { Log } from "@novaclaw/schema/log"
+import { Permission } from "@/permission"
+import { FSUtil } from "@novaclaw/core/fs-util"
+import { Config } from "@/config/config"
+import { FrontmatterError } from "@novaclaw/core/config/error"
+import { ConfigMarkdown } from "@/config/markdown"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+import { Glob } from "@novaclaw/core/util/glob"
+import { Discovery } from "./discovery"
+import { isRecord } from "@/util/record"
+import { escapeHtml } from "@/util/html"
+
+const CLAUDE_EXTERNAL_DIR = ".claude"
+const AGENTS_EXTERNAL_DIR = ".agents"
+const EXTERNAL_SKILL_PATTERN = "skills/**/SKILL.md"
+const NOVACLAW_SKILL_PATTERN = "{skill,skills}/**/SKILL.md"
+const SKILL_PATTERN = "**/SKILL.md"
+
+// The old built-in "customize-novaclaw" skill is RETIRED (2026-07-22): it taught the jsonc-file
+// config world (novaclaw.json schemas, edit-then-restart) that the settings-in-SQLite migration
+// removed — exactly the wrong instructions for the live HTTP config surface. Config repair is the
+// self-healing rule's territory (AGENTS.md: runtime-editable stores behind PATCH /config), not a
+// file-schema cheat sheet. Skills on disk with the same name still load normally.
+
+export const Info = Schema.Struct({
+  name: Schema.String,
+  description: Schema.optional(Schema.String),
+  location: Schema.String,
+  content: Schema.String,
+})
+export type Info = Schema.Schema.Type<typeof Info>
+
+const Issue = Schema.StructWithRest(
+  Schema.Struct({
+    message: Schema.String,
+    path: Schema.Array(Schema.String),
+  }),
+  [Schema.Record(Schema.String, Schema.Unknown)],
+)
+
+function isSkillFrontmatter(data: unknown): data is { name: string; description?: string } {
+  return (
+    isRecord(data) &&
+    typeof data.name === "string" &&
+    (data.description === undefined || typeof data.description === "string")
+  )
+}
+
+export class InvalidError extends Schema.TaggedErrorClass<InvalidError>()("SkillInvalidError", {
+  path: Schema.String,
+  message: Schema.optional(Schema.String),
+  issues: Schema.optional(Schema.Array(Issue)),
+}) {}
+
+export class NameMismatchError extends Schema.TaggedErrorClass<NameMismatchError>()("SkillNameMismatchError", {
+  path: Schema.String,
+  expected: Schema.String,
+  actual: Schema.String,
+}) {}
+
+export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Skill.NotFoundError", {
+  name: Schema.String,
+  available: Schema.Array(Schema.String),
+}) {
+  override get message() {
+    return `Skill "${this.name}" not found. Available skills: ${this.available.join(", ") || "none"}`
+  }
+}
+
+type State = {
+  skills: Record<string, Info>
+  dirs: Set<string>
+}
+
+type DiscoveryState = {
+  matches: string[]
+  dirs: string[]
+}
+
+type ScanState = {
+  matches: Set<string>
+  dirs: Set<string>
+}
+
+export interface Interface {
+  readonly get: (name: string) => Effect.Effect<Info | undefined>
+  readonly require: (name: string) => Effect.Effect<Info, NotFoundError>
+  readonly all: () => Effect.Effect<Info[]>
+  readonly dirs: () => Effect.Effect<string[]>
+  readonly available: (agent?: Agent.Info) => Effect.Effect<Info[]>
+}
+
+const add = Effect.fnUntraced(function* (state: State, match: string, events: EventV2Bridge.Service["Service"]) {
+  const md = yield* Effect.tryPromise({
+    try: () => ConfigMarkdown.parse(match),
+    catch: (err) => err,
+  }).pipe(
+    Effect.catch(
+      Effect.fnUntraced(function* (err) {
+        const message = FrontmatterError.isInstance(err) ? err.data.message : `Failed to parse skill ${match}`
+        const { SessionRecordEvent } = yield* Effect.promise(() => import("@novaclaw/schema/session-record-event"))
+        yield* events.publish(SessionRecordEvent.Error, { error: new NamedError.Unknown({ message }).toObject() })
+        yield* Log.event("skill.file.load.failed", {
+          "skill.file": match,
+          "skill.error": err instanceof Error ? err.message : String(err),
+        })
+        return undefined
+      }),
+    ),
+  )
+
+  if (!md) return
+
+  if (!isSkillFrontmatter(md.data)) return
+
+  if (state.skills[md.data.name]) {
+    yield* Log.event("skill.registry.duplicate", {
+      "skill.name": md.data.name,
+      "skill.existing": state.skills[md.data.name].location,
+      "skill.duplicate": match,
+    })
+  }
+
+  state.dirs.add(path.dirname(match))
+  state.skills[md.data.name] = {
+    name: md.data.name,
+    description: md.data.description,
+    location: match,
+    content: md.content,
+  }
+})
+
+const scan = Effect.fnUntraced(function* (
+  state: ScanState,
+  root: string,
+  pattern: string,
+  opts?: { dot?: boolean; scope?: "global" | "project" },
+) {
+  const matches = yield* Effect.tryPromise({
+    try: () =>
+      Glob.scan(pattern, {
+        cwd: root,
+        absolute: true,
+        include: "file",
+        symlink: true,
+        dot: opts?.dot,
+      }),
+    catch: (error) => error,
+  }).pipe(
+    Effect.catch((error) => {
+      if (!opts?.scope) return Effect.die(error)
+      return Log.event("skill.scan.failed", {
+        "skill.scope": opts.scope,
+        "skill.directory": root,
+        "skill.error": error instanceof Error ? error.message : String(error),
+      }).pipe(Effect.as([] as string[]))
+    }),
+  )
+
+  for (const match of matches) {
+    state.matches.add(match)
+    state.dirs.add(path.dirname(match))
+  }
+})
+
+const discoverSkills = Effect.fnUntraced(function* (
+  config: Config.Interface,
+  discovery: Discovery.Interface,
+  fsys: FSUtil.Interface,
+  global: Global.Interface,
+  disableExternalSkills: boolean,
+  disableClaudeCodeSkills: boolean,
+  directory: string,
+  worktree: string,
+) {
+  const state: ScanState = { matches: new Set(), dirs: new Set() }
+
+  const externalDirs: string[] = []
+  if (!disableExternalSkills) {
+    if (!disableClaudeCodeSkills) externalDirs.push(CLAUDE_EXTERNAL_DIR)
+    externalDirs.push(AGENTS_EXTERNAL_DIR)
+
+    for (const dir of externalDirs) {
+      const root = path.join(global.home, dir)
+      if (!(yield* fsys.isDir(root))) continue
+      yield* scan(state, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "global" })
+    }
+
+    const upDirs = yield* fsys
+      .up({ targets: externalDirs, start: directory, stop: worktree })
+      .pipe(Effect.catch(() => Effect.succeed([] as string[])))
+
+    for (const root of upDirs) {
+      yield* scan(state, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "project" })
+    }
+  }
+
+  const configDirs = yield* config.directories()
+  for (const dir of configDirs) {
+    yield* scan(state, dir, NOVACLAW_SKILL_PATTERN)
+  }
+
+  const cfg = yield* config.get()
+  // V2 `skills` is one flat array (V1 spelled it `{paths, urls}`, migrated as [...paths, ...urls]).
+  // Split it back: http(s) entries are pull-able skill sources, the rest are local directory paths.
+  const skills = cfg.skills ?? []
+  const isSkillUrl = (item: string) => /^https?:\/\//i.test(item)
+  for (const item of skills.filter((entry) => !isSkillUrl(entry))) {
+    const expanded = item.startsWith("~/") ? path.join(global.home, item.slice(2)) : item
+    const dir = path.isAbsolute(expanded) ? expanded : path.join(directory, expanded)
+    if (!(yield* fsys.isDir(dir))) {
+      yield* Log.event("skill.path.missing", { "skill.path": dir })
+      continue
+    }
+
+    yield* scan(state, dir, SKILL_PATTERN)
+  }
+
+  for (const url of skills.filter(isSkillUrl)) {
+    const pulledDirs = yield* discovery.pull(url)
+    for (const dir of pulledDirs) {
+      yield* scan(state, dir, SKILL_PATTERN)
+    }
+  }
+
+  return {
+    matches: Array.from(state.matches),
+    dirs: Array.from(state.dirs),
+  }
+})
+
+const loadSkills = Effect.fnUntraced(function* (
+  state: State,
+  discovered: DiscoveryState,
+  events: EventV2Bridge.Service["Service"],
+) {
+  yield* Effect.forEach(discovered.matches, (match) => add(state, match, events), {
+    concurrency: "unbounded",
+    discard: true,
+  })
+
+  yield* Log.event("skill.registry.init", { count: Object.keys(state.skills).length })
+})
+
+export class Service extends Context.Service<Service, Interface>()("@novaclaw/Skill") {}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const discovery = yield* Discovery.Service
+    const config = yield* Config.Service
+    const events = yield* EventV2Bridge.Service
+    const fsys = yield* FSUtil.Service
+    const global = yield* Global.Service
+    const flags = yield* RuntimeFlags.Service
+    const discovered = yield* InstanceState.make(
+      Effect.fn("Skill.discovery")(function* (ctx) {
+        return yield* discoverSkills(
+          config,
+          discovery,
+          fsys,
+          global,
+          flags.disableExternalSkills,
+          flags.disableClaudeCodeSkills,
+          ctx.directory,
+          ctx.worktree,
+        )
+      }),
+    )
+    const state = yield* InstanceState.make(
+      Effect.fn("Skill.state")(function* () {
+        const s: State = { skills: {}, dirs: new Set() }
+        yield* loadSkills(s, yield* InstanceState.get(discovered), events)
+        return s
+      }),
+    )
+
+    const get = Effect.fn("Skill.get")(function* (name: string) {
+      const s = yield* InstanceState.get(state)
+      return s.skills[name]
+    })
+
+    const require = Effect.fn("Skill.require")(function* (name: string) {
+      const s = yield* InstanceState.get(state)
+      const info = s.skills[name]
+      if (info) return info
+      return yield* new NotFoundError({ name, available: Object.keys(s.skills).toSorted() })
+    })
+
+    const all = Effect.fn("Skill.all")(function* () {
+      const s = yield* InstanceState.get(state)
+      return Object.values(s.skills)
+    })
+
+    const dirs = Effect.fn("Skill.dirs")(function* () {
+      return (yield* InstanceState.get(discovered)).dirs
+    })
+
+    const available = Effect.fn("Skill.available")(function* (agent?: Agent.Info) {
+      const s = yield* InstanceState.get(state)
+      const list = Object.values(s.skills).toSorted((a, b) => a.name.localeCompare(b.name))
+      if (!agent) return list
+      return list.filter((skill) => Permission.evaluate("skill", skill.name, agent.permission).action !== "deny")
+    })
+
+    return Service.of({ get, require, all, dirs, available })
+  }),
+)
+
+export const defaultLayer = layer.pipe(
+  Layer.provide(Discovery.defaultLayer),
+  Layer.provide(Config.defaultLayer),
+  Layer.provide(EventV2Bridge.defaultLayer),
+  Layer.provide(FSUtil.defaultLayer),
+  Layer.provide(Global.layer),
+  Layer.provide(RuntimeFlags.defaultLayer),
+)
+
+export function fmt(list: Info[], opts: { verbose: boolean }) {
+  const described = list.filter((skill) => skill.description !== undefined)
+  if (described.length === 0) return "No skills are currently available."
+  if (opts.verbose) {
+    return [
+      "<available_skills>",
+      ...described
+        .toSorted((a, b) => a.name.localeCompare(b.name))
+        .flatMap((skill) => [
+          "  <skill>",
+          `    <name>${skill.name}</name>`,
+          `    <description>${skill.description}</description>`,
+          `    <location>${escapeHtml(skill.location)}</location>`,
+          "  </skill>",
+        ]),
+      "</available_skills>",
+    ].join("\n")
+  }
+
+  return [
+    "## Available Skills",
+    ...described
+      .toSorted((a, b) => a.name.localeCompare(b.name))
+      .map((skill) => `- **${skill.name}**: ${skill.description}`),
+  ].join("\n")
+}
+
+export const node = LayerNode.make({
+  service: Service,
+  layer: layer,
+  deps: [Discovery.node, Config.node, EventV2Bridge.node, FSUtil.node, Global.node, RuntimeFlags.node],
+})
+
+export * as Skill from "."

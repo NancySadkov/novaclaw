@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@novaclaw/plugin",
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "scripts": {
+    "typecheck": "tsgo --noEmit",
+    "build": "tsc"
+  },
+  "exports": {
+    "./tool": "./src/tool.ts",
+    "./v2/effect": "./src/v2/effect/index.ts",
+    "./v2/effect/integration": "./src/v2/effect/integration.ts",
+    "./v2/effect/plugin": "./src/v2/effect/plugin.ts",
+    "./v2/promise": "./src/v2/promise/index.ts"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@novaclaw/sdk": "workspace:*",
+    "effect": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@tsconfig/node22": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "@typescript/native-preview": "catalog:"
+  }
+}

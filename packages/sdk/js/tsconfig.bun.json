@@ -1,0 +1,40 @@
+// The BUN-FLAVOURED half of `@novaclaw/sdk`. See `tsconfig.json` for why this package needs two
+// projects at all; in short, `src` ships to a browser and these two directories run under bun.
+//
+// Until 2026-07-29 nothing compiled them: `tsconfig.json` says `"include": ["src"]`, and bun
+// type-STRIPS rather than type-checks, so `test/**` could pass every assertion it makes while
+// failing `tsgo` outright. `bun run typecheck` now runs this project as its second command, so both
+// halves are in the gate's `typecheck:sdk` unit (`novaclaw/script/lib/typecheck-units.ts` discovers
+// units from the manifest and runs each package's OWN `typecheck` script — extending that script is
+// what wires this in, with no new unit name and no baseline entry).
+//
+// ⚠️ It extends `@tsconfig/bun` rather than `./tsconfig.json`, and that is MEASURED, not preferred.
+// `packages/desktop` solves the same two-halves problem the other way (`tsconfig.test.json` extends
+// its own base and only overrides `types`), so the obvious move is to copy it. Tried on 2026-07-29:
+// it reports FIVE errors, and all five are false —
+//   · `test/session-history.test.ts(2,43)` TS2307, because that file imports `"../src/v2/gen/types.gen"`
+//     EXTENSIONLESS. `nodenext` requires `./x.js`; bun's resolver does not, and bun is what runs it.
+//   · four in `packages/script/src/index.ts` (TS1470/TS1309), a workspace sibling that `nodenext`
+//     misclassifies as CommonJS, so its `import.meta` and top-level `await` become errors.
+// Desktop's base is already node/electron-ESM-shaped so inheriting it costs nothing there; this
+// package's base is `@tsconfig/node22` with `moduleResolution: nodenext`, which is the wrong resolver
+// for files bun executes. Compiling code under a module system it will never run in invents errors
+// and then invites "fixes" to real files to silence them.
+//
+// ⚠️ `include` names DIRECTORIES, not file globs. That is deliberate: a glob like `["*.ts",
+// "test/**/*.ts"]` leaves any new subdirectory silently unchecked forever, which is the exact hole
+// this file exists to close (it is the correction `novaclaw/script/tsconfig.json` recorded on the
+// same day). A bare directory name is recursive, so `test/**` and `script/**` cannot grow a blind
+// spot. `src` is deliberately absent — it belongs to the other project — though the two overlap
+// where a test imports it (`test/session-history.test.ts` pulls in `src/v2/gen/types.gen.ts`),
+// which is correct: a consumer should compile the thing it consumes.
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@tsconfig/bun/tsconfig.json",
+  "compilerOptions": {
+    // Stated, not inherited from whatever happens to be in `node_modules/@types`. The mirror of the
+    // `"types": ["node"]` pin in `tsconfig.json`: this half may see bun, that half may not.
+    "types": ["node", "bun"]
+  },
+  "include": ["test", "script"]
+}

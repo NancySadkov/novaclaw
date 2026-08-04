@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@tsconfig/bun/tsconfig.json",
+  "compilerOptions": {
+    "noUncheckedIndexedAccess": false,
+    // Web/fetch globals (Response, ReadableStream) + the DOM type aliases
+    // (HeadersInit, BodyInit) that consumed workspace sources (@novaclaw/plugin,
+    // @novaclaw/sdk) surface. `@tsconfig/bun` ships ESNext-only, so core — which
+    // typechecks those deps from source — must opt into DOM like `novaclaw` does.
+    "lib": ["ESNext", "DOM", "DOM.Iterable"]
+  }
+}

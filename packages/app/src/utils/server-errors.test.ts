@@ -1,0 +1,258 @@
+import { describe, expect, test } from "bun:test"
+import type { SessionNotFoundError } from "@novaclaw/sdk/v2/client"
+import type { TranslationParams } from "@/context/language"
+import type { ConfigInvalidError, ProviderModelNotFoundError } from "./server-errors"
+import {
+  formatServerError,
+  isMissingDirectoryError,
+  isSessionNotFoundError,
+  parseReadableConfigInvalidError,
+} from "./server-errors"
+
+function fill(text: string, vars?: TranslationParams) {
+  if (!vars) return text
+  return text.replace(/{{\s*(\w+)\s*}}/g, (_, key: string) => {
+    const value = vars[key]
+    if (value === undefined) return ""
+    return String(value)
+  })
+}
+
+function useLanguageMock() {
+  const dict: Record<string, string> = {
+    "error.chain.unknown": "Erro desconhecido",
+    "error.chain.configInvalid": "Arquivo de config em {{path}} invalido",
+    "error.chain.configInvalidWithMessage": "Arquivo de config em {{path}} invalido: {{message}}",
+    "error.chain.modelNotFound": "Modelo nao encontrado: {{provider}}/{{model}}",
+    "error.chain.didYouMean": "Voce quis dizer: {{suggestions}}",
+    "error.chain.checkConfig": "Revise provider/model no config",
+  }
+  return {
+    // The mock must accept AT LEAST what the real `t` accepts — `params` is contravariant, so a
+    // mock declaring a narrower bag than `TranslationParams` is not a valid `Translator`.
+    // `key` stays `string` on purpose: the mock deliberately probes the missing-key fallback.
+    t(key: string, vars?: TranslationParams) {
+      const text = dict[key]
+      if (!text) return key
+      return fill(text, vars)
+    },
+  }
+}
+
+const language = useLanguageMock()
+
+describe("parseReadableConfigInvalidError", () => {
+  test("formats issues with file path", () => {
+    const error = {
+      name: "ConfigInvalidError",
+      data: {
+        path: "novaclaw.config.ts",
+        issues: [
+          { path: ["settings", "host"], message: "Required" },
+          { path: ["mode"], message: "Invalid" },
+        ],
+      },
+    } satisfies ConfigInvalidError
+
+    const result = parseReadableConfigInvalidError(error, language.t)
+
+    expect(result).toBe(
+      ["Arquivo de config em novaclaw.config.ts invalido: settings.host: Required", "mode: Invalid"].join("\n"),
+    )
+  })
+
+  test("uses trimmed message when issues are missing", () => {
+    const error = {
+      name: "ConfigInvalidError",
+      data: {
+        path: "config",
+        message: "  Bad value  ",
+      },
+    } satisfies ConfigInvalidError
+
+    const result = parseReadableConfigInvalidError(error, language.t)
+
+    expect(result).toBe("Arquivo de config em config invalido: Bad value")
+  })
+})
+
+describe("formatServerError", () => {
+  test("formats config invalid errors", () => {
+    const error = {
+      name: "ConfigInvalidError",
+      data: {
+        message: "Missing host",
+      },
+    } satisfies ConfigInvalidError
+
+    const result = formatServerError(error, language.t)
+
+    expect(result).toBe("Arquivo de config em config invalido: Missing host")
+  })
+
+  test("returns error messages", () => {
+    expect(formatServerError(new Error("Request failed with status 503"), language.t)).toBe(
+      "Request failed with status 503",
+    )
+  })
+
+  test("returns provided string errors", () => {
+    expect(formatServerError("Failed to connect to server", language.t)).toBe("Failed to connect to server")
+  })
+
+  test("uses translated unknown fallback", () => {
+    expect(formatServerError(0, language.t)).toBe("Erro desconhecido")
+  })
+
+  test("falls back for unknown error objects and names", () => {
+    expect(formatServerError({ name: "ServerTimeoutError", data: { seconds: 30 } }, language.t)).toBe(
+      "Erro desconhecido",
+    )
+  })
+
+  test("formats provider model errors using provider/model", () => {
+    const error = {
+      name: "ProviderModelNotFoundError",
+      data: {
+        providerID: "openai",
+        modelID: "gpt-4.1",
+      },
+    } satisfies ProviderModelNotFoundError
+
+    expect(formatServerError(error, language.t)).toBe(
+      ["Modelo nao encontrado: openai/gpt-4.1", "Revise provider/model no config"].join("\n"),
+    )
+  })
+
+  test("formats provider model suggestions", () => {
+    const error = {
+      name: "ProviderModelNotFoundError",
+      data: {
+        providerID: "x",
+        modelID: "y",
+        suggestions: ["x/y2", "x/y3"],
+      },
+    } satisfies ProviderModelNotFoundError
+
+    expect(formatServerError(error, language.t)).toBe(
+      ["Modelo nao encontrado: x/y", "Voce quis dizer: x/y2, x/y3", "Revise provider/model no config"].join("\n"),
+    )
+  })
+
+  test("unwraps SDK-wrapped errors from cause.body", () => {
+    const body = {
+      name: "ConfigInvalidError",
+      data: {
+        message: "Missing host",
+      },
+    } satisfies ConfigInvalidError
+
+    const wrapped = new Error("ConfigInvalidError", { cause: { body, status: 400 } })
+
+    expect(formatServerError(wrapped, language.t)).toBe("Arquivo de config em config invalido: Missing host")
+  })
+
+  test("uses a server-authored description from generic named errors", () => {
+    const body = {
+      name: "UnknownError",
+      data: {
+        message: "NovaClaw could not read the saved provider sign-in. Diagnostic reference: err_12345678.",
+        ref: "err_12345678",
+      },
+    }
+    const wrapped = new Error("Request failed with status 500", { cause: { body, status: 500 } })
+
+    expect(formatServerError(wrapped, language.t)).toBe(body.data.message)
+  })
+})
+
+describe("isSessionNotFoundError", () => {
+  test("matches an SDK-wrapped error for the requested session", () => {
+    const body = {
+      _tag: "SessionNotFoundError",
+      sessionID: "ses_missing",
+      message: "Session not found",
+    } satisfies SessionNotFoundError
+
+    expect(isSessionNotFoundError(new Error(body.message, { cause: { body, status: 404 } }), body.sessionID)).toBe(true)
+  })
+
+  test("rejects errors for other sessions and other 404 responses", () => {
+    const body = {
+      _tag: "SessionNotFoundError",
+      sessionID: "ses_parent",
+      message: "Session not found",
+    } satisfies SessionNotFoundError
+
+    expect(isSessionNotFoundError(new Error(body.message, { cause: { body, status: 404 } }), "ses_tab")).toBe(false)
+    expect(
+      isSessionNotFoundError(
+        new Error("Provider not found", {
+          cause: { body: { _tag: "ProviderNotFoundError", providerID: "missing" }, status: 404 },
+        }),
+        "ses_tab",
+      ),
+    ).toBe(false)
+  })
+
+  // The real shape from wrapClientError (error-interceptor.ts): the v2
+  // `session.get` of a removed session 404s as NotFoundError with a
+  // server-authored "Session not found: <id>" message under cause.body.data.
+  test("matches the wrapClientError NotFoundError shape for the requested session", () => {
+    const error = new Error("Session not found: ses_x", {
+      cause: {
+        body: { name: "NotFoundError", data: { message: "Session not found: ses_x" } },
+        status: 404,
+      },
+    })
+    expect(isSessionNotFoundError(error, "ses_x")).toBe(true)
+  })
+
+  test("matches a bare client-synthesized Error (result-tuple path)", () => {
+    expect(isSessionNotFoundError(new Error("Session not found: ses_x"), "ses_x")).toBe(true)
+  })
+
+  test("rejects the wrapClientError NotFoundError shape for a different session", () => {
+    const error = new Error("Session not found: ses_x", {
+      cause: {
+        body: { name: "NotFoundError", data: { message: "Session not found: ses_x" } },
+        status: 404,
+      },
+    })
+    expect(isSessionNotFoundError(error, "ses_other")).toBe(false)
+  })
+
+  test("rejects a non-session 404 (NotFoundError for an unrelated resource)", () => {
+    const error = new Error("Resource not found: /some/path", {
+      cause: {
+        body: { name: "NotFoundError", data: { message: "Resource not found: /some/path" } },
+        status: 404,
+      },
+    })
+    expect(isSessionNotFoundError(error, "ses_x")).toBe(false)
+  })
+})
+
+describe("isMissingDirectoryError", () => {
+  test("matches the bare client error returned by a missing routed folder", () => {
+    expect(isMissingDirectoryError(new Error("Directory does not exist: C:/gone"))).toBe(true)
+  })
+
+  test("matches the SDK-wrapped InvalidRequestError shape", () => {
+    const body = {
+      name: "InvalidRequestError",
+      data: { field: "directory", message: "Directory does not exist: /gone" },
+    }
+    expect(isMissingDirectoryError(new Error("Request failed", { cause: { body, status: 400 } }))).toBe(true)
+  })
+
+  test("does not hide unrelated request errors", () => {
+    expect(isMissingDirectoryError(new Error("Failed to fetch"))).toBe(false)
+    expect(
+      isMissingDirectoryError({
+        name: "InvalidRequestError",
+        data: { field: "workspace", message: "Directory does not exist: /gone" },
+      }),
+    ).toBe(false)
+  })
+})

@@ -1,0 +1,14 @@
+research
+dist
+dist-*
+gen
+app.log
+# ⚠️ `script/build-*.ts` matches `script/build-node.ts`, which is a REQUIRED, tracked build script
+# (it builds the Electron sidecar). The pattern is inert here because the file is already tracked —
+# but the v0.1.0 publish created a FRESH repo from the working tree, where it was untracked, so this
+# rule silently dropped it. The published source on GitHub and the novaclaw.app source zip therefore
+# cannot build the sidecar at all. Keep the negation.
+script/build-*.ts
+!script/build-node.ts
+temporary-*.md
+.artifacts

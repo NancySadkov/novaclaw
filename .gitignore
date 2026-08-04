@@ -1,0 +1,37 @@
+.DS_Store
+node_modules
+.worktrees
+.sst
+.env
+.env.local
+.idea
+.vscode
+.codex
+*~
+playground
+tmp
+dist
+ts-dist
+.turbo
+**/.serena
+.serena/
+**/.omo
+.omo/
+/result
+refs
+Session.vim
+/novaclaw.json
+a.out
+target
+.scripts
+.direnv/
+
+# Local dev files
+novaclaw-dev
+UPCOMING_CHANGELOG.md
+logs/
+*.bun-build
+tsconfig.tsbuildinfo
+
+# Internal working notes — must never enter the app repo (it is disjoint from the plan repo)
+notes/

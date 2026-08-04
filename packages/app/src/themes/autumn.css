@@ -1,0 +1,67 @@
+/* Autumn preset (uix.md §7) — ember amber on a deep russet/plum field. A dark preset, so it inherits
+   Nova's dark elevation + state-chip recipe and only overrides the hue-bearing tokens + the --nc-*
+   accents. Selected via body[data-new-layout][data-app-theme="autumn"] (higher specificity than the
+   Nova base, so it wins regardless of import order). One warm accent (amber) is THE eye anchor. */
+body[data-new-layout][data-app-theme="autumn"] {
+  color-scheme: dark;
+
+  --nc-accent-solid: #e8933a;
+  --nc-accent-gradient: linear-gradient(155deg, #f4b56a, #e8933a 55%, #c26a26);
+  --nc-gold-gradient: var(--nc-accent-gradient);
+  --nc-ink: #2a1410;
+  --nc-aurora:
+    radial-gradient(110% 75% at 12% -8%, rgba(176, 78, 58, 0.28), transparent 62%),
+    radial-gradient(85% 70% at 100% 4%, rgba(232, 147, 58, 0.12), transparent 58%);
+
+  --v2-background-bg-deep: #1c0f12;
+  --v2-background-bg-base: #2a1519;
+  --v2-background-bg-layer-01: #331a1f;
+  --v2-background-bg-layer-02: #3f2027;
+  --v2-background-bg-layer-03: #4c2830;
+  --v2-background-bg-layer-04: #5a303a;
+  --v2-background-bg-inverse: #f6ece4;
+  --v2-background-bg-contrast: #f0dcc9;
+  --v2-background-bg-button-neutral: #331a1f;
+
+  --v2-text-text-base: #f6e9e2;
+  --v2-text-text-muted: #d8b6a8;
+  --v2-text-text-faint: #a8887c;
+  --v2-text-text-inverse: #241012;
+  --v2-text-text-contrast: #241012;
+  --v2-text-text-accent: #f2b45c;
+  --v2-text-text-accent-hover: #f8c886;
+  --v2-text-text-code-accent: #f2b45c;
+
+  --v2-icon-icon-base: #e0c3b6;
+  --v2-icon-icon-muted: #a8887c;
+  --v2-icon-icon-inverse: #241012;
+  --v2-icon-icon-contrast: #241012;
+  --v2-icon-icon-accent: #f2b45c;
+  --v2-icon-icon-accent-hover: #f8c886;
+
+  --v2-border-border-muted: rgba(232, 180, 140, 0.08);
+  --v2-border-border-base: rgba(232, 180, 140, 0.16);
+  --v2-border-border-strong: rgba(232, 180, 140, 0.28);
+  --v2-border-border-inverse: rgba(30, 15, 12, 0.24);
+
+  --v2-overlay-simple-overlay-hover: rgba(255, 222, 200, 0.08);
+  --v2-overlay-simple-overlay-pressed: rgba(255, 222, 200, 0.14);
+  --v2-overlay-simple-overlay-scrim: rgba(18, 8, 8, 0.6);
+  --v2-overlay-simple-tab-active-scrim: #2a151900;
+  --v2-overlay-simple-tab-hover-scrim: #3f202700;
+  --v2-overlay-simple-tab-scrim: #1c0f1200;
+  --v2-overlay-gradient-depth-overlay-depth-top: rgba(246, 233, 226, 0.92);
+  --v2-overlay-gradient-depth-overlay-depth-bot: rgba(246, 233, 226, 0);
+
+  --v2-illustration-illustration-layer-01: #3f2027;
+  --v2-illustration-illustration-layer-02: #4c2830;
+  --v2-illustration-illustration-layer-03: #5a303a;
+
+  --surface-base: #2a1519;
+  --surface-base-hover: #351b21;
+  --text-base: #f6e9e2;
+  --text-strong: #ffffff;
+  --text-weak: #d8b6a8;
+  --border-weak-base: rgba(232, 180, 140, 0.16);
+  --icon-base: #e0c3b6;
+}

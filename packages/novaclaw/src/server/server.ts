@@ -1,0 +1,272 @@
+import "./init-projectors"
+
+import { NodeHttpServer } from "@effect/platform-node"
+import { ConfigProvider, Context, Effect, Exit, Layer, Scope } from "effect"
+import { HttpRouter, HttpServer } from "effect/unstable/http"
+import { OpenApi } from "effect/unstable/httpapi"
+import { createServer } from "node:http"
+import { InstallationVersion } from "@novaclaw/core/installation/version"
+import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
+import { BootProfile } from "@novaclaw/core/observability/boot-profile"
+import { MDNS } from "./mdns"
+import { HttpApiApp } from "./routes/instance/httpapi/server"
+import { disposeMiddleware } from "./routes/instance/httpapi/lifecycle"
+import { WebSocketTracker } from "./routes/instance/httpapi/websocket-tracker"
+import { PublicApi } from "./routes/instance/httpapi/public"
+import type { CorsOptions } from "@novaclaw/server/cors"
+import { lazy } from "@/util/lazy"
+
+// @ts-ignore This global is needed to prevent ai-sdk from logging warnings to stdout https://github.com/vercel/ai/blob/2dc67e0ef538307f21368db32d5a12345d98831b/packages/ai/src/logger/log-warnings.ts#L85
+globalThis.AI_SDK_LOG_WARNINGS = false
+
+// ⚠️ This file is the ONE shared boot path of both entry points: `cli/cmd/serve.ts` reaches it by
+// dynamic import, and the Electron sidecar reaches the same `Server.listen` through
+// `virtual:novaclaw-server` → `src/node.ts`. Every mark below is therefore measured twice over —
+// once per entry point — with no second harness. (`todo/startup.md` Phase 1.)
+BootProfile.mark("server:module-loaded")
+
+export type Listener = {
+  hostname: string
+  port: number
+  url: URL
+  stop: (close?: boolean) => Promise<void>
+}
+
+type ServerApp = {
+  fetch(request: Request): Response | Promise<Response>
+  request(input: string | URL | Request, init?: RequestInit): Response | Promise<Response>
+}
+
+type ListenOptions = CorsOptions & {
+  port: number
+  hostname: string
+  mdns?: boolean
+  mdnsDomain?: string
+}
+type ListenerState = {
+  scope: Scope.Scope
+  server: Context.Service.Shape<typeof HttpServer.HttpServer>
+  http: ListenerServer
+  websockets: WebSocketTracker.Interface
+}
+type EffectListener = Omit<Listener, "stop"> & {
+  stop: (close?: boolean) => Effect.Effect<void>
+}
+
+interface ListenerServer {
+  readonly closeAll: Effect.Effect<void>
+}
+
+class ListenerServerService extends Context.Service<ListenerServerService, ListenerServer>()(
+  "@novaclaw/ListenerServer",
+) {}
+
+export const Default = lazy(() => {
+  const handler = HttpApiApp.webHandler().handler
+  const app: ServerApp = {
+    fetch: (request: Request) => handler(request, HttpApiApp.context),
+    request(input, init) {
+      return app.fetch(input instanceof Request ? input : new Request(new URL(input, "http://localhost"), init))
+    },
+  }
+  return { app }
+})
+
+export async function openapi() {
+  return OpenApi.fromApi(PublicApi)
+}
+
+export let url: URL | undefined
+
+export async function listen(opts: ListenOptions): Promise<Listener> {
+  const listener = await Effect.runPromise(listenEffect(opts))
+  return {
+    hostname: listener.hostname,
+    port: listener.port,
+    url: listener.url,
+    stop: (close?: boolean) => Effect.runPromiseExit(listener.stop(close)).then(() => undefined),
+  }
+}
+
+const listenEffect: (opts: ListenOptions) => Effect.Effect<EffectListener, unknown> = Effect.fn("Server.listen")(
+  function* (opts: ListenOptions) {
+    BootProfile.mark("server:listen-start")
+    const state = yield* startWithPortFallback(opts)
+    const address = yield* tcpAddress(state)
+    BootProfile.mark("server:tcp-address")
+    const listenerUrl = makeURL(opts.hostname, address.port)
+    const unpublishMdns = yield* setupMdns(opts, address.port, state.scope)
+    BootProfile.mark("server:mdns")
+    url = listenerUrl
+    BootProfile.mark("server:listening")
+    // Observation only — `report` prints nothing unless NOVACLAW_BOOT_PROFILE is set, and returns the
+    // timeline either way so a caller can assert on its STRUCTURE. The entry point is derived from
+    // what was observed (`cli:*` marks exist or they do not), never from a flag someone must set.
+    const segment = BootProfile.entryPoint()
+    BootProfile.report(segment === "serve" ? "novaclaw serve" : "electron sidecar", BootProfile.PHASES[segment])
+
+    return {
+      hostname: opts.hostname,
+      port: address.port,
+      url: listenerUrl,
+      stop: yield* makeStop(state, unpublishMdns, listenerUrl),
+    }
+  },
+)
+
+function listenerLayer(opts: ListenOptions, port: number) {
+  // The two taps split the single biggest phase of the boot into its two honest halves: binding the
+  // TCP socket (`serverLayer` → `NodeHttpServer.layer`) and building the whole instance service graph
+  // behind the routes (`createRoutes` — Database + migration, every config store, MCP, skills, the
+  // messenger drivers…). `provideMerge` builds its argument FIRST, so the bind precedes the graph:
+  // the port is listening while the services are still coming up, which is a fact about this boot
+  // that no total could have told us. Neither tap changes what is built or in what order.
+  return HttpRouter.serve(
+    Layer.tap(HttpApiApp.createRoutes(opts), () => Effect.sync(() => BootProfile.mark("server:services-built"))),
+    {
+      middleware: disposeMiddleware,
+      disableLogger: true,
+      disableListenLog: true,
+    },
+  ).pipe(
+    Layer.provideMerge(WebSocketTracker.layer),
+    Layer.provideMerge(
+      Layer.tap(serverLayer({ port, hostname: opts.hostname }), () =>
+        Effect.sync(() => BootProfile.mark("server:http-bound")),
+      ),
+    ),
+    // Install a fresh `ConfigProvider` per listener so `Config.string(...)`
+    // reads reflect the current `process.env`. Effect's default
+    // `ConfigProvider` snapshots `process.env` on first read and caches the
+    // result on a module-singleton Reference; without overriding it here,
+    // every later `Server.listen()` keeps observing that initial snapshot.
+    Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnv())),
+  )
+}
+
+function startWithPortFallback(opts: ListenOptions) {
+  if (opts.port !== 0) return startListener(opts, opts.port)
+  // Match the legacy listener port-resolution behavior: explicit `0` prefers
+  // 4096 first, then any free port.
+  return startListener(opts, 4096).pipe(Effect.catch(() => startListener(opts, 0)))
+}
+
+function startListener(opts: ListenOptions, port: number) {
+  const scope = Scope.makeUnsafe()
+  return Layer.buildWithMemoMap(listenerLayer(opts, port), Layer.makeMemoMapUnsafe(), scope).pipe(
+    Effect.provide(HttpApiApp.context),
+    Effect.onError(() => Scope.close(scope, Exit.void).pipe(Effect.ignore)),
+    Effect.map(
+      (ctx): ListenerState => ({
+        scope,
+        server: Context.get(ctx, HttpServer.HttpServer),
+        http: Context.get(ctx, ListenerServerService),
+        websockets: Context.get(ctx, WebSocketTracker.Service),
+      }),
+    ),
+  )
+}
+
+function tcpAddress(state: ListenerState) {
+  return Effect.gen(function* () {
+    if (state.server.address._tag === "TcpAddress") return state.server.address
+    yield* Scope.close(state.scope, Exit.void).pipe(Effect.ignore)
+    return yield* Effect.die(new Error(`Unexpected HttpServer address tag: ${state.server.address._tag}`))
+  })
+}
+
+function makeURL(hostname: string, port: number) {
+  const result = new URL("http://localhost")
+  result.hostname = hostname
+  result.port = String(port)
+  return result
+}
+
+function setupMdns(opts: ListenOptions, port: number, scope: Scope.Scope) {
+  return Effect.gen(function* () {
+    const publish =
+      opts.mdns && port && opts.hostname !== "127.0.0.1" && opts.hostname !== "localhost" && opts.hostname !== "::1"
+    if (publish) {
+      const unpublish = yield* Effect.cached(Effect.sync(() => MDNS.unpublish()))
+      // R7: advertise the instance's stable identity (+ version) in the TXT record so a
+      // discovering client can dedup the same instance behind different addresses. Best-effort:
+      // an identity-store failure must never block the listener coming up.
+      const txt = yield* InstanceIdentityStore.Service.pipe(
+        Effect.flatMap((identity) => identity.get()),
+        Effect.provide(InstanceIdentityStore.defaultLayer),
+        Effect.map((id) => ({ id, v: InstallationVersion })),
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
+      yield* Effect.sync(() => MDNS.publish(port, opts.mdnsDomain, txt))
+      yield* Scope.addFinalizer(scope, unpublish)
+      return unpublish
+    }
+    if (opts.mdns) {
+      yield* Effect.logWarning("mDNS enabled but hostname is loopback; skipping mDNS publish")
+    }
+    return Effect.void
+  })
+}
+
+function makeStop(state: ListenerState, unpublishMdns: Effect.Effect<void>, listenerUrl: URL) {
+  return Effect.gen(function* () {
+    const forceCloseOnce = yield* Effect.cached(forceClose(state).pipe(Effect.ignore))
+    const closeScopeOnce = yield* Effect.cached(
+      Scope.close(state.scope, Exit.void).pipe(
+        Effect.ignore,
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (url === listenerUrl) url = undefined
+          }),
+        ),
+      ),
+    )
+
+    return (close?: boolean) =>
+      Effect.gen(function* () {
+        yield* unpublishMdns
+        if (close) yield* forceCloseOnce
+        yield* closeScopeOnce
+      })
+  })
+}
+
+function forceClose(state: ListenerState) {
+  return Effect.all([state.http.closeAll, state.websockets.closeAll], { concurrency: "unbounded", discard: true })
+}
+
+function serverLayer(opts: { port: number; hostname: string }) {
+  const server = createServer()
+  // SSE event streams are legitimately INFINITE responses: Node's default requestTimeout
+  // (300s, whole-request clock) reaped them — the "connection lost — reconnecting…" blips
+  // minutes apart during healthy turns (issues.md P3). 0 disables the whole-response clock;
+  // headersTimeout (60s default) still guards the header phase against slow-loris, which is
+  // the vector that matters on a local-first server.
+  server.requestTimeout = 0
+  server.keepAliveTimeout = 65_000
+  const serverRef = { closeStarted: false, forceStop: false }
+  const close = server.close.bind(server)
+  // Keep shutdown owned by NodeHttpServer, but honor listener.stop(true) by
+  // force-closing active HTTP sockets when its finalizer calls server.close().
+  // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- Node's overloads don't preserve a monkey-patched method assignment.
+  server.close = ((callback?: Parameters<typeof server.close>[0]) => {
+    serverRef.closeStarted = true
+    const result = close(callback)
+    if (serverRef.forceStop) server.closeAllConnections()
+    return result
+  }) as typeof server.close
+
+  return Layer.mergeAll(
+    NodeHttpServer.layer(() => server, { port: opts.port, host: opts.hostname, gracefulShutdownTimeout: "1 second" }),
+    Layer.succeed(ListenerServerService)(
+      ListenerServerService.of({
+        closeAll: Effect.sync(() => {
+          serverRef.forceStop = true
+          if (serverRef.closeStarted) server.closeAllConnections()
+        }),
+      }),
+    ),
+  )
+}
+
+export * as Server from "./server"
