@@ -531,11 +531,19 @@ describe("makeExternal declares nothing", () => {
   test("`makeExternal` declares no second permission surface", () => {
     // The type IS the check for CALL SITES — the option no longer exists, so a caller passing it
     // fails the gate's typecheck phase on the object literal. What a type cannot catch is the
-    // option being ADDED BACK here, which is what this reads. The four names below are the whole
-    // surface a dynamic tool may declare; `permission` reappearing among them is the regression.
+    // option being ADDED BACK here, which is what this reads. The names below are the whole surface
+    // a dynamic tool may declare; `permission` reappearing among them is the regression.
+    //
+    // ⚠️ `sideEffect` joined the list in app `26eadde21` and is NOT a second permission surface —
+    // it classifies a tool for the durable RECOVERY decision (replay-safe vs. paused), which asks
+    // "did this already happen?", never "may this happen?". The equality is kept rather than
+    // loosened to a `not.toContain("permission")` on purpose: an exact list is what makes the next
+    // option ARGUE for itself here instead of arriving silently.
     const source = sources.find((one) => one.name === "packages/core/src/tool/tool.ts")
     expect(source, "packages/core/src/tool/tool.ts was not in the sweep").toBeDefined()
-    expect(makeExternalOptions(source!.text)).toEqual(["description", "inputSchema", "outputSchema", "execute"])
+    const options = makeExternalOptions(source!.text)
+    expect(options).toEqual(["sideEffect", "description", "inputSchema", "outputSchema", "execute"])
+    expect(options).not.toContain("permission")
   })
 
   test("the makeExternal reader actually bites (negative control)", () => {

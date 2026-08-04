@@ -778,9 +778,11 @@ export const layer = Layer.effect(
       // overlay, the Tuning switches, the stance, and saved answers. Only after
       // all of that resolves to `ask` do we know that NOBODY ruled on this action, which is exactly
       // the state B4c created by design: the compiled floor is an allowlist now
-      // (`AMBIENT_SAFE_BASELINE`), so `js`, `spawn`, `skill`, `kb`, `webfetch`, `websearch`,
-      // `revert`, `provision`, `define_tool`, `register-app`, `messenger.*`, every MCP tool and
-      // every ad-hoc tool a model invents at runtime fall through to `evaluate`'s `ask` default.
+      // (`AMBIENT_SAFE_BASELINE`), so `spawn`, `skill`, `kb`, `websearch`, `revert`, `provision`,
+      // `define_tool`, `register-app`, `messenger.*`, every MCP tool and every ad-hoc tool a model
+      // invents at runtime fall through to `evaluate`'s `ask` default. (⚠️ `webfetch` and `js` were
+      // in that list until 2026-08-04, when the owner promoted both INTO the baseline. Read the
+      // constant, never this sentence — a stale example here left five tests red for a day.)
       //
       // Under an UNATTENDED chain that ask parks on a consent card nobody will ever answer — and
       // `pending` above is an in-memory, location-scoped Map, so it does not even survive the
@@ -794,7 +796,7 @@ export const layer = Layer.effect(
       // arm above. Those two convert a GRANT into a refusal, so the mode that means "everything"
       // has to be the way out of them. This arm converts nothing: reaching it means the action was
       // never granted, in any mode — `MODE_RULES.yolo` names only the mutation cluster and the two
-      // external classes, so an unattended `yolo` root calling `webfetch` was hanging too. A mode
+      // external classes, so an unattended `yolo` root calling any of them was hanging too. A mode
       // is a statement about capability; attendance is a statement about who can answer, and `yolo`
       // cannot conjure an operator. Exempting it would preserve a hang in the name of a grant
       // nobody made.

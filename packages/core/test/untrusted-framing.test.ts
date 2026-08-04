@@ -590,6 +590,9 @@ const NO_EXTERNAL = [
   "reconfigure.ts",
   "register-app.ts",
   "registry.ts",
+  // Reads THIS instance's own RAM/disk pressure probe. Every byte it returns is a number this
+  // process measured about the machine it is running on; no party other than the user is involved.
+  "resource-status.ts",
   "revert.ts",
   "skill.ts",
   "spawn.ts",
