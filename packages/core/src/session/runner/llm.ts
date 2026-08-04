@@ -60,6 +60,7 @@ import { AgentJail } from "../../agent-jail"
 import { HostExec } from "../../host-exec"
 import { MessengerStore } from "../../messenger/store"
 import { Offline } from "../../offline"
+import { PermissionV2 } from "../../permission"
 import { SessionScheduler } from "../scheduler"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
@@ -256,11 +257,46 @@ export const layer = Layer.effect(
     // QE (QE-B): the deterministic 5-step verify loop over the PROVISIONED commands.
     // Default OFF; failures steer the agent to fix and re-run (observation, never a halt).
     const appProcess = yield* AppProcess.Service
+    const permission = yield* PermissionV2.Service
     const runQualityCheck = Effect.fn("SessionRunner.qualityCheck")(function* (
       sessionID: SessionSchema.ID,
       shell: string,
       check: { readonly label: string; readonly command: string; readonly timeoutMs?: number },
     ) {
+      // ⚠️ THE EXECUTION GATE, and it must be spelled `bash` — the same argument
+      // `tool/quality-provision.ts` records at its own verify loop, arrived at from the other side.
+      // This runs a command string through the agent shell with the host user's authority, and the
+      // string is not necessarily the user's: `quality_provision` with `verify: false` PERSISTS
+      // model-supplied commands without ever running them, and they execute here instead. Until now
+      // they executed with no permission assert at all — so `plan` mode, which denies `bash` and
+      // promises read-only, still had the harness running shell commands after every turn.
+      //
+      // `assert`, not `ask`: `ask` publishes a consent card and registers it as pending, so a
+      // background maintenance step calling it would litter the dock with cards nobody awaits.
+      // `assert` resolves to allow under the shipped `bypass` default (no card at all), parks on a
+      // real card under an `ask` posture — where a human IS present to answer it, and one
+      // "always" covers that command for every tool that runs it, this one included — and
+      // deny-fasts under an unattended root (B4c) instead of hanging the drain.
+      //
+      // Resources and `save` are the command STRING, matching `tool/bash.ts` and
+      // `quality-provision.ts`: one vocabulary, so an "always allow" answered once is the same
+      // grant whichever surface spends it. `agent` is deliberately omitted — `configured()` falls
+      // back to the session's own agent, which is exactly whose authority this runs under.
+      const refused = yield* permission
+        .assert({ action: "bash", resources: [check.command], save: [check.command], sessionID })
+        .pipe(
+          Effect.as(false),
+          Effect.catchTag("PermissionV2.DeniedError", () => Effect.succeed(true)),
+        )
+      if (refused) {
+        // A policy refusal is not a broken check — the caller's `errored` log would misreport it as
+        // one, and the harness must not steer the model about the user's own posture.
+        yield* Log.event("session.quality.check.refused", {
+          "session.id": sessionID,
+          "session.quality.label": check.label,
+        })
+        return false
+      }
       const policy = CalloutPolicy.qualityGate(check.timeoutMs ?? 60_000)
       const command = ChildProcess.make(check.command, [], {
         cwd: location.directory,
@@ -2668,5 +2704,8 @@ export const node = makeLocationNode({
     // OFF-C policy. Both are global nodes, so this adds no per-location state.
     MessengerStore.node,
     Offline.node,
+    // The quality gate executes persisted (possibly model-supplied) commands through the agent
+    // shell, so it asserts `bash` like every other execution surface — see `runQualityCheck`.
+    PermissionV2.node,
   ],
 })

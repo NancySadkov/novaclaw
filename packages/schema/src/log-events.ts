@@ -1199,6 +1199,14 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  /** The session's permission posture refused the shell command the quality gate wanted to run. */
+  "session.quality.check.refused": {
+    level: "info",
+    message: "quality check not run — the session's permission posture refused it",
+    attributes: { "session.id": "id", "session.quality.label": "text" },
+    content: "user",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   /** Clearing a staged session revert failed at the snapshot boundary. */
   "session.revert.clear.failed": {
     level: "error",
