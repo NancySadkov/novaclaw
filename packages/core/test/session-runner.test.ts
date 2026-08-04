@@ -350,13 +350,30 @@ const itBase = testEffect(
     ],
   ),
 )
-// Windows-from-source: SKIP THE ENTIRE SUITE on win32. It is known-bad on this platform — ~27
-// `toEqual` assertion mismatches that PASS on CI/Linux (platform quirks, not logic), PLUS a runaway
-// 100% CPU spin in several steer/queued-input + failing-provider tests that WEDGES the process: an
-// Effect-runtime loop under the virtual TestClock that Bun's per-test timeout cannot cancel (root
-// cause not pinned — instrumentation ruled out the coordinator, continuation, and retry loops). Per
-// plan-executor-contract.md this suite must not be run locally; skipping enforces that and stops the
-// fork-bomb pile-up at the source. The singleton guard atop this file is the backstop. Runs on CI/Linux.
+// Windows-from-source: SKIP THE ENTIRE SUITE on win32 — a runaway 100% CPU spin in several
+// steer/queued-input + failing-provider tests WEDGES the process: an Effect-runtime loop under the
+// virtual TestClock that Bun's per-test timeout cannot cancel (root cause not pinned —
+// instrumentation ruled out the coordinator, continuation, and retry loops). Skipping stops the
+// fork-bomb pile-up at the source; the singleton guard atop this file is the backstop.
+//
+// 🔴 **"~27 mismatches that PASS on CI/Linux (platform quirks, not logic)" — MEASURED FALSE,
+// 2026-08-05.** That sentence shipped with the skip (`aa9f00ad6`, 2026-07-08) as an assumption:
+// there is no CI, so nobody had ever run this suite on Linux, and the commit's own FOLLOW-UP asked
+// for the repro it was asserting the answer to. Run on the DGX Spark (Linux aarch64, DGX OS 7.5,
+// bun 1.3.14, `--timeout=15000`):
+//
+//   at 0.1.57 (`26eadde21`)  23 pass / 60 fail   ·   at `03aff6e1c`  24 pass / 59 fail
+//
+// So it is not Windows-broken, it is BROKEN — and the spin reproduces on Linux too (four tests hit
+// the 15 s timeout there). The failures are not platform noise either: the first one sampled is
+// `expect(requests).toHaveLength(1)` receiving **2**, i.e. the drain issuing a second provider
+// request where the test expects one, which is a behavioural claim about the runner.
+//
+// ⚠️ THE CONSEQUENCE, and it is why this paragraph is long: this suite is the ONLY thing that
+// executes `session/runner/llm.ts`, so that file — the heart of the product — currently has **no
+// passing executing coverage on any platform**. Every invariant in it is held by source-assertion
+// ratchets and by `tests/os-foundation-smoke.ts` against a live model. Do not read the win32 skip as
+// "green elsewhere"; it is not green anywhere. Filed in `todo/v0.2.0-prep.md`.
 const it = process.platform === "win32" ? { effect: itBase.effect.skip, live: itBase.live.skip } : itBase
 const sessionID = SessionV2.ID.make("ses_runner_test")
 
