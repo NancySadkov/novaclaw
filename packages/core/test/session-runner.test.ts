@@ -949,53 +949,11 @@ describe("SessionRunnerLLM", () => {
   // "persists a second context overflow after one recovery" — PORTED to
   // session-runner-compaction.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("recovers once from a raw context overflow failure", () =>
-    Effect.gen(function* () {
-      const session = yield* setupOverflowRecovery
-      responseStream = Stream.fail(
-        new LLMError({
-          module: "test",
-          method: "stream",
-          reason: new InvalidRequestReason({
-            message: "prompt too long",
-            classification: "context-overflow",
-          }),
-        }),
-      )
-      responses = [
-        fragmentFixture("text", "text-summary", ["## Goal\n- Recover raw overflow"]).completeEvents,
-        fragmentFixture("text", "text-final", ["Recovered"]).completeEvents,
-      ]
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Continue" }), resume: false })
-      yield* session.resume(sessionID)
+  // "recovers once from a raw context overflow failure" — PORTED to
+  // session-runner-compaction.test.ts and deleted here (S3, 2026-08-05).
 
-      expect(requests).toHaveLength(3)
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "compaction", summary: "## Goal\n- Recover raw overflow" },
-        { type: "assistant", finish: "stop" },
-      ])
-    }),
-  )
-
-  it.effect("publishes the original overflow when recovery summarization fails", () =>
-    Effect.gen(function* () {
-      const session = yield* setupOverflowRecovery
-      responses = [
-        [LLMEvent.providerError({ message: "prompt too long", classification: "context-overflow" })],
-        [LLMEvent.providerError({ message: "summary unavailable" })],
-      ]
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Continue" }), resume: false })
-      yield* session.resume(sessionID)
-
-      expect(requests).toHaveLength(2)
-      const context = yield* session.context(sessionID)
-      expect(context.some((message) => message.type === "compaction")).toBe(false)
-      expect(context.slice(-2)).toMatchObject([
-        { type: "user", text: "Continue" },
-        { type: "assistant", finish: "error", error: { message: "prompt too long" } },
-      ])
-    }),
-  )
+  // "publishes the original overflow when recovery summarization fails" — PORTED to
+  // session-runner-compaction.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("interrupts overflow recovery while the summary provider is running", () =>
     Effect.gen(function* () {

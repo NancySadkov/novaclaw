@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { LLMEvent } from "@novaclaw/llm"
+import { LLMError, LLMEvent, InvalidRequestReason } from "@novaclaw/llm"
+import { Stream } from "effect"
 import { EventV2 } from "@novaclaw/core/event"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionEvent } from "@novaclaw/core/session/event"
@@ -289,6 +290,82 @@ describe("SessionRunnerLLM — overflow recovery", () => {
     expect(harness.requests, "exactly one recovery attempt, not a loop").toHaveLength(3)
     expect(context).toMatchObject([
       { type: "compaction" },
+      { type: "assistant", finish: "error", error: { message: "prompt too long" } },
+    ])
+  })
+
+  test("recovers once from a raw context overflow failure", async () => {
+    // Same recovery, reached by a RAW stream failure carrying the overflow classification rather than a
+    // providerError event. Both routes must reach the same place: the runner cannot only recognise
+    // overflow when the provider is polite enough to report it in-band.
+    const harness = makeRunnerHarness({
+      turns: [
+        fragmentFixture("text", "text-earlier", ["Earlier answer"]).completeEvents,
+        fragmentFixture("text", "text-second", ["Second answer"]).completeEvents,
+        Stream.fail(
+          new LLMError({
+            module: "test",
+            method: "stream",
+            reason: new InvalidRequestReason({ message: "prompt too long", classification: "context-overflow" }),
+          }),
+        ),
+        fragmentFixture("text", "text-summary", ["## Goal\n- Recover raw overflow"]).completeEvents,
+        fragmentFixture("text", "text-final", ["Recovered"]).completeEvents,
+      ],
+    })
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* primeForOverflow(harness)
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Continue" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+        return yield* session.context(HARNESS_SESSION)
+      }),
+      "claim — a raw overflow failure recovers too",
+    )
+
+    expect(harness.requests).toHaveLength(3)
+    expect(context).toMatchObject([
+      { type: "compaction", summary: "## Goal\n- Recover raw overflow" },
+      { type: "assistant", finish: "stop" },
+    ])
+  })
+
+  test("publishes the original overflow when recovery summarization fails", async () => {
+    // Recovery itself fails. The user must be told about the OVERFLOW — the thing that actually blocked
+    // their turn — not about the summariser, which is an implementation detail of the attempted fix.
+    //
+    // ⭐ And no compaction may be recorded: a half-finished recovery that left a compaction behind
+    // would shrink the transcript without producing the summary that justified shrinking it, losing
+    // history to a step that failed.
+    const harness = makeRunnerHarness({
+      turns: [
+        fragmentFixture("text", "text-earlier", ["Earlier answer"]).completeEvents,
+        fragmentFixture("text", "text-second", ["Second answer"]).completeEvents,
+        [LLMEvent.providerError({ message: "prompt too long", classification: "context-overflow" })],
+        [LLMEvent.providerError({ message: "summary unavailable" })],
+      ],
+    })
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* primeForOverflow(harness)
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Continue" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+        return yield* session.context(HARNESS_SESSION)
+      }),
+      "claim — a failed recovery reports the overflow, not the summariser",
+    )
+
+    expect(harness.requests).toHaveLength(2)
+    expect(
+      (context as Array<{ type: string }>).some((message) => message.type === "compaction"),
+      "a failed recovery must not leave a compaction behind",
+    ).toBe(false)
+    expect(context.slice(-2)).toMatchObject([
+      { type: "user", text: "Continue" },
       { type: "assistant", finish: "error", error: { message: "prompt too long" } },
     ])
   })
