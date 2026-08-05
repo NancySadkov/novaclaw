@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Effect, Fiber } from "effect"
 import { LLMEvent } from "@novaclaw/llm"
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionExecution } from "@novaclaw/core/session/execution"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { HARNESS_SESSION, drive, makeLatch, makeRunnerHarness, userTexts } from "./fixture/runner-harness"
 
@@ -82,5 +83,88 @@ describe("SessionRunnerLLM — steering", () => {
       "Change direction",
     ])
     expect(types).toEqual(["user", "assistant", "user", "assistant"])
+  })
+
+  test("joins concurrent resume calls into one active provider run", async () => {
+    // Two resumes while a turn is in flight must JOIN it, not start a second. This is the property the
+    // whole steering family rests on — if a concurrent resume forked its own run, every claim about
+    // "the next turn" would be about an arbitrary one of several.
+    const streamStarted = makeLatch()
+    const streamGate = makeLatch()
+    const harness = makeRunnerHarness({ turns: [replyTurn("text-once", "Once")] })
+    harness.controls.streamStarted = streamStarted
+    harness.controls.streamGate = streamGate
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Run once" }), resume: false })
+
+        const first = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+        yield* Effect.promise(() => streamStarted.promise)
+        const second = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+        yield* Effect.yieldNow
+
+        // Asserted BEFORE releasing: the second resume must not have issued its own request.
+        expect(harness.requests, "a concurrent resume must join, not fork a second run").toHaveLength(1)
+
+        streamGate.open()
+        yield* Fiber.join(first)
+        yield* Fiber.join(second)
+        return yield* session.context(HARNESS_SESSION)
+      }),
+      "claim — concurrent resumes join one run",
+    )
+
+    expect(harness.requests).toHaveLength(1)
+    expect(context).toMatchObject([
+      { type: "user", text: "Run once" },
+      { type: "assistant", finish: "stop", content: [{ type: "text", id: "text-once", text: "Once" }] },
+    ])
+  })
+
+  test("coalesces multiple active steering prompts into one continuation turn", async () => {
+    // TWO steers during one in-flight turn produce ONE continuation carrying both, not two turns. The
+    // final `wake` is the load-bearing half: after coalescing, nothing may be left pending, so waking
+    // the session must issue no further request. Without that check a runner that coalesced into one
+    // turn and ALSO left a stray queued item would pass.
+    const streamStarted = makeLatch()
+    const streamGate = makeLatch()
+    const harness = makeRunnerHarness({
+      turns: [replyTurn("text-1", "Working"), replyTurn("text-2", "Adjusted")],
+    })
+    harness.controls.streamStarted = streamStarted
+    harness.controls.streamGate = streamGate
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Start working" }),
+          resume: false,
+        })
+
+        const first = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+        yield* Effect.promise(() => streamStarted.promise)
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First steer" }) })
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Second steer" }) })
+
+        streamGate.open()
+        yield* Fiber.join(first)
+
+        expect(harness.requests, "two steers coalesce into ONE continuation").toHaveLength(2)
+        expect(userTexts(harness.requests[1]!)).toEqual(["Start working", "First steer", "Second steer"])
+
+        // Nothing may remain pending after coalescing.
+        yield* (yield* SessionExecution.Service).wake(HARNESS_SESSION)
+        yield* Effect.yieldNow
+      }),
+      "claim — steers coalesce into one continuation",
+    )
+
+    expect(harness.requests, "a wake after coalescing must find nothing left to do").toHaveLength(2)
   })
 })

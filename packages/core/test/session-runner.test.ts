@@ -1617,44 +1617,8 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("joins concurrent resume calls into one active provider run", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Run once" }), resume: false })
-
-      requests.length = 0
-      responses = undefined
-      response = [
-        LLMEvent.stepStart({ index: 0 }),
-        LLMEvent.textStart({ id: "text-once" }),
-        LLMEvent.textDelta({ id: "text-once", text: "Once" }),
-        LLMEvent.textEnd({ id: "text-once" }),
-        LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-        LLMEvent.finish({ reason: "stop" }),
-      ]
-      streamGate = yield* Deferred.make<void>()
-      streamStarted = yield* Deferred.make<void>()
-
-      const first = yield* session.resume(sessionID).pipe(Effect.forkChild)
-      yield* Deferred.await(streamStarted)
-      const second = yield* session.resume(sessionID).pipe(Effect.forkChild)
-      yield* Effect.yieldNow
-
-      expect(requests).toHaveLength(1)
-      yield* Deferred.succeed(streamGate, undefined)
-      yield* Fiber.join(first)
-      yield* Fiber.join(second)
-      streamGate = undefined
-      streamStarted = undefined
-
-      expect(requests).toHaveLength(1)
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Run once" },
-        { type: "assistant", finish: "stop", content: [{ type: "text", id: "text-once", text: "Once" }] },
-      ])
-    }),
-  )
+  // "joins concurrent resume calls into one active provider run" — PORTED to
+  // session-runner-steering.test.ts and deleted here (S3, 2026-08-05).
 
   // "steers an active provider turn with newly recorded prompts" — PORTED to
   // session-runner-steering.test.ts and deleted here (S3, 2026-08-05).
@@ -1934,45 +1898,8 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("coalesces multiple active steering prompts into one continuation turn", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Start working" }), resume: false })
-
-      requests.length = 0
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-      ]
-      streamGate = yield* Deferred.make<void>()
-      streamStarted = yield* Deferred.make<void>()
-
-      const first = yield* session.resume(sessionID).pipe(Effect.forkChild)
-      yield* Deferred.await(streamStarted)
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First steer" }) })
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Second steer" }) })
-      yield* Deferred.succeed(streamGate, undefined)
-      yield* Fiber.join(first)
-      streamGate = undefined
-      streamStarted = undefined
-      yield* Effect.yieldNow
-
-      expect(requests).toHaveLength(2)
-      expect(userTexts(requests[1]!)).toEqual(["Start working", "First steer", "Second steer"])
-      yield* (yield* SessionExecution.Service).wake(sessionID)
-      yield* Effect.yieldNow
-      expect(requests).toHaveLength(2)
-    }),
-  )
+  // "coalesces multiple active steering prompts into one continuation turn" — PORTED to
+  // session-runner-steering.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("runs steering input accepted while the active provider turn fails", () =>
     Effect.gen(function* () {
