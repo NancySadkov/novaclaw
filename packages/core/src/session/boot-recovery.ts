@@ -37,28 +37,46 @@ import type { SessionStore } from "./store"
 /** How stale a lease heartbeat must be before its owner is presumed dead. */
 export const STALE_AFTER_MS = 30_000
 
-/**
- * A replacement host can start before the dead one's last heartbeat is old enough to classify, so
- * one sweep at boot is not enough — keep sweeping.
- */
+/** A replacement host can start before the dead one's last heartbeat is old enough to classify. */
 const RESWEEP_INTERVAL = Duration.seconds(10)
 
 /**
- * Reclassify leases whose owner stopped heartbeating. Repeats forever in the caller's scope.
+ * How many re-sweeps follow the boot sweep. Seven at ten seconds is a 70 s window, which covers
+ * `STALE_AFTER_MS` **twice over** — a lease whose heartbeat stopped the instant before this instance
+ * booted becomes classifiable 30 s in, and the window carries a full second pass after that.
+ *
+ * ⚠️ **BOUNDED, and the bound is the whole point.** `SessionExecutionLocal` ran this as
+ * `Effect.repeat(Schedule.spaced(10s))` — forever, in the layer's scope — which was survivable only
+ * because that layer has no production caller. Lifting it to `SessionV2` (where it belongs, since
+ * production binds a different executor) put an **unbounded background timer into every graph that
+ * builds a session service**, including every test that does. That is the runaway-under-TestClock
+ * shape AGENTS.md pitfall #-1 and the win32 `session-runner` skip both describe, and it wedged the
+ * whole `core` unit for ten minutes at 4 s of CPU when it was first landed.
+ *
+ * The justification for repeating at all was always a BOOT-WINDOW argument ("a replacement may start
+ * before the dead host's last heartbeat is old enough"), so a boot-shaped window is the honest
+ * schedule. A peer that dies later is a P2P concern no per-instance timer answers anyway: its own
+ * replacement sweeps on ITS boot.
+ */
+const RESWEEP_PASSES = 7
+
+/**
+ * Reclassify leases whose owner stopped heartbeating. Sweeps once, then re-sweeps across the boot
+ * window and STOPS — see {@link RESWEEP_PASSES}, which is a correctness bound, not a tidy-up.
  *
  * `recoverStale` is itself transactional and fenced on `(session_id, attempt_id, generation)`, so a
  * second host sweeping the same rows cannot double-count a failure.
  */
 export const recoverStaleLeases = (attempts: SessionExecutionAttempt.Interface) =>
   attempts.recoverStale(Date.now() - STALE_AFTER_MS).pipe(
-    // Only a sweep that FOUND something is worth a line: this repeats every ten seconds for the
-    // life of the instance, and an unconditional record would be 8,640 "recovered 0" lines a day.
+    // Only a sweep that FOUND something is worth a line: an unconditional record would be one line
+    // per interval for the whole window, saying nothing.
     Effect.flatMap((recovered) =>
       recovered.length === 0
         ? Effect.void
         : Log.event("session.lease.stale.recovered", { "session.recovered": recovered.length }),
     ),
-    Effect.repeat(Schedule.spaced(RESWEEP_INTERVAL)),
+    Effect.repeat(Schedule.spaced(RESWEEP_INTERVAL).pipe(Schedule.take(RESWEEP_PASSES))),
   )
 
 /**
