@@ -1139,6 +1139,7 @@ export const dict = {
   "expertise.gate.home": "Back to home",
   "terminal.gate.description":
     "A terminal is a place to type commands directly to the machine this instance runs on — handy for checking on a service or fixing something by hand, and easy to get wrong if you have never used one. It appears once you switch to the Advanced level.",
+  "terminal.clear": "Clear",
   "terminal.exited.title": "The shell ended",
   "terminal.exited.description":
     "It stopped with exit code {{code}}. Whatever it printed is still above — start a new shell when you have read it.",

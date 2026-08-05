@@ -3,7 +3,7 @@ import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
-import { Terminal } from "@/components/terminal"
+import { Terminal, type TerminalHandle } from "@/components/terminal"
 import { terminalWorkspaceShortcut } from "@/components/terminal-keyboard"
 import {
   shouldCloneTerminal,
@@ -143,6 +143,10 @@ function TerminalWorkspace(props: { serverName: string }) {
       message: terminalConnectFailureMessage(failure, language.t("terminal.connectionLost.description")),
     })
   }
+  // One handle per live tab, withdrawn by the component itself on teardown (see TerminalHandle) — so
+  // an action can never fire into a terminal that has already gone.
+  const handles = new Map<string, TerminalHandle>()
+  const [menu, setMenu] = createSignal<{ id: string; x: number; y: number } | undefined>()
   const [dragging, setDragging] = createSignal<string | undefined>()
   const [copied, setCopied] = createSignal<string | undefined>()
   const copyDiagnosis = async (item: { id: string; shell?: string; cwd?: string; exitCode?: number }) => {
@@ -364,7 +368,17 @@ function TerminalWorkspace(props: { serverName: string }) {
                     </div>
                   }
                 >
-                  <div id={`terminal-wrapper-${item.id}`} class="absolute inset-0">
+                  <div
+                    id={`terminal-wrapper-${item.id}`}
+                    class="absolute inset-0"
+                    onContextMenu={(event) => {
+                      // Right-click opens OUR menu rather than the browser's, because the browser's
+                      // offers Back/Reload/View source — none of which mean anything over a shell,
+                      // and one of which throws away the session.
+                      event.preventDefault()
+                      setMenu({ id: item.id, x: event.clientX, y: event.clientY })
+                    }}
+                  >
                     <Terminal
                       pty={item}
                       autoFocus
@@ -374,6 +388,10 @@ function TerminalWorkspace(props: { serverName: string }) {
                       }}
                       onCleanup={ops.update}
                       onConnectError={(failure) => connectError(failure, item.id)}
+                      onHandle={(handle) => {
+                        if (handle) handles.set(item.id, handle)
+                        else handles.delete(item.id)
+                      }}
                     />
                   </div>
                 </Show>
@@ -381,6 +399,45 @@ function TerminalWorkspace(props: { serverName: string }) {
             }}
           </Show>
         </div>
+      </Show>
+      <Show when={menu()}>
+        {(open) => (
+          <>
+            {/* A full-surface backdrop so the next click anywhere dismisses — including a click that
+                lands on the terminal, which would otherwise both close the menu and be typed into
+                the shell. */}
+            <div class="fixed inset-0 z-40" onClick={() => setMenu(undefined)} onContextMenu={() => setMenu(undefined)} />
+            <div
+              role="menu"
+              aria-label={language.t("terminal.title")}
+              class="fixed z-50 min-w-40 rounded-md border border-border-weaker-base bg-surface-raised-base py-1 shadow-lg"
+              style={{ left: `${Math.min(open().x, window.innerWidth - 176)}px`, top: `${open().y}px` }}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                class="block w-full px-3 py-1.5 text-left text-13-regular text-text-strong hover:bg-surface-hover-base"
+                onClick={() => {
+                  handles.get(open().id)?.clear()
+                  setMenu(undefined)
+                }}
+              >
+                {language.t("terminal.clear")}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                class="block w-full px-3 py-1.5 text-left text-13-regular text-text-strong hover:bg-surface-hover-base"
+                onClick={() => {
+                  void terminal.close(open().id)
+                  setMenu(undefined)
+                }}
+              >
+                {language.t("terminal.close")}
+              </button>
+            </div>
+          </>
+        )}
       </Show>
     </section>
   )

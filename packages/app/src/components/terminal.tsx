@@ -21,6 +21,19 @@ import { restartTerminalCursorBlink, terminalClipboardShortcut } from "./termina
 
 const TOGGLE_TERMINAL_ID = "terminal.toggle"
 const DEFAULT_TOGGLE_TERMINAL_KEYBIND = "ctrl+`"
+/** What a CALLER may do to a live terminal.
+ *
+ * ⚠️ Deliberately narrow, and it is not an oversight that the ghostty `Terminal` is not handed over.
+ * Every method here is one the product needs by name; exposing the renderer itself would spread
+ * ghostty's API across the app and make the engine a thing we can no longer swap. Add a method when a
+ * feature needs one, not in anticipation. */
+export interface TerminalHandle {
+  /** Wipe the screen AND the scrollback — what a terminal's "Clear" has always meant. Local to the
+   * renderer: it deliberately does not send anything to the shell, so it cannot disturb a running
+   * job or land a stray line in the user's shell history. */
+  clear: () => void
+}
+
 export interface TerminalProps extends ComponentProps<"div"> {
   pty: LocalPTY
   autoFocus?: boolean
@@ -28,6 +41,9 @@ export interface TerminalProps extends ComponentProps<"div"> {
   onCleanup?: (pty: Partial<LocalPTY> & { id: string }) => void
   onConnect?: () => void
   onConnectError?: (failure: TerminalConnectFailure) => void
+  /** Called once the renderer exists, and again with `undefined` when it goes away — so a caller
+   * holding the handle cannot keep a disposed terminal alive or call into it after teardown. */
+  onHandle?: (handle: TerminalHandle | undefined) => void
 }
 
 let shared: Promise<{ mod: typeof import("ghostty-web"); ghostty: Ghostty }> | undefined
@@ -173,7 +189,15 @@ export const Terminal = (props: TerminalProps) => {
   const authToken = connection.type === "http" ? connection.authToken : false
   const sameOrigin = new URL(url, location.href).origin === location.origin
   let container!: HTMLDivElement
-  const [local, others] = splitProps(props, ["pty", "class", "classList", "autoFocus", "onConnect", "onConnectError"])
+  const [local, others] = splitProps(props, [
+    "pty",
+    "class",
+    "classList",
+    "autoFocus",
+    "onConnect",
+    "onConnectError",
+    "onHandle",
+  ])
   const id = local.pty.id
   const restore = typeof local.pty.buffer === "string" ? local.pty.buffer : ""
   const restoreSize =
@@ -371,6 +395,10 @@ export const Terminal = (props: TerminalProps) => {
         cleanup()
         return
       }
+      // Handed out AFTER the disposed check, and withdrawn in the same cleanup that disposes the
+      // renderer, so the page can never hold a handle onto a terminal that is already gone.
+      local.onHandle?.({ clear: () => t.clear() })
+      cleanups.push(() => local.onHandle?.(undefined))
       _ghostty = g
       term = t
       output = terminalWriter((data, done) =>
