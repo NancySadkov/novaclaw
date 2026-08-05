@@ -1311,63 +1311,8 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("continues with reloaded history after durably settling one local tool call", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Echo this" }), resume: false })
-
-      requests.length = 0
-      authorizations.length = 0
-      executions.length = 0
-      streamGate = undefined
-      streamStarted = undefined
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "call-echo", name: "echo", input: { text: "hello" } }),
-          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-          LLMEvent.finish({ reason: "tool-calls" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.textStart({ id: "text-final" }),
-          LLMEvent.textDelta({ id: "text-final", text: "Done" }),
-          LLMEvent.textEnd({ id: "text-final" }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-      ]
-
-      yield* session.resume(sessionID)
-
-      expect(requests).toHaveLength(2)
-      expect(requests[1]?.messages.map((message) => message.role)).toEqual(["user", "assistant", "tool"])
-      expect(authorizations).toMatchObject([{ sessionID, toolCallID: "call-echo" }])
-      expect(executions).toEqual(["hello"])
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Echo this" },
-        {
-          type: "assistant",
-          finish: "tool-calls",
-          content: [
-            {
-              type: "tool",
-              id: "call-echo",
-              name: "echo",
-              state: {
-                status: "completed",
-                input: { text: "hello" },
-                structured: { text: "hello" },
-                content: [{ type: "text", text: "hello" }],
-              },
-            },
-          ],
-        },
-        { type: "assistant", finish: "stop", content: [{ type: "text", id: "text-final", text: "Done" }] },
-      ])
-    }),
-  )
+  // "continues with reloaded history after durably settling one local tool call" — PORTED to
+  // session-runner-tools.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("reloads a model switch before a tool-driven continuation turn", () =>
     Effect.gen(function* () {
@@ -1922,100 +1867,11 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("durably settles local tool failures before continuing", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Call missing" }), resume: false })
+  // "durably settles local tool failures before continuing" — PORTED to
+  // session-runner-tools.test.ts and deleted here (S3, 2026-08-05).
 
-      requests.length = 0
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "call-missing", name: "missing", input: {} }),
-          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-          LLMEvent.finish({ reason: "tool-calls" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.textStart({ id: "text-after-error" }),
-          LLMEvent.textDelta({ id: "text-after-error", text: "Recovered" }),
-          LLMEvent.textEnd({ id: "text-after-error" }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-      ]
-      streamGate = undefined
-      streamStarted = undefined
-
-      yield* session.resume(sessionID)
-
-      expect(requests).toHaveLength(2)
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Call missing" },
-        {
-          type: "assistant",
-          content: [
-            {
-              type: "tool",
-              id: "call-missing",
-              // Identifying clause only: the registry also names the advertised tools now.
-              state: { status: "error", error: { message: expect.stringContaining("Unknown tool: missing.") } },
-            },
-          ],
-        },
-        { type: "assistant", finish: "stop", content: [{ type: "text", id: "text-after-error", text: "Recovered" }] },
-      ])
-    }),
-  )
-
-  it.effect("returns unexpected local tool defects to the model and continues", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Call defect" }), resume: false })
-
-      requests.length = 0
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "call-defect", name: "defect", input: {} }),
-          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-          LLMEvent.finish({ reason: "tool-calls" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.textStart({ id: "text-after-defect" }),
-          LLMEvent.textDelta({ id: "text-after-defect", text: "Recovered" }),
-          LLMEvent.textEnd({ id: "text-after-defect" }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-      ]
-
-      yield* session.resume(sessionID)
-
-      expect(requests).toHaveLength(2)
-      expect(requests[1]?.messages.map((message) => message.role)).toEqual(["user", "assistant", "tool"])
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Call defect" },
-        {
-          type: "assistant",
-          content: [
-            {
-              type: "tool",
-              id: "call-defect",
-              state: {
-                status: "error",
-                error: { type: "unknown", message: "Tool execution failed: unexpected tool defect" },
-              },
-            },
-          ],
-        },
-        { type: "assistant", finish: "stop", content: [{ type: "text", text: "Recovered" }] },
-      ])
-    }),
-  )
+  // "returns unexpected local tool defects to the model and continues" — PORTED to
+  // session-runner-tools.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("interrupts runner continuation when a question is dismissed", () =>
     Effect.gen(function* () {
