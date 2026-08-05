@@ -98,6 +98,13 @@ const OUT_OF_BAND = [
   { channel: "maintenance", marker: "You extract durable MEMORIES" },
 ] as const
 
+/**
+ * What the runner writes as a chronological System message when a context producer disappears.
+ * Exported so a claim asserts against the fixture's own wording instead of re-typing it — a literal in
+ * two places is a literal that will disagree with itself.
+ */
+export const SYSTEM_CONTEXT_REMOVED_MESSAGE = "System context source removed: test/harness-context"
+
 /** The session every harness seeds. Per-harness DB, so a fixed id cannot collide across tests. */
 export const HARNESS_SESSION = SessionV2.ID.make("ses_harness")
 
@@ -135,6 +142,20 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
   const titleRequests: LLMRequest[] = []
   const maintenanceRequests: LLMRequest[] = []
   const utilityRequests: LLMRequest[] = []
+  /**
+   * The world a test can change MID-RUN. Mutable, and deliberately so — a family of claims is about
+   * context becoming unavailable, a producer being removed, or a baseline changing *between* turns, and
+   * none of them is writable against construction-time config.
+   *
+   * ⚠️ This is per-HARNESS mutable state, which is not the pattern this rewrite exists to kill. The old
+   * fixture's six MODULE-level variables were shared by all 77 tests and reset by hand in sixty places;
+   * these belong to one harness, cannot be seen by another test, and have nothing to reset.
+   */
+  const controls = {
+    systemBaseline: "Initial context",
+    systemRemoved: false,
+    systemUnavailable: false,
+  }
   const turns = [...(script.turns ?? [])]
   const titleTurns = [...(script.titleTurns ?? [])]
   const maintenanceTurns = [...(script.maintenanceTurns ?? [])]
@@ -228,17 +249,26 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       Effect.flatMap((registry) =>
         registry.register({
           key: systemContextKey,
+          // Read through `controls` on EVERY load, so a test can change the world mid-run — which a
+          // whole family of claims is about (context becoming unavailable, a producer being removed, a
+          // baseline changing). Capturing the values here instead would make those claims unwritable.
           load: Effect.sync(() =>
-            SystemContext.combine([
-              SystemContext.make({
-                key: systemContextKey,
-                codec: Schema.toCodecJson(Schema.String),
-                load: Effect.succeed("Initial context"),
-                baseline: String,
-                update: (_previous, current) => current,
-                removed: () => "System context source removed: test/harness-context",
-              }),
-            ]),
+            SystemContext.combine(
+              controls.systemRemoved
+                ? []
+                : [
+                    SystemContext.make({
+                      key: systemContextKey,
+                      codec: Schema.toCodecJson(Schema.String),
+                      load: Effect.sync(() =>
+                        controls.systemUnavailable ? SystemContext.unavailable : controls.systemBaseline,
+                      ),
+                      baseline: String,
+                      update: (_previous, current) => current,
+                      removed: () => SYSTEM_CONTEXT_REMOVED_MESSAGE,
+                    }),
+                  ],
+            ),
           ),
         }),
       ),
@@ -377,6 +407,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     layer,
     seed,
     seedSession,
+    controls,
   }
 }
 
