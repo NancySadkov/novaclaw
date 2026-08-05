@@ -27,7 +27,12 @@ import { AgentV2 } from "@novaclaw/core/agent"
 import { Config } from "@novaclaw/core/config"
 import { ConfigCompaction } from "@novaclaw/core/config/compaction"
 import { Tool } from "@novaclaw/core/tool/tool"
-import { SessionInputTable, SessionMessageTable, SessionTable } from "@novaclaw/core/session/sql"
+import {
+  SessionCompactionTable,
+  SessionInputTable,
+  SessionMessageTable,
+  SessionTable,
+} from "@novaclaw/core/session/sql"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SystemContext } from "@novaclaw/core/system-context"
 import { SystemContextRegistry } from "@novaclaw/core/system-context/registry"
@@ -573,6 +578,15 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       yield* events.remove(id)
       yield* db.delete(SessionInputTable).where(eq(SessionInputTable.session_id, id)).run().pipe(Effect.orDie)
       yield* db.delete(SessionMessageTable).where(eq(SessionMessageTable.session_id, id)).run().pipe(Effect.orDie)
+      // ⚠️ Compaction rows are PROJECTED state too, and forgetting them makes replay fail on a
+      // compacted session rather than merely differ: `session_compaction` has a unique
+      // (session_id, seq) index, so replaying the Compaction event re-inserts and the query throws.
+      // Found 2026-08-05 by the first ported claim that compacts and then replays.
+      yield* db
+        .delete(SessionCompactionTable)
+        .where(eq(SessionCompactionTable.session_id, id))
+        .run()
+        .pipe(Effect.orDie)
       yield* events.replayAll(
         recorded.map((event) => ({
           id: event.id,

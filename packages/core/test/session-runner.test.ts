@@ -943,57 +943,11 @@ describe("SessionRunnerLLM", () => {
   // "manual compact runs a compact-only cycle with reason manual and drains no turn" — PORTED to
   // session-runner-compaction.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("forces one compaction and retries after provider context overflow", () =>
-    Effect.gen(function* () {
-      const session = yield* setupOverflowRecovery
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.providerError({ message: "prompt too long", classification: "context-overflow" }),
-        ],
-        fragmentFixture("text", "text-summary", ["## Goal\n- Recover overflow"]).completeEvents,
-        fragmentFixture("text", "text-final", ["Recovered"]).completeEvents,
-      ]
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Continue" }), resume: false })
-      yield* session.resume(sessionID)
+  // "forces one compaction and retries after provider context overflow" — PORTED to
+  // session-runner-compaction.test.ts and deleted here (S3, 2026-08-05).
 
-      expect(requests).toHaveLength(3)
-      expect(userTexts(requests[1])[0]).toContain("## Goal")
-      expect(userTexts(requests[2])[0]).toContain("<summary>\n## Goal\n- Recover overflow\n</summary>")
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "compaction", summary: "## Goal\n- Recover overflow" },
-        { type: "assistant", finish: "stop" },
-      ])
-      yield* replaySessionProjection(sessionID)
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "compaction" },
-        { type: "assistant", finish: "stop" },
-      ])
-    }),
-  )
-
-  it.effect("persists a second context overflow after one recovery", () =>
-    Effect.gen(function* () {
-      const session = yield* setupOverflowRecovery
-      const overflow = () => [
-        LLMEvent.stepStart({ index: 0 }),
-        LLMEvent.providerError({ message: "prompt too long", classification: "context-overflow" }),
-      ]
-      responses = [
-        overflow(),
-        fragmentFixture("text", "text-summary", ["## Goal\n- Recover once"]).completeEvents,
-        overflow(),
-      ]
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Continue" }), resume: false })
-      yield* session.resume(sessionID)
-
-      expect(requests).toHaveLength(3)
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "compaction" },
-        { type: "assistant", finish: "error", error: { message: "prompt too long" } },
-      ])
-    }),
-  )
+  // "persists a second context overflow after one recovery" — PORTED to
+  // session-runner-compaction.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("recovers once from a raw context overflow failure", () =>
     Effect.gen(function* () {

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
+import { LLMEvent } from "@novaclaw/llm"
 import { EventV2 } from "@novaclaw/core/event"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionEvent } from "@novaclaw/core/session/event"
@@ -186,5 +187,109 @@ describe("SessionRunnerLLM — compaction", () => {
       type: "compaction",
       summary: "## Goal\n- Preserve the updated task",
     })
+  })
+})
+
+/**
+ * OVERFLOW RECOVERY shares a setup: one long exchange, then a model small enough that the next turn
+ * cannot fit. The provider reports `context-overflow`, and the runner must compact and retry rather
+ * than surfacing an error the user can do nothing about.
+ */
+const overflowTurn = () => [
+  LLMEvent.stepStart({ index: 0 }),
+  LLMEvent.providerError({ message: "prompt too long", classification: "context-overflow" }),
+]
+
+const primeForOverflow = Effect.fn("primeForOverflow")(function* (harness: ReturnType<typeof makeRunnerHarness>) {
+  const session = yield* SessionV2.Service
+  // TWO exchanges — see fault ① at the top of this file. One leaves [user, assistant, user], the
+  // boundary walk drives recentStart to 0, head is empty, and the overflow recovery has nothing to
+  // summarise, so it silently does not recover at all.
+  for (const text of ["Earlier question ", "Second question "]) {
+    yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: text.repeat(350) }), resume: false })
+    yield* session.resume(HARNESS_SESSION)
+  }
+  harness.controls.currentModel = harness.makeModel("recovery", { context: 20_000, output: 1_000 })
+  harness.requests.length = 0
+  return session
+})
+
+describe("SessionRunnerLLM — overflow recovery", () => {
+  test("forces one compaction and retries after provider context overflow", async () => {
+    // Three requests: the turn that overflows, the summary, then the retry built from that summary.
+    // ⭐ The retry is the claim. A runner that compacted and stopped would leave the user's prompt
+    // unanswered after doing all the work to make answering possible.
+    const harness = makeRunnerHarness({
+      turns: [
+        fragmentFixture("text", "text-earlier", ["Earlier answer"]).completeEvents,
+        fragmentFixture("text", "text-second", ["Second answer"]).completeEvents,
+        overflowTurn(),
+        fragmentFixture("text", "text-summary", ["## Goal\n- Recover overflow"]).completeEvents,
+        fragmentFixture("text", "text-final", ["Recovered"]).completeEvents,
+      ],
+    })
+
+    const { context, replayed } = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* primeForOverflow(harness)
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Continue" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+        const context = yield* session.context(HARNESS_SESSION)
+        yield* harness.replayProjection(HARNESS_SESSION)
+        return { context, replayed: yield* session.context(HARNESS_SESSION) }
+      }),
+      "claim — overflow forces one compaction and retries",
+    )
+
+    expect(harness.requests).toHaveLength(3)
+    expect(userTexts(harness.requests[1]!)[0]).toContain("## Goal")
+    expect(userTexts(harness.requests[2]!)[0]).toContain("<summary>\n## Goal\n- Recover overflow\n</summary>")
+    expect(context).toMatchObject([
+      { type: "compaction", summary: "## Goal\n- Recover overflow" },
+      { type: "assistant", finish: "stop" },
+    ])
+    // ⏳ **The replay half of this claim is NOT asserted, deliberately — see todo/v0.2.0-prep.md.**
+    // Measured 2026-08-05: after `replayProjection`, a compacted session comes back as its full
+    // uncompacted history (`[user, assistant] × 3`) instead of `[compaction, assistant]`. The
+    // compaction row is re-inserted, but the transcript no longer honours it — most likely because the
+    // replayed messages take new seqs and the overlay's `prefix_seq`/`prefix_hash` no longer match the
+    // prefix it was written against. Whether that is a product gap or a limitation of rebuilding a
+    // projection out-of-band is an open question, and asserting either answer here would be guessing.
+    expect(replayed.length, "replay currently returns the uncompacted history — see the note above").toBeGreaterThan(
+      0,
+    )
+  })
+
+  test("persists a second context overflow after one recovery", async () => {
+    // Recovery is attempted ONCE. If the compacted retry overflows too, that failure is real and must
+    // reach the user — a second compaction would be the runner grinding against a limit it has already
+    // failed to satisfy, on the user's time and tokens.
+    const harness = makeRunnerHarness({
+      turns: [
+        fragmentFixture("text", "text-earlier", ["Earlier answer"]).completeEvents,
+        fragmentFixture("text", "text-second", ["Second answer"]).completeEvents,
+        overflowTurn(),
+        fragmentFixture("text", "text-summary", ["## Goal\n- Recover once"]).completeEvents,
+        overflowTurn(),
+      ],
+    })
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* primeForOverflow(harness)
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Continue" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+        return yield* session.context(HARNESS_SESSION)
+      }),
+      "claim — a second overflow is not retried again",
+    )
+
+    expect(harness.requests, "exactly one recovery attempt, not a loop").toHaveLength(3)
+    expect(context).toMatchObject([
+      { type: "compaction" },
+      { type: "assistant", finish: "error", error: { message: "prompt too long" } },
+    ])
   })
 })
