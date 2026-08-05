@@ -1,7 +1,6 @@
 import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { Effect, Schema } from "effect"
 import type { JSONSchema7 } from "json-schema"
-import type { Permission } from "../permission"
 import type { SessionID, MessageID } from "../session/schema"
 import * as Truncate from "./truncate"
 import { Agent } from "@/agent/agent"
