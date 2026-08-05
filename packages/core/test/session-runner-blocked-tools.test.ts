@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Fiber, Stream } from "effect"
+import { Cause, Effect, Exit, Fiber, Stream } from "effect"
 import { LLMError, LLMEvent, TransportReason } from "@novaclaw/llm"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
+import { SessionRunner } from "@novaclaw/core/session/runner"
 import { HARNESS_SESSION, drive, makeLatch, makeRunnerHarness } from "./fixture/runner-harness"
 
 /**
@@ -179,5 +180,99 @@ describe("SessionRunnerLLM — tools blocked when the turn ends", () => {
     expect(harness.requests, "exactly one turn — the failure must not trigger a continuation").toHaveLength(1)
     // …and the tool still ran, so the restraint is about CONTINUING, not about abandoning work.
     expect(harness.executions).toEqual(["settled"])
+  })
+
+  test("interrupts a blocked provider turn without local tool execution", async () => {
+    // The turn is interrupted while the provider is still holding the stream open — before any tool
+    // exists. The claim is that interruption is CLEAN in that state: the run fails with interrupts
+    // only, not with a manufactured error, and the request that was already sent is not re-sent.
+    //
+    // ⭐ `hasInterruptsOnly` is the load-bearing part. A run that failed with a wrapped error would
+    // look identical to a caller checking only "did it fail", while telling the recovery UI that
+    // something went wrong rather than that the user stopped it — ruling 2's "a fault is never
+    // described falsely" applied to a non-fault.
+    const streamStarted = makeLatch()
+    const streamGate = makeLatch()
+    const harness = makeRunnerHarness({ turns: [[]] })
+    harness.controls.streamStarted = streamStarted
+    harness.controls.streamGate = streamGate
+
+    const exit = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Interrupt provider" }),
+          resume: false,
+        })
+        const run = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+        yield* Effect.promise(() => streamStarted.promise)
+        yield* session.interrupt(HARNESS_SESSION)
+        const exit = yield* Fiber.await(run)
+        // Release so the abandoned stream cannot hold the scope open.
+        streamGate.open()
+        yield* session.interrupt(HARNESS_SESSION)
+        return exit
+      }),
+      "claim — a blocked provider turn interrupts cleanly",
+    )
+
+    expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause), "interrupted, not errored").toBeTrue()
+    expect(harness.requests).toHaveLength(1)
+  })
+
+  test("durably fails blocked local tools when interrupted while awaiting settlement", async () => {
+    // The third interruption variant, and the narrowest: the turn has FINISHED arriving
+    // (stepFinish + finish) and the runner is awaiting the tool's settlement when it is interrupted.
+    // The tool must still be closed durably — a turn that completed its stream is not a turn whose
+    // tools may be left open.
+    const toolGate = makeLatch()
+    const harness = makeRunnerHarness({
+      turns: [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "call-await-interrupt", name: "echo", input: { text: "blocked" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+      ],
+    })
+    harness.controls.toolGate = toolGate
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Interrupt tool settlement" }),
+          resume: false,
+        })
+        const runner = yield* SessionRunner.Service
+        const run = yield* runner.run({ sessionID: HARNESS_SESSION, force: true }).pipe(Effect.forkChild)
+        yield* waitForExecution(harness)
+        yield* Fiber.interrupt(run)
+        toolGate.open()
+
+        expect(yield* Fiber.await(run)).toMatchObject({ _tag: "Failure" })
+        return yield* session.context(HARNESS_SESSION)
+      }),
+      "claim — tools awaiting settlement fail durably on interrupt",
+    )
+
+    expect(context).toMatchObject([
+      { type: "user", text: "Interrupt tool settlement" },
+      {
+        type: "assistant",
+        content: [
+          {
+            type: "tool",
+            id: "call-await-interrupt",
+            state: { status: "error", error: { type: "unknown", message: "Tool execution interrupted" } },
+          },
+        ],
+      },
+    ])
   })
 })

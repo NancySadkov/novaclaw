@@ -1677,65 +1677,11 @@ describe("SessionRunnerLLM", () => {
   // "durably fails blocked local tools when a provider turn is interrupted" — PORTED to
   // session-runner-blocked-tools.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("interrupts a blocked provider turn without local tool execution", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Interrupt provider" }), resume: false })
-      requests.length = 0
-      response = []
-      streamGate = yield* Deferred.make<void>()
-      streamStarted = yield* Deferred.make<void>()
+  // "interrupts a blocked provider turn without local tool execution" — PORTED to
+  // session-runner-blocked-tools.test.ts and deleted here (S3, 2026-08-05).
 
-      const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
-      yield* Deferred.await(streamStarted)
-      yield* session.interrupt(sessionID)
-      const exit = yield* Fiber.await(run)
-      streamGate = undefined
-      streamStarted = undefined
-
-      expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBeTrue()
-      expect(requests).toHaveLength(1)
-      yield* session.interrupt(sessionID)
-    }),
-  )
-
-  it.effect("durably fails blocked local tools when interrupted while awaiting settlement", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Interrupt tool settlement" }), resume: false })
-      executions.length = 0
-      toolExecutionGate = yield* Deferred.make<void>()
-      response = [
-        LLMEvent.stepStart({ index: 0 }),
-        LLMEvent.toolCall({ id: "call-await-interrupt", name: "echo", input: { text: "blocked" } }),
-        LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-        LLMEvent.finish({ reason: "tool-calls" }),
-      ]
-
-      const runner = yield* SessionRunner.Service
-      const run = yield* runner.run({ sessionID, force: true }).pipe(Effect.forkChild)
-      while (executions.length === 0) yield* Effect.yieldNow
-      yield* Fiber.interrupt(run)
-      toolExecutionGate = undefined
-
-      expect(yield* Fiber.await(run)).toMatchObject({ _tag: "Failure" })
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Interrupt tool settlement" },
-        {
-          type: "assistant",
-          content: [
-            {
-              type: "tool",
-              id: "call-await-interrupt",
-              state: { status: "error", error: { type: "unknown", message: "Tool execution interrupted" } },
-            },
-          ],
-        },
-      ])
-    }),
-  )
+  // "durably fails blocked local tools when interrupted while awaiting settlement" — PORTED to
+  // session-runner-blocked-tools.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("forces a text response on an agent's configured final step", () =>
     Effect.gen(function* () {
