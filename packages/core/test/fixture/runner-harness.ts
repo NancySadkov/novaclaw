@@ -1,5 +1,5 @@
 import { Effect, Layer, Schema, Stream } from "effect"
-import { LLMClient, LLMEvent, Model, type LLMClientShape, type LLMRequest } from "@novaclaw/llm"
+import { LLMClient, LLMEvent, Model, type LLMClientShape, type LLMError, type LLMRequest } from "@novaclaw/llm"
 import { runBounded } from "./bounded"
 import { asc, eq } from "drizzle-orm"
 import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
@@ -64,9 +64,19 @@ import { Location } from "@novaclaw/core/location"
  * bet — `session-runner-claims.test.ts` names all 77 claims, so any of them can be re-derived against a
  * different fixture later.
  */
+/**
+ * One scripted turn: either a plain event list, or a Stream for the cases that need to PAUSE mid-turn.
+ *
+ * The stream form exists for a specific class of claim — tools must start as soon as their calls are
+ * seen, before the turn has finished arriving. That is only expressible if the provider can emit some
+ * events, block, and emit the rest; a static array always arrives complete and would let a runner that
+ * waits for the whole turn pass a test about not waiting.
+ */
+export type ScriptedTurn = LLMEvent[] | Stream.Stream<LLMEvent, LLMError>
+
 export interface RunnerScript {
   /** Events the provider returns for the next interactive request, and for each request after it. */
-  turns?: LLMEvent[][]
+  turns?: ScriptedTurn[]
   /** Events the out-of-band auto-title probe gets. Default: an empty stream, i.e. no title. */
   titleTurns?: LLMEvent[][]
   /** Events the out-of-band post-drain maintenance probes get. Default: an empty stream. */
@@ -106,6 +116,29 @@ const OUT_OF_BAND = [
  * two places is a literal that will disagree with itself.
  */
 export const SYSTEM_CONTEXT_REMOVED_MESSAGE = "System context source removed: test/harness-context"
+
+/**
+ * A one-shot latch: a promise and the function that opens it.
+ *
+ * ⚠️ **Deliberately a plain Promise rather than an Effect `Deferred`.** A `Deferred` can only be made
+ * inside an Effect, which would force every gated claim to thread construction through its test body
+ * before it can even describe the scenario. A latch can be created by the synchronous factory, handed
+ * to the test, and awaited from inside an Effect with `Effect.promise` — so the gating machinery stays
+ * out of the claim's way. The old fixture used `Deferred` and paid for it with six module-level
+ * variables that every test had to reset.
+ */
+export interface Latch {
+  readonly promise: Promise<void>
+  readonly open: () => void
+}
+
+export const makeLatch = (): Latch => {
+  let open!: () => void
+  const promise = new Promise<void>((resolve) => {
+    open = resolve
+  })
+  return { promise, open }
+}
 
 /** The session every harness seeds. Per-harness DB, so a fixed id cannot collide across tests. */
 export const HARNESS_SESSION = SessionV2.ID.make("ses_harness")
@@ -157,8 +190,22 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     systemBaseline: "Initial context",
     systemRemoved: false,
     systemUnavailable: false,
+    /** When set, every tool execution BLOCKS on this latch until the test opens it. */
+    toolGate: undefined as Latch | undefined,
+    /** Opened once `toolsReady` executions are in flight at the same time. */
+    toolsStarted: undefined as Latch | undefined,
+    /** How many concurrent executions `toolsStarted` waits for. */
+    toolsReady: 1,
   }
-  const turns = [...(script.turns ?? [])]
+  /**
+   * Live tool-execution accounting. `maxActive` is the interesting one: it is the only way to assert
+   * that tools ran CONCURRENTLY rather than one after another, which several claims are about and which
+   * no assertion on results can distinguish.
+   */
+  const toolState = { active: 0, maxActive: 0 }
+  /** Every `Tool.Context` the echo tool was invoked with — who authorised each execution. */
+  const authorizations: Tool.Context[] = []
+  const turns: ScriptedTurn[] = [...(script.turns ?? [])]
   const titleTurns = [...(script.titleTurns ?? [])]
   const maintenanceTurns = [...(script.maintenanceTurns ?? [])]
   const utilityTurns = [...(script.utilityTurns ?? [])]
@@ -210,7 +257,8 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
         // produced **three** provider requests in three seconds — the drain treats an empty stream as a
         // turn worth retrying, not as an answer. So a claim asserting on a request COUNT must script a
         // real response; scripting nothing does not mean "one request and stop".
-        return Stream.fromIterable(turns.shift() ?? [])
+        const next = turns.shift()
+        return Array.isArray(next) ? Stream.fromIterable(next) : (next ?? Stream.fromIterable([]))
       }) as unknown as LLMClientShape["stream"],
       generate: () => Effect.die("the harness has no non-streaming path — a test that needs one should say so"),
     }),
@@ -224,11 +272,19 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
           input: Schema.Struct({ text: Schema.String }),
           output: Schema.Struct({ text: Schema.String }),
           toModelOutput: ({ output }) => [{ type: "text", text: output.text }],
-          execute: ({ text }) =>
-            Effect.sync(() => {
+          execute: ({ text }, toolContext) =>
+            Effect.gen(function* () {
+              authorizations.push(toolContext)
               executions.push(text)
+              toolState.active++
+              toolState.maxActive = Math.max(toolState.maxActive, toolState.active)
+              if (toolState.active === controls.toolsReady && controls.toolsStarted) {
+                controls.toolsStarted.open()
+              }
+              const gate = controls.toolGate
+              if (gate) yield* Effect.promise(() => gate.promise)
               return { text }
-            }),
+            }).pipe(Effect.ensuring(Effect.sync(() => void toolState.active--))),
         }),
         // Registered in this order on purpose: claims about the advertised tool list assert
         // `["echo", "defect"]` verbatim, so the registry's order is part of what is being ported.
@@ -437,6 +493,10 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     utilityRequests,
     /** Text the echo tool was asked to echo, in call order. */
     executions,
+    /** Every context the echo tool was invoked with — the authorisation trail. */
+    authorizations,
+    /** Live execution accounting; `maxActive` proves concurrency, which results alone cannot. */
+    toolState,
     model,
     clientLayer,
     /** The whole node graph, wired exactly as the old fixture wires it. Provide this to a test body. */

@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Schema } from "effect"
+import { Effect, Fiber, Schema, Stream } from "effect"
 import { LLMEvent } from "@novaclaw/llm"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { ApplicationTools } from "@novaclaw/core/tool/application-tools"
 import { Tool } from "@novaclaw/core/tool/tool"
-import { HARNESS_SESSION, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, drive, makeLatch, makeRunnerHarness } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — tools the runner did not register itself.
@@ -96,6 +96,87 @@ describe("SessionRunnerLLM — application tools", () => {
         content: [
           { type: "tool", id: "call-application", state: { status: "completed", structured: { answer: "HELLO" } } },
         ],
+      },
+    ])
+  })
+})
+
+describe("SessionRunnerLLM — local tool execution", () => {
+  test("starts recorded local tools eagerly and awaits settlement before continuing", async () => {
+    // FIVE tool calls arrive, then the provider PAUSES before finishing the turn. The claim is that the
+    // runner starts each tool as soon as its call is seen rather than waiting for the turn to complete.
+    //
+    // ⭐ `maxActive` is what makes this provable, and nothing about the results could. Five tools that
+    // ran one after another produce exactly the same five outputs as five that ran at once — only the
+    // high-water mark of concurrent executions tells them apart. That is why the harness accounts for
+    // it rather than just collecting results.
+    //
+    // The provider stream is a Stream rather than an array for the same reason: a static array always
+    // arrives complete, so a runner that waited for the whole turn would pass a test about not waiting.
+    const toolsStarted = makeLatch()
+    const toolGate = makeLatch()
+    const providerGate = makeLatch()
+
+    const harness = makeRunnerHarness({
+      turns: [
+        Stream.concat(
+          Stream.fromIterable([
+            LLMEvent.stepStart({ index: 0 }),
+            ...Array.from({ length: 5 }, (_, index) =>
+              LLMEvent.toolCall({ id: `call-echo-${index}`, name: "echo", input: { text: `${index}` } }),
+            ),
+          ]),
+          Stream.fromEffect(Effect.promise(() => providerGate.promise)).pipe(
+            Stream.flatMap(() =>
+              Stream.fromIterable([
+                LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+                LLMEvent.finish({ reason: "tool-calls" }),
+              ]),
+            ),
+          ),
+        ),
+        [],
+      ],
+    })
+    harness.controls.toolsReady = 5
+    harness.controls.toolsStarted = toolsStarted
+    harness.controls.toolGate = toolGate
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Echo five times" }),
+          resume: false,
+        })
+        const run = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+
+        // All five are in flight — the turn has NOT finished arriving yet.
+        yield* Effect.promise(() => toolsStarted.promise)
+        const observed = yield* session.context(HARNESS_SESSION)
+
+        // Let the tools settle, then let the provider finish the turn.
+        toolGate.open()
+        providerGate.open()
+        yield* Fiber.join(run)
+        return observed
+      }),
+      "claim — local tools start eagerly",
+    )
+
+    expect(harness.executions, "all five started before the turn finished arriving").toHaveLength(5)
+    expect(harness.toolState.maxActive, "they ran CONCURRENTLY, not one after another").toBe(5)
+    expect(context).toMatchObject([
+      { type: "user", text: "Echo five times" },
+      {
+        type: "assistant",
+        content: Array.from({ length: 5 }, (_, index) => ({
+          type: "tool",
+          id: `call-echo-${index}`,
+          state: { status: "running", input: { text: `${index}` } },
+        })),
       },
     ])
   })

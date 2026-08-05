@@ -1551,66 +1551,8 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("starts recorded local tools eagerly and awaits settlement before continuing", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Echo five times" }), resume: false })
-
-      requests.length = 0
-      executions.length = 0
-      toolExecutionGate = yield* Deferred.make<void>()
-      toolExecutionsStarted = yield* Deferred.make<void>()
-      const providerGate = yield* Deferred.make<void>()
-      response = []
-      responses = undefined
-      const initial = Stream.fromIterable([
-        LLMEvent.stepStart({ index: 0 }),
-        ...Array.from({ length: 5 }, (_, index) =>
-          LLMEvent.toolCall({ id: `call-echo-${index}`, name: "echo", input: { text: `${index}` } }),
-        ),
-      ])
-      const final = Stream.fromIterable([
-        LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-        LLMEvent.finish({ reason: "tool-calls" }),
-      ])
-      streamGate = undefined
-      responseStream = Stream.concat(
-        initial,
-        Stream.fromEffect(Deferred.await(providerGate)).pipe(Stream.flatMap(() => final)),
-      )
-
-      const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
-      yield* Deferred.await(toolExecutionsStarted)
-
-      expect(executions).toHaveLength(5)
-      expect(maxActiveToolExecutions).toBe(5)
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Echo five times" },
-        {
-          type: "assistant",
-          content: Array.from({ length: 5 }, (_, index) => ({
-            type: "tool",
-            id: `call-echo-${index}`,
-            state: { status: "running", input: { text: `${index}` } },
-          })),
-        },
-      ])
-
-      yield* Deferred.succeed(providerGate, undefined)
-      yield* Effect.yieldNow
-      expect(requests).toHaveLength(1)
-
-      yield* Deferred.succeed(toolExecutionGate, undefined)
-      yield* Fiber.join(run)
-      toolExecutionGate = undefined
-      toolExecutionsStarted = undefined
-
-      expect(executions).toHaveLength(5)
-      expect(maxActiveToolExecutions).toBe(5)
-      expect(requests).toHaveLength(2)
-    }),
-  )
+  // "starts recorded local tools eagerly and awaits settlement before continuing" — PORTED to
+  // session-runner-tools.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("settles repeated provider-local tool call IDs against their owning assistant messages", () =>
     Effect.gen(function* () {

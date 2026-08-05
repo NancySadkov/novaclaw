@@ -194,6 +194,10 @@ const STATUS: Readonly<Record<string, { status: Exclude<ClaimStatus, "spec">; wh
     status: "ported",
     where: "session-runner-tools.test.ts",
   },
+  "starts recorded local tools eagerly and awaits settlement before continuing": {
+    status: "ported",
+    where: "session-runner-tools.test.ts",
+  },
 }
 
 describe("the session-runner claims ledger", () => {
@@ -235,21 +239,21 @@ describe("the session-runner claims ledger", () => {
     // about `session/runner/llm.ts` still have NO executing coverage on any platform.
     const remaining = CLAIMS.filter((claim) => STATUS[claim] === undefined)
     expect(remaining.length).toBe(CLAIMS.length - Object.keys(STATUS).length)
-    expect(remaining.length).toBe(60)
+    expect(remaining.length).toBe(59)
   })
 
-  test("the remaining declarations are 66 tests, and the ledger knows why", () => {
+  test("the remaining declarations are 65 tests, and the ledger knows why", () => {
     // The two numbers look like a discrepancy until you know about the loop: three titles are template
     // literals iterated over `fragmentKinds`, which has three entries, so those three declarations
     // produce nine tests. That is how the ledger stays tied to something observable — this is the exact
     // win32 skip count `bun test test/session-runner.test.ts` reports for the file, and
     // `script/test-baseline.json`'s `units.core` must move with it on every ported slice.
     //
-    // It was 77 → 83 when the ledger landed; seventeen ported claims (none parameterised) make it 60 → 66.
+    // It was 77 → 83 when the ledger landed; eighteen ported claims (none parameterised) make it 59 → 65.
     const remaining = CLAIMS.filter((claim) => STATUS[claim] === undefined)
     const parameterised = remaining.filter((claim) => claim.includes("${kind}"))
     expect(parameterised.length).toBe(3)
     const FRAGMENT_KINDS = 3
-    expect(remaining.length - parameterised.length + parameterised.length * FRAGMENT_KINDS).toBe(66)
+    expect(remaining.length - parameterised.length + parameterised.length * FRAGMENT_KINDS).toBe(65)
   })
 })
