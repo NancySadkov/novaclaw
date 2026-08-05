@@ -1352,6 +1352,42 @@ export const layer = Layer.effect(
                   : { status: ProviderRetry.statusCode(llmFailure) }),
               }),
             )
+          } else if (
+            stream._tag === "Success" &&
+            !publisher.hasAssistantStarted() &&
+            !publisher.hasProviderError() &&
+            overflowFailure === undefined &&
+            !steerInterrupt &&
+            !needsContinuation
+          ) {
+            // 🔴 A stream that SUCCEEDS having emitted nothing. Every branch above is gated on
+            // `llmFailure`, so this case fell through all of them and the turn ended silently: one
+            // provider request, no assistant row, and the drain settling `Exit Success` with a
+            // transcript holding only the user's message.
+            //
+            // That is ruling 2 — *a failed mutation never reports success* — broken at the drain
+            // itself, and it is invisible from above: R5's retry/stop UI, the execution-attempt ledger
+            // and an agent awaiting `exit()` all read "success" and see the user's turn simply not
+            // answered, with nothing to retry and nothing naming a fault.
+            //
+            // `InvalidProviderOutput` rather than a new tag: an empty body IS invalid provider output,
+            // and that tag already carries a display arm and its localisations. `retryable` is true
+            // because it usually is — a local server under load returns an empty body and the same
+            // request succeeds on the next attempt.
+            //
+            // ⚠️ The four negative guards are all load-bearing, and each one names a LEGITIMATE way a
+            // turn ends without assistant output: an overflow being recovered, a provider error already
+            // published, a steer cutting the stream, or a continuation already scheduled. Without them
+            // this would report a fault on paths that are working correctly — which is the same ruling
+            // broken in the other direction.
+            yield* Log.event("session.provider.response.empty", { "session.id": session.id })
+            yield* withPublication(
+              publisher.failAssistant({
+                message: "The provider returned an empty response",
+                _tag: "InvalidProviderOutput",
+                retryable: true,
+              }),
+            )
           }
           if (stream._tag === "Failure" && Cause.hasInterrupts(stream.cause)) yield* FiberSet.clear(toolFibers)
           const settled = yield* restore(awaitToolFibers(toolFibers)).pipe(Effect.exit)

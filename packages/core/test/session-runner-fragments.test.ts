@@ -8,7 +8,7 @@ import { EventTable } from "@novaclaw/core/event/sql"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionRunner } from "@novaclaw/core/session/runner"
-import { HARNESS_SESSION, drive, makeLatch, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness } from "./fixture/runner-harness"
 import { fragmentFixture, fragmentID, fragmentKinds, type FragmentKind } from "./fixture/fragments"
 
 /**
@@ -35,7 +35,10 @@ describe("SessionRunnerLLM — streamed fragments", () => {
       // what is durable and the deltas are pure transport.
       const chunks = Array.from({ length: 32 }, (_, index) => `${index},`)
       const fixture = fragmentFixture(kind, fragmentID(kind, "many"), chunks)
-      const harness = makeRunnerHarness({ turns: [fixture.completeEvents] })
+      // The second turn is scripted for the kinds that draw the re-ground nudge (see below). Leaving it
+      // unscripted would make the continuation an EMPTY provider response, which is now a named fault
+      // rather than silence — see the empty-response claim in `session-runner-errors.test.ts`.
+      const harness = makeRunnerHarness({ turns: [fixture.completeEvents, completeTurn("t2", "Done")] })
       const prompt = `Stream ${kind}`
 
       const { live, deltaRows, before, after } = await drive(
@@ -80,7 +83,17 @@ describe("SessionRunnerLLM — streamed fragments", () => {
           (m) =>
             (m.type === "user" || m.type === "assistant") && !String(m.text ?? "").startsWith("[Automated NovaClaw"),
         )
-      const expected = [{ type: "user", text: prompt }, fixture.expectedAssistant]
+      // Derived, not hard-coded per kind: if the runner nudged, that nudge drew a reply, and it belongs
+      // in the expected pair. Asking the transcript whether it was nudged keeps this correct for any
+      // kind that starts or stops producing text.
+      const nudged = (before as Array<{ text?: string }>).some((message) =>
+        String(message.text ?? "").startsWith("[Automated NovaClaw"),
+      )
+      const expected = [
+        { type: "user", text: prompt },
+        fixture.expectedAssistant,
+        ...(nudged ? [{ type: "assistant", finish: "stop" }] : []),
+      ]
       expect(pair(before)).toMatchObject(expected)
       expect(pair(after), "the assembled fragment survives a replay from events alone").toMatchObject(expected)
     })

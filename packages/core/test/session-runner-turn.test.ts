@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — turn start and request assembly.
@@ -19,7 +19,7 @@ describe("SessionRunnerLLM — turn start", () => {
   test("streams one request with registry definitions from chronological V2 user history", async () => {
     // Two prompts recorded without draining, then one resume: the request must carry BOTH user
     // messages in order, plus the registry's tools.
-    const harness = makeRunnerHarness({ turns: [[]] })
+    const harness = makeRunnerHarness({ turns: [completeTurn("t1", "One")] })
 
     await drive(
       harness,
@@ -28,7 +28,9 @@ describe("SessionRunnerLLM — turn start", () => {
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }), resume: false })
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Second" }), resume: false })
         yield* session.resume(HARNESS_SESSION)
-        expect(yield* session.messages({ sessionID: HARNESS_SESSION })).toHaveLength(2)
+        // Both prompts plus the one reply they drew. (Was 2 while an unscripted turn produced no
+        // assistant message at all — see the empty-response claim in `session-runner-errors.test.ts`.)
+        expect(yield* session.messages({ sessionID: HARNESS_SESSION })).toHaveLength(3)
       }),
       "claim — one request from chronological history",
     )

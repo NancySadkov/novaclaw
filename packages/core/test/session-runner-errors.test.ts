@@ -217,4 +217,46 @@ describe("SessionRunnerLLM — provider errors", () => {
       { type: "assistant", finish: "error", error: { type: "unknown", message: "Provider unavailable" } },
     ])
   })
+
+  test("reports an empty provider response as a terminal assistant failure", async () => {
+    // 🔴 THE REGRESSION CHECK FOR A CONFIRMED DEFECT (roadmap item, fixed in the same commit). The
+    // provider returns a stream that SUCCEEDS having emitted nothing. Before the fix this fell through
+    // every branch in the runner's post-stream chain — all of which are gated on a stream FAILURE — and
+    // the turn ended silently: one request, no assistant row, and the drain settling `Exit Success`
+    // with a transcript holding only the user's message.
+    //
+    // ⭐ The assistant message is the claim, not the request count. Nothing above the drain could see
+    // this: R5's retry/stop UI, the execution-attempt ledger and an agent awaiting `exit()` all read
+    // "success" and observe the user's turn simply not answered — no fault named, nothing to retry.
+    // Ruling 2 broken at the drain itself.
+    //
+    // ⚠️ This is also why a claim asserting on request COUNT must script a real response: an empty
+    // stream is not "one request and stop", it is one request and a FAULT.
+    const harness = makeRunnerHarness({ turns: [[]] })
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Answer me" }),
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+        return yield* session.context(HARNESS_SESSION)
+      }),
+      "claim — an empty provider response is a named fault",
+    )
+
+    expect(harness.requests, "the empty stream is not retried into a second turn").toHaveLength(1)
+    expect(context).toMatchObject([
+      { type: "user", text: "Answer me" },
+      {
+        type: "assistant",
+        finish: "error",
+        error: { type: "unknown", message: "The provider returned an empty response" },
+      },
+    ])
+  })
 })

@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import { LLMEvent } from "@novaclaw/llm"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — reasoning that has to SURVIVE, not merely render.
@@ -43,7 +43,10 @@ describe("SessionRunnerLLM — reasoning round trip", () => {
           LLMEvent.stepFinish({ index: 0, reason: "stop" }),
           LLMEvent.finish({ reason: "stop" }),
         ],
-        [],
+        // The re-ground nudge's continuation. Scripted rather than left empty: an unscripted turn is
+        // now a named provider fault (`session-runner-errors.test.ts`), not silence.
+        completeTurn("t2", "Done"),
+        completeTurn("t3", "Continued"),
       ],
     })
 
@@ -91,6 +94,8 @@ describe("SessionRunnerLLM — reasoning round trip", () => {
           },
         ],
       },
+      // The nudge's own reply — this turn produced reasoning and no text, so the runner asked for one.
+      { type: "assistant", finish: "stop" },
     ])
 
     // ② And carried back OUT on the next turn — the half that actually breaks a provider if dropped.

@@ -398,10 +398,17 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
         // Shift rather than index, so an exhausted script cannot replay its last response forever —
         // a replay looks like a working test right up until it loops.
         //
-        // 🔴 ⚠️ AN EMPTY STREAM DOES NOT SETTLE THE TURN. Measured 2026-08-05: a script of `[[]]`
-        // produced **three** provider requests in three seconds — the drain treats an empty stream as a
-        // turn worth retrying, not as an answer. So a claim asserting on a request COUNT must script a
-        // real response; scripting nothing does not mean "one request and stop".
+        // 🔴 ⚠️ AN EMPTY STREAM IS A FAULT, NOT AN ANSWER. Re-measured 2026-08-05 against the finished
+        // harness: `[[]]` produces **one** request, and the runner now records a terminal assistant
+        // failure ("The provider returned an empty response") — see the claim in
+        // `session-runner-errors.test.ts`. Until that fix it produced one request and **nothing else**:
+        // no assistant row, `Exit Success`, a transcript holding only the user message.
+        //
+        // ⚠️ An earlier version of this note claimed **three** requests. That number came from S2's
+        // incomplete layer graph and was superseded by the re-measurement the same day; it survived
+        // here because it had been written into a comment. Scripting nothing still does not mean "one
+        // request and stop" — it means one request and a FAULT — so a claim asserting on a request
+        // COUNT must still script a real response.
         const next = turns.shift()
         return Array.isArray(next) ? Stream.fromIterable(next) : (next ?? Stream.fromIterable([]))
       }) as unknown as LLMClientShape["stream"],

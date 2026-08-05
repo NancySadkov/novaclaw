@@ -160,7 +160,7 @@ describe("SessionRunnerLLM — agent system prompt", () => {
     // WHEN the switch landed relative to the sample, and the request alone cannot show that — a request
     // carrying the old model looks identical whether the switch arrived late or never arrived at all.
     // The hook is what makes the race deterministic instead of hoped-for.
-    const harness = makeRunnerHarness({ turns: [[]] })
+    const harness = makeRunnerHarness({ turns: [completeTurn("t1", "One")] })
 
     await drive(
       harness,

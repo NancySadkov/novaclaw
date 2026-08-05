@@ -1178,6 +1178,15 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  "session.provider.response.empty": {
+    level: "warn",
+    message: "provider returned an empty response",
+    // No provider text to carry — an empty response has none, which is the whole event. So `none`,
+    // unlike its `.broken` neighbour above, which logs the provider's own fault message.
+    attributes: { "session.id": "id" },
+    content: "none",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.quality.check.errored": {
     level: "warn",
     message: "quality check errored",

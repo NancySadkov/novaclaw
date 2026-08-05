@@ -57,7 +57,11 @@ describe("SessionRunnerLLM — durable system context", () => {
     //
     // So this asserts what the runner actually guarantees — the notice arrives, names the source, and
     // is framed as automated — rather than a wire role that is an implementation choice.
-    const harness = makeRunnerHarness()
+    // ⚠️ Real turns are SCRIPTED deliberately. This claim used to run on the harness default — no
+    // turns at all — and passed only because an empty provider stream was silently swallowed. That was
+    // the drain defect (fixed 2026-08-05); now an empty stream is a named fault, and a claim that is
+    // not about failure must script a response. See `session-runner-errors.test.ts`.
+    const harness = makeRunnerHarness({ turns: [completeTurn("t1", "One"), completeTurn("t2", "Two")] })
 
     const messages = await drive(
       harness,
@@ -76,7 +80,8 @@ describe("SessionRunnerLLM — durable system context", () => {
     )
 
     const second = harness.requests[1]
-    expect(second?.messages, "both user turns plus the removal notice").toHaveLength(3)
+    // Both user turns, the first turn's assistant reply, and the removal notice last.
+    expect(second?.messages, "both user turns, the first reply, and the removal notice").toHaveLength(4)
     const notice = JSON.stringify(second?.messages.at(-1)?.content)
     expect(notice, "the notice must name the source that went away").toContain(SYSTEM_CONTEXT_REMOVED_MESSAGE)
     expect(notice, "and must be framed as automated, not as something the user said").toContain(
@@ -84,7 +89,24 @@ describe("SessionRunnerLLM — durable system context", () => {
     )
     // It is a SYSTEM message in the session's own record even though the wire lowers it to `user`.
     expect((messages as Array<{ type: string }>).filter((message) => message.type === "system")).toHaveLength(1)
-    expect(messages).toHaveLength(3)
+    // The notice is ONE extra message in a two-turn transcript — it does not replace a turn or fold
+    // into one. Stated as a composition rather than a bare literal so the reason survives.
+    //
+    // ⏳ **Asserted as a COMPOSITION, not an order, and that is a deliberate limit.** Measured
+    // 2026-08-05: `session.messages()` returns these five in an order that is neither the wire order
+    // (where the notice is last — the assertion above reads it off `.at(-1)` and passes) nor
+    // chronological-by-prompt. Two readings disagree on the same run, so one of them is wrong, but
+    // which is a product question about how the record sorts a message the runner injects — not
+    // something this claim should answer by pinning whichever it happened to observe. Filed as an open
+    // question. What IS the claim holds either way: the notice is admitted, named, framed as
+    // automated, and is ONE extra message that neither replaces a turn nor folds into one.
+    const kinds = (messages as Array<{ type: string }>).map((message) => message.type)
+    expect(
+      kinds.filter((kind) => kind === "user").length,
+      "both user turns are recorded",
+    ).toBe(2)
+    expect(kinds.filter((kind) => kind === "assistant").length, "both replies are recorded").toBe(2)
+    expect(kinds, "the notice is one extra message, not a replacement").toHaveLength(5)
   })
 
   test("preserves the baseline while context is temporarily unavailable", async () => {
@@ -135,7 +157,10 @@ describe("SessionRunnerLLM — durable system context", () => {
     // load-bearing assertion is the event count — exactly ONE `context.updated`, i.e. the baseline was
     // established once and reused, not rebuilt per turn. Rebuilding it every turn would be invisible in
     // the transcript and would silently destroy prompt-cache hits on every single request.
-    const harness = makeRunnerHarness()
+    //
+    // ⚠️ Turns are scripted for the same reason as the claim above — this ran on empty streams and
+    // passed only because the drain swallowed them.
+    const harness = makeRunnerHarness({ turns: [completeTurn("t1", "One"), completeTurn("t2", "Two")] })
 
     const { messages, updates, replayed } = await drive(
       harness,
@@ -175,8 +200,9 @@ describe("SessionRunnerLLM — durable system context", () => {
 
     const notice = JSON.stringify(harness.requests[1]?.messages.at(-1)?.content)
     expect(notice, "the new value arrives chronologically instead").toContain("Changed context")
-    expect(messages).toHaveLength(3)
-    expect(replayed, "the transcript must be rebuildable from events alone").toHaveLength(3)
+    // Compared against the PRE-replay count rather than a literal — the claim is FIDELITY, and a
+    // literal here would make every future change to what the runner records look like a replay bug.
+    expect(replayed, "the transcript must be rebuildable from events alone").toHaveLength(messages.length)
   })
 
   test("retries the first provider turn after system context becomes available", async () => {

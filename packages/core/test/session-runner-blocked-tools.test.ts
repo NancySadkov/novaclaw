@@ -7,7 +7,7 @@ import { SessionRunner } from "@novaclaw/core/session/runner"
 import { QuestionV2 } from "@novaclaw/core/question"
 import { Tool } from "@novaclaw/core/tool/tool"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
-import { HARNESS_SESSION, drive, makeLatch, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — a local tool still RUNNING when the turn around it ends.
@@ -200,7 +200,7 @@ describe("SessionRunnerLLM — tools blocked when the turn ends", () => {
     // described falsely" applied to a non-fault.
     const streamStarted = makeLatch()
     const streamGate = makeLatch()
-    const harness = makeRunnerHarness({ turns: [[]] })
+    const harness = makeRunnerHarness({ turns: [completeTurn("t1", "One")] })
     harness.controls.streamStarted = streamStarted
     harness.controls.streamGate = streamGate
 

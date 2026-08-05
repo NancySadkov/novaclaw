@@ -9,7 +9,7 @@ import { SessionEvent } from "@novaclaw/core/session/event"
 import { SessionInput } from "@novaclaw/core/session/input"
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — state left behind by a process that died mid-tool.
@@ -74,7 +74,7 @@ const orphanToolCall = (input: {
 
 describe("SessionRunnerLLM — recovery from a prior process", () => {
   test("durably fails local tools left running by a prior process before continuing", async () => {
-    const harness = makeRunnerHarness({ turns: [[]] })
+    const harness = makeRunnerHarness({ turns: [completeTurn("t1", "One")] })
     const assistantMessageID = SessionMessage.ID.create()
 
     const context = await drive(
@@ -118,6 +118,9 @@ describe("SessionRunnerLLM — recovery from a prior process", () => {
           },
         ],
       },
+      // The continuation turn's own reply. It exists because the recovery turn is scripted — an
+      // unscripted one would now be a named provider fault, not silence.
+      { type: "assistant", finish: "stop" },
     ])
   })
 
@@ -127,7 +130,7 @@ describe("SessionRunnerLLM — recovery from a prior process", () => {
     // beside its own tool-call inside the assistant message. Providers reject a hosted call that is not
     // answered in place, so a runner that recovered both the same way would produce a request the
     // provider refuses — the roles here are ["user","assistant"], with no third `tool` message.
-    const harness = makeRunnerHarness({ turns: [[]] })
+    const harness = makeRunnerHarness({ turns: [completeTurn("t1", "One")] })
     const assistantMessageID = SessionMessage.ID.create()
 
     await drive(
@@ -179,7 +182,7 @@ describe("SessionRunnerLLM — recovery from a prior process", () => {
     // The earliest possible orphan: the process died before the tool input was even complete, so there
     // is no `Called` event at all — only a started input. It must still be closed rather than left as a
     // half-written call that no later turn can interpret.
-    const harness = makeRunnerHarness({ turns: [[]] })
+    const harness = makeRunnerHarness({ turns: [completeTurn("t1", "One")] })
     const assistantMessageID = SessionMessage.ID.create()
 
     const context = await drive(
@@ -220,6 +223,7 @@ describe("SessionRunnerLLM — recovery from a prior process", () => {
         type: "assistant",
         content: [{ type: "tool", id: "call-pending-interrupted", state: { status: "error" } }],
       },
+      { type: "assistant", finish: "stop" },
     ])
   })
 })

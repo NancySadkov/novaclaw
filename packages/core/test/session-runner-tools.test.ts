@@ -6,7 +6,7 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { ApplicationTools } from "@novaclaw/core/tool/application-tools"
 import { Tool } from "@novaclaw/core/tool/tool"
-import { HARNESS_SESSION, drive, makeLatch, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — tools the runner did not register itself.
@@ -31,9 +31,11 @@ describe("SessionRunnerLLM — application tools", () => {
           LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
           LLMEvent.finish({ reason: "tool-calls" }),
         ],
-        // The continuation turn. Scripted empty on purpose — this claim is about the tool round trip,
-        // not about what the model says afterwards.
-        [],
+        // The continuation turn. Scripted with a real reply — it used to be empty "on purpose, this
+        // claim is about the tool round trip", and that only worked while an empty provider stream was
+        // silently swallowed. It is now a named fault (`session-runner-errors.test.ts`), so a claim
+        // that is not about failure must script a response.
+        completeTurn("t2", "Done"),
       ],
     })
 
@@ -97,6 +99,7 @@ describe("SessionRunnerLLM — application tools", () => {
           { type: "tool", id: "call-application", state: { status: "completed", structured: { answer: "HELLO" } } },
         ],
       },
+      { type: "assistant", finish: "stop" },
     ])
   })
 })
@@ -375,7 +378,7 @@ describe("SessionRunnerLLM — local tool execution", () => {
           LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
           LLMEvent.finish({ reason: "tool-calls" }),
         ],
-        [],
+        completeTurn("t3", "Done"),
       ],
     })
 
@@ -414,6 +417,7 @@ describe("SessionRunnerLLM — local tool execution", () => {
           },
         ],
       },
+      { type: "assistant", finish: "stop" },
     ])
   })
 })
