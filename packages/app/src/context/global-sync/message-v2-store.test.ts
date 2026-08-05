@@ -72,3 +72,57 @@ describe("createNativeMessageStore", () => {
     expect(store.messages("s")).toBeUndefined()
   })
 })
+
+describe("optimistic user messages", () => {
+  const optimisticUser = (id: string, text: string, created = Date.now()): SessionMessage =>
+    ({ id, type: "user", text, time: { created } }) as unknown as SessionMessage
+
+  test("a sent prompt is on screen before the server has echoed anything", () => {
+    // The defect this exists for: sendFollowupDraft awaits the worktree (five minutes, budgeted),
+    // possibly a switchModel and a switchAgent, and only then POSTs — so the user's own words were
+    // nowhere until the echo came back, which reads as "it disappeared".
+    const store = createNativeMessageStore(noClient)
+    store.optimistic("s", optimisticUser("msg_u", "deploy the thing"))
+    expect(store.messages("s")?.map((m) => m.id)).toEqual(["msg_u"])
+    expect(store.messages("s")?.[0]).toMatchObject({ type: "user", text: "deploy the thing" })
+  })
+
+  test("the server's echo lands on the SAME row instead of beside it", () => {
+    // The id is the one the client already sends as prompt({id}), so the echo is the same message.
+    // A second row here would be the bug wearing the opposite coat: the user sees it twice.
+    const store = createNativeMessageStore(noClient)
+    store.optimistic("s", optimisticUser("msg_u", "deploy the thing"))
+    store.apply(prompted("s", "msg_u", "deploy the thing"))
+    expect(store.messages("s")?.length).toBe(1)
+  })
+
+  test("a failed send takes the row back", () => {
+    // Otherwise the fix trades a MISSING message for a LYING one, which is worse — the user believes
+    // it landed, and the composer has already restored the text for a retry.
+    const store = createNativeMessageStore(noClient)
+    store.optimistic("s", optimisticUser("msg_u", "deploy the thing"))
+    store.forget("s", "msg_u")
+    expect(store.messages("s")).toEqual([])
+  })
+
+  test("forgetting an id that is not there, or a session that is not there, is a no-op", () => {
+    const store = createNativeMessageStore(noClient)
+    store.forget("never-seen", "msg_u")
+    store.optimistic("s", optimisticUser("msg_u", "one"))
+    store.forget("s", "msg_other")
+    expect(store.messages("s")?.map((m) => m.id)).toEqual(["msg_u"])
+  })
+
+  test("🔴 the row SURVIVES an authoritative reconcile — this is the constraint that fails silently", async () => {
+    // mergeNativeMessages drops a local row only when it is both withinPage AND predatesFetch, and a
+    // MISSING time.created makes predatesFetch true. So an optimistic row without a real timestamp
+    // appears and then blinks out on the next reconcile — strictly worse than the bug being fixed,
+    // and invisible to every other test here. This pins the timestamp as load-bearing.
+    const store = createNativeMessageStore(clientReturning([]))
+    store.optimistic("s", optimisticUser("msg_u", "deploy the thing", Date.now() + 60_000))
+    await store.load("s")
+    expect(store.messages("s")?.map((m) => m.id), "an in-flight prompt must survive a reconcile").toEqual([
+      "msg_u",
+    ])
+  })
+})

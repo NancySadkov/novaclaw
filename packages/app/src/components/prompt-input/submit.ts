@@ -189,9 +189,43 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
 
   setBusy()
 
+  // Put the user's own words on screen NOW, before the worktree wait (five minutes, budgeted), before
+  // any switchModel/switchAgent round-trip, and before the prompt POST. Until this, the message was
+  // nowhere between Enter and the server's echo — which reads as "it disappeared", and the recovery a
+  // user reaches for is retyping it. Keyed on `messageID`, the id we are about to send, so the echo
+  // lands on the same row instead of beside it. `time.created` is load-bearing — see `optimistic`.
+  //
+  // ⚠️ SHOWING the message must never be able to stop SENDING it. Both calls are guarded because the
+  // inversion is catastrophic and silent: a throw here happens BEFORE the prompt POST, so a display
+  // fault would swallow the user's message entirely — the exact harm this code exists to prevent,
+  // caused by the fix for it. Caught live by `submit.test.ts`, whose serverSync mock has no
+  // `nativeMessages`: the assertion that failed was "the prompt reached the session", not anything
+  // about rendering. Delivery is the product; the echo is a courtesy.
+  const showOptimistic = () => {
+    try {
+      input.serverSync.nativeMessages?.optimistic(input.draft.sessionID, {
+        id: messageID,
+        type: "user",
+        text,
+        time: { created: Date.now() },
+      })
+    } catch {
+      /* a transcript that cannot render the echo must still deliver the prompt */
+    }
+  }
+  const forgetOptimistic = () => {
+    try {
+      input.serverSync.nativeMessages?.forget(input.draft.sessionID, messageID)
+    } catch {
+      /* nothing to take back */
+    }
+  }
+  showOptimistic()
+
   try {
     if (!(await wait())) {
       setIdle()
+      forgetOptimistic()
       return false
     }
 
@@ -222,6 +256,10 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     return true
   } catch (err) {
     setIdle()
+    // The send failed, so the row has to go. Leaving it would trade a missing message for a LYING one
+    // — the user sees their prompt sitting in the transcript as though it landed, and the composer has
+    // already restored the text for them to retry, so keeping it would also show the message twice.
+    forgetOptimistic()
     throw err
   }
 }

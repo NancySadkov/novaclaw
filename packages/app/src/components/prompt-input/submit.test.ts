@@ -17,6 +17,9 @@ const optimistic: Array<{
 }> = []
 const optimisticSeeded: boolean[] = []
 const storedSessions: Record<string, Array<{ id: string; title?: string }>> = {}
+/** Recorded optimistic transcript echoes — see the nativeMessages mock below. */
+const optimisticEchoes: unknown[][] = []
+const forgottenEchoes: unknown[][] = []
 const promoted: Array<{ directory: string; sessionID: string }> = []
 const sentShell: string[] = []
 const syncedDirectories: string[] = []
@@ -228,6 +231,17 @@ beforeAll(async () => {
         remember: () => undefined,
         set: () => undefined,
         get: () => undefined,
+      },
+      // The optimistic transcript echo lives here. Mocked rather than omitted so the send path
+      // exercises the real call — when it was missing, submit.ts threw BEFORE the prompt POST and the
+      // failing assertion was "the prompt reached the session", which reads nothing like a render bug.
+      nativeMessages: {
+        optimistic: (...args: unknown[]) => {
+          optimisticEchoes.push(args)
+        },
+        forget: (...args: unknown[]) => {
+          forgottenEchoes.push(args)
+        },
       },
       child: (directory: string) => {
         syncedDirectories.push(directory)

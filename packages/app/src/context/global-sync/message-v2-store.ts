@@ -1,6 +1,6 @@
 import { createStore, produce } from "solid-js/store"
 import type { NovaclawClient, SessionMessage, V2Event } from "@novaclaw/sdk/v2/client"
-import { applySessionNextEvent, mergeNativeMessages } from "@novaclaw/session-ui/v2/message-fold"
+import { appendMessage, applySessionNextEvent, mergeNativeMessages } from "@novaclaw/session-ui/v2/message-fold"
 import { fetchNativeMessages } from "./message-v2-fetch"
 
 /**
@@ -49,6 +49,53 @@ export function createNativeMessageStore(client: NovaclawClient) {
     )
   }
 
+  /**
+   * Show a message the user has just sent, BEFORE the server has echoed it.
+   *
+   * Why this exists: `sendFollowupDraft` waits on the worktree (budgeted at five minutes), possibly a
+   * `switchModel` and a `switchAgent`, and only then POSTs the prompt — so between pressing Enter and
+   * the `session.next.prompted` echo the user's own words are nowhere on screen. Owner, 2026-08-05:
+   * *"the prompt gets queued, but doesn't immediately show ... which gives user impression it
+   * disappeared."* Losing a person's words is the one failure a chat UI cannot have.
+   *
+   * Three properties make this safe rather than a second source of truth:
+   *  · The id is the one the client already generates and sends as `prompt({id})`, so the server's
+   *    echo carries the SAME id — and `appendMessage` ignores an id it already holds, so the echo
+   *    cannot duplicate this row.
+   *  · A later authoritative fetch replaces it with the server's own copy (fetched wins for settled
+   *    messages), so any divergence heals rather than persisting.
+   *  · ⚠️ `time.created` MUST be real. `mergeNativeMessages` drops a local row only when it is both
+   *    `withinPage` AND `predatesFetch`, and a missing timestamp makes `predatesFetch` TRUE — so a row
+   *    without one would appear and then BLINK OUT on the next reconcile, which is worse than the bug
+   *    this fixes. Callers pass `Date.now()`; the merge then keeps it by its own rule ("created AFTER
+   *    the fetch ⇒ it simply arrived too late to be included").
+   */
+  const optimistic = (sessionID: string, message: SessionMessage) =>
+    setData(
+      "messages",
+      produce((bySession) => {
+        appendMessage((bySession[sessionID] ??= []), message)
+      }),
+    )
+
+  /**
+   * Take back an optimistic row whose send FAILED.
+   *
+   * Without this the fix would trade a missing message for a lying one: the user would see their
+   * prompt sitting in the transcript as though it had landed, when nothing was ever sent. A message
+   * that is never reconciled is the worse of the two failures, because it is believed.
+   */
+  const forget = (sessionID: string, messageID: string) =>
+    setData(
+      "messages",
+      produce((bySession) => {
+        const list = bySession[sessionID]
+        if (!list) return
+        const index = list.findIndex((message) => message.id === messageID)
+        if (index >= 0) list.splice(index, 1)
+      }),
+    )
+
   const evict = (sessionID: string) =>
     setData(
       "messages",
@@ -62,6 +109,8 @@ export function createNativeMessageStore(client: NovaclawClient) {
     messages: (sessionID: string): SessionMessage[] | undefined => data.messages[sessionID],
     apply,
     load,
+    optimistic,
+    forget,
     evict,
   }
 }
