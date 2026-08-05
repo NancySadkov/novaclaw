@@ -19,6 +19,7 @@ import { SDKProvider } from "@/context/sdk"
 import { serverName, useServer } from "@/context/server"
 import { TerminalProvider, useTerminal } from "@/context/terminal"
 import { terminalTabLabel } from "@/pages/session/terminal-label"
+import { terminalTargetLine } from "@/pages/terminal-target"
 import { showToast } from "@/utils/toast"
 
 /** A terminal belongs to the selected NovaClaw instance, not to the renderer machine. Resolve that
@@ -163,7 +164,9 @@ function TerminalWorkspace(props: { serverName: string }) {
       <header class="flex h-14 shrink-0 items-center gap-3 border-b border-border-weaker-base px-4">
         <div class="min-w-0 flex-1">
           <h1 class="text-16-medium text-text-strong">{language.t("terminal.title")}</h1>
-          <p class="truncate text-12-regular text-text-weak">{props.serverName}</p>
+          <p class="truncate text-12-regular text-text-weak">
+            {terminalTargetLine({ server: props.serverName, shell: active()?.shell, cwd: active()?.cwd })}
+          </p>
         </div>
         <ButtonV2 size="small" variant="ghost-muted" disabled={stopping()} onClick={() => void stopAll()}>
           {stopping() ? language.t("terminal.stopAll.stopping") : language.t("terminal.stopAll.action")}

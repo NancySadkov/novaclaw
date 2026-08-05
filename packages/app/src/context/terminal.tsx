@@ -21,6 +21,13 @@ export type LocalPTY = {
   buffer?: string
   scrollY?: number
   cursor?: number
+  /** Resolved shell executable, straight from `Pty.Info.command` — the server already knows it and
+   * the client used to throw it away. Named honestly at the render site: w64devkit's BusyBox `ash`
+   * is not Bash and must never be labelled as one (terminal.md, the product contract). Optional
+   * because tabs persisted before this field existed have no value for it. */
+  shell?: string
+  /** Working directory the shell actually started in, from `Pty.Info.cwd`. */
+  cwd?: string
 }
 
 const WORKSPACE_KEY = "__workspace__"
@@ -55,6 +62,8 @@ function pty(value: unknown): LocalPTY | undefined {
   const buffer = text(value.buffer)
   const scrollY = num(value.scrollY)
   const cursor = num(value.cursor)
+  const shell = text(value.shell)
+  const cwd = text(value.cwd)
 
   return {
     id,
@@ -65,6 +74,8 @@ function pty(value: unknown): LocalPTY | undefined {
     ...(buffer !== undefined ? { buffer } : {}),
     ...(scrollY !== undefined ? { scrollY } : {}),
     ...(cursor !== undefined ? { cursor } : {}),
+    ...(shell !== undefined ? { shell } : {}),
+    ...(cwd !== undefined ? { cwd } : {}),
   }
 }
 
@@ -289,10 +300,15 @@ function createWorkspaceTerminalSession(
         .then((pty) => {
           const id = pty.data?.data.id
           if (!id) return
+          const info = pty.data?.data
           const newTerminal = {
             id,
-            title: pty.data?.data.title ?? defaultTitle(nextNumber),
+            title: info?.title ?? defaultTitle(nextNumber),
             titleNumber: nextNumber,
+            // `Pty.Info` already carries the resolved shell and cwd; keeping them is what lets the
+            // header say WHICH shell on WHICH machine instead of only naming the instance.
+            ...(info?.command ? { shell: info.command } : {}),
+            ...(info?.cwd ? { cwd: info.cwd } : {}),
           }
           setStore("all", store.all.length, newTerminal)
           setStore("active", id)
