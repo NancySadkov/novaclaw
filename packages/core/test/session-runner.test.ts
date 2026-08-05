@@ -751,60 +751,15 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("starts a real runner turn after default prompt recording", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      requests.length = 0
-      responses = undefined
-      streamGate = undefined
-      streamStarted = undefined
-      response = []
-
-      const message = yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Run automatically" }) })
-
-      expect(requests).toHaveLength(1)
-      expect(yield* session.messages({ sessionID })).toMatchObject([
-        { id: message.id, type: "user", text: "Run automatically" },
-      ])
-    }),
-  )
+  // "starts a real runner turn after default prompt recording" — PORTED to
+  // session-runner-context.test.ts and deleted here (S3, 2026-08-05).
 
   // "streams one request with registry definitions from chronological V2 user history" — PORTED to
   // session-runner-turn.test.ts and deleted here (S3, 2026-08-05). The ledger enforces that this
   // deletion happened; see session-runner-claims.test.ts.
 
-  it.effect("retries the first provider turn after system context becomes available", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      const { db } = yield* Database.Service
-      const messageID = SessionMessage.ID.create()
-      systemUnavailable = true
-      yield* session.prompt({ id: messageID, sessionID, prompt: Prompt.make({ text: "First" }), resume: false })
-      requests.length = 0
-
-      const exit = yield* session.resume(sessionID).pipe(Effect.exit)
-
-      expect(Exit.isFailure(exit)).toBe(true)
-      if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(SystemContext.InitializationBlocked)
-      expect(requests).toHaveLength(0)
-      expect(yield* SessionInput.hasPending(db, sessionID, "steer")).toBe(true)
-      expect(
-        yield* db
-          .select()
-          .from(SessionContextEpochTable)
-          .where(eq(SessionContextEpochTable.session_id, sessionID))
-          .get(),
-      ).toBeUndefined()
-
-      systemUnavailable = false
-      yield* session.prompt({ id: messageID, sessionID, prompt: Prompt.make({ text: "First" }) })
-
-      expect(requests).toHaveLength(1)
-      expect(requests[0]?.messages.map((message) => message.role)).toEqual(["user"])
-    }),
-  )
+  // "retries the first provider turn after system context becomes available" — PORTED to
+  // session-runner-context.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("interrupts a source Location runner after a Session moves", () =>
     Effect.gen(function* () {
@@ -864,39 +819,8 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("reuses one durable baseline after the context producer changes", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First" }), resume: false })
-
-      requests.length = 0
-      response = []
-      yield* session.resume(sessionID)
-      systemBaseline = "Changed context"
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Second" }), resume: false })
-      yield* session.resume(sessionID)
-
-      expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([
-        ["Initial context"],
-        ["Initial context"],
-      ])
-      expect(requests[1]?.messages.map((message) => message.role)).toEqual(["user", "user", "system"])
-      expect(requests[1]?.messages.at(-1)?.content).toEqual([{ type: "text", text: "Changed context" }])
-      expect(yield* session.messages({ sessionID })).toHaveLength(3)
-      const { db } = yield* Database.Service
-      expect(
-        yield* db
-          .select({ id: EventTable.id })
-          .from(EventTable)
-          .where(eq(EventTable.type, "session.next.context.updated.1"))
-          .all()
-          .pipe(Effect.orDie),
-      ).toHaveLength(1)
-      yield* replaySessionProjection(sessionID)
-      expect(yield* session.messages({ sessionID })).toHaveLength(3)
-    }),
-  )
+  // "reuses one durable baseline after the context producer changes" — PORTED to
+  // session-runner-context.test.ts and deleted here (S3, 2026-08-05).
 
   // "includes the effective default agent system before durable context" — PORTED to
   // session-runner-agent.test.ts and deleted here (S3, 2026-08-05).

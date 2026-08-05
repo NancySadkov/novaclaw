@@ -1,9 +1,17 @@
 import { describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Cause, Effect, Exit } from "effect"
+import { eq } from "drizzle-orm"
+import { Database } from "@novaclaw/core/database/database"
+import { EventTable } from "@novaclaw/core/event/sql"
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionInput } from "@novaclaw/core/session/input"
+import { SessionMessage } from "@novaclaw/core/session/message"
+import { SessionContextEpochTable } from "@novaclaw/core/session/sql"
+import { SystemContext } from "@novaclaw/core/system-context"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import {
   HARNESS_SESSION,
+  completeTurn,
   SYSTEM_CONTEXT_REMOVED_MESSAGE,
   drive,
   makeRunnerHarness,
@@ -114,5 +122,144 @@ describe("SessionRunnerLLM — durable system context", () => {
       durableContext(harness.requests[2]?.system),
       "a changed baseline must NOT rewrite the established prompt prefix",
     ).toMatch(/^Initial context/)
+  })
+
+  test("reuses one durable baseline after the context producer changes", async () => {
+    // The complement of the claim above: when the producer genuinely changes, the prompt PREFIX still
+    // carries the original baseline and the new value arrives as a chronological message. The
+    // load-bearing assertion is the event count — exactly ONE `context.updated`, i.e. the baseline was
+    // established once and reused, not rebuilt per turn. Rebuilding it every turn would be invisible in
+    // the transcript and would silently destroy prompt-cache hits on every single request.
+    const harness = makeRunnerHarness()
+
+    const { messages, updates, replayed } = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+
+        harness.controls.systemBaseline = "Changed context"
+
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Second" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+
+        const messages = yield* session.messages({ sessionID: HARNESS_SESSION })
+        const { db } = yield* Database.Service
+        const updates = yield* db
+          .select({ id: EventTable.id })
+          .from(EventTable)
+          .where(eq(EventTable.type, "session.next.context.updated.1"))
+          .all()
+          .pipe(Effect.orDie)
+
+        // The transcript must be derivable from the events alone.
+        yield* harness.replayProjection(HARNESS_SESSION)
+        const replayed = yield* session.messages({ sessionID: HARNESS_SESSION })
+        return { messages, updates, replayed }
+      }),
+      "claim — one durable baseline reused after the producer changes",
+    )
+
+    expect(durableContext(harness.requests[0]?.system), "turn 1 establishes the baseline").toMatch(/^Initial context/)
+    expect(
+      durableContext(harness.requests[1]?.system),
+      "the established prefix is REUSED, not rebuilt from the new value",
+    ).toMatch(/^Initial context/)
+    expect(updates, "the baseline must be established once, not per turn").toHaveLength(1)
+
+    const notice = JSON.stringify(harness.requests[1]?.messages.at(-1)?.content)
+    expect(notice, "the new value arrives chronologically instead").toContain("Changed context")
+    expect(messages).toHaveLength(3)
+    expect(replayed, "the transcript must be rebuildable from events alone").toHaveLength(3)
+  })
+
+  test("retries the first provider turn after system context becomes available", async () => {
+    // If context cannot be built at all, the FIRST turn must not go out half-formed. The claim has four
+    // parts and each is a separate way to get this wrong: the drain fails rather than proceeding, the
+    // provider is never called, the prompt is preserved as pending steer input, and no context epoch is
+    // committed. Then, once context is available, the same prompt goes through as a single user turn —
+    // not duplicated, which is what preserving the input naively would cause.
+    const harness = makeRunnerHarness()
+    const messageID = SessionMessage.ID.create()
+
+    const observed = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        const { db } = yield* Database.Service
+
+        harness.controls.systemUnavailable = true
+        yield* session.prompt({
+          id: messageID,
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "First" }),
+          resume: false,
+        })
+
+        const exit = yield* session.resume(HARNESS_SESSION).pipe(Effect.exit)
+        const pending = yield* SessionInput.hasPending(db, HARNESS_SESSION, "steer")
+        const epoch = yield* db
+          .select()
+          .from(SessionContextEpochTable)
+          .where(eq(SessionContextEpochTable.session_id, HARNESS_SESSION))
+          .get()
+          .pipe(Effect.orDie)
+        const requestsWhileBlocked = harness.requests.length
+
+        harness.controls.systemUnavailable = false
+        yield* session.prompt({ id: messageID, sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }) })
+        // ⭐ THE SETTLE POINT. `prompt` with the default `resume` starts the turn but does NOT await
+        // it — measured, `requests` is still 0 when it returns. `session.resume` JOINS the in-flight
+        // drain rather than starting a second one (measured: 0 -> 1, not 0 -> 2), so it is the "the
+        // turn you just started has settled" edge, and asserting without it is a race.
+        yield* session.resume(HARNESS_SESSION)
+
+        return { exit, pending, epoch, requestsWhileBlocked }
+      }),
+      "claim — first turn retried once context becomes available",
+    )
+
+    expect(Exit.isFailure(observed.exit), "a turn with no context must FAIL, not proceed").toBe(true)
+    if (Exit.isFailure(observed.exit)) {
+      expect(Cause.squash(observed.exit.cause)).toBeInstanceOf(SystemContext.InitializationBlocked)
+    }
+    expect(observed.requestsWhileBlocked, "the provider must never be called without context").toBe(0)
+    expect(observed.pending, "the prompt must survive as pending steer input").toBe(true)
+    expect(observed.epoch, "no context epoch may be committed for a turn that never ran").toBeUndefined()
+
+    expect(harness.requests, "the retry goes out exactly once").toHaveLength(1)
+    expect(harness.requests[0]?.messages.map((message) => message.role), "and not duplicated").toEqual(["user"])
+  })
+
+  test("starts a real runner turn after default prompt recording", async () => {
+    // `prompt` without `resume: false` must itself start the turn — recording a prompt the default way
+    // reaches the provider rather than sitting there.
+    //
+    // ⚠️ **This claim was left unported for a day because its original assertion is a RACE.** The old
+    // test asserts `requests` has length 1 on the line after `prompt`, but the default-resume path
+    // starts the turn without awaiting it: measured, `requests` is still 0 when `prompt` returns. The
+    // settle edge is `session.resume`, which JOINS the in-flight drain instead of starting a second one
+    // (0 -> 1, not 0 -> 2). So the claim is true and its old assertion was merely lucky about timing.
+    const harness = makeRunnerHarness({ turns: [completeTurn("text-auto", "Done")] })
+
+    const messages = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        const message = yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Run automatically" }),
+        })
+        yield* session.resume(HARNESS_SESSION)
+        const messages = yield* session.messages({ sessionID: HARNESS_SESSION })
+        return { messages, id: message.id }
+      }),
+      "claim — default prompt recording starts a real turn",
+    )
+
+    expect(harness.requests, "recording a prompt the default way must reach the provider once").toHaveLength(1)
+    const user = messages.messages.find((message: { type: string }) => message.type === "user")
+    expect(user).toMatchObject({ id: messages.id, type: "user", text: "Run automatically" })
   })
 })
