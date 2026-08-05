@@ -8,6 +8,7 @@ import { SessionInput } from "@novaclaw/core/session/input"
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { SessionContextEpochTable } from "@novaclaw/core/session/sql"
 import { SystemContext } from "@novaclaw/core/system-context"
+import { ContextSnapshotDecodeError } from "@novaclaw/core/session/error"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import {
   HARNESS_SESSION,
@@ -261,5 +262,43 @@ describe("SessionRunnerLLM — durable system context", () => {
     expect(harness.requests, "recording a prompt the default way must reach the provider once").toHaveLength(1)
     const user = messages.messages.find((message: { type: string }) => message.type === "user")
     expect(user).toMatchObject({ id: messages.id, type: "user", text: "Run automatically" })
+  })
+
+  test("fails gracefully when a stored context snapshot cannot be decoded", async () => {
+    // A corrupt context snapshot in the database — schema drift, a partial write, a hand-edit. The turn
+    // must FAIL with a named error and the provider must never be called.
+    //
+    // ⭐ The zero-request assertion is the claim. Proceeding on an undecodable snapshot would silently
+    // send a request built from a context nobody could read, and the model would answer against a
+    // partially-reconstructed world — a wrong answer produced confidently, which is worse than a
+    // refusal. Ruling 2's "an unavailable subsystem names itself instead of rendering empty", applied
+    // to the context store.
+    const harness = makeRunnerHarness({ turns: [completeTurn("t1", "First answer")] })
+
+    const exit = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        const { db } = yield* Database.Service
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+
+        yield* db
+          .update(SessionContextEpochTable)
+          .set({ snapshot: { invalid: { value: "bad" } } })
+          .where(eq(SessionContextEpochTable.session_id, HARNESS_SESSION))
+          .run()
+          .pipe(Effect.orDie)
+
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Second" }), resume: false })
+        harness.requests.length = 0
+        return yield* session.resume(HARNESS_SESSION).pipe(Effect.exit)
+      }),
+      "claim — an undecodable snapshot fails by name",
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(ContextSnapshotDecodeError)
+    expect(harness.requests, "the provider must never see a context nobody could read").toHaveLength(0)
   })
 })

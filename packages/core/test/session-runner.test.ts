@@ -711,30 +711,8 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("fails gracefully when a stored context snapshot cannot be decoded", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      const { db } = yield* Database.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First" }), resume: false })
-      response = []
-      yield* session.resume(sessionID)
-      yield* db
-        .update(SessionContextEpochTable)
-        .set({ snapshot: { invalid: { value: "bad" } } })
-        .where(eq(SessionContextEpochTable.session_id, sessionID))
-        .run()
-        .pipe(Effect.orDie)
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Second" }), resume: false })
-      requests.length = 0
-
-      const exit = yield* session.resume(sessionID).pipe(Effect.exit)
-
-      expect(Exit.isFailure(exit)).toBe(true)
-      if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(ContextSnapshotDecodeError)
-      expect(requests).toHaveLength(0)
-    }),
-  )
+  // "fails gracefully when a stored context snapshot cannot be decoded" — PORTED to
+  // session-runner-context.test.ts and deleted here (S3, 2026-08-05).
 
   // "reuses one durable baseline after the context producer changes" — PORTED to
   // session-runner-context.test.ts and deleted here (S3, 2026-08-05).
@@ -1048,93 +1026,8 @@ describe("SessionRunnerLLM", () => {
   // "starts recorded local tools eagerly and awaits settlement before continuing" — PORTED to
   // session-runner-tools.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("settles repeated provider-local tool call IDs against their owning assistant messages", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Echo twice" }), resume: false })
-
-      requests.length = 0
-      executions.length = 0
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "tool_0", name: "echo", input: { text: "first" } }),
-          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-          LLMEvent.finish({ reason: "tool-calls" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "tool_0", name: "echo", input: { text: "second" } }),
-          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-          LLMEvent.finish({ reason: "tool-calls" }),
-        ],
-        [],
-      ]
-
-      yield* session.resume(sessionID)
-
-      expect(executions).toEqual(["first", "second"])
-      expect(requests).toHaveLength(3)
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Echo twice" },
-        {
-          type: "assistant",
-          content: [
-            {
-              type: "tool",
-              id: "tool_0",
-              state: { status: "completed", structured: { text: "first" }, content: [{ type: "text", text: "first" }] },
-            },
-          ],
-        },
-        {
-          type: "assistant",
-          content: [
-            {
-              type: "tool",
-              id: "tool_0",
-              state: {
-                status: "completed",
-                structured: { text: "second" },
-                content: [{ type: "text", text: "second" }],
-              },
-            },
-          ],
-        },
-      ])
-
-      yield* replaySessionProjection(sessionID)
-
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Echo twice" },
-        {
-          type: "assistant",
-          content: [
-            {
-              type: "tool",
-              id: "tool_0",
-              state: { status: "completed", structured: { text: "first" }, content: [{ type: "text", text: "first" }] },
-            },
-          ],
-        },
-        {
-          type: "assistant",
-          content: [
-            {
-              type: "tool",
-              id: "tool_0",
-              state: {
-                status: "completed",
-                structured: { text: "second" },
-                content: [{ type: "text", text: "second" }],
-              },
-            },
-          ],
-        },
-      ])
-    }),
-  )
+  // "settles repeated provider-local tool call IDs against their owning assistant messages" — PORTED to
+  // session-runner-tools.test.ts and deleted here (S3, 2026-08-05).
 
   // "joins concurrent resume calls into one active provider run" — PORTED to
   // session-runner-steering.test.ts and deleted here (S3, 2026-08-05).

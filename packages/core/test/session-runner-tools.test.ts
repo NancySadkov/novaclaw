@@ -352,4 +352,68 @@ describe("SessionRunnerLLM — local tool execution", () => {
       { type: "assistant", finish: "stop", content: [{ type: "text", text: "Recovered" }] },
     ])
   })
+
+  test("settles repeated provider-local tool call IDs against their owning assistant messages", async () => {
+    // Two different turns each issue a call with the SAME id `tool_0`. Small models reuse call ids
+    // constantly — some providers number them per-turn — so this is routine, not adversarial.
+    //
+    // ⭐ The id is only unique WITHIN its assistant message, so settlement must be keyed by (message,
+    // call), not by call alone. A runner keyed on the id would settle the second result against the
+    // first message: the first tool would appear to change its answer after the fact, and the second
+    // would sit unsettled forever. Both turns must keep their own result.
+    const harness = makeRunnerHarness({
+      turns: [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "tool_0", name: "echo", input: { text: "first" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "tool_0", name: "echo", input: { text: "second" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [],
+      ],
+    })
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Echo twice" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+        return yield* session.context(HARNESS_SESSION)
+      }),
+      "claim — repeated call ids settle per assistant message",
+    )
+
+    expect(harness.executions).toEqual(["first", "second"])
+    expect(harness.requests).toHaveLength(3)
+    expect(context).toMatchObject([
+      { type: "user", text: "Echo twice" },
+      {
+        type: "assistant",
+        content: [
+          {
+            type: "tool",
+            id: "tool_0",
+            state: { status: "completed", structured: { text: "first" }, content: [{ type: "text", text: "first" }] },
+          },
+        ],
+      },
+      {
+        type: "assistant",
+        content: [
+          {
+            type: "tool",
+            id: "tool_0",
+            state: { status: "completed", structured: { text: "second" }, content: [{ type: "text", text: "second" }] },
+          },
+        ],
+      },
+    ])
+  })
 })
