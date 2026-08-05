@@ -738,50 +738,8 @@ describe("SessionRunnerLLM", () => {
   // "admits removed context as a chronological System message" — PORTED to
   // session-runner-context.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("keeps the baseline and chronological System updates after a model switch", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      const events = yield* EventV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First" }), resume: false })
-
-      requests.length = 0
-      response = []
-      yield* session.resume(sessionID)
-      systemBaseline = "Changed context"
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Second" }), resume: false })
-      yield* session.resume(sessionID)
-      yield* events.publish(SessionEvent.ModelSwitched, {
-        sessionID,
-        messageID: SessionMessage.ID.create(),
-        timestamp: DateTime.makeUnsafe(1),
-        model: { id: ModelV2.ID.make("replacement"), providerID: ProviderV2.ID.make("fake") },
-      })
-      systemBaseline = "Replacement context"
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Third" }), resume: false })
-      yield* session.resume(sessionID)
-
-      expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([
-        ["Initial context"],
-        ["Initial context"],
-        ["Initial context"],
-      ])
-      expect(requests[1]?.messages.map((message) => message.role)).toEqual(["user", "user", "system"])
-      expect(requests[2]?.messages.filter((message) => message.role === "system")).toHaveLength(2)
-      expect((yield* session.context(sessionID)).map((message) => message.type)).toEqual([
-        "user",
-        "user",
-        "system",
-        "model-switched",
-        "user",
-        "system",
-      ])
-      yield* replaySessionProjection(sessionID)
-      expect(yield* session.messages({ sessionID })).toHaveLength(6)
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Fourth" }), resume: false })
-      yield* session.resume(sessionID)
-    }),
-  )
+  // "keeps the baseline and chronological System updates after a model switch" — PORTED to
+  // session-runner-context.test.ts and deleted here (S3, 2026-08-05).
 
   // "preserves the baseline while context is temporarily unavailable" — PORTED to
   // session-runner-context.test.ts and deleted here (S3, 2026-08-05).

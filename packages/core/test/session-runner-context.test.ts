@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test"
-import { Cause, Effect, Exit } from "effect"
+import { Cause, DateTime, Effect, Exit } from "effect"
 import { eq } from "drizzle-orm"
 import { Database } from "@novaclaw/core/database/database"
 import { EventTable } from "@novaclaw/core/event/sql"
 import { SessionV2 } from "@novaclaw/core/session"
+import { EventV2 } from "@novaclaw/core/event"
+import { ModelV2 } from "@novaclaw/core/model"
+import { ProviderV2 } from "@novaclaw/core/provider"
+import { SessionEvent } from "@novaclaw/core/session/event"
 import { SessionInput } from "@novaclaw/core/session/input"
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { SessionContextEpochTable } from "@novaclaw/core/session/sql"
@@ -300,5 +304,75 @@ describe("SessionRunnerLLM — durable system context", () => {
     expect(Exit.isFailure(exit)).toBe(true)
     if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(ContextSnapshotDecodeError)
     expect(harness.requests, "the provider must never see a context nobody could read").toHaveLength(0)
+  })
+
+  test("keeps the baseline and chronological System updates after a model switch", async () => {
+    // Three turns with the context changing between each, and a model switch in the middle. The prompt
+    // prefix carries "Initial context" on ALL THREE — established once, never rewritten — while every
+    // change accumulates as chronological System messages.
+    //
+    // ⭐ The count on turn 3 is the load-bearing assertion: TWO system messages, not one. Each change is
+    // its own event, so a runner that collapsed them into "latest wins" would lose the intermediate
+    // state — and the model would never learn that the context changed twice, only where it ended up.
+    // The model switch is in the middle to prove it does not reset any of this.
+    const harness = makeRunnerHarness({
+      turns: [completeTurn("t1", "One"), completeTurn("t2", "Two"), completeTurn("t3", "Three")],
+    })
+
+    const { types, before, replayed } = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        const events = yield* EventV2.Service
+
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+
+        harness.controls.systemBaseline = "Changed context"
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Second" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+
+        yield* events.publish(SessionEvent.ModelSwitched, {
+          sessionID: HARNESS_SESSION,
+          messageID: SessionMessage.ID.create(),
+          timestamp: DateTime.makeUnsafe(1),
+          model: { id: ModelV2.ID.make("replacement"), providerID: ProviderV2.ID.make("harness") },
+        })
+        harness.controls.systemBaseline = "Replacement context"
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Third" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+
+        const types = (yield* session.context(HARNESS_SESSION)).map((message) => message.type)
+        const before = yield* session.messages({ sessionID: HARNESS_SESSION })
+        yield* harness.replayProjection(HARNESS_SESSION)
+        return { types, before, replayed: yield* session.messages({ sessionID: HARNESS_SESSION }) }
+      }),
+      "claim — the baseline survives a model switch",
+    )
+
+    // ① The prefix never changes, across three context changes and a model switch.
+    for (const index of [0, 1, 2]) {
+      expect(durableContext(harness.requests[index]?.system), `turn ${index + 1} keeps the baseline`).toMatch(
+        /^Initial context/,
+      )
+    }
+    // ② Changes ACCUMULATE rather than collapsing — BOTH are present by the third turn.
+    //
+    // ⚠️ Counted by CONTENT, not by `role === "system"`. The old test counted system-role messages and
+    // would now find zero: context notices are lowered to the `user` role on the wire (the same
+    // lowering the removed-context claim documents), so a role filter sees none of them.
+    const thirdBody = JSON.stringify((harness.requests[2]?.messages ?? []).map((message) => message.content))
+    expect(thirdBody, "the first change is still present").toContain("Changed context")
+    expect(thirdBody, "and the second — collapsing them loses the intermediate state").toContain(
+      "Replacement context",
+    )
+    expect(types).toContain("model-switched")
+    // ③ And the whole thing is rebuildable from events.
+    //
+    // ⚠️ Compared against the PRE-replay count rather than a literal. The old test asserted 6; the
+    // transcript is 9 now because each context notice is its own message. Pinning a literal here would
+    // make every future change to what the runner records look like a replay regression — the claim is
+    // FIDELITY, so the two counts are compared to each other.
+    expect(replayed, "replay must reproduce the transcript exactly").toHaveLength(before.length)
   })
 })
