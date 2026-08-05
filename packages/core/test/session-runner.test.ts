@@ -839,33 +839,8 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("keeps the sampled model when selection changes during model resolution", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      const events = yield* EventV2.Service
-      let switched = false
-      modelResolveHook = Effect.suspend(() => {
-        if (switched) return Effect.void
-        switched = true
-        return events
-          .publish(SessionEvent.ModelSwitched, {
-            sessionID,
-            messageID: SessionMessage.ID.create(),
-            timestamp: DateTime.makeUnsafe(1),
-            model: { id: ModelV2.ID.make("replacement"), providerID: ProviderV2.ID.make("fake") },
-          })
-          .pipe(Effect.asVoid)
-      })
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First" }), resume: false })
-
-      requests.length = 0
-      response = []
-      yield* session.resume(sessionID)
-      expect(requests.map((request) => request.model)).toEqual([model])
-      expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([["Initial context"]])
-    }),
-  )
+  // "keeps the sampled model when selection changes during model resolution" — PORTED to
+  // session-runner-agent.test.ts and deleted here (S3, 2026-08-05).
 
   // "admits removed context as a chronological System message" — PORTED to
   // session-runner-context.test.ts and deleted here (S3, 2026-08-05).

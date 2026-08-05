@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { DateTime, Effect } from "effect"
 import { eq } from "drizzle-orm"
 import { AgentV2 } from "@novaclaw/core/agent"
+import { EventV2 } from "@novaclaw/core/event"
+import { ModelV2 } from "@novaclaw/core/model"
+import { ProviderV2 } from "@novaclaw/core/provider"
+import { SessionEvent } from "@novaclaw/core/session/event"
+import { SessionMessage } from "@novaclaw/core/session/message"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
@@ -144,5 +149,44 @@ describe("SessionRunnerLLM — agent system prompt", () => {
       "Build agent instructions",
     )
     expect(messages[0]).toMatchObject({ type: "assistant", agent: "reviewer" })
+  })
+
+  test("keeps the sampled model when selection changes during model resolution", async () => {
+    // A model switch published WHILE resolution is in flight must not retroactively change the turn
+    // that is already resolving. The turn keeps the model it sampled.
+    //
+    // ⭐ This is only expressible because the resolution hook runs inside the window: the claim is about
+    // WHEN the switch landed relative to the sample, and the request alone cannot show that — a request
+    // carrying the old model looks identical whether the switch arrived late or never arrived at all.
+    // The hook is what makes the race deterministic instead of hoped-for.
+    const harness = makeRunnerHarness({ turns: [[]] })
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const events = yield* EventV2.Service
+        const session = yield* SessionV2.Service
+        let switched = false
+        harness.controls.modelResolveHook = Effect.suspend(() => {
+          if (switched) return Effect.void
+          switched = true
+          return events
+            .publish(SessionEvent.ModelSwitched, {
+              sessionID: HARNESS_SESSION,
+              messageID: SessionMessage.ID.create(),
+              timestamp: DateTime.makeUnsafe(1),
+              model: { id: ModelV2.ID.make("replacement"), providerID: ProviderV2.ID.make("harness") },
+            })
+            .pipe(Effect.asVoid, Effect.orDie)
+        })
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+      }),
+      "claim — the turn keeps the model it sampled",
+    )
+
+    expect(harness.requests.map((request) => request.model), "the in-flight turn keeps its sampled model").toEqual([
+      harness.model,
+    ])
   })
 })

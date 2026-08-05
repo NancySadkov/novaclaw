@@ -196,6 +196,17 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     toolsStarted: undefined as Latch | undefined,
     /** How many concurrent executions `toolsStarted` waits for. */
     toolsReady: 1,
+    /**
+     * The model resolution returns for a session that has not switched. Assign a `makeModel(...)` here
+     * to run a claim against different limits.
+     */
+    currentModel: undefined as Model | undefined,
+    /**
+     * Run before every model resolution. A latch-await here lets a claim observe the window in which a
+     * selection changes WHILE resolution is in flight — which is the only way to state that the turn
+     * keeps the model it sampled rather than the newest one.
+     */
+    modelResolveHook: undefined as Effect.Effect<void> | undefined,
   }
   /**
    * Live tool-execution accounting. `maxActive` is the interesting one: it is the only way to assert
@@ -213,6 +224,21 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
   const executions: string[] = []
 
   const model = Model.make({ id: "harness-model", provider: "harness", route: OpenAIChat.route })
+  /**
+   * The model a session switches TO. Its id is `replacement` because that is what the runner keys on
+   * when a `ModelSwitched` event names it — the switch is resolved per turn from the session row, not
+   * captured once.
+   */
+  const replacementModel = Model.make({ id: "replacement", provider: "harness", route: OpenAIChat.route })
+  /**
+   * Build a model with explicit context/output limits.
+   *
+   * The compaction and overflow families are entirely about what happens at a limit, so they need a
+   * model whose limits are small enough to reach deliberately. Exposed as a factory rather than a fixed
+   * pair so a claim can state the number it depends on instead of inheriting someone else's.
+   */
+  const makeModel = (id: string, limits: { context: number; output: number }) =>
+    Model.make({ id, provider: "harness", route: OpenAIChat.route.with({ limits }) })
 
   const clientLayer = Layer.succeed(
     LLMClient.Service,
@@ -299,7 +325,15 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
   )
   const echoNode = makeLocationNode({ name: "test/runner-harness-tools", layer: echo, deps: [ToolRegistry.node] })
 
-  const models = SessionRunnerModel.layerWith(() => Effect.succeed(model))
+  const models = SessionRunnerModel.layerWith((session) =>
+    Effect.gen(function* () {
+      const hook = controls.modelResolveHook
+      if (hook) yield* hook
+      // Keyed on the SESSION's model id, so a `ModelSwitched` event actually changes what resolves.
+      if (session.model?.id === "replacement") return replacementModel
+      return controls.currentModel ?? model
+    }),
+  )
 
   const systemContextKey = SystemContext.Key.make("test/harness-context")
   const systemContext = Layer.effectDiscard(
@@ -498,6 +532,8 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     /** Live execution accounting; `maxActive` proves concurrency, which results alone cannot. */
     toolState,
     model,
+    replacementModel,
+    makeModel,
     clientLayer,
     /** The whole node graph, wired exactly as the old fixture wires it. Provide this to a test body. */
     layer,
