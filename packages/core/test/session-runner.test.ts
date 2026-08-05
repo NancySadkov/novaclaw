@@ -1362,60 +1362,8 @@ describe("SessionRunnerLLM", () => {
   // "restores durable reasoning provider metadata in a second-turn request" — PORTED to
   // session-runner-reasoning.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("replays durable provider-executed tool results inline in a second-turn request", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Search first" }), resume: false })
-
-      requests.length = 0
-      response = [
-        LLMEvent.stepStart({ index: 0 }),
-        LLMEvent.toolCall({
-          id: "hosted-search",
-          name: "web_search",
-          input: { query: "Effect" },
-          providerExecuted: true,
-          providerMetadata: { openai: { itemId: "hosted-search" } },
-        }),
-        LLMEvent.toolResult({
-          id: "hosted-search",
-          name: "web_search",
-          result: { type: "json", value: [{ title: "Effect" }] },
-          providerExecuted: true,
-          providerMetadata: { anthropic: { blockType: "web_search_tool_result" } },
-        }),
-        LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-        LLMEvent.finish({ reason: "stop" }),
-      ]
-      yield* session.resume(sessionID)
-      yield* replaySessionProjection(sessionID)
-
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Continue" }), resume: false })
-      response = []
-      yield* session.resume(sessionID)
-
-      expect(requests[1]?.messages.map((message) => message.role)).toEqual(["user", "assistant", "user"])
-      expect(requests[1]?.messages[1]?.content).toMatchObject([
-        {
-          type: "tool-call",
-          id: "hosted-search",
-          name: "web_search",
-          input: { query: "Effect" },
-          providerExecuted: true,
-          providerMetadata: { openai: { itemId: "hosted-search" } },
-        },
-        {
-          type: "tool-result",
-          id: "hosted-search",
-          name: "web_search",
-          result: { type: "json", value: [{ title: "Effect" }] },
-          providerExecuted: true,
-          providerMetadata: { anthropic: { blockType: "web_search_tool_result" } },
-        },
-      ])
-    }),
-  )
+  // "replays durable provider-executed tool results inline in a second-turn request" — PORTED to
+  // session-runner-hosted-tools.test.ts and deleted here (S3, 2026-08-05).
 
   // "starts recorded local tools eagerly and awaits settlement before continuing" — PORTED to
   // session-runner-tools.test.ts and deleted here (S3, 2026-08-05).
@@ -1985,30 +1933,8 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("does not continue automatically after a provider error follows a local tool call", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({
-        sessionID,
-        prompt: Prompt.make({ text: "Do not continue failed provider" }),
-        resume: false,
-      })
-
-      requests.length = 0
-      const executionCount = executions.length
-      response = [
-        LLMEvent.stepStart({ index: 0 }),
-        LLMEvent.toolCall({ id: "call-before-provider-error", name: "echo", input: { text: "settled" } }),
-        LLMEvent.providerError({ message: "Provider unavailable" }),
-      ]
-
-      yield* session.resume(sessionID)
-
-      expect(requests).toHaveLength(1)
-      expect(executions.slice(executionCount)).toEqual(["settled"])
-    }),
-  )
+  // "does not continue automatically after a provider error follows a local tool call" — PORTED to
+  // session-runner-blocked-tools.test.ts and deleted here (S3, 2026-08-05).
 
   // "durably fails a hosted tool when its provider errors before returning a result" — PORTED to
   // session-runner-hosted-tools.test.ts and deleted here (S3, 2026-08-05).

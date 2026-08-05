@@ -144,4 +144,40 @@ describe("SessionRunnerLLM — tools blocked when the turn ends", () => {
     // And the next turn sees it as a settled tool result, not an open call.
     expect(harness.requests[0]?.messages.map((message) => message.role)).toEqual(["user", "assistant", "tool"])
   })
+
+  test("does not continue automatically after a provider error follows a local tool call", async () => {
+    // A tool ran, then the provider failed. The tool's result exists and is durable — but the runner
+    // must NOT auto-continue into a second turn to deliver it.
+    //
+    // ⭐ Why that restraint is the claim: continuing would re-enter the provider that just failed,
+    // usually failing again, and on a local model each attempt is expensive. The work is preserved;
+    // the decision to retry belongs to whoever resumes the session, not to the failure path.
+    const harness = makeRunnerHarness({
+      turns: [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "call-before-provider-error", name: "echo", input: { text: "settled" } }),
+          LLMEvent.providerError({ message: "Provider unavailable" }),
+        ],
+      ],
+    })
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Do not continue failed provider" }),
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+      }),
+      "claim — no auto-continue after a provider error",
+    )
+
+    expect(harness.requests, "exactly one turn — the failure must not trigger a continuation").toHaveLength(1)
+    // …and the tool still ran, so the restraint is about CONTINUING, not about abandoning work.
+    expect(harness.executions).toEqual(["settled"])
+  })
 })

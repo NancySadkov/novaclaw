@@ -28,6 +28,76 @@ const providerUnavailable = () =>
 const hostedCall = (id: string) =>
   LLMEvent.toolCall({ id, name: "web_search", input: { query: "effect" }, providerExecuted: true })
 
+describe("SessionRunnerLLM — hosted tool results", () => {
+  test("replays durable provider-executed tool results inline in a second-turn request", async () => {
+    // A hosted call that DID return must be replayed to the provider exactly as it arrived — call and
+    // result adjacent, inside the assistant message, with both sides' providerMetadata intact.
+    //
+    // ⭐ The metadata is a round-trip carrier here just as it is for reasoning: OpenAI keys the hosted
+    // item by `itemId` and Anthropic tags the result block type. Dropping either does not degrade the
+    // answer, it makes the next request unrecognisable to the provider that produced it.
+    const harness = makeRunnerHarness({
+      turns: [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({
+            id: "hosted-search",
+            name: "web_search",
+            input: { query: "Effect" },
+            providerExecuted: true,
+            providerMetadata: { openai: { itemId: "hosted-search" } },
+          }),
+          LLMEvent.toolResult({
+            id: "hosted-search",
+            name: "web_search",
+            result: { type: "json", value: [{ title: "Effect" }] },
+            providerExecuted: true,
+            providerMetadata: { anthropic: { blockType: "web_search_tool_result" } },
+          }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+        [],
+      ],
+    })
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Search first" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+        // Durable, not merely live: the replay is what proves the metadata survives a process boundary.
+        yield* harness.replayProjection(HARNESS_SESSION)
+
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Continue" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+      }),
+      "claim — hosted results replay inline with metadata",
+    )
+
+    expect(harness.requests[1]?.messages.map((message) => message.role)).toEqual(["user", "assistant", "user"])
+    expect(harness.requests[1]?.messages[1]?.content).toMatchObject([
+      {
+        type: "tool-call",
+        id: "hosted-search",
+        name: "web_search",
+        input: { query: "Effect" },
+        providerExecuted: true,
+        providerMetadata: { openai: { itemId: "hosted-search" } },
+      },
+      {
+        type: "tool-result",
+        id: "hosted-search",
+        name: "web_search",
+        result: { type: "json", value: [{ title: "Effect" }] },
+        providerExecuted: true,
+        providerMetadata: { anthropic: { blockType: "web_search_tool_result" } },
+      },
+    ])
+  })
+})
+
 describe("SessionRunnerLLM — hosted tools left unresolved", () => {
   test("durably fails a hosted tool when its provider errors before returning a result", async () => {
     const harness = makeRunnerHarness({
