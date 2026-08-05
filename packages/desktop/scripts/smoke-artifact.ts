@@ -591,9 +591,17 @@ async function run() {
     const source = path.join(tempHome, "packaged-toolchain-smoke.c")
     const program = path.join(tempHome, "packaged-toolchain-smoke.exe")
     await writeFile(source, '#include <stdio.h>\nint main(void){fputs("NOVACLAW_PACKAGED_GCC_OK",stdout);return 0;}\n')
+    // ⚠️ PATH is REPLACED by the kit's own bin, not prepended to the host's. Prepending was the
+    // original shape and it quietly defeated the point of this check: with the developer's PATH still
+    // present, a host MinGW/MSYS2/Strawberry-Perl toolchain can satisfy a link the SHIPPED kit cannot,
+    // so an incomplete release passes on any machine that has ever installed a compiler. That is the
+    // exact failure the clean-VM run in T5 exists to catch, and this is the half of it reachable
+    // without a VM. Measured 2026-08-05 before the change: the staged kit compiles, links AND runs a
+    // C99 program with PATH containing nothing but `bin`, so scrubbing costs nothing on a complete
+    // kit — Windows resolves kernel32 and friends from the system directory regardless of PATH.
     const compilerEnv = { ...process.env }
-    const pathKey = Object.keys(compilerEnv).find((key) => key.toLowerCase() === "path") ?? "Path"
-    compilerEnv[pathKey] = `${bin}${path.delimiter}${compilerEnv[pathKey] ?? ""}`
+    for (const key of Object.keys(compilerEnv)) if (key.toLowerCase() === "path") delete compilerEnv[key]
+    compilerEnv["PATH"] = bin
     const compiled = spawnSync(path.join(bin, "gcc.exe"), ["-std=c99", source, "-o", program], {
       cwd: tempHome,
       encoding: "utf8",
@@ -604,7 +612,9 @@ async function run() {
       "w64devkit-c99-compile",
       `GCC exited ${String(compiled.status)}: ${compiled.stderr || compiled.stdout}`,
     )
-    const executed = existsSync(program) ? spawnSync(program, [], { encoding: "utf8" }) : undefined
+    // Same scrub for the RUN: a program that links against a DLL only the host happens to have is
+    // still a release defect, and inheriting PATH here would hide it after the compile stopped doing so.
+    const executed = existsSync(program) ? spawnSync(program, [], { encoding: "utf8", env: compilerEnv }) : undefined
     check(
       executed?.status === 0 && executed.stdout === "NOVACLAW_PACKAGED_GCC_OK",
       "w64devkit-c99-run",
