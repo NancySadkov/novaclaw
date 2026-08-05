@@ -12,6 +12,20 @@ import { SettingsConfigStore } from "../settings-config-store"
 import { Shell } from "../shell"
 import { ResourcePressureContext } from "../resource-pressure-context"
 
+/**
+ * Is the resolved workspace root worth telling the model about?
+ *
+ * No when it is the working directory (the line would repeat the line above it), and no when it is a
+ * filesystem or drive root — `C:`, `C:\`, `/` — because that is what `Project.resolve` falls back to
+ * for a directory in no project, and naming it as the "workspace root" is actively misleading.
+ */
+export const isInformativeRoot = (root: string, directory: string): boolean => {
+  if (root === directory) return false
+  const normalized = root.replace(/[\\/]+$/, "")
+  // "" is what a POSIX root normalizes to; `C:` is what a Windows drive root normalizes to.
+  return normalized !== "" && !/^[A-Za-z]:$/.test(normalized)
+}
+
 const builtIns = Layer.effectDiscard(
   Effect.gen(function* () {
     const location = yield* Location.Service
@@ -31,8 +45,15 @@ const builtIns = Layer.effectDiscard(
         [
           "<env>",
           `  Working directory: ${location.directory}`,
-          `  Workspace root folder: ${location.root}`,
-          `  Is directory a git repo: ${location.vcs?.type === "git" ? "yes" : "no"}`,
+          // Only when it ADDS something. `location.root` is the resolved project root, which degrades
+          // to the drive/filesystem root when the working directory belongs to no project — and
+          // "Workspace root folder: C:" is worse than silence: it tells the model nothing and invites
+          // it to treat the whole drive as its workspace (owner, 2026-08-05). Principle 11 says the
+          // opposite: outside the session's own folder we read, and nothing more.
+          ...(isInformativeRoot(location.root, location.directory) ? [`  Workspace root folder: ${location.root}`] : []),
+          // Only when it is TRUE. "Is directory a git repo: no" spends a line to say a folder is
+          // ordinary; the absence of the line carries the same information.
+          ...(location.vcs?.type === "git" ? ["  Is directory a git repo: yes"] : []),
           `  Platform: ${process.platform}`,
           `  Shell: ${Shell.agentDefault()}`,
           // The agent shell is bash almost everywhere, and the tool descriptions + the shipped recipes

@@ -54,15 +54,30 @@ describe("StorageResourcePressureContext", () => {
     }
 
     expect(StorageResourcePressureContext.lines(report)).toEqual([
-      "Memory headroom is low; avoid memory-intensive work.",
+      // ⭐ NUMBERS, not an adjective (owner, 2026-08-05). "Memory headroom is low" gives an agent
+      // nothing to reason with — it cannot tell whether a 2 GB test run is fine or fatal. The exact
+      // committed/total figures let it decide. Exception-only, so this line is absent on a healthy
+      // machine and the churn from moving byte counts is confined to the pressured case.
+      "Memory headroom is low: 30720 MB of 40960 MB committed. Avoid memory-intensive work.",
       "Use tool_search for resource status, then resource_status to inspect and confirm recovery.",
     ])
+    // 🔴 **This assertion previously required the OPPOSITE and is superseded deliberately.** It pinned
+    // "same severity band ⇒ identical line", so that fluctuating byte counts could not regenerate the
+    // system context every turn. The owner's 2026-08-05 directive replaces the adjective with exact
+    // committed/total figures, which necessarily moves the line whenever memory moves.
+    // ⚠️ The old concern is real and is now bounded rather than ignored: the line exists ONLY under
+    // warning/floor, so regeneration happens while the machine is already struggling — precisely when a
+    // stale number is the more expensive mistake. Do NOT put numbers on the healthy path without
+    // re-opening that trade.
     expect(
       StorageResourcePressureContext.lines({
         ...report,
         memory: { ...(report.memory as Pressure.MemoryKnown), usedBytes: 31 * GIB },
       }),
-    ).toEqual(StorageResourcePressureContext.lines(report))
+    ).toEqual([
+      "Memory headroom is low: 31744 MB of 40960 MB committed. Avoid memory-intensive work.",
+      "Use tool_search for resource status, then resource_status to inspect and confirm recovery.",
+    ])
     expect(StorageResourcePressureContext.details(report)).toEqual([
       "Resource pressure: warning — plan memory- and disk-intensive work conservatively.",
       "Memory headroom: 10.0 GiB free of 40.0 GiB commit.",

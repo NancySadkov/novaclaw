@@ -61,17 +61,34 @@ export function details(report: Pressure.Report): ReadonlyArray<string> {
 
 const urgency = (level: Pressure.Level) => (level === "floor" ? "critically low" : "low")
 
+/** Whole MiB. The model is being asked to make a judgement call, and it needs a number to make it. */
+const mib = (bytes: number) => `${Math.round(bytes / MIB)} MB`
+
 /**
  * Exception-only ambient context. Healthy and unmeasurable probes say nothing: normal headroom is the
  * default, while measurement diagnostics remain available through resource_status and Instance settings.
- * Lines are deliberately stable inside a severity band so fluctuating byte counts do not regenerate the
- * system environment every turn.
+ *
+ * ⭐ **The memory line carries NUMBERS, not an adjective** (owner, 2026-08-05): *"tell the model exact
+ * amount committed / total virtual memory (in mb), and only when the memory is below a specific
+ * threshold — since it is a warning, not a monitoring heartbeat side channel distracting the model
+ * from the task."* "Memory headroom is low" gives an agent nothing to reason with; it cannot tell
+ * whether a 2 GB test run is fine or fatal. `13 900 MB of 45 800 MB committed` it can act on.
+ *
+ * ⚠️ **The cost of exact figures, and why it is acceptable HERE.** Byte counts move every turn, and a
+ * moving system-context line regenerates the durable baseline — which is why these lines were
+ * previously kept stable inside a severity band. That cost is bounded by the exception-only rule: the
+ * line exists ONLY under warning/floor, so the churn happens only while the machine is already
+ * struggling, which is exactly when a stale number would be the more expensive mistake. Do not extend
+ * numeric lines to the healthy path without re-opening that trade.
  */
 export function lines(report: Pressure.Report): ReadonlyArray<string> {
   const result: string[] = []
   const memoryLevel = Pressure.memoryLevel(report.memory, report.thresholds)
   if (report.memory.known && (memoryLevel === "warning" || memoryLevel === "floor"))
-    result.push(`Memory headroom is ${urgency(memoryLevel)}; avoid memory-intensive work.`)
+    result.push(
+      `Memory headroom is ${urgency(memoryLevel)}: ${mib(report.memory.usedBytes)} of ` +
+        `${mib(report.memory.limitBytes)} committed. Avoid memory-intensive work.`,
+    )
 
   const disks = new Map<string, Pressure.Level>()
   for (const disk of report.disks) {
