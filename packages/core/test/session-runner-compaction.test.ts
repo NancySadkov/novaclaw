@@ -101,4 +101,90 @@ describe("SessionRunnerLLM — compaction", () => {
     expect(userTexts(harness.requests[0]!)[0]).toContain("anchored summary")
     expect(context[0]).toMatchObject({ type: "compaction", summary: "## Goal\n- Manual summary" })
   })
+
+  test("automatically compacts into a completed summary and retained recent turn", async () => {
+    // The AUTOMATIC path: nobody asks for a compaction, the history simply crosses the threshold on the
+    // way into the next turn. Two provider requests result — the summary, then the real turn — and the
+    // real turn must be built from the SUMMARY plus the retained recent exchange, not from the raw
+    // history it replaced.
+    //
+    // ⭐ Then it runs a SECOND time, and that half is the one worth having: the second summary prompt
+    // must carry the first summary as `<previous-summary>`. Compaction is iterative, so a summariser
+    // that re-derived from scratch each time would drop everything established before the last window —
+    // the session would lose its own past one compaction at a time, invisibly.
+    const harness = makeRunnerHarness({
+      turns: [
+        fragmentFixture("text", "text-first", ["Earlier answer"]).completeEvents,
+        fragmentFixture("text", "text-second", ["Second answer"]).completeEvents,
+        fragmentFixture("text", "text-summary", ["## Goal\n- Preserve the task"]).completeEvents,
+        fragmentFixture("text", "text-final", ["Continued"]).completeEvents,
+        fragmentFixture("text", "text-summary-2", ["## Goal\n- Preserve the updated task"]).completeEvents,
+        fragmentFixture("text", "text-final-2", ["Continued again"]).completeEvents,
+      ],
+    })
+
+    const { firstRound, secondRound, contextAfterFirst, contextAfterSecond } = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        const store = yield* SessionStore.Service
+
+        // TWO priming exchanges, for the reason at the top of this file: with only one, the retained
+        // window lands after message 0 and `head` comes back empty, so nothing compacts.
+        for (const text of ["Earlier question ", "Second question "]) {
+          yield* session.prompt({
+            sessionID: HARNESS_SESSION,
+            prompt: Prompt.make({ text: text.repeat(180) }),
+            resume: false,
+          })
+          yield* session.resume(HARNESS_SESSION)
+        }
+
+        harness.controls.currentModel = harness.makeModel("compact", { context: 4_000, output: 50 })
+        harness.requests.length = 0
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Recent exact request ".repeat(180) }),
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+        const firstRound = [...harness.requests]
+        const contextAfterFirst = yield* store.context(HARNESS_SESSION)
+
+        harness.requests.length = 0
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Newest exact request ".repeat(180) }),
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+        const secondRound = [...harness.requests]
+        const contextAfterSecond = yield* store.context(HARNESS_SESSION)
+
+        return { firstRound, secondRound, contextAfterFirst, contextAfterSecond }
+      }),
+      "claim — automatic compaction summarises then continues",
+    )
+
+    // Round one: the summary request, then the real turn built from summary + retained recent turn.
+    expect(firstRound).toHaveLength(2)
+    expect(userTexts(firstRound[0]!)[0]).toContain("## Goal")
+    expect(userTexts(firstRound[1]!)).toHaveLength(1)
+    expect(userTexts(firstRound[1]!)[0]).toContain("<summary>\n## Goal\n- Preserve the task\n</summary>")
+    expect(userTexts(firstRound[1]!)[0]).toContain(`[User]: ${"Recent exact request ".repeat(180)}`)
+    expect(contextAfterFirst.map((message) => message.type)).toEqual(["compaction", "assistant"])
+    expect(contextAfterFirst[0]).toMatchObject({ type: "compaction", summary: "## Goal\n- Preserve the task" })
+
+    // Round two: the new summary prompt carries the OLD summary, so nothing established is lost.
+    expect(secondRound).toHaveLength(2)
+    expect(
+      userTexts(secondRound[0]!)[0],
+      "an iterative compaction must build on the previous summary, not re-derive from scratch",
+    ).toContain("<previous-summary>\n## Goal\n- Preserve the task\n</previous-summary>")
+    expect(userTexts(secondRound[0]!)[0]).toContain("Recent exact request")
+    expect(contextAfterSecond[0]).toMatchObject({
+      type: "compaction",
+      summary: "## Goal\n- Preserve the updated task",
+    })
+  })
 })

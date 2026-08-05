@@ -933,68 +933,8 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("automatically compacts into a completed summary and retained recent turn", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      response = fragmentFixture("text", "text-first", ["Earlier answer"]).completeEvents
-      yield* session.prompt({
-        sessionID,
-        prompt: Prompt.make({ text: "Earlier question ".repeat(180) }),
-        resume: false,
-      })
-      yield* session.resume(sessionID)
-
-      currentModel = compactModel
-      requests.length = 0
-      responses = [
-        fragmentFixture("text", "text-summary", ["## Goal\n- Preserve the task"]).completeEvents,
-        fragmentFixture("text", "text-final", ["Continued"]).completeEvents,
-      ]
-      yield* session.prompt({
-        sessionID,
-        prompt: Prompt.make({ text: "Recent exact request ".repeat(180) }),
-        resume: false,
-      })
-      yield* session.resume(sessionID)
-
-      expect(requests).toHaveLength(2)
-      expect(userTexts(requests[0])[0]).toContain("## Goal")
-      expect(userTexts(requests[1])).toHaveLength(1)
-      expect(userTexts(requests[1])[0]).toContain("<summary>\n## Goal\n- Preserve the task\n</summary>")
-      expect(userTexts(requests[1])[0]).toContain(`[User]: ${"Recent exact request ".repeat(180)}`)
-
-      const context = yield* (yield* SessionStore.Service).context(sessionID)
-      expect(context.map((message) => message.type)).toEqual(["compaction", "assistant"])
-      expect(context[0]).toMatchObject({
-        type: "compaction",
-        summary: "## Goal\n- Preserve the task",
-      })
-
-      requests.length = 0
-      executions.length = 0
-      responses = [
-        fragmentFixture("text", "text-summary-2", ["## Goal\n- Preserve the updated task"]).completeEvents,
-        fragmentFixture("text", "text-final-2", ["Continued again"]).completeEvents,
-      ]
-      yield* session.prompt({
-        sessionID,
-        prompt: Prompt.make({ text: "Newest exact request ".repeat(180) }),
-        resume: false,
-      })
-      yield* session.resume(sessionID)
-
-      expect(requests).toHaveLength(2)
-      expect(userTexts(requests[0])[0]).toContain(
-        "<previous-summary>\n## Goal\n- Preserve the task\n</previous-summary>",
-      )
-      expect(userTexts(requests[0])[0]).toContain("Recent exact request")
-      expect((yield* (yield* SessionStore.Service).context(sessionID))[0]).toMatchObject({
-        type: "compaction",
-        summary: "## Goal\n- Preserve the updated task",
-      })
-    }),
-  )
+  // "automatically compacts into a completed summary and retained recent turn" — PORTED to
+  // session-runner-compaction.test.ts and deleted here (S3, 2026-08-05).
 
   // F1a SLICE 7 — runner-force manual compaction: SessionV2.compact marks the one-shot
   // SessionCompactionRequest and wakes the session; the runner consumes the marker at the top
