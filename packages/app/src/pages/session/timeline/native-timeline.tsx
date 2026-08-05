@@ -5,7 +5,7 @@ import { useExpertise } from "@/context/expertise"
 import { useServerSync } from "@/context/server-sync"
 import { useServer } from "@/context/server"
 import { selectVisibleMessages } from "@/pages/session/revert-view"
-import { fetchPendingPrompts, type PendingPrompt } from "@/utils/session-pending-api"
+import { fetchPendingPrompts, pendingPromptsKick, type PendingPrompt } from "@/utils/session-pending-api"
 import { useSettings } from "@/context/settings"
 import { nextPinned } from "./native-scroll"
 
@@ -89,6 +89,10 @@ export function NativeTimeline(props: {
     const directory = server.current?.http ? sessionDirectory() : undefined
     const conn = server.current
     if (!conn || !directory) return
+    // Read so a submit can re-run this effect and poll AT ONCE. Without it the dependencies below
+    // never change when the user presses Enter, so a mid-turn prompt stayed invisible for up to a
+    // full 2 s tick — long enough to read as "it disappeared" and retype it.
+    pendingPromptsKick()
     if (!working() && pending().length === 0) return
     let stop = false
     const tick = async () => {

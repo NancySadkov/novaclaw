@@ -7,6 +7,7 @@ import { type Accessor } from "solid-js"
 import { useTabs } from "@/context/tabs"
 import { useServerSync, type ServerSync } from "@/context/server-sync"
 import { OPTIMISTIC_METADATA_KEY } from "@/context/global-sync/message-v2-store"
+import { kickPendingPrompts } from "@/utils/session-pending-api"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import {
@@ -281,6 +282,11 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       id: messageID,
       prompt,
     })
+    // The server has it now. If this was a mid-turn prompt it is sitting in the durable input queue,
+    // and the queued-bubble poll would not otherwise look for it until its next 2 s tick — so say so
+    // rather than letting the user watch an empty transcript wonder whether Enter worked. Fired after
+    // the POST on purpose: before it there is nothing to fetch. Idle sessions already have their row.
+    if (wasBusy) kickPendingPrompts()
     return true
   } catch (err) {
     setIdle()

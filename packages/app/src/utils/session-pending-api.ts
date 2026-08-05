@@ -1,3 +1,4 @@
+import { createSignal } from "solid-js"
 import type { ServerConnection } from "@/context/server"
 import { instanceFetch } from "@/utils/instance-fetch"
 
@@ -14,6 +15,27 @@ export interface PendingPrompt {
   delivery: string
   timeCreated: number
 }
+
+/**
+ * A nudge that says "ask again NOW" instead of waiting out the interval.
+ *
+ * The poll below runs every 2 s while a turn is in flight, and its effect's dependencies (connection,
+ * directory, whether a turn is running, how many prompts are already queued) do not change when the
+ * user presses Enter. So a prompt sent mid-turn was invisible for up to a full tick — which is what
+ * the owner reported as *"it disappeared"*, and two seconds is long enough to retype it.
+ *
+ * ⚠️ Fire this AFTER the prompt POST resolves, never at submit: before the server has admitted the
+ * input there is nothing to fetch, and an early poll just spends a request to return the same empty
+ * list. ⚠️ And it is a KICK, not a shorter interval — the gap is "we did not know to look", not "we
+ * looked too slowly", so polling faster would burn requests to shrink the same window.
+ */
+const [kicks, setKicks] = createSignal(0)
+
+/** Read by the polling effect so a kick re-runs it immediately. */
+export const pendingPromptsKick = kicks
+
+/** Call once the server has certainly admitted a prompt. */
+export const kickPendingPrompts = () => setKicks((value) => value + 1)
 
 /**
  * ⚠️ **The one client on this seam that deliberately swallows its fault, and why it is not ruling 2's
