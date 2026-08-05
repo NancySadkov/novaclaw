@@ -1,6 +1,7 @@
 import { Effect, Layer, Schema, Stream } from "effect"
 import { LLMClient, LLMEvent, Model, type LLMClientShape, type LLMRequest } from "@novaclaw/llm"
 import { runBounded } from "./bounded"
+import { asc, eq } from "drizzle-orm"
 import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
 import { Database } from "@novaclaw/core/database/database"
 import { makeLocationNode } from "@novaclaw/core/effect/app-node"
@@ -8,6 +9,7 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNodePlatform } from "@novaclaw/core/effect/app-node-platform"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
+import { EventTable } from "@novaclaw/core/event/sql"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { QuestionV2 } from "@novaclaw/core/question"
 import { AbsolutePath } from "@novaclaw/core/schema"
@@ -25,7 +27,7 @@ import { AgentV2 } from "@novaclaw/core/agent"
 import { Config } from "@novaclaw/core/config"
 import { ConfigCompaction } from "@novaclaw/core/config/compaction"
 import { Tool } from "@novaclaw/core/tool/tool"
-import { SessionTable } from "@novaclaw/core/session/sql"
+import { SessionInputTable, SessionMessageTable, SessionTable } from "@novaclaw/core/session/sql"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SystemContext } from "@novaclaw/core/system-context"
 import { SystemContextRegistry } from "@novaclaw/core/system-context/registry"
@@ -390,6 +392,40 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
 
   const seed = seedSession(HARNESS_SESSION)
 
+  /**
+   * Rebuild a session's messages FROM ITS EVENTS ALONE — drop the projected rows, then replay.
+   *
+   * ⭐ This is how a claim proves a projection is **derivable rather than incidental**: if replaying the
+   * recorded events does not reproduce the same transcript, then some state reached the messages table
+   * without going through an event, and the session is not actually rebuildable. Several claims assert
+   * exactly that, which is why it lives here rather than being re-typed per file.
+   */
+  const replayProjection = (id: SessionV2.ID) =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      const recorded = yield* db
+        .select()
+        .from(EventTable)
+        .where(eq(EventTable.aggregate_id, id))
+        .orderBy(asc(EventTable.seq))
+        .all()
+        .pipe(Effect.orDie)
+
+      yield* events.remove(id)
+      yield* db.delete(SessionInputTable).where(eq(SessionInputTable.session_id, id)).run().pipe(Effect.orDie)
+      yield* db.delete(SessionMessageTable).where(eq(SessionMessageTable.session_id, id)).run().pipe(Effect.orDie)
+      yield* events.replayAll(
+        recorded.map((event) => ({
+          id: event.id,
+          aggregateID: event.aggregate_id,
+          seq: event.seq,
+          type: event.type,
+          data: event.data,
+        })),
+      )
+    })
+
   return {
     /** Every interactive request the drain issued, in order. Per-harness: another test cannot append. */
     requests,
@@ -407,6 +443,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     layer,
     seed,
     seedSession,
+    replayProjection,
     controls,
   }
 }
