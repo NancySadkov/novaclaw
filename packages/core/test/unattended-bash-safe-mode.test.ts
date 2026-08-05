@@ -185,7 +185,6 @@ describe("③ the project-scope instruction is in every non-yolo prompt, and abs
       persona: "P",
       expertiseHint: "E",
       tierHint: "T",
-      memoryRecall: "M",
       systemPromptOverride: "O",
       agentSystem: "A",
       base: "B",

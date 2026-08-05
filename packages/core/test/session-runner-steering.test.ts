@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Fiber } from "effect"
 import { LLMEvent } from "@novaclaw/llm"
+import { Database } from "@novaclaw/core/database/database"
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionInput } from "@novaclaw/core/session/input"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { HARNESS_SESSION, drive, makeLatch, makeRunnerHarness, userTexts } from "./fixture/runner-harness"
@@ -375,4 +377,71 @@ describe("SessionRunnerLLM — steering", () => {
     expect(harness.requests).toHaveLength(1)
     expect(userTexts(harness.requests[0]!)).toEqual(["Wait in queue"])
   })
+
+  // Both durability claims are the same shape with one word changed, so they share a body. The point of
+  // having BOTH is that queue and steer are stored and promoted differently — a runner that persisted
+  // one and dropped the other would pass exactly half of this pair, which is why they are not merged
+  // into a single parameterised claim with a shared assertion.
+  const durableAcrossInterrupt = (delivery: "queue" | "steer", text: string) =>
+    async function () {
+      const streamStarted = makeLatch()
+      const streamGate = makeLatch()
+      const harness = makeRunnerHarness({ turns: [[], replyTurn("t2", "Resumed")] })
+      harness.controls.streamStarted = streamStarted
+      harness.controls.streamGate = streamGate
+
+      await drive(
+        harness,
+        Effect.gen(function* () {
+          const session = yield* SessionV2.Service
+          const { db } = yield* Database.Service
+          yield* session.prompt({
+            sessionID: HARNESS_SESSION,
+            prompt: Prompt.make({ text: "Interrupt current work" }),
+            resume: false,
+          })
+
+          const run = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+          yield* Effect.promise(() => streamStarted.promise)
+          yield* session.prompt({
+            sessionID: HARNESS_SESSION,
+            prompt: Prompt.make({ text }),
+            ...(delivery === "queue" ? { delivery: "queue" as const } : {}),
+          })
+
+          // Interrupt with the input already accepted but the turn not yet settled — the window where
+          // input is easiest to lose, because it belongs to a run that is about to fail.
+          yield* session.interrupt(HARNESS_SESSION)
+          expect(yield* Fiber.await(run), "an interrupted run FAILS").toMatchObject({ _tag: "Failure" })
+          expect(harness.requests).toHaveLength(1)
+          expect(
+            yield* SessionInput.hasPending(db, HARNESS_SESSION, delivery),
+            `${delivery} input must survive the interrupted run that accepted it`,
+          ).toBe(true)
+
+          const resumed = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+          yield* waitForRequests(harness, 2)
+          streamGate.open()
+          yield* Fiber.join(resumed)
+        }),
+        `claim — durable ${delivery} input survives interruption`,
+      )
+
+      expect(harness.requests).toHaveLength(2)
+      expect(userTexts(harness.requests[0]!)).toEqual(["Interrupt current work"])
+      expect(userTexts(harness.requests[1]!), "and reaches the turn after the resume").toEqual([
+        "Interrupt current work",
+        text,
+      ])
+    }
+
+  test(
+    "preserves durable queued input for a later wake after interruption",
+    durableAcrossInterrupt("queue", "Run after interrupt"),
+  )
+
+  test(
+    "preserves durable steering input for a later resume after interruption",
+    durableAcrossInterrupt("steer", "Steer after interrupt"),
+  )
 })

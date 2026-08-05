@@ -11,8 +11,11 @@ import { SystemCompose } from "@novaclaw/core/session/runner/system-compose"
 
 describe("SystemCompose — per-model pre-prompt composition", () => {
   // The named parts the runner assembles, minus the pre-prompt — the "today" baseline. Order here
-  // MUST match the array in llm.ts: persona, expertiseHint, tierHint, memoryRecall, override, agent,
-  // base. (`persona` composed first, `base` last — see system-compose.ts and persona.ts.)
+  // MUST match the array in llm.ts: persona, expertiseHint, tierHint, override, agent, base.
+  // (`persona` composed first, `base` last — see system-compose.ts and persona.ts.)
+  // ⚠️ `memoryRecall` is deliberately NOT here: it left the system prompt on 2026-08-05 because it is
+  // the one per-turn-volatile part and it was destroying the server-side prefix cache. It now rides
+  // the message tail (llm.ts). See the ⚠️ header in system-compose.ts.
   // ⚠️ `projectScope` is omitted alongside `modelPrePrompt` on purpose: this file's whole claim is
   // "byte-identical to today when the OPTIONAL sections are absent", so both optional sections have
   // to be absent from the baseline. `projectScope`'s own composition is covered in
@@ -21,7 +24,6 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
     persona: "You are Nova.",
     expertiseHint: "Explain in plain language.",
     tierHint: "You are a small local model.",
-    memoryRecall: "Recalled: the user prefers tabs.",
     systemPromptOverride: "Session override text.",
     agentSystem: "Build agent instructions.",
     base: "Initial context (kernel base).",
@@ -31,7 +33,6 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
     baseParts.persona,
     baseParts.expertiseHint,
     baseParts.tierHint,
-    baseParts.memoryRecall,
     baseParts.systemPromptOverride,
     baseParts.agentSystem,
     baseParts.base,
