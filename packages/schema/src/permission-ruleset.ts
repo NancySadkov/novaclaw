@@ -56,11 +56,6 @@ export const ReplyBody = Schema.Struct({ reply: Reply, message: Schema.optional(
 })
 export type ReplyBody = typeof ReplyBody.Type
 
-export const AskInput = Schema.Struct({ ...Request.fields, id: Schema.optional(ID), ruleset: Ruleset }).annotate({
-  identifier: "PermissionAskInput",
-})
-export type AskInput = typeof AskInput.Type
-
 export const ReplyInput = Schema.Struct({ requestID: ID, ...ReplyBody.fields }).annotate({
   identifier: "PermissionReplyInput",
 })
@@ -73,32 +68,13 @@ const Replied = define({
 })
 export const Event = { Asked, Replied, Definitions: inventory(Asked, Replied) }
 
-// The permission outcome errors (re-homed with the ruleset from the deleted core/v1 wrapper —
-// live vocabulary: the ask/reply pipeline and the tool gate raise these).
-export class RejectedError extends Schema.TaggedErrorClass<RejectedError>()("PermissionRejectedError", {}) {
-  override get message() {
-    return "The user rejected permission to use this specific tool call."
-  }
-}
-
-export class CorrectedError extends Schema.TaggedErrorClass<CorrectedError>()("PermissionCorrectedError", {
-  feedback: Schema.String,
-}) {
-  override get message() {
-    return `The user rejected permission to use this specific tool call with the following feedback: ${this.feedback}`
-  }
-}
-
-export class DeniedError extends Schema.TaggedErrorClass<DeniedError>()("PermissionDeniedError", {
-  ruleset: Ruleset,
-}) {
-  override get message() {
-    return `The user has specified a rule which prevents you from using this specific tool call. Here are some of the relevant rules ${JSON.stringify(this.ruleset)}`
-  }
-}
-
-export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Permission.NotFoundError", {
-  requestID: ID,
-}) {}
-
-export type Error = DeniedError | RejectedError | CorrectedError
+// ⚠️ **Five members were DELETED here 2026-08-06** — `AskInput`, and the outcome errors
+// `RejectedError` / `CorrectedError` / `DeniedError` / `NotFoundError` (plus their `Error` union).
+// They went with the V1 permission service in `novaclaw/src/permission/index.ts`, which was the only
+// thing that raised them. The comment they carried claimed they were "live vocabulary: the ask/reply
+// pipeline and the tool gate raise these" — that had stopped being true when the V1 wrapper died.
+//
+// The live vocabulary is `PermissionV2.{DeniedError,RejectedError,CorrectedError}` in
+// `core/src/permission.ts`, and the wire's is `PermissionNotFoundError` in `protocol/src/errors.ts`.
+// Checked before deleting, because this is the SCHEMA package and a reference count is not the test:
+// zero hits across the generated SDK, `openapi.json`, the event codecs and the UI.

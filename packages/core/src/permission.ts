@@ -108,7 +108,8 @@ export class CorrectedError extends Schema.TaggedErrorClass<CorrectedError>()("P
  * UNATTENDED session" would be a claim about something we just failed to read, and it points the
  * user at the wrong thing. Same third-reason shape `HostExec.denyMessage` carries for the
  * hostility tri-state. This literal set is core-internal — `DeniedError` here is
- * `PermissionV2.DeniedError`, distinct from `@novaclaw/schema`'s `PermissionDeniedError`, and
+ * `PermissionV2.DeniedError` — schema's `PermissionDeniedError` twin was deleted 2026-08-06 with the
+ * V1 service that raised it, so this is now the only one — and
  * neither the reason nor this class is projected into the HttpApi contract, so adding a member
  * drifts no generated artifact (checked 2026-07-28).
  *
