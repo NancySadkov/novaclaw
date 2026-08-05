@@ -189,4 +189,45 @@ describe("SessionRunnerLLM — agent system prompt", () => {
       harness.model,
     ])
   })
+
+  test("keeps the sampled agent when selection changes during observation", async () => {
+    // The model-sampling claim's twin, one layer up. An `AgentSwitched` event published WHILE the
+    // system context is being loaded must not retroactively change the turn already assembling.
+    //
+    // ⭐ Asserted through SKILL GUIDANCE rather than the agent name, because guidance is what actually
+    // differs downstream: the turn must carry `build`'s skills, and must not carry `reviewer`'s. A
+    // claim asserting only "the agent is still build" would pass on a runner that sampled the agent
+    // once but re-derived its guidance afterwards — which is the half that reaches the model.
+    const harness = makeRunnerHarness({ turns: [completeTurn("t1", "Done")] })
+    harness.controls.skillBaselines.set("build", "Build skills")
+    harness.controls.skillBaselines.set("reviewer", "Reviewer skills")
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const events = yield* EventV2.Service
+        const session = yield* SessionV2.Service
+        let switched = false
+        harness.controls.systemLoadHook = Effect.suspend(() => {
+          if (switched) return Effect.void
+          switched = true
+          return events
+            .publish(SessionEvent.AgentSwitched, {
+              sessionID: HARNESS_SESSION,
+              messageID: SessionMessage.ID.create(),
+              timestamp: DateTime.makeUnsafe(1),
+              agent: "reviewer",
+            })
+            .pipe(Effect.asVoid, Effect.orDie)
+        })
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+      }),
+      "claim — the turn keeps the agent it sampled",
+    )
+
+    const system = (harness.requests[0]?.system ?? []).map((part) => part.text).join("\n")
+    expect(system, "the sampled agent's guidance is used").toContain("Build skills")
+    expect(system, "the mid-load switch must not reach this turn").not.toContain("Reviewer skills")
+  })
 })

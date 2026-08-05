@@ -256,6 +256,16 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     /** When set, the interactive stream FAILS with this instead of emitting its scripted turn. */
     streamFailure: undefined as LLMError | undefined,
     /**
+     * Run during every system-context LOAD. The agent-sampling claims need to change the world inside
+     * that window — the point being that a switch landing mid-load must not retroactively change the
+     * turn already assembling.
+     */
+    systemLoadHook: undefined as Effect.Effect<void> | undefined,
+    /**
+     * Per-agent skill guidance. Absent agent ⇒ no guidance, which is the default for every other claim.
+     */
+    skillBaselines: new Map<string, string>(),
+    /**
      * Compaction settings, read on every `Config.entries()` call so a claim can change them mid-test.
      * The compaction family is about behaviour AT a threshold, so the threshold has to be reachable.
      */
@@ -440,9 +450,11 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
                     SystemContext.make({
                       key: systemContextKey,
                       codec: Schema.toCodecJson(Schema.String),
-                      load: Effect.sync(() =>
-                        controls.systemUnavailable ? SystemContext.unavailable : controls.systemBaseline,
-                      ),
+                      load: Effect.gen(function* () {
+                        const hook = controls.systemLoadHook
+                        if (hook) yield* hook
+                        return controls.systemUnavailable ? SystemContext.unavailable : controls.systemBaseline
+                      }),
                       baseline: String,
                       update: (_previous, current) => current,
                       removed: () => SYSTEM_CONTEXT_REMOVED_MESSAGE,
@@ -455,7 +467,21 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     ),
   ).pipe(Layer.provideMerge(AppNodeBuilder.build(SystemContextRegistry.node)))
 
-  const skillGuidance = Layer.mock(SkillGuidance.Service, { load: () => Effect.succeed(SystemContext.empty) })
+  const skillGuidance = Layer.mock(SkillGuidance.Service, {
+    load: (agent: { id: string }) =>
+      Effect.succeed(
+        controls.skillBaselines.has(agent.id)
+          ? SystemContext.make({
+              key: SystemContext.Key.make("test/skill-guidance"),
+              codec: Schema.toCodecJson(Schema.String),
+              load: Effect.succeed(controls.skillBaselines.get(agent.id)!),
+              baseline: String,
+              update: (_previous, current) => current,
+              removed: () => "Skill guidance removed",
+            })
+          : SystemContext.empty,
+      ),
+  })
   const referenceGuidance = Layer.mock(ReferenceGuidance.Service, { load: () => Effect.succeed(SystemContext.empty) })
 
   const permission = Layer.succeed(
