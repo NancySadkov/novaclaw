@@ -1359,62 +1359,8 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("restores durable reasoning provider metadata in a second-turn request", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Think first" }), resume: false })
-
-      requests.length = 0
-      response = [
-        LLMEvent.stepStart({ index: 0 }),
-        LLMEvent.reasoningStart({ id: "reasoning-anthropic" }),
-        LLMEvent.reasoningDelta({ id: "reasoning-anthropic", text: "Signed thought" }),
-        LLMEvent.reasoningEnd({ id: "reasoning-anthropic", providerMetadata: { anthropic: { signature: "sig_1" } } }),
-        LLMEvent.reasoningStart({
-          id: "reasoning-openai",
-          providerMetadata: { openai: { itemId: "rs_1", reasoningEncryptedContent: null } },
-        }),
-        LLMEvent.reasoningDelta({ id: "reasoning-openai", text: "Encrypted thought" }),
-        LLMEvent.reasoningEnd({
-          id: "reasoning-openai",
-          providerMetadata: { openai: { itemId: "rs_1", reasoningEncryptedContent: "encrypted-state" } },
-        }),
-        LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-        LLMEvent.finish({ reason: "stop" }),
-      ]
-      yield* session.resume(sessionID)
-      yield* replaySessionProjection(sessionID)
-
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Think first" },
-        {
-          type: "assistant",
-          content: [
-            { type: "reasoning", text: "Signed thought", providerMetadata: { anthropic: { signature: "sig_1" } } },
-            {
-              type: "reasoning",
-              text: "Encrypted thought",
-              providerMetadata: { openai: { itemId: "rs_1", reasoningEncryptedContent: "encrypted-state" } },
-            },
-          ],
-        },
-      ])
-
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Continue" }), resume: false })
-      response = []
-      yield* session.resume(sessionID)
-
-      expect(requests[1]?.messages[1]?.content).toEqual([
-        { type: "reasoning", text: "Signed thought", providerMetadata: { anthropic: { signature: "sig_1" } } },
-        {
-          type: "reasoning",
-          text: "Encrypted thought",
-          providerMetadata: { openai: { itemId: "rs_1", reasoningEncryptedContent: "encrypted-state" } },
-        },
-      ])
-    }),
-  )
+  // "restores durable reasoning provider metadata in a second-turn request" — PORTED to
+  // session-runner-reasoning.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("replays durable provider-executed tool results inline in a second-turn request", () =>
     Effect.gen(function* () {
