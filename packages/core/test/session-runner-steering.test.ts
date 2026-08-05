@@ -293,4 +293,86 @@ describe("SessionRunnerLLM — steering", () => {
     ])
     expect(userTexts(harness.requests[3]!)?.at(-1), "the queued item follows the steers").toBe("Queue second")
   })
+
+  test("promotes queued input after continuation ends", async () => {
+    // A queued item must wait for the WHOLE exchange, not just the current request. Turn 1 calls a
+    // tool, so turn 2 is its continuation — and the queued item must not cut in there. It gets turn 3.
+    //
+    // ⭐ That middle turn is why this claim exists and why its assertion looks redundant: requests 0
+    // and 1 carry the SAME user text. A runner that promoted on "the request finished" instead of "the
+    // exchange finished" would put the queued item into turn 2, and every other queue claim would still
+    // pass.
+    const streamStarted = makeLatch()
+    const streamGate = makeLatch()
+    const harness = makeRunnerHarness({
+      turns: [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "call-echo", name: "echo", input: { text: "hello" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        replyTurn("t2", "Continued"),
+        replyTurn("t3", "Queued work"),
+      ],
+    })
+    harness.controls.streamStarted = streamStarted
+    harness.controls.streamGate = streamGate
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Start working" }),
+          resume: false,
+        })
+
+        const first = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+        yield* Effect.promise(() => streamStarted.promise)
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Wait until continuation ends" }),
+          delivery: "queue",
+        })
+        streamGate.open()
+        yield* Fiber.join(first)
+      }),
+      "claim — queued input waits for the continuation",
+    )
+
+    expect(harness.requests).toHaveLength(3)
+    expect(userTexts(harness.requests[0]!)).toEqual(["Start working"])
+    expect(userTexts(harness.requests[1]!), "the continuation must NOT carry the queued item").toEqual([
+      "Start working",
+    ])
+    expect(userTexts(harness.requests[2]!)).toEqual(["Start working", "Wait until continuation ends"])
+  })
+
+  test("promotes the first queued input when woken while idle", async () => {
+    // Nothing is running. A queued item plus a wake must start a turn — otherwise queued work would sit
+    // there until something else happened to resume the session, which is a silent stall rather than a
+    // queue.
+    const harness = makeRunnerHarness({ turns: [replyTurn("t1", "Picked it up")] })
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Wait in queue" }),
+          delivery: "queue",
+          resume: false,
+        })
+        yield* (yield* SessionExecution.Service).wake(HARNESS_SESSION)
+        yield* Effect.yieldNow
+      }),
+      "claim — a wake while idle promotes the first queued input",
+    )
+
+    expect(harness.requests).toHaveLength(1)
+    expect(userTexts(harness.requests[0]!)).toEqual(["Wait in queue"])
+  })
 })

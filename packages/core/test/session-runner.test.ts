@@ -1623,52 +1623,8 @@ describe("SessionRunnerLLM", () => {
   // "steers an active provider turn with newly recorded prompts" — PORTED to
   // session-runner-steering.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("promotes queued input after continuation ends", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Start working" }), resume: false })
-
-      requests.length = 0
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "call-echo", name: "echo", input: { text: "hello" } }),
-          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-          LLMEvent.finish({ reason: "tool-calls" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-      ]
-      streamGate = yield* Deferred.make<void>()
-      streamStarted = yield* Deferred.make<void>()
-
-      const first = yield* session.resume(sessionID).pipe(Effect.forkChild)
-      yield* Deferred.await(streamStarted)
-      yield* session.prompt({
-        sessionID,
-        prompt: Prompt.make({ text: "Wait until continuation ends" }),
-        delivery: "queue",
-      })
-      yield* Deferred.succeed(streamGate, undefined)
-      yield* Fiber.join(first)
-      streamGate = undefined
-      streamStarted = undefined
-
-      expect(requests).toHaveLength(3)
-      expect(userTexts(requests[0]!)).toEqual(["Start working"])
-      expect(userTexts(requests[1]!)).toEqual(["Start working"])
-      expect(userTexts(requests[2]!)).toEqual(["Start working", "Wait until continuation ends"])
-    }),
-  )
+  // "promotes queued input after continuation ends" — PORTED to
+  // session-runner-steering.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("preserves durable queued input for a later wake after interruption", () =>
     Effect.gen(function* () {
@@ -1989,25 +1945,8 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("promotes the first queued input when woken while idle", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({
-        sessionID,
-        prompt: Prompt.make({ text: "Wait in queue" }),
-        delivery: "queue",
-        resume: false,
-      })
-
-      requests.length = 0
-      yield* (yield* SessionExecution.Service).wake(sessionID)
-      yield* Effect.yieldNow
-
-      expect(requests).toHaveLength(1)
-      expect(userTexts(requests[0]!)).toEqual(["Wait in queue"])
-    }),
-  )
+  // "promotes the first queued input when woken while idle" — PORTED to
+  // session-runner-steering.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("retries inbox input after prompt projection rolls back", () =>
     Effect.gen(function* () {
