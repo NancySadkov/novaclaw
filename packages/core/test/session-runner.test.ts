@@ -2534,17 +2534,10 @@ describe("SessionRunnerLLM", () => {
   // "keeps interleaved assistant text blocks separate" — PORTED to
   // session-runner-projection.test.ts and deleted here (S3, 2026-08-05).
 
-  for (const kind of fragmentKinds) {
-    it.effect(`broadcasts provider ${kind} deltas without storing projection rewrites`, () =>
-      verifyEphemeralDeltas(kind),
-    )
-
-    it.effect(`durably closes partial ${kind} when the provider stream fails`, () => verifyPartialFlushOnFailure(kind))
-
-    it.effect(`durably closes partial ${kind} when the provider stream is interrupted`, () =>
-      verifyPartialFlushOnInterruption(kind),
-    )
-  }
+  // The three PARAMETERISED claims — "broadcasts provider ${kind} deltas without storing projection
+  // rewrites", "durably closes partial ${kind} when the provider stream fails" and "…when the provider
+  // stream is interrupted" — are PORTED to session-runner-fragments.test.ts and deleted here
+  // (S3, 2026-08-05). Three declarations, nine tests.
 
   // "rejects duplicate streamed text starts" — PORTED to
   // session-runner-projection.test.ts and deleted here (S3, 2026-08-05).
