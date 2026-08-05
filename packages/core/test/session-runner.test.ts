@@ -1756,48 +1756,8 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("promotes queued inputs one at a time in FIFO order", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Start working" }), resume: false })
-
-      requests.length = 0
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-      ]
-      streamGate = yield* Deferred.make<void>()
-      streamStarted = yield* Deferred.make<void>()
-
-      const first = yield* session.resume(sessionID).pipe(Effect.forkChild)
-      yield* Deferred.await(streamStarted)
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Queue first" }), delivery: "queue" })
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Queue second" }), delivery: "queue" })
-      yield* Deferred.succeed(streamGate, undefined)
-      yield* Fiber.join(first)
-      streamGate = undefined
-      streamStarted = undefined
-
-      expect(requests).toHaveLength(3)
-      expect(userTexts(requests[0]!)).toEqual(["Start working"])
-      expect(userTexts(requests[1]!)).toEqual(["Start working", "Queue first"])
-      expect(userTexts(requests[2]!)).toEqual(["Start working", "Queue first", "Queue second"])
-    }),
-  )
+  // "promotes queued inputs one at a time in FIFO order" — PORTED to
+  // session-runner-steering.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("promotes queued input after steering continuation ends", () =>
     Effect.gen(function* () {
@@ -1833,70 +1793,8 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("promotes steers before the next queued input", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Start working" }), resume: false })
-
-      requests.length = 0
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-      ]
-      const firstGate = yield* Deferred.make<void>()
-      const secondGate = yield* Deferred.make<void>()
-      streamGate = firstGate
-
-      const first = yield* session.resume(sessionID).pipe(Effect.forkChild)
-      while (requests.length < 1) yield* Effect.yieldNow
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Queue first" }), delivery: "queue" })
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Queue second" }), delivery: "queue" })
-      streamGate = secondGate
-      yield* Deferred.succeed(firstGate, undefined)
-      while (requests.length < 2) yield* Effect.yieldNow
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Steer before next queued input" }) })
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Also steer before next queued input" }) })
-      yield* Deferred.succeed(secondGate, undefined)
-      yield* Fiber.join(first)
-      streamGate = undefined
-
-      expect(requests).toHaveLength(4)
-      expect(userTexts(requests[0]!)).toEqual(["Start working"])
-      expect(userTexts(requests[1]!)).toEqual(["Start working", "Queue first"])
-      expect(userTexts(requests[2]!)).toEqual([
-        "Start working",
-        "Queue first",
-        "Steer before next queued input",
-        "Also steer before next queued input",
-      ])
-      expect(userTexts(requests[3]!)).toEqual([
-        "Start working",
-        "Queue first",
-        "Steer before next queued input",
-        "Also steer before next queued input",
-        "Queue second",
-      ])
-    }),
-  )
+  // "promotes steers before the next queued input" — PORTED to
+  // session-runner-steering.test.ts and deleted here (S3, 2026-08-05).
 
   // "coalesces multiple active steering prompts into one continuation turn" — PORTED to
   // session-runner-steering.test.ts and deleted here (S3, 2026-08-05).

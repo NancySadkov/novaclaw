@@ -38,6 +38,18 @@ const replyTurn = (id: string, text: string) => [
   LLMEvent.finish({ reason: "stop" }),
 ]
 
+/**
+ * Wait until the harness has seen `count` interactive requests.
+ *
+ * ⚠️ A busy-yield rather than a latch, and deliberately: a latch is one-shot, so a claim that has to
+ * observe the START of the second *and* third turn cannot reuse one. Bounded by `runBounded` like
+ * everything else, so a runner that never issues the request fails by name instead of spinning here.
+ */
+const waitForRequests = (harness: ReturnType<typeof makeRunnerHarness>, count: number) =>
+  Effect.gen(function* () {
+    while (harness.requests.length < count) yield* Effect.yieldNow
+  })
+
 describe("SessionRunnerLLM — steering", () => {
   test("steers an active provider turn with newly recorded prompts", async () => {
     const streamStarted = makeLatch()
@@ -166,5 +178,119 @@ describe("SessionRunnerLLM — steering", () => {
     )
 
     expect(harness.requests, "a wake after coalescing must find nothing left to do").toHaveLength(2)
+  })
+
+  test("promotes queued inputs one at a time in FIFO order", async () => {
+    // Two items queued during one in-flight turn must produce TWO further turns, in order — not one
+    // turn carrying both (that is what STEERS do) and not the reverse order. The distinction between
+    // queue and steer delivery is the whole point: a steer joins the next turn, a queued item gets its
+    // own.
+    const streamStarted = makeLatch()
+    const streamGate = makeLatch()
+    const harness = makeRunnerHarness({
+      turns: [replyTurn("t1", "One"), replyTurn("t2", "Two"), replyTurn("t3", "Three")],
+    })
+    harness.controls.streamStarted = streamStarted
+    harness.controls.streamGate = streamGate
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Start working" }),
+          resume: false,
+        })
+
+        const first = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+        yield* Effect.promise(() => streamStarted.promise)
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Queue first" }),
+          delivery: "queue",
+        })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Queue second" }),
+          delivery: "queue",
+        })
+        streamGate.open()
+        yield* Fiber.join(first)
+      }),
+      "claim — queued inputs promote FIFO, one at a time",
+    )
+
+    expect(harness.requests, "each queued item gets its OWN turn").toHaveLength(3)
+    expect(userTexts(harness.requests[0]!)).toEqual(["Start working"])
+    expect(userTexts(harness.requests[1]!)).toEqual(["Start working", "Queue first"])
+    expect(userTexts(harness.requests[2]!)).toEqual(["Start working", "Queue first", "Queue second"])
+  })
+
+  test("promotes steers before the next queued input", async () => {
+    // The priority rule, and it needs both deliveries live at once: with two items already queued, a
+    // steer arriving during the continuation must jump ahead of the remaining queued item. Steers are
+    // course corrections to what is happening now; queued items are work to do next.
+    //
+    // Two gates rather than one, swapped between turns, because the claim has to inject at TWO distinct
+    // moments — during turn 1 and again during turn 2.
+    const firstGate = makeLatch()
+    const secondGate = makeLatch()
+    const harness = makeRunnerHarness({
+      turns: [replyTurn("t1", "One"), replyTurn("t2", "Two"), replyTurn("t3", "Three"), replyTurn("t4", "Four")],
+    })
+    harness.controls.streamGate = firstGate
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Start working" }),
+          resume: false,
+        })
+
+        const first = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+        yield* waitForRequests(harness, 1)
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Queue first" }),
+          delivery: "queue",
+        })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Queue second" }),
+          delivery: "queue",
+        })
+
+        harness.controls.streamGate = secondGate
+        firstGate.open()
+        yield* waitForRequests(harness, 2)
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Steer before next queued input" }),
+        })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Also steer before next queued input" }),
+        })
+        secondGate.open()
+        yield* Fiber.join(first)
+      }),
+      "claim — steers jump ahead of queued input",
+    )
+
+    expect(harness.requests).toHaveLength(4)
+    expect(userTexts(harness.requests[0]!)).toEqual(["Start working"])
+    expect(userTexts(harness.requests[1]!)).toEqual(["Start working", "Queue first"])
+    // The steers land BEFORE "Queue second" — that is the claim.
+    expect(userTexts(harness.requests[2]!)).toEqual([
+      "Start working",
+      "Queue first",
+      "Steer before next queued input",
+      "Also steer before next queued input",
+    ])
+    expect(userTexts(harness.requests[3]!)?.at(-1), "the queued item follows the steers").toBe("Queue second")
   })
 })
