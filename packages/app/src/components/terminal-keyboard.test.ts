@@ -22,6 +22,21 @@ describe("terminal keyboard", () => {
     expect(terminalWorkspaceShortcut(key("PageUp", { metaKey: true }))).toBe("previous")
   })
 
+  test("Shift turns tab NAVIGATION into tab REORDER, on the browser convention", () => {
+    expect(terminalWorkspaceShortcut(key("PageDown", { ctrlKey: true, shiftKey: true }))).toBe("move-next")
+    expect(terminalWorkspaceShortcut(key("PageUp", { metaKey: true, shiftKey: true }))).toBe("move-previous")
+  })
+
+  test("reorder does not swallow plain navigation, and neither shadows the other", () => {
+    // The negative control for the pair above: these four live one Shift apart, so an ordering
+    // mistake in the parser would silently turn "next tab" into "move tab" — a keystroke people
+    // press constantly quietly rearranging their workspace.
+    expect(terminalWorkspaceShortcut(key("PageDown", { ctrlKey: true }))).toBe("next")
+    expect(terminalWorkspaceShortcut(key("PageUp", { ctrlKey: true }))).toBe("previous")
+    // Reorder exists so the drag gesture is not the only way; it must stay keyboard-reachable.
+    expect(terminalWorkspaceShortcut(key("PageDown", { ctrlKey: true, shiftKey: true, altKey: true }))).toBeUndefined()
+  })
+
   test("reveals the cursor before restarting its blink interval", () => {
     const writes: boolean[] = []
     const options = {

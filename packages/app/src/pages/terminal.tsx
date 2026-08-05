@@ -109,6 +109,18 @@ function TerminalWorkspace(props: { serverName: string }) {
         terminal.next()
         return
       }
+      if (shortcut === "move-next" || shortcut === "move-previous") {
+        const id = terminal.active()
+        if (!id) return
+        const all = terminal.all()
+        const from = all.findIndex((item) => item.id === id)
+        if (from === -1) return
+        // Clamped rather than wrapping: dragging past the end drops at the end, so the keyboard
+        // equivalent must too, or the two affordances disagree about what "move right" means.
+        const to = Math.min(all.length - 1, Math.max(0, from + (shortcut === "move-next" ? 1 : -1)))
+        if (to !== from) terminal.move(id, to)
+        return
+      }
       terminal.previous()
     }
     window.addEventListener("keydown", keydown, true)
@@ -131,6 +143,7 @@ function TerminalWorkspace(props: { serverName: string }) {
       message: terminalConnectFailureMessage(failure, language.t("terminal.connectionLost.description")),
     })
   }
+  const [dragging, setDragging] = createSignal<string | undefined>()
   const [copied, setCopied] = createSignal<string | undefined>()
   const copyDiagnosis = async (item: { id: string; shell?: string; cwd?: string; exitCode?: number }) => {
     const text = terminalDiagnosis({
@@ -225,6 +238,32 @@ function TerminalWorkspace(props: { serverName: string }) {
                   // v2 owns middle-click, so the hand-rolled onAuxClick guard this file used to
                   // carry is gone rather than duplicated.
                   onMiddleClick={() => void terminal.close(item.id)}
+                  // Drag-reorder rides `rest` straight through TabsV2.Trigger onto the button, so
+                  // there is no fork of the design-system component to add it (ruling 13). The
+                  // reducer already existed; only the gesture was missing.
+                  draggable={true}
+                  onDragStart={(event: DragEvent) => {
+                    setDragging(item.id)
+                    // `move` is required or Firefox refuses to start the drag at all.
+                    event.dataTransfer?.setData("text/plain", item.id)
+                    if (event.dataTransfer) event.dataTransfer.effectAllowed = "move"
+                  }}
+                  onDragEnd={() => setDragging(undefined)}
+                  onDragOver={(event: DragEvent) => {
+                    if (!dragging() || dragging() === item.id) return
+                    // Without preventDefault the browser treats this as a non-drop target and the
+                    // cursor says "no" over every tab.
+                    event.preventDefault()
+                    if (event.dataTransfer) event.dataTransfer.dropEffect = "move"
+                  }}
+                  onDrop={(event: DragEvent) => {
+                    event.preventDefault()
+                    const source = dragging() ?? event.dataTransfer?.getData("text/plain")
+                    setDragging(undefined)
+                    if (!source || source === item.id) return
+                    const to = terminal.all().findIndex((entry) => entry.id === item.id)
+                    if (to !== -1) terminal.move(source, to)
+                  }}
                   closeButton={
                     <IconButtonV2
                       icon={<IconV2 name="close" />}

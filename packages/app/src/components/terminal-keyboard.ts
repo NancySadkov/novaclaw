@@ -1,7 +1,7 @@
 type ShortcutEvent = Pick<KeyboardEvent, "altKey" | "ctrlKey" | "key" | "metaKey" | "shiftKey">
 
 export type TerminalClipboardShortcut = "copy" | "paste"
-export type TerminalWorkspaceShortcut = "new" | "close" | "next" | "previous"
+export type TerminalWorkspaceShortcut = "new" | "close" | "next" | "previous" | "move-next" | "move-previous"
 
 export function terminalClipboardShortcut(event: ShortcutEvent): TerminalClipboardShortcut | undefined {
   const key = event.key.toLowerCase()
@@ -21,6 +21,12 @@ export function terminalWorkspaceShortcut(event: ShortcutEvent): TerminalWorkspa
   if (event.shiftKey && key === "w") return "close"
   if (!event.shiftKey && key === "pagedown") return "next"
   if (!event.shiftKey && key === "pageup") return "previous"
+  // Reorder, on the same convention browsers use: Shift turns "go to the next tab" into "take this
+  // tab with you". It exists because the other way to reorder is DRAG, and a drag-only affordance is
+  // unreachable by keyboard — which on a surface gated to Advanced/Developer would quietly mean the
+  // people most likely to live in this app are the ones who cannot use half of it.
+  if (event.shiftKey && key === "pagedown") return "move-next"
+  if (event.shiftKey && key === "pageup") return "move-previous"
 }
 
 /** Keyboard input should reveal the cursor immediately, then begin a fresh blink interval. */
