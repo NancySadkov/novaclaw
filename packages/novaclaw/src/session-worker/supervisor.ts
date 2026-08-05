@@ -4,6 +4,7 @@ import type { SessionExecutionAttempt } from "@novaclaw/core/session/execution-a
 import { AbsolutePath } from "@novaclaw/core/schema"
 import type { Location } from "@novaclaw/core/location"
 import childProcess from "node:child_process"
+import fs from "node:fs"
 import type { Readable } from "node:stream"
 
 export type Outcome =
@@ -84,6 +85,16 @@ export const activeWorkerCount = () => activePIDs.size
  * the fault domain that launched it. */
 export function spawn(input: Input): Handle {
   if (input.command.length === 0) throw new Error("Session worker command is empty")
+  // A missing `cwd` makes uv_spawn fail ENOENT with `path` set to the EXECUTABLE, so the raw error
+  // names the interpreter as missing when the interpreter is fine and the session's folder is gone.
+  // Measured 2026-08-05: same bun.exe, missing cwd -> ENOENT naming bun.exe; valid cwd -> spawns. That
+  // is ruling 2's "a fault is never described falsely", and it reaches users through boot recovery,
+  // which resumes abandoned input for sessions whose folder may have been deleted since. Check first
+  // so the fault names the thing that is actually absent.
+  if (!fs.existsSync(input.directory))
+    throw new Error(
+      `Session working folder no longer exists: ${input.directory} — the session cannot run until it is restored or the session is pointed at another folder.`,
+    )
   const child = childProcess.spawn(input.command[0]!, input.command.slice(1), {
     cwd: input.directory,
     stdio: ["pipe", "pipe", "inherit"],

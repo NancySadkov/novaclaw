@@ -371,6 +371,30 @@ test("reported worker memory pressure is contained without allocating it in the 
   expect(activeWorkerCount()).toBe(0)
 })
 
+test("a deleted session folder is named as the fault, not the interpreter", async () => {
+  const missing = path.join(os.tmpdir(), "novaclaw-worker-gone-" + process.pid)
+  expect(
+    await fs.stat(missing).then(
+      () => true,
+      () => false,
+    ),
+  ).toBe(false)
+  const attempt = () =>
+    spawn({
+      command: [process.execPath, fixture, "settle"],
+      lease: { ...lease, sessionID: SessionSchema.ID.make("ses_worker_gone"), attemptID: "exe_gone" },
+      directory: missing,
+      force: false,
+    })
+  // NEGATIVE CONTROL for the whole point of this test: uv_spawn reports a missing cwd as ENOENT with
+  // `path` set to the EXECUTABLE (measured 2026-08-05 — same binary, missing cwd fails, valid cwd
+  // spawns), so without the pre-check the operator is told the interpreter is missing. Assert the
+  // message names the FOLDER and never the interpreter, or this guard passes while still lying.
+  expect(attempt).toThrow(missing)
+  expect(() => attempt()).not.toThrow(path.basename(process.execPath))
+  expect(activeWorkerCount()).toBe(0)
+})
+
 test("interrupt tree-kills a tool subprocess owned by the isolated session", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "novaclaw-worker-tree-"))
   const marker = path.join(directory, "leaked.txt")
