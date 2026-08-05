@@ -373,7 +373,18 @@ const itBase = testEffect(
 // executes `session/runner/llm.ts`, so that file — the heart of the product — currently has **no
 // passing executing coverage on any platform**. Every invariant in it is held by source-assertion
 // ratchets and by `tests/os-foundation-smoke.ts` against a live model. Do not read the win32 skip as
-// "green elsewhere"; it is not green anywhere. Filed in `todo/v0.2.0-prep.md`.
+// "green elsewhere"; it is not green anywhere.
+//
+// ⚖️ RULED 2026-08-05 — THIS FILE IS A SPEC, NOT A GATE. Repairing the 59 assertions is refused: they
+// are the symptom, while the reason the suite went dark is the spin above, which lives in the harness
+// and reproduces on Linux. Retiring it outright is also refused — its 77 titles are the only written
+// specification of the drain's steering/queued-input, compaction, overflow-recovery, durable
+// tool-settlement and provider-error behaviour, and ruling 1 says an invariant with no check does not
+// exist. So its CLAIMS are being rewritten against the current runner, on a lean harness whose
+// admission test is that it runs on **win32** in the default tier; each ported slice deletes its old
+// tests here and un-pins the skips it frees. Read the file as the source of those claims. Do not add a
+// test to it, and do not port its fixture — the owner's rule for the httpapi island applies unchanged:
+// "just make a good unit test instead", not a like-for-like port. Sequence: `todo/v0.2.0-prep.md`.
 const it = process.platform === "win32" ? { effect: itBase.effect.skip, live: itBase.live.skip } : itBase
 const sessionID = SessionV2.ID.make("ses_runner_test")
 
