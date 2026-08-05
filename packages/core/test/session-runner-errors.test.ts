@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { Effect } from "effect"
-import { LLMEvent } from "@novaclaw/llm"
+import { Effect, Stream } from "effect"
+import { InvalidProviderOutputReason, LLMError, LLMEvent, TransportReason } from "@novaclaw/llm"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { HARNESS_SESSION, drive, makeRunnerHarness } from "./fixture/runner-harness"
@@ -72,6 +72,116 @@ describe("SessionRunnerLLM — provider errors", () => {
     expect(context).toMatchObject([
       { type: "user", text: "Fail before step" },
       { type: "assistant", finish: "error", error: { type: "unknown", message: "Provider unavailable" } },
+    ])
+  })
+
+  test("does not recover context overflow after durable assistant output", async () => {
+    // An overflow reported AFTER the assistant has already produced durable text is not recoverable by
+    // compaction — the turn is half-spoken. Compacting and retrying would either duplicate the partial
+    // answer or discard it, and both are worse than reporting the failure with the partial preserved.
+    //
+    // ⭐ The single request is the claim. The identical scenario WITHOUT prior output compacts and
+    // retries (see the overflow claims); what flips the behaviour is that something durable was already
+    // said.
+    const harness = makeRunnerHarness({
+      turns: [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-partial" }),
+          LLMEvent.textDelta({ id: "text-partial", text: "Partial" }),
+          LLMEvent.textEnd({ id: "text-partial" }),
+          LLMEvent.providerError({ message: "prompt too long", classification: "context-overflow" }),
+        ],
+      ],
+    })
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Fail after output" }),
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+        return yield* session.context(HARNESS_SESSION)
+      }),
+      "claim — no overflow recovery once output is durable",
+    )
+
+    expect(harness.requests, "no compaction, no retry — the turn is half-spoken").toHaveLength(1)
+    expect(context).toMatchObject([
+      { type: "user", text: "Fail after output" },
+      {
+        type: "assistant",
+        finish: "error",
+        error: { message: "prompt too long" },
+        content: [{ type: "text", text: "Partial" }],
+      },
+    ])
+  })
+
+  test("accepts a malformed stream tail as broken context and continues without replaying the request", async () => {
+    // The provider's SSE frame is truncated mid-reply. The partial text is USABLE and is kept, the turn
+    // is marked `broken` rather than `error`, and the runner continues — telling the model that its
+    // previous reply ended abruptly instead of silently re-sending the same request.
+    //
+    // ⭐ "Without replaying the request" is the load-bearing half. A runner that retried the identical
+    // request would discard usable output and pay for the whole turn again; on a small local model,
+    // truncated frames are common enough that retrying is a real cost, not a corner case.
+    const harness = makeRunnerHarness({
+      turns: [
+        Stream.concat(
+          Stream.fromIterable([
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.textStart({ id: "text-broken" }),
+            LLMEvent.textDelta({ id: "text-broken", text: "Usable partial" }),
+          ]),
+          Stream.fail(
+            new LLMError({
+              module: "test",
+              method: "stream",
+              reason: new InvalidProviderOutputReason({ message: "truncated SSE frame" }),
+            }),
+          ),
+        ),
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-recovered" }),
+          LLMEvent.textDelta({ id: "text-recovered", text: "Recovered" }),
+          LLMEvent.textEnd({ id: "text-recovered" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ],
+    })
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Survive a broken reply" }),
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+        return yield* session.context(HARNESS_SESSION)
+      }),
+      "claim — a malformed tail becomes broken context, not a replay",
+    )
+
+    expect(harness.requests).toHaveLength(2)
+    expect(harness.requests[1]?.messages.at(-1)?.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "text", text: expect.stringContaining("previous provider reply ended") }),
+      ]),
+    )
+    expect(context).toMatchObject([
+      { type: "user", text: "Survive a broken reply" },
+      { type: "assistant", finish: "broken", content: [{ type: "text", text: "Usable partial" }] },
+      { type: "assistant", finish: "stop", content: [{ type: "text", text: "Recovered" }] },
     ])
   })
 })

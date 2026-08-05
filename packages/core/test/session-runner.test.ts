@@ -1594,34 +1594,8 @@ describe("SessionRunnerLLM", () => {
   // "projects provider errors emitted before assistant step start" — PORTED to
   // session-runner-errors.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("does not recover context overflow after durable assistant output", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Fail after output" }), resume: false })
-
-      requests.length = 0
-      response = [
-        LLMEvent.stepStart({ index: 0 }),
-        LLMEvent.textStart({ id: "text-partial" }),
-        LLMEvent.textDelta({ id: "text-partial", text: "Partial" }),
-        LLMEvent.textEnd({ id: "text-partial" }),
-        LLMEvent.providerError({ message: "prompt too long", classification: "context-overflow" }),
-      ]
-      yield* session.resume(sessionID)
-
-      expect(requests).toHaveLength(1)
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Fail after output" },
-        {
-          type: "assistant",
-          finish: "error",
-          error: { message: "prompt too long" },
-          content: [{ type: "text", text: "Partial" }],
-        },
-      ])
-    }),
-  )
+  // "does not recover context overflow after durable assistant output" — PORTED to
+  // session-runner-errors.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("projects raw provider stream failures as terminal assistant step failures", () =>
     Effect.gen(function* () {
@@ -1640,49 +1614,8 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("accepts a malformed stream tail as broken context and continues without replaying the request", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Survive a broken reply" }), resume: false })
-      requests.length = 0
-      const failure = new LLMError({
-        module: "test",
-        method: "stream",
-        reason: new InvalidProviderOutputReason({ message: "truncated SSE frame" }),
-      })
-      responseStream = Stream.concat(
-        Stream.fromIterable([
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.textStart({ id: "text-broken" }),
-          LLMEvent.textDelta({ id: "text-broken", text: "Usable partial" }),
-        ]),
-        Stream.fail(failure),
-      )
-      response = [
-        LLMEvent.stepStart({ index: 0 }),
-        LLMEvent.textStart({ id: "text-recovered" }),
-        LLMEvent.textDelta({ id: "text-recovered", text: "Recovered" }),
-        LLMEvent.textEnd({ id: "text-recovered" }),
-        LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-        LLMEvent.finish({ reason: "stop" }),
-      ]
-
-      yield* session.resume(sessionID)
-
-      expect(requests).toHaveLength(2)
-      expect(requests[1]?.messages.at(-1)?.content).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ type: "text", text: expect.stringContaining("previous provider reply ended") }),
-        ]),
-      )
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Survive a broken reply" },
-        { type: "assistant", finish: "broken", content: [{ type: "text", text: "Usable partial" }] },
-        { type: "assistant", finish: "stop", content: [{ type: "text", text: "Recovered" }] },
-      ])
-    }),
-  )
+  // "accepts a malformed stream tail as broken context and continues without replaying the request" — PORTED to
+  // session-runner-errors.test.ts and deleted here (S3, 2026-08-05).
 
   // "does not continue automatically after a provider error follows a local tool call" — PORTED to
   // session-runner-blocked-tools.test.ts and deleted here (S3, 2026-08-05).
