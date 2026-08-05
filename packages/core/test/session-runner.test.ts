@@ -838,53 +838,11 @@ describe("SessionRunnerLLM", () => {
   // "promotes the first queued input when woken while idle" — PORTED to
   // session-runner-steering.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("retries inbox input after prompt projection rolls back", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      const events = yield* EventV2.Service
-      const defect = new Error("fail after prompt promotion")
-      let fail = true
-      yield* events.project(SessionEvent.Prompted, () => (fail ? Effect.die(defect) : Effect.void))
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Recover promoted input" }), resume: false })
+  // "retries inbox input after prompt projection rolls back" — PORTED to
+  // session-runner-promotion.test.ts and deleted here (S3, 2026-08-05).
 
-      expect(yield* session.resume(sessionID).pipe(Effect.catchDefect(Effect.succeed))).toBe(defect)
-      fail = false
-      requests.length = 0
-      response = [
-        LLMEvent.stepStart({ index: 0 }),
-        LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-        LLMEvent.finish({ reason: "stop" }),
-      ]
-
-      yield* (yield* SessionExecution.Service).wake(sessionID)
-      while (requests.length === 0) yield* Effect.yieldNow
-
-      expect(userTexts(requests[0]!)).toEqual(["Recover promoted input"])
-    }),
-  )
-
-  it.effect("does not strand a committed promotion when a post-commit listener defects", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      const events = yield* EventV2.Service
-      yield* events.listen((event) =>
-        event.type === SessionEvent.Prompted.type ? Effect.die("fail after prompt promotion commits") : Effect.void,
-      )
-      yield* session.prompt({
-        sessionID,
-        prompt: Prompt.make({ text: "Run committed promotion" }),
-        resume: false,
-      })
-
-      requests.length = 0
-      yield* session.resume(sessionID)
-
-      expect(requests).toHaveLength(1)
-      expect(userTexts(requests[0]!)).toEqual(["Run committed promotion"])
-    }),
-  )
+  // "does not strand a committed promotion when a post-commit listener defects" — PORTED to
+  // session-runner-promotion.test.ts and deleted here (S3, 2026-08-05).
 
   // "runs different sessions concurrently" — PORTED to
   // session-runner-steering.test.ts and deleted here (S3, 2026-08-05).
