@@ -165,6 +165,14 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
               return { text }
             }),
         }),
+        // Registered in this order on purpose: claims about the advertised tool list assert
+        // `["echo", "defect"]` verbatim, so the registry's order is part of what is being ported.
+        defect: Tool.make({
+          description: "Fail unexpectedly",
+          input: Schema.Struct({}),
+          output: Schema.Struct({}),
+          execute: () => Effect.die("unexpected tool defect"),
+        }),
       }),
     ),
   )

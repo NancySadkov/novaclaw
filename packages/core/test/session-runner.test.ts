@@ -770,30 +770,9 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("streams one request with registry definitions from chronological V2 user history", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First" }), resume: false })
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Second" }), resume: false })
-
-      requests.length = 0
-      responses = undefined
-      streamGate = undefined
-      streamStarted = undefined
-      response = []
-      yield* session.resume(sessionID)
-
-      expect(requests).toHaveLength(1)
-      expect(requests[0]?.model).toBe(model)
-      expect(requests[0]?.tools.map((tool) => tool.name)).toEqual(["echo", "defect"])
-      expect(requests[0]?.messages.map((message) => ({ role: message.role, content: message.content }))).toEqual([
-        { role: "user", content: [{ type: "text", text: "First" }] },
-        { role: "user", content: [{ type: "text", text: "Second" }] },
-      ])
-      expect(yield* session.messages({ sessionID })).toHaveLength(2)
-    }),
-  )
+  // "streams one request with registry definitions from chronological V2 user history" — PORTED to
+  // session-runner-turn.test.ts and deleted here (S3, 2026-08-05). The ledger enforces that this
+  // deletion happened; see session-runner-claims.test.ts.
 
   it.effect("retries the first provider turn after system context becomes available", () =>
     Effect.gen(function* () {

@@ -117,34 +117,75 @@ function declaredTitles(): string[] {
 
 const PATTERN = /it\.(?:effect|live)\(\s*(["'`])([\s\S]*?)\1/g
 
+/**
+ * The per-claim state. A claim absent from here is `spec` — the starting state — so porting is the
+ * only thing that needs writing down.
+ *
+ * ⚠️ **`ported` means the old test is DELETED, not merely duplicated.** The assertion below enforces
+ * exactly that, which is what makes the ledger drive S3's "delete as you go" instead of describing it.
+ * Leaving both alive would keep the win32 skip count where it is and quietly double the spec.
+ */
+const STATUS: Readonly<Record<string, { status: Exclude<ClaimStatus, "spec">; where: string }>> = {
+  "streams one request with registry definitions from chronological V2 user history": {
+    status: "ported",
+    where: "session-runner-turn.test.ts",
+  },
+}
+
 describe("the session-runner claims ledger", () => {
-  test("the ledger lists exactly what the suite declares", () => {
+  test("the ledger lists exactly what the suite declares, minus what has left it", () => {
     // Checked BOTH ways on purpose. A test that only asserted "every ledger entry still exists" would
     // let a new, untracked test slip in — and an untracked claim is how a spec starts rotting.
     const declared = declaredTitles()
-    expect(declared.length, "the suite's declaration count moved — reconcile the ledger").toBe(CLAIMS.length)
+    const expected = CLAIMS.filter((claim) => STATUS[claim] === undefined)
+    expect(declared.length, "the suite's declaration count moved — reconcile the ledger").toBe(expected.length)
     expect([...declared].sort(), "a test was added, renamed or removed without a ledger entry").toEqual(
-      [...CLAIMS].sort(),
+      [...expected].sort(),
     )
   })
 
-  test("nothing has been ported yet, and that is recorded rather than implied", () => {
-    // S2/S3 flip entries to `ported`/`dropped` as replacements land. While every entry reads `spec`,
-    // `session/runner/llm.ts` has NO executing coverage on any platform — the fact this whole program
-    // exists to fix. When this assertion needs changing, the rewrite has started working.
-    const status: Record<string, ClaimStatus> = Object.fromEntries(CLAIMS.map((claim) => [claim, "spec"]))
-    expect(Object.keys(status).length).toBe(CLAIMS.length)
-    expect(Object.values(status).every((value) => value === "spec")).toBe(true)
+  test("🔴 a ported claim is GONE from the old suite, not duplicated in it", () => {
+    // The half of "port and delete as you go" that an agent under time pressure skips. Without this,
+    // `ported` becomes a label on a claim that still runs nowhere and still costs a win32 skip.
+    const declared = new Set(declaredTitles())
+    for (const [claim, entry] of Object.entries(STATUS)) {
+      expect(declared.has(claim), `"${claim}" is marked ${entry.status} but still declared in the old suite`).toBe(
+        false,
+      )
+    }
   })
 
-  test("77 declarations are 83 tests, and the ledger knows why", () => {
+  test("every ported claim names where it went, and that file exists", () => {
+    for (const [claim, entry] of Object.entries(STATUS)) {
+      if (entry.status !== "ported") continue
+      expect(entry.where, `"${claim}" is ported but names no replacement file`).toBeTruthy()
+      expect(
+        fs.existsSync(path.join(import.meta.dir, entry.where)),
+        `"${claim}" names ${entry.where}, which does not exist`,
+      ).toBe(true)
+    }
+  })
+
+  test("the remaining claims are the size of the job left", () => {
+    // Reads as a progress counter on purpose: while this number is above zero, that many statements
+    // about `session/runner/llm.ts` still have NO executing coverage on any platform.
+    const remaining = CLAIMS.filter((claim) => STATUS[claim] === undefined)
+    expect(remaining.length).toBe(CLAIMS.length - Object.keys(STATUS).length)
+    expect(remaining.length).toBe(76)
+  })
+
+  test("the remaining declarations are 82 tests, and the ledger knows why", () => {
     // The two numbers look like a discrepancy until you know about the loop: three titles are template
     // literals iterated over `fragmentKinds`, which has three entries, so those three declarations
-    // produce nine tests. 74 + 9 = 83 — the exact skip count `bun run test --only=core` reports for
-    // this file on win32, which is how the ledger stays tied to something observable.
-    const parameterised = CLAIMS.filter((claim) => claim.includes("${kind}"))
+    // produce nine tests. That is how the ledger stays tied to something observable — this is the exact
+    // win32 skip count `bun test test/session-runner.test.ts` reports for the file, and
+    // `script/test-baseline.json`'s `units.core` must move with it on every ported slice.
+    //
+    // It was 77 → 83 when the ledger landed; one ported claim (unparameterised) makes it 76 → 82.
+    const remaining = CLAIMS.filter((claim) => STATUS[claim] === undefined)
+    const parameterised = remaining.filter((claim) => claim.includes("${kind}"))
     expect(parameterised.length).toBe(3)
     const FRAGMENT_KINDS = 3
-    expect(CLAIMS.length - parameterised.length + parameterised.length * FRAGMENT_KINDS).toBe(83)
+    expect(remaining.length - parameterised.length + parameterised.length * FRAGMENT_KINDS).toBe(82)
   })
 })
