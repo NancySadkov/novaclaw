@@ -100,10 +100,35 @@ const OUT_OF_BAND = [
 export const HARNESS_SESSION = SessionV2.ID.make("ses_harness")
 
 /**
+ * 🔴 **The isolation this whole fixture rests on is bought by ONE environment variable, and nothing
+ * used to say so.** Every harness seeds the *same* session id, which is only safe because
+ * `test/preload.ts` sets `NOVACLAW_DB=":memory:"` — `Database.node` resolves its filename once at
+ * module load, so with a real file path every harness in the process would share one database **and one
+ * `ses_harness` row**. Two tests would then see each other's messages, and it would present as a flaky
+ * drain rather than as a configuration change: the second test's context would carry the first test's
+ * turns, which reads exactly like the runner mis-projecting.
+ *
+ * Per ruling 1 an invariant whose violation compiles green ships with a mechanical check, so this
+ * asserts rather than assumes. It is checked at harness construction — the moment before the assumption
+ * would be relied on — and names the file to fix.
+ */
+function assertIsolationHolds() {
+  const db = process.env["NOVACLAW_DB"]
+  if (db !== ":memory:") {
+    throw new Error(
+      `runner-harness requires NOVACLAW_DB=":memory:" for per-test isolation, got ${JSON.stringify(db)}. ` +
+        `Every harness seeds the same session id (${HARNESS_SESSION}); on a shared file database they ` +
+        `would share one row. Set it in packages/core/test/preload.ts, or give each harness its own id.`,
+    )
+  }
+}
+
+/**
  * Build one harness. Call it INSIDE a test, never at module scope — module scope is how the shared
  * state got there in the first place.
  */
 export function makeRunnerHarness(script: RunnerScript = {}) {
+  assertIsolationHolds()
   const requests: LLMRequest[] = []
   const titleRequests: LLMRequest[] = []
   const maintenanceRequests: LLMRequest[] = []

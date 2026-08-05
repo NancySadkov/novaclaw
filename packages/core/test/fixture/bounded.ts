@@ -46,11 +46,63 @@ export async function runBounded<A, E>(
     ])
   } finally {
     if (timer !== undefined) clearTimeout(timer)
-    // Always, on every exit path. A bound that reports a runaway and then leaves it running has moved
-    // the wedge from this test into the next one, where it will be blamed on innocent code.
-    await Effect.runPromise(Fiber.interrupt(fiber)).then(
-      () => undefined,
-      () => undefined,
-    )
+    // Always interrupt, on every exit path. A bound that reports a runaway and then leaves it running
+    // has moved the wedge from this test into the next one, where it will be blamed on innocent code.
+    //
+    // 🔴 ⚠️ **BUT THE INTERRUPT ITSELF MUST BE BOUNDED — this line used to be a bare `await` and that
+    // made the helper the exact hang it exists to prevent (measured 2026-08-05).** `Effect.interrupt`
+    // cannot land while the fiber sits in an UNINTERRUPTIBLE region, and `Effect.acquireRelease` makes
+    // every acquire uninterruptible — which is how every scoped resource in the graph is taken,
+    // including `EffectFlock.acquire` (`util/effect-flock.ts`, "acquire is uninterruptible"), whose own
+    // wait is `timeoutMs: 5 * 60_000`. So a case parked in an acquire would: trip the 60 s bound, throw
+    // as designed, and then **block in this `finally` for as long as the acquire takes**, printing
+    // nothing. Observed as a bun process at 0 s CPU against 247–412 s elapsed holding ~6.7 GB of commit
+    // — indistinguishable from the wedge this file was written to make impossible.
+    //
+    // So: fire the interrupt, give it a short grace period, and return regardless. A teardown that can
+    // outlive its own timeout is not a timeout.
+    //
+    // ⚠️ **The grace timer is CLEARED, and that is not tidiness.** A pending `setTimeout` keeps the
+    // event loop alive, so leaving one behind per call would delay process exit by up to the grace
+    // period — reintroducing "the tests passed and the process would not exit" as a *new* leak inside
+    // the fix for the old one. Found by reading, before this file had ever been run.
+    let graceTimer: ReturnType<typeof setTimeout> | undefined
+    try {
+      await Promise.race([
+        Effect.runPromise(Fiber.interrupt(fiber)).then(
+          () => undefined,
+          () => undefined,
+        ),
+        new Promise<void>((resolve) => {
+          graceTimer = setTimeout(resolve, INTERRUPT_GRACE_MS)
+        }),
+      ])
+    } finally {
+      if (graceTimer !== undefined) clearTimeout(graceTimer)
+    }
   }
 }
+
+/**
+ * How long to wait for an interrupt to land before giving up on it.
+ *
+ * Deliberately short. If the fiber is interruptible the interrupt lands in milliseconds (measured: a
+ * cooperative spin died in 209 ms). If it is not, no amount of waiting here helps — the process-level
+ * backstop in `script/test.ts` is what remains, and blocking the whole suite meanwhile buys nothing.
+ *
+ * ⚠️ **This is a deliberate MIDDLE, not a free win, and the trade is worth knowing before you tune it.**
+ * Interruption is what runs a fiber's finalizers, and in this graph a finalizer is what releases the
+ * **one-permit semaphore guarding the SQLite connection** (`database/sqlite.bun.ts` — `Semaphore.make(1)`
+ * plus an `uninterruptibleMask` transaction acquirer, and `semaphore.take(1)` has no timeout). So the
+ * original bare `await` was not merely wrong: awaiting is correct for permit hygiene and unbounded in
+ * the worst case, while returning early is prompt and may abandon a held permit. Long enough for
+ * finalizers in the normal case, bounded in the pathological one.
+ *
+ * ✅ **The blast radius of getting this wrong is ONE test, not the file** — worth knowing before anyone
+ * lengthens the grace out of caution. Each `drive()` builds its own root memo map, hence its own
+ * `:memory:` database, connection and semaphore (`Database.node` has `deps: []`, and
+ * `effect/layer-node.ts:299-301` returns such a node's layer unchanged, so sharing is a property of the
+ * memo map). A permit abandoned here dies with its harness. `runner-harness-drain.test.ts`'s isolation
+ * case is the standing proof: it would fail outright if two harnesses shared a database.
+ */
+const INTERRUPT_GRACE_MS = 1_000

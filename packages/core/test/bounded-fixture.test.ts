@@ -44,6 +44,32 @@ describe("runBounded", () => {
     )
   })
 
+  test("🔴 an UNINTERRUPTIBLE runaway still fails by name — the bound must not block in its own cleanup", async () => {
+    // The defect this pins cost hours (2026-08-05). `runBounded` used to `await` the interrupt in its
+    // `finally`. An interrupt cannot land while the fiber is inside an uninterruptible region, and
+    // `Effect.acquireRelease` makes EVERY acquire uninterruptible — that is how every scoped resource in
+    // the runner graph is taken, `EffectFlock.acquire` among them, and its own wait is five minutes.
+    //
+    // So the helper would trip its bound, throw exactly as designed, and then block in the `finally`
+    // for as long as the acquire took, printing nothing. Observed as bun at 0s CPU against 247-412s
+    // elapsed holding ~6.7GB commit — indistinguishable from the wedge this file exists to prevent, and
+    // it defeated every other test here because they all use interruptible spins.
+    //
+    // The fix bounds the teardown too. This test is the negative control for that: a spin wrapped in
+    // `Effect.uninterruptible` must still reject PROMPTLY.
+    const spin = Effect.uninterruptible(
+      Effect.gen(function* () {
+        for (;;) yield* Effect.yieldNow
+      }),
+    )
+    const started = Date.now()
+    await expect(runBounded(spin, { ms: 200, label: "uninterruptible acquire never settled" })).rejects.toThrow(
+      /uninterruptible acquire never settled/,
+    )
+    // The whole point: bound (200ms) + interrupt grace (1s) + slack. Before the fix this never returned.
+    expect(Date.now() - started, "runBounded blocked waiting for an interrupt that cannot land").toBeLessThan(3_000)
+  })
+
   test("the runaway is interrupted, not merely abandoned", async () => {
     // A bound that reports and walks away moves the wedge into the next test, where it gets blamed on
     // innocent code. The spin increments a counter; after the bound fires and we wait, it must stop.
