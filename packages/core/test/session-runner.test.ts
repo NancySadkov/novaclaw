@@ -744,45 +744,8 @@ describe("SessionRunnerLLM", () => {
   // "preserves the baseline while context is temporarily unavailable" — PORTED to
   // session-runner-context.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("rebuilds the baseline directly after completed compaction", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      const events = yield* EventV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First" }), resume: false })
-
-      requests.length = 0
-      response = []
-      yield* session.resume(sessionID)
-      const compactionID = SessionMessage.ID.create()
-      yield* events.publish(SessionEvent.Compaction.Started, {
-        sessionID,
-        messageID: compactionID,
-        timestamp: DateTime.makeUnsafe(1),
-        reason: "manual",
-      })
-      yield* events.publish(SessionEvent.Compaction.Ended, {
-        sessionID,
-        messageID: compactionID,
-        timestamp: DateTime.makeUnsafe(2),
-        reason: "manual",
-        text: "summary",
-        recent: "",
-        ...(yield* currentPrefix()),
-      })
-      systemBaseline = "Replacement context"
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Second" }), resume: false })
-      yield* session.resume(sessionID)
-
-      expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([
-        ["Initial context"],
-        ["Replacement context"],
-      ])
-      yield* replaySessionProjection(sessionID)
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Third" }), resume: false })
-      yield* session.resume(sessionID)
-    }),
-  )
+  // "rebuilds the baseline directly after completed compaction" — PORTED to
+  // session-runner-context.test.ts and deleted here (S3, 2026-08-05).
 
   // "automatically compacts into a completed summary and retained recent turn" — PORTED to
   // session-runner-compaction.test.ts and deleted here (S3, 2026-08-05).

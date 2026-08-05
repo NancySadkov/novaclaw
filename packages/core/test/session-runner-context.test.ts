@@ -375,4 +375,55 @@ describe("SessionRunnerLLM — durable system context", () => {
     // FIDELITY, so the two counts are compared to each other.
     expect(replayed, "replay must reproduce the transcript exactly").toHaveLength(before.length)
   })
+
+  test("rebuilds the baseline directly after completed compaction", async () => {
+    // ⭐ THE EXCEPTION to every other baseline claim in this file, and the reason they are all worth
+    // having together. Elsewhere the prefix is established once and never rewritten — a change arrives
+    // chronologically. After a COMPLETED compaction it IS rebuilt: turn 2 carries the new baseline, not
+    // the old one.
+    //
+    // That is not an inconsistency. Compaction is the one moment the prefix is being replaced anyway,
+    // so rebuilding costs nothing that was not already lost — and NOT rebuilding would pin a stale
+    // context in front of a freshly summarised transcript for the rest of the session.
+    const harness = makeRunnerHarness({ turns: [completeTurn("t1", "One"), completeTurn("t2", "Two")] })
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        const events = yield* EventV2.Service
+
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+
+        const compactionID = SessionMessage.ID.create()
+        yield* events.publish(SessionEvent.Compaction.Started, {
+          sessionID: HARNESS_SESSION,
+          messageID: compactionID,
+          timestamp: DateTime.makeUnsafe(1),
+          reason: "manual",
+        })
+        yield* events.publish(SessionEvent.Compaction.Ended, {
+          sessionID: HARNESS_SESSION,
+          messageID: compactionID,
+          timestamp: DateTime.makeUnsafe(2),
+          reason: "manual",
+          text: "summary",
+          recent: "",
+          ...(yield* harness.currentPrefix),
+        })
+
+        harness.controls.systemBaseline = "Replacement context"
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Second" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+      }),
+      "claim — compaction rebuilds the baseline",
+    )
+
+    expect(durableContext(harness.requests[0]?.system), "before compaction: the original").toMatch(/^Initial context/)
+    expect(
+      durableContext(harness.requests[1]?.system),
+      "after compaction: REBUILT, unlike every other baseline change",
+    ).toMatch(/^Replacement context/)
+  })
 })

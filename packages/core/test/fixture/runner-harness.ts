@@ -1,7 +1,7 @@
 import { Effect, Layer, Schema, Stream } from "effect"
 import { LLMClient, LLMEvent, Model, type LLMClientShape, type LLMError, type LLMRequest } from "@novaclaw/llm"
 import { runBounded } from "./bounded"
-import { asc, eq } from "drizzle-orm"
+import { asc, desc, eq } from "drizzle-orm"
 import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
 import { Database } from "@novaclaw/core/database/database"
 import { makeLocationNode } from "@novaclaw/core/effect/app-node"
@@ -33,6 +33,7 @@ import {
   SessionMessageTable,
   SessionTable,
 } from "@novaclaw/core/session/sql"
+import { SessionHistory } from "@novaclaw/core/session/history"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SystemContext } from "@novaclaw/core/system-context"
 import { SystemContextRegistry } from "@novaclaw/core/system-context/registry"
@@ -597,6 +598,25 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
   const seed = seedSession(HARNESS_SESSION)
 
   /**
+   * The canonical prefix a compaction would replace: `{ prefixSeq, prefixHash }` for the session as it
+   * stands right now. A `Compaction.Ended` event must carry these, and they cannot be invented — the
+   * hash is checked against the messages the summary claims to replace.
+   */
+  const currentPrefix = Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    const row = yield* db
+      .select({ seq: SessionMessageTable.seq })
+      .from(SessionMessageTable)
+      .where(eq(SessionMessageTable.session_id, HARNESS_SESSION))
+      .orderBy(desc(SessionMessageTable.seq))
+      .limit(1)
+      .get()
+      .pipe(Effect.orDie)
+    const prefixSeq = row?.seq ?? 0
+    return { prefixSeq, prefixHash: yield* SessionHistory.prefixHash(db, HARNESS_SESSION, prefixSeq) }
+  })
+
+  /**
    * Rebuild a session's messages FROM ITS EVENTS ALONE — drop the projected rows, then replay.
    *
    * ⭐ This is how a claim proves a projection is **derivable rather than incidental**: if replaying the
@@ -663,6 +683,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     seed,
     seedSession,
     replayProjection,
+    currentPrefix,
     controls,
   }
 }
