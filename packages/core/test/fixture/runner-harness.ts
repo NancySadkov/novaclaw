@@ -111,6 +111,24 @@ const OUT_OF_BAND = [
 ] as const
 
 /**
+ * 🔴 **The COMPACTION SUMMARY carries no system prompt and IS real work.**
+ *
+ * `SessionCompaction` sends `LLM.request({ model, messages: [Message.user(prompt)], tools: [] })` —
+ * no `system` at all. The positive rule below ("carries the agent system ⇒ interactive, else
+ * out-of-band") therefore routed it to `utilityRequests` and handed it an empty stream, so the
+ * summarizer produced nothing and the runner reported `compacted: false`.
+ *
+ * ⚠️ **That cost four iterations and generated seven hypotheses, every one about the PRODUCT** — the
+ * model's limits, the keep window, the context baseline, config freezing (filed as a ruling-3
+ * violation and retracted), the token guard. Instrumenting `compactAfterOverflow` settled it in one
+ * run: `PAST GATE2 — publishing Started` with `promptTokens=661 limit=3950`. The compactor was
+ * working perfectly and being starved by the fixture.
+ * ⭐ **The lesson: "no system prompt" is not a synonym for "not part of the turn."** A request is
+ * out-of-band because of what it IS, so the summary has to be recognised by name.
+ */
+const COMPACTION_SUMMARY_MARKER = "anchored summary"
+
+/**
  * What the runner writes as a chronological System message when a context producer disappears.
  * Exported so a claim asserts against the fixture's own wording instead of re-typing it — a literal in
  * two places is a literal that will disagree with itself.
@@ -278,8 +296,21 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
         // present and future utility pass falls out on the other side by construction.
         const parts = request.system ?? []
         if (parts.length === 0) {
-          utilityRequests.push(request)
-          return Stream.fromIterable(utilityTurns.shift() ?? [])
+          // …unless it is the compaction summary, which carries no agent system but IS the work.
+          const isSummary = (request.messages ?? []).some((message) =>
+            (message.content as ReadonlyArray<{ type: string; text?: string }> | undefined)?.some(
+              (content) => content.type === "text" && (content.text ?? "").includes(COMPACTION_SUMMARY_MARKER),
+            ),
+          )
+          if (!isSummary) {
+            utilityRequests.push(request)
+            return Stream.fromIterable(utilityTurns.shift() ?? [])
+          }
+          requests.push(request)
+          const summaryTurn = turns.shift()
+          return Array.isArray(summaryTurn)
+            ? Stream.fromIterable(summaryTurn)
+            : (summaryTurn ?? Stream.fromIterable([]))
         }
         const system = JSON.stringify(parts)
         const channel = OUT_OF_BAND.find((entry) => system.includes(entry.marker))?.channel
