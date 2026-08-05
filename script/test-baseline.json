@@ -46,8 +46,26 @@
     ]
   },
   "peaks": {
+    "script": 281,
+    "schema": 692,
+    "protocol": 698,
+    "effect-drizzle-sqlite": 400,
+    "http-recorder": 709,
+    "llm": 758,
+    "sdk-js": 1293,
+    "session-ui": 547,
+    "ui": 498,
     "core": 1007,
-    "schema": 692
+    "app:unit": 908,
+    "app:browser": 648,
+    "desktop": 502,
+    "server": 830,
+    "novaclaw:server": 2133,
+    "novaclaw:v2": 1004,
+    "novaclaw:config": 991,
+    "novaclaw:tool": 1692,
+    "novaclaw:control-plane": 846,
+    "novaclaw:fixture": 874
   },
   "peaksNote": "Measured peak MB per run unit — the input to the memory ladder in script/lib/memory-plan.ts. Seeded 2026-08-05 from a sampled run (notes/test-harness-memory.md): core was measured by hand across five runs varying under 3%, schema by the runner's own sampler. A unit that is ABSENT plans with the generous UNPROFILED_PEAK_MB default and will therefore shard on a tight box until one run records it — the numbers the run prints under '-- peak memory --' are what to paste here. REPORTED, never enforced: this suite's wall clock swings 24% on a byte-identical tree and memory swings with it, so arming a ratchet wants data first."
 }
