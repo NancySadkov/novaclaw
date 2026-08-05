@@ -2,7 +2,6 @@ import { Show, type JSX } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { SessionPermissionDock } from "@/pages/session/composer/session-permission-dock"
 import { SessionQuestionDock } from "@/pages/session/composer/session-question-dock"
-import { SessionFollowupDock } from "@/pages/session/composer/session-followup-dock"
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
 import { SessionResponderDock } from "@/pages/session/composer/session-responder-dock"
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
@@ -142,14 +141,6 @@ export function SessionComposerRegion(props: {
                     onResume={recovery.onResume}
                   />
                 )}
-              </Show>
-              <Show when={controller.followup()?.items.length}>
-                <SessionFollowupDock
-                  items={controller.followup()!.items}
-                  sending={controller.followup()!.sending}
-                  onSend={controller.followup()!.onSend}
-                  onEdit={controller.followup()!.onEdit}
-                />
               </Show>
               <Show
                 when={controller.child()}

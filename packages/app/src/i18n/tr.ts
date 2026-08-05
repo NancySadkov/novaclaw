@@ -515,12 +515,6 @@ export const dict = {
   "session.todo.title": "Görevler",
   "session.todo.collapse": "Daralt",
   "session.todo.expand": "Genişlet",
-  "session.followupDock.summary.one": "{{count}} sıradaki mesaj",
-  "session.followupDock.summary.other": "{{count}} sıradaki mesaj",
-  "session.followupDock.sendNow": "Şimdi gönder",
-  "session.followupDock.edit": "Düzenle",
-  "session.followupDock.collapse": "Sıradaki mesajları daralt",
-  "session.followupDock.expand": "Sıradaki mesajları genişlet",
   "session.revertDock.summary.one": "{{count}} geri alınan mesaj",
   "session.revertDock.summary.other": "{{count}} geri alınan mesaj",
   "session.revertDock.collapse": "Geri alınan mesajları daralt",
@@ -629,11 +623,6 @@ export const dict = {
   "settings.general.row.terminalFont.description": "Customise the font used in the terminal",
   "settings.general.row.uiFont.title": "Arayüz Yazı Tipi",
   "settings.general.row.uiFont.description": "Arayüz genelinde kullanılan yazı tipini özelleştirin",
-  "settings.general.row.followup.title": "Takip davranışı",
-  "settings.general.row.followup.description":
-    "Takip komutlarının hemen yönlendirilmesini mi yoksa sırada beklemesini mi istediğinizi seçin",
-  "settings.general.row.followup.option.queue": "Sıra",
-  "settings.general.row.followup.option.steer": "Yönlendir",
 
   "settings.general.row.wayland.title": "Yerel Wayland kullan",
   "settings.general.row.wayland.description":

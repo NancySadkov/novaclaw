@@ -240,7 +240,6 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/pages/recipes.tsx": ["icon"],
   "app/src/pages/registry.tsx": ["icon"],
   "app/src/pages/session.tsx": ["button", "select", "tabs"],
-  "app/src/pages/session/composer/session-followup-dock.tsx": ["button", "icon-button"],
   "app/src/pages/session/composer/session-permission-dock.tsx": ["button", "icon"],
   "app/src/pages/session/composer/session-question-dock.tsx": ["button", "icon"],
   "app/src/pages/session/composer/session-responder-dock.tsx": ["button"],
@@ -278,8 +277,8 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
 const V1_COMPONENT_CEILING = 38
 
 /** Measured totals, pinned so the ledger stays a measurement rather than an aspiration. */
-const V1_CALL_SITE_FILES = 88
-const V1_CALL_SITE_PAIRS = 162
+const V1_CALL_SITE_FILES = 87
+const V1_CALL_SITE_PAIRS = 160
 
 // ---------------------------------------------------------------------------------------------
 // The sweep. Pure functions first so the negative controls can drive them without touching disk.

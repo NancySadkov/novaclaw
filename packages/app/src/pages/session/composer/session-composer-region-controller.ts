@@ -8,13 +8,6 @@ import { getSessionHandoff, setSessionHandoff } from "@/pages/session/handoff"
 import type { SessionComposerController } from "./session-composer-state"
 import type { SessionProviderRecovery } from "./session-provider-recovery"
 
-export type SessionComposerFollowupDock = {
-  items: { id: string; text: string }[]
-  sending?: string
-  onSend: (id: string) => void
-  onEdit: (id: string) => void
-}
-
 export type SessionComposerRevertDock = {
   items: { id: string; text: string }[]
   restoring?: string
@@ -34,7 +27,6 @@ export function createSessionComposerRegionController(input: {
     collapsed: Accessor<boolean>
     onToggle: () => void
   }
-  followup: Accessor<SessionComposerFollowupDock | undefined>
   revert: Accessor<SessionComposerRevertDock | undefined>
   providerRecovery: Accessor<{ sessionID: string; recovery: SessionProviderRecovery; onResume: () => void } | undefined>
   onResponseSubmit: () => void
@@ -127,7 +119,6 @@ export function createSessionComposerRegionController(input: {
     sessionID: input.sessionID,
     centered: input.centered,
     todo: input.todo,
-    followup: input.followup,
     revert: input.revert,
     providerRecovery: input.providerRecovery,
     onResponseSubmit: input.onResponseSubmit,
