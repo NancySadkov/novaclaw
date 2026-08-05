@@ -1,11 +1,11 @@
 {
-  "note": "Baseline for `bun run test`. `units` = tests bun reported SKIPPED per run unit; `failing` = failures PINNED as known, by name. Both are ratchets: any change fails the run and prints what moved. Pin only failures that are understood and filed — never to make a red go away. Seeded 2026-07-27 (v0.2.0 PREP Wave 0).",
+  "note": "Baseline for `bun run test`. `units` = tests bun reported SKIPPED per run unit; `failing` = failures PINNED as known, by name. Both are ratchets: any change fails the run and prints what moved. Pin only failures that are understood and filed â€” never to make a red go away. Seeded 2026-07-27 (v0.2.0 PREP Wave 0).",
   "reasons": {
-    "novaclaw:server": "Pre-existing Windows-from-source failures in the promoted novaclaw:server unit. DO NOT un-pin on a single green run: measured 2026-07-28, SEVENTEEN of these flip between pass and fail across consecutive full-gate runs on an otherwise unchanged tree (they reported now-passing at 565s wall, then NEW FAILURE at 318s). They are FLAKY, not fixed — the unit boots a real server per suite and its runtime already swings +/-30%. Un-pinning them makes the next run red for the opposite reason. The ledger is the authority on the count; prose here drifts."
+    "novaclaw:server": "Pre-existing Windows-from-source failures in the promoted novaclaw:server unit. DO NOT un-pin on a single green run: measured 2026-07-28, SEVENTEEN of these flip between pass and fail across consecutive full-gate runs on an otherwise unchanged tree (they reported now-passing at 565s wall, then NEW FAILURE at 318s). They are FLAKY, not fixed â€” the unit boots a real server per suite and its runtime already swings +/-30%. Un-pinning them makes the next run red for the opposite reason. The ledger is the authority on the count; prose here drifts."
   },
   "units": {
     "llm": 30,
-    "core": 88,
+    "core": 91,
     "novaclaw:server": 22,
     "novaclaw:v2": 3,
     "schema": 0,
@@ -39,10 +39,15 @@
       "mcp HttpApi > serves deterministic OAuth endpoints",
       "mcp HttpApi > serves status endpoint",
       "project directories and copies endpoints > lists directories and manages git worktree copies",
-      "promptAsync routes to the V2 native engine (F1b: one engine) > fresh session + model routes promptAsync to V2 (prompted on stream, busy→idle bracket, zero legacy rows)",
+      "promptAsync routes to the V2 native engine (F1b: one engine) > fresh session + model routes promptAsync to V2 (prompted on stream, busyâ†’idle bracket, zero legacy rows)",
       "v2 SDK error shape > 400 schema rejection: SDK extracts the field-level reason from the NamedError body",
       "v2 location HttpApi > returns command and skill snapshots with resolved locations",
       "workspace HttpApi > proxies remote workspace requests selected from session ownership"
     ]
-  }
+  },
+  "peaks": {
+    "core": 1007,
+    "schema": 692
+  },
+  "peaksNote": "Measured peak MB per run unit — the input to the memory ladder in script/lib/memory-plan.ts. Seeded 2026-08-05 from a sampled run (notes/test-harness-memory.md): core was measured by hand across five runs varying under 3%, schema by the runner's own sampler. A unit that is ABSENT plans with the generous UNPROFILED_PEAK_MB default and will therefore shard on a tight box until one run records it — the numbers the run prints under '-- peak memory --' are what to paste here. REPORTED, never enforced: this suite's wall clock swings 24% on a byte-identical tree and memory swings with it, so arming a ratchet wants data first."
 }

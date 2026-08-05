@@ -61,15 +61,25 @@ import { spawnSync } from "node:child_process"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 
-import { enforce } from "./lib/heavy-guard"
+import { enforce, headroomBytes, topConsumers } from "./lib/heavy-guard"
+import * as MemoryPlan from "./lib/memory-plan"
+import * as PeakSampler from "./lib/peak-sampler"
 import { readFailingNames, stripAnsi } from "./lib/test-output"
 import { typecheckUnits } from "./lib/typecheck-units"
 
-// Refuse to run alongside a build, local inference server or another suite, or on a machine already
-// short of memory. The test runner has no override and requires a real pressure measurement: tests are
-// evidence, so knowingly running one in conditions that can fabricate a timeout is never useful.
+/**
+ * Refuse to run alongside a build, local inference server or another suite, or on a machine whose
+ * commit charge is already near its limit. No override, and a real measurement is required: tests
+ * are evidence, so knowingly running one in conditions that can fabricate a timeout is never useful.
+ *
+ * ⚠️ `minimumFreeBytes: 0` DISARMS the guard's flat free-RAM floor here, deliberately, and this file
+ * takes that decision over instead (see `planUnit`). The flat 6 GB floor was ~6× the measured need of
+ * the heaviest unit and made the gate unrunnable on an ordinary desktop; builds keep it, because a
+ * build genuinely does cost that much. The other two arms — concurrency and the commit ceiling — are
+ * unchanged and still absolute, because they are about the MACHINE rather than about one unit.
+ */
 const enforceTestMemory = (label: string) =>
-  enforce(label, process.argv, { allowOverride: false, requireMeasurement: true })
+  enforce(label, process.argv, { allowOverride: false, requireMeasurement: true, minimumFreeBytes: 0 })
 enforceTestMemory("the test suite")
 
 const FULL = process.argv.includes("--full")
@@ -81,6 +91,8 @@ const PACKAGE_WALLCLOCK_MS = 150_000 // a HANG backstop, not a normal budget
 // would read exactly like a real failure — so the ceiling is set far above any plausible run (core's
 // ~2k tests produce a few hundred KB) rather than at bun's 1 MB default.
 const CAPTURE_MAX_BYTES = 64 * 1024 * 1024
+/** Above this, a peak sample is another process's memory rather than ours — see `spawnOnce`. */
+const IMPLAUSIBLE_PEAK_MB = 8192
 
 /**
  * `packages/novaclaw/test/` subdirs promoted OUT of the `--full` tier into fast-tier run units of their
@@ -200,6 +212,10 @@ type Result = {
   skipped: number | undefined
   /** The names bun reported as failing, for the expected-failure ledger. */
   failing: string[]
+  /** Peak MB this unit's processes held, when the sampler could measure it. Feeds the peak profile. */
+  peakMb?: number
+  /** How many shards this unit was split into, when memory pressure forced the degraded rung. */
+  shards?: number
 }
 const results: Result[] = []
 
@@ -320,12 +336,77 @@ function reapOrphans(pid: number | undefined, label: string) {
  * the single source of truth for how it is checked (`app` needs `tsgo -b`, `desktop` needs two passes),
  * and a package that changes its command does not have to change this file.
  */
-function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs: number) {
-  // Re-check BETWEEN EVERY UNIT, not only once at suite startup. A passed test can still leak a child
-  // or retain several GB; letting the next unit start is the cascading false-failure shape observed on
-  // 2026-07-27. This also catches a local model or build started while the suite was in progress.
-  enforceTestMemory(`${kind} unit ${name}`)
-  process.stdout.write(`\n\x1b[1m▶ ${name}\x1b[0m\n`)
+/**
+ * The peak profile: what each unit was last MEASURED to cost, in MB.
+ *
+ * Read separately (and very tolerantly) from the full baseline below, because the ladder needs it
+ * before the first unit runs while the ledgers are only read at the end. An unreadable or absent
+ * profile is the unprofiled state, not a fault: every unit then plans with the generous default.
+ */
+function readPeaks(): MemoryPlan.PeakProfile {
+  try {
+    const parsed = JSON.parse(readFileSync(join(import.meta.dir, "test-baseline.json"), "utf8")) as {
+      peaks?: Record<string, number>
+    }
+    const peaks = parsed.peaks ?? {}
+    return Object.fromEntries(Object.entries(peaks).filter(([, mb]) => Number.isFinite(mb) && mb > 0))
+  } catch {
+    return {}
+  }
+}
+const peakProfile = readPeaks()
+
+/** Every unit name this invocation could run — the candidate list for "what would still fit". */
+const allUnitNames = () => PACKAGES.map((p) => p.name)
+
+/**
+ * Decide the rung for one unit, or refuse with something the reader can act on.
+ *
+ * ⚠️ This REPLACES the flat 6 GB free-RAM floor for tests. The reasoning, and the measurements it
+ * rests on, are in `lib/memory-plan.ts` and `notes/test-harness-memory.md`.
+ */
+function planUnit(name: string, kind: Kind): MemoryPlan.Plan {
+  // A typecheck is a different beast — `tsgo --noEmit` on `packages/novaclaw` peaks ~3.8 GB and
+  // cannot be sharded at all — so it keeps the conservative floor rather than this ladder.
+  const peakMb = kind === "typecheck" ? 4096 : MemoryPlan.peakFor(peakProfile, name)
+  const headroom = headroomBytes()
+  if (headroom === undefined) {
+    // Fail closed, exactly as `requireMeasurement` does: an unmeasurable host is not a safe one.
+    process.stderr.write(
+      `\n\x1b[31mRefusing to start ${kind} unit ${name}: host memory could not be measured.\x1b[0m\n` +
+        `Neither free RAM nor Windows commit charge could be read, so the harness would only be\n` +
+        `guessing that this unit fits.\n\n`,
+    )
+    process.exit(2)
+  }
+  const plan = MemoryPlan.planFor(peakMb, headroom)
+  if (plan.mode !== "refuse") return plan
+
+  const gb = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(1)} GB`
+  const fits = MemoryPlan.unitsThatFit(peakProfile, allUnitNames(), headroom)
+  const consumers = topConsumers()
+  process.stderr.write(
+    `\n\x1b[31mRefusing to start ${kind} unit ${name}: the machine cannot fit it, even split.\x1b[0m\n` +
+      `  needs   ${gb(plan.requiredBytes)}  (measured peak ${peakMb} MB × ${MemoryPlan.WHOLE_HEADROOM_FACTOR}` +
+      ` + ${gb(MemoryPlan.SLACK_BYTES)} slack)\n` +
+      `  sharded ${gb(MemoryPlan.MIN_VIABLE_BYTES)}  (one shard's floor — peak is nearly flat in file count,` +
+      ` so splitting harder does not help)\n` +
+      `  have    ${gb(headroom)}  (the smaller of free RAM and commit headroom)\n` +
+      (consumers.length ? `  holding it: ${consumers.join(", ")}\n` : "") +
+      (fits.length ? `  still fits right now: bun run test --only=${fits[0]}${fits.length > 1 ? `  (+${fits.length - 1} more)` : ""}\n` : "") +
+      `\n`,
+  )
+  process.exit(2)
+}
+
+/**
+ * ONE sampler for the whole suite, started before the first unit — see `lib/peak-sampler.ts` for why
+ * per-unit sampling measured nothing for anything that finished in under a second.
+ */
+const sampler = PeakSampler.start()
+
+/** One spawn of one command, with its peak sampled. The unit-level orchestration is in `run`. */
+function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], wallclockMs: number) {
   const start = Date.now()
   const proc = spawnSync("bun", argv, {
     cwd: dir,
@@ -353,9 +434,21 @@ function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs:
         `   flushes nothing. Silence here is a property of the kill, not evidence the child was quiet.)\n`,
     )
 
+  const sample = kind === "test" ? sampler.window(start, Date.now()) : {}
+
   let note = ""
   if (timedOut) {
-    note = `WALL-CLOCK KILL at ${wallclockMs / 1000}s (hang; a SIGKILLed bun child often flushes no stderr)`
+    // ⚠️ A wall-clock kill and a paging stall are indistinguishable in a summary row, and the second
+    // is the FALSE FAILURE the memory guard exists to prevent — so when it happens anyway, say which
+    // it was. The sampler already holds the answer; without this the reader hunts a hang that is not
+    // there (which is exactly how 2026-07-27's cascade was misread for a week).
+    const pressure =
+      sample.hostCommitPct !== undefined && sample.hostCommitPct >= 90
+        ? ` — host commit peaked ${sample.hostCommitPct}%, so this is likely PAGING rather than a hang`
+        : sample.hostCommitPct !== undefined
+          ? ` — host commit peaked only ${sample.hostCommitPct}%, so this is a genuine hang, not memory`
+          : ""
+    note = `WALL-CLOCK KILL at ${wallclockMs / 1000}s${pressure} (a SIGKILLed bun child often flushes no stderr)`
   } else if (errno === "ENOBUFS") {
     note = `output exceeded ${CAPTURE_MAX_BYTES / 1024 / 1024} MB — the child was killed by the CAPTURE, not by a test`
   } else if (errno) {
@@ -365,16 +458,66 @@ function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs:
     note = `exit ${proc.status}${excerpt ? ` · ${excerpt}` : ""}`
   }
 
+  // ⚠️ Discard a sample nothing on this machine could plausibly have produced. The sampler sums every
+  // `bun` but the runner (see lib/peak-sampler.ts for why the precise walk was abandoned), so a stray
+  // bun inflates it — once, measured, `core` reported 12 014 MB against a hand-measured ~1 000. A
+  // number that wrong feeds the ladder, so refusing to record it is the honest outcome; the profile
+  // simply stays as it was and the unit plans with its previous figure or the generous default.
+  const believable = sample.treeMb !== undefined && sample.treeMb <= IMPLAUSIBLE_PEAK_MB
+  return { ok, ms, note, captured, ...(believable ? { peakMb: sample.treeMb } : {}) }
+}
+
+/**
+ * Run one unit: pick the rung from measured headroom, spawn it whole or in shards, record what it did.
+ *
+ * ⚠️ **A SHARDED result is weaker than a whole one and is labelled as such everywhere it appears.**
+ * Splitting changes which files share a process, and that changes behaviour — measured 2026-08-05,
+ * eight green batches over `core` concealed a wedge that only exists when the unit runs whole. The
+ * fallback exists so a memory-poor machine gets most of the signal, never so it can claim the gate.
+ */
+function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs: number) {
+  // Re-check BETWEEN EVERY UNIT, not only once at suite startup. A passed test can still leak a child
+  // or retain several GB; letting the next unit start is the cascading false-failure shape observed on
+  // 2026-07-27. This also catches a local model or build started while the suite was in progress.
+  enforceTestMemory(`${kind} unit ${name}`)
+  const plan = planUnit(name, kind)
+  const sharded = plan.mode === "sharded" && kind === "test" ? plan.shards : undefined
+
+  process.stdout.write(
+    `\n\x1b[1m▶ ${name}\x1b[0m${sharded ? `  \x1b[33m(low memory: split into ${sharded} shards — DEGRADED)\x1b[0m` : ""}\n`,
+  )
+
+  const runs = sharded
+    ? Array.from({ length: sharded }, (_, i) =>
+        spawnOnce(`${name} shard ${i + 1}/${sharded}`, kind, dir, [...argv, `--shard=${i + 1}/${sharded}`], wallclockMs),
+      )
+    : [spawnOnce(name, kind, dir, argv, wallclockMs)]
+
+  const captured = runs.map((r) => r.captured).join("\n")
+  // A skip count is only meaningful if EVERY shard produced a summary — one unreadable shard makes the
+  // total an undercount, which the ledger would then read as a skip that disappeared.
+  const perShardSkips = kind === "test" ? runs.map((r) => readSkipCount(r.captured)) : []
+  const skipped =
+    kind !== "test" || perShardSkips.some((s) => s === undefined)
+      ? undefined
+      : perShardSkips.reduce<number>((a, s) => a + (s ?? 0), 0)
+  const peaks = runs.map((r) => r.peakMb).filter((mb): mb is number => mb !== undefined)
+
   // Only a bun test run has a skip count or a parseable failure list. Reading tsgo's output with either
   // parser would invent numbers, so a typecheck unit reports neither and both ledgers below ignore it.
   results.push({
     name,
     kind,
-    ok,
-    ms,
-    note,
-    skipped: kind === "test" ? readSkipCount(captured) : undefined,
-    failing: kind === "test" ? readFailingNames(captured) : [],
+    ok: runs.every((r) => r.ok),
+    ms: runs.reduce((a, r) => a + r.ms, 0),
+    note: runs
+      .map((r) => r.note)
+      .filter(Boolean)
+      .join(" · "),
+    skipped,
+    failing: kind === "test" ? [...new Set(runs.flatMap((r) => readFailingNames(r.captured)))] : [],
+    ...(peaks.length ? { peakMb: Math.max(...peaks) } : {}),
+    ...(sharded ? { shards: sharded } : {}),
   })
 
   // A last unit has no "next" preflight, so check after it as well. If it left the host unsafe, the
@@ -448,6 +591,8 @@ for (const pkg of PACKAGES) {
   }
 }
 
+sampler.stop()
+
 const totalMs = results.reduce((a, r) => a + r.ms, 0)
 
 /**
@@ -462,6 +607,8 @@ type Baseline = {
   reasons?: Record<string, string>
   units?: Record<string, number>
   failing?: Record<string, string[]>
+  /** Measured peak MB per run unit — the input to the memory ladder. See `readPeaks` above. */
+  peaks?: Record<string, number>
 }
 const BASELINE_PATH = join(import.meta.dir, "test-baseline.json")
 
@@ -520,9 +667,52 @@ const isPinned = (r: Result) => pinnedOk.includes(r)
 
 process.stdout.write(`\n\x1b[1m── summary ──\x1b[0m\n`)
 for (const r of results) {
-  const tag = r.ok ? "\x1b[32mPASS\x1b[0m" : isPinned(r) ? "\x1b[33mPINN\x1b[0m" : "\x1b[31mFAIL\x1b[0m"
+  // A sharded PASS is not a plain PASS and must never print as one — the composition it exercised is
+  // not the composition the gate is defined over. `PASS*` plus the note is the whole honesty budget.
+  const tag = r.ok
+    ? r.shards
+      ? "\x1b[33mPASS*\x1b[0m"
+      : "\x1b[32mPASS\x1b[0m"
+    : isPinned(r)
+      ? "\x1b[33mPINN\x1b[0m"
+      : "\x1b[31mFAIL\x1b[0m"
+  const degraded = r.shards ? `sharded ×${r.shards} (DEGRADED — composition differs from a whole run)` : ""
   const note = isPinned(r) ? `${r.failing.length} pinned failure(s) — see ${BASELINE_PATH}` : r.note
-  process.stdout.write(`  ${tag}  ${r.name.padEnd(30)} ${(r.ms / 1000).toFixed(1)}s  ${note}\n`)
+  process.stdout.write(
+    `  ${tag}${r.shards ? "" : " "} ${r.name.padEnd(30)} ${(r.ms / 1000).toFixed(1)}s  ${[degraded, note].filter(Boolean).join("  ·  ")}\n`,
+  )
+}
+
+/**
+ * ─── the PEAK profile ──────────────────────────────────────────────────────────────────────────────
+ * What each unit actually cost, so the next run can PLAN instead of guessing. Before this the harness
+ * knew one number — a flat 6 GB floor derived from an incident — and it was ~6× the measured need of
+ * the heaviest unit, which is why the gate was unrunnable on an ordinary desktop.
+ *
+ * ⚠️ REPORTED, not enforced. This suite's wall clock swings 24 % on a byte-identical tree
+ * (todo/test-speed.md) and memory swings with it, so a ratchet armed on the first observation would
+ * fire on noise and be deleted within a week. Arming it wants a few runs of data — the numbers below
+ * are how that data gets collected.
+ */
+const measured = results.filter((r) => r.peakMb !== undefined)
+if (measured.length) {
+  process.stdout.write(`\n\x1b[1m── peak memory (MB) ──\x1b[0m\n`)
+  for (const r of measured) {
+    const was = peakProfile[r.name]
+    // ⚠️ A SHARDED run's peak is recorded too, and that is sound rather than sloppy: measurement
+    // shows peak is nearly FLAT in file count (784 MB for 27 files, ~1 GB for 321) because it is
+    // dominated by a per-process baseline. It is also what closes the bootstrap — an unprofiled unit
+    // plans with the generous default, therefore shards, and without this would never learn its own
+    // number and would shard forever. Marked, so the provenance is never invisible.
+    const from = r.shards ? `  (from a sharded run — one shard's peak, which measures close to the whole)` : ""
+    const drift =
+      was === undefined
+        ? '  (not in profile — copy it into test-baseline.json\'s "peaks")'
+        : MemoryPlan.peakRegressed(was, r.peakMb ?? 0)
+          ? `  \x1b[33m<- profile says ${was}; that is a real jump, look at it\x1b[0m`
+          : ""
+    process.stdout.write(`  ${r.name.padEnd(30)} ${String(r.peakMb).padStart(5)}${drift}${from}\n`)
+  }
 }
 
 /**
@@ -630,9 +820,13 @@ if (matchedNothing)
     `\n  \x1b[31mNO RUN UNIT MATCHED\x1b[0m ${ONLY === undefined ? "(nothing to run)" : `--only=${ONLY}`} — ` +
       `unit names are the ones printed by a full run, not directory paths.\n`,
   )
+const shardedUnits = results.filter((r) => r.shards)
 process.stdout.write(
   `\n${[tally("test units green", testResults), tally("typechecks green", typecheckResults)].filter(Boolean).join("  ·  ")}` +
     `  ·  ${(totalMs / 1000).toFixed(1)}s wall${FULL ? "  (--full)" : ""}` +
+    // On the headline, because a run that had to shard is a run whose green means less, and the one
+    // place everybody reads is the last line.
+    `${shardedUnits.length ? `  ·  \x1b[33m${shardedUnits.length} unit(s) SHARDED — degraded\x1b[0m` : ""}` +
     `${pinnedOk.length ? `  ·  \x1b[33m${pinnedOk.length} pinned\x1b[0m` : ""}` +
     `${skipDrift ? "  ·  \x1b[31mskip-ledger drift\x1b[0m" : ""}` +
     `${ledgerDrift ? "  ·  \x1b[31mexpected-failure drift\x1b[0m" : ""}\n`,

@@ -58,6 +58,50 @@ export function bypassesGuard(
   )
 }
 
+/**
+ * Usable headroom: the SMALLER of free RAM and commit headroom.
+ *
+ * Both, because a machine can have free RAM and no commit left (the 2026-07-27 shape, where Windows
+ * grew the pagefile rather than refusing) or commit headroom and no RAM (the ordinary desktop with a
+ * browser open). Planning against one alone plans against the wrong wall. `undefined` means the host
+ * could not be measured at all, which callers must treat as "do not guess".
+ */
+export function headroomBytes(): number | undefined {
+  const free = os.freemem()
+  if (process.platform !== "win32") return Number.isFinite(free) && free > 0 ? free : undefined
+  const commit = windowsCommit()
+  if (!commit) return undefined
+  const commitFree = (commit.limitGb - commit.usedGb) * 1024 ** 3
+  if (!Number.isFinite(free) || free <= 0) return commitFree > 0 ? commitFree : undefined
+  return Math.max(0, Math.min(free, commitFree))
+}
+
+/**
+ * The biggest memory consumers on the box, for a refusal that names WHO rather than only how much.
+ *
+ * "Only 3.7 GB is available" is a constant, not a situation: it tells the reader nothing they can
+ * act on. This is one extra query against a table the guard already reads, and it turns the message
+ * into a list of things to close.
+ */
+export function topConsumers(limit = 5): string[] {
+  if (process.platform !== "win32") return []
+  const script =
+    "Get-Process | Sort-Object -Property PagedMemorySize64 -Descending | Select-Object -First " +
+    `${limit} | ForEach-Object { "$($_.ProcessName)\`t$([Math]::Round($_.PagedMemorySize64/1MB))" }`
+  const proc = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
+    encoding: "utf8",
+    timeout: 15_000,
+  })
+  if (proc.status !== 0 || !proc.stdout) return []
+  const rows: string[] = []
+  for (const line of proc.stdout.split(/\r?\n/)) {
+    const [name, mb] = line.split("\t")
+    if (!name?.trim() || !mb?.trim()) continue
+    rows.push(`${name.trim()} ${mb.trim()} MB`)
+  }
+  return rows
+}
+
 /** Windows commit charge vs limit — the pair that actually predicts the crash. */
 function windowsCommit(): { usedGb: number; limitGb: number } | undefined {
   const script =
