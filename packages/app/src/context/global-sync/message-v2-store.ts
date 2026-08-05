@@ -1,6 +1,12 @@
 import { createStore, produce } from "solid-js/store"
 import type { NovaclawClient, SessionMessage, V2Event } from "@novaclaw/sdk/v2/client"
-import { appendMessage, applySessionNextEvent, mergeNativeMessages } from "@novaclaw/session-ui/v2/message-fold"
+import {
+  appendMessage,
+  applySessionNextEvent,
+  isOptimistic,
+  mergeNativeMessages,
+} from "@novaclaw/session-ui/v2/message-fold"
+export { OPTIMISTIC_METADATA_KEY } from "@novaclaw/session-ui/v2/message-fold"
 import { fetchNativeMessages } from "./message-v2-fetch"
 
 /**
@@ -26,7 +32,19 @@ export function createNativeMessageStore(client: NovaclawClient) {
     setData(
       "messages",
       produce((bySession) => {
-        applySessionNextEvent((bySession[sessionID] ??= []), event)
+        const list = (bySession[sessionID] ??= [])
+        // ⚠️ The server's echo of a message we already showed OPTIMISTICALLY has to REPLACE it, not be
+        // ignored. `appendMessage` skips an id it already holds, which is what stops the echo
+        // duplicating the row — but it would also strip the echo of its power to *settle* it, leaving
+        // the row marked pending forever and the client's own text/timestamp standing in for the
+        // server's. Dropping ours first lets the normal fold append the canonical version, so "sending"
+        // becomes "sent" on the same event that proves it.
+        if (event.type === "session.next.prompted") {
+          const echoed = (event.data as { messageID?: string } | undefined)?.messageID
+          const index = echoed === undefined ? -1 : list.findIndex((message) => message.id === echoed)
+          if (index >= 0 && isOptimistic(list[index])) list.splice(index, 1)
+        }
+        applySessionNextEvent(list, event)
       }),
     )
   }

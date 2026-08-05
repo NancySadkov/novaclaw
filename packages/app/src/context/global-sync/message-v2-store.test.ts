@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { NovaclawClient, SessionMessage, V2Event } from "@novaclaw/sdk/v2/client"
 import { createNativeMessageStore } from "./message-v2-store"
+import { isOptimistic } from "@novaclaw/session-ui/v2/message-fold"
 
 function ev(type: string, data: Record<string, unknown>): V2Event {
   return { id: `evt_${type}`, type, data } as unknown as V2Event
@@ -124,5 +125,47 @@ describe("optimistic user messages", () => {
     expect(store.messages("s")?.map((m) => m.id), "an in-flight prompt must survive a reconcile").toEqual([
       "msg_u",
     ])
+  })
+})
+
+describe("the optimistic row settles when the server confirms it", () => {
+  const optimisticUser = (id: string, text: string): SessionMessage =>
+    ({
+      id,
+      type: "user",
+      text,
+      time: { created: Date.now() },
+      metadata: { novaclawOptimistic: true },
+    }) as unknown as SessionMessage
+
+  test("the echo REPLACES the pending row rather than being ignored by it", () => {
+    // appendMessage skips an id it already holds — which is what stops the echo duplicating the row,
+    // and would ALSO have left it marked pending forever, with the client's text and timestamp
+    // standing in for the server's. "Sending" has to become "sent" on the event that proves it.
+    const store = createNativeMessageStore(noClient)
+    store.optimistic("s", optimisticUser("msg_u", "deploy the thing"))
+    expect(store.messages("s")?.[0]).toMatchObject({ metadata: { novaclawOptimistic: true } })
+
+    store.apply(prompted("s", "msg_u", "deploy the thing"))
+
+    const rows = store.messages("s") ?? []
+    expect(rows.length, "still exactly one row").toBe(1)
+    expect(isOptimistic(rows[0]), "the pending mark must be gone once the server has it").toBe(false)
+  })
+
+  test("an echo for a message we never showed optimistically is folded normally", () => {
+    // The replace path must not eat ordinary prompts — e.g. one sent from another device.
+    const store = createNativeMessageStore(noClient)
+    store.apply(prompted("s", "msg_elsewhere", "from my phone"))
+    expect(store.messages("s")?.map((m) => m.id)).toEqual(["msg_elsewhere"])
+  })
+
+  test("a NON-optimistic row with the same id is left alone", () => {
+    // Only rows we marked may be replaced; anything else keeps appendMessage's dedupe semantics.
+    const store = createNativeMessageStore(noClient)
+    store.apply(prompted("s", "msg_u", "first"))
+    store.apply(prompted("s", "msg_u", "second"))
+    expect(store.messages("s")?.length).toBe(1)
+    expect(store.messages("s")?.[0]).toMatchObject({ text: "first" })
   })
 })

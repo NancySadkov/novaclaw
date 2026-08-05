@@ -42,6 +42,22 @@ import type {
  */
 
 /** Append `item` unless a message with the same id already exists (idempotent → mid-turn-reload safe). */
+/**
+ * Marks a message the client is showing AHEAD of the server — on screen the instant the user pressed
+ * Enter, before the prompt has been acknowledged.
+ *
+ * It lives in `metadata`, which is already part of the message type, so nothing in the schema or on the
+ * wire had to learn about a client-only state. It is defined HERE, in the shared render layer, because
+ * both sides need it and the dependency only runs one way: the app's store stamps it, this package's
+ * transcript reads it.
+ */
+export const OPTIMISTIC_METADATA_KEY = "novaclawOptimistic"
+
+/** True while a message is on screen but not yet acknowledged by the server. */
+export function isOptimistic(message: SessionMessage | undefined): boolean {
+  return (message as { metadata?: Record<string, unknown> } | undefined)?.metadata?.[OPTIMISTIC_METADATA_KEY] === true
+}
+
 export function appendMessage(messages: SessionMessage[], item: SessionMessage): void {
   if (messages.some((existing) => existing.id === item.id)) return
   messages.push(item)

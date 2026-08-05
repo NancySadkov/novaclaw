@@ -13,6 +13,7 @@ import type {
 } from "@novaclaw/sdk/v2"
 import { isSteerText, stripSteerProvenance } from "@novaclaw/core/session/steer-provenance"
 import { SessionOrigin } from "@novaclaw/core/session/origin"
+import { isOptimistic } from "../message-fold"
 import { reasoningTokenLabel } from "./reasoning-count"
 import { Markdown } from "../../components/markdown"
 import { reasoningOpenDefault, toolOpenDefault, type ReasoningFoldMode } from "../reasoning-fold"
@@ -211,8 +212,12 @@ function UserMessage(props: { message: SessionMessageUser }) {
   // is applied at lowering, not here.
   const badge = () => SessionOrigin.badge(props.message.origin)
   const actions = useContext(TranscriptActionsContext)
+  // Not-yet-acknowledged: the row is on screen because the user pressed Enter, not because the server
+  // has it. Rendered DIFFERENTLY on purpose — a pending message that looks identical to a delivered one
+  // answers "where did it go?" while leaving "did it send?" open, which is the owner's "unread".
+  const pending = () => isOptimistic(props.message)
   return (
-    <div data-slot="native-user">
+    <div data-slot="native-user" data-pending={pending() ? "" : undefined}>
       <div data-slot="native-user-bubble">
         <Show when={badge()}>
           {(b) => (

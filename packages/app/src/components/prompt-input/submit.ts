@@ -6,6 +6,7 @@ import { useNavigate, useParams, useSearchParams } from "@solidjs/router"
 import { type Accessor } from "solid-js"
 import { useTabs } from "@/context/tabs"
 import { useServerSync, type ServerSync } from "@/context/server-sync"
+import { OPTIMISTIC_METADATA_KEY } from "@/context/global-sync/message-v2-store"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import {
@@ -201,13 +202,40 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
   // caused by the fix for it. Caught live by `submit.test.ts`, whose serverSync mock has no
   // `nativeMessages`: the assertion that failed was "the prompt reached the session", not anything
   // about rendering. Delivery is the product; the echo is a courtesy.
+  // ⚠️ ONLY when the session is IDLE, and the boundary is not an optimisation — it is ownership.
+  //
+  // A prompt sent MID-TURN is admitted to the server's durable input queue and rendered by
+  // `QueuedMessage` from `fetchPendingPrompts`, which is read from the SERVER on purpose so a prompt
+  // sent from another device or the messenger gateway also appears (see session-pending-api.ts's
+  // header — that is a recorded decision, not an accident). Showing an optimistic row there too would
+  // put the same message on screen TWICE: once as a normal bubble, once as a queued one.
+  //
+  // Idle is the case nothing else covers: the pending poll does not even run (its effect returns early
+  // when the session is not working and nothing is queued), so between Enter and the first
+  // `session.next.prompted` there is no other view of the message at all.
+  // Guarded like the calls below, and for the same reason: this runs BEFORE the prompt POST, so an
+  // exception here would swallow the message. ⚠️ It fails toward SHOWING. If we cannot tell whether the
+  // session was busy, a duplicate bubble is visible, self-correcting (the queued one clears on
+  // promotion) and merely untidy — while a missing message is the defect being fixed. Pick the failure
+  // that a user can see over the one that looks like their words were thrown away.
+  const wasBusy = (() => {
+    try {
+      return input.sync.data.session_working(input.draft.sessionID) === true
+    } catch {
+      return false
+    }
+  })()
   const showOptimistic = () => {
+    if (wasBusy) return
     try {
       input.serverSync.nativeMessages?.optimistic(input.draft.sessionID, {
         id: messageID,
         type: "user",
         text,
         time: { created: Date.now() },
+        // Marks it as not-yet-acknowledged so the transcript can render it as SENDING rather than
+        // sent — the owner's "unread". Cleared by the server's own echo, which replaces this row.
+        metadata: { [OPTIMISTIC_METADATA_KEY]: true },
       })
     } catch {
       /* a transcript that cannot render the echo must still deliver the prompt */
