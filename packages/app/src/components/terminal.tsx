@@ -32,6 +32,13 @@ export interface TerminalHandle {
    * renderer: it deliberately does not send anything to the shell, so it cannot disturb a running
    * job or land a stray line in the user's shell history. */
   clear: () => void
+  /** Every buffer line as text, scrollback THROUGH the active screen, in the same coordinate space
+   * `reveal` takes. ⚠️ Read on demand rather than cached: a live shell appends while a find bar is
+   * open, and a cached snapshot would search a buffer the user is no longer looking at. */
+  readLines: () => string[]
+  /** Select a match and scroll it into view. Coordinates are absolute buffer rows, as returned by
+   * `readLines` — the one place these two must agree, which is why they are neighbours here. */
+  reveal: (match: { row: number; column: number; length: number }) => void
 }
 
 export interface TerminalProps extends ComponentProps<"div"> {
@@ -397,7 +404,22 @@ export const Terminal = (props: TerminalProps) => {
       }
       // Handed out AFTER the disposed check, and withdrawn in the same cleanup that disposes the
       // renderer, so the page can never hold a handle onto a terminal that is already gone.
-      local.onHandle?.({ clear: () => t.clear() })
+      local.onHandle?.({
+        clear: () => t.clear(),
+        readLines: () => {
+          // `buffer.active`, NOT `getScrollbackLine()`. The latter is history only, by its own doc
+          // comment, so a search built on it cannot find what is on screen — which is the most likely
+          // thing anyone is searching for.
+          const buffer = t.buffer.active
+          const lines: string[] = []
+          for (let row = 0; row < buffer.length; row++) lines.push(buffer.getLine(row)?.translateToString(true) ?? "")
+          return lines
+        },
+        reveal: (match) => {
+          t.select(match.column, match.row, match.length)
+          t.scrollToLine(match.row)
+        },
+      })
       cleanups.push(() => local.onHandle?.(undefined))
       _ghostty = g
       term = t

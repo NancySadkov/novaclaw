@@ -21,6 +21,7 @@ import { TerminalProvider, useTerminal } from "@/context/terminal"
 import { terminalTabLabel } from "@/pages/session/terminal-label"
 import { shellName, terminalTargetLine } from "@/pages/terminal-target"
 import { terminalDiagnosis } from "@/pages/terminal-diagnosis"
+import { findMatches, stepMatch } from "@/pages/terminal-search"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { showToast } from "@/utils/toast"
 
@@ -105,6 +106,10 @@ function TerminalWorkspace(props: { serverName: string }) {
         void terminal.close(id)
         return
       }
+      if (shortcut === "find") {
+        setFinding(true)
+        return
+      }
       if (shortcut === "next") {
         terminal.next()
         return
@@ -147,6 +152,35 @@ function TerminalWorkspace(props: { serverName: string }) {
   // an action can never fire into a terminal that has already gone.
   const handles = new Map<string, TerminalHandle>()
   const [menu, setMenu] = createSignal<{ id: string; x: number; y: number } | undefined>()
+  const [finding, setFinding] = createSignal(false)
+  const [query, setQuery] = createSignal("")
+  const [matchCount, setMatchCount] = createSignal(0)
+  const [matchIndex, setMatchIndex] = createSignal<number | undefined>()
+
+  const runSearch = (direction: "next" | "previous") => {
+    const id = terminal.active()
+    const handle = id ? handles.get(id) : undefined
+    if (!handle) return
+    // Lines are re-read per step rather than cached: a live shell appends while the bar is open, and
+    // searching a stale snapshot would step to coordinates the buffer no longer has.
+    const matches = findMatches(handle.readLines(), query())
+    setMatchCount(matches.length)
+    const next = stepMatch(matches.length, matchIndex(), direction)
+    if (next < 0) {
+      setMatchIndex(undefined)
+      return
+    }
+    setMatchIndex(next)
+    const match = matches[next]
+    if (match) handle.reveal(match)
+  }
+
+  const closeFind = () => {
+    setFinding(false)
+    setQuery("")
+    setMatchCount(0)
+    setMatchIndex(undefined)
+  }
   const [dragging, setDragging] = createSignal<string | undefined>()
   const [copied, setCopied] = createSignal<string | undefined>()
   const copyDiagnosis = async (item: { id: string; shell?: string; cwd?: string; exitCode?: number }) => {
@@ -211,6 +245,50 @@ function TerminalWorkspace(props: { serverName: string }) {
       class="flex h-full min-h-0 w-full min-w-0 flex-1 self-stretch flex-col bg-background-stronger"
       aria-label={language.t("terminal.title")}
     >
+      <Show when={finding()}>
+        <div class="flex shrink-0 items-center gap-2 border-b border-border-weaker-base px-4 py-2">
+          <input
+            type="text"
+            autofocus
+            aria-label={language.t("terminal.find.label")}
+            placeholder={language.t("terminal.find.label")}
+            class="min-w-0 flex-1 rounded-md bg-surface-raised-base px-2 py-1 text-13-regular text-text-strong outline-none"
+            value={query()}
+            onInput={(event) => {
+              setQuery(event.currentTarget.value)
+              // A fresh query restarts the walk; keeping the old index would step from a position
+              // that belongs to a different set of matches.
+              setMatchIndex(undefined)
+              setMatchCount(findMatches(handles.get(terminal.active() ?? "")?.readLines() ?? [], event.currentTarget.value).length)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault()
+                closeFind()
+                return
+              }
+              if (event.key !== "Enter") return
+              event.preventDefault()
+              runSearch(event.shiftKey ? "previous" : "next")
+            }}
+          />
+          <span class="shrink-0 text-12-regular text-text-weak">
+            {/* Stated rather than implied: "no matches" and "not searched yet" look identical on a
+                bar that only highlights, and the difference is the whole answer to "is it there?" */}
+            {query() === ""
+              ? ""
+              : matchCount() === 0
+                ? language.t("terminal.find.none")
+                : language.t("terminal.find.count", { index: (matchIndex() ?? 0) + 1, total: matchCount() })}
+          </span>
+          <IconButtonV2
+            icon={<IconV2 name="close" />}
+            variant="ghost-muted"
+            aria-label={language.t("terminal.find.close")}
+            onClick={closeFind}
+          />
+        </div>
+      </Show>
       <header class="flex h-14 shrink-0 items-center gap-3 border-b border-border-weaker-base px-4">
         <div class="min-w-0 flex-1">
           <h1 class="text-16-medium text-text-strong">{language.t("terminal.title")}</h1>
@@ -413,6 +491,17 @@ function TerminalWorkspace(props: { serverName: string }) {
               class="fixed z-50 min-w-40 rounded-md border border-border-weaker-base bg-surface-raised-base py-1 shadow-lg"
               style={{ left: `${Math.min(open().x, window.innerWidth - 176)}px`, top: `${open().y}px` }}
             >
+              <button
+                type="button"
+                role="menuitem"
+                class="block w-full px-3 py-1.5 text-left text-13-regular text-text-strong hover:bg-surface-hover-base"
+                onClick={() => {
+                  setFinding(true)
+                  setMenu(undefined)
+                }}
+              >
+                {language.t("terminal.find.label")}
+              </button>
               <button
                 type="button"
                 role="menuitem"

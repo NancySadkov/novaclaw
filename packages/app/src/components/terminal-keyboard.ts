@@ -1,7 +1,14 @@
 type ShortcutEvent = Pick<KeyboardEvent, "altKey" | "ctrlKey" | "key" | "metaKey" | "shiftKey">
 
 export type TerminalClipboardShortcut = "copy" | "paste"
-export type TerminalWorkspaceShortcut = "new" | "close" | "next" | "previous" | "move-next" | "move-previous"
+export type TerminalWorkspaceShortcut =
+  | "new"
+  | "close"
+  | "next"
+  | "previous"
+  | "move-next"
+  | "move-previous"
+  | "find"
 
 export function terminalClipboardShortcut(event: ShortcutEvent): TerminalClipboardShortcut | undefined {
   const key = event.key.toLowerCase()
@@ -17,6 +24,7 @@ export function terminalWorkspaceShortcut(event: ShortcutEvent): TerminalWorkspa
   const modifier = event.ctrlKey || event.metaKey
   if (!modifier) return
   const key = event.key.toLowerCase()
+  if (event.shiftKey && key === "f") return "find"
   if (event.shiftKey && key === "t") return "new"
   if (event.shiftKey && key === "w") return "close"
   if (!event.shiftKey && key === "pagedown") return "next"

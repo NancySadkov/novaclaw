@@ -22,6 +22,15 @@ describe("terminal keyboard", () => {
     expect(terminalWorkspaceShortcut(key("PageUp", { metaKey: true }))).toBe("previous")
   })
 
+  test("find opens on the standard Ctrl/Cmd+Shift+F", () => {
+    expect(terminalWorkspaceShortcut(key("f", { ctrlKey: true, shiftKey: true }))).toBe("find")
+    expect(terminalWorkspaceShortcut(key("F", { metaKey: true, shiftKey: true }))).toBe("find")
+    // Plain Ctrl+F must NOT be taken: it is a live control character in a shell (forward-char in
+    // readline, and page-forward in less/vim), so stealing it would break editing inside the terminal
+    // to serve a UI that has its own modifier.
+    expect(terminalWorkspaceShortcut(key("f", { ctrlKey: true }))).toBeUndefined()
+  })
+
   test("Shift turns tab NAVIGATION into tab REORDER, on the browser convention", () => {
     expect(terminalWorkspaceShortcut(key("PageDown", { ctrlKey: true, shiftKey: true }))).toBe("move-next")
     expect(terminalWorkspaceShortcut(key("PageUp", { metaKey: true, shiftKey: true }))).toBe("move-previous")
