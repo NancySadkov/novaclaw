@@ -92,21 +92,18 @@ describe("SessionRunnerLLM — durable system context", () => {
     // The notice is ONE extra message in a two-turn transcript — it does not replace a turn or fold
     // into one. Stated as a composition rather than a bare literal so the reason survives.
     //
-    // ⏳ **Asserted as a COMPOSITION, not an order, and that is a deliberate limit.** Measured
-    // 2026-08-05: `session.messages()` returns these five in an order that is neither the wire order
-    // (where the notice is last — the assertion above reads it off `.at(-1)` and passes) nor
-    // chronological-by-prompt. Two readings disagree on the same run, so one of them is wrong, but
-    // which is a product question about how the record sorts a message the runner injects — not
-    // something this claim should answer by pinning whichever it happened to observe. Filed as an open
-    // question. What IS the claim holds either way: the notice is admitted, named, framed as
-    // automated, and is ONE extra message that neither replaces a turn nor folds into one.
-    const kinds = (messages as Array<{ type: string }>).map((message) => message.type)
+    // 🔴 ⚠️ **`session.messages()` is NEWEST-FIRST; `session.context()` is OLDEST-FIRST.** Measured by
+    // message id 2026-08-05 (they are ULIDs, and this list's descend). Nothing else in this file
+    // notices, because every other claim reads `context()`. I briefly filed the difference as a
+    // record-vs-wire ordering DEFECT and it was nothing of the kind — reversed, the notice sits exactly
+    // where the request puts it, immediately after the prompt that followed the removal.
+    //
+    // Asserted in the API's own order rather than reversed-then-compared, so the next reader meets the
+    // convention head-on instead of inheriting my mistake.
     expect(
-      kinds.filter((kind) => kind === "user").length,
-      "both user turns are recorded",
-    ).toBe(2)
-    expect(kinds.filter((kind) => kind === "assistant").length, "both replies are recorded").toBe(2)
-    expect(kinds, "the notice is one extra message, not a replacement").toHaveLength(5)
+      (messages as Array<{ type: string }>).map((message) => message.type),
+      "newest first: the second reply, the notice, the second prompt, the first reply, the first prompt",
+    ).toEqual(["assistant", "system", "user", "assistant", "user"])
   })
 
   test("preserves the baseline while context is temporarily unavailable", async () => {
