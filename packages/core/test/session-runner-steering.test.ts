@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Fiber } from "effect"
-import { LLMEvent } from "@novaclaw/llm"
+import { LLMError, LLMEvent, TransportReason } from "@novaclaw/llm"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionInput } from "@novaclaw/core/session/input"
@@ -520,5 +520,57 @@ describe("SessionRunnerLLM — steering", () => {
     )
 
     expect(harness.requests).toHaveLength(2)
+  })
+
+  test("fans out one failed run and allows a later retry", async () => {
+    // Two callers wait on one failing run. Both get the SAME failure — the run is shared, not
+    // duplicated — and the session is left retryable afterwards.
+    //
+    // ⭐ Both halves matter and they pull opposite ways. Fanning out means a provider outage costs one
+    // request rather than one per waiter. Staying retryable means the failure did not poison the
+    // session: the next resume issues a fresh request. A runner that cached the failed run to "avoid
+    // hammering the provider" would satisfy the first and break the second, leaving a session that can
+    // never recover without being recreated.
+    const streamStarted = makeLatch()
+    const streamGate = makeLatch()
+    const failure = new LLMError({
+      module: "test",
+      method: "stream",
+      reason: new TransportReason({ message: "Provider unavailable" }),
+    })
+    const harness = makeRunnerHarness({ turns: [replyTurn("t-retry", "Recovered")] })
+    harness.controls.streamStarted = streamStarted
+    harness.controls.streamGate = streamGate
+    harness.controls.streamFailure = failure
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Retry after failure" }),
+          resume: false,
+        })
+
+        const first = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+        yield* Effect.promise(() => streamStarted.promise)
+        const second = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+        yield* Effect.yieldNow
+
+        expect(harness.requests, "the second waiter joins rather than issuing its own request").toHaveLength(1)
+
+        streamGate.open()
+        const [firstExit, secondExit] = yield* Effect.all([Fiber.await(first), Fiber.await(second)])
+        expect(secondExit, "both waiters see the same outcome").toEqual(firstExit)
+
+        // Clear the fault and retry: the session must still be usable.
+        harness.controls.streamFailure = undefined
+        yield* session.resume(HARNESS_SESSION)
+      }),
+      "claim — a failed run fans out and stays retryable",
+    )
+
+    expect(harness.requests, "the failure did not poison the session").toHaveLength(2)
   })
 })

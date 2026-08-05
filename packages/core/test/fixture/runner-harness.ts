@@ -80,7 +80,22 @@ import { Location } from "@novaclaw/core/location"
 export type ScriptedTurn = LLMEvent[] | Stream.Stream<LLMEvent, LLMError>
 
 export interface RunnerScript {
-  /** Events the provider returns for the next interactive request, and for each request after it. */
+  /**
+   * Events the provider returns for the next interactive request, and for each request after it.
+   *
+   * 🔴 **A TURN THAT SAYS NOTHING COSTS YOU A TURN.** If a scripted turn produces no text and calls no
+   * tool — a bare `stepStart`/`stepFinish`/`finish` — the runner correctly treats it as a no-op reply
+   * and appends an automated re-ground nudge: an extra **`user`** message on the FOLLOWING request
+   * ("Your last turn ended with no reply and no tool call…"), a `synthetic` transcript entry, and
+   * usually one more provider request.
+   *
+   * ⚠️ **This has broken a claim in three separate families** (fragments, steering, step allowance),
+   * always the same way: a request COUNT reads one too high, or a `toMatchObject` over a transcript
+   * fails on length. Use `completeTurn` — or any turn that replies for real — unless the no-op IS the
+   * thing under test. If you must assert over a transcript that contains one, filter BOTH the
+   * `[Automated NovaClaw …]` user message and the `synthetic` entry; a role filter alone leaves the
+   * first, a marker filter alone leaves the second.
+   */
   turns?: ScriptedTurn[]
   /** Events the out-of-band auto-title probe gets. Default: an empty stream, i.e. no title. */
   titleTurns?: LLMEvent[][]

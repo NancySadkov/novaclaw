@@ -1383,36 +1383,8 @@ describe("SessionRunnerLLM", () => {
   // "bounds 64-character session prompt cache keys" — PORTED to
   // session-runner-turn.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("fans out one failed run and allows a later retry", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Retry after failure" }), resume: false })
-
-      requests.length = 0
-      responses = undefined
-      response = []
-      streamFailure = providerUnavailable()
-      streamGate = yield* Deferred.make<void>()
-      streamStarted = yield* Deferred.make<void>()
-
-      const first = yield* session.resume(sessionID).pipe(Effect.forkChild)
-      yield* Deferred.await(streamStarted)
-      const second = yield* session.resume(sessionID).pipe(Effect.forkChild)
-      yield* Effect.yieldNow
-
-      expect(requests).toHaveLength(1)
-      yield* Deferred.succeed(streamGate, undefined)
-      const [firstExit, secondExit] = yield* Effect.all([Fiber.await(first), Fiber.await(second)])
-      expect(secondExit).toEqual(firstExit)
-
-      streamFailure = undefined
-      streamGate = undefined
-      streamStarted = undefined
-      yield* session.resume(sessionID)
-      expect(requests).toHaveLength(2)
-    }),
-  )
+  // "fans out one failed run and allows a later retry" — PORTED to
+  // session-runner-steering.test.ts and deleted here (S3, 2026-08-05).
 
   // "durably settles local tool failures before continuing" — PORTED to
   // session-runner-tools.test.ts and deleted here (S3, 2026-08-05).
