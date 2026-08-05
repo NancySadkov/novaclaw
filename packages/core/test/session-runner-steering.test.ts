@@ -444,4 +444,81 @@ describe("SessionRunnerLLM — steering", () => {
     "preserves durable steering input for a later resume after interruption",
     durableAcrossInterrupt("steer", "Steer after interrupt"),
   )
+
+  test("promotes queued input after steering continuation ends", async () => {
+    // Queued BEFORE anything runs, so it is waiting from the start. It still must not join the first
+    // turn — it gets its own, after that turn finishes. The delivery decides placement, not the
+    // arrival time.
+    const harness = makeRunnerHarness({ turns: [replyTurn("t1", "Steering"), replyTurn("t2", "Queued")] })
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Start steering" }),
+          resume: false,
+        })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Queue for later" }),
+          delivery: "queue",
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+      }),
+      "claim — queued input follows the steering continuation",
+    )
+
+    expect(harness.requests).toHaveLength(2)
+    expect(userTexts(harness.requests[0]!), "an already-waiting queued item does not join turn 1").toEqual([
+      "Start steering",
+    ])
+    expect(userTexts(harness.requests[1]!)).toEqual(["Start steering", "Queue for later"])
+  })
+
+  test("runs different sessions concurrently", async () => {
+    // Two SESSIONS, one in flight. The second must start rather than queue behind the first — sessions
+    // are the OS's threads, and a runner that serialised them would make one slow session block every
+    // other, which is the property this claim exists to prevent.
+    //
+    // The cache-key assertion is the discriminating half: both requests are in flight at once AND are
+    // keyed to their own session, so they cannot be sharing a prompt cache.
+    const otherSession = SessionV2.ID.make("ses_harness_other")
+    const streamStarted = makeLatch()
+    const streamGate = makeLatch()
+    const harness = makeRunnerHarness({ turns: [replyTurn("t1", "First"), replyTurn("t2", "Second")] })
+    harness.controls.streamStarted = streamStarted
+    harness.controls.streamGate = streamGate
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* harness.seedSession(otherSession)
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Run first" }), resume: false })
+        yield* session.prompt({ sessionID: otherSession, prompt: Prompt.make({ text: "Run second" }), resume: false })
+
+        const first = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+        yield* Effect.promise(() => streamStarted.promise)
+        const second = yield* session.resume(otherSession).pipe(Effect.forkChild)
+        yield* waitForRequests(harness, 2)
+
+        // Both in flight, before either is released.
+        expect(harness.requests, "the second session must not wait for the first").toHaveLength(2)
+        expect(harness.requests.map((request) => request.providerOptions?.openai?.promptCacheKey)).toEqual([
+          HARNESS_SESSION,
+          otherSession,
+        ])
+
+        streamGate.open()
+        yield* Fiber.join(first)
+        yield* Fiber.join(second)
+      }),
+      "claim — different sessions run concurrently",
+    )
+
+    expect(harness.requests).toHaveLength(2)
+  })
 })

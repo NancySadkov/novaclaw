@@ -1635,39 +1635,8 @@ describe("SessionRunnerLLM", () => {
   // "promotes queued inputs one at a time in FIFO order" — PORTED to
   // session-runner-steering.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("promotes queued input after steering continuation ends", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Start steering" }), resume: false })
-      yield* session.prompt({
-        sessionID,
-        prompt: Prompt.make({ text: "Queue for later" }),
-        delivery: "queue",
-        resume: false,
-      })
-
-      requests.length = 0
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-      ]
-
-      yield* session.resume(sessionID)
-
-      expect(requests).toHaveLength(2)
-      expect(userTexts(requests[0]!)).toEqual(["Start steering"])
-      expect(userTexts(requests[1]!)).toEqual(["Start steering", "Queue for later"])
-    }),
-  )
+  // "promotes queued input after steering continuation ends" — PORTED to
+  // session-runner-steering.test.ts and deleted here (S3, 2026-08-05).
 
   // "promotes steers before the next queued input" — PORTED to
   // session-runner-steering.test.ts and deleted here (S3, 2026-08-05).
@@ -1916,37 +1885,8 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("runs different sessions concurrently", () =>
-    Effect.gen(function* () {
-      yield* setup
-      yield* insertSession(otherSessionID)
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Run first" }), resume: false })
-      yield* session.prompt({ sessionID: otherSessionID, prompt: Prompt.make({ text: "Run second" }), resume: false })
-
-      requests.length = 0
-      responses = undefined
-      response = []
-      streamGate = yield* Deferred.make<void>()
-      streamStarted = yield* Deferred.make<void>()
-
-      const first = yield* session.resume(sessionID).pipe(Effect.forkChild)
-      yield* Deferred.await(streamStarted)
-      const second = yield* session.resume(otherSessionID).pipe(Effect.forkChild)
-      yield* Effect.yieldNow
-
-      expect(requests).toHaveLength(2)
-      expect(requests.map((request) => request.providerOptions?.openai?.promptCacheKey)).toEqual([
-        sessionID,
-        otherSessionID,
-      ])
-      yield* Deferred.succeed(streamGate, undefined)
-      yield* Fiber.join(first)
-      yield* Fiber.join(second)
-      streamGate = undefined
-      streamStarted = undefined
-    }),
-  )
+  // "runs different sessions concurrently" — PORTED to
+  // session-runner-steering.test.ts and deleted here (S3, 2026-08-05).
 
   // "bounds 64-character session prompt cache keys" — PORTED to
   // session-runner-turn.test.ts and deleted here (S3, 2026-08-05).
