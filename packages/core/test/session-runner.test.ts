@@ -772,43 +772,8 @@ describe("SessionRunnerLLM", () => {
   // "interrupts overflow recovery while the summary provider is running" — PORTED to
   // session-runner-compaction.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("preserves effective System updates while compaction rebaseline is blocked", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      const events = yield* EventV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First" }), resume: false })
-
-      requests.length = 0
-      response = []
-      yield* session.resume(sessionID)
-      systemBaseline = "Changed context"
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Second" }), resume: false })
-      yield* session.resume(sessionID)
-      const compactionID = SessionMessage.ID.create()
-      yield* events.publish(SessionEvent.Compaction.Started, {
-        sessionID,
-        messageID: compactionID,
-        timestamp: DateTime.makeUnsafe(1),
-        reason: "manual",
-      })
-      yield* events.publish(SessionEvent.Compaction.Ended, {
-        sessionID,
-        messageID: compactionID,
-        timestamp: DateTime.makeUnsafe(2),
-        reason: "manual",
-        text: "summary",
-        recent: "",
-        ...(yield* currentPrefix()),
-      })
-      systemUnavailable = true
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Third" }), resume: false })
-      yield* session.resume(sessionID)
-
-      expect(requests.at(-1)?.system.map((part) => part.text)).toEqual(["Initial context"])
-      expect(systemTexts(requests.at(-1)!)).toContain("Changed context")
-    }),
-  )
+  // "preserves effective System updates while compaction rebaseline is blocked" — PORTED to
+  // session-runner-context.test.ts and deleted here (S3, 2026-08-05).
 
   // "projects reasoning and tool events without executing or continuing tools" — PORTED to
   // session-runner-projection.test.ts and deleted here (S3, 2026-08-05).

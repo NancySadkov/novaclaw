@@ -426,4 +426,69 @@ describe("SessionRunnerLLM — durable system context", () => {
       "after compaction: REBUILT, unlike every other baseline change",
     ).toMatch(/^Replacement context/)
   })
+
+  test("preserves effective System updates while compaction rebaseline is blocked", async () => {
+    // ⭐ THE EXCEPTION'S OWN EXCEPTION, and the pair only reads correctly together. The claim above
+    // says a completed compaction REBUILDS the durable prefix. This says: when the rebuild cannot be
+    // performed — the context source is unavailable at exactly that moment — the runner keeps the last
+    // known-good prefix AND keeps the chronological update that had already been delivered.
+    //
+    // Both halves are load-bearing, and they fail in opposite directions. Dropping the prefix would
+    // strand the session with no durable context at all; dropping the chronological update would lose
+    // the only surviving record of a change the model had already been told about, and it would look
+    // fine — the request still carries a plausible prefix, just a stale one with the correction
+    // silently deleted. That is the failure a user cannot see and cannot report.
+    const harness = makeRunnerHarness({
+      turns: [completeTurn("t1", "One"), completeTurn("t2", "Two"), completeTurn("t3", "Three")],
+    })
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        const events = yield* EventV2.Service
+
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+
+        // The world changes and is delivered chronologically (the baseline claims above).
+        harness.controls.systemBaseline = "Changed context"
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Second" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+
+        const compactionID = SessionMessage.ID.create()
+        yield* events.publish(SessionEvent.Compaction.Started, {
+          sessionID: HARNESS_SESSION,
+          messageID: compactionID,
+          timestamp: DateTime.makeUnsafe(1),
+          reason: "manual",
+        })
+        yield* events.publish(SessionEvent.Compaction.Ended, {
+          sessionID: HARNESS_SESSION,
+          messageID: compactionID,
+          timestamp: DateTime.makeUnsafe(2),
+          reason: "manual",
+          text: "summary",
+          recent: "",
+          ...(yield* harness.currentPrefix),
+        })
+
+        // …and the source goes away before the rebaseline that compaction would otherwise perform.
+        harness.controls.systemUnavailable = true
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Third" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+      }),
+      "claim — a blocked rebaseline keeps both the prefix and the update",
+    )
+
+    const last = harness.requests.at(-1)
+    expect(
+      durableContext(last?.system),
+      "the rebuild could not run, so the last known-good prefix stands",
+    ).toMatch(/^Initial context/)
+    expect(
+      JSON.stringify((last?.messages ?? []).map((message) => message.content)),
+      "and the change already delivered chronologically is still there",
+    ).toContain("Changed context")
+  })
 })
