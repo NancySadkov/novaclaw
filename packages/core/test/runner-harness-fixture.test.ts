@@ -39,6 +39,6 @@ describe("makeRunnerHarness", () => {
   test("a harness with no script is legal — some claims only assert on the request", () => {
     const h = makeRunnerHarness()
     expect(h.requests).toEqual([])
-    expect(h.model.id).toBe("harness-model")
+    expect(String(h.model.id)).toBe("harness-model")
   })
 })
