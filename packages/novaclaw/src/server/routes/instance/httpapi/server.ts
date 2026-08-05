@@ -31,7 +31,6 @@ import { Format } from "@/format"
 import { Git } from "@/git"
 import { MCP } from "@/mcp"
 import { McpAuth } from "@/mcp/auth"
-import { Permission } from "@/permission"
 import { InstanceStore } from "@/project/instance-store"
 import { Vcs } from "@/project/vcs"
 import { Question } from "@/question"
@@ -256,7 +255,6 @@ const app = LayerNode.group([
   Skill.node,
   Discovery.node,
   Question.node,
-  Permission.node,
   PermissionSaved.node,
   Todo.node,
   SessionProjector.node,

@@ -622,33 +622,12 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("offline.request.blocked")).toBe(false)
   })
 
-  test("permission decisions separate their closed action from user-controlled patterns", () => {
-    const [evaluated] = lines(
-      Log.event("permission.rule.evaluate", {
-        "permission.name": "bash",
-        "permission.pattern": "private-command --token secret",
-        "permission.action": "ask",
-      }),
-    )
-    const [asking] = lines(
-      Log.event("permission.request.ask", {
-        "permission.request.id": "per_123",
-        "permission.name": "bash",
-        "permission.patterns": '["private-command --token secret"]',
-      }),
-    )
-    expect(evaluated).toContain("event=permission.rule.evaluate")
-    expect(evaluated).toContain("message=evaluated")
-    expect(evaluated).toContain("permission.action=ask")
-    expect(evaluated).toContain('permission.pattern="private-command --token secret"')
-    expect(asking).toContain("event=permission.request.ask")
-    expect(asking).toContain("message=asking")
-    expect(asking).toContain("permission.request.id=per_123")
-    expect(asking).toContain("permission.patterns=")
-    expect(mayEgress("permission.rule.evaluate")).toBe(false)
-    expect(mayEgress("permission.request.ask")).toBe(false)
-  })
-
+  // The two `permission.*` log events were DELETED 2026-08-06 with the V1 permission service that
+  // emitted them (`novaclaw/src/permission/index.ts`). The test here asserted their redaction — that a
+  // permission PATTERN, which is user content, never egresses while the action does. That property
+  // still holds for every event that carries user content; it just has no permission event left to
+  // hold it for. Removed rather than re-pointed: the sibling above ("every declared key points at a
+  // live call site") is what failed and named them, and it is the check that matters.
   test("PTY lifecycle fields stay structured and command content stays local", () => {
     const [created] = lines(
       Log.event("pty.session.create", {

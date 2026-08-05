@@ -15,7 +15,6 @@ import { Agent } from "@/agent/agent"
 import { Skill } from "@/skill"
 import { Discovery } from "@/skill/discovery"
 import { Question } from "@/question"
-import { Permission } from "@/permission"
 import { Todo } from "@/session/todo"
 import { MCP } from "@/mcp"
 import { McpAuth } from "@/mcp/auth"
@@ -46,7 +45,6 @@ export const AppLayer = Layer.mergeAll(
   Skill.defaultLayer,
   Discovery.defaultLayer,
   Question.defaultLayer,
-  Permission.defaultLayer,
   Todo.defaultLayer,
   RuntimeFlags.defaultLayer,
   EventV2Bridge.defaultLayer,
