@@ -1,10 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { LLMEvent } from "@novaclaw/llm"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, makeRunnerHarness, type RunnerHarness } from "./fixture/runner-harness"
-import { runBounded } from "./fixture/bounded"
+import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, type RunnerHarness } from "./fixture/runner-harness"
 
 /**
  * S2's ADMISSION TEST. Not a ported claim — the thing that must be true before any claim can be
@@ -17,28 +15,6 @@ import { runBounded } from "./fixture/bounded"
  * reporting `Exit { _tag: "Success" }`. If this file goes red in that shape again, the harness is the
  * suspect, not the claim under test.
  */
-
-/** The canonical complete turn, byte-identical in shape to the old fixture's `fragmentFixture("text")`. */
-const completeTurn = (id: string, text: string): LLMEvent[] => [
-  LLMEvent.stepStart({ index: 0 }),
-  LLMEvent.textStart({ id }),
-  LLMEvent.textDelta({ id, text }),
-  LLMEvent.textEnd({ id }),
-  LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-  LLMEvent.finish({ reason: "stop" }),
-]
-
-/** Seed the session, run `body` against the harness graph, and bound the whole thing against a hang. */
-const drive = <A, E>(harness: RunnerHarness, body: Effect.Effect<A, E, any>, label: string) =>
-  runBounded(
-    Effect.gen(function* () {
-      yield* harness.seed
-      return yield* body
-    }).pipe(Effect.scoped, Effect.provide(harness.layer)) as unknown as Effect.Effect<A, E, never>,
-    // Generous, because this is the bound against a HANG, not a latency budget: a graph of ~19 nodes is
-    // built per case and the first one pays for module init. A case that trips this is wedged.
-    { ms: 60_000, label },
-  )
 
 describe("the harness drives the real drain", () => {
   test("🔴 S2 admission — one scripted turn writes one assistant message", async () => {

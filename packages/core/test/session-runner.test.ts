@@ -898,82 +898,14 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("includes the effective default agent system before durable context", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const agent = yield* AgentV2.Service
-      yield* agent.transform((editor) =>
-        editor.update(AgentV2.ID.make("build"), (agent) => {
-          agent.system = "Build agent instructions"
-          agent.mode = "primary"
-        }),
-      )
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First" }), resume: false })
+  // "includes the effective default agent system before durable context" — PORTED to
+  // session-runner-agent.test.ts and deleted here (S3, 2026-08-05).
 
-      requests.length = 0
-      response = fragmentFixture("text", "text-build", ["Done"]).completeEvents
-      yield* session.resume(sessionID)
+  // "uses the configured default agent system for omitted-agent sessions" — PORTED to
+  // session-runner-agent.test.ts and deleted here (S3, 2026-08-05).
 
-      expect(requests.at(-1)?.system.map((part) => part.text)).toEqual(["Build agent instructions", "Initial context"])
-    }),
-  )
-
-  it.effect("uses the configured default agent system for omitted-agent sessions", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const agent = yield* AgentV2.Service
-      yield* agent.transform((editor) => {
-        editor.update(AgentV2.ID.make("build"), (agent) => {
-          agent.system = "Build agent instructions"
-          agent.mode = "primary"
-        })
-        editor.update(AgentV2.ID.make("reviewer"), (agent) => {
-          agent.system = "Reviewer instructions"
-          agent.mode = "primary"
-        })
-        editor.default(AgentV2.ID.make("reviewer"))
-      })
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First" }), resume: false })
-
-      requests.length = 0
-      response = fragmentFixture("text", "text-reviewer", ["Done"]).completeEvents
-      yield* session.resume(sessionID)
-
-      expect(requests.at(-1)?.system.map((part) => part.text)).toEqual(["Reviewer instructions", "Initial context"])
-      expect((yield* session.messages({ sessionID }))[0]).toMatchObject({ type: "assistant", agent: "reviewer" })
-    }),
-  )
-
-  it.effect("uses an explicitly selected non-build agent system", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const { db } = yield* Database.Service
-      const agent = yield* AgentV2.Service
-      yield* agent.transform((editor) =>
-        editor.update(AgentV2.ID.make("reviewer"), (agent) => {
-          agent.system = "Reviewer instructions"
-          agent.mode = "primary"
-        }),
-      )
-      yield* db
-        .update(SessionTable)
-        .set({ agent: "reviewer" })
-        .where(eq(SessionTable.id, sessionID))
-        .run()
-        .pipe(Effect.orDie)
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First" }), resume: false })
-
-      requests.length = 0
-      response = fragmentFixture("text", "text-selected", ["Done"]).completeEvents
-      yield* session.resume(sessionID)
-
-      expect(requests.at(-1)?.system.map((part) => part.text)).toEqual(["Reviewer instructions", "Initial context"])
-      expect((yield* session.messages({ sessionID }))[0]).toMatchObject({ type: "assistant", agent: "reviewer" })
-    }),
-  )
+  // "uses an explicitly selected non-build agent system" — PORTED to
+  // session-runner-agent.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("updates selected-agent skill guidance after an agent switch", () =>
     Effect.gen(function* () {

@@ -1,11 +1,6 @@
 import { Effect, Layer, Schema, Stream } from "effect"
-import {
-  LLMClient,
-  Model,
-  type LLMClientShape,
-  type LLMEvent,
-  type LLMRequest,
-} from "@novaclaw/llm"
+import { LLMClient, LLMEvent, Model, type LLMClientShape, type LLMRequest } from "@novaclaw/llm"
+import { runBounded } from "./bounded"
 import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
 import { Database } from "@novaclaw/core/database/database"
 import { makeLocationNode } from "@novaclaw/core/effect/app-node"
@@ -333,3 +328,34 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
 
 /** Derived rather than declared, so the factory stays the single description of its own shape. */
 export type RunnerHarness = ReturnType<typeof makeRunnerHarness>
+
+/**
+ * The canonical complete turn — the same shape the old suite's `fragmentFixture("text")` produces.
+ * Lives here rather than in each ported file so the ported claims cannot drift apart on what "a normal
+ * provider response" means.
+ */
+export const completeTurn = (id: string, text: string): LLMEvent[] => [
+  LLMEvent.stepStart({ index: 0 }),
+  LLMEvent.textStart({ id }),
+  LLMEvent.textDelta({ id, text }),
+  LLMEvent.textEnd({ id }),
+  LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+  LLMEvent.finish({ reason: "stop" }),
+]
+
+/**
+ * Seed the session, run `body` against the harness graph, and bound the whole thing against a hang.
+ *
+ * ⚠️ **Every ported case goes through this.** The bound is the half of S2's ruling that survived
+ * undiluted: a wedged case must fail by name rather than stall the suite. The 60 s is a HANG bound, not
+ * a latency budget — a ~19-node graph is built per case and the first pays for module init — so a case
+ * that trips it is wedged, not slow.
+ */
+export const drive = <A, E>(harness: RunnerHarness, body: Effect.Effect<A, E, any>, label: string) =>
+  runBounded(
+    Effect.gen(function* () {
+      yield* harness.seed
+      return yield* body
+    }).pipe(Effect.scoped, Effect.provide(harness.layer)) as unknown as Effect.Effect<A, E, never>,
+    { ms: 60_000, label },
+  )

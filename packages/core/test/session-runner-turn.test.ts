@@ -2,8 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, makeRunnerHarness, type RunnerHarness } from "./fixture/runner-harness"
-import { runBounded } from "./fixture/bounded"
+import { HARNESS_SESSION, drive, makeRunnerHarness } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — turn start and request assembly.
@@ -15,15 +14,6 @@ import { runBounded } from "./fixture/bounded"
  * counted post-drain memory extraction as an interactive request, so an assertion there may encode
  * fixture staleness rather than runner behaviour. Each one below was re-derived.
  */
-
-const drive = <A, E>(harness: RunnerHarness, body: Effect.Effect<A, E, any>, label: string) =>
-  runBounded(
-    Effect.gen(function* () {
-      yield* harness.seed
-      return yield* body
-    }).pipe(Effect.scoped, Effect.provide(harness.layer)) as unknown as Effect.Effect<A, E, never>,
-    { ms: 60_000, label },
-  )
 
 describe("SessionRunnerLLM — turn start", () => {
   test("streams one request with registry definitions from chronological V2 user history", async () => {
