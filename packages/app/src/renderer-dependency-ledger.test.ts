@@ -106,7 +106,14 @@ const SPECIFIER_PATTERNS: RegExp[] = [
   /^[ \t]*import\s*["']([^"']+)["']/gm,
   /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,
   /\brequire\s*\(\s*["']([^"']+)["']\s*\)/g,
-  /@import\s+(?:url\()?["']([^"']+)["']/g,
+  // ⚠️ ANCHORED to the start of a line, and that anchor is load-bearing. Unanchored, this pattern
+  // matched `@import "tailwindcss/*"` written inside a LEDGER REASON in this very file — so the
+  // entry explaining why tailwindcss has no imports was itself counted as an import of it, and the
+  // stale-entry test then failed on prose rather than on anything that had moved. Fourth instance of
+  // AGENTS.md's "writing ABOUT a pattern trips the guard against it"; the cure there is the same one
+  // used by the two patterns above — anchor to a real line, since a CSS `@import` opens its line
+  // (the spec requires it to precede other rules) while a mention inside a sentence never does.
+  /^[ 	]*@import\s+(?:url\()?["']([^"']+)["']/gm,
   /<reference\s+types\s*=\s*["']([^"']+)["']/g,
 ]
 
