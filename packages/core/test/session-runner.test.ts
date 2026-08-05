@@ -1656,48 +1656,8 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("steers an active provider turn with newly recorded prompts", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Start working" }), resume: false })
-
-      requests.length = 0
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-      ]
-      streamGate = yield* Deferred.make<void>()
-      streamStarted = yield* Deferred.make<void>()
-
-      const first = yield* session.resume(sessionID).pipe(Effect.forkChild)
-      yield* Deferred.await(streamStarted)
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Change direction" }) })
-      yield* Deferred.succeed(streamGate, undefined)
-      yield* Fiber.join(first)
-      streamGate = undefined
-      streamStarted = undefined
-      yield* Effect.yieldNow
-
-      expect(requests).toHaveLength(2)
-      expect(userTexts(requests[0]!)).toEqual(["Start working"])
-      expect(userTexts(requests[1]!)).toEqual(["Start working", "Change direction"])
-      expect((yield* session.context(sessionID)).map((message) => message.type)).toEqual([
-        "user",
-        "assistant",
-        "user",
-        "assistant",
-      ])
-    }),
-  )
+  // "steers an active provider turn with newly recorded prompts" — PORTED to
+  // session-runner-steering.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("promotes queued input after continuation ends", () =>
     Effect.gen(function* () {

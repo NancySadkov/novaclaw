@@ -207,6 +207,16 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
      * keeps the model it sampled rather than the newest one.
      */
     modelResolveHook: undefined as Effect.Effect<void> | undefined,
+    /**
+     * When set, an INTERACTIVE provider stream signals `streamStarted` and then blocks on this latch
+     * before emitting anything. That window — turn in flight, nothing emitted yet — is where steering
+     * and queued input have to be observed.
+     */
+    streamGate: undefined as Latch | undefined,
+    /** Opened when an interactive stream begins. Pair with `streamGate` to hold a turn open. */
+    streamStarted: undefined as Latch | undefined,
+    /** When set, the interactive stream FAILS with this instead of emitting its scripted turn. */
+    streamFailure: undefined as LLMError | undefined,
   }
   /**
    * Live tool-execution accounting. `maxActive` is the interesting one: it is the only way to assert
@@ -276,6 +286,27 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
           return Stream.fromIterable(maintenanceTurns.shift() ?? [])
         }
         requests.push(request)
+        // ⚠️ Gating and failure are applied ONLY here, on the interactive path — deliberately below the
+        // out-of-band classification above. Blocking the title or maintenance probe on a steering gate
+        // would deadlock a claim that has nothing to do with them.
+        const gate = controls.streamGate
+        const started = controls.streamStarted
+        const failure = controls.streamFailure
+        if (gate || started || failure) {
+          const scripted = turns.shift()
+          const body: Stream.Stream<LLMEvent, LLMError> = failure
+            ? Stream.fail(failure)
+            : Array.isArray(scripted)
+              ? Stream.fromIterable(scripted)
+              : (scripted ?? Stream.fromIterable([]))
+          return Stream.unwrap(
+            Effect.gen(function* () {
+              if (started) started.open()
+              if (gate) yield* Effect.promise(() => gate.promise)
+              return body
+            }),
+          )
+        }
         // Shift rather than index, so an exhausted script cannot replay its last response forever —
         // a replay looks like a working test right up until it loops.
         //
@@ -543,6 +574,18 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     controls,
   }
 }
+
+/**
+ * The text of a request's messages for one role. Lives here because claims across several files assert
+ * on it, and a helper re-typed per file is a helper that will disagree with itself.
+ */
+export const messageTexts = (request: LLMRequest, role: "user" | "system") =>
+  request.messages.flatMap((message) =>
+    message.role === role ? message.content.flatMap((content) => (content.type === "text" ? [content.text] : [])) : [],
+  )
+
+export const userTexts = (request: LLMRequest) => messageTexts(request, "user")
+export const systemTexts = (request: LLMRequest) => messageTexts(request, "system")
 
 /** Derived rather than declared, so the factory stays the single description of its own shape. */
 export type RunnerHarness = ReturnType<typeof makeRunnerHarness>
