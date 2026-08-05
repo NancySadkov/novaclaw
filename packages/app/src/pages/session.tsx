@@ -1388,12 +1388,6 @@ export default function Page() {
     return followupMutation.variables?.id
   })
 
-  const queueEnabled = createMemo(() => {
-    const id = params.id
-    if (!id) return false
-    return settings.general.followup() === "queue" && busy(id) && !composer.blocked() && !isChildSession()
-  })
-
   const followupText = (item: FollowupDraft) => {
     const text = item.prompt
       .map((part) => {
@@ -1409,15 +1403,6 @@ export default function Page() {
 
     if (text) return text
     return `[${language.t("common.attachment")}]`
-  }
-
-  const queueFollowup = (draft: FollowupDraft) => {
-    setFollowup("items", draft.sessionID, (items) => [
-      ...(items ?? []),
-      { id: Identifier.ascending("message"), ...draft },
-    ])
-    setFollowup("failed", draft.sessionID, undefined)
-    setFollowup("paused", draft.sessionID, undefined)
   }
 
   const followupDock = createMemo(() => queuedFollowups().map((item) => ({ id: item.id, text: followupText(item) })))
@@ -1842,8 +1827,6 @@ export default function Page() {
             }}
             edit={editingFollowup()}
             onEditLoaded={clearFollowupEdit}
-            shouldQueue={queueEnabled}
-            onQueue={queueFollowup}
             onAbort={() => {
               const id = params.id
               if (!id) return

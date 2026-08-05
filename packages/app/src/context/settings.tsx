@@ -28,7 +28,6 @@ export interface Settings {
   general: {
     autoSave: boolean
     releaseNotes: boolean
-    followup: "queue" | "steer"
     showFileTree: boolean
     showNavigation: boolean
     showSearch: boolean
@@ -119,7 +118,6 @@ const defaultSettings: Settings = {
   general: {
     autoSave: true,
     releaseNotes: true,
-    followup: "steer",
     showFileTree: false,
     showNavigation: false,
     showSearch: false,
@@ -190,11 +188,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
       root.style.setProperty("--font-family-sans", sansFontFamily(store.appearance?.sans))
     })
 
-    createEffect(() => {
-      if (store.general?.followup !== "queue") return
-      setStore("general", "followup", "steer")
-    })
-
     return {
       ready,
       get current() {
@@ -208,13 +201,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         releaseNotes: withFallback(() => store.general?.releaseNotes, defaultSettings.general.releaseNotes),
         setReleaseNotes(value: boolean) {
           setStore("general", "releaseNotes", value)
-        },
-        followup: withFallback(
-          () => (store.general?.followup === "queue" ? "steer" : store.general?.followup),
-          defaultSettings.general.followup,
-        ),
-        setFollowup(value: "queue" | "steer") {
-          setStore("general", "followup", value === "queue" ? "steer" : value)
         },
         showFileTree,
         setShowFileTree(value: boolean) {
