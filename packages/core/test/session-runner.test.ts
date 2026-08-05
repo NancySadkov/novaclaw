@@ -726,34 +726,8 @@ describe("SessionRunnerLLM", () => {
   // "uses an explicitly selected non-build agent system" — PORTED to
   // session-runner-agent.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("updates selected-agent skill guidance after an agent switch", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      const events = yield* EventV2.Service
-      skillBaselines.set(AgentV2.ID.make("build"), "Build skills")
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First" }), resume: false })
-
-      requests.length = 0
-      response = []
-      yield* session.resume(sessionID)
-      skillBaselines.set(AgentV2.ID.make("reviewer"), "Reviewer skills")
-      yield* events.publish(SessionEvent.AgentSwitched, {
-        sessionID,
-        messageID: SessionMessage.ID.create(),
-        timestamp: DateTime.makeUnsafe(1),
-        agent: "reviewer",
-      })
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Second" }), resume: false })
-      yield* session.resume(sessionID)
-
-      expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([
-        ["Initial context\n\nBuild skills"],
-        ["Initial context\n\nBuild skills"],
-      ])
-      expect(systemTexts(requests[1]!)).toContainEqual(expect.stringContaining("Reviewer skills"))
-    }),
-  )
+  // "updates selected-agent skill guidance after an agent switch" — PORTED to
+  // session-runner-agent.test.ts and deleted here (S3, 2026-08-05).
 
   // "keeps the sampled agent when selection changes during observation" — PORTED to
   // session-runner-agent.test.ts and deleted here (S3, 2026-08-05).

@@ -230,4 +230,50 @@ describe("SessionRunnerLLM — agent system prompt", () => {
     expect(system, "the sampled agent's guidance is used").toContain("Build skills")
     expect(system, "the mid-load switch must not reach this turn").not.toContain("Reviewer skills")
   })
+
+  test("updates selected-agent skill guidance after an agent switch", async () => {
+    // Switching agent mid-session must change the guidance the model receives — but NOT by rewriting
+    // the established prompt prefix. The prefix keeps the sampled agent's skills; the new agent's
+    // guidance arrives chronologically, exactly like a changed durable context does.
+    //
+    // ⭐ That split is the claim, and both halves are asserted. Rewriting the prefix would destroy the
+    // prompt cache for the whole session on every switch; NOT delivering the new guidance at all would
+    // leave the model acting as the old agent under a new name.
+    const harness = makeRunnerHarness({
+      turns: [completeTurn("t1", "First answer"), completeTurn("t2", "Second answer")],
+    })
+    harness.controls.skillBaselines.set("build", "Build skills")
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const events = yield* EventV2.Service
+        const session = yield* SessionV2.Service
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+
+        harness.controls.skillBaselines.set("reviewer", "Reviewer skills")
+        yield* events.publish(SessionEvent.AgentSwitched, {
+          sessionID: HARNESS_SESSION,
+          messageID: SessionMessage.ID.create(),
+          timestamp: DateTime.makeUnsafe(1),
+          agent: "reviewer",
+        })
+
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Second" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+      }),
+      "claim — an agent switch updates guidance chronologically",
+    )
+
+    const prefixOf = (index: number) => (harness.requests[index]?.system ?? []).map((part) => part.text).join("\n")
+    // ① The established prefix is UNCHANGED across the switch.
+    expect(prefixOf(0)).toContain("Build skills")
+    expect(prefixOf(1), "a switch must not rewrite the prompt prefix").toContain("Build skills")
+    expect(prefixOf(1), "…and must not smuggle the new guidance into it either").not.toContain("Reviewer skills")
+    // ② The new guidance still REACHES the turn, chronologically.
+    const bodyOf = (index: number) =>
+      JSON.stringify((harness.requests[index]?.messages ?? []).map((message) => message.content))
+    expect(bodyOf(1), "the new agent's guidance arrives as a message").toContain("Reviewer skills")
+  })
 })
