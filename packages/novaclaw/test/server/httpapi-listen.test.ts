@@ -313,10 +313,25 @@ describe("HttpApi Server.listen", () => {
   })
 
   test("port 0 falls back when 4096 is taken", async () => {
-    const blocker = await occupyPort(4096)
+    // ⚠️ EVERY await here is bounded AND labelled, which the first three were not.
+    //
+    // This test fails intermittently in full `bun run test` runs and passes when the unit runs alone
+    // (measured twice, 2026-08-05) — and it failed at exactly `[15002.85ms]`, i.e. bun's per-test
+    // timeout, so all it could say was "something took 15 s". `stop()` was already bounded at 10 s
+    // with a label and would have named itself; the other three awaits had no inner bound, so the one
+    // that hung stayed anonymous and the diagnosis stalled at "it is slow under load".
+    //
+    // Bounding them is not a workaround for the flake — the budgets are far above any healthy run, so
+    // a green test stays green. It buys the NEXT failure a name, which is the thing that was missing.
+    // See todo/test-speed.md: do not pin this and do not raise the suite timeout; find the stage.
+    const blocker = await withTimeout(occupyPort(4096), 5_000, "timed out occupying 4096 for the fallback test")
     if (!blocker) return
     try {
-      const listener = await startListener()
+      const listener = await withTimeout(
+        startListener(),
+        8_000,
+        "timed out starting the port-0 listener while 4096 was taken",
+      )
       try {
         expect(listener.port).not.toBe(4096)
         expect(listener.port).toBeGreaterThan(0)
@@ -324,7 +339,17 @@ describe("HttpApi Server.listen", () => {
         await stop(listener, "timed out cleaning up port-0 fallback listener")
       }
     } finally {
-      await new Promise<void>((resolve) => blocker.close(() => resolve()))
+      // `net.Server.close()` waits for every accepted connection to end, and this blocker has no
+      // connection handler — so anything that connects to 4096 mid-test parks a socket here and the
+      // callback never fires. Destroy them first, then bound what remains.
+      // Cast because the ambient `net.Server` type here predates it; it exists on Node 18.2+ and the
+      // optional call keeps it harmless if a runtime ever lacks it.
+      ;(blocker as { closeAllConnections?: () => void }).closeAllConnections?.()
+      await withTimeout(
+        new Promise<void>((resolve) => blocker.close(() => resolve())),
+        5_000,
+        "timed out releasing the 4096 blocker — a connection to it never closed",
+      )
     }
   })
 
