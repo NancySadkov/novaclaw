@@ -35,7 +35,7 @@ it.instance("subagent permissions take precedence over parent agent restrictions
     expect(generalAgent).toBeDefined()
     // Sanity: the plan agent itself blocks edit. (Note: `write` and
     // `apply_patch` route through the `edit` permission at the runtime
-    // tool layer — see Permission.disabled / EDIT_TOOLS.)
+    // tool layer via `Tool.withPermission` — see the per-action note below.)
     expect(Permission.evaluate("edit", "/some/file.ts", planAgent!.permission).action).toBe("deny")
 
     const parentSessionPermission: PermissionRuleset.Ruleset = []
@@ -50,7 +50,13 @@ it.instance("subagent permissions take precedence over parent agent restrictions
     const effective = Permission.merge(generalAgent!.permission, subagentSessionPermission)
 
     expect(Permission.evaluate("edit", "/some/file.ts", effective).action).not.toBe("deny")
-    expect(Permission.disabled(["edit", "write", "apply_patch"], effective)).toEqual(new Set())
+    // ⚠️ Asserted per ACTION, against the live mapping. This used to read
+    // `Permission.disabled(["edit", "write", "apply_patch"], effective)` — a helper deleted 2026-08-06
+    // whose table said all three answer to `edit`. The runtime says otherwise: `apply_patch` → `edit`
+    // is the SOLE remap in the tree (`Tool.withPermission`, and `tool/tool.ts` says so), while `write`
+    // answers to `write` under the `?? name` fallback. So the old oracle asserted a mapping the
+    // product does not have, and passed because nothing here denies anything.
+    expect(Permission.evaluate("write", "/some/file.ts", effective).action).not.toBe("deny")
   }),
 )
 
@@ -88,7 +94,7 @@ it.instance(
 
       expect(Permission.evaluate("edit", "/some/file.ts", planAgent!.permission).action).toBe("deny")
       expect(Permission.evaluate("edit", "/some/file.ts", effective).action).toBe("allow")
-      expect(Permission.disabled(["edit", "write", "apply_patch"], effective)).toEqual(new Set())
+      expect(Permission.evaluate("write", "/some/file.ts", effective).action).not.toBe("deny")
     }),
   {
     config: {
@@ -132,7 +138,7 @@ it.effect("subagent self permissions are preserved", () =>
     expect(Permission.evaluate("bash", "git status", effective).action).toBe("allow")
     expect(Permission.evaluate("task", "worker", effective).action).toBe("allow")
     expect(Permission.evaluate("task", "other", effective).action).toBe("deny")
-    expect(Permission.disabled(["edit", "write", "apply_patch"], effective)).toEqual(new Set())
+    expect(Permission.evaluate("write", "/some/file.ts", effective).action).not.toBe("deny")
   }),
 )
 

@@ -63,17 +63,6 @@ export function merge(...rulesets: PermissionRuleset.Ruleset[]): PermissionRules
   return rulesets.flat()
 }
 
-export function disabled(tools: string[], ruleset: PermissionRuleset.Ruleset): Set<string> {
-  const edits = ["edit", "write", "apply_patch"]
-  const reads = ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]
-  return new Set(
-    tools.filter((tool) => {
-      const permission = edits.includes(tool) ? "edit" : reads.includes(tool) ? "read" : tool
-      const rule = ruleset.findLast((rule) => Wildcard.match(permission, rule.permission))
-      return rule?.pattern === "*" && rule.action === "deny"
-    }),
-  )
-}
 
 
 
