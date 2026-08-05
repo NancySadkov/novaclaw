@@ -695,61 +695,8 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("advertises and executes a globally attached application tool", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const applicationTools = yield* ApplicationTools.Service
-      const session = yield* SessionV2.Service
-      const contexts: Tool.Context[] = []
-      yield* applicationTools.register({
-        application_context: Tool.make({
-          description: "Read application context",
-          input: Schema.Struct({ query: Schema.String }),
-          output: Schema.Struct({ answer: Schema.String }),
-          execute: ({ query }, context) =>
-            Effect.sync(() => {
-              contexts.push(context)
-              return { answer: query.toUpperCase() }
-            }),
-        }),
-      })
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Use application context" }), resume: false })
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "call-application", name: "application_context", input: { query: "hello" } }),
-          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-          LLMEvent.finish({ reason: "tool-calls" }),
-        ],
-        [],
-      ]
-
-      yield* session.resume(sessionID)
-
-      expect(requests[0]?.tools.map((tool) => tool.name)).toContain("application_context")
-      expect(contexts).toEqual([
-        {
-          sessionID,
-          agent: AgentV2.ID.make("build"),
-          assistantMessageID: expect.stringMatching(/^msg_/),
-          toolCallID: "call-application",
-        },
-      ])
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Use application context" },
-        {
-          type: "assistant",
-          content: [
-            {
-              type: "tool",
-              id: "call-application",
-              state: { status: "completed", structured: { answer: "HELLO" } },
-            },
-          ],
-        },
-      ])
-    }),
-  )
+  // "advertises and executes a globally attached application tool" — PORTED to
+  // session-runner-tools.test.ts and deleted here (S3, 2026-08-05).
 
   // "starts a real runner turn after default prompt recording" — PORTED to
   // session-runner-context.test.ts and deleted here (S3, 2026-08-05).
