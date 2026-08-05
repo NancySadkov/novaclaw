@@ -106,9 +106,18 @@ const CLAIMS: readonly string[] = [
   "transitions streamed raw tool input to parsed called input",
   "rejects malformed streamed tool input ordering",]
 
-/** The suite is the source of truth for what it claims, so this reads it rather than trusting a copy. */
+const OLD_SUITE = "session-runner.test.ts"
+
+/**
+ * The suite is the source of truth for what it claims, so this reads it rather than trusting a copy.
+ *
+ * It is now GONE — the last claim left on 2026-08-05 — so this returns nothing. It still reads rather
+ * than hard-coding `[]`, because that is what makes the ratchet below real: put the file back with a
+ * single `it.effect` in it and this ledger fails, naming the claim.
+ */
 function declaredTitles(): string[] {
-  const file = path.join(import.meta.dir, "session-runner.test.ts")
+  const file = path.join(import.meta.dir, OLD_SUITE)
+  if (!fs.existsSync(file)) return []
   const source = fs.readFileSync(file, "utf8")
   const titles: string[] = []
   for (const match of source.matchAll(PATTERN)) titles.push(match[2]!)
@@ -430,6 +439,10 @@ const STATUS: Readonly<Record<string, { status: Exclude<ClaimStatus, "spec">; wh
     status: "ported",
     where: "session-runner-blocked-tools.test.ts",
   },
+  "interrupts a source Location runner after a Session moves": {
+    status: "ported",
+    where: "session-runner-move.test.ts",
+  },
 }
 
 describe("the session-runner claims ledger", () => {
@@ -467,25 +480,40 @@ describe("the session-runner claims ledger", () => {
   })
 
   test("the remaining claims are the size of the job left", () => {
-    // Reads as a progress counter on purpose: while this number is above zero, that many statements
-    // about `session/runner/llm.ts` still have NO executing coverage on any platform.
+    // Read as a progress counter for forty-six slices: while this was above zero, that many statements
+    // about `session/runner/llm.ts` had NO executing coverage on any platform. It is now ZERO — every
+    // one of the 77 runs on win32.
     const remaining = CLAIMS.filter((claim) => STATUS[claim] === undefined)
     expect(remaining.length).toBe(CLAIMS.length - Object.keys(STATUS).length)
-    expect(remaining.length).toBe(1)
+    expect(remaining.length).toBe(0)
   })
 
-  test("the remaining declaration is 1 test, and the ledger knows why", () => {
+  test("🔴 the old suite is DELETED, and cannot come back", () => {
+    // The terminal assertion, and the reason this file outlives the job it tracked. S3 finished by
+    // deleting `session-runner.test.ts`; without this, nothing stops it being restored — and a restored
+    // copy would re-introduce claims that are skipped on win32 while their ported twins pass, which
+    // reads as double coverage and is the opposite.
+    expect(
+      fs.existsSync(path.join(import.meta.dir, OLD_SUITE)),
+      `${OLD_SUITE} was deleted when its last claim was ported — it must not return`,
+    ).toBe(false)
+  })
+
+  test("the remaining declarations are 0 tests, and the ledger knows why", () => {
     // The two numbers look like a discrepancy until you know about the loop: three titles are template
     // literals iterated over `fragmentKinds`, which has three entries, so those three declarations
     // produce nine tests. That is how the ledger stays tied to something observable — this is the exact
     // win32 skip count `bun test test/session-runner.test.ts` reports for the file, and
     // `script/test-baseline.json`'s `units.core` must move with it on every ported slice.
     //
-    // It was 77 → 83 when the ledger landed; seventy-six ported claims make it 1 → 1 — the three PARAMETERISED ones went in this slice, so declarations and tests are now equal for the first time.
+    // It was 77 → 83 when the ledger landed. All seventy-seven are ported, so both are 0 and the file
+    // that produced those 83 win32 skips no longer exists. `units.core` in `script/test-baseline.json`
+    // moved with it on every slice, which is what kept this ledger tied to something observable rather
+    // than to its own bookkeeping.
     const remaining = CLAIMS.filter((claim) => STATUS[claim] === undefined)
     const parameterised = remaining.filter((claim) => claim.includes("${kind}"))
     expect(parameterised.length).toBe(0)
     const FRAGMENT_KINDS = 3
-    expect(remaining.length - parameterised.length + parameterised.length * FRAGMENT_KINDS).toBe(1)
+    expect(remaining.length - parameterised.length + parameterised.length * FRAGMENT_KINDS).toBe(0)
   })
 })
