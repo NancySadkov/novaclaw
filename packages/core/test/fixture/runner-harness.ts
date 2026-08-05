@@ -41,9 +41,14 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       prepare: () => Effect.die("the harness has no prepare path — a test that needs one should say so"),
       stream: ((request: LLMRequest) => {
         requests.push(request)
-        // Shift rather than index: the drain may issue more requests than the script anticipates, and
-        // an exhausted script returning an EMPTY stream settles the turn instead of replaying the last
-        // response forever. A replay would look like a working test right up until it looped.
+        // Shift rather than index, so an exhausted script cannot replay its last response forever —
+        // a replay looks like a working test right up until it loops.
+        //
+        // 🔴 ⚠️ BUT AN EMPTY STREAM DOES NOT SETTLE THE TURN. This comment used to claim it did; measured
+        // 2026-08-05, a script of `[[]]` produced **three** provider requests in three seconds — the
+        // drain treats an empty stream as a turn worth retrying, not as an answer. So a claim that
+        // asserts on a request COUNT must script a real response; scripting nothing does not mean
+        // "one request and stop", it means "retry until something else stops it".
         return Stream.fromIterable(turns.shift() ?? [])
       }) as unknown as LLMClientShape["stream"],
       generate: () => Effect.die("the harness has no non-streaming path — a test that needs one should say so"),
