@@ -573,4 +573,53 @@ describe("SessionRunnerLLM — steering", () => {
 
     expect(harness.requests, "the failure did not poison the session").toHaveLength(2)
   })
+
+  test("runs steering input accepted while the active provider turn fails", async () => {
+    // A steer arrives during a turn that then FAILS. The steer was accepted, so it must survive the
+    // failure and drive the next turn — the failure belongs to the provider call, not to the user's
+    // input.
+    //
+    // ⭐ This is the pair to "preserves durable steering input … after interruption": there the turn is
+    // cancelled, here it errors. Both must keep the input, and a runner that discarded pending input on
+    // any non-clean exit would pass the queue claims and silently lose exactly the message a user sends
+    // when they can see something going wrong.
+    const streamStarted = makeLatch()
+    const streamGate = makeLatch()
+    const failure = new LLMError({
+      module: "test",
+      method: "stream",
+      reason: new TransportReason({ message: "Provider unavailable" }),
+    })
+    const harness = makeRunnerHarness({ turns: [replyTurn("t-recover", "Recovered")] })
+    harness.controls.streamStarted = streamStarted
+    harness.controls.streamGate = streamGate
+    harness.controls.streamFailure = failure
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Start working" }),
+          resume: false,
+        })
+
+        const first = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+        yield* Effect.promise(() => streamStarted.promise)
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Recover with this" }) })
+
+        streamGate.open()
+        expect(yield* Fiber.join(first).pipe(Effect.flip)).toBe(failure)
+
+        // The fault clears; the steer that was accepted mid-failure now drives the next turn.
+        harness.controls.streamFailure = undefined
+        yield* session.resume(HARNESS_SESSION)
+      }),
+      "claim — a steer accepted during a failing turn still runs",
+    )
+
+    expect(harness.requests).toHaveLength(2)
+    expect(userTexts(harness.requests[1]!)).toEqual(["Start working", "Recover with this"])
+  })
 })

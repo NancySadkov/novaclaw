@@ -370,6 +370,14 @@ const STATUS: Readonly<Record<string, { status: Exclude<ClaimStatus, "spec">; wh
     status: "ported",
     where: "session-runner-steering.test.ts",
   },
+  "runs steering input accepted while the active provider turn fails": {
+    status: "ported",
+    where: "session-runner-steering.test.ts",
+  },
+  "auto-titles a reasoning model through the shared token-budget controller": {
+    status: "ported",
+    where: "session-runner-title.test.ts",
+  },
 }
 
 describe("the session-runner claims ledger", () => {
@@ -411,21 +419,21 @@ describe("the session-runner claims ledger", () => {
     // about `session/runner/llm.ts` still have NO executing coverage on any platform.
     const remaining = CLAIMS.filter((claim) => STATUS[claim] === undefined)
     expect(remaining.length).toBe(CLAIMS.length - Object.keys(STATUS).length)
-    expect(remaining.length).toBe(16)
+    expect(remaining.length).toBe(14)
   })
 
-  test("the remaining declarations are 16 tests, and the ledger knows why", () => {
+  test("the remaining declarations are 14 tests, and the ledger knows why", () => {
     // The two numbers look like a discrepancy until you know about the loop: three titles are template
     // literals iterated over `fragmentKinds`, which has three entries, so those three declarations
     // produce nine tests. That is how the ledger stays tied to something observable — this is the exact
     // win32 skip count `bun test test/session-runner.test.ts` reports for the file, and
     // `script/test-baseline.json`'s `units.core` must move with it on every ported slice.
     //
-    // It was 77 → 83 when the ledger landed; sixty-one ported claims make it 16 → 16 — the three PARAMETERISED ones went in this slice, so declarations and tests are now equal for the first time.
+    // It was 77 → 83 when the ledger landed; sixty-three ported claims make it 14 → 14 — the three PARAMETERISED ones went in this slice, so declarations and tests are now equal for the first time.
     const remaining = CLAIMS.filter((claim) => STATUS[claim] === undefined)
     const parameterised = remaining.filter((claim) => claim.includes("${kind}"))
     expect(parameterised.length).toBe(0)
     const FRAGMENT_KINDS = 3
-    expect(remaining.length - parameterised.length + parameterised.length * FRAGMENT_KINDS).toBe(16)
+    expect(remaining.length - parameterised.length + parameterised.length * FRAGMENT_KINDS).toBe(14)
   })
 })

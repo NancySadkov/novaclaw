@@ -662,38 +662,8 @@ const verifyPartialFlushOnInterruption = (kind: FragmentKind) =>
   })
 
 describe("SessionRunnerLLM", () => {
-  it.effect("auto-titles a reasoning model through the shared token-budget controller", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const { db } = yield* Database.Service
-      const session = yield* SessionV2.Service
-      yield* db
-        .update(SessionTable)
-        .set({ title: "New session" })
-        .where(eq(SessionTable.id, sessionID))
-        .run()
-        .pipe(Effect.orDie)
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Investigate parser failures" }), resume: false })
-
-      response = [LLMEvent.textDelta({ id: "answer", text: "I found the parser issue." })]
-      titleResponses = [
-        // The first utility request gets stuck reasoning. The controller cuts this oversized delta
-        // at its checkpoint instead of letting the 512-token completion end with no title.
-        [LLMEvent.reasoningDelta({ id: "title-reasoning", text: "r".repeat(1_000) })],
-        [
-          LLMEvent.textDelta({ id: "title", text: "Parser failure investigation" }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-        ],
-      ]
-
-      yield* session.resume(sessionID)
-
-      expect((yield* session.get(sessionID)).title).toBe("Parser failure investigation")
-      expect(titleRequests).toHaveLength(2)
-      expect(JSON.stringify(titleRequests[0]?.system)).toContain("reasoning budget of about 128 tokens")
-      expect(titleRequests[1]?.http?.body?.["continue_final_message"]).toBe(true)
-    }),
-  )
+  // "auto-titles a reasoning model through the shared token-budget controller" — PORTED to
+  // session-runner-title.test.ts and deleted here (S3, 2026-08-05).
 
   // "advertises and executes a globally attached application tool" — PORTED to
   // session-runner-tools.test.ts and deleted here (S3, 2026-08-05).
@@ -1288,34 +1258,8 @@ describe("SessionRunnerLLM", () => {
   // "coalesces multiple active steering prompts into one continuation turn" — PORTED to
   // session-runner-steering.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("runs steering input accepted while the active provider turn fails", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Start working" }), resume: false })
-
-      requests.length = 0
-      responses = undefined
-      response = []
-      streamFailure = providerUnavailable()
-      streamGate = yield* Deferred.make<void>()
-      streamStarted = yield* Deferred.make<void>()
-
-      const first = yield* session.resume(sessionID).pipe(Effect.forkChild)
-      yield* Deferred.await(streamStarted)
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Recover with this" }) })
-      yield* Deferred.succeed(streamGate, undefined)
-      expect(yield* Fiber.join(first).pipe(Effect.flip)).toBe(streamFailure)
-
-      streamFailure = undefined
-      streamGate = undefined
-      streamStarted = undefined
-      yield* Effect.yieldNow
-
-      expect(requests).toHaveLength(2)
-      expect(userTexts(requests[1]!)).toEqual(["Start working", "Recover with this"])
-    }),
-  )
+  // "runs steering input accepted while the active provider turn fails" — PORTED to
+  // session-runner-steering.test.ts and deleted here (S3, 2026-08-05).
 
   // "durably fails local tools left running by a prior process before continuing" — PORTED to
   // session-runner-recovery.test.ts and deleted here (S3, 2026-08-05).
