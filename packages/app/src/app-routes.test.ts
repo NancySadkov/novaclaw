@@ -69,3 +69,36 @@ describe("the legacy directory URL shape still resolves", () => {
     }
   })
 })
+
+describe("a level-gated ROUTE explains itself instead of bouncing", () => {
+  // `RequiresLevel` HIDES its children below the level, which is right for a section INSIDE a page —
+  // progressive disclosure, nothing asked, nothing to answer. A route is the opposite situation: the
+  // user typed the address or followed a link somebody shared, so the question was asked out loud.
+  // `/terminal` used to answer it with `fallback={<Navigate href="/" />}` — a silent bounce to the
+  // home screen with no statement that anything was gated and no way to reach it (measured in the
+  // running app, 2026-08-05). terminal.md T4 requires the expertise explainer; AGENTS.md principle 8
+  // is the reason: that bounce is the single moment the product could teach what expertise levels
+  // are, and it said nothing.
+  //
+  // Violating this compiles green and renders "fine" — standing decision 1's defect class exactly,
+  // which is why the check is here rather than in a review comment.
+  const pages = sourceFiles().filter((rel) => rel.startsWith("pages/"))
+
+  test("pages exist that gate on expertise", () => {
+    // Negative control: if this list empties the assertion below passes vacuously forever.
+    expect(pages.filter((rel) => read(rel).includes("RequiresLevel")).length).toBeGreaterThan(0)
+  })
+
+  test("no page falls back to a redirect", () => {
+    const bouncing = pages.filter((rel) => {
+      const source = read(rel)
+      if (!source.includes("RequiresLevel")) return false
+      return /fallback=\{\s*<Navigate/.test(source)
+    })
+    expect(
+      bouncing,
+      "a level-gated page must render an explainer (see @/components/expertise-gate), never redirect: " +
+        "a deep link that silently returns the user home teaches them nothing and hides the unlock.",
+    ).toEqual([])
+  })
+})

@@ -1133,6 +1133,12 @@ export const dict = {
   "session.share.copy.copyLink": "Copy link",
 
   "prompt.loading": "Loading prompt...",
+  "expertise.gate.hint":
+    "Your experience level decides how much of NovaClaw is on show. You can change it whenever you like, and change it back — nothing is deleted either way.",
+  "expertise.gate.change": "Change experience level",
+  "expertise.gate.home": "Back to home",
+  "terminal.gate.description":
+    "A terminal is a place to type commands directly to the machine this instance runs on — handy for checking on a service or fixing something by hand, and easy to get wrong if you have never used one. It appears once you switch to the Advanced level.",
   "terminal.loading": "Loading terminal...",
   "terminal.title": "Terminal",
   "terminal.title.numbered": "Terminal {{number}}",

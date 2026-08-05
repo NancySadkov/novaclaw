@@ -1,4 +1,3 @@
-import { Navigate } from "@solidjs/router"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
@@ -11,6 +10,7 @@ import {
   terminalConnectFailureMessage,
   type TerminalConnectFailure,
 } from "@/components/terminal-connection"
+import { ExpertiseGate } from "@/components/expertise-gate"
 import { RequiresLevel } from "@/context/expertise"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
@@ -44,7 +44,12 @@ export function TerminalPage() {
   })
 
   return (
-    <RequiresLevel min="advanced" fallback={<Navigate href="/" />}>
+    <RequiresLevel
+      min="advanced"
+      fallback={
+        <ExpertiseGate title={language.t("terminal.title")} description={language.t("terminal.gate.description")} />
+      }
+    >
       <Show
         when={directory()}
         keyed
