@@ -10,6 +10,14 @@ export interface TabsV2Props extends ComponentProps<typeof Kobalte> {
 export interface TabsV2ListProps extends ComponentProps<typeof Kobalte.List> {}
 export interface TabsV2TriggerProps extends ComponentProps<typeof Kobalte.Trigger> {
   onMiddleClick?: () => void
+  /**
+   * A per-tab close affordance, rendered as a SIBLING of the trigger inside the wrapper — never as a
+   * child of it, because a button nested in a button is invalid HTML and swallows the outer click.
+   * Mirrors v1 `tabs.tsx`'s slot exactly, and lands on the `tabs-v2-close-button` styling this
+   * component's CSS already carries. Added so a v1 call site with closeable tabs has somewhere to
+   * migrate TO — the fork ledger cannot shrink past a widget whose v2 twin lacks the capability.
+   */
+  closeButton?: JSX.Element
   /** Optional subtext shown beside the primary content (muted style) */
   subtext?: JSX.Element | string
 }
@@ -48,7 +56,7 @@ function TabsV2List(props: TabsV2ListProps) {
 }
 
 function TabsV2Trigger(props: ParentProps<TabsV2TriggerProps>) {
-  const [split, rest] = splitProps(props, ["class", "classList", "children", "onMiddleClick", "subtext"])
+  const [split, rest] = splitProps(props, ["class", "classList", "children", "onMiddleClick", "closeButton", "subtext"])
   return (
     <div
       data-slot="tabs-v2-trigger-wrapper"
@@ -81,6 +89,7 @@ function TabsV2Trigger(props: ParentProps<TabsV2TriggerProps>) {
           </Show>
         </span>
       </Kobalte.Trigger>
+      <Show when={split.closeButton}>{(closeButton) => closeButton()}</Show>
     </div>
   )
 }

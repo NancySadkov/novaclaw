@@ -1,6 +1,7 @@
 import { Navigate } from "@solidjs/router"
-import { Tabs } from "@novaclaw/ui/tabs"
-import { IconButton } from "@novaclaw/ui/icon-button"
+import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
+import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
+import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { Terminal } from "@/components/terminal"
@@ -169,22 +170,24 @@ function TerminalWorkspace(props: { serverName: string }) {
           <div class="flex flex-1 items-center justify-center text-text-weak">{language.t("terminal.loading")}</div>
         }
       >
-        <Tabs value={terminal.active()} onChange={terminal.open} variant="alt" class="!h-auto !flex-none">
-          <Tabs.List class="h-10 border-b border-border-weaker-base">
+        {/* v2 design system. ⚠️ Deliberately NOT v1's `variant="alt"`: porting that variant's CSS
+            across would settle a brand question by copying the v1 app, which AGENTS.md forbids —
+            `visual.md` is the spec and v2's own variants are its expression. The tab strip keeps its
+            layout classes and takes v2's default. */}
+        <TabsV2 value={terminal.active()} onChange={terminal.open} class="!h-auto !flex-none">
+          <TabsV2.List class="h-10 border-b border-border-weaker-base">
             <For each={terminal.all()}>
               {(item) => (
-                <Tabs.Trigger
+                <TabsV2.Trigger
                   value={item.id}
                   onDblClick={() => rename(item)}
-                  onAuxClick={(event: MouseEvent) => {
-                    if (event.button !== 1) return
-                    event.preventDefault()
-                    void terminal.close(item.id)
-                  }}
+                  // v2 owns middle-click, so the hand-rolled onAuxClick guard this file used to
+                  // carry is gone rather than duplicated.
+                  onMiddleClick={() => void terminal.close(item.id)}
                   closeButton={
-                    <IconButton
-                      icon="close"
-                      variant="ghost"
+                    <IconButtonV2
+                      icon={<IconV2 name="close" />}
+                      variant="ghost-muted"
                       aria-label={language.t("terminal.close")}
                       onClick={(event) => {
                         event.stopPropagation()
@@ -194,20 +197,19 @@ function TerminalWorkspace(props: { serverName: string }) {
                   }
                 >
                   {terminalTabLabel({ title: item.title, titleNumber: item.titleNumber, t: language.t })}
-                </Tabs.Trigger>
+                </TabsV2.Trigger>
               )}
             </For>
             <div class="flex h-full items-center">
-              <IconButton
-                icon="plus-small"
-                variant="ghost"
-                iconSize="large"
+              <IconButtonV2
+                icon={<IconV2 name="plus-small" />}
+                variant="ghost-muted"
                 aria-label={language.t("command.terminal.new")}
                 onClick={terminal.new}
               />
             </div>
-          </Tabs.List>
-        </Tabs>
+          </TabsV2.List>
+        </TabsV2>
         <div class="relative min-h-0 flex-1">
           <Show
             when={active()}
