@@ -3268,41 +3268,8 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("keeps interleaved assistant text blocks separate", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Two blocks" }), resume: false })
-
-      responses = undefined
-      streamGate = undefined
-      streamStarted = undefined
-      response = [
-        LLMEvent.stepStart({ index: 0 }),
-        LLMEvent.textStart({ id: "text-1" }),
-        LLMEvent.textStart({ id: "text-2" }),
-        LLMEvent.textDelta({ id: "text-1", text: "First" }),
-        LLMEvent.textDelta({ id: "text-2", text: "Second" }),
-        LLMEvent.textEnd({ id: "text-1" }),
-        LLMEvent.textEnd({ id: "text-2" }),
-        LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-        LLMEvent.finish({ reason: "stop" }),
-      ]
-
-      yield* session.resume(sessionID)
-
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Two blocks" },
-        {
-          type: "assistant",
-          content: [
-            { type: "text", id: "text-1", text: "First" },
-            { type: "text", id: "text-2", text: "Second" },
-          ],
-        },
-      ])
-    }),
-  )
+  // "keeps interleaved assistant text blocks separate" — PORTED to
+  // session-runner-projection.test.ts and deleted here (S3, 2026-08-05).
 
   for (const kind of fragmentKinds) {
     it.effect(`broadcasts provider ${kind} deltas without storing projection rewrites`, () =>
@@ -3319,34 +3286,8 @@ describe("SessionRunnerLLM", () => {
   // "rejects duplicate streamed text starts" — PORTED to
   // session-runner-projection.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("transitions streamed raw tool input to parsed called input", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Call provider tool" }), resume: false })
-
-      responses = undefined
-      streamGate = undefined
-      streamStarted = undefined
-      response = [
-        LLMEvent.stepStart({ index: 0 }),
-        LLMEvent.toolInputStart({ id: "call-parsed", name: "web_search" }),
-        LLMEvent.toolInputDelta({ id: "call-parsed", name: "web_search", text: '{"query":"hello"}' }),
-        LLMEvent.toolInputEnd({ id: "call-parsed", name: "web_search" }),
-        LLMEvent.toolCall({ id: "call-parsed", name: "web_search", input: { query: "hello" }, providerExecuted: true }),
-      ]
-
-      yield* session.resume(sessionID)
-
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Call provider tool" },
-        {
-          type: "assistant",
-          content: [{ type: "tool", id: "call-parsed", state: { status: "error", input: { query: "hello" } } }],
-        },
-      ])
-    }),
-  )
+  // "transitions streamed raw tool input to parsed called input" — PORTED to
+  // session-runner-projection.test.ts and deleted here (S3, 2026-08-05).
 
   // "rejects malformed streamed tool input ordering" — PORTED to
   // session-runner-projection.test.ts and deleted here (S3, 2026-08-05).

@@ -69,6 +69,8 @@ export interface RunnerScript {
   titleTurns?: LLMEvent[][]
   /** Events the out-of-band post-drain maintenance probes get. Default: an empty stream. */
   maintenanceTurns?: LLMEvent[][]
+  /** Events the system-prompt-less utility passes get. Default: an empty stream. */
+  utilityTurns?: LLMEvent[][]
 }
 
 /**
@@ -132,9 +134,11 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
   const requests: LLMRequest[] = []
   const titleRequests: LLMRequest[] = []
   const maintenanceRequests: LLMRequest[] = []
+  const utilityRequests: LLMRequest[] = []
   const turns = [...(script.turns ?? [])]
   const titleTurns = [...(script.titleTurns ?? [])]
   const maintenanceTurns = [...(script.maintenanceTurns ?? [])]
+  const utilityTurns = [...(script.utilityTurns ?? [])]
   /** Every tool input the echo tool was called with, in order. Per-harness, like everything else. */
   const executions: string[] = []
 
@@ -147,7 +151,25 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       stream: ((request: LLMRequest) => {
         // Route the out-of-band passes off the interactive log FIRST — see OUT_OF_BAND above for why
         // this is correctness rather than bookkeeping.
-        const system = JSON.stringify(request.system ?? [])
+        //
+        // 🔴 ⚠️ **THE STRUCTURAL TEST COMES FIRST, AND MARKER MATCHING ALONE WAS NOT ENOUGH.** Measured
+        // 2026-08-05: a third utility pass exists that carries **no system prompt at all** (`system`
+        // empty, `tools` empty, one message). No marker can match an empty string, so it fell through
+        // to the interactive log and **consumed the scripted turn** — leaving the real turn an empty
+        // stream, so no assistant message was written and the claim failed with a context of one entry.
+        // It is conditional on the prompt (`"Two blocks"` triggered it, `"Go"` did not), which is
+        // exactly how it hid: probes passed and tests failed on the same script.
+        //
+        // So the discriminator is now POSITIVE — the interactive turn is the one carrying the agent's
+        // system prompt — rather than a list of known utilities. A list of markers can only ever
+        // recognise the probes somebody already knew about; this recognises the turn itself, and every
+        // present and future utility pass falls out on the other side by construction.
+        const parts = request.system ?? []
+        if (parts.length === 0) {
+          utilityRequests.push(request)
+          return Stream.fromIterable(utilityTurns.shift() ?? [])
+        }
+        const system = JSON.stringify(parts)
         const channel = OUT_OF_BAND.find((entry) => system.includes(entry.marker))?.channel
         if (channel === "title") {
           titleRequests.push(request)
@@ -341,6 +363,8 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     titleRequests,
     /** Requests post-drain maintenance (memory extraction) issued. Also kept off `requests`. */
     maintenanceRequests,
+    /** Utility passes that carry NO system prompt. The class a marker list cannot recognise. */
+    utilityRequests,
     /** Text the echo tool was asked to echo, in call order. */
     executions,
     model,
