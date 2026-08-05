@@ -1491,57 +1491,8 @@ describe("SessionRunnerLLM", () => {
   // "forces a text response on an agent's configured final step" — PORTED to
   // session-runner-steps.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("resets the configured step allowance when steering input promotes", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const agents = yield* AgentV2.Service
-      yield* agents.transform((editor) =>
-        editor.update(AgentV2.ID.make("build"), (agent) => {
-          agent.steps = 2
-        }),
-      )
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Start work" }), resume: false })
-
-      requests.length = 0
-      executions.length = 0
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "call-before-steer", name: "echo", input: { text: "before" } }),
-          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-          LLMEvent.finish({ reason: "tool-calls" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "call-after-steer", name: "echo", input: { text: "after" } }),
-          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-          LLMEvent.finish({ reason: "tool-calls" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-      ]
-      streamGate = yield* Deferred.make<void>()
-      streamStarted = yield* Deferred.make<void>()
-
-      const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
-      yield* Deferred.await(streamStarted)
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Change direction" }) })
-      yield* Deferred.succeed(streamGate, undefined)
-      yield* Fiber.join(run)
-      streamGate = undefined
-      streamStarted = undefined
-
-      expect(requests).toHaveLength(3)
-      expect(requests[1]?.toolChoice).toBeUndefined()
-      expect(requests[1]?.tools).not.toEqual([])
-      expect(requests[2]?.toolChoice).toMatchObject({ type: "none" })
-      expect(executions).toEqual(["before", "after"])
-    }),
-  )
+  // "resets the configured step allowance when steering input promotes" — PORTED to
+  // session-runner-steps.test.ts and deleted here (S3, 2026-08-05).
 
   // "projects provider errors as terminal assistant step failures" — PORTED to
   // session-runner-errors.test.ts and deleted here (S3, 2026-08-05).
