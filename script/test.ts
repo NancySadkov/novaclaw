@@ -168,9 +168,22 @@ const PACKAGES: Pkg[] = [
   { name: "ui", dir: "packages/ui", args: ["src"] },
   // MEASURED 110–136 s (2026-07-27, arch review) against the 150 s default — i.e. the default was a
   // ~10% margin, and under memory pressure core was being wall-clock-killed and reported as a CRASH.
-  // 300 s is a hang backstop again rather than a budget. This number is evidence, not a guess; if core
-  // ever approaches it, that is a real regression to investigate, not a cap to raise.
-  { name: "core", dir: "packages/core", args: [], wallclockMs: 300_000 },
+  // 300 s was a hang backstop again rather than a budget.
+  //
+  // 2026-08-05 — core reached it, and the note above said that is "a real regression to investigate,
+  // not a cap to raise". Investigated. **It is neither.** Five runs on a quiet box (host commit 50%,
+  // no strays) measured 185 s · 192 s · 208 s · 241 s and two kills at 300 s — a >55% spread with no
+  // change in between. Timing every file found no hot spot: the slowest is 14 s and `test/` root is
+  // 204 files at ~0.7 s each. Core grew by BREADTH (110–136 s over 300-odd files → 185–241 s over
+  // 341), and the variance rides on top of that.
+  //
+  // So the dichotomy in the old note was false: accumulated breadth is not a regression, and a
+  // backstop that fires on healthy runs destroys the only thing it is for. A hang burns the budget
+  // ONCE; a too-tight backstop corrupts EVERY loaded run, and a kill is indistinguishable from a
+  // crash at the summary. 600 s is ~2.5× the healthy maximum. ⚠️ The wall clock alone no longer
+  // separates "hung" from "slow" here — if this one fires, read the PeakSampler pressure verdict on
+  // the kill line before assuming a hang.
+  { name: "core", dir: "packages/core", args: [], wallclockMs: 600_000 },
   { name: "app:unit", dir: "packages/app", args: ["--preload", "./happydom.ts", "./src"] },
   {
     name: "app:browser",
@@ -739,9 +752,22 @@ process.stdout.write(`\n\x1b[1m── skipped ──\x1b[0m\n`)
 if (testResults.length && !observed.length) {
   // Every unit unreadable is not N crashes — it means bun's summary is no longer on the stream we
   // capture (it writes the reporter to stderr today). Say that once instead of N times.
+  //
+  // ⚠️ …but only when the units PASSED. "Every unit unreadable" is trivially true when there is one
+  // unit (`--only=core`), and a unit that was wall-clock-killed is unreadable for the obvious reason.
+  // Measured 2026-08-05: this printed the reporter-moved hypothesis for a killed `core`, and the
+  // hypothesis is what a reader acts on — it cost two 300 s runs spent looking at readSkipCount()
+  // while the answer ("WALL-CLOCK KILL at 300s") was already in the row above. The script knows which
+  // units failed; offering a diagnosis it can rule out is ruling 2 at the reporting layer.
+  const broken = testResults.filter((r) => !r.ok)
   process.stdout.write(
-    `  \x1b[33mNO RUN UNIT PRODUCED A READABLE BUN SUMMARY\x1b[0m — the ledger could not be built.\n` +
-      `  If the units themselves passed, bun's reporter moved off stderr and readSkipCount() needs updating.\n`,
+    broken.length > 0
+      ? `  \x1b[33mNO RUN UNIT PRODUCED A READABLE BUN SUMMARY\x1b[0m — the ledger could not be built.\n` +
+          `  ${broken.length} of ${testResults.length} unit(s) did not finish (${broken
+            .map((r) => `${r.name}: ${r.note || "failed"}`)
+            .join("; ")}) — that is the cause; the ledger is a symptom.\n`
+      : `  \x1b[33mNO RUN UNIT PRODUCED A READABLE BUN SUMMARY\x1b[0m — the ledger could not be built.\n` +
+          `  Every unit PASSED, so bun's reporter moved off stderr and readSkipCount() needs updating.\n`,
   )
 } else if (!testResults.length) {
   process.stdout.write(`  (no test units ran — nothing to count)\n`)

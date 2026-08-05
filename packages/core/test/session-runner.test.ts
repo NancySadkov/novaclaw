@@ -769,30 +769,8 @@ describe("SessionRunnerLLM", () => {
   // "publishes the original overflow when recovery summarization fails" — PORTED to
   // session-runner-compaction.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("interrupts overflow recovery while the summary provider is running", () =>
-    Effect.gen(function* () {
-      const session = yield* setupOverflowRecovery
-      responses = [
-        [LLMEvent.providerError({ message: "prompt too long", classification: "context-overflow" })],
-        fragmentFixture("text", "text-summary", ["## Goal\n- Interrupted"]).completeEvents,
-      ]
-      const firstGate = yield* Deferred.make<void>()
-      const summaryGate = yield* Deferred.make<void>()
-      streamGate = firstGate
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Continue" }), resume: false })
-      const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
-      while (requests.length < 1) yield* Effect.yieldNow
-      streamGate = summaryGate
-      yield* Deferred.succeed(firstGate, undefined)
-      while (requests.length < 2) yield* Effect.yieldNow
-
-      yield* session.interrupt(sessionID)
-      expect(yield* Fiber.await(run)).toMatchObject({ _tag: "Failure" })
-      streamGate = undefined
-      expect(requests).toHaveLength(2)
-      expect((yield* session.context(sessionID)).some((message) => message.type === "compaction")).toBe(false)
-    }),
-  )
+  // "interrupts overflow recovery while the summary provider is running" — PORTED to
+  // session-runner-compaction.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("preserves effective System updates while compaction rebaseline is blocked", () =>
     Effect.gen(function* () {

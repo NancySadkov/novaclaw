@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Fiber } from "effect"
 import { LLMError, LLMEvent, InvalidRequestReason } from "@novaclaw/llm"
 import { Stream } from "effect"
 import { EventV2 } from "@novaclaw/core/event"
@@ -368,5 +368,52 @@ describe("SessionRunnerLLM — overflow recovery", () => {
       { type: "user", text: "Continue" },
       { type: "assistant", finish: "error", error: { message: "prompt too long" } },
     ])
+  })
+
+  test("interrupts overflow recovery while the summary provider is running", async () => {
+    // The user interrupts DURING the summary — after the overflow, before the retry. The recovery must
+    // abandon cleanly: the run fails, no retry is issued, and no compaction is left behind.
+    //
+    // ⭐ The absent compaction is the claim, and it is the same one the failed-summariser claim above
+    // makes by a different route. Together they say compaction is committed only by a summary that
+    // finished — a runner that wrote the overlay when the summary STARTED would pass every green-path
+    // compaction claim in this file and still hand the user a session whose history had been replaced
+    // by a summary that was never written.
+    const summaryStarted = makeLatch()
+    const summaryGate = makeLatch()
+    const harness = makeRunnerHarness({
+      turns: [
+        fragmentFixture("text", "text-earlier", ["Earlier answer"]).completeEvents,
+        fragmentFixture("text", "text-second", ["Second answer"]).completeEvents,
+        overflowTurn(),
+        fragmentFixture("text", "text-summary", ["## Goal\n- Interrupted"]).completeEvents,
+      ],
+    })
+    harness.controls.summaryStarted = summaryStarted
+    harness.controls.summaryGate = summaryGate
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* primeForOverflow(harness)
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Continue" }), resume: false })
+        const run = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+
+        yield* Effect.promise(() => summaryStarted.promise)
+        yield* session.interrupt(HARNESS_SESSION)
+        expect(yield* Fiber.await(run), "an interrupted recovery does not settle as success").toMatchObject({
+          _tag: "Failure",
+        })
+        summaryGate.open()
+        return yield* session.context(HARNESS_SESSION)
+      }),
+      "claim — an interrupted recovery commits no compaction",
+    )
+
+    expect(harness.requests, "the overflow turn and the summary — the retry never happens").toHaveLength(2)
+    expect(
+      (context as Array<{ type: string }>).some((message) => message.type === "compaction"),
+      "an interrupted summary must not leave a compaction behind",
+    ).toBe(false)
   })
 })

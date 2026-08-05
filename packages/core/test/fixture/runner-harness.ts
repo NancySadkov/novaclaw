@@ -257,6 +257,16 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     /** When set, the interactive stream FAILS with this instead of emitting its scripted turn. */
     streamFailure: undefined as LLMError | undefined,
     /**
+     * Gate the COMPACTION SUMMARY request specifically.
+     *
+     * ⚠️ `streamGate` cannot do this. The summary runs on the no-agent-system path classified above, so
+     * it never reaches the interactive gate — a claim that set `streamGate` and waited for the summary
+     * to block would wait forever. Held open, this is what lets a claim interrupt mid-recovery.
+     */
+    summaryGate: undefined as Latch | undefined,
+    /** Opened when the summary request begins. Pair with `summaryGate` to hold recovery open. */
+    summaryStarted: undefined as Latch | undefined,
+    /**
      * Run during every system-context LOAD. The agent-sampling claims need to change the world inside
      * that window — the point being that a switch landing mid-load must not retroactively change the
      * turn already assembling.
@@ -339,9 +349,19 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
           }
           requests.push(request)
           const summaryTurn = turns.shift()
-          return Array.isArray(summaryTurn)
+          const summaryBody: Stream.Stream<LLMEvent, LLMError> = Array.isArray(summaryTurn)
             ? Stream.fromIterable(summaryTurn)
             : (summaryTurn ?? Stream.fromIterable([]))
+          const summaryStarted = controls.summaryStarted
+          const summaryGate = controls.summaryGate
+          if (!summaryStarted && !summaryGate) return summaryBody
+          return Stream.unwrap(
+            Effect.gen(function* () {
+              if (summaryStarted) summaryStarted.open()
+              if (summaryGate) yield* Effect.promise(() => summaryGate.promise)
+              return summaryBody
+            }),
+          )
         }
         const system = JSON.stringify(parts)
         const channel = OUT_OF_BAND.find((entry) => system.includes(entry.marker))?.channel
