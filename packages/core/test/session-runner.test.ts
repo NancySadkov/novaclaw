@@ -2294,98 +2294,14 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("durably fails a hosted tool when its provider errors before returning a result", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Fail hosted tool durably" }), resume: false })
+  // "durably fails a hosted tool when its provider errors before returning a result" — PORTED to
+  // session-runner-hosted-tools.test.ts and deleted here (S3, 2026-08-05).
 
-      requests.length = 0
-      response = [
-        LLMEvent.stepStart({ index: 0 }),
-        LLMEvent.toolCall({
-          id: "call-hosted-provider-error",
-          name: "web_search",
-          input: { query: "effect" },
-          providerExecuted: true,
-        }),
-        LLMEvent.providerError({ message: "Provider unavailable" }),
-      ]
+  // "durably fails a hosted tool left unresolved at normal provider EOF" — PORTED to
+  // session-runner-hosted-tools.test.ts and deleted here (S3, 2026-08-05).
 
-      yield* session.resume(sessionID)
-
-      expect(requests).toHaveLength(1)
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Fail hosted tool durably" },
-        {
-          type: "assistant",
-          content: [{ type: "tool", id: "call-hosted-provider-error", state: { status: "error" } }],
-        },
-      ])
-    }),
-  )
-
-  it.effect("durably fails a hosted tool left unresolved at normal provider EOF", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Fail hosted tool at EOF" }), resume: false })
-      response = [
-        LLMEvent.stepStart({ index: 0 }),
-        LLMEvent.toolCall({
-          id: "call-hosted-eof",
-          name: "web_search",
-          input: { query: "effect" },
-          providerExecuted: true,
-        }),
-      ]
-
-      yield* session.resume(sessionID)
-      yield* replaySessionProjection(sessionID)
-
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Fail hosted tool at EOF" },
-        { type: "assistant", content: [{ type: "tool", id: "call-hosted-eof", state: { status: "error" } }] },
-      ])
-    }),
-  )
-
-  it.effect("durably fails a hosted tool left unresolved by a raw provider stream failure", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({
-        sessionID,
-        prompt: Prompt.make({ text: "Fail hosted tool on raw failure" }),
-        resume: false,
-      })
-      const failure = providerUnavailable()
-      responseStream = Stream.concat(
-        Stream.fromIterable([
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({
-            id: "call-hosted-raw-failure",
-            name: "web_search",
-            input: { query: "effect" },
-            providerExecuted: true,
-          }),
-        ]),
-        Stream.fail(failure),
-      )
-
-      expect(yield* session.resume(sessionID).pipe(Effect.flip)).toBe(failure)
-      yield* replaySessionProjection(sessionID)
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Fail hosted tool on raw failure" },
-        {
-          type: "assistant",
-          finish: "error",
-          error: { type: "unknown", message: "Provider unavailable" },
-          content: [{ type: "tool", id: "call-hosted-raw-failure", state: { status: "error" } }],
-        },
-      ])
-    }),
-  )
+  // "durably fails a hosted tool left unresolved by a raw provider stream failure" — PORTED to
+  // session-runner-hosted-tools.test.ts and deleted here (S3, 2026-08-05).
 
   // "keeps interleaved assistant text blocks separate" — PORTED to
   // session-runner-projection.test.ts and deleted here (S3, 2026-08-05).
