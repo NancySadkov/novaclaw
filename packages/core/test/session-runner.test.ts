@@ -859,61 +859,8 @@ describe("SessionRunnerLLM", () => {
   // "returns unexpected local tool defects to the model and continues" — PORTED to
   // session-runner-tools.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("interrupts runner continuation when a question is dismissed", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      const registry = yield* ToolRegistry.Service
-      const questions = yield* QuestionV2.Service
-      yield* registry.register({
-        question: Tool.make({
-          description: "Ask the user",
-          input: Schema.Struct({}),
-          output: Schema.Struct({}),
-          execute: (_, context) =>
-            questions.ask({ sessionID: context.sessionID, questions: [] }).pipe(Effect.as({}), Effect.orDie),
-        }),
-      })
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Ask then stop" }), resume: false })
-
-      requests.length = 0
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "call-question", name: "question", input: {} }),
-          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-          LLMEvent.finish({ reason: "tool-calls" }),
-        ],
-        [],
-      ]
-
-      const run = yield* session.resume(sessionID).pipe(Effect.exit, Effect.forkChild)
-      let pending = yield* questions.list()
-      while (pending.length === 0) {
-        yield* Effect.yieldNow
-        pending = yield* questions.list()
-      }
-      yield* questions.reject(pending[0]!.id)
-      const exit = yield* Fiber.join(run)
-
-      expect(exit._tag).toBe("Failure")
-      if (exit._tag === "Failure") expect(Cause.hasInterruptsOnly(exit.cause)).toBe(true)
-      expect(requests).toHaveLength(1)
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Ask then stop" },
-        {
-          type: "assistant",
-          content: [
-            {
-              type: "tool",
-              id: "call-question",
-              state: { status: "error", error: { type: "unknown", message: "Tool execution interrupted" } },
-            },
-          ],
-        },
-      ])
-    }),
-  )
+  // "interrupts runner continuation when a question is dismissed" — PORTED to
+  // session-runner-blocked-tools.test.ts and deleted here (S3, 2026-08-05).
 
   // "awaits started local tools before surfacing provider stream failure" — PORTED to
   // session-runner-blocked-tools.test.ts and deleted here (S3, 2026-08-05).
