@@ -1488,53 +1488,8 @@ describe("SessionRunnerLLM", () => {
   // "durably fails blocked local tools when interrupted while awaiting settlement" — PORTED to
   // session-runner-blocked-tools.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("forces a text response on an agent's configured final step", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const agents = yield* AgentV2.Service
-      yield* agents.transform((editor) =>
-        editor.update(AgentV2.ID.make("build"), (agent) => {
-          agent.steps = 2
-        }),
-      )
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Finish at the limit" }), resume: false })
-
-      requests.length = 0
-      executions.length = 0
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "call-terminal", name: "echo", input: { text: "done" } }),
-          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-          LLMEvent.finish({ reason: "tool-calls" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "call-forbidden", name: "echo", input: { text: "forbidden" } }),
-          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-          LLMEvent.finish({ reason: "tool-calls" }),
-        ],
-      ]
-
-      yield* session.resume(sessionID)
-
-      expect(requests).toHaveLength(2)
-      expect(requests[0]?.toolChoice).toBeUndefined()
-      expect(requests[1]?.toolChoice).toMatchObject({ type: "none" })
-      expect(requests[1]?.tools).toEqual([])
-      expect(requests[1]?.messages.at(-1)).toMatchObject({
-        role: "assistant",
-        content: [{ type: "text", text: expect.stringContaining("MAXIMUM STEPS REACHED") }],
-      })
-      expect(executions).toEqual(["done"])
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Finish at the limit" },
-        { type: "assistant", content: [{ type: "tool", id: "call-terminal", state: { status: "completed" } }] },
-        { type: "assistant", content: [{ type: "tool", id: "call-forbidden", state: { status: "error" } }] },
-      ])
-    }),
-  )
+  // "forces a text response on an agent's configured final step" — PORTED to
+  // session-runner-steps.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("resets the configured step allowance when steering input promotes", () =>
     Effect.gen(function* () {
@@ -1597,22 +1552,8 @@ describe("SessionRunnerLLM", () => {
   // "does not recover context overflow after durable assistant output" — PORTED to
   // session-runner-errors.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("projects raw provider stream failures as terminal assistant step failures", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Fail raw stream durably" }), resume: false })
-      const failure = providerUnavailable()
-      responseStream = Stream.fail(failure)
-
-      expect(yield* session.resume(sessionID).pipe(Effect.flip)).toBe(failure)
-      yield* replaySessionProjection(sessionID)
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Fail raw stream durably" },
-        { type: "assistant", finish: "error", error: { type: "unknown", message: "Provider unavailable" } },
-      ])
-    }),
-  )
+  // "projects raw provider stream failures as terminal assistant step failures" — PORTED to
+  // session-runner-errors.test.ts and deleted here (S3, 2026-08-05).
 
   // "accepts a malformed stream tail as broken context and continues without replaying the request" — PORTED to
   // session-runner-errors.test.ts and deleted here (S3, 2026-08-05).

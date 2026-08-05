@@ -184,4 +184,37 @@ describe("SessionRunnerLLM — provider errors", () => {
       { type: "assistant", finish: "stop", content: [{ type: "text", text: "Recovered" }] },
     ])
   })
+
+  test("projects raw provider stream failures as terminal assistant step failures", async () => {
+    // The stream dies before emitting anything at all. The failure reaches the caller AND is recorded
+    // as a terminal assistant failure that survives a projection replay — a session whose provider died
+    // must still be able to say what happened after a restart.
+    const failure = new LLMError({
+      module: "test",
+      method: "stream",
+      reason: new TransportReason({ message: "Provider unavailable" }),
+    })
+    const harness = makeRunnerHarness({ turns: [Stream.fail(failure)] })
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Fail raw stream durably" }),
+          resume: false,
+        })
+        expect(yield* session.resume(HARNESS_SESSION).pipe(Effect.flip)).toBe(failure)
+        yield* harness.replayProjection(HARNESS_SESSION)
+        return yield* session.context(HARNESS_SESSION)
+      }),
+      "claim — a raw stream failure is durable",
+    )
+
+    expect(context).toMatchObject([
+      { type: "user", text: "Fail raw stream durably" },
+      { type: "assistant", finish: "error", error: { type: "unknown", message: "Provider unavailable" } },
+    ])
+  })
 })
