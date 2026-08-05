@@ -47,6 +47,7 @@ import { EventV2 } from "@novaclaw/core/event"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionExecution } from "@novaclaw/core/session/execution"
+import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionStore } from "@novaclaw/core/session/store"
@@ -82,6 +83,11 @@ const kernel = AppNodeBuilder.build(
     SessionStore.node,
     SessionTags.node,
     SessionV2.node,
+    // ⚠️ Both of these are listed because the HANDLER reads them out of the ambient context
+    // (`handlers/session.ts` yields both before returning), not because the kernel needs them —
+    // a node that is only replaced is provided INWARD, and the handler is outside that graph.
+    SessionExecution.node,
+    SessionExecutionAttempt.node,
   ]),
   [
     [Database.node, Database.layerFromPath(":memory:")],
