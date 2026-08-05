@@ -3316,20 +3316,8 @@ describe("SessionRunnerLLM", () => {
     )
   }
 
-  it.effect("rejects duplicate streamed text starts", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      responses = undefined
-      streamGate = undefined
-      streamStarted = undefined
-      response = [LLMEvent.textStart({ id: "text-1" }), LLMEvent.textStart({ id: "text-1" })]
-
-      expect(yield* session.resume(sessionID).pipe(Effect.catchDefect(Effect.succeed))).toBe(
-        "Duplicate text start: text-1",
-      )
-    }),
-  )
+  // "rejects duplicate streamed text starts" — PORTED to
+  // session-runner-projection.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("transitions streamed raw tool input to parsed called input", () =>
     Effect.gen(function* () {
@@ -3360,18 +3348,6 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("rejects malformed streamed tool input ordering", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      responses = undefined
-      streamGate = undefined
-      streamStarted = undefined
-      response = [LLMEvent.toolInputDelta({ id: "call-1", name: "read", text: "{}" })]
-
-      expect(yield* session.resume(sessionID).pipe(Effect.catchDefect(Effect.succeed))).toBe(
-        "Tool input delta before start: call-1",
-      )
-    }),
-  )
+  // "rejects malformed streamed tool input ordering" — PORTED to
+  // session-runner-projection.test.ts and deleted here (S3, 2026-08-05).
 })
