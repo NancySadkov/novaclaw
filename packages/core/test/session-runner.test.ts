@@ -1777,89 +1777,11 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("awaits started local tools before surfacing provider stream failure", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Settle before failing" }), resume: false })
-      const failure = providerUnavailable()
-      toolExecutionGate = yield* Deferred.make<void>()
-      responseStream = Stream.concat(
-        Stream.fromIterable([
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "call-before-failure", name: "echo", input: { text: "settle" } }),
-        ]),
-        Stream.fail(failure),
-      )
+  // "awaits started local tools before surfacing provider stream failure" — PORTED to
+  // session-runner-blocked-tools.test.ts and deleted here (S3, 2026-08-05).
 
-      const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
-      while (executions.length === 0) yield* Effect.yieldNow
-      yield* Effect.yieldNow
-      yield* Deferred.succeed(toolExecutionGate, undefined)
-      expect(yield* Fiber.join(run).pipe(Effect.flip)).toBe(failure)
-      toolExecutionGate = undefined
-
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Settle before failing" },
-        {
-          type: "assistant",
-          content: [
-            { type: "tool", id: "call-before-failure", state: { status: "completed", structured: { text: "settle" } } },
-          ],
-        },
-      ])
-    }),
-  )
-
-  it.effect("durably fails blocked local tools when a provider turn is interrupted", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Interrupt blocked tool" }), resume: false })
-      executions.length = 0
-      toolExecutionGate = yield* Deferred.make<void>()
-      responseStream = Stream.concat(
-        Stream.fromIterable([
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "call-before-interrupt", name: "echo", input: { text: "blocked" } }),
-        ]),
-        Stream.never,
-      )
-
-      const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
-      while (executions.length === 0) yield* Effect.yieldNow
-      yield* session.interrupt(sessionID)
-      toolExecutionGate = undefined
-
-      expect(yield* Fiber.await(run)).toMatchObject({ _tag: "Failure" })
-      yield* session.interrupt(sessionID)
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Interrupt blocked tool" },
-        {
-          type: "assistant",
-          content: [
-            {
-              type: "tool",
-              id: "call-before-interrupt",
-              state: { status: "error", error: { type: "unknown", message: "Tool execution interrupted" } },
-            },
-          ],
-        },
-      ])
-
-      yield* replaySessionProjection(sessionID)
-
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Interrupt blocked tool" },
-        { type: "assistant", content: [{ type: "tool", id: "call-before-interrupt", state: { status: "error" } }] },
-      ])
-      requests.length = 0
-      responseStream = undefined
-      response = []
-      yield* session.resume(sessionID)
-      expect(requests[0]?.messages.map((message) => message.role)).toEqual(["user", "assistant", "tool"])
-    }),
-  )
+  // "durably fails blocked local tools when a provider turn is interrupted" — PORTED to
+  // session-runner-blocked-tools.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("interrupts a blocked provider turn without local tool execution", () =>
     Effect.gen(function* () {
