@@ -9,7 +9,11 @@ describe("the diagnosis carries metadata and never output", () => {
     ptyID: "pty_fd01841b6001B4gU4x9RJ6utW7",
     shell: "bash",
     cwd: "C:\\Users\\nangl",
-    version: "0.1.57",
+    // ⚠️ Deliberately NOT the real current version. `core/test/version-single-source.test.ts` scans
+    // packages/app/src for the live version as a literal and fails on any hit — this fixture used the
+    // real one and tripped it. A fixture only needs a version-SHAPED string, and using the real one
+    // would also silently rot at every release.
+    version: "9.9.9",
   }
 
   test("every field the user can already see is included", () => {
