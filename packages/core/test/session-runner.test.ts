@@ -838,50 +838,8 @@ describe("SessionRunnerLLM", () => {
   // "continues with reloaded history after durably settling one local tool call" — PORTED to
   // session-runner-tools.test.ts and deleted here (S3, 2026-08-05).
 
-  it.effect("reloads a model switch before a tool-driven continuation turn", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      const events = yield* EventV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Echo this" }), resume: false })
-
-      requests.length = 0
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "call-echo", name: "echo", input: { text: "hello" } }),
-          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-          LLMEvent.finish({ reason: "tool-calls" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-      ]
-      toolExecutionGate = yield* Deferred.make<void>()
-      toolExecutionsStarted = yield* Deferred.make<void>()
-      toolExecutionsReady = 1
-      const run = yield* Effect.forkChild(session.resume(sessionID))
-      yield* Deferred.await(toolExecutionsStarted)
-      yield* events.publish(SessionEvent.ModelSwitched, {
-        sessionID,
-        messageID: SessionMessage.ID.create(),
-        timestamp: DateTime.makeUnsafe(1),
-        model: { id: ModelV2.ID.make("replacement"), providerID: ProviderV2.ID.make("fake") },
-      })
-      systemBaseline = "Replacement context"
-      yield* Deferred.succeed(toolExecutionGate, undefined)
-      yield* Fiber.join(run)
-
-      expect(requests.map((request) => request.model)).toEqual([model, replacementModel])
-      expect(requests.map((request) => request.system.map((part) => part.text))).toEqual([
-        ["Initial context"],
-        ["Initial context"],
-      ])
-      expect(systemTexts(requests[1]!)).toContain("Replacement context")
-    }),
-  )
+  // "reloads a model switch before a tool-driven continuation turn" — PORTED to
+  // session-runner-agent.test.ts and deleted here (S3, 2026-08-05).
 
   // "restores durable reasoning provider metadata in a second-turn request" — PORTED to
   // session-runner-reasoning.test.ts and deleted here (S3, 2026-08-05).

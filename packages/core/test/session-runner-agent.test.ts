@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Fiber } from "effect"
 import { eq } from "drizzle-orm"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { EventV2 } from "@novaclaw/core/event"
@@ -11,7 +11,8 @@ import { Database } from "@novaclaw/core/database/database"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionTable } from "@novaclaw/core/session/sql"
-import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { LLMEvent } from "@novaclaw/llm"
+import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — which agent's system prompt reaches the provider, and in what order.
@@ -275,5 +276,64 @@ describe("SessionRunnerLLM — agent system prompt", () => {
     const bodyOf = (index: number) =>
       JSON.stringify((harness.requests[index]?.messages ?? []).map((message) => message.content))
     expect(bodyOf(1), "the new agent's guidance arrives as a message").toContain("Reviewer skills")
+  })
+
+  test("reloads a model switch before a tool-driven continuation turn", async () => {
+    // A model switch published WHILE a tool is executing must take effect on the CONTINUATION turn. The
+    // sampled-model claim says an in-flight turn keeps its model; this says the next one does not.
+    //
+    // ⭐ Together they define the boundary, and neither alone does: one prevents a switch from
+    // rewriting work already underway, the other prevents it from being swallowed. A runner that
+    // sampled the model once per RUN rather than per TURN would pass the first and fail this — and the
+    // user's switch would appear to do nothing until they started a new session.
+    const toolsStarted = makeLatch()
+    const toolGate = makeLatch()
+    const harness = makeRunnerHarness({
+      turns: [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "call-echo", name: "echo", input: { text: "hello" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        completeTurn("t2", "Continued"),
+      ],
+    })
+    harness.controls.toolsStarted = toolsStarted
+    harness.controls.toolGate = toolGate
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const events = yield* EventV2.Service
+        const session = yield* SessionV2.Service
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Echo this" }), resume: false })
+
+        const run = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+        yield* Effect.promise(() => toolsStarted.promise)
+
+        // The world changes while the tool is mid-execution.
+        yield* events.publish(SessionEvent.ModelSwitched, {
+          sessionID: HARNESS_SESSION,
+          messageID: SessionMessage.ID.create(),
+          timestamp: DateTime.makeUnsafe(1),
+          model: { id: ModelV2.ID.make("replacement"), providerID: ProviderV2.ID.make("harness") },
+        })
+        harness.controls.systemBaseline = "Replacement context"
+
+        toolGate.open()
+        yield* Fiber.join(run)
+      }),
+      "claim — a continuation turn reloads the switched model",
+    )
+
+    expect(harness.requests).toHaveLength(2)
+    expect(
+      harness.requests.map((request) => request.model),
+      "the in-flight turn keeps its model; the continuation picks up the switch",
+    ).toEqual([harness.model, harness.replacementModel])
+    // The prefix is NOT rewritten by the switch — the new context arrives chronologically instead.
+    const secondBody = JSON.stringify((harness.requests[1]?.messages ?? []).map((message) => message.content))
+    expect(secondBody, "the changed context reaches the continuation as a message").toContain("Replacement context")
   })
 })

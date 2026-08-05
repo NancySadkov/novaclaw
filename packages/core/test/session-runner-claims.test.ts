@@ -406,6 +406,10 @@ const STATUS: Readonly<Record<string, { status: Exclude<ClaimStatus, "spec">; wh
     status: "ported",
     where: "session-runner-context.test.ts",
   },
+  "reloads a model switch before a tool-driven continuation turn": {
+    status: "ported",
+    where: "session-runner-agent.test.ts",
+  },
 }
 
 describe("the session-runner claims ledger", () => {
@@ -447,21 +451,21 @@ describe("the session-runner claims ledger", () => {
     // about `session/runner/llm.ts` still have NO executing coverage on any platform.
     const remaining = CLAIMS.filter((claim) => STATUS[claim] === undefined)
     expect(remaining.length).toBe(CLAIMS.length - Object.keys(STATUS).length)
-    expect(remaining.length).toBe(7)
+    expect(remaining.length).toBe(6)
   })
 
-  test("the remaining declarations are 7 tests, and the ledger knows why", () => {
+  test("the remaining declarations are 6 tests, and the ledger knows why", () => {
     // The two numbers look like a discrepancy until you know about the loop: three titles are template
     // literals iterated over `fragmentKinds`, which has three entries, so those three declarations
     // produce nine tests. That is how the ledger stays tied to something observable — this is the exact
     // win32 skip count `bun test test/session-runner.test.ts` reports for the file, and
     // `script/test-baseline.json`'s `units.core` must move with it on every ported slice.
     //
-    // It was 77 → 83 when the ledger landed; seventy ported claims make it 7 → 7 — the three PARAMETERISED ones went in this slice, so declarations and tests are now equal for the first time.
+    // It was 77 → 83 when the ledger landed; seventy-one ported claims make it 6 → 6 — the three PARAMETERISED ones went in this slice, so declarations and tests are now equal for the first time.
     const remaining = CLAIMS.filter((claim) => STATUS[claim] === undefined)
     const parameterised = remaining.filter((claim) => claim.includes("${kind}"))
     expect(parameterised.length).toBe(0)
     const FRAGMENT_KINDS = 3
-    expect(remaining.length - parameterised.length + parameterised.length * FRAGMENT_KINDS).toBe(7)
+    expect(remaining.length - parameterised.length + parameterised.length * FRAGMENT_KINDS).toBe(6)
   })
 })
