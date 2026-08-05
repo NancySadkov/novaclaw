@@ -346,15 +346,19 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
    * Seed the session row. The old fixture's `setup` did this plus sixty resets; here the resets do not
    * exist, so seeding is all that is left.
    */
-  const seed = Effect.gen(function* () {
-    const { db } = yield* Database.Service
-    yield* db
-      .insert(SessionTable)
-      .values({ id: HARNESS_SESSION, slug: HARNESS_SESSION, directory: "/project", title: "test", version: "test" })
-      .onConflictDoNothing()
-      .run()
-      .pipe(Effect.orDie)
-  })
+  /** Seed any session row. Claims about two sessions at once need more than the default one. */
+  const seedSession = (id: SessionV2.ID) =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* db
+        .insert(SessionTable)
+        .values({ id, slug: id, directory: "/project", title: "test", version: "test" })
+        .onConflictDoNothing()
+        .run()
+        .pipe(Effect.orDie)
+    })
+
+  const seed = seedSession(HARNESS_SESSION)
 
   return {
     /** Every interactive request the drain issued, in order. Per-harness: another test cannot append. */
@@ -372,6 +376,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     /** The whole node graph, wired exactly as the old fixture wires it. Provide this to a test body. */
     layer,
     seed,
+    seedSession,
   }
 }
 

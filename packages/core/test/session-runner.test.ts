@@ -2563,35 +2563,8 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("bounds 64-character session prompt cache keys", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const longSessionID = SessionV2.ID.make(`ses_${"a".repeat(64)}`)
-      const otherLongSessionID = SessionV2.ID.make(`ses_${"b".repeat(64)}`)
-      yield* insertSession(longSessionID)
-      yield* insertSession(otherLongSessionID)
-      const session = yield* SessionV2.Service
-      yield* session.prompt({
-        sessionID: longSessionID,
-        prompt: Prompt.make({ text: "Run long session" }),
-        resume: false,
-      })
-      yield* session.prompt({
-        sessionID: otherLongSessionID,
-        prompt: Prompt.make({ text: "Run other long session" }),
-        resume: false,
-      })
-
-      requests.length = 0
-      yield* session.resume(longSessionID)
-      yield* session.resume(otherLongSessionID)
-
-      const keys = requests.map((request) => request.providerOptions?.openai?.promptCacheKey)
-      expect(keys).toEqual([longSessionID.slice(4), otherLongSessionID.slice(4)])
-      expect(keys.every((key) => typeof key === "string" && key.length === 64)).toBe(true)
-      expect(keys[0]).not.toBe(keys[1])
-    }),
-  )
+  // "bounds 64-character session prompt cache keys" — PORTED to
+  // session-runner-turn.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("fans out one failed run and allows a later retry", () =>
     Effect.gen(function* () {
@@ -3019,46 +2992,11 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("projects provider errors as terminal assistant step failures", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Fail durably" }), resume: false })
+  // "projects provider errors as terminal assistant step failures" — PORTED to
+  // session-runner-errors.test.ts and deleted here (S3, 2026-08-05).
 
-      requests.length = 0
-      responses = undefined
-      streamGate = undefined
-      streamStarted = undefined
-      response = [LLMEvent.stepStart({ index: 0 }), LLMEvent.providerError({ message: "Provider unavailable" })]
-
-      yield* session.resume(sessionID)
-
-      expect(requests).toHaveLength(1)
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Fail durably" },
-        { type: "assistant", finish: "error", error: { type: "unknown", message: "Provider unavailable" } },
-      ])
-    }),
-  )
-
-  it.effect("projects provider errors emitted before assistant step start", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Fail before step" }), resume: false })
-
-      requests.length = 0
-      response = [LLMEvent.providerError({ message: "Provider unavailable" })]
-
-      yield* session.resume(sessionID)
-
-      expect(requests).toHaveLength(1)
-      expect(yield* session.context(sessionID)).toMatchObject([
-        { type: "user", text: "Fail before step" },
-        { type: "assistant", finish: "error", error: { type: "unknown", message: "Provider unavailable" } },
-      ])
-    }),
-  )
+  // "projects provider errors emitted before assistant step start" — PORTED to
+  // session-runner-errors.test.ts and deleted here (S3, 2026-08-05).
 
   it.effect("does not recover context overflow after durable assistant output", () =>
     Effect.gen(function* () {

@@ -43,4 +43,40 @@ describe("SessionRunnerLLM — turn start", () => {
       { role: "user", content: [{ type: "text", text: "Second" }] },
     ])
   })
+
+  test("bounds 64-character session prompt cache keys", async () => {
+    // Two sessions whose ids are far longer than the provider's 64-character cache-key limit. The keys
+    // must be bounded AND still distinct — a truncation that collided would silently share a prompt
+    // cache between unrelated sessions, which is a correctness bug wearing a performance hat.
+    const longSessionID = SessionV2.ID.make(`ses_${"a".repeat(64)}`)
+    const otherLongSessionID = SessionV2.ID.make(`ses_${"b".repeat(64)}`)
+    const harness = makeRunnerHarness()
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* harness.seedSession(longSessionID)
+        yield* harness.seedSession(otherLongSessionID)
+        yield* session.prompt({
+          sessionID: longSessionID,
+          prompt: Prompt.make({ text: "Run long session" }),
+          resume: false,
+        })
+        yield* session.prompt({
+          sessionID: otherLongSessionID,
+          prompt: Prompt.make({ text: "Run other long session" }),
+          resume: false,
+        })
+        yield* session.resume(longSessionID)
+        yield* session.resume(otherLongSessionID)
+      }),
+      "claim — bounded prompt cache keys",
+    )
+
+    const keys = harness.requests.map((request) => request.providerOptions?.openai?.promptCacheKey)
+    expect(keys).toEqual([longSessionID.slice(4), otherLongSessionID.slice(4)])
+    expect(keys.every((key) => typeof key === "string" && key.length === 64)).toBe(true)
+    expect(keys[0]).not.toBe(keys[1])
+  })
 })
