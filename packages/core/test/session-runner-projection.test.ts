@@ -148,4 +148,117 @@ describe("SessionRunnerLLM — stream projection", () => {
       },
     ])
   })
+
+  test("projects reasoning and tool events without executing or continuing tools", async () => {
+    // One dense turn carrying every provider-side content kind at once: reasoning, a PROVIDER-executed
+    // tool that errored, and another that returned mixed text+file content — plus usage.
+    //
+    // ⭐ "Without executing or continuing" is the claim, and it is invisible in the transcript. Both
+    // tool calls are `providerExecuted`, so the runner must PROJECT their results rather than run
+    // anything locally, and must not start a continuation turn to deliver them. The single interactive
+    // request is what proves it: a runner that treated a provider-executed call like a local one would
+    // produce the same content and one extra turn, having tried to execute a tool it does not own.
+    const harness = makeRunnerHarness({
+      turns: [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.reasoningStart({ id: "reasoning-1" }),
+          LLMEvent.reasoningDelta({ id: "reasoning-1", text: "Think" }),
+          LLMEvent.reasoningEnd({ id: "reasoning-1" }),
+          LLMEvent.toolInputStart({ id: "call-error", name: "write" }),
+          LLMEvent.toolInputDelta({ id: "call-error", name: "write", text: '{"path":"README.md"}' }),
+          LLMEvent.toolInputEnd({ id: "call-error", name: "write" }),
+          LLMEvent.toolCall({
+            id: "call-error",
+            name: "write",
+            input: { path: "README.md" },
+            providerExecuted: true,
+          }),
+          LLMEvent.toolError({ id: "call-error", name: "write", message: "Denied" }),
+          LLMEvent.toolResult({ id: "call-error", name: "write", result: { type: "error", value: "Denied" } }),
+          LLMEvent.toolCall({
+            id: "call-provider",
+            name: "web_search",
+            input: { query: "hello" },
+            providerExecuted: true,
+            providerMetadata: { fake: { source: "provider" } },
+          }),
+          LLMEvent.toolResult({
+            id: "call-provider",
+            name: "web_search",
+            result: {
+              type: "content",
+              value: [
+                { type: "text", text: "Hello" },
+                { type: "file", uri: "data:image/png;base64,aGVsbG8=", mime: "image/png", name: "hello.png" },
+              ],
+            },
+            providerExecuted: true,
+            providerMetadata: { fake: { source: "provider" } },
+          }),
+          LLMEvent.stepFinish({
+            index: 0,
+            reason: "tool-calls",
+            usage: {
+              inputTokens: 10,
+              nonCachedInputTokens: 8,
+              outputTokens: 4,
+              reasoningTokens: 1,
+              cacheReadInputTokens: 2,
+            },
+          }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+      ],
+    })
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Use tools" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+        return yield* session.context(HARNESS_SESSION)
+      }),
+      "claim — provider-executed tools are projected, not run",
+    )
+
+    expect(harness.requests, "no continuation turn — nothing local was owed").toHaveLength(1)
+    expect(harness.requests[0]?.tools.map((tool) => tool.name)).toEqual(["echo", "defect"])
+    expect(harness.executions, "no local tool ran").toEqual([])
+    expect(context).toMatchObject([
+      { type: "user", text: "Use tools" },
+      {
+        type: "assistant",
+        finish: "tool-calls",
+        // Usage is projected too, and `input` is the NON-CACHED count — the cached read is reported
+        // separately rather than folded in, or a cache hit would look like a larger prompt.
+        tokens: { input: 8, output: 3, reasoning: 1, cache: { read: 2, write: 0 } },
+        content: [
+          { type: "reasoning", id: "reasoning-1", text: "Think" },
+          {
+            type: "tool",
+            id: "call-error",
+            name: "write",
+            state: { status: "error", input: { path: "README.md" }, error: { type: "unknown", message: "Denied" } },
+          },
+          {
+            type: "tool",
+            id: "call-provider",
+            name: "web_search",
+            provider: { executed: true, metadata: { fake: { source: "provider" } } },
+            state: {
+              status: "completed",
+              input: { query: "hello" },
+              structured: {},
+              content: [
+                { type: "text", text: "Hello" },
+                { type: "file", mime: "image/png", uri: "data:image/png;base64,aGVsbG8=", name: "hello.png" },
+              ],
+            },
+          },
+        ],
+      },
+    ])
+  })
 })
