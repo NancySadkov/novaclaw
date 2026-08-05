@@ -236,18 +236,39 @@ function TerminalWorkspace(props: { serverName: string }) {
               const ops = terminal.bind()
               return (
                 <Show
-                  when={error()?.id !== item.id}
+                  when={error()?.id !== item.id && item.exitCode === undefined}
                   fallback={
                     <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
-                      <div class="text-14-medium text-text-strong">{language.t("terminal.connectionLost.title")}</div>
-                      <div class="max-w-md text-13-regular text-text-weak">{error()?.message}</div>
-                      <button
-                        type="button"
-                        class="rounded-md bg-surface-raised-base px-3 py-1.5 text-13-medium text-text-strong"
-                        onClick={() => setError(undefined)}
-                      >
-                        {language.t("terminal.connectionLost.retry")}
-                      </button>
+                      <div class="text-14-medium text-text-strong">
+                        {item.exitCode === undefined
+                          ? language.t("terminal.connectionLost.title")
+                          : language.t("terminal.exited.title")}
+                      </div>
+                      <div class="max-w-md text-13-regular text-text-weak">
+                        {item.exitCode === undefined
+                          ? error()?.message
+                          : language.t("terminal.exited.description", { code: item.exitCode })}
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <button
+                          type="button"
+                          class="rounded-md bg-surface-raised-base px-3 py-1.5 text-13-medium text-text-strong"
+                          onClick={() => (item.exitCode === undefined ? setError(undefined) : void ops.clone(item.id))}
+                        >
+                          {item.exitCode === undefined
+                            ? language.t("terminal.connectionLost.retry")
+                            : language.t("terminal.exited.newShell")}
+                        </button>
+                        <Show when={item.exitCode !== undefined}>
+                          <button
+                            type="button"
+                            class="rounded-md px-3 py-1.5 text-13-medium text-text-weak"
+                            onClick={() => void terminal.close(item.id)}
+                          >
+                            {language.t("terminal.close")}
+                          </button>
+                        </Show>
+                      </div>
                     </div>
                   }
                 >

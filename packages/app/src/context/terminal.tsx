@@ -8,6 +8,7 @@ import { useServerSDK } from "./server-sdk"
 import { useLanguage } from "./language"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { defaultTitle, titleNumber } from "./terminal-title"
+import { shouldKeepExitedTab } from "@/pages/terminal-exit"
 import { Persist, persisted, removePersisted } from "@/utils/persist"
 import { ScopedKey, ServerScope, type ServerScope as ServerScopeValue } from "@/utils/server-scope"
 import { showToast } from "@/utils/toast"
@@ -28,6 +29,9 @@ export type LocalPTY = {
   shell?: string
   /** Working directory the shell actually started in, from `Pty.Info.cwd`. */
   cwd?: string
+  /** Set only when the shell ended ABNORMALLY — a clean exit closes the tab instead. Its presence is
+   * what marks a tab exited; see `shouldKeepExitedTab`. */
+  exitCode?: number
 }
 
 const WORKSPACE_KEY = "__workspace__"
@@ -222,8 +226,19 @@ function createWorkspaceTerminalSession(
     })
   }
 
-  const unsub = sdk.event.on("pty.exited", (event: { properties: { id: string } }) => {
-    removeExited(event.properties.id)
+  // ⚠️ The exit CODE used to be read off this event and thrown away — every exit removed the tab,
+  // including the abnormal ones, so a shell that died took the output explaining why with it. See
+  // `shouldKeepExitedTab` for the rule; the short version is that exit 0 closes (what every terminal
+  // does) and a failure stays put, marked, with its buffer intact.
+  const unsub = sdk.event.on("pty.exited", (event: { properties: { id: string; exitCode?: number } }) => {
+    const { id, exitCode } = event.properties
+    if (!shouldKeepExitedTab(exitCode)) {
+      removeExited(id)
+      return
+    }
+    const index = store.all.findIndex((item) => item.id === id)
+    if (index === -1) return
+    setStore("all", index, (item) => ({ ...item, exitCode }))
   })
   onCleanup(unsub)
 
@@ -275,6 +290,15 @@ function createWorkspaceTerminalSession(
         scrollY: undefined,
         rows: undefined,
         cols: undefined,
+        // ⚠️ MUST be cleared explicitly, like every field above it: `setStore(path, object)` MERGES,
+        // so a field left out survives the clone. Caught live — "New shell" on an exited tab spawned a
+        // healthy PTY and the tab went on showing "The shell ended, exit code 1" over it, because the
+        // dead tab's code merged straight through. The recovery button looked broken while working.
+        exitCode: undefined,
+        // The replacement's own shell/cwd arrive with its create response; carrying the dead tab's
+        // would let the header describe a process that no longer exists.
+        shell: next.data.data.command,
+        cwd: next.data.data.cwd,
       })
       if (active) {
         setStore("active", next.data.data.id)
