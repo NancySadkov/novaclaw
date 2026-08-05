@@ -19,7 +19,9 @@ import { SDKProvider } from "@/context/sdk"
 import { serverName, useServer } from "@/context/server"
 import { TerminalProvider, useTerminal } from "@/context/terminal"
 import { terminalTabLabel } from "@/pages/session/terminal-label"
-import { terminalTargetLine } from "@/pages/terminal-target"
+import { shellName, terminalTargetLine } from "@/pages/terminal-target"
+import { terminalDiagnosis } from "@/pages/terminal-diagnosis"
+import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { showToast } from "@/utils/toast"
 
 /** A terminal belongs to the selected NovaClaw instance, not to the renderer machine. Resolve that
@@ -129,6 +131,37 @@ function TerminalWorkspace(props: { serverName: string }) {
       message: terminalConnectFailureMessage(failure, language.t("terminal.connectionLost.description")),
     })
   }
+  const [copied, setCopied] = createSignal<string | undefined>()
+  const copyDiagnosis = async (item: { id: string; shell?: string; cwd?: string; exitCode?: number }) => {
+    const text = terminalDiagnosis({
+      // The same words the panel is showing, so a forwarded copy cannot describe a different fault
+      // from the one the user was looking at.
+      headline:
+        item.exitCode === undefined
+          ? language.t("terminal.connectionLost.title")
+          : language.t("terminal.exited.title"),
+      server: props.serverName,
+      detail:
+        item.exitCode === undefined
+          ? (error()?.message ?? language.t("terminal.connectionLost.description"))
+          : language.t("terminal.exited.description", { code: item.exitCode }),
+      ptyID: item.id,
+      shell: shellName(item.shell),
+      cwd: item.cwd,
+      version: InstallationVersion,
+    })
+    // The banner is model-free by requirement, and so is this: plain clipboard, no round-trip. If the
+    // clipboard is unavailable the label simply does not change — a failed copy must not throw a
+    // stack trace onto the one screen a user reaches when things are already broken.
+    await navigator.clipboard?.writeText?.(text).then(
+      () => {
+        setCopied(item.id)
+        setTimeout(() => setCopied(undefined), 2_000)
+      },
+      () => undefined,
+    )
+  }
+
   const stopAll = async () => {
     const accepted = await confirm({
       title: language.t("terminal.stopAll.title"),
@@ -249,6 +282,10 @@ function TerminalWorkspace(props: { serverName: string }) {
                           ? error()?.message
                           : language.t("terminal.exited.description", { code: item.exitCode })}
                       </div>
+                      {/* T3: every action here is MODEL-FREE by requirement — this banner is what a
+                          user meets when the instance is already unwell, so nothing on it may depend
+                          on a working agent, provider or network round-trip beyond the one being
+                          retried. Retry/New shell differ by cause; Copy details and Stop are shared. */}
                       <div class="flex items-center gap-2">
                         <button
                           type="button"
@@ -259,15 +296,31 @@ function TerminalWorkspace(props: { serverName: string }) {
                             ? language.t("terminal.connectionLost.retry")
                             : language.t("terminal.exited.newShell")}
                         </button>
-                        <Show when={item.exitCode !== undefined}>
+                        <Show when={item.exitCode === undefined}>
                           <button
                             type="button"
                             class="rounded-md px-3 py-1.5 text-13-medium text-text-weak"
-                            onClick={() => void terminal.close(item.id)}
+                            onClick={() => void ops.clone(item.id)}
                           >
-                            {language.t("terminal.close")}
+                            {language.t("terminal.exited.newShell")}
                           </button>
                         </Show>
+                        <button
+                          type="button"
+                          class="rounded-md px-3 py-1.5 text-13-medium text-text-weak"
+                          onClick={() => void copyDiagnosis(item)}
+                        >
+                          {copied() === item.id
+                            ? language.t("terminal.connectionLost.copied")
+                            : language.t("terminal.connectionLost.copy")}
+                        </button>
+                        <button
+                          type="button"
+                          class="rounded-md px-3 py-1.5 text-13-medium text-text-weak"
+                          onClick={() => void terminal.close(item.id)}
+                        >
+                          {language.t("terminal.close")}
+                        </button>
                       </div>
                     </div>
                   }

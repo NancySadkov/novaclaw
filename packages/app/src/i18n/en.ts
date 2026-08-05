@@ -1161,6 +1161,8 @@ export const dict = {
   "terminal.connectionLost.description":
     "The terminal connection was interrupted. This can happen when the server restarts.",
   "terminal.connectionLost.retry": "Reconnect",
+  "terminal.connectionLost.copy": "Copy details",
+  "terminal.connectionLost.copied": "Copied",
 
   "common.closeTab": "Close tab",
   "common.dismiss": "Dismiss",
