@@ -217,6 +217,12 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     streamStarted: undefined as Latch | undefined,
     /** When set, the interactive stream FAILS with this instead of emitting its scripted turn. */
     streamFailure: undefined as LLMError | undefined,
+    /**
+     * Compaction settings, read on every `Config.entries()` call so a claim can change them mid-test.
+     * The compaction family is about behaviour AT a threshold, so the threshold has to be reachable.
+     */
+    compactionBuffer: 3_000,
+    compactionKeepTokens: 1_000,
   }
   /**
    * Live tool-execution accounting. `maxActive` is the interesting one: it is the only way to assert
@@ -422,8 +428,8 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
             type: "document",
             info: new Config.Info({
               compaction: new ConfigCompaction.Info({
-                buffer: 3_000,
-                keep: new ConfigCompaction.Keep({ tokens: 1_000 }),
+                buffer: controls.compactionBuffer,
+                keep: new ConfigCompaction.Keep({ tokens: controls.compactionKeepTokens }),
               }),
             }),
           }),
