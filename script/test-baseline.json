@@ -24,7 +24,6 @@
   },
   "failing": {
     "novaclaw:server": [
-      "HttpApi SDK > matches generated SDK missing session errors",
       "HttpApi SDK > uses the generated SDK for safe instance routes",
       "HttpApi workspace routing middleware > uses directory query/header fallback when no workspace is selected",
       "promptAsync routes to the V2 native engine (F1b: one engine) > fresh session + model routes promptAsync to V2 (prompted on stream, busy→idle bracket, zero legacy rows)",

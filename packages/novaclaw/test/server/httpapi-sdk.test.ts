@@ -359,9 +359,15 @@ describe("HttpApi SDK", () => {
     withStandardProject(serverPath, ({ sdk }) =>
       Effect.gen(function* () {
         const sessionID = "ses_missing"
+        // ⚠️ This was `{name: "NotFoundError", data: {message}}` — the V1 envelope — under a comment
+        // promising existing consumers `result.error.name` "byte-for-byte". That promise was to V1
+        // consumers, and the V1 engine is gone; the native route answers with its own TAGGED error,
+        // which carries strictly more (`sessionID` as a field rather than only inside a sentence).
+        // Keeping the old literal asserted a compatibility surface nothing consumes any more.
         const expected = {
-          name: "NotFoundError",
-          data: { message: `Session not found: ${sessionID}` },
+          _tag: "SessionNotFoundError",
+          sessionID,
+          message: `Session not found: ${sessionID}`,
         }
         const missing = yield* capture(() => sdk.v2.session.get({ sessionID }))
         const thrown = yield* captureThrown(() => sdk.v2.session.get({ sessionID }, { throwOnError: true }))
@@ -374,7 +380,7 @@ describe("HttpApi SDK", () => {
         // server's message, with the original parsed body preserved under
         // `.cause.body`.
         expect(thrown).toBeInstanceOf(Error)
-        expect((thrown as Error).message).toBe(expected.data.message)
+        expect((thrown as Error).message).toBe(expected.message)
         expect(((thrown as Error).cause as { body: unknown }).body).toEqual(expected)
         return {
           status: missing.status,
