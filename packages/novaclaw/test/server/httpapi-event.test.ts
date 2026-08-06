@@ -85,7 +85,15 @@ describe("event HttpApi", () => {
         const { reader } = yield* openEventStream(directory)
         expect(yield* readEvent(reader)).toMatchObject({ type: "server.connected", properties: {} })
 
-        const created = yield* requestInDirectory("/session", directory, { method: "POST" })
+        // ⚠️ `POST /session` — the bare V1 facade — was removed by the V1 nuke and 404s; there is no
+        // `session` group in the HttpApi at all. This test is about EVENT DELIVERY, not session
+        // creation, so only the trigger was stale: the native V2 route is the one that still
+        // publishes `session.created`. (Pinned as Windows flakiness until 2026-08-06.)
+        const created = yield* requestInDirectory("/api/session", directory, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ location: { directory } }),
+        })
         expect(created.status).toBe(200)
         expect(yield* readEvent(reader)).toMatchObject({ type: "session.created" })
       }),

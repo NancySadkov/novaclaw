@@ -192,7 +192,9 @@ describe("the sweep", () => {
       "packages/novaclaw/test/project/worktree-remove.test.ts",
       "packages/novaclaw/test/git/git.test.ts",
       "packages/novaclaw/test/effect/instance-state.test.ts",
-      "packages/novaclaw/test/server/project-copy.test.ts",
+      // `project-copy.test.ts` was an anchor here until 2026-08-06, when it was DELETED — it drove
+      // `/project/{id}` routes the T2/T3 project-entity kill removed. An anchor leaves this list only
+      // when its file leaves the tree; never drop one to green a red run.
     ])
       expect(names, `${name} is not in the sweep`).toContain(name)
   })

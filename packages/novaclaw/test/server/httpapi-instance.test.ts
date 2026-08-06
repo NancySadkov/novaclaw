@@ -7,8 +7,6 @@ import * as Socket from "effect/unstable/socket/Socket"
 import { WorkspaceV2 } from "@novaclaw/core/workspace"
 import { ControlPaths } from "../../src/server/routes/instance/httpapi/groups/control"
 import { InstancePaths } from "../../src/server/routes/instance/httpapi/groups/instance"
-import { InstancePaths as FencePaths } from "../../src/server/routes/instance/httpapi/groups/instance"
-import { ProjectV2 } from "@novaclaw/core/project"
 import { QuestionID } from "../../src/question/schema"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { HEADER as FenceHeader } from "../../src/server/shared/fence"
@@ -83,11 +81,22 @@ describe("instance HttpApi", () => {
       )
 
       const dir = yield* tmpdirScoped({ git: true })
-      // V1-nuke slice D: the bare /session create died; any mutating instance route carries the
-      // fence header — app registration is the simplest.
-      const response = yield* HttpClientRequest.post(FencePaths.app).pipe(
+      // 🔴 **The route must WRITE AN EVENT, not merely mutate.** This test used `POST /app` under the
+      // note "any mutating instance route carries the fence header — app registration is the
+      // simplest", and that premise is false: `middleware/fence.ts` emits the header only when
+      // `Fence.diff` over `EventSequenceTable` is non-empty, so a mutation that advances no aggregate
+      // sequence carries nothing. App registration is exactly such a mutation.
+      //
+      // ⚠️ Two defects were stacked here, and the first hid the second for the whole life of the pin:
+      // the body was `{id, title}` while `AppRegisterPayload` requires `open`, so the request 400'd and
+      // the fence assertion was never reached. Fixing the payload got a 200 and *then* showed the
+      // header was absent. A route that 400s cannot tell you anything about the behaviour under test.
+      //
+      // Session creation is the natural subject: it publishes `session.created`, and `/api/session` is
+      // served by this same router (the OpenAPI test above asserts it is in `paths`).
+      const response = yield* HttpClientRequest.post("/api/session").pipe(
         directoryHeader(dir),
-        HttpClientRequest.bodyJson({ id: "fence-test", title: "fenced" }),
+        HttpClientRequest.bodyJson({ location: { directory: dir } }),
         Effect.flatMap(HttpClient.execute),
       )
 
@@ -196,29 +205,12 @@ describe("instance HttpApi", () => {
     }),
   )
 
-  it.live("returns typed not found bodies for missing projects", () =>
-    Effect.gen(function* () {
-      const dir = yield* tmpdirScoped({ git: true })
-      const projectID = ProjectV2.ID.make("project_missing")
-      const response = yield* Effect.promise(() =>
-        HttpApiApp.webHandler().handler(
-          new Request(`http://localhost/project/${projectID}`, {
-            method: "PATCH",
-            headers: { "x-novaclaw-directory": dir, "content-type": "application/json" },
-            body: JSON.stringify({ name: "Missing" }),
-          }),
-          handlerContext,
-        ),
-      )
-
-      expect(response.status).toBe(404)
-      expect(yield* Effect.promise(() => response.json())).toEqual({
-        _tag: "ProjectNotFoundError",
-        projectID,
-        message: `Project not found: ${projectID}`,
-      })
-    }),
-  )
+  // `returns typed not found bodies for missing projects` lived here until 2026-08-06. It PATCHed
+  // `/project/{id}` — a route the T2/T3 project-entity kill removed — so it got the router's generic
+  // 404 with an EMPTY body and died in `.json()`. ⚠️ Its `expect(status).toBe(404)` passed the whole
+  // time, for the wrong reason: a missing route and a typed not-found are the same status code.
+  // `ProjectNotFoundError` went with it — the test was the last reference to a class no endpoint
+  // could produce.
 
   it.live("serves path and VCS read endpoints", () =>
     Effect.gen(function* () {
