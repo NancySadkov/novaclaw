@@ -14,6 +14,18 @@ import { Token } from "../../util/token"
  * continue with the nudge prefilled** (`continue_final_message`), verified against the live
  * qwen3.6-35b. Three checkpoints:
  *
+ * ⚠️ **PROVENANCE — every "verified/probed live against qwen3.6-35b" below names an artefact that is
+ * no longer served.** Those runs used the **PrismaQuant-4.75bit** build at `:8000`; that endpoint was
+ * stopped to make room for the test fleet and answers nothing today. The floor is now
+ * `spark-holo/holo3.1` — `Hcompany/Holo-3.1-35B-A3B-NVFP4`, the same Qwen3.6-35B-A3B base but a
+ * different quantisation plus a GUI-grounding fine-tune.
+ *
+ * The base being shared is why the ruling is sound; the artefact differing is why a NEW number may not
+ * be appended to these as though nothing changed. Concretely: the template behaviours below
+ * (`enable_thinking=false` answering, a closed-`</think>` prefill returning empty) are chat-template
+ * facts and are the most likely to survive the swap — but "most likely" is not "measured". **When you
+ * re-verify one of these, say which build produced the new number, in this comment.**
+ *
  *   1. **Opening** — a system-prompt line primes the model to keep reasoning within the budget.
  *      (MindControl prefills this into `<think>`; a client can't force that safely on non-thinking
  *      models, so we make it an honest instruction the model actually receives.)

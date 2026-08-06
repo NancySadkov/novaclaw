@@ -14,7 +14,10 @@ import type { FinishReason } from "@novaclaw/llm"
  * `finishReason === "length"` and leaves the turn TRUNCATED: the assistant message ends
  * mid-sentence — or, when the whole budget went into reasoning, with no content at all (measured
  * against qwen3.6-35b: `max_tokens=2048 -> finish=length, completion=2048, content 0 chars`; the
- * table lives in `runner/llm.ts`'s auto-title note). Nothing downstream can tell that apart from a
+ * table lives in `runner/llm.ts`'s auto-title note — ⚠️ that measurement is against the
+ * **PrismaQuant-4.75bit** build, which is no longer served; the floor is now
+ * `spark-holo/holo3.1` (NVFP4, same Qwen3.6-35B-A3B base, plus a GUI fine-tune), so a fresh number
+ * must say which build produced it rather than extend this series). Nothing downstream can tell that apart from a
  * finished answer, so the drain either drops the tail silently or, if it re-prompts on a heuristic,
  * re-prompts against a wall it cannot move.
  *
