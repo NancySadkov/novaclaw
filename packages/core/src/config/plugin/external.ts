@@ -49,7 +49,7 @@ export const Plugin = define({
   id: "config-plugin",
   effect: Effect.fn(function* (ctx) {
     if (Flag.NOVACLAW_PURE) {
-      yield* Effect.logDebug("skipping external plugins (--pure)")
+      yield* Log.event("plugin.external.skipped", {})
       return
     }
     const config = yield* Config.Service

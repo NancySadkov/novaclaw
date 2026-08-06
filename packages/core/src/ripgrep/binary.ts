@@ -11,6 +11,7 @@ import { httpClient } from "../effect/app-node-platform"
 import { FSUtil } from "../fs-util"
 import { Global } from "../global"
 import { which } from "../util/which"
+import { Log } from "@novaclaw/schema/log"
 
 export namespace RipgrepBinary {
   export const VERSION = "15.1.0"
@@ -243,7 +244,7 @@ export namespace RipgrepBinary {
             const url = `https://github.com/BurntSushi/ripgrep/releases/download/${VERSION}/${filename}`
             const archive = path.join(Global.Path.bin, filename)
 
-            yield* Effect.logInfo("downloading ripgrep", { url })
+            yield* Log.event("tool.ripgrep.download.start", { "tool.url": url })
             yield* fs.ensureDir(Global.Path.bin).pipe(Effect.orDie)
             yield* Download.toFile({
               url,

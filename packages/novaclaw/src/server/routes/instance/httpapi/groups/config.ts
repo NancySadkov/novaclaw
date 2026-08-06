@@ -8,6 +8,7 @@ import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware/workspace-routing"
 import { described } from "./metadata"
+import { Log } from "@novaclaw/schema/log"
 
 const root = "/config"
 
@@ -119,7 +120,7 @@ export const rejectUnknownConfigKeys = (request: HttpServerRequest.HttpServerReq
     const plural = unknown.length === 1 ? "it" : "them"
     // Capped for the same reason `middleware/schema-error.ts` caps its reason: a 4xx must never
     // mirror an unbounded request back into the response body and the log file.
-    yield* Effect.logWarning("config PATCH refused: unknown top-level key", { keys: named, hidden })
+    yield* Log.event("config.patch.key.unknown", { "config.keys": String(named), "config.hidden": String(hidden) })
     yield* Effect.fail(
       new InvalidRequestError({
         kind: UNKNOWN_CONFIG_KEY_KIND,

@@ -8,6 +8,7 @@ import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
 import { MergePatch } from "./merge-patch"
 import { SettingsConfigStore } from "./settings-config-store"
+import { Log } from "@novaclaw/schema/log"
 
 // NOTE: config.ts imports this module (the layer runs the seed + synthetic-doc build), so all
 // Config.Info schema derivations stay INSIDE function bodies — a module-level derivation would
@@ -358,7 +359,8 @@ export const seedFromDirectory = (globalConfigDir: string) =>
     // A partially-invalid config still applies its valid keys — tell the user what was dropped and
     // why. Non-blocking by contract: this seed is Effect.ignore-wrapped and must never fault
     // startup, so we log a notice rather than throw.
-    if (skipped.length > 0) yield* Effect.logWarning(formatSkippedNotice(skipped))
+    if (skipped.length > 0)
+      yield* Log.event("config.settings.seed.skipped", { "config.notice": formatSkippedNotice(skipped) })
 
     if (infos.length > 0) yield* seedFromInfos(infos)
     return skipped

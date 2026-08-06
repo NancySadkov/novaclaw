@@ -36,6 +36,7 @@ import { ConfigComputer } from "./config/computer"
 import { ConfigWatcher } from "./config/watcher"
 import { SettingsConfigSeed } from "./settings-config-seed"
 import { SettingsConfigStore } from "./settings-config-store"
+import { Log } from "@novaclaw/schema/log"
 
 /**
  * ⚠️ **Every key below is also priced.** todo.md ruling 4 — *config writes are privilege-tiered:
@@ -437,7 +438,8 @@ export const layer = Layer.effect(
     const readSettings = Effect.fn("Config.readSettings")(function* () {
       const settings = SettingsConfigSeed.settingsInfoFromStore(yield* settingsStore.all())
       const notice = settings.skipped.length > 0 ? SettingsConfigSeed.formatSkippedNotice(settings.skipped) : undefined
-      if (notice !== undefined && notice !== lastSkippedNotice) yield* Effect.logWarning(notice)
+      if (notice !== undefined && notice !== lastSkippedNotice)
+        yield* Log.event("config.settings.skipped", { "config.notice": notice })
       lastSkippedNotice = notice
       // Policies come from the store-backed synthetic document; the import seed preserved the
       // historical reversed-concat order, so loading them verbatim keeps rule precedence.

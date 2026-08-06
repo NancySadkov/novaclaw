@@ -117,6 +117,7 @@ import { emptyJsonBodyLayer } from "./middleware/empty-json-body"
 import { errorLayer } from "./middleware/error"
 import { fenceLayer } from "./middleware/fence"
 import { schemaErrorLayer } from "./middleware/schema-error"
+import { Log } from "@novaclaw/schema/log"
 
 export const context = Context.makeUnsafe<unknown>(new Map())
 
@@ -330,7 +331,8 @@ const messengerServices = Layer.mergeAll(
 const recipeSeedStartup = Layer.effectDiscard(
   Effect.gen(function* () {
     const seeded = yield* Effect.promise(() => RecipeBuiltin.seed())
-    if (seeded.created.length > 0) yield* Effect.logInfo("seeded recipes", { created: seeded.created })
+    if (seeded.created.length > 0)
+      yield* Log.event("server.recipes.seeded", { "server.created": seeded.created.length })
   }).pipe(Effect.catchCause(() => Effect.void)),
 )
 

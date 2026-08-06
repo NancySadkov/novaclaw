@@ -32,6 +32,7 @@ import type { JhEngine } from "./engine"
 import type { JhLog } from "./log"
 import type { JhStep } from "./step"
 import type { JhTree } from "./tree"
+import { Log } from "@novaclaw/schema/log"
 
 type Db = Database.Interface["db"]
 
@@ -174,10 +175,10 @@ export function save(
       // The write path names the fault out loud as well as in the row: the marker reaches a resumed
       // run, this reaches the operator's error log at the moment it happens.
       if (refused.length > 0)
-        yield* Effect.logWarning("jh artifact body over the size cap — refused, not truncated", {
-          plan: input.id,
-          cap: MAX_ARTIFACT_BYTES,
-          refused,
+        yield* Log.event("storage.artifact.body.refused", {
+          "storage.plan": input.id,
+          "storage.cap": MAX_ARTIFACT_BYTES,
+          "storage.refused": refused.length,
         })
     }
     // log: append-only (existing seqs are left untouched)

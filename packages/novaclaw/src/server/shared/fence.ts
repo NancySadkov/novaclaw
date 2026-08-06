@@ -4,6 +4,7 @@ import { EventSequenceTable } from "@novaclaw/core/event/sql"
 import { Workspace } from "@/control-plane/workspace"
 import type { WorkspaceV2 } from "@novaclaw/core/workspace"
 import { Effect } from "effect"
+import { Log } from "@novaclaw/schema/log"
 
 export const HEADER = "x-novaclaw-sync"
 export type State = Record<string, number>
@@ -53,8 +54,8 @@ export function parse(headers: Headers): State | undefined {
 
 export function wait(workspaceID: WorkspaceV2.ID, state: State, signal?: AbortSignal) {
   return Effect.gen(function* () {
-    yield* Effect.logInfo("waiting for state", { workspaceID, state })
+    yield* Log.event("workspace.sync.wait", { "workspace.id": workspaceID, "workspace.state": String(state) })
     yield* Workspace.Service.use((workspace) => workspace.waitForSync(workspaceID, state, signal))
-    yield* Effect.logInfo("state fully synced", { workspaceID, state })
+    yield* Log.event("workspace.sync.complete", { "workspace.id": workspaceID, "workspace.state": String(state) })
   })
 }

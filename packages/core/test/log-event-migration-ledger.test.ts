@@ -11,16 +11,25 @@ const UNKEYED_SITES = SITES.filter((site) => site.kind === "unkeyed")
 const KEYED = countSites(SITES, "keyed")
 
 /**
- * The not-yet-migrated production calls at the instant logging 1c's LEDGER half shipped.
+ * 🔴 **The allowance is GONE — 1b finished on 2026-08-06 and this is 1c's SCAN half.**
  *
- * This is deliberately a shrink-only allowance, not a target. A new `Effect.log*` call fails as
- * unlisted; converting a listed call to `Log.event` fails as stale until this list is shortened in
- * the same commit. When it reaches zero, logging 1c's final SCAN half deletes the allowance and
- * makes every direct call a hard failure.
+ * It used to be a shrink-only list of not-yet-migrated calls, seeded at 233 and worked down through
+ * 145 → 34 → 25 → 22 → **0**. The item said: *when it reaches zero, the final SCAN half deletes the
+ * allowance and makes every direct call a hard failure.* It reached zero, so the list is deleted and
+ * the rule is now absolute — **no direct `Effect.log` call survives anywhere in the shipping
+ * source, and a new one fails here.**
+ *
+ * ⚠️ **An empty allowance is not the same as no allowance, which is why the file is gone rather than
+ * emptied.** An empty JSON array still reads as "add your entry here": the next author under time
+ * pressure appends one line and the invariant is quietly back to being a suggestion. Deleting the
+ * fixture means re-opening the door is a visible act with a commit message attached.
+ *
+ * The exemption that does NOT exist: `schema/log.ts` implements `Log.event` via `LOG_AT[level](…)`
+ * and `log-events.ts` is the registry — neither calls `Effect.log*`, so neither needs carving out. An
+ * earlier note here claimed they did; that came from a regex scanner counting a `cause` inside a doc
+ * comment, and the AST never agreed.
  */
-const UNKEYED_LEDGER = JSON.parse(
-  fs.readFileSync(path.join(import.meta.dir, "fixtures", "unkeyed-log-sites.json"), "utf8"),
-) as readonly LedgerEntry[]
+const NO_ALLOWANCE: readonly LedgerEntry[] = []
 
 describe("the log-event migration ledger", () => {
   test("walks the real production source boundary", () => {
@@ -29,14 +38,13 @@ describe("the log-event migration ledger", () => {
     expect(SITES.length).toBe([...UNKEYED, ...KEYED].reduce((total, entry) => total + entry.count, 0))
   })
 
-  test("has no new bare calls and no stale allowances", () => {
-    const names = UNKEYED_LEDGER.map((entry) => entry.name)
-    expect(new Set(names).size).toBe(names.length)
-    expect(UNKEYED_LEDGER.every((entry) => Number.isInteger(entry.count) && entry.count > 0)).toBe(true)
-
-    const faults = ledgerFaults(UNKEYED, UNKEYED_LEDGER)
+  test("🔴 there is no direct Effect.log* call in the shipping source, at all", () => {
+    // The whole of logging 1b, as one assertion. A failure names the offending call; the fix is to
+    // declare a key in `schema/log-events.ts` and emit it with `Log.event`, never to re-add a list.
+    const faults = ledgerFaults(UNKEYED, NO_ALLOWANCE)
     expect(faults.unlisted).toEqual([])
     expect(faults.stale).toEqual([])
+    expect(UNKEYED_SITES).toEqual([])
   })
 
   test("the parser sees multiline calls, ignores prose, and distinguishes keyed calls", () => {

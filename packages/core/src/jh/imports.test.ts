@@ -5,7 +5,7 @@ import { join } from "node:path"
 // §0.7.2 — mechanical import-whitelist guard. Every engine source file under src/jh/ may import ONLY:
 //   effect · ./… (jh-relative) · ../util/hash · node:… (process-runner/tools-basic/store only) ·
 //   drizzle-orm/… (sql.ts only) · ../database/… (store.ts only).
-// This keeps jh out of the LocationServiceMap and off the session/tool/config/v1/llm/schema trees, so
+// This keeps jh out of the LocationServiceMap and away from session/tool/config/v1/llm REACH, so
 // Phases 1–13 cannot collide with F1 deletions. The guard scans the directory, so it grows as files
 // appear — a new engine file with a stray import fails this test, not a downstream typecheck.
 
@@ -28,6 +28,19 @@ function violationFor(filename: string, spec: string): string | undefined {
   // precisely BECAUSE of this rule: `../shell` re-exports the same function but drags Flag/FSUtil/
   // ShellBundle/Global behind it, and jh must not reach those. Do NOT relax this to "../shell".
   if (spec === "../util/kill-tree") return undefined
+  // logging 1b (2026-08-06): jh's ONE log call became a declared event, which needs the keyed
+  // wrapper. Whitelisted on exactly the grounds this guard states for `../util/hash` and
+  // `../util/kill-tree` — `@novaclaw/schema/log` imports `effect` and `./log-events`, and
+  // `log-events.ts` imports NOTHING at all. It is a static table plus one function, so it carries no
+  // session/tool/config/v1/llm reach.
+  //
+  // ⚠️ **This is the one entry that reads as a contradiction, so read it carefully.** The header says
+  // jh stays "off the … schema tree", and this is a schema import. The header names TREES; every
+  // justification in this function names REACH, and reach is what the guard can actually be violated
+  // by. `schema/log` is a leaf by construction and is tested to stay one (`log-events.test.ts`). Do
+  // NOT read this as opening `@novaclaw/schema/*` generally — the rest of that package pulls the
+  // session and config shapes jh must not see.
+  if (spec === "@novaclaw/schema/log") return undefined
   if (spec.startsWith("node:")) {
     return NODE_ALLOWED.has(filename) ? undefined : `node: import "${spec}" not allowed in ${filename}`
   }

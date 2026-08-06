@@ -3,6 +3,7 @@ export * as SessionRunCoordinator from "./run-coordinator"
 import { Context, Deferred, Effect, Exit, Fiber, FiberSet, Layer, Scope } from "effect"
 import { makeGlobalNode } from "../effect/app-node"
 import type { SessionSchema } from "./schema"
+import { Log } from "@novaclaw/schema/log"
 
 /** Serializes execution for each key while allowing different keys to run concurrently. */
 export interface Coordinator<Key, E> {
@@ -161,9 +162,7 @@ export const wakeLayer = Layer.effect(
         }),
       wake: (sessionID) =>
         executor === undefined
-          ? Effect.logWarning("session wake dropped — no executor attached; queued input will not run", {
-              sessionID,
-            }).pipe(Effect.as(false))
+          ? Log.event("session.wake.dropped", { "session.id": sessionID }).pipe(Effect.as(false))
           : executor(sessionID).pipe(Effect.as(true)),
     })
   }),

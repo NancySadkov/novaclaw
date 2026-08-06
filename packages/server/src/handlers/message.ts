@@ -8,6 +8,7 @@ import { InvalidCursorError, InvalidRequestError, SessionNotFoundError, UnknownE
 import * as nodeFs from "node:fs/promises"
 import * as nodePath from "node:path"
 import { SessionMarkdown } from "../session-markdown"
+import { Log } from "@novaclaw/schema/log"
 
 const DefaultMessagesLimit = 50
 
@@ -131,8 +132,11 @@ export const MessageHandler = HttpApiBuilder.group(Api, "server.message", (handl
               ),
               Effect.catchTag("Session.MessageDecodeError", (error) => {
                 const ref = `err_${crypto.randomUUID().slice(0, 8)}`
-                return Effect.logError("failed to decode session message").pipe(
-                  Effect.annotateLogs({ ref, sessionID: error.sessionID, messageID: error.messageID }),
+                return Log.event("session.message.decode.failed", {
+                  "session.ref": ref,
+                  "session.id": error.sessionID,
+                  "session.message": error.messageID,
+                }).pipe(
                   Effect.andThen(
                     Effect.fail(
                       new UnknownError({

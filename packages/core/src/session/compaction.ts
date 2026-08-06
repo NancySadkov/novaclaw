@@ -11,6 +11,7 @@ import { SessionSchema } from "./schema"
 import { isSteerText, stripSteerProvenance } from "./steer-provenance"
 import { Token } from "../util/token"
 import { CalloutPolicy } from "../callout-policy"
+import { Log } from "@novaclaw/schema/log"
 
 const DEFAULT_BUFFER = 20_000
 const DEFAULT_KEEP_TOKENS = 8_000
@@ -233,11 +234,11 @@ export const make = (dependencies: Dependencies) => {
   const pruneCheapTier = Effect.fn("SessionCompaction.prune")(function* (entries: readonly Entry[]) {
     if (!config.prune) return entries
     const planned = CompactionPrune.plan(entries.map((entry) => entry.message))
-    yield* Effect.logInfo("compaction prune planned", {
-      commit: planned.commit,
-      targets: planned.targets.length,
-      reclaim: planned.reclaim,
-      scanned: planned.scanned,
+    yield* Log.event("session.compaction.prune.planned", {
+      "session.commit": planned.commit,
+      "session.targets": planned.targets.length,
+      "session.reclaim": planned.reclaim,
+      "session.scanned": planned.scanned,
     })
     if (!planned.commit) return entries
     const erased = CompactionPrune.erase(

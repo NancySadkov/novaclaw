@@ -8,6 +8,7 @@ import { MessageDecodeError } from "./error"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
 import { SessionCompactionTable, SessionContextEpochTable, SessionMessageTable } from "./sql"
+import { Log } from "@novaclaw/schema/log"
 
 type DatabaseService = Database.Interface["db"]
 type MessageRow = typeof SessionMessageTable.$inferSelect
@@ -75,12 +76,12 @@ export const latestCompaction = Effect.fnUntraced(function* (db: DatabaseService
   if (!row) return
   const actual = yield* prefixHash(db, sessionID, row.prefix_seq)
   if (actual === row.prefix_hash) return row
-  yield* Effect.logWarning("stale session compaction rejected", {
-    sessionID,
-    compactionID: row.id,
-    prefixSeq: row.prefix_seq,
-    expected: row.prefix_hash,
-    actual,
+  yield* Log.event("session.compaction.stale.rejected", {
+    "session.id": sessionID,
+    "session.compaction.id": row.id,
+    "session.prefix.seq": row.prefix_seq,
+    "session.hash.expected": row.prefix_hash,
+    "session.hash.actual": actual,
   })
 })
 

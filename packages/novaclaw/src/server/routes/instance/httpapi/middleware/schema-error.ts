@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import { HttpServerResponse } from "effect/unstable/http"
 import { HttpApiMiddleware } from "effect/unstable/httpapi"
 import { InvalidRequestError } from "../errors"
+import { Log } from "@novaclaw/schema/log"
 
 // Effect's Issue formatter recursively dumps the rejected `actual` value with
 // no truncation, so a 5KB invalid array produces a ~360KB string. Cap to keep
@@ -51,6 +52,8 @@ export const schemaErrorLayer = HttpApiMiddleware.layerSchemaErrorTransform(
             { status: 400 },
           ),
         )
-    return Effect.logWarning("schema rejection", { kind: error.kind, reason }).pipe(Effect.andThen(response))
+    return Log.event("server.schema.rejection", { "server.kind": error.kind, "server.reason": reason }).pipe(
+      Effect.andThen(response),
+    )
   },
 )

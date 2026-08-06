@@ -14,6 +14,7 @@ import path from "path"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { InvalidRequestError } from "../errors"
+import { Log } from "@novaclaw/schema/log"
 
 export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handlers) =>
   Effect.gen(function* () {
@@ -52,13 +53,17 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
       const type = ctx.query.type ?? (ctx.query.dirs === "false" ? "file" : undefined)
       const started = performance.now()
       const found = yield* filesystem(FileSystem.Service.use((fs) => fs.find({ query: ctx.query.query, limit, type })))
-      yield* Effect.logInfo("find file", {
-        query: ctx.query.query,
-        type,
-        directory,
-        limit,
-        results: found.length,
-        duration: Math.round(performance.now() - started),
+      yield* Log.event("server.file.find", {
+        "server.query": ctx.query.query,
+        // `type` is absent when the caller did not constrain the search — a real state, named
+        // rather than sent as `undefined`, which renders as the literal string on the line.
+        "server.type": type ?? "(any)",
+        // The handler defaults an absent directory downstream; NAME the absence rather than send
+        // `undefined`, which renders as the literal string "undefined" on the line.
+        "server.directory": directory ?? "(instance root)",
+        "server.limit": limit,
+        "server.results": found.length,
+        "server.duration": Math.round(performance.now() - started),
       })
       return found.map((item) => item.path)
     })

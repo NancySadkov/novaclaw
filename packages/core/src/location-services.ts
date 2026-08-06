@@ -40,6 +40,7 @@ import { ReadToolFileSystem } from "./tool/read-filesystem"
 import { ToolRegistry } from "./tool/registry"
 import { ToolOutputStore } from "./tool-output-store"
 import { ToolCatalogueGuidance } from "./tool-catalogue-guidance"
+import { Log } from "@novaclaw/schema/log"
 
 export { LocationServiceMap } from "./location-service-map"
 
@@ -188,9 +189,12 @@ export function buildLocationServiceMap(
           return LayerNode.compile(location.node).pipe(
             Layer.fresh,
             Layer.tap(() =>
-              Effect.logInfo("booting location services", {
+              Log.event("location.services.boot", {
                 directory: ref.directory,
-                workspaceID: ref.workspaceID,
+                // A location outside any workspace is a real state, so it is NAMED rather than
+                // sent as `undefined` — an absent value renders as the string "undefined" on the
+                // line, which reads like a bug in the logger instead of a fact about the location.
+                workspaceID: ref.workspaceID ?? "(none)",
               }),
             ),
             Layer.tap(() =>

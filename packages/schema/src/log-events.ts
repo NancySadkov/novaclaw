@@ -254,6 +254,14 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/config-store-write.ts",
   },
+  /** A config PATCH named a top-level key the schema does not define; the whole patch is refused. */
+  "config.patch.key.unknown": {
+    level: "warn",
+    message: "config PATCH refused, unknown top-level key",
+    attributes: { "config.keys": "text", "config.hidden": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/groups/config.ts",
+  },
   /** The legacy permission environment override was malformed and was skipped. */
   "config.permission.parse.failed": {
     level: "warn",
@@ -301,6 +309,22 @@ export const EVENTS = {
     attributes: { "config.keys": "text", "config.reasons": "text" },
     content: "user",
     file: "packages/core/src/config-store-write.ts",
+  },
+  /** A partially invalid config still seeded its valid keys. Never faults startup. */
+  "config.settings.seed.skipped": {
+    level: "warn",
+    message: "settings seed skipped invalid keys",
+    attributes: { "config.notice": "text" },
+    content: "user",
+    file: "packages/core/src/settings-config-seed.ts",
+  },
+  /** Some settings keys were dropped as invalid; the rest applied. The notice names them. */
+  "config.settings.skipped": {
+    level: "warn",
+    message: "settings keys were skipped",
+    attributes: { "config.notice": "text" },
+    content: "user",
+    file: "packages/core/src/config.ts",
   },
   /** One or more stored config rows were unreadable; valid peers remain available. */
   "config.store.read.degraded": {
@@ -908,6 +932,14 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/config/plugin/external.ts",
   },
+  /** --pure was set, so no external plugin was loaded. */
+  "plugin.external.skipped": {
+    level: "debug",
+    message: "skipping external plugins",
+    attributes: {},
+    content: "none",
+    file: "packages/core/src/config/plugin/external.ts",
+  },
 
   // ── pty ──────────────────────────────────────────────────────────────────────────────────────
   /** A client began receiving retained and live output from a running terminal session. */
@@ -994,6 +1026,69 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/storage/resource-pressure-context.ts",
   },
+  /** A client opened the per-instance SSE event stream. */
+  "server.event.connected": {
+    level: "info",
+    message: "event stream connected",
+    attributes: {},
+    content: "none",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/event.ts",
+  },
+  /** The per-instance SSE event stream closed. */
+  "server.event.disconnected": {
+    level: "info",
+    message: "event stream disconnected",
+    attributes: {},
+    content: "none",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/event.ts",
+  },
+  /** A file search was served. The query is user text and never egresses. */
+  "server.file.find": {
+    level: "info",
+    message: "find file",
+    attributes: {
+      "server.query": "text",
+      "server.type": "id",
+      "server.directory": "path",
+      "server.limit": "count",
+      "server.results": "count",
+      "server.duration": "count",
+    },
+    content: "user",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/file.ts",
+  },
+  /** A client opened the instance-global SSE event stream. */
+  "server.global.event.connected": {
+    level: "info",
+    message: "global event stream connected",
+    attributes: {},
+    content: "none",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/global.ts",
+  },
+  /** The instance-global SSE event stream closed. */
+  "server.global.event.disconnected": {
+    level: "info",
+    message: "global event stream disconnected",
+    attributes: {},
+    content: "none",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/global.ts",
+  },
+  /** mDNS was asked for but the resolved hostname is loopback, which would advertise an unreachable address. */
+  "server.mdns.publish.skipped": {
+    level: "warn",
+    message: "mDNS enabled but hostname is loopback, skipping publish",
+    attributes: {},
+    content: "none",
+    file: "packages/novaclaw/src/server/server.ts",
+  },
+  /** First-boot recipe seeding created entries. */
+  "server.recipes.seeded": {
+    level: "info",
+    message: "seeded recipes",
+    attributes: { "server.created": "count" },
+    content: "none",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/server.ts",
+  },
 
   // ── server ────────────────────────────────────────────────────────────────────────────────────
   /**
@@ -1008,6 +1103,14 @@ export const EVENTS = {
     attributes: { ref: "id", "server.error": "fault", "server.cause": "fault" },
     content: "user",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/middleware/error.ts",
+  },
+  /** A request body failed schema decoding. Emitted by both HTTP boundaries; this file is the anchor. */
+  "server.schema.rejection": {
+    level: "warn",
+    message: "schema rejection",
+    attributes: { "server.kind": "id", "server.reason": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/middleware/schema-error.ts",
   },
   /** A child session did not inherit its parent session-defined adhoc recipes. The spawn still succeeds. */
   "session.adhoc.copy.failed": {
@@ -1039,6 +1142,22 @@ export const EVENTS = {
     attributes: { "session.id": "id", compacted: "flag" },
     content: "none",
     file: "packages/core/src/session/runner/llm.ts",
+  },
+  /** A cheap-tier prune was planned. `session.commit` says whether it will be applied. */
+  "session.compaction.prune.planned": {
+    level: "info",
+    message: "compaction prune planned",
+    attributes: { "session.commit": "flag", "session.targets": "count", "session.reclaim": "count", "session.scanned": "count" },
+    content: "none",
+    file: "packages/core/src/session/compaction.ts",
+  },
+  /** A stored compaction no longer matches its prefix hash, so it was not applied. */
+  "session.compaction.stale.rejected": {
+    level: "warn",
+    message: "stale session compaction rejected",
+    attributes: { "session.id": "id", "session.compaction.id": "id", "session.prefix.seq": "count", "session.hash.expected": "id", "session.hash.actual": "id" },
+    content: "none",
+    file: "packages/core/src/session/history.ts",
   },
   "session.context.pack.evicted": {
     level: "warn",
@@ -1426,6 +1545,14 @@ export const EVENTS = {
     content: "none",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  /** A wake arrived with no executor attached; queued input will not run until one is. */
+  "session.wake.dropped": {
+    level: "warn",
+    message: "session wake dropped, no executor attached",
+    attributes: { "session.id": "id" },
+    content: "none",
+    file: "packages/core/src/session/run-coordinator.ts",
+  },
 
   // ── skill ─────────────────────────────────────────────────────────────────────────────────────
   /** A file advertised by a remote skill catalog could not be downloaded. */
@@ -1705,6 +1832,14 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/snapshot/index.ts",
   },
+  /** One or more jh artifact bodies exceeded the cap. Refused whole, never silently truncated. */
+  "storage.artifact.body.refused": {
+    level: "warn",
+    message: "jh artifact body over the size cap, refused rather than truncated",
+    attributes: { "storage.plan": "id", "storage.cap": "count", "storage.refused": "count" },
+    content: "none",
+    file: "packages/core/src/jh/store.ts",
+  },
 
   // ── storage ───────────────────────────────────────────────────────────────────────────────────
   /** A legacy message document is copied into the current layout. */
@@ -1814,6 +1949,14 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/tool/external-tool-source.ts",
   },
+  /** The bundled ripgrep was absent, so a release binary is being fetched. */
+  "tool.ripgrep.download.start": {
+    level: "info",
+    message: "downloading ripgrep",
+    attributes: { "tool.url": "id" },
+    content: "none",
+    file: "packages/core/src/ripgrep/binary.ts",
+  },
   /** The hourly cleanup of saved, truncated tool output failed unexpectedly. */
   "tool.truncation.cleanup.failed": {
     level: "error",
@@ -1914,6 +2057,14 @@ export const EVENTS = {
     content: "none",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/sync.ts",
   },
+  /** The fenced workspace reached the named sync state. */
+  "workspace.sync.complete": {
+    level: "info",
+    message: "workspace state fully synced",
+    attributes: { "workspace.id": "id", "workspace.state": "id" },
+    content: "none",
+    file: "packages/novaclaw/src/server/shared/fence.ts",
+  },
   /** The control plane could not establish the remote workspace's global event stream. */
   "workspace.sync.connect.failed": {
     level: "warn",
@@ -1948,6 +2099,14 @@ export const EVENTS = {
     },
     content: "user",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/sync.ts",
+  },
+  /** A mutation is fenced until the workspace reaches the named sync state. */
+  "workspace.sync.wait": {
+    level: "info",
+    message: "waiting for workspace state",
+    attributes: { "workspace.id": "id", "workspace.state": "id" },
+    content: "none",
+    file: "packages/novaclaw/src/server/shared/fence.ts",
   },
   /** A successful remote workspace response did not decode as the expected representation. */
   "workspace.target.decode.failed": {
