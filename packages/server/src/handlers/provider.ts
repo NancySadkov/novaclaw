@@ -1,6 +1,7 @@
 import { Catalog } from "@novaclaw/core/catalog"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { ModelPrune } from "@novaclaw/core/catalog/model-prune"
+import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { Config } from "@novaclaw/core/config"
 import { LocalModelManager } from "@novaclaw/core/local-model-manager"
 import { Effect } from "effect"
@@ -50,12 +51,16 @@ export const ProviderHandler = HttpApiBuilder.group(Api, "server.provider", (han
         "provider.remove",
         Effect.fn(function* (ctx) {
           // T10(iv): the true config-key delete — the store row goes away (instance-wide),
-          // unlike the client-side disable-list hide. The live per-location catalog snapshot
-          // still holds the provider until the next boot; the store is the durable truth.
+          // unlike the client-side disable-list hide.
           const store = yield* CatalogStore.Service
           yield* store.removeProvider(ctx.params.providerID)
           const fallback = yield* store.getDefault()
           if (fallback !== undefined && fallback.startsWith(ctx.params.providerID + "/")) yield* store.clearDefault()
+          // ⚠️ This line used to be absent, and this comment used to say "the live per-location
+          // catalog snapshot still holds the provider until the next boot". It does not any more:
+          // `apply` fires the same refresh for every `PATCH /config`, and a store write that
+          // bypasses `apply` has to fire it too or the delete is durable-but-invisible.
+          yield* ConfigStoreWrite.refreshDomain("catalog")
         }),
       )
       .handle(
@@ -79,6 +84,9 @@ export const ProviderHandler = HttpApiBuilder.group(Api, "server.provider", (han
           const fallback = yield* store.getDefault()
           if (ModelPrune.refNamesModel(fallback, ctx.params.providerID, ctx.query.modelID))
             yield* store.clearDefault()
+          // Fired AFTER the store writes commit — the reload re-reads the store, so firing it
+          // earlier would re-materialise the pre-delete state and report success for it.
+          yield* ConfigStoreWrite.refreshDomain("catalog")
         }),
       )
       .handle(

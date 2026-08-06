@@ -663,6 +663,27 @@ export function registeredReloads(domain: ReloadDomain): number {
   return registered[domain].size
 }
 
+/**
+ * Re-materialise one domain for every open location, for a durable write that did NOT come through
+ * `apply`.
+ *
+ * **Why this exists (2026-08-06).** `apply` fires `refreshDomains` itself, so every `PATCH /config`
+ * already lands live. Two routes write the catalogue store directly and therefore bypassed it —
+ * `provider.remove` and `provider.removeModel` — which is why `provider.remove`'s handler carried the
+ * note *"the live per-location catalog snapshot still holds the provider until the next boot"*. That
+ * lag was visible as a shipped defect: deleting a model left its row on screen, so the Models tab had
+ * to keep a client-side hide purely to cover a staleness we could simply not have.
+ *
+ * ⚠️ **This is not a second mechanism.** It is the same registry, the same ordering and the same
+ * ruling-2 reporting as the config path — deliberately, because a *second* refresh path is exactly
+ * the kind of duplicate that drifts. If you find yourself adding a third caller, ask first whether
+ * that write belongs in `apply`.
+ *
+ * ⚠️ A store write must be COMMITTED before calling this: the reload re-reads the store, so firing it
+ * inside the transaction would re-materialise the pre-write state and report success for it.
+ */
+export const refreshDomain = (domain: ReloadDomain) => refreshDomains([domain])
+
 /** Reloads this module has DISPATCHED for `domain` (monotonic, counts attempts not successes).
  *  Pairs with the above to tell "refreshed" from "never asked", and is what makes "an unrelated
  *  config key costs this domain nothing" a measurement instead of a claim. */

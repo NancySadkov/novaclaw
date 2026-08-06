@@ -157,10 +157,17 @@ export const SettingsModelsV2: Component = () => {
     //    so a destructive confirm dialog performed a per-browser-profile hide while stating an
     //    instance-wide fact: an agent choosing a model, a second device, and any headless instance
     //    all still saw the entry. That is ruling 2, and it defeated the point of a prune.
-    // ② The CLIENT hide stays as an immediate-feedback cover, NOT as the mechanism. The live
-    //    per-location catalog snapshot keeps serving the old list until the next serve boot — the
-    //    same property `provider.remove` documents in its own handler — so without this the row
-    //    would sit there after a successful delete and read as a broken button.
+    // ② The CLIENT hide stays as an immediate-feedback cover, NOT as the mechanism.
+    //    ⚠️ **Its reason CHANGED on 2026-08-06 and the old one is gone.** It used to cover a
+    //    server-side staleness: the live per-location catalog snapshot served the old list until the
+    //    next `serve` boot. That is fixed — the handler now fires the same `catalog` domain refresh
+    //    a `PATCH /config` does, and it is proven end to end against a running instance (9 models →
+    //    DELETE 204 → 8 models on `/api/model`, no restart between the reads).
+    //    What this line still covers is only the CLIENT hop: whether `serverSync` pushes the
+    //    re-materialised catalog to an open tab promptly. That is unverified, not known-broken, and
+    //    the window is at worst a sync tick rather than a reboot. ⏳ Verify it and this line goes —
+    //    keeping a cover for a fault that no longer exists is the cruft the vision rules against, so
+    //    it stays only until someone checks the push.
     //
     // ⚠️ A failed delete must not hide the row: that would recreate exactly the local-only illusion
     // this change exists to remove. So the local write happens only after the server confirms.

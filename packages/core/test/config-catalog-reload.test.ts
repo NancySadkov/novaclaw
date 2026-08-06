@@ -13,6 +13,7 @@ import { Location } from "@novaclaw/core/location"
 import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { PluginV2 } from "@novaclaw/core/plugin"
 import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
+import { ModelV2 } from "@novaclaw/core/model"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { AbsolutePath } from "@novaclaw/core/schema"
@@ -142,6 +143,103 @@ describe("a provider write re-materialises the catalog", () => {
       ),
     ),
   )
+})
+
+// ────────────────────────────────────────────────────────────────────────────────────────────────
+// A store write that does NOT go through `apply` — the delete routes (2026-08-06).
+//
+// `provider.remove` and `provider.removeModel` write `CatalogStore` directly, so none of the
+// machinery above fires for them. That was a shipped defect rather than a subtlety: deleting a model
+// left its row on screen, and the Models tab had to keep a client-side hide purely to cover the lag.
+// `provider.remove`'s own handler documented it — *"the live per-location catalog snapshot still
+// holds the provider until the next boot"* — which is ruling 3's *a settings change is not a reboot*
+// stated as a known exception instead of being fixed.
+//
+// ⚠️ The read-through discipline at the top of this file is what makes these tests mean anything:
+// `Catalog.Service` is resolved BEFORE the delete and every assertion goes through that instance.
+// Re-resolving afterwards would pass with the domain frozen at boot.
+// ────────────────────────────────────────────────────────────────────────────────────────────────
+describe("a direct store DELETE re-materialises the catalog too", () => {
+  it.live("removing one model drops it from the live catalog, and leaves its siblings", () =>
+    Effect.scoped(
+      withLocation((location) =>
+        Effect.gen(function* () {
+          const plugins = yield* PluginV2.Service
+          yield* plugins.ready
+          const catalog = yield* Catalog.Service
+          const store = yield* CatalogStore.Service
+
+          yield* ConfigStoreWrite.apply(
+            decodeInfo({
+              providers: {
+                [PROBE]: {
+                  name: "Probe endpoint",
+                  api: api("https://delete.test/v1"),
+                  models: { keep: { name: "Keep" }, drop: { name: "Drop" } },
+                },
+              },
+            }),
+          )
+          const has = (id: string) =>
+            catalog.model.get(PROBE_ID, ModelV2.ID.make(id)).pipe(Effect.map((model) => model !== undefined))
+          expect(yield* has("keep")).toBe(true)
+          expect(yield* has("drop")).toBe(true)
+
+          const before = ConfigStoreWrite.reloadsDispatched("catalog")
+          expect(yield* store.removeModel(PROBE_ID, "drop")).toBe(true)
+
+          // The negative control, and the whole point of the change: WITHOUT the refresh the store
+          // is already correct here while the live catalog still lists `drop`. That gap is what the
+          // UI was covering with a client-side hide.
+          yield* ConfigStoreWrite.refreshDomain("catalog")
+
+          expect(yield* has("drop")).toBe(false)
+          // The sibling must survive: a delete that quietly took the whole provider with it would
+          // pass an assertion that only checked the target.
+          expect(yield* has("keep")).toBe(true)
+          expect(ConfigStoreWrite.reloadsDispatched("catalog") - before).toBe(1)
+        }).pipe(Effect.provide(LocationServiceMap.Service.get(location))),
+      ),
+    ),
+  )
+
+  it.live("removing a whole provider drops it from the live catalog", () =>
+    Effect.scoped(
+      withLocation((location) =>
+        Effect.gen(function* () {
+          const plugins = yield* PluginV2.Service
+          yield* plugins.ready
+          const catalog = yield* Catalog.Service
+          const store = yield* CatalogStore.Service
+
+          yield* ConfigStoreWrite.apply(
+            decodeInfo({ providers: { [PROBE]: { name: "Probe endpoint", api: api("https://gone.test/v1") } } }),
+          )
+          expect(yield* catalog.provider.get(PROBE_ID)).toBeDefined()
+
+          yield* store.removeProvider(PROBE_ID)
+          yield* ConfigStoreWrite.refreshDomain("catalog")
+          expect(yield* catalog.provider.get(PROBE_ID)).toBeUndefined()
+        }).pipe(Effect.provide(LocationServiceMap.Service.get(location))),
+      ),
+    ),
+  )
+
+  it.effect("refreshDomain is the SAME registry as the config path, not a second mechanism", () => {
+    // A parallel refresh path is the kind of duplicate that drifts — one caller gains a domain the
+    // other does not, and the two disagree about what is live. Pinning that they share a registry is
+    // cheap and stops that at the door.
+    return Effect.gen(function* () {
+      const seen: string[] = []
+      yield* ConfigStoreWrite.registerReload("catalog", () =>
+        Effect.sync(() => {
+          seen.push("catalog")
+        }),
+      )
+      yield* ConfigStoreWrite.refreshDomain("catalog")
+      expect(seen).toEqual(["catalog"])
+    })
+  })
 })
 
 describe("the catalog reload is per-key, like every other domain", () => {
