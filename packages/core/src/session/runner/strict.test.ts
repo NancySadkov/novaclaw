@@ -669,3 +669,70 @@ describe("SessionStrict.filesWritten", () => {
     expect(SessionStrict.filesWritten([])).toEqual([])
   })
 })
+
+// 🔴 The completion gate is project-global and can only DOWNGRADE, so a quality command that is broken
+// — or simply unrelated to the task — blocks every Strict task regardless of whether the deliverable is
+// right. A live run on 2026-08-06 proved the sharp end: the work was correct and the harness still
+// refused. Sampling the gate once at task start is what lets the two be told apart.
+describe("SessionStrict — a project that starts red", () => {
+  test("the opening notice states the consequence, and does not call it a failure", () => {
+    // "Fix the failing test" is a NORMAL Strict task and begins in exactly this state, so the wording
+    // must inform without accusing. It says the one thing that follows and nothing about blame.
+    const notice = SessionStrict.baselineRedNotice("test failed with exit 1")
+    expect(notice).toContain("ALREADY failing")
+    expect(notice).toContain("expected if fixing them is the task")
+    expect(notice).toContain("test failed with exit 1")
+    expect(notice.toLowerCase()).not.toContain("error:")
+  })
+
+  test("🔴 the terminal notice stops accusing the work when the checks were already red", () => {
+    // Without this the sentence reads "the work did NOT pass this project's verification" — an
+    // accusation, and a false one when the commands could never have passed.
+    const red = SessionStrict.terminalNotice({
+      status: "blocked",
+      reason: "completion_unverified",
+      steps: 2,
+      single: true,
+      keptBest: false,
+      baselineRed: true,
+    })
+    expect(red).toContain("ALREADY failing before this run started")
+    expect(red).toContain("does not say the work is wrong")
+  })
+
+  test("and it says so plainly when the run DID break them", () => {
+    const green = SessionStrict.terminalNotice({
+      status: "blocked",
+      reason: "completion_unverified",
+      steps: 2,
+      single: true,
+      keptBest: false,
+      baselineRed: false,
+    })
+    expect(green).toContain("were passing before this run started")
+  })
+
+  test("an UNSAMPLED run claims neither — silence, not a guess", () => {
+    // No quality commands configured means no baseline was taken. Asserting either direction would be
+    // inventing a measurement (ruling 2), so the clause is simply absent.
+    const notice = SessionStrict.terminalNotice({
+      status: "blocked",
+      reason: "completion_unverified",
+      steps: 2,
+      single: true,
+      keptBest: false,
+    })
+    expect(notice).not.toContain("before this run started")
+    expect(notice).toContain("did NOT pass this project's own verification commands")
+  })
+
+  test("the clause never leaks onto unrelated outcomes", () => {
+    for (const reason of ["aborted", "wall_exhausted"] as const)
+      expect(
+        SessionStrict.terminalNotice({ status: "blocked", reason, steps: 1, single: true, keptBest: false, baselineRed: true }),
+      ).not.toContain("before this run started")
+    expect(
+      SessionStrict.terminalNotice({ status: "done", steps: 1, single: true, keptBest: false, baselineRed: true }),
+    ).toContain("Strict task complete")
+  })
+})

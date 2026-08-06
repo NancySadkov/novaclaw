@@ -161,6 +161,8 @@ export function terminalNotice(input: {
   readonly single: boolean
   /** `JhEngine.Report.keptBest` — REQUIRED, so a caller cannot render the claim without asking. */
   readonly keptBest: boolean
+  /** Were this project's own checks already failing BEFORE the run? `undefined` = never sampled. */
+  readonly baselineRed?: boolean
 }): string {
   if (input.status === "done") return `✅ Strict task complete — ${input.steps} steps, every one verified.`
   // Racing never touched the folder — the run happened in the attempt workspaces — so both halves
@@ -175,7 +177,12 @@ export function terminalNotice(input: {
   // commands disagreed — and "stopped" alone would hide the only part the user needs (ruling 2: a fault
   // is never described falsely, and "ran out of time" would be a false description of this one).
   if (input.reason === "completion_unverified")
-    return `⚠️ Strict stopped after ${input.steps} steps: the work did NOT pass this project's own verification commands, so the task is not reported complete — ${state}. Say "resume" to keep working on it.`
+    return (
+      `⚠️ Strict stopped after ${input.steps} steps: the work did NOT pass this project's own verification commands, so the task is not reported complete — ${state}.` +
+      // Without this the sentence above reads as an accusation, and it is a FALSE one when the
+      // commands were already failing before the run touched anything (measured 2026-08-06).
+      `${baselineClause(input.baselineRed)} Say "resume" to keep working on it.`
+    )
   return `⚠️ Strict run stopped (${input.reason ?? "blocked"}) after ${input.steps} steps — ${state}. Say "resume" to continue it.`
 }
 
@@ -333,6 +340,46 @@ export function completionGateFor(
       }
       return { ok: true, detail: `this project's own checks pass (${checks.map((c) => c.label).join(", ")})` }
     })
+}
+
+/**
+ * The notice a Strict run opens with when this project's own checks are ALREADY failing.
+ *
+ * 🔴 **Measured 2026-08-06.** The completion gate is project-global and can only downgrade, so a
+ * quality command that is broken — or simply unrelated to the task — blocks every Strict task
+ * regardless of whether the deliverable is right. A live run proved the sharp end of that: the work
+ * was correct (`note.txt` held exactly what was asked) and the harness still refused, because the
+ * configured check could not pass at all. Nothing distinguished *"your work failed the project's
+ * checks"* from *"this project's checks cannot pass"*, and the user learned the difference only after
+ * the wall clock had been spent.
+ *
+ * ⚠️ **It is deliberately NOT alarming, because starting red is often correct.** *"Fix the failing
+ * test"* is a normal Strict task and begins in exactly this state. The notice states the fact and its
+ * one consequence — unless the work also turns the checks green, the run will end unverified — and
+ * says nothing about whether that is good or bad.
+ */
+export function baselineRedNotice(detail: string): string {
+  return (
+    `🔎 Heads-up before starting: this project's own verification commands are ALREADY failing. ` +
+    `That is expected if fixing them is the task — but if it is not, this run will end ` +
+    `"not verified" no matter how well the work goes, because the completion gate runs these same ` +
+    `commands.\n\n${detail}`
+  )
+}
+
+/**
+ * The `completion_unverified` clause that says whether the run BROKE the checks or merely inherited
+ * them broken.
+ *
+ * The distinction is the whole point of sampling at the start: *"the work did not pass this project's
+ * verification"* reads as an accusation, and it is a false one when the commands were failing before
+ * the run touched anything.
+ */
+export function baselineClause(baselineRed: boolean | undefined): string {
+  if (baselineRed === undefined) return ""
+  return baselineRed
+    ? " ⚠️ These commands were ALREADY failing before this run started, so this result does not say the work is wrong — it says the project is not in a verifiable state."
+    : " These commands were passing before this run started."
 }
 
 // Milestones the user sees as chat notices. Leaf-level noise (every action/observation/verification)
@@ -749,7 +796,19 @@ export function commandPlan(input: {
 
 /** Run one Strict task over the session's working directory. Milestones buffer synchronously (onLog is
  *  sync) and flush before each model call and at the end — bounded staleness, one notice per batch. */
-export function runTask(args: RunArgs): Effect.Effect<JhEngine.Report> {
+/**
+ * A Strict report, plus the one fact only this layer can know.
+ *
+ * `baselineRed` is not on `JhEngine.Report` because the engine has no concept of "before the run" —
+ * it is handed a `completionGate` and asks it. Sampling that gate at task start is a SESSION-level
+ * decision, so the answer rides back here rather than being pushed into the engine's shape.
+ */
+export interface StrictReport extends JhEngine.Report {
+  /** Were this project's own checks already failing BEFORE the run? `undefined` = never sampled. */
+  readonly baselineRed?: boolean
+}
+
+export function runTask(args: RunArgs): Effect.Effect<StrictReport> {
   const nowFn = args.now ?? (() => Date.now())
   // ONE shell for the whole product, resolved by the ONE host-execution gate: `config.shell` when
   // the operator set one, else the agent default (bundled PortableGit / system git-bash / COMSPEC).
@@ -831,8 +890,19 @@ export function runTask(args: RunArgs): Effect.Effect<JhEngine.Report> {
     },
   }
   return Effect.gen(function* () {
+    // ⚠️ ONE extra gate run per Strict task, and the cost is deliberate. The completion gate can only
+    // downgrade, so a project whose checks are already red cannot produce a verified completion for
+    // ANY task that does not also fix them. Learning that before the wall clock is spent is worth one
+    // suite run in a mode whose default budget is 45 minutes — and it is the only way the terminal
+    // `completion_unverified` can tell "your work failed" apart from "this project cannot verify".
+    let baselineRed: boolean | undefined
+    if (gateChecks.length > 0) {
+      const baseline = yield* completionGateFor(runner, gateChecks, args.cwd)()
+      baselineRed = !baseline.ok
+      if (baselineRed) yield* args.onMilestone(baselineRedNotice(baseline.detail))
+    }
     const report = yield* JhEngine.runTask(deps, { goal: args.task }, args.resume && reviveForResume(args.resume))
     yield* flush
-    return report
+    return { ...report, ...(baselineRed === undefined ? {} : { baselineRed }) }
   })
 }

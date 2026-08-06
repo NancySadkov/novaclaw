@@ -2346,6 +2346,9 @@ export const layer = Layer.effect(
               steps: report.state.tree.nodes.size,
               single,
               keptBest: report.keptBest,
+              // Sampled before the run started, so a `completion_unverified` can say whether this run
+              // BROKE the project's checks or merely inherited them broken.
+              ...(report.baselineRed === undefined ? {} : { baselineRed: report.baselineRed }),
             }),
           )
           // Racing legibility: replay the WINNER's buffered actions as real tool parts on the run
