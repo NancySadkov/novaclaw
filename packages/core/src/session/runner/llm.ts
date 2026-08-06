@@ -445,12 +445,35 @@ export const layer = Layer.effect(
     // Utility calls ask for a short string or a JSON array — never for extended reasoning. Left
     // unconstrained, reasoning models frequently spend the ENTIRE token
     // budget reasoning and return EMPTY content, which parses to "nothing to record" and silently
-    // no-ops the whole pass. MEASURED 2026-07-20 against the Spark with the shipped extraction prompt:
+    // no-ops the whole pass.
+    //
+    // MEASURED 2026-07-20 against `dgx-spark/qwen3.6-35b` (the PrismaQuant-4.75bit build), shipped
+    // extraction prompt:
     //   max_tokens= 512 -> finish=stop,   completion= 348, content 132 chars (valid JSON)
     //   max_tokens=2048 -> finish=length, completion=2048, content 0 chars
     //   max_tokens=4096 -> finish=length, completion=4096, content 0 chars
-    // Note the INVERSION: a bigger output limit is WORSE (a runaway thinking loop), so raising
-    // maxTokens is not the fix. Auto-title therefore uses the provider-neutral stages of the shared
+    // That table was read as an INVERSION — "a bigger output limit is WORSE (a runaway thinking
+    // loop)".
+    //
+    // ⚠️ RE-MEASURED 2026-08-06 against `holo3.1` (Hcompany/Holo-3.1-35B-A3B-NVFP4, the current test
+    // model per AGENTS.md), same prompt, temperature 0. **THE INVERSION DID NOT SURVIVE.** Above the
+    // cliff a bigger cap is NEUTRAL, not worse — the model stops on its own and the answers are
+    // byte-identical:
+    //   thinking ENABLED (no chat_template_kwargs):     <=384 -> finish=length, 0 content chars
+    //                                                    512/2048/4096 -> finish=stop, 260-310 completion, valid JSON
+    //   thinking DISABLED (the NO_THINKING overlay):     64 -> finish=length
+    //                                                    128..4096 -> finish=stop, ~126 completion, valid JSON
+    // So the real mechanism is a CLIFF, not an inversion: a reasoner cut off mid-think returns
+    // NOTHING rather than something partial, and where the cliff sits depends entirely on whether it
+    // is reasoning. The 2026-07-20 runaway was a property of that BUILD, not of reasoning models.
+    // ⚠️ Do not re-derive "bigger is worse" from the first table — it is kept for provenance, not as
+    // current behaviour. Any change here needs a fresh table naming the build it was taken on.
+    // ⚠️ `enable_thinking:false` IS honoured by holo3.1 (reasoning chars drop to 0 and latency
+    // roughly halves, ~3.5s -> ~1.7s). That is a per-model fact and not a guarantee — the standing
+    // ruling that the HARNESS enforces no-thinking itself exists precisely because a growing class of
+    // models ignores the flag. It stays a cheap first line, never the only one.
+    //
+    // Auto-title therefore uses the provider-neutral stages of the shared
     // ReasoningBudget controller first: observe reasoning tokens, stop at checkpoints, and nudge the
     // model toward its tiny answer. Its final mechanical backstop remains the best-effort
     // `chat_template_kwargs` switch for providers that support it. The other utility passes still use

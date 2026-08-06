@@ -37,7 +37,18 @@ import { Token } from "../../util/token"
  * Each phase inherits the base request's own `max_tokens` (typically UNSET → the server uses the
  * remaining context window): the budget is enforced by the mid-stream checkpoint, never by
  * `max_tokens`, so an answer that starts inside a phase always completes rather than being
- * guillotined, and `prompt + max_tokens` can never overflow the window. A model that finishes
+ * guillotined, and `prompt + max_tokens` can never overflow the window.
+ *
+ * ✅ **That choice was RE-CONFIRMED on the current test model, 2026-08-06** (`holo3.1`, shipped
+ * extraction prompt, temperature 0). Enforcing a reasoning budget with `max_tokens` instead would
+ * hit a CLIFF: with thinking on, every cap ≤384 returned `finish=length` and **zero content
+ * chars** — not a truncated answer, no answer — while 512/2048/4096 stopped on their own with
+ * byte-identical valid JSON. A cut-off reasoner returns nothing, which is exactly the "empty-reply
+ * trap" named in checkpoint 4 above, now with a measured boundary.
+ * ⚠️ Note what did NOT survive: `runner/llm.ts` used to read the 2026-07-20 table as an INVERSION
+ * ("a bigger output limit is worse"). On holo3.1 a bigger cap is *neutral*, not worse. The
+ * mechanism here is unaffected — it never rested on the inversion — but do not re-import that
+ * conclusion from the neighbouring file's history. A model that finishes
  * reasoning on its own (emits answer
  * `content`) short-circuits with NO continuation — the common, cheap path, and the reason phase 1
  * carries no prefill: a non-thinking model just answers and the mechanism is a no-op. The whole turn
