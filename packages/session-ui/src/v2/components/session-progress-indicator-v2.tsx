@@ -1,5 +1,4 @@
 import { For, splitProps, type ComponentProps } from "solid-js"
-import "./session-progress-indicator-v2.css"
 
 const grid = 5
 const dot = 2

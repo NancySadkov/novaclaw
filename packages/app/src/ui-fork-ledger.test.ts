@@ -724,10 +724,6 @@ describe("the seven deleted v1 components stay deleted", () => {
   const UNLAYERED_STYLESHEETS = [
     "packages/app/src/components/settings-v2/settings-v2.css",
     "packages/app/src/components/titlebar-tab-nav.css",
-    "packages/session-ui/src/v2/components/basic-tool-v2.css",
-    "packages/session-ui/src/v2/components/native-transcript.css",
-    "packages/session-ui/src/v2/components/session-progress-indicator-v2.css",
-    "packages/session-ui/src/v2/components/tool-error-card-v2.css",
     "packages/ui/src/v2/components/button-v2.css",
     "packages/ui/src/v2/components/dialog-v2.css",
     "packages/ui/src/v2/components/icon-button-v2.css",

@@ -1,6 +1,5 @@
 import { Collapsible } from "@kobalte/core/collapsible"
 import { type ComponentProps, type JSX, Show, createMemo, splitProps } from "solid-js"
-import "./tool-error-card-v2.css"
 
 function BanIcon() {
   return (

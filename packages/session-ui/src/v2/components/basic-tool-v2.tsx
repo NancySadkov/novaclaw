@@ -2,7 +2,6 @@ import { Collapsible } from "@kobalte/core/collapsible"
 import { type ComponentProps, type JSX, For, Show, createMemo, splitProps } from "solid-js"
 import { DiffChanges } from "@novaclaw/ui/v2/diff-changes-v2"
 import { TextShimmerV2 } from "@novaclaw/ui/v2/text-shimmer-v2"
-import "./basic-tool-v2.css"
 
 function ChevronIcon() {
   return (

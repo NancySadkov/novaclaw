@@ -27,7 +27,6 @@ import {
 } from "@novaclaw/core/session/session-error"
 import { useI18n } from "@novaclaw/ui/context/i18n"
 import { selectTranscriptMessages } from "../transcript-view"
-import "./native-transcript.css"
 
 // Level-aware fold modes (UIX residue b / C4). Reasoning and tool cards carry SEPARATE modes so
 // the user's explicit Settings prefs (feedReasoningDisplay/feedToolDisplay) can override each
