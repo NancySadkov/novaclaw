@@ -4,7 +4,6 @@ import type { ComponentProps, JSX } from "solid-js"
 import { Show, children } from "solid-js"
 import { Portal } from "solid-js/web"
 import { ButtonV2 } from "./button-v2"
-import "./toast-v2.css"
 
 export interface ToastV2RegionProps extends ComponentProps<typeof Kobalte.Region> {}
 

@@ -1,5 +1,4 @@
 import { type ComponentProps, For, splitProps } from "solid-js"
-import "./keybind-v2.css"
 
 export interface KeybindV2Props extends ComponentProps<"div"> {
   keys: string[]

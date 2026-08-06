@@ -1,5 +1,4 @@
 import { type ComponentProps, splitProps } from "solid-js"
-import "./badge-v2.css"
 
 export interface TagProps extends ComponentProps<"span"> {}
 

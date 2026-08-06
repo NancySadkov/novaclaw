@@ -1,5 +1,4 @@
 import { type ComponentProps, createMemo, splitProps } from "solid-js"
-import "./progress-circle-v2.css"
 
 export interface ProgressCircleV2Props extends Pick<ComponentProps<"svg">, "class" | "classList"> {
   percentage: number

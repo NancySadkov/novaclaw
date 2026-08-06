@@ -699,22 +699,14 @@ describe("the seven deleted v1 components stay deleted", () => {
    */
   const UNLAYERED_V2_STYLESHEETS = [
     "avatar-v2",
-    "badge-v2",
     "button-v2",
     "dialog-v2",
-    "diff-changes-v2",
     "icon-button-v2",
-    "keybind-v2",
     "menu-v2",
-    "progress-circle-v2",
-    "project-avatar-v2",
-    "select-v2",
     "switch-v2",
     "tabs-v2",
     "text-input-v2",
-    "text-shimmer-v2",
     "textarea-v2",
-    "toast-v2",
     "tooltip-v2",
   ]
 
@@ -735,6 +727,29 @@ describe("the seven deleted v1 components stay deleted", () => {
       UNLAYERED_V2_STYLESHEETS.filter((name) => !unlayered.includes(name)),
       "these are layered now — delete them from UNLAYERED_V2_STYLESHEETS in this commit (shrink-only)",
     ).toEqual([])
+  })
+
+  test("🔴 every v2 @import comes AFTER every v1 @import — same layer, so ORDER decides", () => {
+    // ⚠️ **This became load-bearing the moment v2 stylesheets joined `layer(components)`, and it was
+    // invisible before.** Six v2 sheets target a selector their v1 twin also targets:
+    // `badge-v2`/`tag.css` → `[data-component="tag"]`, `diff-changes-v2`/`diff-changes.css`,
+    // `switch-v2`/`switch.css`, `dialog-v2`/`dialog.css`, plus `tabs-v2` and `toast-v2` on shared
+    // `icon`/`icon-button` selectors.
+    //
+    // While v2 was UNLAYERED it beat v1 unconditionally. Now both sit in `components`, equal
+    // specificity, so the LATER declaration wins — i.e. the order of these `@import` lines is the only
+    // thing keeping v2 in front. Verified in the browser 2026-08-06: `[data-component="tag"]` computes
+    // v2's values (gap 4px, height 16px, padding 0 4px, radius 2px), not v1's (no gap, 18px, 0 6px).
+    // Inserting a v1 import below the v2 block would silently hand those components back to v1.
+    const barrel = readFileSync(join(PACKAGES, "ui", "src", "styles", "index.css"), "utf8")
+    const lines = barrel.split("\n")
+    const lastV1 = lines.reduce((last, line, index) => (/@import\s+["']\.\.\/components\/[^"']+\.css["']/.test(line) ? index : last), -1)
+    const firstV2 = lines.findIndex((line) => /@import\s+["']\.\.\/v2\/components\/[^"']+\.css["']/.test(line))
+    expect(firstV2, "no v2 stylesheet is imported by the barrel — has the migration moved?").toBeGreaterThan(-1)
+    expect(
+      lastV1,
+      "a v1 @import sits BELOW the v2 block — v2 loses every shared selector to it; move it up",
+    ).toBeLessThan(firstV2)
   })
 
   test("the CSS barrel has no dangling @import — a break no typecheck can see", () => {

@@ -1,5 +1,4 @@
 import { createMemo, Show } from "solid-js"
-import "./diff-changes-v2.css"
 
 export function DiffChanges(props: {
   class?: string
