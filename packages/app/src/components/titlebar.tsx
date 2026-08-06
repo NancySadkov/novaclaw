@@ -20,7 +20,6 @@ import { readSessionTabsRemovedDetail, SESSION_TABS_REMOVED_EVENT } from "@/comp
 import { useGlobal } from "@/context/global"
 import { ServerConnection, useServer } from "@/context/server"
 import { tabKey, useTabs } from "@/context/tabs"
-import "./titlebar.css"
 
 const v2TitlebarHeight = 36
 const minTitlebarZoom = 0.25

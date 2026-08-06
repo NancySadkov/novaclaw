@@ -15,6 +15,7 @@
    within `components` an app rule still beats a ui-package one. */
 @import "./components/brand.css" layer(components);
 @import "./components/dialog-select-directory-v2.css" layer(components);
+@import "./components/titlebar.css" layer(components);
 
 @font-face {
   font-family: "JetBrainsMono Nerd Font Mono";
