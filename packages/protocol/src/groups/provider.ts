@@ -101,6 +101,27 @@ export const ProviderGroup = HttpApiGroup.make("server.provider")
         }),
       ),
   )
+  .add(
+    // ⚠️ `modelID` is a QUERY parameter, not a path segment, and that is forced rather than chosen:
+    // model ids routinely contain slashes (`openai/gpt-oss-120b`,
+    // `hf.co/unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL`), so `/model/:modelID` would split one id
+    // across several segments and never match.
+    HttpApiEndpoint.delete("provider.removeModel", "/api/provider/:providerID/model", {
+      params: { providerID: Provider.ID },
+      query: Schema.Struct({ ...LocationQuery.fields, modelID: Schema.String }),
+      success: HttpApiSchema.NoContent,
+      error: [ProviderNotFoundError, ServiceUnavailableError],
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.provider.removeModel",
+          summary: "Remove one model",
+          description:
+            "Delete a single model from a provider in the instance catalog store, keeping the provider itself (and so its endpoint URL, auth and request defaults). Instance-wide and durable, unlike the client-side hide the Models tab used to perform. A model that is in no layer is a 404, never a cheerful 204.",
+        }),
+      ),
+  )
   .annotateMerge(
     OpenApi.annotations({
       title: "providers",

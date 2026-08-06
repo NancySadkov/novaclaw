@@ -285,6 +285,8 @@ import type {
   V2ProviderLocalModelsErrors,
   V2ProviderLocalModelsResponses,
   V2ProviderRemoveErrors,
+  V2ProviderRemoveModelErrors,
+  V2ProviderRemoveModelResponses,
   V2ProviderRemoveResponses,
   V2ProviderStopLocalModelErrors,
   V2ProviderStopLocalModelResponses,
@@ -5451,6 +5453,45 @@ export class Provider2 extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<V2ProviderGetResponses, V2ProviderGetErrors, ThrowOnError>({
       url: "/api/provider/{providerID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Remove one model
+   *
+   * Delete a single model from a provider in the instance catalog store, keeping the provider itself (and so its endpoint URL, auth and request defaults). Instance-wide and durable, unlike the client-side hide the Models tab used to perform. A model that is in no layer is a 404, never a cheerful 204.
+   */
+  public removeModel<ThrowOnError extends boolean = false>(
+    parameters: {
+      providerID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      modelID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "providerID" },
+            { in: "query", key: "location" },
+            { in: "query", key: "modelID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<
+      V2ProviderRemoveModelResponses,
+      V2ProviderRemoveModelErrors,
+      ThrowOnError
+    >({
+      url: "/api/provider/{providerID}/model",
       ...options,
       ...params,
     })

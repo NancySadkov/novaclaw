@@ -12377,6 +12377,51 @@ export type V2ProviderGetResponses = {
 
 export type V2ProviderGetResponse = V2ProviderGetResponses[keyof V2ProviderGetResponses]
 
+export type V2ProviderRemoveModelData = {
+  body?: never
+  path: {
+    providerID: string
+  }
+  query: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+    modelID: string
+  }
+  url: "/api/provider/{providerID}/model"
+}
+
+export type V2ProviderRemoveModelErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ProviderNotFoundError
+   */
+  404: ProviderNotFoundError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2ProviderRemoveModelError = V2ProviderRemoveModelErrors[keyof V2ProviderRemoveModelErrors]
+
+export type V2ProviderRemoveModelResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2ProviderRemoveModelResponse = V2ProviderRemoveModelResponses[keyof V2ProviderRemoveModelResponses]
+
 export type V2IntegrationListData = {
   body?: never
   path?: never

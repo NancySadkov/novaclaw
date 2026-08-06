@@ -151,7 +151,27 @@ export const SettingsModelsV2: Component = () => {
       destructive: true,
     })
     if (!ok) return
-    models.remove(key)
+    // Two writes, and both are needed for different reasons — see todo/assorted.md.
+    //
+    // ① The SERVER delete is the real one. Until 2026-08-06 this button wrote ONLY the client store,
+    //    so a destructive confirm dialog performed a per-browser-profile hide while stating an
+    //    instance-wide fact: an agent choosing a model, a second device, and any headless instance
+    //    all still saw the entry. That is ruling 2, and it defeated the point of a prune.
+    // ② The CLIENT hide stays as an immediate-feedback cover, NOT as the mechanism. The live
+    //    per-location catalog snapshot keeps serving the old list until the next serve boot — the
+    //    same property `provider.remove` documents in its own handler — so without this the row
+    //    would sit there after a successful delete and read as a broken button.
+    //
+    // ⚠️ A failed delete must not hide the row: that would recreate exactly the local-only illusion
+    // this change exists to remove. So the local write happens only after the server confirms.
+    const c = ctx()
+    const dir = routeDir()
+    if (!c) return
+    const removed = await c.sdk.client.v2.provider
+      .removeModel({ providerID: key.providerID, modelID: key.modelID, ...(dir ? { location: { directory: dir } } : {}) })
+      .then(() => true)
+      .catch(() => false)
+    if (removed) models.remove(key)
   }
 
   const list = useFilteredList<ModelItem>({

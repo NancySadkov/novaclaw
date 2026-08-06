@@ -6,6 +6,7 @@ import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
 import { CatalogProviderTable, CatalogSettingTable } from "./catalog/sql"
 import { ConfigProvider } from "./config/provider"
+import { ModelPrune } from "./catalog/model-prune"
 import type { ProviderV2 } from "./provider"
 
 const DEFAULT_MODEL_KEY = "default_model"
@@ -26,6 +27,12 @@ export interface Interface {
   readonly setLayers: (id: ProviderV2.ID, layers: ConfigProvider.Info[]) => Effect.Effect<void>
   /** Remove one provider. */
   readonly removeProvider: (id: ProviderV2.ID) => Effect.Effect<void>
+  /**
+   * Remove ONE model from a provider, keeping the provider (and so its URL, auth and request
+   * defaults). Returns false when the model was in no layer — the caller must be able to tell a
+   * real delete from a no-op, or it reports success for a mutation that did nothing (ruling 2).
+   */
+  readonly removeModel: (id: ProviderV2.ID, modelID: string) => Effect.Effect<boolean>
   /** The default-model ref (`providerID/modelID`), if set. */
   readonly getDefault: () => Effect.Effect<string | undefined>
   /** Set the default-model ref. */
@@ -69,6 +76,15 @@ export const layer = Layer.effect(
       }),
       removeProvider: Effect.fn("CatalogStore.removeProvider")(function* (id) {
         yield* providers.remove(id)
+      }),
+      removeModel: Effect.fn("CatalogStore.removeModel")(function* (id, modelID) {
+        const all = yield* providers.all()
+        const layers = all[id]
+        if (layers === undefined) return false
+        const next = ModelPrune.stripModel(layers, modelID)
+        if (next === undefined) return false
+        yield* providers.setLayers(id, next)
+        return true
       }),
       getDefault: Effect.fn("CatalogStore.getDefault")(function* () {
         return yield* settings.get(DEFAULT_MODEL_KEY)

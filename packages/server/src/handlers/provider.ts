@@ -1,5 +1,6 @@
 import { Catalog } from "@novaclaw/core/catalog"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
+import { ModelPrune } from "@novaclaw/core/catalog/model-prune"
 import { Config } from "@novaclaw/core/config"
 import { LocalModelManager } from "@novaclaw/core/local-model-manager"
 import { Effect } from "effect"
@@ -55,6 +56,29 @@ export const ProviderHandler = HttpApiBuilder.group(Api, "server.provider", (han
           yield* store.removeProvider(ctx.params.providerID)
           const fallback = yield* store.getDefault()
           if (fallback !== undefined && fallback.startsWith(ctx.params.providerID + "/")) yield* store.clearDefault()
+        }),
+      )
+      .handle(
+        "provider.removeModel",
+        Effect.fn(function* (ctx) {
+          // The per-model twin of `provider.remove`. Before this existed the only ways to drop a
+          // stale model were to delete its whole provider (taking every sibling with it) or to hide
+          // it in a CLIENT-side preference that an agent, a second device and a headless instance
+          // all still saw — a destructive dialog performing a local act while stating an
+          // instance-wide fact (ruling 2).
+          const store = yield* CatalogStore.Service
+          const removed = yield* store.removeModel(ctx.params.providerID, ctx.query.modelID)
+          // A no-op must NOT report success: without this the caller cannot tell "deleted" from
+          // "was never here", which is the same failed-mutation-reports-success shape the wire's
+          // unknown-key guard exists to close.
+          if (!removed)
+            return yield* new ProviderNotFoundError({
+              providerID: ctx.params.providerID,
+              message: `Model not found in provider "${ctx.params.providerID}": ${ctx.query.modelID}`,
+            })
+          const fallback = yield* store.getDefault()
+          if (ModelPrune.refNamesModel(fallback, ctx.params.providerID, ctx.query.modelID))
+            yield* store.clearDefault()
         }),
       )
       .handle(
