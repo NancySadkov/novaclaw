@@ -1,7 +1,6 @@
 import { Switch as Kobalte } from "@kobalte/core/switch"
 import { Show, splitProps } from "solid-js"
 import type { ComponentProps, ParentProps } from "solid-js"
-import "./switch-v2.css"
 
 export interface SwitchProps extends ParentProps<ComponentProps<typeof Kobalte>> {
   hideLabel?: boolean

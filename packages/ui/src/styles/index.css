@@ -48,13 +48,16 @@
    silently do nothing. `app/src/ui-fork-ledger.test.ts` pins the ones still doing that
    (`UNLAYERED_V2_STYLESHEETS`) and the list is shrink-only — move one here, drop its own import,
    check that component's call sites, and delete its name in the same commit. */
+@import "../v2/components/avatar-v2.css" layer(components);
 @import "../v2/components/badge-v2.css" layer(components);
 @import "../v2/components/diff-changes-v2.css" layer(components);
 @import "../v2/components/divider-v2.css" layer(components);
 @import "../v2/components/keybind-v2.css" layer(components);
+@import "../v2/components/menu-v2.css" layer(components);
 @import "../v2/components/progress-circle-v2.css" layer(components);
 @import "../v2/components/project-avatar-v2.css" layer(components);
 @import "../v2/components/select-v2.css" layer(components);
+@import "../v2/components/switch-v2.css" layer(components);
 @import "../v2/components/text-shimmer-v2.css" layer(components);
 @import "../v2/components/toast-v2.css" layer(components);
 

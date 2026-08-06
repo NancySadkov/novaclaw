@@ -698,12 +698,9 @@ describe("the seven deleted v1 components stay deleted", () => {
    * Adding a name is not allowed: a new v2 component should be layered from birth.
    */
   const UNLAYERED_V2_STYLESHEETS = [
-    "avatar-v2",
     "button-v2",
     "dialog-v2",
     "icon-button-v2",
-    "menu-v2",
-    "switch-v2",
     "tabs-v2",
     "text-input-v2",
     "textarea-v2",

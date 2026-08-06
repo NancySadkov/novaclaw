@@ -1,7 +1,6 @@
 import { DropdownMenu } from "@kobalte/core/dropdown-menu"
 import { ContextMenu } from "@kobalte/core/context-menu"
 import { Show, splitProps, type Component, type ComponentProps, type JSX, type ParentProps } from "solid-js"
-import "./menu-v2.css"
 
 const ChevronRight: Component = () => (
   <svg
