@@ -88,8 +88,36 @@ function selectedV2WorkspaceID(
   return workspaceID.value
 }
 
+/**
+ * The directory a request names, as a real path.
+ *
+ * 🔴 **The HEADER is percent-ENCODED by the SDK and must be decoded; the query param must not be.**
+ * `packages/sdk/js/src/v2/client.ts` sends `x-novaclaw-directory: encodeURIComponent(directory)`, so
+ * on Windows `C:\Users\…` arrives as `C%3A%5CUsers%5C…`. `URL.searchParams.get` already decodes, and
+ * `packages/server/src/location.ts` decodes the header — this module did not, in BOTH places that
+ * read it, which is the asymmetry that produced the bug.
+ *
+ * ⚠️ Consequence, and it is not cosmetic: the existence guard in `planRequest` tested `existsSync` on
+ * the ENCODED string, so it never matched and every SDK request carrying a directory but no session
+ * was rejected 400 `Directory does not exist: C%3A%5C…`. The 400 also masked the second half — this
+ * function would otherwise have handed the literal `C%3A%5C…` to instance boot as a directory.
+ */
+const requestedDirectory = (request: HttpServerRequest.HttpServerRequest, url: URL): string | undefined => {
+  const query = url.searchParams.get("directory")
+  if (query) return query
+  const header = request.headers["x-novaclaw-directory"]
+  if (!header) return undefined
+  try {
+    return decodeURIComponent(header)
+  } catch {
+    // A malformed escape is the client's problem, but it is not a reason to throw here: hand the raw
+    // value on and let the existence guard reject it with the value the client actually sent.
+    return header
+  }
+}
+
 function defaultDirectory(request: HttpServerRequest.HttpServerRequest, url: URL): string {
-  return url.searchParams.get("directory") || request.headers["x-novaclaw-directory"] || process.cwd()
+  return requestedDirectory(request, url) || process.cwd()
 }
 
 function shouldStayOnControlPlane(request: HttpServerRequest.HttpServerRequest, url: URL): boolean {
@@ -189,7 +217,9 @@ function planRequest(
     // base64 route param booted instances on garbage-byte directories). Session-derived and
     // cwd-default directories are server-side truth and stay unvalidated.
     if (!session?.location.directory) {
-      const requested = url.searchParams.get("directory") || request.headers["x-novaclaw-directory"]
+      // Decoded — see `requestedDirectory`. Testing `existsSync` on the SDK's percent-encoded header
+      // never matched, so this guard rejected every legitimate client-supplied directory.
+      const requested = requestedDirectory(request, url)
       if (requested && !(yield* Effect.sync(() => existsSync(requested)))) {
         return RequestPlan.InvalidDirectory({ directory: requested })
       }

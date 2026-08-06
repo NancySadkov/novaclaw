@@ -25,7 +25,6 @@
   "failing": {
     "novaclaw:server": [
       "promptAsync routes to the V2 native engine (F1b: one engine) > fresh session + model routes promptAsync to V2 (prompted on stream, busy→idle bracket, zero legacy rows)",
-      "v2 SDK error shape > 400 schema rejection: SDK extracts the field-level reason from the NamedError body",
       "workspace HttpApi > proxies remote workspace requests selected from session ownership"
     ]
   },
