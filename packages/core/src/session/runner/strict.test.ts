@@ -601,3 +601,71 @@ describe("SessionStrict.reviveForResume (P14.1 resume fix)", () => {
     expect(out.tree.nodes.get("root.2")!.status).toBe("pending")
   })
 })
+
+// 🔴 The default path used to reach the run summary with NO file information, so the model was asked
+// what state the folder was in while being told nothing about any file. A live run on 2026-08-06 then
+// closed with "the final state of note.txt remains unknown" about a file holding exactly what the task
+// asked for. `summaryPrompt` now forbids the guess; this supplies the facts it was missing.
+describe("SessionStrict.filesWritten", () => {
+  const act = (tool: string, path: string | undefined, ok = true): SessionStrict.MaterializedAction => ({
+    tool,
+    args: path === undefined ? {} : { path },
+    ok,
+    output: "",
+  })
+
+  test("every write atom is recognised, and each file appears once", () => {
+    expect(
+      SessionStrict.filesWritten([
+        act("write_file", "a.ts"),
+        act("append_file", "b.ts"),
+        act("edit_file", "c.ts"),
+        act("replace_lines", "a.ts"),
+      ]),
+    ).toEqual(["a.ts", "b.ts", "c.ts"])
+  })
+
+  test("reads and runs are not writes", () => {
+    expect(SessionStrict.filesWritten([act("read_file", "a.ts"), act("run", undefined), act("note", undefined)])).toEqual(
+      [],
+    )
+  })
+
+  test("🔴 a FAILED write is not reported — it did not change the folder", () => {
+    // Naming it would put a file in the report that is not in the folder: the same false statement
+    // this whole fix exists to remove, pointing the other way.
+    expect(SessionStrict.filesWritten([act("write_file", "a.ts", false)])).toEqual([])
+    expect(SessionStrict.filesWritten([act("write_file", "a.ts", false), act("write_file", "b.ts")])).toEqual(["b.ts"])
+  })
+
+  test("🔴 a bare git_revert UN-records everything — the changes are gone", () => {
+    // `git_revert` takes {path} defaulting to ".". Without this, a run that wrote a file and then
+    // reverted it would report a change that no longer exists on disk.
+    expect(SessionStrict.filesWritten([act("write_file", "a.ts"), act("git_revert", ".")])).toEqual([])
+    expect(SessionStrict.filesWritten([act("write_file", "a.ts"), act("git_revert", undefined)])).toEqual([])
+  })
+
+  test("a targeted git_revert removes only that file", () => {
+    expect(
+      SessionStrict.filesWritten([act("write_file", "a.ts"), act("write_file", "b.ts"), act("git_revert", "a.ts")]),
+    ).toEqual(["b.ts"])
+  })
+
+  test("a FAILED revert changes nothing, so the writes still stand", () => {
+    expect(SessionStrict.filesWritten([act("write_file", "a.ts"), act("git_revert", ".", false)])).toEqual(["a.ts"])
+  })
+
+  test("a write after a revert is recorded again", () => {
+    expect(
+      SessionStrict.filesWritten([act("write_file", "a.ts"), act("git_revert", "."), act("write_file", "a.ts")]),
+    ).toEqual(["a.ts"])
+  })
+
+  test("a missing or blank path is ignored rather than reported as an empty filename", () => {
+    expect(SessionStrict.filesWritten([act("write_file", undefined), act("write_file", "  ")])).toEqual([])
+  })
+
+  test("no actions means no claim", () => {
+    expect(SessionStrict.filesWritten([])).toEqual([])
+  })
+})

@@ -2119,9 +2119,14 @@ export const layer = Layer.effect(
             buf.push(action)
             if (buf.length > SessionStrict.MATERIALIZED_ACTION_CAP) buf.shift()
           })
+        // Single-attempt runs publish actions live and used to DISCARD them, which is why the run
+        // summary had no file list on the default path (see `SessionStrict.filesWritten`). Keeping the
+        // names — not the actions — costs nothing and is what the summary needs.
+        const singleActions: SessionStrict.MaterializedAction[] = []
         let actionSeq = 0
         const publishAction = (action: SessionStrict.MaterializedAction) =>
           Effect.gen(function* () {
+            if (single) singleActions.push(action)
             const id = `jh_a${++actionSeq}`
             yield* runPublisher.publish({ type: "tool-input-start", id, name: action.tool })
             yield* runPublisher.publish({ type: "tool-call", id, name: action.tool, input: action.args })
@@ -2297,7 +2302,9 @@ export const layer = Layer.effect(
               } catch {}
             return
           }
-          let appliedFiles: string[] = []
+          // The racing branch below overwrites this with `applyBack`'s authoritative list; on the
+          // single path the engine's own successful writes ARE the answer.
+          let appliedFiles: string[] = single ? [...SessionStrict.filesWritten(singleActions)] : []
           if (!single) {
             if (winnerIdx !== undefined && baseline) {
               appliedFiles = SessionStrict.applyBack(forks[winnerIdx]!, location.directory, baseline)

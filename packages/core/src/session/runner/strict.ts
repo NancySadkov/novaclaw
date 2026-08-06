@@ -569,6 +569,50 @@ export interface MaterializedAction {
   readonly output: string
 }
 
+/** The jh executor atoms that CHANGE a file, all of which take `{path}`. */
+const WRITE_TOOLS = new Set(["write_file", "append_file", "edit_file", "replace_lines"])
+
+/**
+ * The files a run actually changed, derived from its own action stream.
+ *
+ * 🔴 **Why this exists: on the DEFAULT path the run summary had no file information at all.**
+ * `appliedFiles` is computed by `applyBack`, which only runs in the best-of-N racing branch — so a
+ * single-attempt run (the default, and every ordinary Strict session) reached `summaryPrompt` with an
+ * empty list. The model was then asked *what state is the folder in* while being told nothing about
+ * any file, and it filled the gap: a live run on 2026-08-06 closed with *"the final state of note.txt
+ * remains unknown"* about a file that held exactly what the task asked for. Forbidding the guess was
+ * the first half of that fix (see `summaryPrompt`); supplying the facts is this half.
+ *
+ * ⚠️ **Derived from the ACTIONS, not from a directory scan, and that is a cost decision.** The obvious
+ * alternative is `manifestFor` at task start and a diff at the end — but that sha1s every file in the
+ * workspace twice, which is nothing on a toy project and real money on a large repo, for information
+ * the engine already emitted. The action stream is free and already materialized.
+ *
+ * Two things it deliberately gets right:
+ *  · **Only SUCCESSFUL writes count.** A refused `write_file` changed nothing, and naming it would put
+ *    a file in the report that is not in the folder — the same class of false statement this whole
+ *    fix exists to remove, just pointing the other way.
+ *  · **A successful `git_revert` UN-records.** It takes `{path}` defaulting to `"."`, so a bare revert
+ *    clears the list and a targeted one removes that entry. Without this, a run that wrote a file and
+ *    then reverted it would report a change that no longer exists on disk.
+ */
+export const filesWritten = (actions: ReadonlyArray<MaterializedAction>): ReadonlyArray<string> => {
+  const written = new Set<string>()
+  for (const action of actions) {
+    if (!action.ok) continue
+    const raw = action.args.path
+    const path = typeof raw === "string" ? raw.trim() : ""
+    if (action.tool === "git_revert") {
+      // `.` (or an absent path) is the whole tree — the run's changes are gone.
+      if (path === "" || path === ".") written.clear()
+      else written.delete(path)
+      continue
+    }
+    if (WRITE_TOOLS.has(action.tool) && path !== "") written.add(path)
+  }
+  return [...written]
+}
+
 const truncate = (text: string, cap: number) =>
   text.length > cap ? `${text.slice(0, cap)}\n… (${text.length - cap} more chars)` : text
 
