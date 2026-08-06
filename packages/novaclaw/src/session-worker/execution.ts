@@ -26,6 +26,7 @@ import { SessionWorkerExecutionBridge } from "./execution-bridge"
 import { SessionWorkerInteractionBridge } from "./interaction-bridge"
 import * as SessionWorkerSupervisor from "./supervisor"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
+import { SessionJoin } from "@novaclaw/core/session/join"
 
 const failure = (outcome: SessionWorkerSupervisor.Outcome) =>
   outcome.type === "failed"
@@ -108,6 +109,10 @@ export const layer = Layer.effect(
                     // Location-scoped, exactly like the two above — which is why spawn rides this
                     // channel rather than getting one of its own.
                     spawner: yield* SessionSpawner.Service,
+                    // ⚠️ NOT `yield* SessionJoin.Service` — see join.ts. Resolving a service
+                    // that is not already in the location graph inside this per-request
+                    // handler abandons every tool-call turn. `events` is already built.
+                    join: SessionJoin.fromEvents(events),
                     lease,
                     message,
                   })

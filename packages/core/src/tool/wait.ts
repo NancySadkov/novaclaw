@@ -10,6 +10,7 @@ import { SessionSchema } from "../session/schema"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
+import { SessionJoin } from "../session/join"
 
 // wait(sessionID) — join on a DIRECT child session's completion (architecture.md step 5), the
 // complement to spawn/exit. The durable aggregate stream closes the read/subscribe race: it replays a
@@ -17,7 +18,8 @@ import { Tools } from "./tools"
 // seconds. Blocking within the turn is intended (like bash's long timeouts).
 
 export const name = "wait"
-const WAIT_TIMEOUT = "2 minutes"
+/** Milliseconds, because `SessionJoin` crosses the worker protocol and a Duration does not. */
+const WAIT_TIMEOUT_MS = 2 * 60_000
 
 export const Input = Schema.Struct({
   sessionID: Schema.String.annotate({ description: "The child session id to wait for (returned by a prior spawn)." }),
@@ -31,7 +33,7 @@ export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
     const store = yield* SessionStore.Service
-    const events = yield* EventV2.Service
+    const join = yield* SessionJoin.Service
     yield* tools
       .register({
         [name]: Tool.make({
@@ -53,17 +55,12 @@ export const layer = Layer.effectDiscard(
                 )
               }
 
-              const completed = yield* events.durable({ aggregateID: childID }).pipe(
-                Stream.filter((event) => event.type === SessionEvent.Completed.type),
-                Stream.map((event) => event as EventV2.Payload<typeof SessionEvent.Completed>),
-                Stream.runHead,
-                Effect.map(Option.getOrUndefined),
-                Effect.timeoutOrElse({ duration: WAIT_TIMEOUT, orElse: () => Effect.succeed(undefined) }),
-              )
-              if (!completed) return { completed: false, message: `Timed out waiting for session ${childID}.` }
-              const result = completed.data.result
-              const rendered = typeof result === "string" ? result : result === undefined ? "" : JSON.stringify(result)
-              return { completed: true, message: `Session ${childID} completed. Result: ${rendered}` }
+              // ⚠️ Through `SessionJoin`, never `events.durable` directly — the worker's EventV2
+              // replacement DIES on the durable stream, which is what killed `wait` inside every
+              // session worker. The service is the seam the worker swaps for a host RPC.
+              const joined = yield* join.awaitCompletion({ childID, timeoutMs: WAIT_TIMEOUT_MS })
+              if (!joined.completed) return { completed: false, message: `Timed out waiting for session ${childID}.` }
+              return { completed: true, message: `Session ${childID} completed. Result: ${joined.result ?? ""}` }
             }).pipe(
               Effect.mapError((error) =>
                 error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to wait for session." }),
@@ -78,5 +75,5 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/wait",
   layer,
-  deps: [ToolRegistry.node, SessionStore.node, EventV2.node],
+  deps: [ToolRegistry.node, SessionStore.node, SessionJoin.node],
 })
