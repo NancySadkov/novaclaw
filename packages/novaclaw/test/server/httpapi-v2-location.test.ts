@@ -96,12 +96,17 @@ describe("v2 location HttpApi", () => {
       const response = await request(route, tmp.path)
       expect(response.status).toBe(200)
       const body = (await response.json()) as {
-        location: { directory: string; project: { id: string } }
+        location: { directory: string; root: string; origin: string }
         data: unknown
       }
       expect(body.data).toBeArray()
       expect(body.location.directory).toBe(tmp.path)
-      expect(body.location.project.id).toBeTruthy()
+      // T2 (notes/entities.md): a project is not an entity. This asserted `location.project.id`
+      // until 2026-08-06 — a field `Location.Info` has not had since the kill — so it failed
+      // deterministically and was carried in the baseline as Windows flakiness for the whole
+      // migration. The current contract is the two DERIVED substrate attributes.
+      expect(body.location.root).toBeTruthy()
+      expect(body.location.origin).toBeTruthy()
     }
   })
 

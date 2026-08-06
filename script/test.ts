@@ -62,6 +62,7 @@ import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 
 import { enforce, headroomBytes, topConsumers } from "./lib/heavy-guard"
+import * as LedgerDrift from "./lib/ledger-drift"
 import * as MemoryPlan from "./lib/memory-plan"
 import * as PeakSampler from "./lib/peak-sampler"
 import { readFailingNames, stripAnsi } from "./lib/test-output"
@@ -705,7 +706,10 @@ const baseline = readBaseline()
  * reason belongs in the baseline's `reasons` map.
  */
 const expectedFailures = new Map(Object.entries(baseline.failing).map(([unit, names]) => [unit, [...names].sort()]))
-const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i])
+// ⚠️ Was a local `sameSet` that compared ORDER, not membership — see script/lib/ledger-drift.ts for
+// what that cost. Never inline this back: the header below is printed FROM the diffs, so the two can
+// no longer disagree.
+const ledgerMatches = (pinned: string[], failing: string[]) => LedgerDrift.clean(LedgerDrift.compute(pinned, failing))
 
 const pinnedOk: Result[] = []
 const failed: Result[] = []
@@ -714,7 +718,7 @@ for (const r of results) {
   const pinned = expectedFailures.get(r.name)
   // Only an assertion-level failure can be pinned. A wall-clock kill or a spawn error produces no
   // parseable list, and pinning "the unit died" would hide exactly the thing worth seeing.
-  if (pinned && r.failing.length > 0 && sameSet(pinned, r.failing)) pinnedOk.push(r)
+  if (pinned && r.failing.length > 0 && ledgerMatches(pinned, r.failing)) pinnedOk.push(r)
   else failed.push(r)
 }
 const isPinned = (r: Result) => pinnedOk.includes(r)
@@ -856,14 +860,16 @@ let ledgerDrift = false
 for (const [unit, pinned] of expectedFailures) {
   const result = results.find((r) => r.name === unit)
   if (!result) continue // not run this invocation (--only=, or --full-gated): nothing to say
-  if (sameSet(pinned, result.failing)) continue
+  const drift = LedgerDrift.compute(pinned, result.failing)
+  if (LedgerDrift.clean(drift)) continue
   ledgerDrift = true
-  const fixed = pinned.filter((name) => !result.failing.includes(name))
-  const fresh = result.failing.filter((name) => !pinned.includes(name))
   process.stdout.write(`\n  \x1b[31mEXPECTED-FAILURE DRIFT · ${unit}\x1b[0m\n`)
-  for (const name of fresh) process.stdout.write(`    \x1b[31m+ NEW FAILURE\x1b[0m   ${name}\n`)
-  for (const name of fixed)
+  for (const name of drift.fresh) process.stdout.write(`    \x1b[31m+ NEW FAILURE\x1b[0m   ${name}\n`)
+  for (const name of drift.fixed)
     process.stdout.write(`    \x1b[32m- now passing\x1b[0m   ${name}   (remove it from ${BASELINE_PATH})\n`)
+  // A test reported failing more often than it is pinned. Not a ledger edit — look at the sharding.
+  for (const name of drift.repeated)
+    process.stdout.write(`    \x1b[33m! reported twice\x1b[0m ${name}   (a shard ran it more than once)\n`)
 }
 if (pinnedOk.length) {
   process.stdout.write(`\n\x1b[33m── pinned failures (expected, filed) ──\x1b[0m\n`)
