@@ -53,10 +53,35 @@ import type { SessionType } from "./session/config-resolve"
 export type Shape =
   | { readonly kind: "shell-command"; readonly shell: string; readonly command: string }
   | { readonly kind: "runtime-eval"; readonly runtime: string; readonly program: string }
+  /**
+   * A literal argv — `file` is `argv[0]`, and NOTHING parses the rest.
+   *
+   * **Added 2026-08-06 for Computer Use P1, and it is a safety shape rather than a convenience.**
+   * The `computer` tool's `type` action carries text the MODEL chose, read off a screen that is
+   * untrusted input by construction (`session/origin.ts`'s framing exists for exactly that). The two
+   * shapes above both end in a command STRING, so expressing `xdotool type <text>` through either
+   * means pasting that text onto a shell command line — `; rm -rf ~`, `$(curl …|sh)` — an injection
+   * a page can talk the grounder into writing. This shape is how a caller stays inside ruling 6's
+   * one gate without ever building such a string.
+   *
+   * ⚠️ **It is NOT a general escape hatch, and the distinction is worth holding.** `shell-command`
+   * exists because a human-approved `bash` command legitimately wants shell semantics — pipes,
+   * globs, redirection. This shape exists because a MACHINE-authored argument list must never
+   * acquire them. Reach for it when the arguments come from a model or a screen; do not reach for it
+   * to avoid quoting.
+   */
+  | { readonly kind: "argv"; readonly argv: ReadonlyArray<string> }
 
-/** The argv a shape becomes when it is exec'd directly (inside the sandbox, or as a plain exec). */
+/**
+ * The argv a shape becomes when it is exec'd directly (inside the sandbox, or as a plain exec).
+ *
+ * ⚠️ The `argv` shape is returned as-is: it is ALREADY the argv, and re-wrapping it in a shell here
+ * would undo the one property it exists to provide.
+ */
 export function argvOf(shape: Shape): string[] {
-  return shape.kind === "shell-command" ? [shape.shell, "-c", shape.command] : [shape.runtime, "-e", shape.program]
+  if (shape.kind === "shell-command") return [shape.shell, "-c", shape.command]
+  if (shape.kind === "runtime-eval") return [shape.runtime, "-e", shape.program]
+  return [...shape.argv]
 }
 
 /**
@@ -523,6 +548,16 @@ export function plan(request: Request): Plan {
       args: ["-e", request.shape.program],
       env,
     }
+  // 🔴 An argv shape MUST take the exec arm even unconfined. Falling through to `via: "shell"` is
+  // not a type error waiting to happen — it is the injection: the shell arm hands a COMMAND STRING
+  // to the runtime's shell, and this shape exists precisely because its arguments must never be
+  // parsed by one. The empty check is here rather than at the type level because `argv[0]` is the
+  // executable and an empty list would exec the empty string.
+  if (request.shape.kind === "argv") {
+    const [file, ...args] = request.shape.argv
+    if (file === undefined) return { via: "none", decision: "deny", message: "empty argv: nothing to execute" }
+    return { via: "exec", decision, file, args, env }
+  }
   return { via: "shell", decision, shell: request.shape.shell, command: request.shape.command, env }
 }
 
