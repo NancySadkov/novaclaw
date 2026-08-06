@@ -41,6 +41,28 @@ describe("getWorkspaceRouteSessionID", () => {
     expect(getWorkspaceRouteSessionID(url)).toBe(SessionID.make("ses_xyz"))
   })
 
+  // 🔴 The NATIVE routes. Until 2026-08-07 this function knew only the V1 `/session/:id` shape — which
+  // the V1 nuke DELETED — so it answered `null` for every live session route, and the middleware that
+  // asks it concluded "not session-scoped" and served the request locally.
+  test("extracts session ID from a native /api/session path", () => {
+    const url = new URL("http://localhost/api/session/ses_abc123/prompt")
+    expect(getWorkspaceRouteSessionID(url)).toBe(SessionID.make("ses_abc123"))
+  })
+
+  test("extracts session ID from a native path with no trailing segment", () => {
+    const url = new URL("http://localhost/api/session/ses_xyz")
+    expect(getWorkspaceRouteSessionID(url)).toBe(SessionID.make("ses_xyz"))
+  })
+
+  // ⚠️ `/api/session/active` and `/api/session/execution` are LITERAL routes. A greedy `[^/]+` segment
+  // match would read "active" as a session id and send the middleware looking for its workspace, so the
+  // pattern requires the `ses` prefix (`SessionID` is `isStartsWith("ses")`).
+  test("does not mistake the literal /api/session routes for session IDs", () => {
+    expect(getWorkspaceRouteSessionID(new URL("http://localhost/api/session/active"))).toBeNull()
+    expect(getWorkspaceRouteSessionID(new URL("http://localhost/api/session/execution"))).toBeNull()
+    expect(getWorkspaceRouteSessionID(new URL("http://localhost/api/session"))).toBeNull()
+  })
+
   test("extracts session ID from experimental background path", () => {
     const url = new URL("http://localhost/experimental/session/ses_bg/background")
     expect(getWorkspaceRouteSessionID(url)).toBe(SessionID.make("ses_bg"))

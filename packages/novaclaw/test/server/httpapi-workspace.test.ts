@@ -477,8 +477,17 @@ describe("workspace HttpApi", () => {
         body: JSON.stringify({ type: "remote-session-target", branch: null }),
       })
       const workspace = (yield* created.json) as Workspace.Info
-      const sessionResponse = yield* requestDefault("/session", dir, { method: "POST" })
-      const session = (yield* sessionResponse.json) as { id: string }
+      // ⚠️ `POST /session` — the bare V1 facade — was removed by the V1 nuke. There is no `session`
+      // group in the HttpApi at all, so this 404'd, `json` gave `null`, and the test died on
+      // `session.id` with `TypeError: null is not an object` — which reads like a session that failed
+      // to be created rather than a route that does not exist. The native create is `/api/session`,
+      // and its response is enveloped (`{data: …}`) unlike the V1 one.
+      const sessionResponse = yield* requestDefault("/api/session", dir, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ location: { directory: dir } }),
+      })
+      const session = ((yield* sessionResponse.json) as { data: { id: string } }).data
       const warped = yield* requestDefault(WorkspacePaths.warp, dir, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -487,20 +496,23 @@ describe("workspace HttpApi", () => {
       expect(warped.status).toBe(204)
 
       try {
-        const response = yield* requestDefault(`http://localhost/session/${session.id}/prompt_async`, dir, {
+        // V1 `/session/:id/prompt_async` is gone; the native prompt is `/api/session/:id/prompt`.
+        // The PATH is not the subject here — proxying to the owning workspace is — but it has to be a
+        // route that exists, or the 404 happens before the proxy ever sees the request.
+        const response = yield* requestDefault(`http://localhost/api/session/${session.id}/prompt`, dir, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ parts: [{ type: "text", text: "hello" }] }),
+          body: JSON.stringify({ prompt: { text: "hello" }, delivery: "queue" }),
         })
 
         const responseBody = yield* response.text
         expect({ status: response.status, body: responseBody }).toMatchObject({ status: 200 })
-        expect(JSON.parse(responseBody)).toEqual({ proxied: true, path: `/base/session/${session.id}/prompt_async` })
+        expect(JSON.parse(responseBody)).toEqual({ proxied: true, path: `/base/api/session/${session.id}/prompt` })
         expect(
-          proxied.filter((item) => new URL(item.url).pathname === `/base/session/${session.id}/prompt_async`),
+          proxied.filter((item) => new URL(item.url).pathname === `/base/api/session/${session.id}/prompt`),
         ).toEqual([
           expect.objectContaining({
-            url: `http://127.0.0.1:${remote.port}/base/session/${session.id}/prompt_async`,
+            url: `http://127.0.0.1:${remote.port}/base/api/session/${session.id}/prompt`,
             method: "POST",
           }),
         ])
