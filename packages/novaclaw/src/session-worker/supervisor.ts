@@ -55,11 +55,11 @@ export interface Input {
   readonly onInteractionRequest?: (
     message: Extract<
       SessionWorkerProtocol.WorkerMessage,
-      { readonly type: "permission-assert" | "question-ask" | "spawn-child" }
+      { readonly type: "permission-assert" | "question-ask" | "spawn-child" | "await-child" }
     >,
     signal: AbortSignal,
   ) => Promise<
-    Extract<SessionWorkerProtocol.HostMessage, { readonly type: "permission-result" | "question-result" | "spawn-result" }>
+    Extract<SessionWorkerProtocol.HostMessage, { readonly type: "permission-result" | "question-result" | "spawn-result" | "await-child-result" }>
   >
   readonly onExecutionRequest?: (
     message: SessionWorkerProtocol.ExecutionRequest,
@@ -259,6 +259,7 @@ export function spawn(input: Input): Handle {
       // Spawn rides the INTERACTION channel because it needs the same thing those two do:
       // the host's LOCATION services. `SessionSpawner` is a location node, and this is the
       // only worker->host path already resolved inside `runLocated`.
+      case "await-child":
       case "spawn-child": {
         if (!ready) {
           finish({ type: "protocol-error", detail: "interaction request arrived before ready" })
@@ -267,7 +268,17 @@ export function spawn(input: Input): Handle {
         const request = input.onInteractionRequest
         if (!request) {
           send(
-            message.type === "spawn-child"
+            message.type === "await-child"
+              ? {
+                  version: SessionWorkerProtocol.VERSION,
+                  type: "await-child-result",
+                  sessionID: input.lease.sessionID,
+                  attemptID: input.lease.attemptID,
+                  generation: input.lease.generation,
+                  requestID: message.requestID,
+                  outcome: "rejected",
+                }
+              : message.type === "spawn-child"
               ? {
                   version: SessionWorkerProtocol.VERSION,
                   type: "spawn-result",

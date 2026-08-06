@@ -40,6 +40,11 @@ export interface Capabilities {
     input: SessionWorkerProtocol.SpawnChildInput,
     signal?: AbortSignal,
   ) => Promise<Extract<Reply, { readonly type: "spawn-result" }>>
+  /** Join a child session. BLOCKS host-side until completion or `timeoutMs` — see `AwaitChild`. */
+  readonly awaitChild: (
+    input: { readonly childID: string; readonly timeoutMs: number },
+    signal?: AbortSignal,
+  ) => Promise<Extract<Reply, { readonly type: "await-child-result" }>>
   readonly execution: SessionExecutionAttempt.CurrentInterface
 }
 
@@ -134,6 +139,14 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
         signal,
       )
       if (reply.type !== "permission-result") throw new Error(`unexpected ${reply.type} reply to permission assertion`)
+      return reply
+    },
+    awaitChild: async (request, signal) => {
+      const reply = await input.client.request(
+        { ...identity, type: "await-child", requestID: requestID(), input: request as never },
+        signal,
+      )
+      if (reply.type !== "await-child-result") throw new Error(`unexpected ${reply.type} reply to await-child`)
       return reply
     },
     spawnChild: async (request, signal) => {

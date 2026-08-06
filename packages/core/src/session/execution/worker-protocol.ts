@@ -87,6 +87,15 @@ export const PermissionResult = Schema.Struct({
  * request never reached the spawner — a stale lease or a parent that is not this worker's session.
  * Collapsing the two would tell a model it hit a quota when the truth is that its worker is stale.
  */
+export const AwaitChildResult = Schema.Struct({
+  ...Identity,
+  type: Schema.Literal("await-child-result"),
+  requestID: Schema.String,
+  outcome: Schema.Literals(["completed", "timeout", "rejected"]),
+  /** The child's rendered `exit(result)`; present only when `outcome` is "completed". */
+  result: Schema.String.pipe(Schema.optional),
+}).annotate({ identifier: "SessionWorker.AwaitChildResult" })
+
 export const SpawnResultMessage = Schema.Struct({
   ...Identity,
   type: Schema.Literal("spawn-result"),
@@ -138,6 +147,7 @@ export const HostMessage = Schema.Union([
   PermissionResult,
   QuestionResult,
   SpawnResultMessage,
+  AwaitChildResult,
   ExecutionResult,
 ]).annotate({ identifier: "SessionWorker.HostMessage" })
 export type HostMessage = typeof HostMessage.Type
@@ -221,6 +231,24 @@ export const DeviceReport = Schema.Struct({
  */
 /** The payload half of `SpawnChild` — what a worker may ask for. */
 export type SpawnChildInput = typeof SpawnChild.Type["input"]
+
+/**
+ * Join a child session — the second worker→host operation, and the sibling of `SpawnChild`.
+ *
+ * `tool/wait.ts` awaited a child through `events.durable(...)`, and the worker's `EventV2`
+ * replacement dies on the durable stream, so `wait` failed inside every session worker with
+ * "only works in host-only contexts". Found the moment fixing spawn let the live smoke reach test 8.
+ *
+ * ⚠️ **It BLOCKS, which none of the other requests do.** The host tails the child's durable stream
+ * until a completion arrives or `timeoutMs` elapses. A timeout is a normal ANSWER (`outcome:
+ * "timeout"`), not a transport failure — the child may simply still be working.
+ */
+export const AwaitChild = Schema.Struct({
+  ...Identity,
+  type: Schema.Literal("await-child"),
+  requestID: Schema.String,
+  input: Schema.Struct({ childID: SessionSchema.ID, timeoutMs: Schema.Finite }),
+}).annotate({ identifier: "SessionWorker.AwaitChild" })
 
 export const SpawnChild = Schema.Struct({
   ...Identity,
@@ -332,6 +360,7 @@ export const WorkerMessage = Schema.Union([
   DeviceReport,
   PermissionAssert,
   SpawnChild,
+  AwaitChild,
   QuestionAsk,
   ExecutionAdvance,
   ExecutionToolDispatched,

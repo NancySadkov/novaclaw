@@ -4,16 +4,17 @@ import { Cause, Effect, Exit, Schema } from "effect"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { QuestionV2 } from "@novaclaw/core/question"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
+import { SessionJoin } from "@novaclaw/core/session/join"
 import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
 import type { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 
 export type Request = Extract<
   SessionWorkerProtocol.WorkerMessage,
-  { readonly type: "permission-assert" | "question-ask" | "spawn-child" }
+  { readonly type: "permission-assert" | "question-ask" | "spawn-child" | "await-child" }
 >
 export type Reply = Extract<
   SessionWorkerProtocol.HostMessage,
-  { readonly type: "permission-result" | "question-result" | "spawn-result" }
+  { readonly type: "permission-result" | "question-result" | "spawn-result" | "await-child-result" }
 >
 
 const identity = (message: Request) => ({
@@ -30,15 +31,18 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
   readonly permission: PermissionV2.Interface
   readonly question: QuestionV2.Interface
   readonly spawner: SessionSpawner.Interface
+  readonly join: SessionJoin.Interface
   readonly lease: SessionExecutionAttempt.Lease
   readonly message: Request
 }) {
   const reject = () =>
-    input.message.type === "spawn-child"
-      ? ({ ...identity(input.message), type: "spawn-result" as const, outcome: "rejected" as const } as Reply)
-      : input.message.type === "permission-assert"
-        ? ({ ...identity(input.message), type: "permission-result" as const, outcome: "rejected" as const } as Reply)
-        : ({ ...identity(input.message), type: "question-result" as const, outcome: "rejected" as const } as Reply)
+    input.message.type === "await-child"
+      ? ({ ...identity(input.message), type: "await-child-result" as const, outcome: "rejected" as const } as Reply)
+      : input.message.type === "spawn-child"
+        ? ({ ...identity(input.message), type: "spawn-result" as const, outcome: "rejected" as const } as Reply)
+        : input.message.type === "permission-assert"
+          ? ({ ...identity(input.message), type: "permission-result" as const, outcome: "rejected" as const } as Reply)
+          : ({ ...identity(input.message), type: "question-result" as const, outcome: "rejected" as const } as Reply)
   if (!SessionWorkerProtocol.owns(input.lease, input.message)) return reject()
 
   /**
@@ -50,6 +54,27 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
    * ⚠️ `parentID` comes from the LEASE and never from the payload. A worker can spawn children of
    * itself and of nothing else, and that is structural — there is no field to forge.
    */
+  /**
+   * ⚠️ The only request that BLOCKS. The host tails the child's durable stream until it completes or
+   * the worker's budget elapses; a timeout is a normal answer, because the child may still be working.
+   * The direct-child authorisation check is NOT here — it stays in `tool/wait.ts`, where the session
+   * store is readable on both sides of the boundary.
+   */
+  if (input.message.type === "await-child") {
+    const joined = yield* input.join
+      .awaitCompletion({ childID: input.message.input.childID, timeoutMs: input.message.input.timeoutMs })
+      .pipe(Effect.exit)
+    if (!Exit.isSuccess(joined)) return reject()
+    return joined.value.completed
+      ? {
+          ...identity(input.message),
+          type: "await-child-result" as const,
+          outcome: "completed" as const,
+          ...(joined.value.result === undefined ? {} : { result: joined.value.result }),
+        }
+      : { ...identity(input.message), type: "await-child-result" as const, outcome: "timeout" as const }
+  }
+
   if (input.message.type === "spawn-child") {
     const spawned = yield* input.spawner
       .spawn({ ...input.message.input, parentID: input.lease.sessionID } as never)
