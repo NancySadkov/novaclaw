@@ -183,15 +183,39 @@ describe("HttpApi instance context middleware", () => {
     }),
   )
 
-  it.live("falls back to the raw directory when URI decoding fails", () =>
+  /**
+   * ⚠️ **This test used to assert 200 and was renamed on 2026-08-06 — it no longer exercises what its
+   * old name claimed.** It was called *"falls back to the raw directory when URI decoding fails"*, but
+   * `decode()` above already catches and returns the raw input, so that fallback happens and is not
+   * what fails. What the request now meets is a LATER guard: `workspace-routing.ts` refuses a
+   * client-supplied directory that does not exist on disk.
+   *
+   * 🔴 **And the guard is right, which is why the assertion moved rather than the code.** Ruling 2 — a
+   * fault is never described falsely. `<cwd>/%E0%A4%A` does not exist; proceeding against it, or
+   * quietly substituting `process.cwd()`, would operate on the WRONG directory while answering 200.
+   * "Degrade and recover" covers faults we can recover FROM; it does not license acting on data we
+   * know is wrong. So the honest answer is the refusal, and it names the field.
+   *
+   * It sat on the expected-failure baseline under the unit-wide reason "Windows-from-source
+   * flakiness". It is not flaky — it fails identically in isolation, deterministically, on every run.
+   */
+  it.live("refuses a client-supplied directory that does not exist, naming the field", () =>
     Effect.gen(function* () {
       yield* serveProbe()
 
+      // `%25E0%25A4%25A` arrives as `%E0%A4%A`, which `decodeURIComponent` cannot decode — so the raw
+      // value survives (the old fallback still works) and resolves to a path that is simply not there.
       const response = yield* HttpClient.get("/probe?directory=%25E0%25A4%25A")
 
-      expect(response.status).toBe(200)
+      expect(response.status).toBe(400)
       expect(yield* response.json).toMatchObject({
-        directory: path.join(process.cwd(), "%E0%A4%A"),
+        kind: "Query",
+        field: "directory",
+        // ⚠️ The raw value AS SUPPLIED, not a resolved path. The guard echoes what the client sent,
+        // which is the honest thing to report — a caller can see their own input in the refusal
+        // instead of a path they never wrote. It is also the fallback's own evidence: `%E0%A4%A`
+        // survived `decodeURIComponent` failing, so the raw string is what reached the guard.
+        message: "Directory does not exist: %E0%A4%A",
       })
     }),
   )

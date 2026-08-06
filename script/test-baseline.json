@@ -26,7 +26,6 @@
     "novaclaw:server": [
       "HttpApi SDK > matches generated SDK missing session errors",
       "HttpApi SDK > uses the generated SDK for safe instance routes",
-      "HttpApi instance context middleware > falls back to the raw directory when URI decoding fails",
       "HttpApi workspace routing middleware > uses directory query/header fallback when no workspace is selected",
       "event HttpApi > delivers instance events after the initial event",
       "instance HttpApi > emits a sync fence header for fixed-workspace mutations",
