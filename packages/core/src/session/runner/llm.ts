@@ -397,22 +397,37 @@ export const layer = Layer.effect(
               },
             },
       )
+      // ⚠️ This pass is the MOST exposed of the three, and for a reason worth stating: unlike the
+      // two extraction passes it carries no `NO_THINKING` overlay, so it runs thinking-ENABLED. The
+      // 2026-08-06 table puts the empty-completion cliff at ~450 tokens in that mode against a 512
+      // cap — about 1.65× margin — where the `NO_THINKING` passes sit near 100 and have roughly 4×.
+      // So it is the one most likely to spend its budget on reasoning and return nothing at all.
       const chunks: string[] = []
-      yield* llm
-        .stream(
-          LLM.request({
-            model,
-            messages: [Message.user(prompt)],
-            tools: [],
-            generation: { maxTokens: 512 },
-          }),
-        )
-        .pipe(
-          Stream.runForEach((event) => {
-            if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
-            return Effect.void
-          }),
-        )
+      let cap = 512
+      for (let attempt = 0; ; attempt++) {
+        chunks.length = 0
+        let finish: FinishReason | undefined
+        const attemptCap = cap
+        yield* llm
+          .stream(
+            LLM.request({
+              model,
+              messages: [Message.user(prompt)],
+              tools: [],
+              generation: { maxTokens: attemptCap },
+            }),
+          )
+          .pipe(
+            Stream.runForEach((event) => {
+              if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
+              else if (event.type === "finish") finish = event.reason
+              return Effect.void
+            }),
+          )
+        const verdict = UtilityCap.decide({ finish, text: chunks.join(""), attempt, cap: attemptCap })
+        if (!verdict.retry) break
+        cap = verdict.cap
+      }
       return chunks.join("")
     })
 
@@ -506,6 +521,21 @@ export const layer = Layer.effect(
       const text = SessionTitle.firstRealUserText(yield* getContext(sessionID))
       if (!text) return
       const model = yield* models.resolve(session)
+      // ⚠️ **This pass deliberately does NOT take the `UtilityCap` ladder the two extraction passes
+      // and the introspection pass now use, and the reason is worth keeping.** `ReasoningBudget`
+      // already owns a bounded multi-phase recovery for exactly this failure: it counts reasoning
+      // tokens live, nudges at 70% and 100% of `TITLE_REASONING_BUDGET` (128), and its mechanical
+      // hard stop re-issues the turn with thinking structurally disabled — which measurably drops
+      // completion to ~126 tokens, far inside this 512. Stacking a second retry loop on top would be
+      // two recoveries racing over one turn, which is how a bounded thing becomes an unbounded one.
+      //
+      // 🔴 **But note a real assumption mismatch, recorded rather than fixed here.**
+      // `reasoning-budget.ts` argues its safety from phases inheriting a `max_tokens` that is
+      // "typically UNSET → the server uses the remaining context window", so an answer that starts
+      // inside a phase always completes. This call site passes an explicit **512**, so that argument
+      // does not hold verbatim — the checkpoints bound REASONING, not the answer. It is covered in
+      // practice only because the hard stop lands so far under the cap. If either number moves, this
+      // is the pairing to re-check.
       const chunks: string[] = []
       const request = LLM.request({
         model,
