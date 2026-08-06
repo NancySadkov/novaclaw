@@ -83,3 +83,67 @@ describe("the log-event migration ledger", () => {
     ])
   })
 })
+
+/**
+ * 🔴 **Which of the remaining calls are DEFECTS, not merely unconverted.**
+ *
+ * The ledger above is a migration counter: every unkeyed call weighs the same in it. They do not
+ * weigh the same in production. `RESERVED_ATTRIBUTES` names the columns the formatter already emits,
+ * so an unkeyed call passing `cause` puts that name on the logfmt line **twice** — which breaks the
+ * naive `grep`/`cut` mining that is the whole requirement of logging item 1, and which
+ * `log-events.test.ts` reproduces as a negative control.
+ *
+ * Tracking the subset separately is what let the 2026-08-06 core pass be aimed: it converted nine
+ * sites and took the live-defect count from **13 to 4** while the raw count moved only 36 → 27. A
+ * single number would have reported that as ordinary progress.
+ *
+ * ⚠️ **The window must span the call, not its first line.** Measured the same day: a one-line check
+ * finds 3 collisions where a four-line window finds 13, because the attribute object is almost always
+ * wrapped by the formatter. A guard that undercounts a defect fourfold reports progress that has not
+ * happened.
+ */
+describe("the reserved-name collisions inside the remaining calls", () => {
+  const RAW_CALL = /Effect\.log(?:Debug|Info|Warning|Error|Trace)?\(/
+  /** From `RESERVED_ATTRIBUTES` — the names the formatter owns. `cause` is the one that occurs. */
+  const RESERVED = /\bcause\b/
+  const WINDOW = 4
+
+  const collisionsIn = (text: string): number => {
+    const lines = text.split("\n")
+    return lines.filter(
+      (line, index) => RAW_CALL.test(line) && RESERVED.test(lines.slice(index, index + WINDOW).join("\n")),
+    ).length
+  }
+
+  const walk = (dir: string, out: string[] = []): string[] => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name === "dist" || entry.name === ".git") continue
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) walk(full, out)
+      else if (entry.name.endsWith(".ts") && !entry.name.includes(".test.")) out.push(full)
+    }
+    return out
+  }
+
+  const live = walk(path.join(ROOT, "packages"))
+    .filter((file) => file.replace(/\\/g, "/").includes("/src/"))
+    .reduce((total, file) => total + collisionsIn(fs.readFileSync(file, "utf8")), 0)
+
+  test("the count may FALL but never rise", () => {
+    // Pinned at the 2026-08-06 measurement. Lower it in the commit that converts the sites; raising
+    // it means a new call site reintroduced a duplicate column and should be written as Log.event.
+    expect(live).toBeLessThanOrEqual(4)
+  })
+
+  test("the whole-call window is the measurement, and a one-line check is not (negative control)", () => {
+    const wrapped = ['Effect.logWarning("failed to materialize reference", {', "  name,", "  cause,", "})"].join("\n")
+    expect(collisionsIn(wrapped)).toBe(1)
+    // The same text seen one line at a time finds nothing — this is the undercount to avoid.
+    expect(wrapped.split("\n").filter((line) => RAW_CALL.test(line) && RESERVED.test(line)).length).toBe(0)
+  })
+
+  test("a keyed call with a subsystem-scoped cause is NOT a collision", () => {
+    // The migration's whole output: `snapshot.cause` is its own column and cannot shadow `cause`.
+    expect(collisionsIn('Log.event("snapshot.capture.failed", { "snapshot.cause": String(error) })')).toBe(0)
+  })
+})

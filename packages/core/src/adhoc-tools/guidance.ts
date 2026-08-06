@@ -7,6 +7,7 @@ import { listSessionRecipes, mergeRecipes, storeRootIn, type Recipe } from "../a
 import { Config } from "../config"
 import { Global } from "../global"
 import { SystemContext } from "../system-context/index"
+import { Log } from "@novaclaw/schema/log"
 
 const Summary = Schema.Struct({
   name: Schema.String,
@@ -80,7 +81,9 @@ export const layer = Layer.effect(
           // reachable failure here is a malformed session id — a caller bug, not a fault of the
           // store. Name it and continue: a prompt missing its session recipes must not fail a turn.
           Effect.catch((cause) =>
-            Effect.logWarning("adhoc session recipes unreadable", { sessionID, cause }).pipe(Effect.as([] as Recipe[])),
+            Log.event("tool.adhoc.read.failed", { "session.id": sessionID, "tool.cause": String(cause) }).pipe(
+              Effect.as([] as Recipe[]),
+            ),
           ),
         )
         const available = mergeRecipes(yield* configured(), session).map((recipe) => ({

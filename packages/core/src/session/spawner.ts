@@ -20,6 +20,7 @@ import { SessionInput } from "./input"
 import { SessionSchema } from "./schema"
 import { SessionMessage } from "./message"
 import { Prompt } from "./prompt"
+import { Log } from "@novaclaw/schema/log"
 
 // Location-scoped seam that lets a running session (a location tool) SPAWN a child session — the OS
 // `fork` (architecture.md Phase 3 step 6). It deliberately depends ONLY on the cycle-free primitives
@@ -170,7 +171,12 @@ export const layer = Layer.effect(
         // the session scope is the "hand your sub-agents a tool set" channel). Best-effort:
         // a store hiccup must never fail the spawn.
         yield* Effect.tryPromise(() => copySessionRecipes(input.parentID, child.id, { root: sessionStoreRoot })).pipe(
-          Effect.catch((cause) => Effect.logWarning("adhoc-tool copy-on-spawn failed", { cause }).pipe(Effect.as(0))),
+          Effect.catch((cause) =>
+            Log.event("session.adhoc.copy.failed", {
+              "session.id": child.id,
+              "session.cause": String(cause),
+            }).pipe(Effect.as(0)),
+          ),
         )
         yield* SessionInput.admit(db, events, {
           id: SessionMessage.ID.create(),

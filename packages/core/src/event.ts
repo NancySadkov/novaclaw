@@ -10,6 +10,7 @@ import { Location } from "./location"
 import { makeGlobalNode } from "./effect/app-node"
 import { isDeepStrictEqual } from "node:util"
 import { Durable } from "@novaclaw/schema/durable-event-manifest"
+import { Log } from "@novaclaw/schema/log"
 
 export const ID = Event.ID
 export type ID = import("@novaclaw/schema/event").ID
@@ -399,7 +400,12 @@ export const layerWith = (options?: LayerOptions) =>
         Effect.suspend(() => observer(event)).pipe(
           Effect.catchCauseIf(
             (cause) => !Cause.hasInterrupts(cause),
-            (cause) => Effect.logError("Event listener failed", { eventID: event.id, eventType: event.type, cause }),
+            (cause) =>
+              Log.event("instance.listener.notify.failed", {
+                "instance.event.id": event.id,
+                "instance.event.type": event.type,
+                "instance.cause": String(cause),
+              }),
           ),
         )
 

@@ -10,6 +10,7 @@ import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
 import { SessionExecution } from "../execution"
 import { SessionExecutionAttempt } from "../execution-attempt"
+import { Log } from "@novaclaw/schema/log"
 
 const HEARTBEAT_INTERVAL = Duration.seconds(5)
 
@@ -75,7 +76,7 @@ export const layer = Layer.effect(
               Effect.tapCause((cause) =>
                 Cause.hasInterruptsOnly(cause)
                   ? Effect.void
-                  : Effect.logError("Failed to drain Session", cause).pipe(Effect.annotateLogs({ sessionID })),
+                  : Log.event("session.drain.failed", { "session.id": sessionID, "session.cause": Cause.pretty(cause) }),
               ),
               // `ensuring` so success, failure, AND interrupt (Stop) all settle back to idle —
               // except a session that called exit(result) mid-drain: `exited` is the K1 terminal

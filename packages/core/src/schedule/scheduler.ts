@@ -17,6 +17,7 @@ import { AbsolutePath } from "../schema"
 import { SessionV2 } from "../session"
 import type { EpochMillis } from "./recurrence"
 import { CalendarStore } from "./store"
+import { Log } from "@novaclaw/schema/log"
 
 export interface LaunchInput {
   readonly schedule: CalendarStore.Schedule
@@ -141,7 +142,7 @@ export const layer = Layer.effectDiscard(
       const now = yield* Clock.currentTimeMillis
       yield* tick(db, launch, now)
     }).pipe(
-      Effect.catchCause((cause) => Effect.logError("calendar-scheduler tick failed", { cause: Cause.pretty(cause) })),
+      Effect.catchCause((cause) => Log.event("instance.scheduler.tick.failed", { "instance.cause": Cause.pretty(cause) })),
       Effect.repeat(Schedule.spaced(Duration.seconds(TICK_INTERVAL_SECONDS))),
       Effect.delay(Duration.seconds(5)),
       Effect.forkScoped,

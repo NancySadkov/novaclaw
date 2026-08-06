@@ -7,6 +7,7 @@ import { SystemContext } from "./system-context"
 import { ToolCatalogue } from "./tool-catalogue"
 import { ToolCatalogueStore } from "./tool-catalogue-store"
 import { ToolRegistry } from "./tool/registry"
+import { Log } from "@novaclaw/schema/log"
 
 const ManifestLine = Schema.Struct({ server: Schema.String, categories: Schema.Array(Schema.String) })
 const MANIFEST_MAX_CHARS = 6_000
@@ -31,7 +32,7 @@ export const layer = Layer.effect(
           .replace(location.directory, ToolCatalogue.rows(location.directory, sources))
           .pipe(
             Effect.catch((cause) =>
-              Effect.logWarning("tool catalogue index unavailable; continuing with the live manifest", { cause }),
+              Log.event("tool.catalogue.index.unavailable", { "tool.cause": String(cause) }),
             ),
           )
         const available = ToolCatalogue.manifest(sources)

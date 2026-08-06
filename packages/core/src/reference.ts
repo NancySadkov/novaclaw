@@ -9,6 +9,7 @@ import { Repository } from "./repository"
 import { RepositoryCache } from "./repository-cache"
 import { AbsolutePath } from "./schema"
 import { State } from "./state"
+import { Log } from "@novaclaw/schema/log"
 
 export const LocalSource = Reference.LocalSource
 export type LocalSource = Reference.LocalSource
@@ -97,10 +98,10 @@ export const layer = Layer.effect(
             )
             yield* cache.ensure({ reference: repository, branch: source.branch, refresh: true }).pipe(
               Effect.catchCause((cause) =>
-                Effect.logWarning("failed to materialize reference", {
-                  name,
-                  repository: source.repository,
-                  cause,
+                Log.event("config.reference.materialize.failed", {
+                  "config.reference": name,
+                  "config.repository": source.repository,
+                  "config.cause": String(cause),
                 }),
               ),
               Effect.forkIn(scope),

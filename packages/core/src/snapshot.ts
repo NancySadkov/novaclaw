@@ -13,6 +13,7 @@ import { Global } from "./global"
 import { Location } from "./location"
 import { AbsolutePath, RelativePath } from "./schema"
 import { Hash } from "./util/hash"
+import { Log } from "@novaclaw/schema/log"
 
 export const ID = Schema.String.pipe(Schema.brand("Snapshot.ID"))
 export type ID = typeof ID.Type
@@ -215,7 +216,9 @@ export const layer = Layer.effect(
           }),
         )
       }).pipe(
-        Effect.catch((cause) => Effect.logWarning("failed to capture snapshot", { cause }).pipe(Effect.as(undefined))),
+        Effect.catch((cause) =>
+          Log.event("snapshot.capture.failed", { "snapshot.cause": String(cause) }).pipe(Effect.as(undefined)),
+        ),
       )
     })
 

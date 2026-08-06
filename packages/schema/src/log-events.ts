@@ -262,6 +262,14 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/config/config.ts",
   },
+  /** A configured reference could not be materialised into the cache; the turn continues without it. */
+  "config.reference.materialize.failed": {
+    level: "warn",
+    message: "failed to materialize reference",
+    attributes: { "config.reference": "text", "config.repository": "text", "config.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/reference.ts",
+  },
   /** One well-known or delegated remote configuration document is being fetched. */
   "config.remote.fetch": {
     level: "debug",
@@ -479,6 +487,22 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/project/bootstrap.ts",
   },
+  /** An event observer threw. The publisher continues — one bad listener must not stop the bus. */
+  "instance.listener.notify.failed": {
+    level: "error",
+    message: "event listener failed",
+    attributes: { "instance.event.id": "id", "instance.event.type": "id", "instance.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/event.ts",
+  },
+  /** One scheduler tick failed. The loop keeps its cadence; a tick is retried by the next interval. */
+  "instance.scheduler.tick.failed": {
+    level: "error",
+    message: "calendar scheduler tick failed",
+    attributes: { "instance.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/schedule/scheduler.ts",
+  },
   /** A directory had no instance yet, so one is being created. 1146 lines. */
   "instance.store.create": {
     level: "info",
@@ -548,6 +572,14 @@ export const EVENTS = {
     attributes: { "llm.protocol": "id", "llm.dropped": "count", "llm.limit": "count" },
     content: "none",
     file: "packages/llm/src/protocols/anthropic-messages.ts",
+  },
+  /** The remote model catalogue could not be refreshed; the cached catalogue stays in force. */
+  "llm.catalog.fetch.failed": {
+    level: "error",
+    message: "failed to fetch models.dev",
+    attributes: { "llm.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/models-dev.ts",
   },
 
   // ── messenger ─────────────────────────────────────────────────────────────────────────────────
@@ -961,6 +993,14 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/middleware/error.ts",
   },
+  /** A child session did not inherit its parent session-defined adhoc recipes. The spawn still succeeds. */
+  "session.adhoc.copy.failed": {
+    level: "warn",
+    message: "adhoc tool copy-on-spawn failed",
+    attributes: { "session.id": "id", "session.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/session/spawner.ts",
+  },
 
   // ── session ───────────────────────────────────────────────────────────────────────────────────
   "session.changes.refresh.failed": {
@@ -1070,6 +1110,14 @@ export const EVENTS = {
     attributes: { "session.id": "id", step: "count" },
     content: "none",
     file: "packages/core/src/session/runner/llm.ts",
+  },
+  /** A session drain ended in failure rather than interruption. The session settles back to idle. */
+  "session.drain.failed": {
+    level: "error",
+    message: "failed to drain session",
+    attributes: { "session.id": "id", "session.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/session/execution/local.ts",
   },
   "session.drive.cap.reached": {
     level: "warn",
@@ -1444,6 +1492,14 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/skill/index.ts",
   },
+  /** No snapshot was taken for this turn, so revert has no restore point for it. */
+  "snapshot.capture.failed": {
+    level: "warn",
+    message: "failed to capture snapshot",
+    attributes: { "snapshot.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/snapshot.ts",
+  },
 
   // ── snapshot ─────────────────────────────────────────────────────────────────────────────────
   /** The hourly maintenance loop itself failed; the next scheduled iteration will retry. */
@@ -1706,6 +1762,22 @@ export const EVENTS = {
     attributes: { "storage.project": "id" },
     content: "none",
     file: "packages/novaclaw/src/storage/storage.ts",
+  },
+  /** The session adhoc-recipe store could not be read; the prompt lists only configured recipes. */
+  "tool.adhoc.read.failed": {
+    level: "warn",
+    message: "adhoc session recipes unreadable",
+    attributes: { "session.id": "id", "tool.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/adhoc-tools/guidance.ts",
+  },
+  /** The persisted tool-catalogue index could not be replaced; guidance falls back to the live manifest. */
+  "tool.catalogue.index.unavailable": {
+    level: "warn",
+    message: "tool catalogue index unavailable, continuing with the live manifest",
+    attributes: { "tool.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/tool-catalogue-guidance.ts",
   },
 
   // ── tool ──────────────────────────────────────────────────────────────────────────────────────
