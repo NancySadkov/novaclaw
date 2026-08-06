@@ -28,7 +28,6 @@ import {
   pickerParent,
   pickerRoot,
 } from "./directory-picker-domain"
-import "./dialog-select-directory-v2.css"
 import { DividerV2 } from "@novaclaw/ui/v2/divider-v2"
 import { useFilesystemOperations, type FilesystemTarget } from "./filesystem-operations"
 import { filesystemShortcut, isEditableFilesystemTarget } from "./filesystem-domain"

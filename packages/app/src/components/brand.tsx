@@ -1,6 +1,5 @@
 import { Show } from "solid-js"
 import { usePlatform } from "@/context/platform"
-import "./brand.css"
 import { publicAssetUrl } from "@/utils/public-asset"
 
 /**

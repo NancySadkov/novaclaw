@@ -7,6 +7,15 @@
 @import "./themes/autumn.css";
 @import "./themes/summer.css";
 
+/* ── app component stylesheets ─────────────────────────────────────────────────────────────────
+   ⚠️ Imported HERE with an explicit layer, not from their `.tsx`. A stylesheet imported from a
+   component file lands UNLAYERED and outranks every Tailwind utility, so `class=` overrides on that
+   component silently do nothing — `app/src/ui-fork-ledger.test.ts` (`UNLAYERED_STYLESHEETS`) pins
+   the ones still doing that, shrink-only. These come AFTER the `@novaclaw/ui` imports above so that
+   within `components` an app rule still beats a ui-package one. */
+@import "./components/brand.css" layer(components);
+@import "./components/dialog-select-directory-v2.css" layer(components);
+
 @font-face {
   font-family: "JetBrainsMono Nerd Font Mono";
   src: url("/assets/JetBrainsMonoNerdFontMono-Regular.woff2") format("woff2");

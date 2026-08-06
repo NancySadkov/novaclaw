@@ -722,8 +722,6 @@ describe("the seven deleted v1 components stay deleted", () => {
    * same commit. Adding a path is refused: a new stylesheet should be layered from birth.
    */
   const UNLAYERED_STYLESHEETS = [
-    "packages/app/src/components/brand.css",
-    "packages/app/src/components/dialog-select-directory-v2.css",
     "packages/app/src/components/settings-v2/settings-v2.css",
     "packages/app/src/components/titlebar-tab-nav.css",
     "packages/app/src/components/titlebar.css",
