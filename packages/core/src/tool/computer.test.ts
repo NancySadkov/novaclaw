@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { ComputerTool } from "./computer"
 import { ComputerActions } from "../computer/actions"
 
+
 const input = (over: Partial<ComputerTool.Input>): ComputerTool.Input =>
   ({ action: "screenshot", ...over }) as ComputerTool.Input
 
@@ -89,5 +90,68 @@ describe("unconfigured declines by NAMING the knob", () => {
 
   test("the tool is named `computer`, which is also its permission action", () => {
     expect(ComputerTool.name).toBe("computer")
+  })
+})
+
+describe("the region rides the flat input through to argv", () => {
+  test("no region asked for, no region emitted", () => {
+    // The crop must be something the model chose, never something it received: a silently cropped
+    // frame offsets every coordinate the grounder reads off it, and the image does not say so.
+    expect(ComputerTool.toAction(input({ action: "screenshot" }))).toEqual({ kind: "screenshot" })
+  })
+
+  test("x,y,w,h reaches the action union, and then the argv scrot takes", () => {
+    const action = ComputerTool.toAction(input({ action: "screenshot", region: "100,120,240,180" }))
+    expect(action).toEqual({ kind: "screenshot", region: { x: 100, y: 120, width: 240, height: 180 } })
+    const built = ComputerActions.build(action as ComputerActions.Action, {
+      display: ":99",
+      screenshotPath: "/tmp/shot.png",
+    })
+    expect(built.ok).toBe(true)
+    if (built.ok) expect([...built.argv[0]!]).toEqual(["scrot", "-o", "-a", "100,120,240,180", "/tmp/shot.png"])
+  })
+
+  test("surrounding whitespace is tolerated — a model spacing a list is not an error", () => {
+    expect(ComputerTool.parseRegion(" 1 , 2 , 3 , 4 ")).toEqual({ x: 1, y: 2, width: 3, height: 4 })
+  })
+
+  test("🔴 a HALF-filled region cannot be expressed, and is refused by name", () => {
+    // The property that justified a nested object before it was measured at 965 bytes of resident
+    // schema: three numbers is not a rectangle, and defaulting the fourth is a wrong crop that
+    // reports success. The string form keeps the property for a fraction of the size.
+    for (const raw of ["1,2,3", "1,2", "", "1,2,3,4,5"]) {
+      const parsed = ComputerTool.parseRegion(raw)
+      expect("error" in parsed).toBe(true)
+      if ("error" in parsed) expect(parsed.error).toContain("x,y,width,height")
+    }
+  })
+
+  test("a non-numeric part is refused, and the message names WHICH part", () => {
+    const parsed = ComputerTool.parseRegion("10,20,wide,40")
+    expect("error" in parsed).toBe(true)
+    if ("error" in parsed) expect(parsed.error).toContain("width")
+  })
+
+  test("the refusal travels out of toAction rather than becoming a full-screen capture", () => {
+    // Silently falling back to the whole screen would be the worst outcome: the model asked a
+    // question about one region and would get an answer about a different picture.
+    const action = ComputerTool.toAction(input({ action: "screenshot", region: "nonsense" }))
+    expect("error" in action).toBe(true)
+  })
+
+  test("range and integer rules are NOT duplicated here — they stay in the action layer", () => {
+    // parseRegion accepts what is arithmetically a region; `build` is the one module that knows what
+    // scrot will take. Two copies of that rule is how the two drift apart.
+    expect(ComputerTool.parseRegion("10,10,0,0")).toEqual({ x: 10, y: 10, width: 0, height: 0 })
+    const built = ComputerActions.build(
+      { kind: "screenshot", region: { x: 10, y: 10, width: 0, height: 0 } },
+      { display: ":99", screenshotPath: "/tmp/shot.png" },
+    )
+    expect(built.ok).toBe(false)
+  })
+
+  test("a region on a NON-screenshot action is ignored rather than half-applied", () => {
+    const action = ComputerTool.toAction(input({ action: "click", x: 5, y: 6, region: "0,0,9,9" }))
+    expect(action).toEqual({ kind: "click", button: "left", point: { x: 5, y: 6 } })
   })
 })

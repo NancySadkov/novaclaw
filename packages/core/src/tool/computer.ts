@@ -43,6 +43,27 @@ export const Input = Schema.Struct({
     description: "Scroll direction.",
   }),
   amount: Schema.Number.pipe(Schema.optional).annotate({ description: "Scroll clicks (1-25)." }),
+  /**
+   * ⚠️ **One string, not four numbers and not a nested object — and the reason is MEASURED.**
+   *
+   * The obvious shape is a nested `{x, y, width, height}`, which has the property that matters: a
+   * model cannot fill three fields and leave a half-built rectangle. It was written that way first,
+   * and then weighed: the nested subtree serialises to **965 bytes**, 40% of this tool's entire input
+   * schema, of which only 236 is the description — the rest is object boilerplate. That is paid on
+   * every turn of every session, resident, for a field only `screenshot` reads. It tripped the 32 KB
+   * resident-tool budget in `test/location-layer.test.ts` the moment it landed.
+   *
+   * `"x,y,width,height"` keeps the property — a partial rectangle cannot be written in this form, it
+   * either parses to four integers or it is rejected by name — at a fraction of the size, and it is
+   * literally what `scrot -a` takes, so the mapping is one split. Parsing is in `toAction`; the range
+   * and integer rules stay in `ComputerActions`, which is the one place that knows the tool.
+   */
+  region: Schema.String.pipe(Schema.optional).annotate({
+    description:
+      'Optional crop for `screenshot`, as "x,y,width,height" in screen pixels (e.g. "100,120,240,180"). ' +
+      "Use it when part of the screen animates on its own — an attract loop, a video, a clock — so a " +
+      "whole-screen capture cannot tell you whether YOUR action changed anything.",
+  }),
 }).annotate({ identifier: "ComputerTool.Input" })
 
 const Output = Schema.Struct({
@@ -53,6 +74,31 @@ const Output = Schema.Struct({
 })
 
 /**
+ * `"x,y,width,height"` → a region, or a refusal that says what was wrong.
+ *
+ * ⚠️ **Four parts exactly, and every part a number — no defaulting a missing one.** A region with an
+ * assumed width is a wrong crop that reports success, and every coordinate read off the resulting
+ * image is then offset with nothing in the picture to say so. The integer and range rules are NOT
+ * repeated here; `ComputerActions.build` owns them, because it is the module that knows what `scrot`
+ * accepts and duplicating the rule is how the two drift apart.
+ */
+export const parseRegion = (raw: string): ComputerActions.Region | { readonly error: string } => {
+  const parts = raw.split(",").map((part) => part.trim())
+  if (parts.length !== 4)
+    return { error: `region must be "x,y,width,height" — got ${parts.length} value(s): ${raw}` }
+  const [x, y, width, height] = parts.map(Number)
+  for (const [name, value] of [
+    ["x", x],
+    ["y", y],
+    ["width", width],
+    ["height", height],
+  ] as const)
+    if (value === undefined || !Number.isFinite(value))
+      return { error: `region ${name} is not a number: ${raw}` }
+  return { x: x!, y: y!, width: width!, height: height! }
+}
+
+/**
  * Turn the model's flat input into the action union. Kept separate from `build` so the schema can
  * stay flat — a model fills a flat object far more reliably than a discriminated union, and the
  * cost is this one translation.
@@ -61,8 +107,11 @@ export const toAction = (input: Input): ComputerActions.Action | { readonly erro
   const point = () =>
     input.x === undefined || input.y === undefined ? undefined : { x: input.x, y: input.y }
   switch (input.action) {
-    case "screenshot":
-      return { kind: "screenshot" }
+    case "screenshot": {
+      if (input.region === undefined) return { kind: "screenshot" }
+      const region = parseRegion(input.region)
+      return "error" in region ? region : { kind: "screenshot", region }
+    }
     case "cursor":
       return { kind: "cursor" }
     case "move": {
@@ -114,7 +163,23 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.make({
+        /**
+         * 🔴 **DEFERRED, and the region field is what forced the question rather than what answered
+         * it.** This tool was resident — its schema in every request of every session — and adding
+         * `region` tripped the 32 KB resident-tool budget in `test/location-layer.test.ts`. The cheap
+         * response was to trim 148 bytes of description and squeak back under. The right one is that
+         * `computer` never belonged in the resident set:
+         *  · It is UNCONFIGURED on most machines — a Windows laptop, a headless server — where its
+         *    only possible answer is the message saying so. That cost was being paid per turn to
+         *    advertise a capability that could not run.
+         *  · Sessions that drive a desktop are a small minority, and they are self-identifying: a task
+         *    that needs a screen says so, and discovery surfaces the tool then.
+         *  · It sits beside `messenger`, `kb`, `profile` and `recipe` in exactly this respect.
+         *
+         * Worth ~2.4 KB of every fresh request (1.8 KB of input schema plus the description), which is
+         * a far larger win than the budget failure that surfaced it.
+         */
+        [name]: Tool.withDeferred(Tool.make({
           sideEffect: "non-idempotent",
           description,
           input: Input,
@@ -179,7 +244,20 @@ export const layer = Layer.effectDiscard(
 
               const detail =
                 action.kind === "screenshot"
-                  ? `screenshot written to ${screenshotPath}`
+                  ? // The region is named back, because the file at `screenshotPath` is a CROP and a
+                    // reader who assumes a full frame will ground every coordinate off by the origin.
+                    //
+                    // ⚠️ The ORIGIN is stated as fact and the SIZE only as an upper bound, because
+                    // `scrot` silently clips a region that overruns the screen: measured 2026-08-06,
+                    // `-a 1200,760,400,400` on a 1280x800 display wrote an 80x40 file with no error.
+                    // The origin survives clipping, so it stays exact; asserting the requested size
+                    // would be describing the file as something it is not.
+                    action.region
+                    ? `screenshot written to ${screenshotPath} — a CROP with its origin at ` +
+                      `(${action.region.x},${action.region.y}) and up to ` +
+                      `${action.region.width}x${action.region.height} (clipped at the screen edge). ` +
+                      `Coordinates read off it are relative to that origin: add it back before clicking.`
+                    : `screenshot written to ${screenshotPath}`
                   : outputs.length > 0
                     ? outputs.join("\n")
                     : `${input.action} done`
@@ -197,7 +275,7 @@ export const layer = Layer.effectDiscard(
                 error instanceof ToolFailure ? error : new ToolFailure({ message: `computer: ${String(error)}` }),
               ),
             ),
-        }),
+        })),
       })
       .pipe(Effect.orDie)
   }),

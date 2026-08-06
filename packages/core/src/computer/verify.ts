@@ -31,6 +31,21 @@ import type { ComputerActions } from "./actions"
  *
  * So the caller must tell us whether the screen is animated — sample twice with NO action between —
  * and a "should-change" action on an animated screen concludes NOTHING rather than confirming.
+ *
+ * 🔴 **And that guard cost the loop its only evidence, which is what `region` is for.** Against Master
+ * of Magic the attract loop animates continuously, so EVERY step came back `inconclusive` and P3 could
+ * not verify a single one. The escape is to stop comparing whole frames: `ComputerActions` can capture
+ * a REGION (`scrot -a`), and a region around the acted-on point is unaffected by animation elsewhere.
+ * Measured in the substrate on 2026-08-06 — static target inside the region, change made outside it:
+ * the region digest was byte-identical across both captures (`84624392` twice) while the full frame
+ * changed (`a34d5244` → `dc5020c7`). Two back-to-back captures of an unchanged region also matched, so
+ * the capture is deterministic and digest equality remains the test.
+ *
+ * ⚠️ **The trap that creates: `animated` must be measured on the SAME pixels being compared.** A region
+ * comparison paired with a whole-screen animation flag is strictly worse than no region at all — the
+ * region gives a clean answer and the flag then vetoes it, so the loop stays blind while looking fixed.
+ * `sampled()` below exists so the flag is DERIVED from captures the caller already has at one scope,
+ * rather than asserted; prefer it to setting `animated` by hand.
  */
 
 /** What a given action is expected to do to the screen. */
@@ -81,6 +96,33 @@ export interface Observation {
    */
   readonly animated?: boolean
 }
+
+/**
+ * Build an `Observation` from the four captures a careful loop already takes, deriving `animated`
+ * instead of asserting it.
+ *
+ * The order is the one the loop runs in: two idle captures with NO action between them (that pair IS
+ * the animation measurement), then the action, then the after capture. `idle[1]` doubles as `before`,
+ * so there is no fourth capture and no window for the screen to change between measuring and acting.
+ *
+ * 🔴 **Why this exists rather than a doc line saying "use the same scope".** All three digests come
+ * from one call site, so they are captured the same way — whole-screen or the same region — and the
+ * mismatch that makes a region comparison useless (region digests judged against a whole-screen
+ * animation flag) cannot be expressed. Setting `animated` by hand still works and is still supported;
+ * it is just the form where nothing checks that the two measurements are about the same pixels.
+ */
+export const sampled = (input: {
+  readonly kind: ComputerActions.Action["kind"]
+  /** Two captures taken with no action between them, in order. */
+  readonly idle: readonly [string, string]
+  /** The capture taken after the action. */
+  readonly after: string
+}): Observation => ({
+  kind: input.kind,
+  before: input.idle[1],
+  after: input.after,
+  animated: input.idle[0] !== input.idle[1],
+})
 
 export type Verdict =
   /**

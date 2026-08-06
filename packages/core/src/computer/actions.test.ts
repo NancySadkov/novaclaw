@@ -173,3 +173,65 @@ describe("every command is addressed to the substrate's display", () => {
     }
   })
 })
+
+// 🔴 The measurement that put `region` here, and it is a PROPERTY not a preference.
+// P3's loop could not verify a single step against Master of Magic: the game's attract mode changes
+// the screen on its own, so every whole-frame comparison came back `inconclusive (animated)` and the
+// guard that stops false confirmations also removed the only evidence the loop had.
+//
+// Run in the substrate on 2026-08-06 with a STATIC target inside the region and a change made well
+// outside it:
+//   region  before/after : 84624392 / 84624392   ← byte-identical
+//   full    before/after : a34d5244 / dc5020c7   ← changed
+// Two back-to-back region captures of an unchanged region also matched. So a region around the
+// acted-on point carries signal exactly where the whole frame carries none.
+describe("regional capture — the verifier's answer to a screen that animates itself", () => {
+  const REGION = { x: 100, y: 120, width: 240, height: 180 }
+
+  test("a region becomes scrot's own `-a x,y,w,h`, and still overwrites", () => {
+    expect(ok(CA.build({ kind: "screenshot", region: REGION }, OPTIONS))).toEqual([
+      ["scrot", "-o", "-a", "100,120,240,180", "/tmp/shot.png"],
+    ])
+  })
+
+  test("no region is still the whole screen — the crop is opt-in, never a default", () => {
+    // A silently-cropped frame is worse than no crop: every coordinate the grounder reads off it is
+    // offset by the origin, and nothing in the image says so.
+    expect(ok(CA.build({ kind: "screenshot" }, OPTIONS))).toEqual([["scrot", "-o", "/tmp/shot.png"]])
+  })
+
+  test("an origin may sit at 0, because the top-left corner is a real place to look", () => {
+    expect(ok(CA.build({ kind: "screenshot", region: { x: 0, y: 0, width: 5, height: 5 } }, OPTIONS))).toEqual([
+      ["scrot", "-o", "-a", "0,0,5,5", "/tmp/shot.png"],
+    ])
+  })
+
+  test("🔴 a zero-sized region is refused rather than passed to scrot", () => {
+    // `scrot -a 10,10,0,0` is not a capture; letting it through would write no file — or a stale one —
+    // and the loop would then compare a digest of the PREVIOUS frame against itself and read "stable".
+    for (const bad of [
+      { x: 10, y: 10, width: 0, height: 5 },
+      { x: 10, y: 10, width: 5, height: 0 },
+      { x: 10, y: 10, width: -4, height: 5 },
+    ])
+      expect(why(CA.build({ kind: "screenshot", region: bad }, OPTIONS))).toMatch(/out of range/)
+  })
+
+  test("a negative origin is refused, and the message names the field", () => {
+    expect(why(CA.build({ kind: "screenshot", region: { ...REGION, x: -1 } }, OPTIONS))).toContain("x")
+  })
+
+  test("fractional pixels are refused — scrot parses integers and would truncate silently", () => {
+    for (const field of ["x", "y", "width", "height"] as const) {
+      const reason = why(CA.build({ kind: "screenshot", region: { ...REGION, [field]: 12.5 } }, OPTIONS))
+      expect(reason).toContain(field)
+      expect(reason).toContain("whole pixel")
+    }
+  })
+
+  test("the display still travels in env, and never leaks into the region argv", () => {
+    const built = CA.build({ kind: "screenshot", region: REGION }, OPTIONS)
+    expect(envOf(built)).toEqual({ DISPLAY: ":99" })
+    for (const command of ok(built)) expect(command).not.toContain("--display")
+  })
+})

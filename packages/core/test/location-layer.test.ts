@@ -48,7 +48,6 @@ const residentTools = [
   "application_context",
   "apply_patch",
   "bash",
-  "computer",
   "define_tool",
   "edit",
   "exit",
@@ -70,6 +69,7 @@ const residentTools = [
 ].sort()
 
 const deferredCoreTools = [
+  "computer",
   "configure",
   "kb",
   "messenger",

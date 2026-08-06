@@ -38,9 +38,27 @@ export type ScrollDirection = "up" | "down" | "left" | "right"
 /** Wheel buttons, in `xdotool click` terms. Horizontal wheel is 6/7 and is not universally honoured. */
 const SCROLL_CODE: Record<ScrollDirection, string> = { up: "4", down: "5", left: "6", right: "7" }
 
+/** A rectangle in screen pixels. */
+export interface Region {
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
+}
+
 export type Action =
-  /** Capture the whole screen to `path`. The only action that produces bytes rather than an effect. */
-  | { readonly kind: "screenshot" }
+  /**
+   * Capture to `path`. The only action that produces bytes rather than an effect.
+   *
+   * ⚠️ **`region` is the verifier's answer to an animated screen, not a cropping convenience.**
+   * A whole-frame digest carries NO signal when anything on screen animates — an attract loop, a
+   * video, a clock — which is exactly what a game presents, and it left P3's loop unable to verify a
+   * single step (`todo/computer-use.md`). Measured 2026-08-06 in the substrate: with a static target
+   * inside the region and a change made well OUTSIDE it, the REGION digest was byte-identical across
+   * both captures while the full-frame digest changed. So comparing a region around the acted-on
+   * point restores the signal the animation guard removes.
+   */
+  | { readonly kind: "screenshot"; readonly region?: Region }
   /** Move the pointer. Coordinates are PIXELS — convert with `ComputerCoordinates.toPixels` first. */
   | { readonly kind: "move"; readonly point: Point }
   | { readonly kind: "click"; readonly button: Button; readonly point?: Point }
@@ -125,10 +143,37 @@ export const build = (action: Action, options: Options): Built => {
   const xdotool = (...args: string[]) => ["xdotool", ...args]
 
   switch (action.kind) {
-    case "screenshot":
+    case "screenshot": {
       // `-o` overwrites: the substrate reuses one path per capture and a stale file read as a fresh
       // frame is the worst possible failure for a loop that decides what to click from it.
-      return { ok: true, env, argv: [["scrot", "-o", options.screenshotPath]] }
+      if (!action.region) return { ok: true, env, argv: [["scrot", "-o", options.screenshotPath]] }
+      const r = action.region
+      for (const [name, value] of [
+        ["x", r.x],
+        ["y", r.y],
+        ["width", r.width],
+        ["height", r.height],
+      ] as const) {
+        if (!Number.isInteger(value)) return { ok: false, reason: `region ${name} must be a whole pixel, got ${value}` }
+        if (name === "x" || name === "y" ? value < 0 : value < 1)
+          return { ok: false, reason: `region ${name} is out of range: ${value}` }
+      }
+      // `scrot -a x,y,w,h` — run against the real `scrot` (1.10) in the substrate on 2026-08-06 in
+      // THIS flag order, not assumed from the flag's existence: a flag that is not there fails at run
+      // time under a green unit suite, which is exactly how `xdotool --display` got through.
+      //
+      // ⚠️ **A region that overruns the screen is CLIPPED, silently and without an error.** Measured:
+      // `-a 1200,760,400,400` on a 1280x800 display wrote an 80x40 file, exit 0. Harmless for the
+      // verifier — both captures clip identically, so digest equality still holds — but it means the
+      // returned size is an upper bound, and no caller may report the requested size as the file's
+      // size. `tool/computer.ts` states the ORIGIN as fact and the size as "up to" for this reason.
+      // (A zero or negative extent is rejected above; `scrot` rejects it too, with "'0' is too small".)
+      return {
+        ok: true,
+        env,
+        argv: [["scrot", "-o", "-a", `${r.x},${r.y},${r.width},${r.height}`, options.screenshotPath]],
+      }
+    }
 
     case "cursor":
       return { ok: true, env, argv: [xdotool("getmouselocation")] }

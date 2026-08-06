@@ -128,3 +128,52 @@ describe("a changed screen proves nothing when the screen animates itself", () =
     if (verdict.ok) expect(verdict.kind).toBe("inconclusive")
   })
 })
+
+// The escape from the deadlock above: compare a REGION around the acted-on point instead of the whole
+// frame. `judge` is unchanged — a digest is a digest — so what these pin is the CONSTRUCTOR that keeps
+// the animation flag and the comparison talking about the same pixels.
+describe("sampled() derives `animated` so it cannot disagree with what was compared", () => {
+  test("a still region gives a verdict where the whole frame gave `inconclusive`", () => {
+    // The real shape of the MoM failure, rerun at region scope: the region is quiet, so a change in it
+    // is attributable to the action. This is the signal the loop did not have.
+    const verdict = CV.judge(CV.sampled({ kind: "click", idle: ["r1", "r1"], after: "r2" }))
+    expect(verdict.ok).toBe(true)
+    if (verdict.ok) expect(verdict.kind).toBe("changed")
+  })
+
+  test("a region that moves on its own still refuses to confirm", () => {
+    // Region scope is not a licence to ignore animation — if the region itself animates, a difference
+    // proves nothing there either, and the honest answer is the same one.
+    const verdict = CV.judge(CV.sampled({ kind: "click", idle: ["r1", "r2"], after: "r3" }))
+    expect(verdict.ok).toBe(true)
+    if (verdict.ok) expect(verdict.kind).toBe("inconclusive")
+  })
+
+  test("🔴 an unchanged region still convicts, whether or not it animates", () => {
+    for (const idle of [
+      ["r1", "r1"],
+      ["r1", "r2"],
+    ] as const) {
+      const verdict = CV.judge(CV.sampled({ kind: "click", idle: [idle[0], "same"], after: "same" }))
+      expect(verdict.ok).toBe(false)
+      if (!verdict.ok) expect(verdict.kind).toBe("no-visible-effect")
+    }
+  })
+
+  test("the SECOND idle capture is `before`, not the first", () => {
+    // The pair measures animation and its later half is the freshest state before the action. Using
+    // the first would compare across the idle gap and report the animation as the action's effect.
+    expect(CV.sampled({ kind: "click", idle: ["old", "fresh"], after: "x" }).before).toBe("fresh")
+  })
+
+  test("identical idle captures mean not-animated, differing ones mean animated", () => {
+    expect(CV.sampled({ kind: "click", idle: ["a", "a"], after: "b" }).animated).toBe(false)
+    expect(CV.sampled({ kind: "click", idle: ["a", "b"], after: "c" }).animated).toBe(true)
+  })
+
+  test("the kind is carried through, so observations keep their own expectation", () => {
+    const verdict = CV.judge(CV.sampled({ kind: "screenshot", idle: ["a", "a"], after: "a" }))
+    expect(verdict.ok).toBe(true)
+    if (verdict.ok) expect(verdict.kind).toBe("stable")
+  })
+})
