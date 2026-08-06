@@ -5,11 +5,6 @@ import { QuestionV2 } from "@novaclaw/core/question"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionWorkerInteractionBridge } from "./interaction-bridge"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
-import { SessionJoin } from "@novaclaw/core/session/join"
-
-const joinStub: SessionJoin.Interface = {
-  awaitCompletion: () => Effect.die(new Error("join is not exercised by this test")),
-}
 
 const spawnerStub: SessionSpawner.Interface = {
   spawn: () => Effect.die(new Error("spawn is not exercised by this test")),
@@ -52,7 +47,7 @@ test("permission assertion and question answers stay in host services", async ()
     SessionWorkerInteractionBridge.handle({
       permission,
       question: unusedQuestion,
-        spawner: spawnerStub, join: joinStub,
+        spawner: spawnerStub,
       lease,
       message: {
         ...base,
@@ -68,7 +63,7 @@ test("permission assertion and question answers stay in host services", async ()
     SessionWorkerInteractionBridge.handle({
       permission,
       question: unusedQuestion,
-        spawner: spawnerStub, join: joinStub,
+        spawner: spawnerStub,
       lease,
       message: {
         ...base,
@@ -101,7 +96,7 @@ test("permission denial details survive while stale and cross-session requests f
     SessionWorkerInteractionBridge.handle({
       permission: deniedPermission,
       question: unusedQuestion,
-        spawner: spawnerStub, join: joinStub,
+        spawner: spawnerStub,
       lease,
       message: {
         ...base,
@@ -121,7 +116,7 @@ test("permission denial details survive while stale and cross-session requests f
     SessionWorkerInteractionBridge.handle({
       permission: deniedPermission,
       question: unusedQuestion,
-        spawner: spawnerStub, join: joinStub,
+        spawner: spawnerStub,
       lease,
       message: {
         ...base,
@@ -165,7 +160,6 @@ test("🔴 the host spawns with the LEASE's session as parent — the payload ca
       permission: unusedPermission,
       question: unusedQuestion,
       spawner,
-      join: joinStub,
       lease,
       message: spawnRequest,
     }),
@@ -189,7 +183,6 @@ test("a stale lease is refused before the spawner is reached", async () => {
       permission: unusedPermission,
       question: unusedQuestion,
       spawner,
-      join: joinStub,
       lease,
       message: { ...spawnRequest, generation: lease.generation - 1 },
     }),
@@ -210,7 +203,6 @@ test("🔴 a quota refusal arrives as `limit`, not as a transport rejection", as
       permission: unusedPermission,
       question: unusedQuestion,
       spawner,
-      join: joinStub,
       lease,
       message: spawnRequest,
     }),
@@ -231,7 +223,6 @@ test("the optional fields ride through, and absent ones stay absent", async () =
       permission: unusedPermission,
       question: unusedQuestion,
       spawner,
-      join: joinStub,
       lease,
       message: { ...spawnRequest, input: { text: "t", agent: "plan", permissionMode: "ask" } },
     }),
@@ -241,88 +232,4 @@ test("the optional fields ride through, and absent ones stay absent", async () =
   // An absent option must not become an explicit `undefined` — `resolveConfig` narrows against the
   // parent chain, and a present-but-undefined field is not the same as inheriting.
   expect("model" in (saw ?? {})).toBe(false)
-})
-
-// 🔴 `wait`'s half of the same outage. It joined a child through `events.durable(...)`, and the
-// worker's EventV2 replacement dies on the durable stream — so `wait` failed inside every session
-// worker with "only works in host-only contexts". It stayed invisible until `spawn` was fixed,
-// because the live smoke exits at its first failure and spawn failed earlier.
-const awaitRequest = {
-  ...base,
-  type: "await-child" as const,
-  requestID: "req_await",
-  input: { childID: SessionSchema.ID.make("ses_child"), timeoutMs: 5_000 },
-}
-
-test("a completed child returns its result", async () => {
-  const join: SessionJoin.Interface = {
-    awaitCompletion: () => Effect.succeed({ completed: true, result: "EXIT-MARKER-42" }),
-  }
-  const reply = await Effect.runPromise(
-    SessionWorkerInteractionBridge.handle({
-      permission: unusedPermission,
-      question: unusedQuestion,
-      spawner: spawnerStub,
-      join,
-      lease,
-      message: awaitRequest,
-    }),
-  )
-  expect(reply).toMatchObject({ type: "await-child-result", outcome: "completed", result: "EXIT-MARKER-42" })
-})
-
-test("🔴 a timeout is a normal ANSWER, not a rejection", async () => {
-  // The child may simply still be working. Reporting "rejected" would tell the model its worker is
-  // stale — a different fact entirely, and one it would act on differently.
-  const join: SessionJoin.Interface = { awaitCompletion: () => Effect.succeed({ completed: false }) }
-  const reply = await Effect.runPromise(
-    SessionWorkerInteractionBridge.handle({
-      permission: unusedPermission,
-      question: unusedQuestion,
-      spawner: spawnerStub,
-      join,
-      lease,
-      message: awaitRequest,
-    }),
-  )
-  expect(reply).toMatchObject({ type: "await-child-result", outcome: "timeout" })
-  expect((reply as { result?: string }).result).toBeUndefined()
-})
-
-test("a stale lease is refused before the join is attempted", async () => {
-  let called = false
-  const join: SessionJoin.Interface = {
-    awaitCompletion: () => {
-      called = true
-      return Effect.succeed({ completed: true, result: "x" })
-    },
-  }
-  const reply = await Effect.runPromise(
-    SessionWorkerInteractionBridge.handle({
-      permission: unusedPermission,
-      question: unusedQuestion,
-      spawner: spawnerStub,
-      join,
-      lease,
-      message: { ...awaitRequest, generation: lease.generation - 1 },
-    }),
-  )
-  expect(called).toBe(false)
-  expect(reply).toMatchObject({ type: "await-child-result", outcome: "rejected" })
-})
-
-test("a completed child with no result still reports completion", async () => {
-  // `exit()` with no payload is legitimate — the join succeeded and there is simply nothing to show.
-  const join: SessionJoin.Interface = { awaitCompletion: () => Effect.succeed({ completed: true }) }
-  const reply = await Effect.runPromise(
-    SessionWorkerInteractionBridge.handle({
-      permission: unusedPermission,
-      question: unusedQuestion,
-      spawner: spawnerStub,
-      join,
-      lease,
-      message: awaitRequest,
-    }),
-  )
-  expect(reply).toMatchObject({ type: "await-child-result", outcome: "completed" })
 })

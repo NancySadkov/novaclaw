@@ -7,7 +7,6 @@ import { QuestionV2 } from "@novaclaw/core/question"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
-import { SessionJoin } from "@novaclaw/core/session/join"
 import { EventManifest } from "@novaclaw/schema/event-manifest"
 import type { SessionWorkerCapabilities } from "./capabilities"
 import { makeGlobalNode, makeLocationNode } from "@novaclaw/core/effect/app-node"
@@ -24,7 +23,6 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
   readonly question: QuestionV2.Interface
   readonly scheduler: SessionScheduler.Interface
   readonly spawner: SessionSpawner.Interface
-  readonly join: SessionJoin.Interface
 } {
   const events: EventV2.Interface = {
     publish: (definition, data, options) => {
@@ -170,33 +168,7 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
       ),
   }
 
-  /**
-   * 🔴 `wait` joined a child through `events.durable(...)`, which the replacement above DIES on — so
-   * `wait` failed in every session worker with "only works in host-only contexts". Same class as
-   * spawn, found the moment fixing spawn let the live smoke reach the test that exercises it.
-   *
-   * It is a request/response rather than a forwarded stream because `wait` only ever wanted the FIRST
-   * completion with a deadline. Forwarding a live stream across the protocol would be a much larger
-   * job for a value nobody reads.
-   */
-  const join: SessionJoin.Interface = {
-    awaitCompletion: (request) =>
-      Effect.promise(() => capabilities.awaitChild({ childID: request.childID, timeoutMs: request.timeoutMs })).pipe(
-        Effect.flatMap((reply): Effect.Effect<SessionJoin.Outcome> => {
-          if (reply.outcome === "completed")
-            return Effect.succeed(
-              reply.result === undefined
-                ? ({ completed: true } satisfies SessionJoin.Outcome)
-                : ({ completed: true, result: reply.result } satisfies SessionJoin.Outcome),
-            )
-          // A timeout is the honest answer, not a fault: the child may still be working.
-          if (reply.outcome === "timeout") return Effect.succeed({ completed: false } satisfies SessionJoin.Outcome)
-          return Effect.die(unavailable("child join"))
-        }),
-      ),
-  }
-
-  return { events, permission, question, scheduler, spawner, join }
+  return { events, permission, question, scheduler, spawner }
 }
 
 export function replacements(capabilities: SessionWorkerCapabilities.Capabilities): LayerNode.Replacements {
@@ -221,10 +193,6 @@ export function replacements(capabilities: SessionWorkerCapabilities.Capabilitie
         layer: Layer.succeed(QuestionV2.Service, services.question),
         deps: [],
       }),
-    ],
-    [
-      SessionJoin.node,
-      makeLocationNode({ service: SessionJoin.Service, layer: Layer.succeed(SessionJoin.Service, services.join), deps: [] }),
     ],
     [
       SessionSpawner.node,
