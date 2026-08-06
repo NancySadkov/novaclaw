@@ -89,6 +89,7 @@ import { SessionDrive } from "./drive"
 import { FinishRecovery } from "./finish-recovery"
 import { UtilityCap } from "./utility-cap"
 import { ContextPack } from "./context-pack"
+import { RequestFootprint } from "./footprint"
 import { ContextBudget } from "./context-budget"
 import {
   detectDoomLoop,
@@ -1167,6 +1168,15 @@ export const layer = Layer.effect(
       const request = packed.changed
         ? LLM.request({ ...LLM.requestInput(fullRequest), system: packed.system, messages: packed.messages })
         : fullRequest
+      // Measured AFTER packing, because packing is what actually goes out — reading `fullRequest`
+      // would report a request that was never sent and hide eviction entirely. Numbers only, at
+      // `debug`: this fires every turn, and the value is the series rather than any one line.
+      yield* Log.event("session.request.footprint", {
+        "session.id": session.id,
+        ...RequestFootprint.attributes(
+          RequestFootprint.measure({ system: request.system, messages: request.messages, tools: request.tools }),
+        ),
+      })
       const startSnapshot = yield* snapshots.capture()
       const assistantMessageID = SessionMessage.ID.create()
       const attemptModelRef = {

@@ -996,6 +996,36 @@ export const EVENTS = {
     content: "none",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  /**
+   * The per-turn request footprint — what the outgoing request costs, and which part of it grew.
+   *
+   * `debug`, deliberately: it fires on EVERY turn, so at `info` it would drown the log it is meant
+   * to make readable. The value is the series, not any single line.
+   *
+   * ⚠️ **All-`count` is what makes `content: "none"` a fact here.** The measurement knows the largest
+   * tool's NAME and does not send it — a `define_tool` name is user-authored, so it is not the closed
+   * vocabulary `id` promises. See `session/runner/footprint.ts` for why the struct is richer than the
+   * event.
+   */
+  "session.request.footprint": {
+    level: "debug",
+    message: "outgoing request footprint",
+    attributes: {
+      "session.id": "id",
+      "request.bytes.total": "count",
+      "request.bytes.system": "count",
+      "request.bytes.messages": "count",
+      "request.bytes.tools": "count",
+      "request.count.system": "count",
+      "request.count.messages": "count",
+      "request.count.tools": "count",
+      "request.tools.share.percent": "count",
+      "request.tokens.estimated": "count",
+      "request.tools.largest.bytes": "count",
+    },
+    content: "none",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.context.pressure.high": {
     level: "warn",
     message: "ctx_pressure: real prompt near the context window",

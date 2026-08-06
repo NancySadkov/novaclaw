@@ -157,7 +157,26 @@ describe("LocationServiceMap", () => {
           expect(blockedState.providers.some((provider) => provider.id === ProviderV2.ID.make("test"))).toBe(false)
           expect(blockedState.tools.map((tool) => tool.name).sort()).toEqual(residentTools)
           expect(blockedState.deferred.map((source) => source.definition.name)).toEqual(deferredCoreTools)
-          expect(Buffer.byteLength(JSON.stringify(blockedState.tools))).toBeLessThan(32_000)
+          // 🔴 A RATCHET, not a limit — and the difference is the whole lesson of 2026-08-06.
+          //
+          // The hard ceiling here was 32,000. Measured that day, the resident set stood at **31,813
+          // bytes — 99.4% of it** — and had for days, with nothing reporting the fact. A ceiling only
+          // speaks at the boundary, and its first lesson to whoever trips it is "shave the new thing
+          // until it fits": the `computer` tool crossed by 148 bytes, and trimming its prose would
+          // have passed. The right answer was 2,400 bytes in the other direction — that tool was
+          // never a per-turn cost worth paying, being UNCONFIGURED on most machines, so it moved
+          // behind deferred disclosure and the set fell to 29,441.
+          //
+          // So the bound now sits just above the observed value instead of far above it. If you are
+          // reading this because it went red, the question is NOT "how do I fit under it" — it is
+          // **should this tool be resident at all?** A resident schema is paid on every turn of every
+          // session forever; deferred costs one discovery round-trip in the sessions that need it.
+          // Raise this number only with that question answered in the commit message.
+          //
+          // ⚠️ Not pinned to the exact byte, deliberately: an equality here would flake on any
+          // platform whose tool prose differs, and a flaky ratchet gets deleted rather than obeyed.
+          const residentBytes = Buffer.byteLength(JSON.stringify(blockedState.tools))
+          expect(residentBytes).toBeLessThan(30_000) // observed 29,441 on 2026-08-06 (92% of 32,000)
           // The second location boots AFTER the policy is gone — its boot snapshot allows the
           // provider, and the first location's catalog transform never leaked into it.
           yield* settings.remove("experimental")
