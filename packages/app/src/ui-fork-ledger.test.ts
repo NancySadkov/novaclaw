@@ -676,6 +676,68 @@ describe("the seven deleted v1 components stay deleted", () => {
     }
   })
 
+  /**
+   * 🔴 **The v1 and v2 forks are in DIFFERENT CASCADE LAYERS, and that changes what `class=` does.**
+   *
+   * `ui/src/styles/index.css` opens `@layer theme, base, components, utilities;` and pulls every **v1**
+   * component stylesheet in with `layer(components)`. Every **v2** stylesheet is instead imported from
+   * its own `.tsx`, which lands it **unlayered** — and an unlayered rule outranks every layered one:
+   *
+   *   - a v1 component's CSS sits in `components` and LOSES to a Tailwind utility → `class=` works;
+   *   - a v2 component's CSS is unlayered and BEATS every utility → `class=` is inert.
+   *
+   * Measured 2026-08-06: **155 call sites** across `app/src` and `ui/src` pass `class`/`classList` to a
+   * v2 component. Each is a place where an author's override may be silently doing nothing — and each
+   * is a place that can change appearance the moment this is fixed, which is why this is a LEDGER and
+   * not a fix. It also explains why migrating a v1 component to its v2 twin keeps not being the cheap
+   * swap it is filed as: the twins' PROPS match and their cascade position does not.
+   *
+   * ⚠️ **Shrink-only, pinned BY NAME.** Layering one means deleting its own `.css` import, adding
+   * `@import "../v2/components/x.css" layer(components);` to the barrel, then checking that
+   * component's call sites — their overrides start working. Remove the name here in the same commit.
+   * Adding a name is not allowed: a new v2 component should be layered from birth.
+   */
+  const UNLAYERED_V2_STYLESHEETS = [
+    "avatar-v2",
+    "badge-v2",
+    "button-v2",
+    "dialog-v2",
+    "diff-changes-v2",
+    "divider-v2",
+    "icon-button-v2",
+    "keybind-v2",
+    "menu-v2",
+    "progress-circle-v2",
+    "project-avatar-v2",
+    "select-v2",
+    "switch-v2",
+    "tabs-v2",
+    "text-input-v2",
+    "text-shimmer-v2",
+    "textarea-v2",
+    "toast-v2",
+    "tooltip-v2",
+  ]
+
+  test("🔴 every v2 stylesheet is either LAYERED or pinned — the list can only shrink", () => {
+    const v2Dir = join(PACKAGES, "ui", "src", "v2", "components")
+    const sheets = readdirSync(v2Dir)
+      .filter((name) => name.endsWith(".css"))
+      .map((name) => name.slice(0, -4))
+    const barrel = readFileSync(join(PACKAGES, "ui", "src", "styles", "index.css"), "utf8")
+    const layered = new Set([...barrel.matchAll(/@import\s+["']([^"']+\/v2\/components\/([^"'/]+)\.css)["']\s+layer\(components\)/g)].map((match) => match[2]!))
+    const unlayered = sheets.filter((name) => !layered.has(name)).sort()
+
+    expect(
+      unlayered.filter((name) => !UNLAYERED_V2_STYLESHEETS.includes(name)),
+      "a NEW v2 stylesheet is unlayered — import it into styles/index.css with layer(components) instead",
+    ).toEqual([])
+    expect(
+      UNLAYERED_V2_STYLESHEETS.filter((name) => !unlayered.includes(name)),
+      "these are layered now — delete them from UNLAYERED_V2_STYLESHEETS in this commit (shrink-only)",
+    ).toEqual([])
+  })
+
   test("the CSS barrel has no dangling @import — a break no typecheck can see", () => {
     // `packages/ui/src/styles/index.css` is reached from app/src/index.css via
     // `@novaclaw/ui/styles/tailwind` → `../index.css`, and it `@import`s each component stylesheet
