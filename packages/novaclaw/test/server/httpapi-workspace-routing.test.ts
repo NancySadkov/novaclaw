@@ -505,6 +505,12 @@ describe("HttpApi workspace routing middleware", () => {
       const dir = yield* tmpdirScoped()
       const queryDir = path.join(dir, "query-target")
       const headerDir = path.join(dir, "header-target")
+      // ⚠️ These have to EXIST. `planRequest` refuses a client-supplied directory that is not on disk
+      // — a deliberate guard, added after a mis-decoded base64 route param booted instances and
+      // file-watchers on garbage-byte paths — so an unmade path yields 400 and the fallback under test
+      // is never exercised. This test predates the guard and was pinned as Windows flakiness until
+      // 2026-08-07; it was asserting against a rejection, not against the fallback.
+      yield* Effect.promise(() => Promise.all([mkdir(queryDir, { recursive: true }), mkdir(headerDir, { recursive: true })]))
       yield* serveProbe
 
       // Without a selected workspace, the middleware falls back to request
