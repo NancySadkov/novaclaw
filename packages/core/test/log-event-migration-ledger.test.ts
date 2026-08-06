@@ -7,6 +7,7 @@ import { countSites, ledgerFaults, type LedgerEntry, scanLogSource, scanPackageS
 const ROOT = path.resolve(import.meta.dir, "..", "..", "..")
 const SITES = scanPackageSources(ROOT)
 const UNKEYED = countSites(SITES, "unkeyed")
+const UNKEYED_SITES = SITES.filter((site) => site.kind === "unkeyed")
 const KEYED = countSites(SITES, "keyed")
 
 /**
@@ -54,10 +55,13 @@ describe("the log-event migration ledger", () => {
       {
         kind: "unkeyed",
         name: 'packages/example/src/example.ts :: Effect.logInfo("wrapped message")',
+        // `{ count: 1 }` reuses no formatter-owned name, so this is unconverted rather than broken.
+        reserved: false,
       },
       {
         kind: "keyed",
         name: 'packages/example/src/example.ts :: Log.event("example.worker.start")',
+        reserved: false,
       },
     ])
   })
@@ -88,62 +92,57 @@ describe("the log-event migration ledger", () => {
  * 🔴 **Which of the remaining calls are DEFECTS, not merely unconverted.**
  *
  * The ledger above is a migration counter: every unkeyed call weighs the same in it. They do not
- * weigh the same in production. `RESERVED_ATTRIBUTES` names the columns the formatter already emits,
- * so an unkeyed call passing `cause` puts that name on the logfmt line **twice** — which breaks the
- * naive `grep`/`cut` mining that is the whole requirement of logging item 1, and which
- * `log-events.test.ts` reproduces as a negative control.
+ * weigh the same in production. An unkeyed call that reuses a formatter-owned name — an attribute
+ * called `cause`, or a second positional argument, which the formatter folds onto `message` — emits
+ * one key **twice** on the logfmt line. That breaks exactly the naive `grep`/`cut` mining that
+ * logging item 1 exists to deliver; `log-events.test.ts` reproduces both forms as negative controls.
  *
- * Tracking the subset separately is what let the 2026-08-06 core pass be aimed: it converted nine
- * sites and took the live-defect count from **13 to 4** while the raw count moved only 36 → 27. A
- * single number would have reported that as ordinary progress.
+ * Tracking the subset separately is what let the 2026-08-06 passes be aimed. Measured through this
+ * parser: the server pass took collisions **3 → 0** while the unkeyed total moved only **25 → 22**. A
+ * single number would have reported that as ordinary progress; the defect count reached zero.
  *
- * ⚠️ **The window must span the call, not its first line.** Measured the same day: a one-line check
- * finds 3 collisions where a four-line window finds 13, because the attribute object is almost always
- * wrapped by the formatter. A guard that undercounts a defect fourfold reports progress that has not
- * happened.
+ * ⚠️ **This reads the AST, and the first version of it did not.** A regex sibling shipped hours
+ * earlier, scanning a four-line window for the word `cause`. It counted a `cause` mentioned in the
+ * DOC COMMENT of `schema/log.ts` as a live defect, and — because it matched text rather than call
+ * arguments — its totals are **not comparable** to the ones above; the figures it produced for the
+ * core pass (13 → 4) are quietly a different measurement and must not be extended into this series.
+ * The parser already knew the difference. **One scanner, or the two disagree and the wrong one is
+ * believed.**
  */
 describe("the reserved-name collisions inside the remaining calls", () => {
-  const RAW_CALL = /Effect\.log(?:Debug|Info|Warning|Error|Trace)?\(/
-  /** From `RESERVED_ATTRIBUTES` — the names the formatter owns. `cause` is the one that occurs. */
-  const RESERVED = /\bcause\b/
-  const WINDOW = 4
-
-  const collisionsIn = (text: string): number => {
-    const lines = text.split("\n")
-    return lines.filter(
-      (line, index) => RAW_CALL.test(line) && RESERVED.test(lines.slice(index, index + WINDOW).join("\n")),
-    ).length
-  }
-
-  const walk = (dir: string, out: string[] = []): string[] => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name === "node_modules" || entry.name === "dist" || entry.name === ".git") continue
-      const full = path.join(dir, entry.name)
-      if (entry.isDirectory()) walk(full, out)
-      else if (entry.name.endsWith(".ts") && !entry.name.includes(".test.")) out.push(full)
-    }
-    return out
-  }
-
-  const live = walk(path.join(ROOT, "packages"))
-    .filter((file) => file.replace(/\\/g, "/").includes("/src/"))
-    .reduce((total, file) => total + collisionsIn(fs.readFileSync(file, "utf8")), 0)
+  const collisions = UNKEYED_SITES.filter((site) => site.reserved)
 
   test("the count may FALL but never rise", () => {
     // Pinned at the 2026-08-06 measurement. Lower it in the commit that converts the sites; raising
     // it means a new call site reintroduced a duplicate column and should be written as Log.event.
-    expect(live).toBeLessThanOrEqual(4)
+    expect(collisions.length).toBeLessThanOrEqual(0)
   })
 
-  test("the whole-call window is the measurement, and a one-line check is not (negative control)", () => {
-    const wrapped = ['Effect.logWarning("failed to materialize reference", {', "  name,", "  cause,", "})"].join("\n")
-    expect(collisionsIn(wrapped)).toBe(1)
-    // The same text seen one line at a time finds nothing — this is the undercount to avoid.
-    expect(wrapped.split("\n").filter((line) => RAW_CALL.test(line) && RESERVED.test(line)).length).toBe(0)
+  test("a doc comment mentioning `cause` is not a call site (negative control)", () => {
+    // The exact false positive the regex version produced against `schema/log.ts`.
+    expect(
+      scanLogSource("packages/example/src/example.ts", '/** `Effect.logInfo("a", cause)` emits message TWICE. */'),
+    ).toEqual([])
+  })
+
+  test("both collision shapes are detected, and a clean call is not (negative control)", () => {
+    const shapes = scanLogSource(
+      "packages/example/src/example.ts",
+      [
+        'Effect.logWarning("attribute named cause", { cause })',
+        'Effect.logError("second positional part", cause)',
+        'Effect.logInfo("clean", { count: 1, sessionID: id })',
+      ].join("\n"),
+    )
+    expect(shapes.map((site) => site.reserved)).toEqual([true, true, false])
   })
 
   test("a keyed call with a subsystem-scoped cause is NOT a collision", () => {
     // The migration's whole output: `snapshot.cause` is its own column and cannot shadow `cause`.
-    expect(collisionsIn('Log.event("snapshot.capture.failed", { "snapshot.cause": String(error) })')).toBe(0)
+    const keyed = scanLogSource(
+      "packages/example/src/example.ts",
+      'Log.event("snapshot.capture.failed", { "snapshot.cause": String(error) })',
+    )
+    expect(keyed.map((site) => site.reserved)).toEqual([false])
   })
 })

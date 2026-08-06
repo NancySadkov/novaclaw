@@ -7,11 +7,40 @@ export type LogSiteKind = "keyed" | "unkeyed"
 export interface LogSite {
   readonly kind: LogSiteKind
   readonly name: string
+  /**
+   * Does this call put a name the FORMATTER already owns onto the line a second time?
+   *
+   * Two ways it happens, both reproduced in `log-events.test.ts`: an attribute literally named
+   * `cause`/`level`/`message`/… (see `RESERVED_ATTRIBUTES`), or a second POSITIONAL argument, which
+   * the formatter maps onto `message` alongside the first. Either emits one key twice and breaks the
+   * naive `grep`/`cut` mining that logging item 1 exists to deliver.
+   *
+   * ⚠️ Tracked on the site rather than counted by a separate scan, because a second scanner is a
+   * second answer: a regex version of this shipped on 2026-08-06 and counted a `cause` mentioned in a
+   * DOC COMMENT as a live defect. The AST cannot make that mistake.
+   */
+  readonly reserved: boolean
 }
 
 export interface LedgerEntry {
   readonly name: string
   readonly count: number
+}
+
+/** The columns `observability/logging.ts` already emits; an attribute reusing one duplicates it. */
+const RESERVED_NAMES = new Set(["timestamp", "level", "run", "event", "message", "cause"])
+
+/** Does any argument reuse a formatter-owned name, or add a second positional message part? */
+const reusesReservedName = (node: ts.CallExpression): boolean => {
+  const [, ...rest] = node.arguments
+  for (const argument of rest) {
+    if (!ts.isObjectLiteralExpression(argument)) return true
+    for (const property of argument.properties) {
+      const name = property.name === undefined ? undefined : ts.isIdentifier(property.name) ? property.name.text : ts.isStringLiteralLike(property.name) ? property.name.text : undefined
+      if (name !== undefined && RESERVED_NAMES.has(name)) return true
+    }
+  }
+  return false
 }
 
 const SOURCE_EXTENSIONS = new Set([".cts", ".js", ".jsx", ".mts", ".ts", ".tsx"])
@@ -35,11 +64,15 @@ export const scanLogSource = (file: string, sourceText: string): readonly LogSit
         sites.push({
           kind: "unkeyed",
           name: `${file} :: Effect.${method}(${normalizedArgument(node.arguments[0], source)})`,
+          reserved: reusesReservedName(node),
         })
       } else if (receiver === "Log" && method === "event") {
         sites.push({
+          // A keyed call cannot collide: `log-events.ts` refuses a reserved attribute name at the
+          // declaration, and `log-events.test.ts` is the mechanical check for that.
           kind: "keyed",
           name: `${file} :: Log.event(${normalizedArgument(node.arguments[0], source)})`,
+          reserved: false,
         })
       }
     }

@@ -487,6 +487,22 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/project/bootstrap.ts",
   },
+  /** Disposing one instance failed while its HTTP lifecycle was tearing down; the response still returns. */
+  "instance.dispose.failed": {
+    level: "warn",
+    message: "instance disposal failed",
+    attributes: { "instance.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/lifecycle.ts",
+  },
+  /** Disposing every instance failed during a swallow-errors shutdown; the disposed event is still emitted. */
+  "instance.global.dispose.failed": {
+    level: "warn",
+    message: "global disposal failed",
+    attributes: { "instance.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/server/global-lifecycle.ts",
+  },
   /** An event observer threw. The publisher continues — one bad listener must not stop the bus. */
   "instance.listener.notify.failed": {
     level: "error",

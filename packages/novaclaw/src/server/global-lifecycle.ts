@@ -1,7 +1,8 @@
 import { GlobalBus } from "@/bus/global"
 import { InstanceStore } from "@/project/instance-store"
-import { Effect } from "effect"
+import { Cause, Effect } from "effect"
 import { Event } from "./event"
+import { Log } from "@novaclaw/schema/log"
 
 export const emitGlobalDisposed = Effect.sync(() =>
   GlobalBus.emit("event", {
@@ -18,7 +19,13 @@ export const disposeAllInstancesAndEmitGlobalDisposed = Effect.fn("Server.dispos
     const store = yield* InstanceStore.Service
     yield* Effect.gen(function* () {
       yield* options?.swallowErrors
-        ? store.disposeAll().pipe(Effect.catchCause((cause) => Effect.logWarning("global disposal failed", { cause })))
+        ? store
+            .disposeAll()
+            .pipe(
+              Effect.catchCause((cause) =>
+                Log.event("instance.global.dispose.failed", { "instance.cause": Cause.pretty(cause) }),
+              ),
+            )
         : store.disposeAll()
       yield* emitGlobalDisposed
     }).pipe(Effect.uninterruptible)
