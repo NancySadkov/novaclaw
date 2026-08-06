@@ -372,7 +372,12 @@ test("reported worker memory pressure is contained without allocating it in the 
 })
 
 test("a deleted session folder is named as the fault, not the interpreter", async () => {
-  const missing = path.join(os.tmpdir(), "novaclaw-worker-gone-" + process.pid)
+  // A path that must NOT exist. It used to be keyed on `process.pid`, which is the wrong tool twice
+  // over: pids are recycled, so a leftover directory from a dead run could occupy the name and turn
+  // this assertion false, and the shape is the one `core/test/tmpdir-namespace.test.ts` now fails on
+  // (a pid-named temp path is live state a later run can inherit). Nothing is created here, so a
+  // random name is both correct and unambiguous.
+  const missing = path.join(os.tmpdir(), `novaclaw-worker-gone-${crypto.randomUUID()}`)
   expect(
     await fs.stat(missing).then(
       () => true,

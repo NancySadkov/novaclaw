@@ -46,7 +46,11 @@ const CLAIMS_PREFIX = /["'`]novaclaw-core-test/
 const stripComments = (source: string): string =>
   source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
-function collect(dir: string, out: { name: string; text: string }[]): { name: string; text: string }[] {
+function collect(
+  dir: string,
+  out: { name: string; text: string }[],
+  base: string = CORE,
+): { name: string; text: string }[] {
   let entries: fs.Dirent[]
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true })
@@ -56,11 +60,11 @@ function collect(dir: string, out: { name: string; text: string }[]): { name: st
   for (const entry of entries) {
     const full = path.join(dir, entry.name)
     if (entry.isDirectory()) {
-      if (!SKIP_DIRS.has(entry.name)) collect(full, out)
+      if (!SKIP_DIRS.has(entry.name)) collect(full, out, base)
       continue
     }
     if (!entry.isFile() || !/\.[cm]?tsx?$/.test(entry.name)) continue
-    const name = path.relative(CORE, full).split(path.sep).join("/")
+    const name = path.relative(base, full).split(path.sep).join("/")
     out.push({ name, text: stripComments(fs.readFileSync(full, "utf8")) })
   }
   return out
@@ -72,6 +76,18 @@ function producers(files: ReadonlyArray<{ name: string; text: string }>): string
 }
 
 const sources = collect(CORE, [])
+
+/**
+ * The second sweep is WORKSPACE-WIDE, and deliberately so.
+ *
+ * The prefix guard above is a `packages/core` matter — that namespace has a reaper pointed at it and
+ * lives here. The PID-shape guard below is not: the same mistake was made independently in
+ * `packages/core` and `packages/novaclaw`, which is what a repo-wide invariant looks like. Splitting
+ * it into a copy per package would reproduce the very "second producer" failure this file was written
+ * to prevent — one rule, one owner.
+ */
+const PACKAGES = path.resolve(CORE, "..")
+const workspaceSources = collect(PACKAGES, [], PACKAGES)
 
 describe("the novaclaw-core-test-* temp namespace has exactly one producer", () => {
   test("the sweep reached this package", () => {
@@ -160,9 +176,11 @@ describe("a PID-named path in the shared temp root is reaped, or it does not exi
    * ⚠️ Adding a name here is a claim that the file REAPS. Do not add one to silence the test.
    */
   const REAPERS: ReadonlyArray<string> = [
-    "test/fixture/tmpdir.ts", // reapAbandonedRoots()
-    "test/fixture/git.ts", // reapAbandonedTemplateRoots()
-    "test/preload.ts", // reaps novaclaw-test-home/<pid> by PID liveness (added 2026-08-06)
+    "core/test/fixture/tmpdir.ts", // reapAbandonedRoots()
+    "core/test/fixture/git.ts", // reapAbandonedTemplateRoots()
+    "core/test/preload.ts", // reaps novaclaw-test-home/<pid> by PID liveness (added 2026-08-06)
+    "novaclaw/test/fixture/fixture.ts", // reapAbandonedTemplateRoots()
+    "novaclaw/test/preload.ts", // reaps novaclaw-test-data-<pid> by PID liveness (added 2026-08-06)
   ]
 
   // ⚠️ An allowlist entry is a CLAIM, so it is checked rather than trusted. The first draft of this
@@ -172,12 +190,19 @@ describe("a PID-named path in the shared temp root is reaped, or it does not exi
   // silencing a failure by typing a name here instead.
   const REAP_EVIDENCE = /process\.kill\([^)]*,\s*0\)/
 
+  // This file necessarily writes the offending shape, in the negative control below. `SELF` is
+  // core-relative while the workspace sweep names files package-relative, so match on the suffix
+  // rather than re-deriving the path twice.
+  const isSelf = (name: string) => name === SELF || name.endsWith(`/${SELF}`)
+
   const offenders = (files: ReadonlyArray<{ name: string; text: string }>): string[] =>
-    files.filter((f) => f.name !== SELF && !REAPERS.includes(f.name) && SHARED_ROOT_PID.test(f.text)).map((f) => f.name)
+    files
+      .filter((f) => !isSelf(f.name) && !REAPERS.includes(f.name) && SHARED_ROOT_PID.test(f.text))
+      .map((f) => f.name)
 
   test("no unreaped file names a PID path at the temp root", () => {
     expect(
-      offenders(sources).map(
+      offenders(workspaceSources).map(
         (name) =>
           `${name} builds a temp path from os.tmpdir() + process.pid without a reaper. A killed run ` +
           "leaves that file behind and PID reuse hands it to a LATER run as live state — the 257 " +
@@ -205,15 +230,19 @@ describe("a PID-named path in the shared temp root is reaped, or it does not exi
     ).toEqual(["test/offender.test.ts"])
   })
 
-  test("the sweep can see the file that motivated this", () => {
-    // If the budget test ever regains the shape, the first test above must be able to catch it.
-    expect(sources.map((f) => f.name)).toContain("test/messenger-initiation-budget.test.ts")
+  test("the workspace sweep really crossed the package boundary", () => {
+    // A repo-wide guard that quietly only saw one package would pass forever. Pin both ends: the
+    // file that motivated the rule, and a file in the OTHER package that the rule now covers.
+    const names = workspaceSources.map((f) => f.name)
+    expect(names).toContain("core/test/messenger-initiation-budget.test.ts")
+    expect(names).toContain("novaclaw/test/preload.ts")
+    expect(names.length).toBeGreaterThan(sources.length)
   })
 
   test("every allowlisted file actually contains a PID-liveness reap", () => {
     // The allowlist is the weak point of a ratchet like this: it is one edit away from becoming the
     // place failures go to be silenced. So each entry must show the probe that justifies it.
-    const byName = new Map(sources.map((f) => [f.name, f.text]))
+    const byName = new Map(workspaceSources.map((f) => [f.name, f.text]))
     const unproven = REAPERS.filter((name) => {
       const text = byName.get(name)
       return text === undefined || !REAP_EVIDENCE.test(text)

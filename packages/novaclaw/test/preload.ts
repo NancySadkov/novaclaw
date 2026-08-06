@@ -7,7 +7,50 @@ import { setTimeout as sleep } from "node:timers/promises"
 import { afterAll } from "bun:test"
 
 // Set XDG env vars FIRST, before any src/ imports
-const dir = path.join(os.tmpdir(), "novaclaw-test-data-" + process.pid)
+const DATA_PREFIX = "novaclaw-test-data-"
+const dir = path.join(os.tmpdir(), DATA_PREFIX + process.pid)
+
+/**
+ * 🔴 **Reap abandoned data roots — the `afterAll` below is NOT a teardown mechanism on its own.**
+ *
+ * It runs on a normal finish and not when the process is killed or crashes, and the gate has been
+ * killed mid-run repeatedly. This directory is the instance's whole XDG home (data, cache, config,
+ * state, plus the test home and the managed-config dir), so an abandoned one is not just clutter:
+ * it is a complete previous instance, and because Windows recycles PIDs a later run eventually
+ * inherits it and starts against **another run's database**.
+ *
+ * That is not hypothetical. The identical shape one prefix over
+ * (`os.tmpdir()/novaclaw-initiation-<pid>.db`) accumulated **257 files by 2026-08-06** and produced a
+ * recurring gate failure that read as a content regression in messenger rather than as stale state;
+ * **52 of these** had piled up alongside it. `packages/novaclaw/test/fixture/fixture.ts` already had
+ * the right answer for its own roots — this is the same reap, for the directory that matters most.
+ *
+ * Keyed on PID liveness, never on age: units run in their own processes, so an age sweep would
+ * delete a CONCURRENT run's home. `process.kill(pid, 0)` is the probe — no throw means alive,
+ * `ESRCH` means gone, `EPERM` means alive under another account and is left alone.
+ */
+try {
+  const fsSync = await import("node:fs")
+  for (const entry of fsSync.readdirSync(os.tmpdir())) {
+    if (!entry.startsWith(DATA_PREFIX)) continue
+    const pid = Number(entry.slice(DATA_PREFIX.length))
+    if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) continue
+    try {
+      process.kill(pid, 0)
+      continue // still running — not ours to delete
+    } catch (error) {
+      if ((error as { code?: string } | undefined)?.code === "EPERM") continue
+    }
+    try {
+      fsSync.rmSync(path.join(os.tmpdir(), entry), { recursive: true, force: true })
+    } catch {
+      // Another process may be reaping the same root; losing the race is fine.
+    }
+  }
+} catch {
+  // A readdir failure must never stop the suite from starting.
+}
+
 await fs.mkdir(dir, { recursive: true })
 afterAll(async () => {
   const { AppRuntime } = await import("../src/effect/app-runtime")
