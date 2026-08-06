@@ -2131,6 +2131,21 @@ export const dict = {
   "settings.webSearch.throttle.sameUrl": "Same-page retry limit",
   "settings.webSearch.throttle.sameUrl.hint":
     "Refuse to fetch one page more times than this in a session — catches an agent stuck in a loop.",
+  "settings.computer.title": "Computer Use",
+  "settings.computer.display.name": "Display",
+  "settings.computer.display.description":
+    "The X display the agent observes and clicks, for example :99. Leave it empty and computer use stays off — a display is never picked up from the environment, because that would either fail on a server or quietly drive your own screen.",
+  "settings.computer.screenshot.name": "Screenshot path",
+  "settings.computer.screenshot.description":
+    "Where screenshots are written on the machine serving the display. Defaults to a temporary file.",
+  "settings.computer.permission.name": "Ask before acting",
+  "settings.computer.permission.description":
+    "What happens when the agent wants to look at the screen or click something.",
+  "settings.computer.permission.ask": "Ask me every time",
+  "settings.computer.permission.allow": "Let it act on its own",
+  "settings.computer.permission.deny": "Never allow",
+  "settings.computer.unset": "No display is set, so computer use is off. The agent will say so if it tries.",
+  "settings.computer.save.failed": "Could not save the computer-use settings",
   "settings.tools.title": "Tools",
   "settings.tools.description":
     "Ad-hoc tool recipes: a name, a one-line description the model sees in its prompt, and a manual it pulls on demand (the API shape plus a curl example). The model runs them from the shell — no MCP server to set up.",

@@ -21,6 +21,7 @@ import { SettingsIntrospectionV2 } from "./introspection"
 import { SettingsSystemPromptV2 } from "./system-prompt"
 import { SettingsAffectiveV2 } from "./affective"
 import { SettingsStrictV2 } from "./strict"
+import { SettingsComputerV2 } from "./computer"
 import { SettingsToolsV2 } from "./tools"
 import { SettingsQualityV2 } from "./quality"
 import { SettingsRecoveryV2 } from "./recovery"
@@ -33,6 +34,7 @@ import { SettingsTunesV2 } from "./tunes"
 const TAB_LEVELS: Record<string, ExpertiseLevel> = {
   "system-prompt": "advanced",
   tunes: "advanced",
+  computer: "advanced",
   tools: "advanced",
   strict: "advanced",
   // Web search "just works" for a normal user via the built-in; the override (own SearXNG) +
@@ -163,7 +165,18 @@ export const DialogSettings: Component<{
                               {language.t("settings.strict.title")}
                             </TabsV2.Trigger>
                           </Show>
-                          <Show when={tabVisible("tools")}>
+                          <Show when={tabVisible("computer")}>
+                            <TabsV2.Trigger value="computer">
+                              <Icon name="window-cursor" />
+                              {language.t("settings.computer.title")}
+                            </TabsV2.Trigger>
+                          </Show>
+                          <Show when={tabVisible("computer")}>
+                <TabsV2.Content value="computer" class="settings-v2-panel">
+                  <SettingsComputerV2 />
+                </TabsV2.Content>
+              </Show>
+              <Show when={tabVisible("tools")}>
                             <TabsV2.Trigger value="tools">
                               <Icon name="code-lines" />
                               {language.t("settings.tools.title")}

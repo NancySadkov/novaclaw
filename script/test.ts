@@ -65,6 +65,7 @@ import { enforce, headroomBytes, topConsumers } from "./lib/heavy-guard"
 import * as MemoryPlan from "./lib/memory-plan"
 import * as PeakSampler from "./lib/peak-sampler"
 import { readFailingNames, stripAnsi } from "./lib/test-output"
+import { isUpstreamWatcherCrash } from "./lib/upstream-crash"
 import { typecheckUnits } from "./lib/typecheck-units"
 
 /**
@@ -477,7 +478,41 @@ function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], wallcl
   // number that wrong feeds the ladder, so refusing to record it is the honest outcome; the profile
   // simply stays as it was and the unit plans with its previous figure or the generous default.
   const believable = sample.treeMb !== undefined && sample.treeMb <= IMPLAUSIBLE_PEAK_MB
-  return { ok, ms, note, captured, ...(believable ? { peakMb: sample.treeMb } : {}) }
+  return {
+    ok,
+    ms,
+    note,
+    captured,
+    upstreamCrash: kind === "test" && !ok && !timedOut && isUpstreamWatcherCrash(proc.status, captured),
+    ...(believable ? { peakMb: sample.treeMb } : {}),
+  }
+}
+
+/**
+ * `spawnOnce`, retried ONCE when the child died of the upstream watcher segfault.
+ *
+ * ⚠️ **The retry is announced, never silent.** A gate that quietly re-runs is a gate you cannot
+ * trust: the reader has to be able to see that a unit needed two attempts, both because the
+ * frequency is itself data (it rose sharply on 2026-08-06) and because a retry that hides itself
+ * would eventually hide something else. The note travels onto the summary row.
+ *
+ * ⚠️ Exactly one retry. If the crash is no longer intermittent the gate must go red and say so,
+ * rather than looping until it gets the answer it wants.
+ */
+function spawnWithUpstreamRetry(name: string, kind: Kind, dir: string, argv: string[], wallclockMs: number) {
+  const first = spawnOnce(name, kind, dir, argv, wallclockMs)
+  if (!first.upstreamCrash) return first
+  process.stderr.write(
+    `\n\x1b[33m── ${name}: upstream Bun watcher segfault (exit 3, watcher.node, no failing assertions)\n` +
+      `   — this is not your change; retrying ONCE. See todo.md's header.\x1b[0m\n`,
+  )
+  const second = spawnOnce(name, kind, dir, argv, wallclockMs)
+  return {
+    ...second,
+    note: second.ok
+      ? `passed on retry after an upstream watcher segfault`
+      : `${second.note} · (also crashed on the first attempt)`,
+  }
 }
 
 /**
@@ -502,9 +537,15 @@ function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs:
 
   const runs = sharded
     ? Array.from({ length: sharded }, (_, i) =>
-        spawnOnce(`${name} shard ${i + 1}/${sharded}`, kind, dir, [...argv, `--shard=${i + 1}/${sharded}`], wallclockMs),
+        spawnWithUpstreamRetry(
+          `${name} shard ${i + 1}/${sharded}`,
+          kind,
+          dir,
+          [...argv, `--shard=${i + 1}/${sharded}`],
+          wallclockMs,
+        ),
       )
-    : [spawnOnce(name, kind, dir, argv, wallclockMs)]
+    : [spawnWithUpstreamRetry(name, kind, dir, argv, wallclockMs)]
 
   const captured = runs.map((r) => r.captured).join("\n")
   // A skip count is only meaningful if EVERY shard produced a summary — one unreadable shard makes the
