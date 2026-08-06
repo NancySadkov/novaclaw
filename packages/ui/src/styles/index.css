@@ -42,5 +42,13 @@
 @import "../components/toast.css" layer(components);
 @import "../components/tooltip.css" layer(components);
 
+/* ── v2 design system ──────────────────────────────────────────────────────────────────────────
+   ⚠️ v2 stylesheets belong HERE, not in their own `.tsx`. A stylesheet imported from a component
+   file lands UNLAYERED and outranks every Tailwind utility, so `class=` overrides on that component
+   silently do nothing. `app/src/ui-fork-ledger.test.ts` pins the ones still doing that
+   (`UNLAYERED_V2_STYLESHEETS`) and the list is shrink-only — move one here, drop its own import,
+   check that component's call sites, and delete its name in the same commit. */
+@import "../v2/components/divider-v2.css" layer(components);
+
 @import "./utilities.css" layer(utilities);
 @import "./animations.css" layer(utilities);

@@ -1,5 +1,4 @@
 import { type ComponentProps, splitProps } from "solid-js"
-import "./divider-v2.css"
 
 export interface DividerV2Props extends ComponentProps<"div"> {}
 

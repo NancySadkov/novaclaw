@@ -703,7 +703,6 @@ describe("the seven deleted v1 components stay deleted", () => {
     "button-v2",
     "dialog-v2",
     "diff-changes-v2",
-    "divider-v2",
     "icon-button-v2",
     "keybind-v2",
     "menu-v2",
