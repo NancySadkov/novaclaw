@@ -1,3 +1,4 @@
+import { Location } from "@novaclaw/core/location"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { NamedError } from "@novaclaw/core/util/error"
@@ -130,7 +131,21 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 askBeforeChanges: ctx.payload.askBeforeChanges,
                 safeMode: ctx.payload.safeMode,
                 contextBudget: ctx.payload.contextBudget,
-                location: ctx.payload.location ?? { directory: AbsolutePath.make(process.cwd()) },
+                // 🔴 **Was `?? { directory: AbsolutePath.make(process.cwd()) }`** — the SERVER
+                // PROCESS's directory, not the one the request named. `list` honours the request's
+                // location, so a create-then-list in one breath returned NOTHING, and the create
+                // response was not even wrong: it faithfully reported the directory it had used.
+                // `process.cwd()` is only ever right for a CLI; on the shipped headless/remote path
+                // it filed every session where `list` would never look again.
+                //
+                // ⚠️ `Location.Service` is resolvable here ONLY because `session.create` now declares
+                // `locationMiddleware` (see `protocol/groups/session.ts`). Resolving a service that no
+                // middleware provides typechecks and then fails on every request — measured: this exact
+                // line returned 500 on every create before the endpoint carried the middleware.
+                location: ctx.payload.location ?? {
+                  directory: (yield* Location.Service).directory,
+                  workspaceID: (yield* Location.Service).workspaceID,
+                },
               }),
             }
           }),

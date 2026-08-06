@@ -115,7 +115,30 @@ export const SessionsQuery = Schema.Struct({
   cursor: SessionsQueryCursor.pipe(Schema.optional),
 }).annotate({ identifier: "SessionsQuery" })
 
-export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLocationMiddleware: Context.Key<I, S>) =>
+/**
+ * 🔴 **`session.create` needs `locationMiddleware`, and that is why this now takes two.**
+ *
+ * Every session-SCOPED endpoint below uses `sessionLocationMiddleware`, which derives the location
+ * from the session named in the path. A CREATE has no session yet, so it carried NEITHER middleware
+ * and had no way to see the directory the request named — and `handlers/session.ts` filled that gap
+ * with `process.cwd()`, filing every such session under the SERVER PROCESS's directory.
+ *
+ * ⚠️ That is only harmless for a CLI, where the process and the user's directory coincide. On the
+ * shipped headless/remote path (R1–R8) the server's cwd is a service directory unrelated to the
+ * user's, so the session landed somewhere `list` — which does honour the request's location — would
+ * never look again.
+ *
+ * Shape copied from `makePermissionGroup`, which already takes both for the same reason.
+ */
+export const makeSessionGroup = <
+  LocationId extends HttpApiMiddleware.AnyId,
+  LocationService,
+  I extends HttpApiMiddleware.AnyId,
+  S,
+>(
+  locationMiddleware: Context.Key<LocationId, LocationService>,
+  sessionLocationMiddleware: Context.Key<I, S>,
+) =>
   HttpApiGroup.make("server.session")
     .add(
       HttpApiEndpoint.get("session.list", "/api/session", {
@@ -184,7 +207,12 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           contextBudget: Schema.Boolean.pipe(Schema.optional),
         }),
         success: Schema.Struct({ data: Session.Info }),
-      }).annotateMerge(
+      })
+        // 🔴 Without this the handler cannot resolve `Location.Service` and has nothing to fall back
+        // on but `process.cwd()`. The description right below has always said "at the requested
+        // location" — this is what makes that true when the payload omits one.
+        .middleware(locationMiddleware)
+        .annotateMerge(
         OpenApi.annotations({
           identifier: "v2.session.create",
           summary: "Create session",

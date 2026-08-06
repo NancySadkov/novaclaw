@@ -110,6 +110,28 @@ describe("v2 location HttpApi", () => {
     }
   })
 
+  test("🔴 a create with NO location in the payload lands at the REQUESTED directory", async () => {
+    // Ruling 1 for the 2026-08-07 fix. `session.create` declared no middleware — every session-scoped
+    // endpoint uses `sessionLocationMiddleware`, which needs a session that a create does not have yet
+    // — so the handler had no `Location.Service` and fell back to `process.cwd()`. Sessions created
+    // without an explicit location were filed under the SERVER PROCESS's directory, while `list`
+    // honoured the request's, so a create-then-list in one breath returned nothing.
+    //
+    // ⚠️ The omitted `location` is the whole point of this test: passing one exercises the path that
+    // was never broken. And the assertion must compare against the REQUESTED directory rather than
+    // "not cwd" — under bun the test process's cwd is `packages/novaclaw`, so a weaker check would
+    // pass on any tmpdir and go green again the moment the fallback returned.
+    await using tmp = await tmpdir({ git: true })
+    const response = await request("/api/session", tmp.path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "no location supplied" }),
+    })
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { data: { location: { directory: string } } }
+    expect(body.data.location.directory).toBe(tmp.path)
+  })
+
   test("streams native EventV2 payloads across locations", async () => {
     await using subscriber = await tmpdir({ git: true })
     await using publisher = await tmpdir({ git: true })

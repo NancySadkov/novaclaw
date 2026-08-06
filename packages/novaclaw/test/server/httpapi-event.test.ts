@@ -12,15 +12,70 @@ const EventData = Schema.Struct({
   properties: Schema.Record(Schema.String, Schema.Any),
 })
 
+/**
+ * SSE framing state per stream. A `Uint8Array` off the wire is a CHUNK, not a record: it may hold
+ * several events, or half of one, and the split is the network's choice rather than the server's.
+ *
+ * ⚠️ This replaces `JSON.parse(decode(oneChunk).replace(/^data: /, ""))`, which assumed exactly one
+ * complete `data:` line per chunk. That held only while the stream was sparse enough that each event
+ * got its own packet — so it was never CORRECT, only lucky, and it failed the moment
+ * `session.create` began emitting on a request that resolves a location (2026-08-07). The failure
+ * mode is maximally misleading: `SyntaxError: Unable to parse JSON string`, which reads like the
+ * server sent something malformed.
+ *
+ * Same framing as `httpapi-v2-location.test.ts`'s `eventStream` — records end at a blank line, and
+ * `data:` lines within a record join with newlines.
+ */
+const buffers = new WeakMap<Queue.Dequeue<Uint8Array>, string>()
+
 const readEvent = (reader: Queue.Dequeue<Uint8Array>) =>
   Effect.gen(function* () {
-    const value = yield* Queue.take(reader).pipe(
-      Effect.timeoutOrElse({
-        duration: "5 seconds",
-        orElse: () => Effect.fail(new Error("timed out waiting for event")),
-      }),
-    )
-    return Schema.decodeUnknownSync(EventData)(JSON.parse(new TextDecoder().decode(value).replace(/^data: /, "")))
+    const decoder = new TextDecoder()
+    while (true) {
+      const buffer = buffers.get(reader) ?? ""
+      const boundary = buffer.match(/(?:\r\n|\r|\n){2}/)
+      if (boundary?.index !== undefined) {
+        buffers.set(reader, buffer.slice(boundary.index + boundary[0].length))
+        const data = buffer
+          .slice(0, boundary.index)
+          .split(/\r\n|\r|\n/)
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).replace(/^ /, ""))
+          .join("\n")
+        // A record with no `data:` line is a comment or keepalive — skip it rather than parse "".
+        if (data) return Schema.decodeUnknownSync(EventData)(JSON.parse(data))
+        continue
+      }
+      const value = yield* Queue.take(reader).pipe(
+        Effect.timeoutOrElse({
+          duration: "5 seconds",
+          orElse: () => Effect.fail(new Error("timed out waiting for event")),
+        }),
+      )
+      buffers.set(reader, buffer + decoder.decode(value, { stream: true }))
+    }
+  })
+
+/**
+ * Read forward until an event of `type` arrives.
+ *
+ * ⚠️ **"The next event is the one I caused" is not a safe assumption on this stream** — it is an
+ * INSTANCE-wide bus, so anything the request touches publishes onto it too. Asserting on the next
+ * event tied the test to the current event volume of an unrelated subsystem: once `session.create`
+ * began resolving a location (2026-08-07), booting that location graph emitted `plugin.added` first
+ * and the test failed while the behaviour it covers was working. `httpapi-v2-location.test.ts` has
+ * the same helper for the same reason.
+ *
+ * Bounded rather than looping forever, so a type that never arrives fails as a test rather than
+ * hanging until the suite's wall-clock kill.
+ */
+const readEventType = (reader: Queue.Dequeue<Uint8Array>, type: string) =>
+  Effect.gen(function* () {
+    for (let index = 0; index < 20; index++) {
+      const event = yield* readEvent(reader)
+      if (event.type === type) return event
+    }
+    return yield* Effect.fail(new Error(`saw 20 events without ${type}`))
   })
 
 const openEventStream = (directory: string) =>
@@ -95,7 +150,7 @@ describe("event HttpApi", () => {
           body: JSON.stringify({ location: { directory } }),
         })
         expect(created.status).toBe(200)
-        expect(yield* readEvent(reader)).toMatchObject({ type: "session.created" })
+        expect(yield* readEventType(reader, "session.created")).toMatchObject({ type: "session.created" })
       }),
     { git: true, config: { formatter: false } },
   )
