@@ -2,6 +2,7 @@ import * as http from "node:http"
 import * as tls from "node:tls"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { enableCompileCache } from "./compile-cache"
 import { prepareSidecarEnv } from "./sidecar-env"
 
 type NodeHttpWithEnvProxy = typeof http & {
@@ -68,6 +69,10 @@ async function start(command: StartCommand) {
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
+    // Before the one big import, not after: the cache only helps the compile it precedes.
+    // Measured 681 -> 555 ms on the shipped bundle. Never fatal — see compile-cache.ts.
+    const cache = enableCompileCache()
+    if (!cache.enabled) console.warn(`[novaclaw] compile cache off (${cache.reason}) — startup will be slower`)
     const serverURL = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "chunks", "novaclaw-server.js")).href
     const { Server } = (await import(/* @vite-ignore */ serverURL)) as ServerModule
 
