@@ -164,7 +164,11 @@ describe("the sweep", () => {
       "packages/novaclaw/test/server/httpapi-workspace.test.ts",
       "packages/novaclaw/test/server/httpapi-event.test.ts",
       "packages/novaclaw/test/server/httpapi-sync.test.ts",
-      "packages/novaclaw/test/server/project-copy.test.ts",
+      // `project-copy.test.ts` was here until 2026-08-06. Deleted, not moved: it exercised
+      // `/project/{id}/directories` and `/experimental/project/{id}/copy`, an API surface the T2/T3
+      // project-entity kill removed entirely — it even asserted a `forceRequired` field that exists
+      // nowhere in src/. This anchor list is a canary for the sweep going blind, so an entry may only
+      // leave it when the FILE leaves; never delete one to make a red test green.
       "packages/novaclaw/test/server/httpapi-layer.ts",
     ])
       expect(consumers, `${name} is not in the sweep`).toContain(name)
