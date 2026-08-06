@@ -50,6 +50,42 @@ describe("model picker routing", () => {
   })
 })
 
+// Owner directive 2026-08-06: a picker row is "model name + its context", never the endpoint it is
+// served from (todo/session-ui.md). Source-asserted for the same reason as the block above — both
+// failure modes render as a perfectly normal-looking list, so nothing about them is visible to a test
+// that only checks the picker opens.
+describe("model picker row shows the model, not its endpoint", () => {
+  test("the row does not render provider.name", () => {
+    // The regression this pins is a re-added host suffix: for every user-added model `provider.name`
+    // defaults to the serving endpoint's slug (settings-v2/dialog-new-model.tsx derives it from
+    // hostname[-port]pathname), so this line put a URL beside every model in the list.
+    expect(selectModel).not.toMatch(/\{\s*i\.provider\.name\s*\}/)
+  })
+
+  test("provider is still a SEARCH key, so typing a host narrows the list", () => {
+    // Deleting it from the row must not delete it from search — displaying and matching are different
+    // questions, and the directive was about what the row SAYS.
+    expect(selectModel).toMatch(/filterKeys=\{\[[^\]]*"provider\.name"/)
+  })
+
+  test("context renders from the declared limit, not only from a successful probe", () => {
+    // Before this change the {n}k tag was gated on `probe()?.status === "ok"`, so a model that had
+    // never been probed — the majority, since probing is lazy and capped at PROBE_CAP per open —
+    // showed no context at all. The declared value is the floor; the probed window overrides it.
+    expect(selectModel).toMatch(/const context = \(\) => window\(\) \?\? i\.limit\?\.context/)
+  })
+
+  test("a declared context is distinguishable from a measured one", () => {
+    // Ruling 2: a fault is never described falsely. A catalog claiming 256k on an endpoint that
+    // honors 32k must not render as measured fact — the tag carries data-measured and the tooltip
+    // says it in words.
+    expect(selectModel).toMatch(/data-measured=\{window\(\) === undefined \? "false" : "true"\}/)
+    expect(selectModel).toMatch(/measured=\{window !== undefined\}/)
+    const tooltip = fs.readFileSync(path.join(HERE, "model-tooltip.tsx"), "utf8")
+    expect(tooltip).toContain("model.tooltip.context.measured")
+  })
+})
+
 describe("add-model provider order", () => {
   const newModel = fs.readFileSync(path.join(HERE, "settings-v2", "dialog-new-model.tsx"), "utf8")
 

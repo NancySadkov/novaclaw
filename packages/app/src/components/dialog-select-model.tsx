@@ -123,6 +123,7 @@ const ModelList: Component<{
                 model={tooltipModel}
                 latest={item.latest}
                 free={isFree(item.provider.id, modelCost(item))}
+                measured={window !== undefined}
               />
             }
           >
@@ -144,6 +145,20 @@ const ModelList: Component<{
           const status = probe()?.status
           return status === "unreachable" || status === "model-missing"
         }
+        // Owner directive 2026-08-06 (todo/session-ui.md): a picker row says WHAT the model is —
+        // its name and its context — never WHERE it is served from. Models-primary: a provider is
+        // the URL a model happens to sit behind, and for every user-added model `provider.name`
+        // defaults to that endpoint's host slug, so printing it here put a URL beside every model.
+        // Users who run one model on two boxes disambiguate by renaming the model (an editable
+        // field in Settings → Models). Do NOT re-add a host suffix when names collide — that is
+        // this line coming back wearing a condition. Provider stays a SEARCH key (filterKeys
+        // above): searchable, not displayed.
+        //
+        // The context is the declared `limit.context` until a probe returns the server's HONORED
+        // window, which then wins. Ruling 2 — a fault is never described falsely — is why the two
+        // are distinguishable rather than both rendered as bare fact: `data-measured` carries it
+        // for tests and styling, and the tooltip says it in words.
+        const context = () => window() ?? i.limit?.context
         return (
           <div class="w-full flex items-center gap-x-2 text-13-regular" classList={{ "opacity-50": stale() }}>
             <span class="truncate">{i.name}</span>
@@ -153,8 +168,17 @@ const ModelList: Component<{
             <Show when={i.latest}>
               <Tag>{language.t("model.tag.latest")}</Tag>
             </Show>
-            <Show when={window()}>{(w) => <Tag>{`${Math.round(w() / 1024)}k`}</Tag>}</Show>
-            <span class="ml-auto shrink-0 truncate text-11-regular text-text-weak-base">{i.provider.name}</span>
+            <Show when={context()}>
+              {(value) => (
+                <Tag
+                  class="ml-auto shrink-0"
+                  data-measured={window() === undefined ? "false" : "true"}
+                  classList={{ "opacity-60": window() === undefined }}
+                >
+                  {`${Math.round(value() / 1024)}k`}
+                </Tag>
+              )}
+            </Show>
           </div>
         )
       }}

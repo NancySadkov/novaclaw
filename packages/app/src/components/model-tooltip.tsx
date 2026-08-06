@@ -19,7 +19,18 @@ type ModelInfo = {
   }
 }
 
-export const ModelTooltip: Component<{ model: ModelInfo; latest?: boolean; free?: boolean }> = (props) => {
+export const ModelTooltip: Component<{
+  model: ModelInfo
+  latest?: boolean
+  free?: boolean
+  /**
+   * True when `model.limit.context` is the window a live probe saw the server HONOR, rather than
+   * the value the catalog declares. The picker renders the number either way; ruling 2 (a fault is
+   * never described falsely) is why the wording has to say which one it is — a declared 256k on an
+   * endpoint that honors 32k would otherwise read as measured truth.
+   */
+  measured?: boolean
+}> = (props) => {
   const language = useLanguage()
   const { atLeast } = useExpertise()
   const sourceName = (model: ModelInfo) => {
@@ -58,7 +69,10 @@ export const ModelTooltip: Component<{ model: ModelInfo; latest?: boolean; free?
     props.model.variants.length > 0
       ? language.t("model.tooltip.reasoning.allowed")
       : language.t("model.tooltip.reasoning.none")
-  const context = () => language.t("model.tooltip.context", { limit: props.model.limit.context.toLocaleString() })
+  const context = () =>
+    language.t(props.measured ? "model.tooltip.context.measured" : "model.tooltip.context", {
+      limit: props.model.limit.context.toLocaleString(),
+    })
 
   return (
     <div class="flex flex-col gap-1 py-1">
