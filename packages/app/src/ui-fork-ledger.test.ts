@@ -697,32 +697,71 @@ describe("the seven deleted v1 components stay deleted", () => {
    * component's call sites — their overrides start working. Remove the name here in the same commit.
    * Adding a name is not allowed: a new v2 component should be layered from birth.
    */
-  const UNLAYERED_V2_STYLESHEETS = [
-    "button-v2",
-    "dialog-v2",
-    "icon-button-v2",
-    "tabs-v2",
-    "text-input-v2",
-    "textarea-v2",
-    "tooltip-v2",
+  /**
+   * 🔴 **A component stylesheet imported from a `.tsx` is UNLAYERED, and outranks every Tailwind
+   * utility applied to that component.**
+   *
+   * `ui/src/styles/index.css` opens `@layer theme, base, components, utilities;` and pulls the v1
+   * component stylesheets in with `layer(components)`. A stylesheet imported from a component file
+   * instead lands outside every layer — and unlayered rules beat layered ones — so:
+   *
+   *   - a LAYERED component's CSS loses to a Tailwind utility → `class="size-full"` works;
+   *   - an UNLAYERED one beats every utility → the same class is inert.
+   *
+   * ⚠️ **Scope widened 2026-08-06 from `ui/src/v2/components` to all three UI packages, because the
+   * narrow version was measuring the wrong thing.** Chasing `textarea-v2`'s overrides found that all
+   * six pass `class="settings-v2-textarea"` — an app-level class in
+   * `app/src/components/settings-v2/settings-v2.css`, which is **itself imported from 23 `.tsx` files
+   * and therefore also unlayered**. So today those two rules have equal specificity and BOTH sit
+   * outside the layers: which one wins is decided by bundler import order, i.e. by nothing anyone
+   * chose. Pinning only the `ui/v2` half would have declared that fixed while it was not.
+   *
+   * ⚠️ **Shrink-only, pinned BY PATH.** Layering one means deleting its `import "./x.css"` and adding
+   * an `@import … layer(components)` line to the barrel its package is reached through — then checking
+   * that component's call sites, because their overrides start working. Remove the path here in the
+   * same commit. Adding a path is refused: a new stylesheet should be layered from birth.
+   */
+  const UNLAYERED_STYLESHEETS = [
+    "packages/app/src/components/brand.css",
+    "packages/app/src/components/dialog-select-directory-v2.css",
+    "packages/app/src/components/settings-v2/settings-v2.css",
+    "packages/app/src/components/titlebar-tab-nav.css",
+    "packages/app/src/components/titlebar.css",
+    "packages/session-ui/src/v2/components/basic-tool-v2.css",
+    "packages/session-ui/src/v2/components/native-transcript.css",
+    "packages/session-ui/src/v2/components/session-progress-indicator-v2.css",
+    "packages/session-ui/src/v2/components/tool-error-card-v2.css",
+    "packages/ui/src/v2/components/button-v2.css",
+    "packages/ui/src/v2/components/dialog-v2.css",
+    "packages/ui/src/v2/components/icon-button-v2.css",
+    "packages/ui/src/v2/components/tabs-v2.css",
+    "packages/ui/src/v2/components/text-input-v2.css",
+    "packages/ui/src/v2/components/textarea-v2.css",
+    "packages/ui/src/v2/components/tooltip-v2.css",
   ]
 
-  test("🔴 every v2 stylesheet is either LAYERED or pinned — the list can only shrink", () => {
-    const v2Dir = join(PACKAGES, "ui", "src", "v2", "components")
-    const sheets = readdirSync(v2Dir)
-      .filter((name) => name.endsWith(".css"))
-      .map((name) => name.slice(0, -4))
-    const barrel = readFileSync(join(PACKAGES, "ui", "src", "styles", "index.css"), "utf8")
-    const layered = new Set([...barrel.matchAll(/@import\s+["']([^"']+\/v2\/components\/([^"'/]+)\.css)["']\s+layer\(components\)/g)].map((match) => match[2]!))
-    const unlayered = sheets.filter((name) => !layered.has(name)).sort()
+  test("🔴 every component stylesheet is either LAYERED or pinned — the list can only shrink", () => {
+    const found = new Set<string>()
+    for (const pkg of ["app", "ui", "session-ui"]) {
+      const root = join(PACKAGES, pkg, "src")
+      if (!existsSync(root)) continue
+      for (const file of sourceFiles(root)) {
+        if (!file.endsWith(".tsx") && !file.endsWith(".ts")) continue
+        for (const match of readFileSync(file, "utf8").matchAll(/^import\s+["'](\.[^"']+\.css)["']/gm)) {
+          const target = resolve(dirname(file), match[1]!)
+          found.add(relative(join(PACKAGES, ".."), target).split("\\").join("/"))
+        }
+      }
+    }
+    const unlayered = [...found].sort()
 
     expect(
-      unlayered.filter((name) => !UNLAYERED_V2_STYLESHEETS.includes(name)),
-      "a NEW v2 stylesheet is unlayered — import it into styles/index.css with layer(components) instead",
+      unlayered.filter((path) => !UNLAYERED_STYLESHEETS.includes(path)),
+      "a stylesheet is imported from a .tsx — import it into a CSS barrel with layer(components) instead",
     ).toEqual([])
     expect(
-      UNLAYERED_V2_STYLESHEETS.filter((name) => !unlayered.includes(name)),
-      "these are layered now — delete them from UNLAYERED_V2_STYLESHEETS in this commit (shrink-only)",
+      UNLAYERED_STYLESHEETS.filter((path) => !unlayered.includes(path)),
+      "these are layered now — delete them from UNLAYERED_STYLESHEETS in this commit (shrink-only)",
     ).toEqual([])
   })
 
