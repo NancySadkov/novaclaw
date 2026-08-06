@@ -4,6 +4,11 @@ import { PermissionV2 } from "@novaclaw/core/permission"
 import { QuestionV2 } from "@novaclaw/core/question"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionWorkerInteractionBridge } from "./interaction-bridge"
+import { SessionSpawner } from "@novaclaw/core/session/spawner"
+
+const spawnerStub: SessionSpawner.Interface = {
+  spawn: () => Effect.die(new Error("spawn is not exercised by this test")),
+}
 
 const lease = {
   sessionID: SessionSchema.ID.make("ses_worker_interaction"),
@@ -42,6 +47,7 @@ test("permission assertion and question answers stay in host services", async ()
     SessionWorkerInteractionBridge.handle({
       permission,
       question: unusedQuestion,
+        spawner: spawnerStub,
       lease,
       message: {
         ...base,
@@ -57,6 +63,7 @@ test("permission assertion and question answers stay in host services", async ()
     SessionWorkerInteractionBridge.handle({
       permission,
       question: unusedQuestion,
+        spawner: spawnerStub,
       lease,
       message: {
         ...base,
@@ -89,6 +96,7 @@ test("permission denial details survive while stale and cross-session requests f
     SessionWorkerInteractionBridge.handle({
       permission: deniedPermission,
       question: unusedQuestion,
+        spawner: spawnerStub,
       lease,
       message: {
         ...base,
@@ -108,6 +116,7 @@ test("permission denial details survive while stale and cross-session requests f
     SessionWorkerInteractionBridge.handle({
       permission: deniedPermission,
       question: unusedQuestion,
+        spawner: spawnerStub,
       lease,
       message: {
         ...base,
@@ -119,4 +128,108 @@ test("permission denial details survive while stale and cross-session requests f
     }),
   )
   expect(stale).toMatchObject({ type: "question-result", outcome: "rejected" })
+})
+
+// 🔴 THE regression guard for the 2026-08-04 → 2026-08-06 outage: `spawn` was dead on the live runner
+// and nothing below a Spark-and-served-model smoke could see it.
+//
+// The cause was structural. `spawn` creates a child session record and admits the child's first input
+// — two events carrying an id that is NOT the worker's lease — and `event-bridge.ts` rejects exactly
+// that, by design and with its own test. So the worker now ASKS the host, like `permission-assert`,
+// and these are the unit-level checks that were missing the whole time.
+const spawnRequest = {
+  ...base,
+  type: "spawn-child" as const,
+  requestID: "req_spawn",
+  input: { text: "do the thing" },
+}
+
+test("🔴 the host spawns with the LEASE's session as parent — the payload cannot name one", async () => {
+  // The security property, and it is structural rather than validated: `SpawnChild` has no parentID
+  // field at all, so a worker can spawn children of itself and of nothing else. If this ever starts
+  // reading a parent from the payload, a worker could graft a child onto any session it can name.
+  let sawParent: string | undefined
+  const spawner: SessionSpawner.Interface = {
+    spawn: (input) => {
+      sawParent = input.parentID
+      return Effect.succeed({ id: SessionSchema.ID.make("ses_child"), started: true })
+    },
+  }
+  const reply = await Effect.runPromise(
+    SessionWorkerInteractionBridge.handle({
+      permission: unusedPermission,
+      question: unusedQuestion,
+      spawner,
+      lease,
+      message: spawnRequest,
+    }),
+  )
+  expect(sawParent).toBe(lease.sessionID)
+  expect(reply).toMatchObject({ type: "spawn-result", outcome: "spawned", child: "ses_child", started: true })
+})
+
+test("a stale lease is refused before the spawner is reached", async () => {
+  // The generation fence: a worker whose lease was superseded must not create sessions. `spawn` is
+  // the one operation where doing so would leave a durable orphan behind.
+  let called = false
+  const spawner: SessionSpawner.Interface = {
+    spawn: () => {
+      called = true
+      return Effect.succeed({ id: SessionSchema.ID.make("ses_child"), started: true })
+    },
+  }
+  const reply = await Effect.runPromise(
+    SessionWorkerInteractionBridge.handle({
+      permission: unusedPermission,
+      question: unusedQuestion,
+      spawner,
+      lease,
+      message: { ...spawnRequest, generation: lease.generation - 1 },
+    }),
+  )
+  expect(called).toBe(false)
+  expect(reply).toMatchObject({ type: "spawn-result", outcome: "rejected" })
+})
+
+test("🔴 a quota refusal arrives as `limit`, not as a transport rejection", async () => {
+  // These are different facts and the model acts on them differently: "you have hit the child limit"
+  // is something it can reason about, "rejected" means its worker is stale and nothing it does helps.
+  // Collapsing them would tell a model it hit a quota when the truth was a stale lease.
+  const spawner: SessionSpawner.Interface = {
+    spawn: () => Effect.fail(new SessionSpawner.SpawnLimitError({ reason: "children", depth: 4, limit: 4 })),
+  }
+  const reply = await Effect.runPromise(
+    SessionWorkerInteractionBridge.handle({
+      permission: unusedPermission,
+      question: unusedQuestion,
+      spawner,
+      lease,
+      message: spawnRequest,
+    }),
+  )
+  expect(reply).toMatchObject({ type: "spawn-result", outcome: "limit", reason: "children", depth: 4, limit: 4 })
+})
+
+test("the optional fields ride through, and absent ones stay absent", async () => {
+  let saw: Record<string, unknown> | undefined
+  const spawner: SessionSpawner.Interface = {
+    spawn: (input) => {
+      saw = input as unknown as Record<string, unknown>
+      return Effect.succeed({ id: SessionSchema.ID.make("ses_child"), started: false })
+    },
+  }
+  await Effect.runPromise(
+    SessionWorkerInteractionBridge.handle({
+      permission: unusedPermission,
+      question: unusedQuestion,
+      spawner,
+      lease,
+      message: { ...spawnRequest, input: { text: "t", agent: "plan", permissionMode: "ask" } },
+    }),
+  )
+  expect(saw?.agent).toBe("plan")
+  expect(saw?.permissionMode).toBe("ask")
+  // An absent option must not become an explicit `undefined` — `resolveConfig` narrows against the
+  // parent chain, and a present-but-undefined field is not the same as inheriting.
+  expect("model" in (saw ?? {})).toBe(false)
 })

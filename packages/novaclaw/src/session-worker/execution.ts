@@ -25,6 +25,7 @@ import { SessionWorkerEventBridge } from "./event-bridge"
 import { SessionWorkerExecutionBridge } from "./execution-bridge"
 import { SessionWorkerInteractionBridge } from "./interaction-bridge"
 import * as SessionWorkerSupervisor from "./supervisor"
+import { SessionSpawner } from "@novaclaw/core/session/spawner"
 
 const failure = (outcome: SessionWorkerSupervisor.Outcome) =>
   outcome.type === "failed"
@@ -104,6 +105,9 @@ export const layer = Layer.effect(
                   return yield* SessionWorkerInteractionBridge.handle({
                     permission: yield* PermissionV2.Service,
                     question: yield* QuestionV2.Service,
+                    // Location-scoped, exactly like the two above — which is why spawn rides this
+                    // channel rather than getting one of its own.
+                    spawner: yield* SessionSpawner.Service,
                     lease,
                     message,
                   })

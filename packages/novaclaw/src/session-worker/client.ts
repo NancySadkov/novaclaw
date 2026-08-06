@@ -13,6 +13,7 @@ export type Request = Extract<
       | "device-report"
       | "permission-assert"
       | "question-ask"
+      | "spawn-child"
       | "execution-advance"
       | "execution-tool-dispatched"
       | "execution-tool-settled"
@@ -36,6 +37,7 @@ export type Reply = Extract<
       | "device-rejected"
       | "permission-result"
       | "question-result"
+      | "spawn-result"
       | "execution-result"
   }
 >
@@ -47,6 +49,7 @@ const replyTypes: Record<Request["type"], ReadonlySet<Reply["type"]>> = {
   "device-report": new Set(["device-reported", "device-rejected"]),
   "permission-assert": new Set(["permission-result"]),
   "question-ask": new Set(["question-result"]),
+  "spawn-child": new Set(["spawn-result"]),
   "execution-advance": new Set(["execution-result"]),
   "execution-tool-dispatched": new Set(["execution-result"]),
   "execution-tool-settled": new Set(["execution-result"]),

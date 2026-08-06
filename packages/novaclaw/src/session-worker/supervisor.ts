@@ -53,9 +53,14 @@ export interface Input {
     >
   >
   readonly onInteractionRequest?: (
-    message: Extract<SessionWorkerProtocol.WorkerMessage, { readonly type: "permission-assert" | "question-ask" }>,
+    message: Extract<
+      SessionWorkerProtocol.WorkerMessage,
+      { readonly type: "permission-assert" | "question-ask" | "spawn-child" }
+    >,
     signal: AbortSignal,
-  ) => Promise<Extract<SessionWorkerProtocol.HostMessage, { readonly type: "permission-result" | "question-result" }>>
+  ) => Promise<
+    Extract<SessionWorkerProtocol.HostMessage, { readonly type: "permission-result" | "question-result" | "spawn-result" }>
+  >
   readonly onExecutionRequest?: (
     message: SessionWorkerProtocol.ExecutionRequest,
     signal: AbortSignal,
@@ -250,7 +255,11 @@ export function spawn(input: Input): Handle {
         return
       }
       case "permission-assert":
-      case "question-ask": {
+      case "question-ask":
+      // Spawn rides the INTERACTION channel because it needs the same thing those two do:
+      // the host's LOCATION services. `SessionSpawner` is a location node, and this is the
+      // only worker->host path already resolved inside `runLocated`.
+      case "spawn-child": {
         if (!ready) {
           finish({ type: "protocol-error", detail: "interaction request arrived before ready" })
           return
@@ -258,7 +267,17 @@ export function spawn(input: Input): Handle {
         const request = input.onInteractionRequest
         if (!request) {
           send(
-            message.type === "permission-assert"
+            message.type === "spawn-child"
+              ? {
+                  version: SessionWorkerProtocol.VERSION,
+                  type: "spawn-result",
+                  sessionID: input.lease.sessionID,
+                  attemptID: input.lease.attemptID,
+                  generation: input.lease.generation,
+                  requestID: message.requestID,
+                  outcome: "rejected",
+                }
+              : message.type === "permission-assert"
               ? {
                   version: SessionWorkerProtocol.VERSION,
                   type: "permission-result",

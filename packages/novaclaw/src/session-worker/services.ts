@@ -6,6 +6,7 @@ import { PermissionV2 } from "@novaclaw/core/permission"
 import { QuestionV2 } from "@novaclaw/core/question"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
+import { SessionSpawner } from "@novaclaw/core/session/spawner"
 import { EventManifest } from "@novaclaw/schema/event-manifest"
 import type { SessionWorkerCapabilities } from "./capabilities"
 import { makeGlobalNode, makeLocationNode } from "@novaclaw/core/effect/app-node"
@@ -21,6 +22,7 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
   readonly permission: PermissionV2.Interface
   readonly question: QuestionV2.Interface
   readonly scheduler: SessionScheduler.Interface
+  readonly spawner: SessionSpawner.Interface
 } {
   const events: EventV2.Interface = {
     publish: (definition, data, options) => {
@@ -123,7 +125,50 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
     snapshot: () => Effect.die(unavailable("scheduler snapshot")),
   }
 
-  return { events, permission, question, scheduler }
+  /**
+   * 🔴 Spawn is the ONE kernel operation that concerns two sessions, so in a worker it is an RPC.
+   *
+   * The real spawner publishes the child's creation event and admits the child's first input — both
+   * carrying an id that is not this worker's lease, which `event-bridge.ts` rejects by design. That
+   * left `spawn` dead on the live runner between 2026-08-04 and this replacement. The host owns the
+   * operation now, exactly as it owns permission decisions.
+   *
+   * ⚠️ **`input.parentID` is intentionally DROPPED.** The host uses the lease's session id, so a
+   * worker spawns children of itself and of nothing else. Passing it would imply a choice that does
+   * not exist, and a reader who saw it forwarded would reasonably assume forging one is possible.
+   */
+  const spawner: SessionSpawner.Interface = {
+    spawn: (request) =>
+      Effect.promise(() =>
+        capabilities.spawnChild({
+          text: request.text,
+          ...(request.agent === undefined ? {} : { agent: request.agent }),
+          ...(request.model === undefined ? {} : { model: request.model }),
+          ...(request.systemPromptOverride === undefined ? {} : { systemPromptOverride: request.systemPromptOverride }),
+          ...(request.type === undefined ? {} : { type: request.type }),
+          ...(request.priority === undefined ? {} : { priority: request.priority }),
+          ...(request.permissionMode === undefined ? {} : { permissionMode: request.permissionMode }),
+        }),
+      ).pipe(
+        Effect.flatMap((reply) => {
+          if (reply.outcome === "spawned" && reply.child !== undefined)
+            return Effect.succeed({ id: reply.child, started: reply.started ?? false })
+          // A quota refusal is the spawner's OWN typed failure and must arrive as one, so the tool
+          // reports "you hit the child limit" rather than an opaque transport error.
+          if (reply.outcome === "limit")
+            return Effect.fail(
+              new SessionSpawner.SpawnLimitError({
+                reason: reply.reason ?? "children",
+                depth: reply.depth ?? 0,
+                limit: reply.limit ?? 0,
+              }),
+            )
+          return Effect.die(unavailable("spawn"))
+        }),
+      ),
+  }
+
+  return { events, permission, question, scheduler, spawner }
 }
 
 export function replacements(capabilities: SessionWorkerCapabilities.Capabilities): LayerNode.Replacements {
@@ -146,6 +191,14 @@ export function replacements(capabilities: SessionWorkerCapabilities.Capabilitie
       makeLocationNode({
         service: QuestionV2.Service,
         layer: Layer.succeed(QuestionV2.Service, services.question),
+        deps: [],
+      }),
+    ],
+    [
+      SessionSpawner.node,
+      makeLocationNode({
+        service: SessionSpawner.Service,
+        layer: Layer.succeed(SessionSpawner.Service, services.spawner),
         deps: [],
       }),
     ],

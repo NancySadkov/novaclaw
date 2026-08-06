@@ -13,6 +13,11 @@ import { SessionWorkerInteractionBridge } from "./interaction-bridge"
 import { SessionWorkerExecutionBridge } from "./execution-bridge"
 import type { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { activeWorkerCount, spawn } from "./supervisor"
+import { SessionSpawner } from "@novaclaw/core/session/spawner"
+
+const spawnerStub: SessionSpawner.Interface = {
+  spawn: () => Effect.die(new Error("spawn is not exercised by this test")),
+}
 
 const fixture = path.resolve(import.meta.dir, "../../test/fixtures/session-worker.ts")
 const entrypointFixture = path.resolve(import.meta.dir, "../../test/fixtures/session-worker-entrypoint.ts")
@@ -201,7 +206,7 @@ test("permission and question waits execute in host-owned services", async () =>
     heartbeatTimeoutMs: 2_000,
     onInteractionRequest: (message) => {
       handled.push(message.type)
-      return Effect.runPromise(SessionWorkerInteractionBridge.handle({ permission, question, lease, message }))
+      return Effect.runPromise(SessionWorkerInteractionBridge.handle({ permission, question, spawner: spawnerStub, lease, message }))
     },
   })
   expect(await worker.result).toEqual({ type: "settled" })

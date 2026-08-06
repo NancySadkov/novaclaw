@@ -79,6 +79,29 @@ export const PermissionResult = Schema.Struct({
   feedback: Schema.String.pipe(Schema.optional),
 }).annotate({ identifier: "SessionWorker.PermissionResult" })
 
+/**
+ * The host's answer to a `spawn-child`.
+ *
+ * `outcome` mirrors the spawner's own contract rather than flattening it: a `limit` refusal is a
+ * NORMAL result the tool reports to the model (depth/children/rate quotas), while `rejected` means the
+ * request never reached the spawner — a stale lease or a parent that is not this worker's session.
+ * Collapsing the two would tell a model it hit a quota when the truth is that its worker is stale.
+ */
+export const SpawnResultMessage = Schema.Struct({
+  ...Identity,
+  type: Schema.Literal("spawn-result"),
+  requestID: Schema.String,
+  outcome: Schema.Literals(["spawned", "limit", "rejected"]),
+  /** Present only when `outcome` is "spawned". */
+  child: SessionSchema.ID.pipe(Schema.optional),
+  /** Whether the child was handed to a live executor — `SpawnResult.started`. */
+  started: Schema.Boolean.pipe(Schema.optional),
+  /** Present only when `outcome` is "limit": which quota, and the numbers behind it. */
+  reason: Schema.Literals(["depth", "children", "rate"]).pipe(Schema.optional),
+  depth: Schema.Finite.pipe(Schema.optional),
+  limit: Schema.Finite.pipe(Schema.optional),
+}).annotate({ identifier: "SessionWorker.SpawnResult" })
+
 export const QuestionResult = Schema.Struct({
   ...Identity,
   type: Schema.Literal("question-result"),
@@ -114,6 +137,7 @@ export const HostMessage = Schema.Union([
   DeviceRejected,
   PermissionResult,
   QuestionResult,
+  SpawnResultMessage,
   ExecutionResult,
 ]).annotate({ identifier: "SessionWorker.HostMessage" })
 export type HostMessage = typeof HostMessage.Type
@@ -180,6 +204,38 @@ export const DeviceReport = Schema.Struct({
   type: Schema.Literal("device-report"),
   costTokens: Schema.Finite,
 }).annotate({ identifier: "SessionWorker.DeviceReport" })
+
+/**
+ * 🔴 **Spawn is a worker→host OPERATION, not an event the worker publishes.**
+ *
+ * A worker may only publish events for its OWN session — `session-worker/event-bridge.ts` rejects
+ * anything else, and its test asserts that. Spawn is the one kernel operation that legitimately
+ * concerns two sessions: it creates a child record and admits the child's first input, both carrying
+ * an id that is not the worker's. Publishing those from the worker was rejected outright, which left
+ * `spawn` dead on the live runner from 2026-08-04 until this message existed.
+ *
+ * So it takes the shape `permission-assert` already established: the worker ASKS, the host performs
+ * the operation under host authority and replies. ⚠️ **`parentID` is deliberately NOT in this payload
+ * — the host uses the LEASE's session id.** A worker can therefore spawn children of itself and of
+ * nothing else, and that property is structural rather than checked.
+ */
+/** The payload half of `SpawnChild` — what a worker may ask for. */
+export type SpawnChildInput = typeof SpawnChild.Type["input"]
+
+export const SpawnChild = Schema.Struct({
+  ...Identity,
+  type: Schema.Literal("spawn-child"),
+  requestID: Schema.String,
+  input: Schema.Struct({
+    text: Schema.String,
+    agent: Schema.String.pipe(Schema.optional),
+    model: Model.Ref.pipe(Schema.optional),
+    systemPromptOverride: Schema.String.pipe(Schema.optional),
+    type: Schema.Literals(["interactive", "sub-agent", "auto-prompting", "goal-oriented"]).pipe(Schema.optional),
+    priority: Schema.Finite.pipe(Schema.optional),
+    permissionMode: Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"]).pipe(Schema.optional),
+  }),
+}).annotate({ identifier: "SessionWorker.SpawnChild" })
 
 export const PermissionAssert = Schema.Struct({
   ...Identity,
@@ -275,6 +331,7 @@ export const WorkerMessage = Schema.Union([
   DeviceRelease,
   DeviceReport,
   PermissionAssert,
+  SpawnChild,
   QuestionAsk,
   ExecutionAdvance,
   ExecutionToolDispatched,

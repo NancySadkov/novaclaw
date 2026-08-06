@@ -30,6 +30,16 @@ export interface Capabilities {
     input: QuestionV2.AskInput,
     signal?: AbortSignal,
   ) => Promise<Extract<Reply, { readonly type: "question-result" }>>
+  /**
+   * Spawn a child of THIS session.
+   *
+   * ⚠️ No `parentID` — see `SpawnChild` in the protocol. The host uses the lease's session id, so a
+   * worker can spawn children of itself and of nothing else, structurally rather than by a check.
+   */
+  readonly spawnChild: (
+    input: SessionWorkerProtocol.SpawnChildInput,
+    signal?: AbortSignal,
+  ) => Promise<Extract<Reply, { readonly type: "spawn-result" }>>
   readonly execution: SessionExecutionAttempt.CurrentInterface
 }
 
@@ -124,6 +134,15 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
         signal,
       )
       if (reply.type !== "permission-result") throw new Error(`unexpected ${reply.type} reply to permission assertion`)
+      return reply
+    },
+    spawnChild: async (request, signal) => {
+      const reply = await input.client.request(
+        // The identity spread carries the lease; the host reads parentID from it, never from here.
+        { ...identity, type: "spawn-child", requestID: requestID(), input: request },
+        signal,
+      )
+      if (reply.type !== "spawn-result") throw new Error(`unexpected ${reply.type} reply to spawn`)
       return reply
     },
     askQuestion: async (request, signal) => {
