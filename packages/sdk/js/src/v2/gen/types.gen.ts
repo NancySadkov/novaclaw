@@ -3250,6 +3250,11 @@ export type ConfigV2Watcher = {
   ignore?: Array<string>
 }
 
+export type ConfigComputerInfo = {
+  display?: string
+  screenshotPath?: string
+}
+
 export type ConfigV2FormatterEntry = {
   disabled?: boolean
   command?: Array<string>
@@ -3623,6 +3628,7 @@ export type ConfigInfo = {
   }
   snapshots?: boolean
   watcher?: ConfigV2Watcher
+  computer?: ConfigComputerInfo
   /**
    * Enable built-in formatters or configure formatter overrides
    */

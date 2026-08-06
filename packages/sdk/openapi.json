@@ -29810,6 +29810,18 @@
         },
         "additionalProperties": false
       },
+      "ConfigComputerInfo": {
+        "type": "object",
+        "properties": {
+          "display": {
+            "type": "string"
+          },
+          "screenshotPath": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "ConfigV2FormatterEntry": {
         "type": "object",
         "properties": {
@@ -30843,6 +30855,9 @@
           },
           "watcher": {
             "$ref": "#/components/schemas/ConfigV2Watcher"
+          },
+          "computer": {
+            "$ref": "#/components/schemas/ConfigComputerInfo"
           },
           "formatter": {
             "anyOf": [

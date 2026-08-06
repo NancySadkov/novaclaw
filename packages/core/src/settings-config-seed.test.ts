@@ -46,6 +46,7 @@ const VALID: Record<string, unknown> = {
   resource_pressure: { warning: { memory_used_fraction: 0.75 }, floor: { disk_free_bytes: 512 * 1024 * 1024 } },
   mcp: {},
   compaction: {},
+  computer: { display: ":99" },
   context: { enabled: true },
   provider_connection: { stall_timeout_ms: 300_000 },
   permissions: [{ action: "bash", resource: "*", effect: "ask" }],

@@ -32,6 +32,7 @@ import { ConfigServer } from "./config/server"
 import { ConfigStrict } from "./config/strict"
 import { ConfigToolOutput } from "./config/tool-output"
 import { ConfigToolRouting } from "./config/tool-routing"
+import { ConfigComputer } from "./config/computer"
 import { ConfigWatcher } from "./config/watcher"
 import { SettingsConfigSeed } from "./settings-config-seed"
 import { SettingsConfigStore } from "./settings-config-store"
@@ -89,6 +90,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   watcher: ConfigWatcher.Info.pipe(Schema.optional).annotate({
     description: "Filesystem watcher configuration",
+  }),
+  computer: ConfigComputer.Info.pipe(Schema.optional).annotate({
+    description: "Computer-use display binding (the `computer` tool declines when unset)",
   }),
   formatter: ConfigFormatter.Info.pipe(Schema.optional).annotate({
     description: "Enable built-in formatters or configure formatter overrides",

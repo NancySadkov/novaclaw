@@ -275,6 +275,11 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   server: "privileged",
   // The shell every terminal and `bash` call runs through. Ruling 4 names it.
   shell: "privileged",
+  // Which SCREEN the `computer` tool drives. An execution surface in ruling 4's sense, and the
+  // sharpest one we have: moving it from a sandbox display to `:0` promotes the agent from clicking
+  // inside a disposable container to clicking on the operator's real desktop -- which is P6, and the
+  // build order's sequence law puts P6 behind the P4 guardrails. A value, but not an inert one.
+  computer: "privileged",
   // Paths or URLs skills are discovered from — a skill is instructions the model reads, and a URL
   // entry fetches them from a third party.
   skills: "privileged",

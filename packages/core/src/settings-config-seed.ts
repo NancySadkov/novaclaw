@@ -45,6 +45,7 @@ export const SETTINGS_KEYS = [
   "server",
   "snapshots",
   "watcher",
+  "computer",
   "formatter",
   "attachments",
   "tool_output",

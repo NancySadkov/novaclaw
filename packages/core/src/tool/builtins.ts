@@ -31,6 +31,7 @@ import { ToolManualTool } from "./tool-manual"
 import { ToolCallTool } from "./tool-call"
 import { ToolSearchTool } from "./tool-search"
 import { TrashTool } from "./trash"
+import { ComputerTool } from "./computer"
 import { WebFetchTool } from "./webfetch"
 import { WebSearchTool } from "./websearch"
 import { SpawnTool } from "./spawn"
@@ -97,6 +98,7 @@ export const locationLayer = Layer.mergeAll(
   ToolCallTool.layer,
   ToolSearchTool.layer,
   TrashTool.layer,
+  ComputerTool.layer,
   WebFetchTool.layer,
   WebSearchTool.layer,
   WriteTool.layer,
@@ -137,6 +139,7 @@ export const node = makeLocationNode({
     ToolCallTool.node,
     ToolSearchTool.node,
     TrashTool.node,
+    ComputerTool.node,
     WebFetchTool.node,
     WebSearchTool.node,
     WriteTool.node,

@@ -184,6 +184,7 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "agents",
       "autoupdate",
       "commands",
+      "computer",
       "default_agent",
       "experimental",
       "formatter",

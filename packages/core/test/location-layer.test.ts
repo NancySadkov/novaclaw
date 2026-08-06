@@ -48,6 +48,7 @@ const residentTools = [
   "application_context",
   "apply_patch",
   "bash",
+  "computer",
   "define_tool",
   "edit",
   "exit",
