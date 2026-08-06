@@ -197,7 +197,18 @@ export function summaryPrompt(input: {
     "Write a short, plain-language report: what was produced or changed (name the files), how it",
     "was verified, and — if the run stopped early — exactly what state the folder is in and what",
     "remains to be done. Base every claim ONLY on the journal below; if the journal doesn't show",
-    "something was verified, don't claim it works. 3-8 sentences, no headings, no apologies.",
+    "something was verified, don't claim it works.",
+    // 🔴 Measured 2026-08-06, and the reason this rule is now stated in BOTH directions. The line
+    // above has always governed positive claims. A live Strict run then closed with "the final state
+    // of note.txt remains unknown" and "without confirmed changes to note.txt" — while the file on
+    // disk contained exactly what the task had asked for. Every word of that is a claim the journal
+    // does not support, made in the NEGATIVE, so the old rule did not touch it. A false "I could not
+    // confirm it" is as much a ruling-2 violation as a false "it works", and it is worse for trust:
+    // the user is told that correct work is doubtful.
+    "Never state that something is unknown, unconfirmed, or may not have happened either — that is",
+    "also a claim, and the journal has to support it. If the journal does not mention a file or an",
+    "outcome, say NOTHING about it rather than guessing in either direction.",
+    "3-8 sentences, no headings, no apologies.",
   ].join("\n")
   const outcome =
     input.status === "done"

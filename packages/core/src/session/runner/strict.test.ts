@@ -271,6 +271,38 @@ describe("SessionStrict.summaryPrompt (P14.1 final answer)", () => {
     expect(p.user).toContain("…") // long lines truncated
     expect(p.user).toContain("Files applied to the folder: a.c, b.c")
   })
+
+  // 🔴 The rule that a LIVE run forced, 2026-08-06. A Strict session against holo3.1 finished its
+  // work correctly — `note.txt` on disk contained exactly what the task asked for — and then closed
+  // with "the final state of note.txt remains unknown" and "without confirmed changes to note.txt".
+  //
+  // The system text already said *base every claim only on the journal; if it doesn't show something
+  // was verified, don't claim it works*. That governs claims in ONE direction. The model's sentence
+  // was a claim in the other: an assertion of doubt the journal equally fails to support. Ruling 2
+  // does not care which way a false description points, and this direction is worse for trust — the
+  // user is told that correct work is questionable.
+  test("🔴 the prompt forbids NEGATIVE speculation, not just positive claims", () => {
+    const p = SessionStrict.summaryPrompt({
+      goal: "g",
+      status: "blocked",
+      reason: "completion_unverified",
+      milestones: [],
+      keptBest: false,
+    })
+    // Both directions must be stated, because the model demonstrably obeyed one and not the other.
+    expect(p.system).toContain("don't claim it works")
+    expect(p.system.toLowerCase()).toContain("unknown")
+    expect(p.system.toLowerCase()).toContain("unconfirmed")
+    // And it must say what to do INSTEAD — a prohibition with no alternative gets filled by a guess.
+    expect(p.system).toContain("say NOTHING about it")
+  })
+
+  test("the instruction survives every outcome, because the failure was on a blocked run", () => {
+    for (const status of ["done", "blocked"] as const)
+      expect(
+        SessionStrict.summaryPrompt({ goal: "g", status, milestones: [], keptBest: false }).system,
+      ).toContain("say NOTHING about it")
+  })
 })
 
 // The chat notice the user actually reads at the end of a run. It claimed "the best verified state
