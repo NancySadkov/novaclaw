@@ -23,8 +23,17 @@ import path from "node:path"
 const ROOT = path.resolve(import.meta.dir, "..", "..", "..", "..")
 const GUARDED = ["packages/core/src/computer", "packages/core/src/tool/computer.ts"]
 
-/** Ways to start a process that are NOT the gate. `docker` is named because it is the live temptation. */
-const RAW_EXEC = /\b(spawnSync|spawn|execSync|execFile|Bun\.spawn|child_process)\b|["'`]docker\b/
+/**
+ * Ways to start a process that are NOT the gate.
+ *
+ * ⚠️ **Deliberately does NOT match the word `docker`.** A first version did, on the reasoning that the
+ * substrate probes used `docker exec` and a lifted probe line was the thing to catch. That conflates
+ * *mentioning docker* with *bypassing the gate*, and it would have blocked the decided design: the
+ * tool addresses a container substrate by handing `["docker", "exec", …]` to `HostExec.plan`, which is
+ * a correct use of the gate, not a violation of it. A lifted probe line is caught anyway, because it
+ * would arrive as `spawnSync`/`Bun.spawn` — the actual danger is the exec API, never the argv content.
+ */
+const RAW_EXEC = /\b(spawnSync|spawn|execSync|execFile|Bun\.spawn|child_process)\b/
 
 const sources = (relative: string): ReadonlyArray<{ file: string; text: string }> => {
   const full = path.join(ROOT, relative)
@@ -74,10 +83,12 @@ describe("Computer Use execs only through HostExec (ruling 6)", () => {
   test("the guard bites (negative control)", () => {
     expect(RAW_EXEC.test(code('const r = spawnSync("xdotool", args)'))).toBe(true)
     expect(RAW_EXEC.test(code('await Bun.spawn(["scrot", "-o", path])'))).toBe(true)
-    expect(RAW_EXEC.test(code('const argv = ["docker", "exec", id, ...cmd]'))).toBe(true)
-    // …and a comment mentioning one is not a call.
-    expect(RAW_EXEC.test(code("// the probe used docker exec; the shipped path must not"))).toBe(false)
+    // …and a comment mentioning an exec API is not a call.
+    expect(RAW_EXEC.test(code("// the probe used spawnSync; the shipped path must not"))).toBe(false)
     // …nor is the legitimate shape.
     expect(RAW_EXEC.test(code('HostExec.plan({ shape: { kind: "argv", argv } })'))).toBe(false)
+    // 🔴 A docker argv handed to the GATE is correct use, not a violation. This is the decided way
+    // to address a container substrate, and an earlier version of this guard would have blocked it.
+    expect(RAW_EXEC.test(code('HostExec.plan({ shape: { kind: "argv", argv: ["docker", "exec", id] } })'))).toBe(false)
   })
 })
