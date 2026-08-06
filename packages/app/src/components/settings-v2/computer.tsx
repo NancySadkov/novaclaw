@@ -6,6 +6,7 @@ import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { effectOf, withEffect, type PermissionEffect, type PermissionRule } from "./computer-rules"
 
 // The Computer Use settings tab.
 //
@@ -32,13 +33,6 @@ interface ComputerConfig {
   screenshotPath?: string
 }
 
-type PermissionEffect = "allow" | "ask" | "deny"
-
-interface PermissionRule {
-  action?: string
-  resource?: string
-  effect?: PermissionEffect
-}
 
 export const SettingsComputerV2: Component = () => {
   const language = useLanguage()
@@ -55,10 +49,7 @@ export const SettingsComputerV2: Component = () => {
    * later, shadowed rule as if it were in force, which is a settings screen lying about the system
    * it configures.
    */
-  const currentEffect = createMemo<PermissionEffect>(() => {
-    const match = rules().find((rule) => rule.action === "computer")
-    return match?.effect ?? "ask"
-  })
+  const currentEffect = createMemo<PermissionEffect>(() => effectOf(rules()))
 
   const effectOptions = createMemo(() =>
     (["ask", "allow", "deny"] as const).map((value) => ({
@@ -80,11 +71,7 @@ export const SettingsComputerV2: Component = () => {
     // Replace this action's rule rather than appending: appending to an ordered, first-match-wins
     // list would leave the OLD rule in front and the new one dead — a control that appears to work
     // and changes nothing.
-    const next: PermissionRule[] = [
-      { action: "computer", resource: "*", effect },
-      ...rules().filter((rule) => rule.action !== "computer"),
-    ]
-    await save({ permissions: next }, language.t("settings.computer.save.failed"))
+    await save({ permissions: withEffect(rules(), effect) }, language.t("settings.computer.save.failed"))
   }
 
   return (
