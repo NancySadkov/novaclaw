@@ -672,24 +672,43 @@ export const layer = Layer.effect(
         names.length < 2
           ? []
           : yield* Effect.gen(function* () {
+              // Stage 2 rides the SAME budget ladder as stage 1 above, for the same reason: an empty
+              // completion here is read as "no relationships", which is a legitimate answer and
+              // therefore indistinguishable from a truncated one. Without this the graph quietly
+              // accumulates disconnected nodes and the multi-hop win never materialises — the exact
+              // outcome `LINK_SYSTEM`'s own note says the edges exist to prevent.
               const linkChunks: string[] = []
-              yield* llm
-                .stream(
-                  LLM.request({
-                    model,
-                    system: [SystemPart.make(SessionExtract.LINK_SYSTEM)],
-                    messages: [Message.user(SessionExtract.buildLinkPrompt(exchange, names))],
-                    tools: [],
-                    generation: { maxTokens: 512 },
-                    http: { body: NO_THINKING }, // else the budget goes to reasoning and the reply is EMPTY
-                  }),
-                )
-                .pipe(
-                  Stream.runForEach((event) => {
-                    if (LLMEvent.is.textDelta(event)) linkChunks.push(event.text)
-                    return Effect.void
-                  }),
-                )
+              let linkCap = 512
+              for (let attempt = 0; ; attempt++) {
+                linkChunks.length = 0
+                let finish: FinishReason | undefined
+                const attemptCap = linkCap
+                yield* llm
+                  .stream(
+                    LLM.request({
+                      model,
+                      system: [SystemPart.make(SessionExtract.LINK_SYSTEM)],
+                      messages: [Message.user(SessionExtract.buildLinkPrompt(exchange, names))],
+                      tools: [],
+                      generation: { maxTokens: attemptCap },
+                      http: { body: NO_THINKING }, // else the budget goes to reasoning and the reply is EMPTY
+                    }),
+                  )
+                  .pipe(
+                    Stream.runForEach((event) => {
+                      if (LLMEvent.is.textDelta(event)) linkChunks.push(event.text)
+                      else if (event.type === "finish") finish = event.reason
+                      return Effect.void
+                    }),
+                  )
+                const verdict = UtilityCap.decide({ finish, text: linkChunks.join(""), attempt, cap: attemptCap })
+                if (!verdict.retry) break
+                yield* Log.event("session.memory.extract.retry", {
+                  "session.id": sessionID,
+                  "extract.cap": verdict.cap,
+                })
+                linkCap = verdict.cap
+              }
               return SessionExtract.parseLinks(linkChunks.join(""), names)
             }).pipe(Effect.catchCause(() => Effect.succeed([] as SessionExtract.ExtractedLink[])))
       // `parseLinks` already guaranteed both endpoints are names from `names`, so every lookup here
