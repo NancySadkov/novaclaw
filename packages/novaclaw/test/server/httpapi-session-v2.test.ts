@@ -103,7 +103,7 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
   // the busy/idle bracket. We assert the OBSERVABLE V2-routing contract over the
   // instance /event stream (which carries the raw V2 `session.next.*` events plus
   // the handler's SessionStatus busy/idle):
-  //   1. `session.next.prompted` reaches the stream  -> the prompt went through
+  //   1. `session.next.prompt.admitted` reaches the stream -> the prompt went through
   //      sessionV2.prompt (the legacy runner never emits session.next.* events).
   //   2. busy is published BEFORE the fork, then idle ALWAYS settles the turn —
   //      even when the V2 turn errors — because the handler's `ensuring(idle)` is
@@ -152,7 +152,18 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
               const payload = record(record(event).payload ?? event)
               const type = payload.type
               if (type === "server.connected") Deferred.doneUnsafe(ready, Effect.void)
-              if (type === "session.next.prompted") {
+              // 🔴 `session.next.prompted` is the WRONG event for this assertion. It is published
+              // only on PROMOTION (`SessionInput.promoteSteers` / `promoteNextQueued`) — when a queued
+              // input is picked up by a running turn. This test deliberately uses a model the V2
+              // Catalog cannot resolve (see the note above), so the turn settles via the error path
+              // and the input is admitted but never promoted. The test was asserting an event that
+              // its own scenario guarantees will not arrive; pinned as Windows flakiness until
+              // 2026-08-07, and the probe confirmed `prompt.admitted` DOES arrive.
+              //
+              // `session.next.prompt.admitted` is what the stated contract actually needs: the
+              // rationale in the note is "the legacy runner never emits session.next.* events", and
+              // admission is the first such event on the V2 path.
+              if (type === "session.next.prompt.admitted") {
                 promptedCount++
                 if (promptedCount === 1) Deferred.doneUnsafe(sawPrompted, Effect.void)
                 if (promptedCount >= 2) Deferred.doneUnsafe(sawPromptedAgain, Effect.void)
@@ -179,7 +190,7 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
           // 1. routed to V2: the V2 runner emitted session.next.prompted.
           yield* awaitWithTimeout(
             Deferred.await(sawPrompted),
-            "session.next.prompted not seen — not routed to V2",
+            "session.next.prompt.admitted not seen — not routed to V2",
             "10 seconds",
           )
           // 2. idle ALWAYS settles the turn (here via the error path).
@@ -212,7 +223,10 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
             })
             return result.response.status
           })
-          expect(summarizeStatus).toBe(200)
+          // 204, not 200: `session.compact` declares `success: HttpApiSchema.NoContent`
+          // (`protocol/groups/session.ts`), so 204 IS its success status. The comment above states
+          // the actual intent — "no 400" — and this asserted a status the endpoint never returns.
+          expect(summarizeStatus).toBe(204)
         }),
       ),
     30_000,
