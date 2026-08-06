@@ -147,7 +147,6 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  * This list may only ever get SHORTER. It was 14 before this change.
  */
 export const FORKED_WIDGETS: readonly string[] = [
-  "avatar",
   "button",
   "dialog",
   "diff-changes",
@@ -185,7 +184,7 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/components/composer/strict-control.tsx": ["button"],
   "app/src/components/composer/variant-control.tsx": ["select"],
   "app/src/components/debug-bar.tsx": ["tooltip"],
-  "app/src/components/dialog-edit-project.tsx": ["avatar", "button", "dialog", "icon"],
+  "app/src/components/dialog-edit-project.tsx": ["button", "dialog", "icon"],
   "app/src/components/dialog-fork.tsx": ["dialog"],
   "app/src/components/dialog-release-notes.tsx": ["button", "dialog"],
   "app/src/components/dialog-select-directory-v2.tsx": ["icon"],
@@ -278,7 +277,7 @@ const V1_COMPONENT_CEILING = 38
 
 /** Measured totals, pinned so the ledger stays a measurement rather than an aspiration. */
 const V1_CALL_SITE_FILES = 87
-const V1_CALL_SITE_PAIRS = 160
+const V1_CALL_SITE_PAIRS = 159
 
 // ---------------------------------------------------------------------------------------------
 // The sweep. Pure functions first so the negative controls can drive them without touching disk.
@@ -550,7 +549,7 @@ describe("the fork's DEPTH can only shrink", () => {
     expect(OBSERVED_PAIRS, "the observed (file, widget) pair count moved — reconcile V1_CALL_SITES").toBe(
       V1_CALL_SITE_PAIRS,
     )
-    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(13)
+    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(12)
   })
 
   test("both sides are genuinely live — this is a fork, not a finished migration", () => {
