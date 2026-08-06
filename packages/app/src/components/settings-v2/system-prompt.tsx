@@ -7,7 +7,6 @@ import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import "./settings-v2.css"
 
 // B4 — the System Prompt settings tab. Exposes the composed prompt's EDITABLE
 // layers: (1) persona — rename the agent (Nova→anything) + replace the B3 base

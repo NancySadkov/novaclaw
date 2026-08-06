@@ -1,6 +1,5 @@
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
 import { type ComponentProps, type JSXElement, type ParentProps, Show, children, splitProps } from "solid-js"
-import "./dialog-v2.css"
 
 export interface DialogProps extends ParentProps {
   /** "content" hugs the children in BOTH axes and centers them (tour/placeholder-style cards);

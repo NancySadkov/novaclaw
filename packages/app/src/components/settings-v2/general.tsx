@@ -25,7 +25,6 @@ import { Link } from "../link"
 import { DialogExpertise } from "./dialog-expertise"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import "./settings-v2.css"
 
 type ShellOption = {
   path: string

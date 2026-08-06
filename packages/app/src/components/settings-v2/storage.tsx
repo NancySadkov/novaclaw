@@ -8,7 +8,6 @@ import { showToast } from "@/utils/toast"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { InstanceResources } from "./instance-resources"
-import "./settings-v2.css"
 
 // The Storage tab — what this instance costs in RAM/on disk, and WHERE it keeps things.
 //

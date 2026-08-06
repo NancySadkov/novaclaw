@@ -30,7 +30,6 @@ import {
 } from "@/utils/messenger-api"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import "./settings-v2.css"
 
 // Settings → Messengers (notes/messenger-plan.md §6.1) — "which messenger apps can NovaClaw use?"
 // A headline lay feature (Normal level): connect NovaClaw to Telegram & friends so the agent can

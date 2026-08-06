@@ -6,7 +6,6 @@ import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import "./settings-v2.css"
 
 // QE-D — the Quality Enforcement settings tab. Edits the QE-C config: the
 // provisioned check commands the runner executes at write/turn boundaries, the

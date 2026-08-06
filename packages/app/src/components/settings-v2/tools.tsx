@@ -9,7 +9,6 @@ import { useServerSync } from "@/context/server-sync"
 import { useConfirm } from "@/components/dialog-confirm"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import "./settings-v2.css"
 
 // P4 (4E) — the Tools settings tab: define/edit/enable/disable GLOBAL ad-hoc tool recipes
 // (`adhoc_tools` config — an array, so updateConfig replaces it wholesale; deletion works,

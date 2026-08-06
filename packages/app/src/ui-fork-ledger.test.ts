@@ -721,17 +721,7 @@ describe("the seven deleted v1 components stay deleted", () => {
    * that component's call sites, because their overrides start working. Remove the path here in the
    * same commit. Adding a path is refused: a new stylesheet should be layered from birth.
    */
-  const UNLAYERED_STYLESHEETS = [
-    "packages/app/src/components/settings-v2/settings-v2.css",
-    "packages/app/src/components/titlebar-tab-nav.css",
-    "packages/ui/src/v2/components/button-v2.css",
-    "packages/ui/src/v2/components/dialog-v2.css",
-    "packages/ui/src/v2/components/icon-button-v2.css",
-    "packages/ui/src/v2/components/tabs-v2.css",
-    "packages/ui/src/v2/components/text-input-v2.css",
-    "packages/ui/src/v2/components/textarea-v2.css",
-    "packages/ui/src/v2/components/tooltip-v2.css",
-  ]
+  const UNLAYERED_STYLESHEETS: string[] = []
 
   test("🔴 every component stylesheet is either LAYERED or pinned — the list can only shrink", () => {
     const found = new Set<string>()

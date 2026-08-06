@@ -7,7 +7,6 @@ import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import "./settings-v2.css"
 
 // P2 (2D) — the Introspection settings tab. A cadence-gated judge model watches a running
 // session and steers an interjection when it answers "yes, this agent is stuck" (2A/2B).

@@ -3,7 +3,6 @@ import { useLanguage } from "@/context/language"
 import type { ShellStatus } from "@/utils/fs-api"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import "./settings-v2.css"
 // ⚠️ TYPE-ONLY. `@novaclaw/core/agent-jail` imports `node:child_process` at module scope, so a VALUE
 // import of it would follow the renderer into the browser bundle. `import type` is erased before the
 // bundler ever sees it, which is what lets the state machine below be typed by the kernel's own

@@ -7,7 +7,6 @@ import { type Component, Show, createEffect, createSignal, onCleanup, onMount } 
 import { useLanguage } from "@/context/language"
 import { type ServerConnection } from "@/context/server"
 import { useServerManagementController } from "../dialog-select-server"
-import "./settings-v2.css"
 
 export const DialogServerV2: Component<{
   mode: "add" | "edit"

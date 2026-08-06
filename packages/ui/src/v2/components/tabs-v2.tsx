@@ -1,7 +1,6 @@
 import { Tabs as Kobalte } from "@kobalte/core/tabs"
 import { Show, splitProps, type JSX } from "solid-js"
 import type { ComponentProps, ParentProps, Component } from "solid-js"
-import "./tabs-v2.css"
 
 export interface TabsV2Props extends ComponentProps<typeof Kobalte> {
   variant?: "normal" | "pill" | "settings"

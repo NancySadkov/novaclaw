@@ -6,7 +6,6 @@ import { useLanguage, type TranslationKey } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import "./settings-v2.css"
 
 // The Web Search settings tab (todo.md → "a built-in fallback so it just works for lay users").
 // Advanced/Developer level: a normal person never needs to touch this — search just works via the

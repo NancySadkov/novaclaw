@@ -20,7 +20,6 @@ import { Link } from "../link"
 import { ThemeSwatches } from "./parts/theme-swatches"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import "./settings-v2.css"
 
 // The Appearance tab — the look/feel of the app (color scheme, theme, fonts) plus Sound Effects,
 // lifted out of General so the app-wide config there isn't cluttered with per-device presentation.

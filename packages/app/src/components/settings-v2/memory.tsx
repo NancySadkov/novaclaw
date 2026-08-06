@@ -21,7 +21,6 @@ import {
 } from "@/utils/memory-api"
 import { buildMemoryBundle, importScope, parseMemoryBundle } from "./memory-bundle"
 import { SettingsProfileSection } from "./profile"
-import "./settings-v2.css"
 
 // The Memory tab (notes/kb-graph-plan.md §5) — the lay-first home for "what NovaClaw remembers".
 // Out of the box memory is fully automatic (recall + extract + consolidate under the hood); this tab

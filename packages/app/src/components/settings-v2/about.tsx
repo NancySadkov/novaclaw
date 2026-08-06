@@ -2,7 +2,6 @@ import { type Component, For } from "solid-js"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
-import "./settings-v2.css"
 
 // The About tab — a small piece of pride and the license attribution the third-party MIT/Apache
 // components require. The product name is set in a fancy branded wordmark (gold gradient serif); the

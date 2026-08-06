@@ -6,7 +6,6 @@ import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import "./settings-v2.css"
 
 // P3 (3D) — the Affective settings tab. When enabled, a per-session mood (appraised from tool
 // errors, repeats, time-on-task) modulates sampling around the model's configured baseline and

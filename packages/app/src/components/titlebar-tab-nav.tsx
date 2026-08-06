@@ -11,7 +11,6 @@ import { SessionTabAvatar } from "@/pages/layout/session-tab-avatar"
 import { showToast } from "@/utils/toast"
 import type { SessionV2Info as Session } from "@novaclaw/sdk/v2"
 import { canOpenTabRename, forwardTabRef } from "./titlebar-tab-gesture"
-import "./titlebar-tab-nav.css"
 
 export function TabNavItem(props: {
   ref?: Ref<HTMLDivElement>

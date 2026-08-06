@@ -1,5 +1,4 @@
 import { type ComponentProps, splitProps } from "solid-js"
-import "./textarea-v2.css"
 
 export interface TextareaV2Props extends ComponentProps<"textarea"> {
   /** Error styling for the field and value text. */

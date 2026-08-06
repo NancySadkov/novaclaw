@@ -7,7 +7,6 @@ import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import "./settings-v2.css"
 
 // The Profile section inside Memory — the friendly, normal-level home for "who am I". The user types
 // their name and a short "about me"; the Enable switch is the master consent gate. When enabled, the model can look the

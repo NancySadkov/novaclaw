@@ -6,7 +6,6 @@ import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import "./settings-v2.css"
 
 // The Strict-mode settings tab (taxonomy E6 — every JH option user-surfaced). Strict mode is the
 // Juvenile Harness posture for weak/local models (jh.md): the HARNESS owns decomposition, per-step

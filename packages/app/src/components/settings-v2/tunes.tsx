@@ -7,7 +7,6 @@ import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import "./settings-v2.css"
 
 type ContextCategory = "system" | "messages" | "retrieval" | "memory" | "tool_output"
 type ContextProfileName = "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"

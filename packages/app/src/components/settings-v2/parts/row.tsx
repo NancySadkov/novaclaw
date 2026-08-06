@@ -1,7 +1,6 @@
 import { Show, type Component, type JSX } from "solid-js"
 import { useExpertise } from "@/context/expertise"
 import type { ExpertiseLevel } from "@/context/settings"
-import "../settings-v2.css"
 
 export interface SettingsRowV2Props {
   title: string | JSX.Element

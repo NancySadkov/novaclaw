@@ -1,6 +1,5 @@
 import { type ComponentProps, Show, splitProps } from "solid-js"
 import { Icon } from "./icon"
-import "./text-input-v2.css"
 
 export interface TextInputV2Props extends Omit<ComponentProps<"input">, "type"> {
   /** Show the trailing copy action. */
