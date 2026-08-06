@@ -121,3 +121,110 @@ describe("the novaclaw-core-test-* temp namespace has exactly one producer", () 
     expect(producers(sources)).toEqual([OWNER])
   })
 })
+
+/**
+ * **A PID-named path in the SHARED temp root needs a reaper — the third hazard, added 2026-08-06.**
+ *
+ * The guard above deliberately scoped itself to one prefix, on the reasoning that other prefixes
+ * "collide with nothing". That is true of the two hazards it lists (leaking into a reaped namespace,
+ * and being reaped out from under a live run) and false of a third nobody had written down:
+ *
+ *   · **PID REUSE POISONS THE NEXT RUN.** `messenger-initiation-budget.test.ts` named its database
+ *     `os.tmpdir()/novaclaw-initiation-${process.pid}.db` and cleaned up only in `Effect.ensuring`,
+ *     which a KILLED process never reaches. The gate has been killed mid-run repeatedly, so the files
+ *     accumulated — **257 of them, measured in `%TEMP%` on 2026-08-06, dating back to 07-31**. Windows
+ *     recycles PIDs, so a later run eventually inherited a dead run's number and opened a database
+ *     whose daily budget was ALREADY SPENT. The first charge then answered `exhausted` where the test
+ *     expects `charged`.
+ *
+ * That failure cost two batches, and the reason is worth stating: it did not look like a leak. It
+ * looked like a clean content regression in an unrelated subsystem, on the same screen as a real one,
+ * and only re-running in isolation distinguished them. A leak that merely wastes disk is tolerable; a
+ * leak that reaches into a later run's assertions is not.
+ *
+ * So the rule is not about a prefix, it is about a SHAPE: interpolating `process.pid` into a path
+ * rooted directly at `os.tmpdir()`. Two fixtures do exactly that and are correct, because both own a
+ * PID-liveness reap (`reapAbandonedRoots`, `reapAbandonedTemplateRoots`) — which is precisely what
+ * makes the shape safe and what its allowlist entry certifies.
+ *
+ * ⚠️ Naming a file by PID *inside an already-unique directory* is NOT this hazard and is not flagged:
+ * `messenger-gateway.test.ts` does it inside a `mkdtemp` root, where the pid is redundant rather than
+ * load-bearing.
+ */
+describe("a PID-named path in the shared temp root is reaped, or it does not exist", () => {
+  /** `os.tmpdir()` (however aliased) and `process.pid` in ONE expression — the shared-root shape. */
+  const SHARED_ROOT_PID = /tmpdir\(\)[^\n]*process\.pid/
+
+  /**
+   * Files allowed to build one, each because it reaps abandoned siblings by PID liveness.
+   * ⚠️ Adding a name here is a claim that the file REAPS. Do not add one to silence the test.
+   */
+  const REAPERS: ReadonlyArray<string> = [
+    "test/fixture/tmpdir.ts", // reapAbandonedRoots()
+    "test/fixture/git.ts", // reapAbandonedTemplateRoots()
+    "test/preload.ts", // reaps novaclaw-test-home/<pid> by PID liveness (added 2026-08-06)
+  ]
+
+  // ⚠️ An allowlist entry is a CLAIM, so it is checked rather than trusted. The first draft of this
+  // list certified `test/preload.ts` as "swept by the fixture roots above" — which was simply false;
+  // nothing reaped `novaclaw-test-home` and it had been accumulating a directory per killed run. The
+  // entry now holds because the file was FIXED, and this test is what stops the next author from
+  // silencing a failure by typing a name here instead.
+  const REAP_EVIDENCE = /process\.kill\([^)]*,\s*0\)/
+
+  const offenders = (files: ReadonlyArray<{ name: string; text: string }>): string[] =>
+    files.filter((f) => f.name !== SELF && !REAPERS.includes(f.name) && SHARED_ROOT_PID.test(f.text)).map((f) => f.name)
+
+  test("no unreaped file names a PID path at the temp root", () => {
+    expect(
+      offenders(sources).map(
+        (name) =>
+          `${name} builds a temp path from os.tmpdir() + process.pid without a reaper. A killed run ` +
+          "leaves that file behind and PID reuse hands it to a LATER run as live state — the 257 " +
+          'abandoned novaclaw-initiation-*.db files, and the "exhausted vs charged" flake they caused. ' +
+          'Use `import { tmpdir } from ".../fixture/tmpdir"`, which is mkdtemp-unique and reaped.',
+      ),
+    ).toEqual([])
+  })
+
+  test("the guard bites, and does not flag the safe shape (negative control)", () => {
+    expect(
+      offenders([
+        {
+          name: "test/offender.test.ts",
+          text: 'const f = path.join(os.tmpdir(), `thing-${process.pid}.db`)',
+        },
+        // Unique-dir-then-pid: redundant, not dangerous — the directory is already per-process.
+        {
+          name: "test/safe-unique-dir.test.ts",
+          text: 'const D = fs.mkdtempSync(path.join(os.tmpdir(), "x-"))\nconst f = path.join(D, `y-${process.pid}.db`)',
+        },
+        // Using the fixture is the sanctioned form.
+        { name: "test/converged.test.ts", text: 'import { tmpdir } from "../fixture/tmpdir"' },
+      ]),
+    ).toEqual(["test/offender.test.ts"])
+  })
+
+  test("the sweep can see the file that motivated this", () => {
+    // If the budget test ever regains the shape, the first test above must be able to catch it.
+    expect(sources.map((f) => f.name)).toContain("test/messenger-initiation-budget.test.ts")
+  })
+
+  test("every allowlisted file actually contains a PID-liveness reap", () => {
+    // The allowlist is the weak point of a ratchet like this: it is one edit away from becoming the
+    // place failures go to be silenced. So each entry must show the probe that justifies it.
+    const byName = new Map(sources.map((f) => [f.name, f.text]))
+    const unproven = REAPERS.filter((name) => {
+      const text = byName.get(name)
+      return text === undefined || !REAP_EVIDENCE.test(text)
+    })
+    expect(
+      unproven.map(
+        (name) =>
+          `${name} is allowlisted as a reaper but contains no \`process.kill(pid, 0)\` liveness probe. ` +
+          "Either it does not reap — in which case fix the file, not the list — or the probe moved and " +
+          "this evidence check needs updating deliberately.",
+      ),
+    ).toEqual([])
+  })
+})

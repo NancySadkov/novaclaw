@@ -28,4 +28,45 @@ process.env.NOVACLAW_DISABLE_MODELS_FETCH = "true"
  * data, state and cache together. PID-scoped, matching `test/fixture/tmpdir.ts`, so parallel runs cannot
  * collide and a leftover directory is attributable.
  */
-process.env.NOVACLAW_HOME = path.join(os.tmpdir(), "novaclaw-test-home", String(process.pid))
+const TEST_HOME_ROOT = path.join(os.tmpdir(), "novaclaw-test-home")
+process.env.NOVACLAW_HOME = path.join(TEST_HOME_ROOT, String(process.pid))
+
+/**
+ * 🔴 **Reap abandoned homes — PID-scoping without a reap is a LEAK that later poisons a run.**
+ *
+ * The comment above says the directory is "PID-scoped, matching `test/fixture/tmpdir.ts`". It matched
+ * that fixture's NAMING and not the half that makes the naming safe: the fixture reaps siblings whose
+ * process is gone, because `bun test` does not run `process.on("exit")` handlers, so a killed run
+ * cleans up nothing. Without a reap the directories accumulate, and since Windows recycles PIDs a
+ * later run eventually inherits a dead run's home — i.e. a previous run's state, presented as its own.
+ *
+ * That is not hypothetical. The same shape one directory over
+ * (`os.tmpdir()/novaclaw-initiation-<pid>.db`) left **257 abandoned files** by 2026-08-06 and produced
+ * a recurring gate failure that read as a content regression in messenger rather than as stale state.
+ * See `test/tmpdir-namespace.test.ts`, which now fails on the shape.
+ *
+ * Keyed on PID liveness, never on age: units run in their own processes, so an age sweep would delete
+ * a CONCURRENT run's home. `process.kill(pid, 0)` is the probe — no throw means alive, `ESRCH` means
+ * gone, `EPERM` means alive under another account and is left alone. A recycled PID only means one
+ * stale home survives a little longer.
+ */
+try {
+  const fs = require("fs") as typeof import("fs")
+  for (const entry of fs.readdirSync(TEST_HOME_ROOT)) {
+    const pid = Number(entry)
+    if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) continue
+    try {
+      process.kill(pid, 0)
+      continue // still running — not ours to delete
+    } catch (error) {
+      if ((error as { code?: string } | undefined)?.code === "EPERM") continue
+    }
+    try {
+      fs.rmSync(path.join(TEST_HOME_ROOT, entry), { recursive: true, force: true })
+    } catch {
+      // Another process may be reaping the same home; losing the race is fine.
+    }
+  }
+} catch {
+  // The root may not exist yet on a first run — nothing to reap.
+}

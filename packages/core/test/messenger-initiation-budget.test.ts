@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
 import nodeFs from "node:fs"
-import os from "node:os"
 import nodePath from "node:path"
 import { sql } from "drizzle-orm"
 import { Effect, Layer } from "effect"
@@ -9,6 +8,7 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { MessengerStore } from "@novaclaw/core/messenger/store"
 import { testEffect } from "./lib/effect"
+import { tmpdir } from "./fixture/tmpdir"
 
 /**
  * The DURABLE daily cold-start budget (AGENTS.md #9(b): starting a conversation needs explicit
@@ -195,7 +195,28 @@ describe("MessengerStore.chargeInitiation", () => {
 
   it.live("the budget survives the store that spent it — a second store over one file resumes it", () =>
     Effect.gen(function* () {
-      const file = nodePath.join(os.tmpdir(), `novaclaw-initiation-${process.pid}.db`)
+      // ⚠️ **This path used to be `os.tmpdir()/novaclaw-initiation-${process.pid}.db`, and that was
+      // the cause of a recurring "unrelated messenger failure" in the full gate.** Two facts
+      // combined: the only cleanup was the `Effect.ensuring` below, which a KILLED process never
+      // reaches (the gate has been killed mid-run more than once), and the name is keyed on a PID,
+      // which Windows recycles. A later run inheriting a dead run's PID opened a database whose day
+      // was ALREADY SPENT, so the very first charge answered `exhausted` where the test expects
+      // `charged`. Measured 2026-08-06: **257 abandoned `novaclaw-initiation-*.db` files** had
+      // accumulated in the temp root since 2026-07-31.
+      //
+      // It read exactly like a real regression in an unrelated subsystem, which is what made it
+      // expensive. The fix is to stop hand-rolling a temp path: `tmpdir()` is `mkdtemp`-unique per
+      // call AND reaped by PID-liveness (`test/fixture/tmpdir.ts` → `reapAbandonedRoots`), so a
+      // killed run's directory is collected by the next run instead of lying in wait.
+      //
+      // ⚠️ The ratchet that should have caught this only guards ONE prefix
+      // (`test/tmpdir-namespace.test.ts` pins `novaclaw-test-`), so a second hand-rolled prefix was
+      // invisible to it. See `tmpdir-namespace.test.ts` for the widened check.
+      const dir = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (handle) => Effect.promise(() => handle[Symbol.asyncDispose]()),
+      )
+      const file = nodePath.join(dir.path, "initiation.db")
       // Store #1 spends the day.
       const first = yield* Effect.gen(function* () {
         const store = yield* MessengerStore.Service
@@ -213,11 +234,11 @@ describe("MessengerStore.chargeInitiation", () => {
         // …and tomorrow is still tomorrow: durability must not also freeze the counter.
         expect((yield* store.chargeInitiation({ at: NOON + DAY, cap: CAP })).kind).toBe("charged")
       }).pipe(Effect.scoped, Effect.provide(overFile(file)))
-    }).pipe(
-      Effect.ensuring(
-        Effect.sync(() => discardDb(nodePath.join(os.tmpdir(), `novaclaw-initiation-${process.pid}.db`))),
-      ),
-    ),
+      // The WAL sidecars go before the scope closes: Windows holds the handle a moment past
+      // `close()`, and `tmpdir()`'s own dispose is a directory remove that would raise EBUSY on
+      // them. Best effort either way — the reaper is what makes correctness not depend on this.
+      yield* Effect.sync(() => discardDb(file))
+    }).pipe(Effect.scoped),
   )
 
   it.live("concurrent charges never oversell the day", () =>
