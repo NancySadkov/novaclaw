@@ -102,8 +102,11 @@ export function topConsumers(limit = 5): string[] {
   return rows
 }
 
-/** Windows commit charge vs limit — the pair that actually predicts the crash. */
-function windowsCommit(): { usedGb: number; limitGb: number } | undefined {
+/** How many times the commit probe may miss before the runner refuses. See `windowsCommit`. */
+const COMMIT_PROBE_ATTEMPTS = 3
+
+/** One attempt at the commit charge. `undefined` = this probe did not answer. */
+function windowsCommitOnce(): { usedGb: number; limitGb: number } | undefined {
   const script =
     "$os = Get-CimInstance Win32_OperatingSystem; " +
     "Write-Output (($os.TotalVirtualMemorySize - $os.FreeVirtualMemory)); Write-Output $os.TotalVirtualMemorySize"
@@ -118,6 +121,33 @@ function windowsCommit(): { usedGb: number; limitGb: number } | undefined {
     .filter((n) => Number.isFinite(n) && n > 0)
   if (usedKb === undefined || limitKb === undefined) return undefined
   return { usedGb: (usedKb * 1024) / 1024 ** 3, limitGb: (limitKb * 1024) / 1024 ** 3 }
+}
+
+/**
+ * Windows commit charge vs limit — the pair that actually predicts the crash.
+ *
+ * ⚠️ **Retried, because a single WMI miss used to discard a six-minute gate.** Measured 2026-08-06: a
+ * full run aborted with *"Windows commit pressure could not be measured"*, and both `Get-CimInstance`
+ * and `Get-WmiObject` answered normally seconds later — the box was at 22.6 GB free of 48.2 GB, i.e.
+ * nowhere near pressure. The refusal itself is RIGHT and stays: running a memory-heavy unit on an
+ * unmeasured machine is the 2026-07-20 hard crash waiting to happen. What was wrong is treating ONE
+ * transient miss as an answer.
+ */
+function windowsCommit(): { usedGb: number; limitGb: number } | undefined {
+  for (let attempt = 1; attempt <= COMMIT_PROBE_ATTEMPTS; attempt++) {
+    const reading = windowsCommitOnce()
+    if (reading) return reading
+    if (attempt < COMMIT_PROBE_ATTEMPTS) {
+      // Announced, because a silent pause before a refusal is indistinguishable from a slow unit —
+      // which is exactly how the 2026-08-06 abort read for ten minutes.
+      process.stdout.write(`  commit-pressure probe attempt ${attempt}/${COMMIT_PROBE_ATTEMPTS} did not answer — retrying\n`)
+      // Synchronous on purpose: this guard runs before any unit starts, so nothing may interleave.
+      spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Milliseconds 1000"], {
+        timeout: 5_000,
+      })
+    }
+  }
+  return undefined
 }
 
 /** Our own heavy jobs, by the command line that identifies them. */
@@ -191,9 +221,14 @@ export function check(argv: readonly string[] = process.argv, options: Options =
         ok: false,
         reason: "Windows commit pressure could not be measured",
         detail:
-          `NovaClaw could not read Win32_OperatingSystem.TotalVirtualMemorySize/FreeVirtualMemory.\n` +
+          `NovaClaw could not read Win32_OperatingSystem.TotalVirtualMemorySize/FreeVirtualMemory ` +
+          `on ${COMMIT_PROBE_ATTEMPTS} attempts a second apart.\n` +
           `The test runner fails closed because running a memory-heavy test without the crash-predicting ` +
-          `measurement would only guess that the machine is safe.`,
+          `measurement would only guess that the machine is safe.\n` +
+          // ⚠️ Says what to DO. The 2026-08-06 abort printed the fact and left the reader to work out
+          // whether the run had stopped or was merely slow — ten minutes of a six-minute gate.
+          `THE RUN HAS STOPPED — this is not a slow unit. If WMI answers now ` +
+          `(\`Get-CimInstance Win32_OperatingSystem\`), it was a transient miss and a re-run will pass.`,
       }
     if (commit && commit.usedGb / commit.limitGb > COMMIT_CEILING)
       return {
