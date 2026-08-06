@@ -56,6 +56,17 @@ export const MAX_RECOVERIES = 1
  */
 const LENGTH: FinishReason = "length"
 
+/**
+ * Did the provider stop because it ran out of output budget?
+ *
+ * Exported so a SECOND consumer can ask the question without naming the literal — `utility-cap.ts`
+ * needs it for a different decision (re-ask a utility pass with a bigger budget) than this module's
+ * (steer a conversational turn to continue). The ratchet in this file's test asserts that `"length"`
+ * appears in exactly one module under `session/`, and that guard is worth keeping rather than
+ * widening: two hand-rolled truncation checks are two things to keep in sync with the schema.
+ */
+export const isTruncated = (reason: string | undefined): boolean => reason === LENGTH
+
 /** Per-DRAIN recovery ledger. See `initialState` for why the drain is the right lifetime. */
 export interface State {
   recoveries: number

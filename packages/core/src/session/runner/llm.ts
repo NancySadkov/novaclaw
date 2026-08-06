@@ -8,6 +8,7 @@ import {
   Message,
   SystemPart,
   isContextOverflowFailure,
+  type FinishReason,
   type LLMRequest,
   type ProviderErrorEvent,
 } from "@novaclaw/llm"
@@ -86,6 +87,7 @@ import { AdhocGuidance } from "../../adhoc-tools/guidance"
 import { Affective } from "./affective"
 import { SessionDrive } from "./drive"
 import { FinishRecovery } from "./finish-recovery"
+import { UtilityCap } from "./utility-cap"
 import { ContextPack } from "./context-pack"
 import { ContextBudget } from "./context-budget"
 import {
@@ -581,24 +583,59 @@ export const layer = Layer.effect(
       const exchange = SessionExtract.buildExchange(yield* getContext(sessionID))
       if (!exchange) return
       const model = yield* models.resolve({ ...session, model: config.model as typeof session.model })
+      // ONE re-ask with a doubled budget when the pass spends everything and answers nothing.
+      //
+      // Measured 2026-08-06: a reasoning model cut off mid-think returns ZERO content chars, not a
+      // partial answer, and `parseExtraction` reads that emptiness as "nothing worth remembering" —
+      // so the pass silently records nothing. `NO_THINKING` below usually keeps us far from the
+      // cliff (it is honoured by holo3.1, which drops reasoning to 0 and completion to ~126), but it
+      // is a REQUEST: a growing class of models ignores it, and one that does puts this pass back on
+      // a cliff at ~450 with 512 to spend. `UtilityCap` is the mechanical backstop for that case.
+      //
+      // ⚠️ NOT `finish-recovery.ts`: that steers a truncated turn to CONTINUE from the cutoff, which
+      // is right for a conversational turn and impossible here — there is nothing to continue from
+      // when the content is zero chars. Re-asking with room is the shape that fits one JSON blob.
       const chunks: string[] = []
-      yield* llm
-        .stream(
-          LLM.request({
-            model,
-            system: [SystemPart.make(SessionExtract.SYSTEM)],
-            messages: [Message.user(exchange)],
-            tools: [],
-            generation: { maxTokens: 512 },
-            http: { body: NO_THINKING }, // else the budget goes to reasoning and the reply is EMPTY
-          }),
-        )
-        .pipe(
-          Stream.runForEach((event) => {
-            if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
-            return Effect.void
-          }),
-        )
+      let cap = 512
+      for (let attempt = 0; ; attempt++) {
+        chunks.length = 0
+        let finish: FinishReason | undefined
+        const attemptCap = cap
+        yield* llm
+          .stream(
+            LLM.request({
+              model,
+              system: [SystemPart.make(SessionExtract.SYSTEM)],
+              messages: [Message.user(exchange)],
+              tools: [],
+              generation: { maxTokens: attemptCap },
+              http: { body: NO_THINKING }, // else the budget goes to reasoning and the reply is EMPTY
+            }),
+          )
+          .pipe(
+            Stream.runForEach((event) => {
+              if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
+              else if (event.type === "finish") finish = event.reason
+              return Effect.void
+            }),
+          )
+        const verdict = UtilityCap.decide({ finish, text: chunks.join(""), attempt, cap: attemptCap })
+        if (!verdict.retry) {
+          // Ruling 2: an empty result that was a BUDGET reading must not look like an honest "[]".
+          if (chunks.join("").trim() === "")
+            yield* Log.event("session.memory.extract.giveup", {
+              "session.id": sessionID,
+              "extract.cause": UtilityCap.giveUpCause({ finish, text: "", attempt, cap: attemptCap }),
+              "extract.cap": attemptCap,
+            })
+          break
+        }
+        yield* Log.event("session.memory.extract.retry", {
+          "session.id": sessionID,
+          "extract.cap": verdict.cap,
+        })
+        cap = verdict.cap
+      }
       const scope = `session:${sessionID}`
       const rawExtraction = chunks.join("")
       // Distinguish "the model said there is nothing to remember" (a legitimate `[]`) from "the model

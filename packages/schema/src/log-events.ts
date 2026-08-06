@@ -1113,6 +1113,23 @@ export const EVENTS = {
     content: "none",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  "session.memory.extract.retry": {
+    level: "debug",
+    message: "memory extraction: empty completion on a `length` finish — re-asking with a larger budget",
+    attributes: { "session.id": "id", "extract.cap": "count" },
+    content: "none",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
+  // Ruling 2 — an empty extraction that was a BUDGET reading must be distinguishable from an honest
+  // "nothing worth remembering". `….empty` says the completion was empty; this says the pass gave up
+  // and why, so nobody raises a cap chasing a failure that was never about the cap.
+  "session.memory.extract.giveup": {
+    level: "warn",
+    message: "memory extraction: gave up after the budget ladder",
+    attributes: { "session.id": "id", "extract.cause": "id", "extract.cap": "count" },
+    content: "none",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.memory.extract.failed": {
     level: "warn",
     message: "memory extraction failed",
