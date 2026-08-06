@@ -81,7 +81,14 @@ export const WorktreeAdapter: WorkspaceAdapter = {
     const config = decodeWorktreeConfig(info)
     await AppRuntime.runPromise(
       provideContext(
-        Worktree.Service.use((svc) => svc.remove({ directory: config.directory })),
+        // 🔴 `force: true` is DELIBERATE here and must stay explicit. Removing a WORKSPACE is a
+        // whole-workspace teardown the operator asked for by name, and refusing it because a file is
+        // uncommitted would strand the workspace half-removed with no way to finish from this seam.
+        // The point of the flag is that the destructive choice is now visible at the call site that
+        // means it, instead of hardcoded inside `Worktree.remove` where every caller inherited it.
+        // ⚠️ If workspace removal ever grows a confirmation step, this is the line that should stop
+        // passing `force` and start asking.
+        Worktree.Service.use((svc) => svc.remove({ directory: config.directory, force: true })),
         context,
       ),
     )

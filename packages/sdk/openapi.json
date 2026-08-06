@@ -23535,6 +23535,7 @@
               "WorktreeCreateFailedError",
               "WorktreeStartCommandFailedError",
               "WorktreeRemoveFailedError",
+              "WorktreeDirtyError",
               "WorktreeResetFailedError",
               "WorktreeListFailedError"
             ]
@@ -23587,6 +23588,9 @@
         "properties": {
           "directory": {
             "type": "string"
+          },
+          "force": {
+            "type": "boolean"
           }
         },
         "required": ["directory"],

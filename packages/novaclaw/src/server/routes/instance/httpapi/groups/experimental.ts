@@ -35,6 +35,11 @@ const WorktreeErrorName = Schema.Union([
   Schema.Literal("WorktreeCreateFailedError"),
   Schema.Literal("WorktreeStartCommandFailedError"),
   Schema.Literal("WorktreeRemoveFailedError"),
+  // The SAFE refusal — a worktree holding uncommitted work, removable by retrying with `force`.
+  // ⚠️ It shares this envelope's 400 with the genuine failures, which is adequate but not ideal: a
+  // client cannot tell "you must confirm" from "it broke" without reading `name`. The pre-2.0 surface
+  // answered `400 {forceRequired: true}` for exactly this and clients keyed on that field.
+  Schema.Literal("WorktreeDirtyError"),
   Schema.Literal("WorktreeResetFailedError"),
   Schema.Literal("WorktreeListFailedError"),
 ])

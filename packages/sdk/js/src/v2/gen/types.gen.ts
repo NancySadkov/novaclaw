@@ -1264,6 +1264,7 @@ export type WorktreeError = {
     | "WorktreeCreateFailedError"
     | "WorktreeStartCommandFailedError"
     | "WorktreeRemoveFailedError"
+    | "WorktreeDirtyError"
     | "WorktreeResetFailedError"
     | "WorktreeListFailedError"
   data: {
@@ -1287,6 +1288,7 @@ export type Worktree = {
 
 export type WorktreeRemoveInput = {
   directory: string
+  force?: boolean
 }
 
 export type WorktreeResetInput = {

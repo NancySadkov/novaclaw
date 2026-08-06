@@ -12,6 +12,42 @@ const it = testEffect(LayerNode.compile(Worktree.node))
 const wintest = process.platform === "win32" ? it.instance : it.instance.skip
 
 describe("Worktree.remove", () => {
+  /**
+   * 🔴 Ruling 1 for the 2026-08-07 data-loss fix. `git worktree remove --force` was HARDCODED, so a
+   * worktree with uncommitted changes was deleted silently — git's own guard switched off at the one
+   * call site that would have used it. `force` now defaults to safe.
+   *
+   * ⚠️ Both halves are asserted deliberately. A test that only checks the refusal would pass against a
+   * `remove` that refuses everything, and one that only checks `force: true` would pass against the
+   * old unconditional behaviour. It is the PAIR that pins the default.
+   */
+  it.instance(
+    "🔴 refuses a worktree with uncommitted work, and removes it when forced",
+    () =>
+      Effect.gen(function* () {
+        const root = (yield* TestInstance).directory
+        const svc = yield* Worktree.Service
+        const name = `dirty-${Date.now().toString(36)}`
+        const dir = path.join(root, "..", name)
+        yield* Effect.addFinalizer(() =>
+          Effect.promise(() => fs.rm(dir, { recursive: true, force: true })).pipe(Effect.ignore),
+        )
+
+        yield* Effect.promise(() => $`git worktree add --detach ${dir} HEAD`.cwd(root).quiet())
+        // The work that must not be destroyed without saying so. Untracked is enough for git to refuse.
+        yield* Effect.promise(() => Bun.write(path.join(dir, "uncommitted.txt"), "work in progress"))
+
+        const refused = yield* svc.remove({ directory: dir }).pipe(Effect.flip)
+        expect(refused._tag).toBe("WorktreeDirtyError")
+        // The directory is still there — the refusal is not a partial removal reported as an error.
+        expect(yield* Effect.promise(() => fs.stat(dir).then(() => true).catch(() => false))).toBe(true)
+
+        expect(yield* svc.remove({ directory: dir, force: true })).toBe(true)
+        expect(yield* Effect.promise(() => fs.stat(dir).then(() => true).catch(() => false))).toBe(false)
+      }),
+    { git: true },
+  )
+
   it.instance(
     "continues when git remove exits non-zero after detaching",
     () =>
@@ -104,7 +140,11 @@ describe("Worktree.remove", () => {
         const before = yield* Effect.promise(() => $`git fsmonitor--daemon status`.cwd(dir).quiet().nothrow())
         expect(before.exitCode).toBe(0)
 
-        const ok = yield* svc.remove({ directory: dir })
+        // `force: true` because this test deliberately writes an untracked `tracked.txt` above to give
+        // fsmonitor something to watch — so the worktree is dirty BY CONSTRUCTION. Its subject is
+        // fsmonitor teardown, not the dirty guard added 2026-08-07, and without the flag it would be
+        // asserting the guard instead. ⚠️ This is exactly the caller the flag change was meant to surface.
+        const ok = yield* svc.remove({ directory: dir, force: true })
 
         expect(ok).toBe(true)
         expect(

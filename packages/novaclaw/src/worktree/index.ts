@@ -37,6 +37,22 @@ export type CreateInput = Schema.Schema.Type<typeof CreateInput>
 
 export const RemoveInput = Schema.Struct({
   directory: Schema.String,
+  /**
+   * 🔴 **Destroy uncommitted work. Defaults to FALSE, and that default is the point.**
+   *
+   * Until 2026-08-07 this field did not exist and `git worktree remove --force` was hardcoded, so a
+   * worktree with uncommitted changes was deleted silently, with no confirmation and no way to ask
+   * for the safe behaviour. Git has a guard for exactly this and it was switched off at the one call
+   * site that would have used it.
+   *
+   * ⚠️ **A flag that defaults to destructive is the same defect with a longer signature.** Callers
+   * that genuinely mean it pass `force: true` explicitly, which makes the destructive choice visible
+   * at the site that intends it rather than invisible in this module.
+   *
+   * The pre-2.0 HTTP surface had this as `force`, and answered `400 {forceRequired: true}` — the
+   * behaviour was lost in a migration rather than deliberately dropped (`todo/assorted.md`).
+   */
+  force: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "WorktreeRemoveInput" })
 export type RemoveInput = Schema.Schema.Type<typeof RemoveInput>
 
@@ -71,6 +87,19 @@ export class RemoveFailedError extends Schema.TaggedErrorClass<RemoveFailedError
   message: Schema.String,
 }) {}
 
+/**
+ * 🔴 The SAFE refusal: the worktree holds work that removing it would discard.
+ *
+ * Distinct from `RemoveFailedError` on purpose — this is not a failure, it is the guard working, and
+ * a caller can convert it into a completed removal by asking again with `force`. Folding it into
+ * `RemoveFailedError` would tell the operator "removal failed" for something that has not failed and
+ * would lose the one piece of information that makes it actionable.
+ */
+export class DirtyWorktreeError extends Schema.TaggedErrorClass<DirtyWorktreeError>()("WorktreeDirtyError", {
+  directory: Schema.String,
+  message: Schema.String,
+}) {}
+
 export class ResetFailedError extends Schema.TaggedErrorClass<ResetFailedError>()("WorktreeResetFailedError", {
   message: Schema.String,
 }) {}
@@ -85,6 +114,7 @@ export type Error =
   | CreateFailedError
   | StartCommandFailedError
   | RemoveFailedError
+  | DirtyWorktreeError
   | ResetFailedError
   | ListFailedError
 
@@ -420,7 +450,24 @@ export const layer: Layer.Layer<
       // Git may return the original casing when a caller supplied a normalized Windows path.
       yield* store.disposeDirectory(entry.path)
       yield* stopFsmonitor(entry.path)
-      const removed = yield* git(["worktree", "remove", "--force", entry.path], { cwd: ctx.worktree })
+      // ⚠️ `--force` ONLY when the caller asked for it. Without it git refuses a worktree with
+      // uncommitted changes or untracked files, which is precisely the guard we want: git already
+      // knows what "dirty" means here, so detecting it ourselves would be a second, drifting answer.
+      const removed = yield* git(
+        input.force === true ? ["worktree", "remove", "--force", entry.path] : ["worktree", "remove", entry.path],
+        { cwd: ctx.worktree },
+      )
+      // A refusal on the SAFE path is not a failure to report as one — it is the guard doing its job,
+      // and the caller needs to be told it can retry with `force`. Git says "contains modified or
+      // untracked files, use --force to delete it"; that text is git's, so match on the stable part.
+      if (removed.code !== 0 && input.force !== true && /use --force|not empty|contains modified/i.test(removed.stderr || removed.text || "")) {
+        return yield* new DirtyWorktreeError({
+          directory: entry.path,
+          message:
+            `Worktree has uncommitted changes or untracked files: ${entry.path}. ` +
+            `Removing it would discard that work — retry with force to delete it anyway.`,
+        })
+      }
       if (removed.code !== 0) {
         const next = yield* git(["worktree", "list", "--porcelain"], { cwd: ctx.worktree })
         if (next.code !== 0) {
