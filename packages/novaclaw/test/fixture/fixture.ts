@@ -304,6 +304,11 @@ const configStores = LayerNode.compile(
     ReferenceConfigStore.node,
     SettingsConfigStore.node,
     SkillConfigStore.node,
+    // 🔴 `Config.node` is here so the write below can INVALIDATE. Without it there is no Config
+    // service in this graph to invalidate, and `Config`'s global view is
+    // `cachedInvalidateWithTTL(…, Duration.infinity)` with nothing on the request path refreshing
+    // it — so a store write is real and permanently invisible to anything that reads config.
+    Config.node,
   ]),
 )
 
@@ -321,7 +326,45 @@ const applyConfig = (config: Partial<Config.Info>) =>
  * *distinct* layer build of `:memory:` is a separate, private database (verified directly — a second
  * top-level build reports `isEmpty === true` after the first has written).
  */
-const applyConfigScoped = (config: Partial<Config.Info>) => applyConfig(config).pipe(Effect.provide(configStores))
+/**
+ * 🔴 **Delegates to the SAME provisioner as the async path, and must keep doing so.**
+ *
+ * This used to be `applyConfig(config).pipe(Effect.provide(configStores))` — a write into a graph
+ * built right here. Two things were wrong with that and only the second is obvious:
+ *
+ *  · `configStores` had no `Config.node`, so there was no Config service to invalidate. `Config`'s
+ *    global view is `cachedInvalidateWithTTL(…, Duration.infinity)` and nothing on the request path
+ *    refreshes it.
+ *  · ⚠️ **and adding the invalidate did NOT fix it** — measured, not assumed. The write was landing in
+ *    a DIFFERENT DATABASE. `test/preload.ts` sets `NOVACLAW_DB=":memory:"`, where every *distinct*
+ *    layer build is a separate private database, and a locally-built group is a distinct build. So
+ *    the provisioned config was real, committed, and unreachable by the server under test.
+ *
+ * The result: every `it.instance({config})` test that then asked `HttpApiApp.webHandler()` about that
+ * config was asserting against an empty document. Four `mcp HttpApi` tests sat in the expected-failure
+ * ledger for it — and the file's ONE green test was the one asserting ABSENCE, which passed *because*
+ * provisioning was broken. A vacuous pass is the tell: it is the test that would survive the feature
+ * being deleted. See todo/test-speed.md.
+ *
+ * `provisionConfig` reaches the server's memo map, invalidates, and records into the `provisioned`
+ * ledger so `releaseConfig` can undo it — which is why the finalizer below is not optional.
+ */
+const applyConfigScoped = (config: Partial<Config.Info>) =>
+  Effect.gen(function* () {
+    // The AMBIENT graph. `Effect.provide` here resolves through the memo map the surrounding
+    // `Effect.provide(testLayer)` installed, so this reaches the Database and Config the test body's
+    // own `Config`/`Agent` reads use. Every `test/config/**` assertion depends on this arm.
+    yield* applyConfig(config).pipe(Effect.provide(configStores))
+    // The SERVER graph. `HttpApiApp.webHandler()` builds through the shared memo map
+    // (`@novaclaw/core/effect/memo-map`), which is a DIFFERENT build — and under
+    // `NOVACLAW_DB=":memory:"` a different build is a different database. `provisionConfig` also
+    // invalidates Config's infinite-TTL global view and records into `provisioned` so the release
+    // below can undo it.
+    yield* Effect.acquireRelease(
+      Effect.promise(() => provisionConfig(config)),
+      () => Effect.promise(() => releaseConfig().catch(() => undefined)),
+    )
+  })
 
 /**
  * Async flavour: build the store layers AND the Config service in the SHARED memo map.
