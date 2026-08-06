@@ -842,7 +842,6 @@ export const pack = (
 /** The runner-facing composition: budget from the request's own system/tools, then pack. */
 const enforceSystemBudgets = (input: {
   readonly system: ReadonlyArray<SystemPart>
-  readonly memoryRecall?: string
   readonly contextSize: number
   readonly profile: ContextBudget.Profile
 }): {
@@ -850,30 +849,7 @@ const enforceSystemBudgets = (input: {
   readonly changed: boolean
   readonly findings: SessionMessage.ContextFinding[]
 } => {
-  let system = [...input.system]
-  const memoryIndex =
-    input.memoryRecall === undefined ? -1 : system.findIndex((part) => part.text === input.memoryRecall)
-  const memoryBefore = memoryIndex < 0 ? 0 : Token.estimate(system[memoryIndex]!.text)
-  const memoryLimit = ContextBudget.cap(input.contextSize, input.profile.memory)
-  let memoryAfter = memoryBefore
-  let memoryAffected = 0
-  if (memoryIndex >= 0 && memoryBefore > memoryLimit) {
-    const lines = system[memoryIndex]!.text.split("\n")
-    let kept = ""
-    for (const line of lines) {
-      const candidate = kept.length === 0 ? line : `${kept}\n${line}`
-      if (Token.estimate(candidate) > memoryLimit) break
-      kept = candidate
-    }
-    if (kept.length === 0) system.splice(memoryIndex, 1)
-    else system[memoryIndex] = { ...system[memoryIndex]!, text: kept }
-    memoryAfter = kept.length === 0 ? 0 : Token.estimate(kept)
-    memoryAffected = 1
-  }
-
-  const systemBefore = input.system.reduce((sum, part, index) => {
-    return index === memoryIndex ? sum : sum + Token.estimate(part.text)
-  }, 0)
+  const systemBefore = input.system.reduce((sum, part) => sum + Token.estimate(part.text), 0)
   const systemLimit = ContextBudget.cap(input.contextSize, input.profile.system)
   const findings: SessionMessage.ContextFinding[] = []
   if (systemBefore > systemLimit)
@@ -886,17 +862,66 @@ const enforceSystemBudgets = (input: {
       affectedMessages: 0,
       protected: true,
     })
-  if (memoryBefore > memoryLimit)
-    findings.push({
-      kind: "category-budget",
-      category: "memory",
-      limitTokens: memoryLimit,
-      beforeTokens: memoryBefore,
-      afterTokens: memoryAfter,
-      affectedMessages: memoryAffected,
-      protected: memoryAfter > memoryLimit,
-    })
-  return { system, changed: memoryAffected > 0, findings }
+  return { system: [...input.system], changed: false, findings }
+}
+
+/**
+ * The `memory` category budget, applied to the TAIL-INJECTED auto-recall message.
+ *
+ * Auto-recall moved out of the system prompt on 2026-08-05 (see system-compose.ts's ⚠️ header): it is
+ * the one per-turn-volatile block, and in the system array it invalidated the server-side prefix cache
+ * for the entire request. The budget follows it here rather than being dropped — `input.memoryRecall`
+ * is the EXACT wire text the runner injected (provenance prefix included), so the match stays as
+ * precise as the old `part.text === memoryRecall` one was.
+ *
+ * Truncation is line-wise, as before, which keeps whole recalled memories rather than cutting one in
+ * half — and because the provenance prefix shares line 0 with the block's opening sentence, any
+ * surviving text still carries it. Nothing left to keep ⇒ the message is dropped entirely.
+ */
+const enforceMemoryBudget = (input: {
+  readonly messages: ReadonlyArray<Message>
+  readonly memoryRecall?: string
+  readonly contextSize: number
+  readonly profile: ContextBudget.Profile
+}): {
+  readonly messages: Message[]
+  readonly changed: boolean
+  readonly findings: SessionMessage.ContextFinding[]
+} => {
+  const messages = [...input.messages]
+  const index =
+    input.memoryRecall === undefined ? -1 : messages.findIndex((message) => firstTextPart(message) === input.memoryRecall)
+  if (index < 0) return { messages, changed: false, findings: [] }
+
+  const memoryLimit = ContextBudget.cap(input.contextSize, input.profile.memory)
+  const memoryBefore = Token.estimate(input.memoryRecall!)
+  if (memoryBefore <= memoryLimit) return { messages, changed: false, findings: [] }
+
+  let kept = ""
+  for (const line of input.memoryRecall!.split("\n")) {
+    const candidate = kept.length === 0 ? line : `${kept}\n${line}`
+    if (Token.estimate(candidate) > memoryLimit) break
+    kept = candidate
+  }
+  if (kept.length === 0) messages.splice(index, 1)
+  else messages[index] = Message.make({ ...messages[index]!, content: [Message.text(kept)] })
+  const memoryAfter = kept.length === 0 ? 0 : Token.estimate(kept)
+
+  return {
+    messages,
+    changed: true,
+    findings: [
+      {
+        kind: "category-budget",
+        category: "memory",
+        limitTokens: memoryLimit,
+        beforeTokens: memoryBefore,
+        afterTokens: memoryAfter,
+        affectedMessages: 1,
+        protected: memoryAfter > memoryLimit,
+      },
+    ],
+  }
 }
 
 export const packRequest = (input: {
@@ -912,12 +937,21 @@ export const packRequest = (input: {
       ? { system: [...input.request.system], changed: false, findings: [] }
       : enforceSystemBudgets({
           system: input.request.system,
+          contextSize,
+          profile: input.profile,
+        })
+  // The `memory` category budget now lands on the tail-injected recall MESSAGE, not a system part.
+  const memoryBudget =
+    input.profile === undefined
+      ? { messages: [...input.request.messages], changed: false, findings: [] }
+      : enforceMemoryBudget({
+          messages: input.request.messages,
           memoryRecall: input.memoryRecall,
           contextSize,
           profile: input.profile,
         })
   const result = pack(
-    input.request.messages,
+    memoryBudget.messages,
     budget({
       contextSize,
       system: systemBudget.system,
@@ -936,8 +970,8 @@ export const packRequest = (input: {
   )
   return {
     ...result,
-    changed: result.changed || systemBudget.changed,
-    findings: [...systemBudget.findings, ...result.findings],
+    changed: result.changed || systemBudget.changed || memoryBudget.changed,
+    findings: [...systemBudget.findings, ...memoryBudget.findings, ...result.findings],
     contextSize,
     system: systemBudget.system,
   }

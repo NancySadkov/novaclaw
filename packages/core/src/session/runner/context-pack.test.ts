@@ -364,12 +364,16 @@ describe("pack", () => {
 })
 
 describe("packRequest typed system shares", () => {
-  test("memory is line-trimmed while an oversized system prompt is protected", () => {
+  // Auto-recall lives in the message TAIL since 2026-08-05 (system-compose.ts's ⚠️ header): in the
+  // system array it was the one per-turn-volatile part and it invalidated the server-side prefix
+  // cache for the whole request. The `memory` category budget followed it, so this asserts the
+  // trimming against a tail MESSAGE — and that nothing puts recall back into the system prompt.
+  test("memory is line-trimmed in the message tail while an oversized system prompt is protected", () => {
     const memory = `Remember these:\n${Array.from({ length: 20 }, (_, index) => `- fact ${index} ${"x".repeat(80)}`).join("\n")}`
     const request = LLM.request({
       model: fakeModel,
-      system: [SystemPart.make("kernel instruction ".repeat(300)), SystemPart.make(memory)],
-      messages: [user("task")],
+      system: [SystemPart.make("kernel instruction ".repeat(300))],
+      messages: [user("task"), user(memory)],
     })
     const result = packRequest({
       request,
@@ -377,7 +381,14 @@ describe("packRequest typed system shares", () => {
       memoryRecall: memory,
       profile: { system: 1, messages: 40, retrieval: 10, memory: 1, tool_output: 20 },
     })
+    // Never in the system prompt — that is the whole point of the move.
     expect(result.system.some((part) => part.text === memory)).toBe(false)
+    // Present but TRIMMED: the full block is gone, a shorter prefix of it survives.
+    const memoryTexts = result.messages.flatMap((message) =>
+      message.content.flatMap((part) => (part.type === "text" && part.text.startsWith("Remember these:") ? [part.text] : [])),
+    )
+    expect(memoryTexts).toHaveLength(1)
+    expect(memoryTexts[0]!.length).toBeLessThan(memory.length)
     expect(result.findings).toContainEqual({
       kind: "category-budget",
       category: "system",
@@ -396,6 +407,18 @@ describe("packRequest typed system shares", () => {
       affectedMessages: 1,
       protected: false,
     })
+  })
+
+  // The property that makes tail injection SAFE. Auto-recall now rides the `user` role, and the
+  // packer's anchor (`isRealUserMessage`) is what survives eviction — so a bare recall block would
+  // be eligible to become "the user's message" and outlive the real one. The 1N provenance prefix
+  // is what prevents that, exactly as it does for the todo reminder and every steer.
+  test("a tail-injected recall block is not mistaken for the user speaking", () => {
+    const recall = SessionInput.applySteerProvenance("Relevant things you remember:\n- prefers tabs")
+    expect(isRealUserMessage(user(recall))).toBe(false)
+    // …and the real turn still anchors.
+    const messages = [user("the real task"), user(recall)]
+    expect(messages.findIndex(isRealUserMessage)).toBe(0)
   })
 })
 

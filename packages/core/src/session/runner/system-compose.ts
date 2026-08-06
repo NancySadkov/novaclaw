@@ -20,6 +20,32 @@ import type { PermissionMode } from "../config-resolve"
 // base context at the end. It rides the same `.filter(non-empty)` as every other part, so an absent
 // pre-prompt changes the composed prompt not at all (byte-identical to today).
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ⚠️ NOTHING PER-TURN-VOLATILE MAY BE COMPOSED HERE (2026-08-05).
+//
+// Every part in this array is a token-prefix of the message history that follows it, so a part whose
+// text changes between two consecutive turns of the SAME session throws away the server-side prefix
+// cache for the whole request — system prompt AND transcript. Prefix caching is linear: the first
+// differing token forfeits everything after it.
+//
+// Measured against the DGX Spark's DeepSeek V4 Flash server (notes/ds4-0731-q2-maintaince.md), on a
+// 13.5K-token prompt, cold prefill ≈ 1000 tok/s:
+//
+//     identical prompt re-sent .................. 15.1s -> 0.9s
+//     same prefix, grown tail (an agent turn) ... 15.1s -> 0.3s
+//     ONE token edited near the FRONT ........... 15.1s -> 12.9s   (i.e. no reuse at all)
+//
+// `memoryRecall` used to sit here, fifth of nine, ahead of the entire immutable base. It is recomputed
+// every turn from the newest user message and then LLM-reranked, so its text (often merely its ORDER)
+// changed on essentially every turn — which meant a coding session re-prefilled its whole prompt every
+// single turn. It now rides the message TAIL instead (session/runner/llm.ts), after the append-only
+// history, where a change costs only the tokens after it.
+//
+// The same rule is why `base` is an epoch-frozen baseline (context-epoch.ts) rather than a per-turn
+// render, and why `tool/profile.ts` keys its availability predicate on the privacy switch alone. If
+// you are adding a part here, it must be constant for the life of the session's context epoch.
+// ─────────────────────────────────────────────────────────────────────────────
+
 /** The header that makes the per-model pre-prompt read as "about this model" and keeps it from being
  *  mistaken for task instructions (todo/assorted.md: "Do not make it a dumping ground"). */
 export const MODEL_PREPROMPT_LABEL =
@@ -103,8 +129,6 @@ export interface SystemPromptParts {
   readonly expertiseHint?: string
   /** Tier scaffold for a weak model (tier-scaffold.ts). */
   readonly tierHint?: string
-  /** Auto-recalled memories (recall.ts). */
-  readonly memoryRecall?: string
   /** Per-session system-prompt override (the config-inheritance walk). */
   readonly systemPromptOverride?: string
   /** The selected agent's own system prompt. */
@@ -136,7 +160,6 @@ export const composeSystemParts = (parts: SystemPromptParts): string[] =>
     parts.modelPrePrompt,
     parts.expertiseHint,
     parts.tierHint,
-    parts.memoryRecall,
     parts.systemPromptOverride,
     parts.agentSystem,
     parts.projectScope,

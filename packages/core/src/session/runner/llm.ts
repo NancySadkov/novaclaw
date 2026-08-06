@@ -938,6 +938,13 @@ export const layer = Layer.effect(
         recalledMemories = ordered.slice(0, budget)
         memoryRecall = SessionRecall.formatRecall(recalledMemories)
       }
+      // The exact wire text of the tail-injected recall block. Carries the 1N provenance prefix for
+      // the same reason the todo reminder does: it rides the `user` role, and every real-user walk
+      // (context-pack's anchor, compaction, title generation) must not mistake it for speech. The
+      // packer matches on this exact string to apply the `memory` category budget, so it — not the
+      // bare `memoryRecall` — is what goes to `packRequest`.
+      const recallMessage =
+        memoryRecall === undefined ? undefined : SessionInput.applySteerProvenance(memoryRecall)
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
       const toolMaterialization = isLastStep
         ? undefined
@@ -1004,7 +1011,6 @@ export const layer = Layer.effect(
           modelPrePrompt,
           expertiseHint: harness.expertiseHint,
           tierHint,
-          memoryRecall,
           systemPromptOverride: config.systemPromptOverride,
           agentSystem: agent.info?.system,
           projectScope: SystemCompose.projectScopeSection(config.permissionMode),
@@ -1014,6 +1020,12 @@ export const layer = Layer.effect(
           ...toLLMMessages(context, model, modelCapabilities),
           // Derived provider context only — never a transcript row. The provenance prefix makes
           // every downstream real-user detector treat it as harness guidance rather than speech.
+          //
+          // Auto-recall rides the TAIL, not the system prompt (see system-compose.ts's ⚠️ header):
+          // it is recomputed and re-ranked every turn, so in the system array it invalidated the
+          // server-side prefix cache for the entire request — measured 0.3s -> 12.9s to first token
+          // on a 13.5K-token agent turn. Here, a change costs only the tokens after it.
+          ...(recallMessage === undefined ? [] : [Message.user(recallMessage)]),
           ...(todoReminder === undefined ? [] : [Message.user(todoReminder)]),
           ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : []),
         ],
@@ -1034,7 +1046,7 @@ export const layer = Layer.effect(
         profile: ContextBudget.enabled(harness.context, config.contextBudget)
           ? ContextBudget.resolve(harness.context, config.type)
           : undefined,
-        memoryRecall,
+        memoryRecall: recallMessage,
       })
       if (packed.dropped > 0)
         yield* Log.event("session.context.pack.evicted", {

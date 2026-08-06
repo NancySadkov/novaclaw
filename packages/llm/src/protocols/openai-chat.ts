@@ -498,11 +498,23 @@ const lowerMessages = Effect.fn("OpenAIChat.lowerMessages")(function* (request: 
 
 const lowerOptions = Effect.fn("OpenAIChat.lowerOptions")(function* (request: LLMRequest) {
   const store = OpenAIOptions.store(request)
+  // `prompt_cache_key` is the ONE cache lever this protocol has. OpenAI-style prefix caching is
+  // implicit and content-addressed, which is why `cache-policy.ts` deliberately skips inline
+  // `CacheHint` lowering for this route — but the key still earns its place: it routes same-key
+  // requests to the same backend, which is what makes an implicit cache actually hit. The runner
+  // has always computed it (session/runner/llm.ts) and only the Responses and OpenRouter protocols
+  // ever sent it; on the Chat path it was dropped on the floor.
+  //
+  // Absent unless the caller set it (spread, not `key: undefined`), and servers that do not know
+  // the field ignore it — verified 2026-08-05 against the local DeepSeek V4 Flash `ds4-server`,
+  // which returns 200 and does not list it in `/v1/models` `supported_parameters`.
+  const promptCacheKey = OpenAIOptions.promptCacheKey(request)
   const reasoningEffort = OpenAIOptions.reasoningEffort(request)
   if (reasoningEffort && !OpenAIOptions.isReasoningEffort(reasoningEffort))
     return yield* invalid(`OpenAI Chat does not support reasoning effort ${reasoningEffort}`)
   return {
     ...(store !== undefined ? { store } : {}),
+    ...(promptCacheKey ? { prompt_cache_key: promptCacheKey } : {}),
     ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
   }
 })
