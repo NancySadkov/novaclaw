@@ -256,6 +256,18 @@ export const RunCommand = effectCmd({
       : yield* Effect.promise(() => import("@/server/routes/instance/httpapi/server")).pipe(
           Effect.flatMap(({ HttpApiApp }) => HttpApiApp.buildWebHandler),
         )
+    // 🔴 **Everything below runs in plain `async`, OUTSIDE the Effect fiber — so a fresh
+    // `Effect.runPromise` in there starts with DEFAULT fiber references and silently loses
+    // `References.MinimumLogLevel`.** That is why `NOVACLAW_LOG_LEVEL=DEBUG` did nothing on this
+    // path: measured 2026-08-07 with a control three lines apart — a debug line emitted just above
+    // this boundary appears in the log, and the same line emitted via `Effect.runPromise` just below
+    // it does not.
+    //
+    // ⚠️ Capturing the CONTEXT is the fix rather than passing the level explicitly: references live in
+    // the context, so this restores everything the boundary drops, not just the one that was noticed.
+    // Anything served through `HttpApiApp`'s own layer is unaffected — that graph provides
+    // `Observability.layer` itself.
+    const captured = yield* Effect.context<never>()
     yield* Effect.promise(async () => {
       const thinking = args.thinking ?? false
 
@@ -498,8 +510,10 @@ export const RunCommand = effectCmd({
         if (!args.agent) return undefined
         const name = args.agent
 
+        // `Effect.provide(captured)` — see the boundary note above. Without it this run begins with
+        // default references and anything it logs at debug is dropped.
         const entry = await Effect.runPromise(
-          agentSvc.get(name).pipe(Effect.provideService(InstanceRef, localInstance)),
+          agentSvc.get(name).pipe(Effect.provideService(InstanceRef, localInstance), Effect.provide(captured)),
         )
         if (!entry) {
           UI.println(
