@@ -58,10 +58,15 @@ export const layer = Layer.unwrap(
       ),
       // ⚠️ NO `Layer.orDie` here, deliberately, and the type is what holds the line: the only
       // failure this composition could ever carry was `Logger.toFile`'s `PlatformError`, and
-      // `Logging.fileLoggerOrStderr` now absorbs that into the stderr sink. `OtlpLogger.make`'s
-      // error channel is `never`. So this layer's error channel is `never` by construction, and
       // re-adding an `orDie` would be re-arming the boot-killer this line used to be
       // (`notes/reports/startup-classification-2026-08-07.md` §5, finding 2).
+      //
+      // ⭐ **Phase 2 went one better: there is no longer a failure to absorb.** `Logger.toFile` is
+      // gone from the production path — `Logging.fileLoggerOrStderr` builds an
+      // `observability/log-file.ts` writer, whose every syscall is inside a `try` and which
+      // degrades to stderr instead of failing. `OtlpLogger.make`'s error channel is `never` too. So
+      // this layer's error channel is not merely emptied by a guard, it is empty because nothing
+      // under it can fail — an `orDie` here would have nothing to widen.
       Layer.merge(Layer.succeed(References.MinimumLogLevel, Logging.minimumLogLevel())),
     )
     // The tracing layer is a dynamic import of the OpenTelemetry SDK, so a broken or partial install

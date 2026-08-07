@@ -233,6 +233,24 @@ describe("retention — one bound, enforced over the directory", () => {
     expect(LogFile.segmentsIn(dir.path, "novaclaw")).toHaveLength(2)
   })
 
+  test("opening the log sweeps, so a quiet instance still honours the age limit", async () => {
+    await using dir = await tmpdir()
+    const file = path.join(dir.path, "novaclaw.log")
+    const now = Date.parse("2026-08-07T00:00:00.000Z")
+    const stale = plant(dir.path, "novaclaw", now - 40 * DAY, 10)
+    const fresh = plant(dir.path, "novaclaw", now - 1 * DAY, 10)
+
+    // Nothing is written and nothing rotates — the instance merely STARTS. At the measured
+    // 69.5 KB/day an 8 MB segment closes about every 16 weeks, so a rotation-only sweep would let a
+    // quiet instance keep months of history while Settings promised 30 days.
+    const writer = LogFile.open({ file, maxAgeMs: 30 * DAY, now: () => new Date(now) })
+    writer.close()
+
+    expect(fsSync.existsSync(stale)).toBe(false)
+    expect(fsSync.existsSync(fresh)).toBe(true)
+    expect(writer.rotations).toBe(0)
+  })
+
   test("reclaim(bytes) frees at least that much for the GC ladder, oldest first", async () => {
     await using dir = await tmpdir()
     const file = path.join(dir.path, "novaclaw.log")
@@ -364,7 +382,8 @@ describe("logging never takes the instance down", () => {
     // ⚠️ Read across the segments AND the active file, never the active file alone: a rotation can
     // land on the last write, and an empty active segment is then correct rather than data loss.
     // Asserting on `novaclaw.log` by itself made this test fail for a reason that was not a defect.
-    const all = segments.map((segment) => fsSync.readFileSync(segment.file, "utf8")).join("") + fsSync.readFileSync(file, "utf8")
+    const all =
+      segments.map((segment) => fsSync.readFileSync(segment.file, "utf8")).join("") + fsSync.readFileSync(file, "utf8")
     for (let index = 0; index < 20; index++) expect(all).toContain(`seq=${index}\n`)
   })
 

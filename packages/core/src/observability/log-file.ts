@@ -107,7 +107,8 @@ export const ROTATION_STUCK_MULTIPLE = 2
 export const TMP_GRACE_MS = 5 * 60 * 1000
 
 /** `2026-08-07T22:13:14.123Z` → `20260807T221314123Z`: fixed width, colon-free, sorts. */
-export const stampOf = (date: Date): string => date.toISOString().replaceAll("-", "").replaceAll(":", "").replace(".", "")
+export const stampOf = (date: Date): string =>
+  date.toISOString().replaceAll("-", "").replaceAll(":", "").replace(".", "")
 
 const STAMP = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(\d{3})Z$/
 
@@ -262,6 +263,18 @@ export class Writer {
     if (this.state.kind === "ok") {
       live.add(this)
       hookExit()
+      // ⚠️ **Rotation alone does not make the 30-day promise true.** At the measured 69.5 KB/day an
+      // 8 MB segment closes about every 16 weeks, so an instance that is merely *quiet* would keep
+      // segments for months past the age limit — the "the TTL is a retention FLOOR, not a deadline"
+      // shape `trash.ts` states honestly and this item cannot afford, because the number is going in
+      // a Settings row that says *"keep about 30 days"*.
+      //
+      // Opening the log IS a write event, so the sweep rides it. This is deliberately the same
+      // launch-triggered pattern §0.6 identified in electron-log and told us to copy: no daemon, no
+      // timer, and an instance nobody starts does no work. Total by construction (`sweep` cannot
+      // throw), and it is a `readdir` plus a `stat` over a few dozen entries — startup speed is
+      // first-class, and this is not where it goes.
+      this.sweep()
     }
   }
 

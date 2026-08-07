@@ -165,7 +165,10 @@ describe("Observability's file logger", () => {
     // CONTENT, not merely that something was written.
     expect(stderr).toContain("message=\"boot-degrade probe reached the logger\"")
     expect(stderr).toContain("level=INFO")
-    expect(stderr).toContain("[novaclaw] WARNING: could not open the log file")
+    // ⚠️ "write", not "open": Phase 2's writer degrades on the first failing WRITE as well as on a
+    // failing open, and one wording covers both. A message that only said "could not open" would be
+    // a false description of a disk that filled up an hour into the run (ruling 2).
+    expect(stderr).toContain("[novaclaw] WARNING: could not write the log file")
 
     // …and `Global` degraded IN PLACE rather than moving the instance for one bad subdirectory.
     expect(report.status.state).toBe("degraded")
