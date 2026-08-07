@@ -591,7 +591,7 @@ export const layer = Layer.effect(
           Effect.catchCause((cause) =>
             Log.event("session.title.early.failed", {
               "session.id": sessionID,
-              "session.cause": Cause.pretty(cause),
+              "session.cause": Log.fault(cause),
             }),
           ),
         ),
@@ -1805,7 +1805,7 @@ export const layer = Layer.effect(
         Effect.catchCause((cause) =>
           Log.event("session.changes.refresh.failed", {
             "session.id": sessionID,
-            "session.cause": Cause.pretty(cause),
+            "session.cause": Log.fault(cause),
           }),
         ),
       )
@@ -1813,7 +1813,7 @@ export const layer = Layer.effect(
         Effect.catchCause((cause) =>
           Log.event("session.title.generate.failed", {
             "session.id": sessionID,
-            "session.cause": Cause.pretty(cause),
+            "session.cause": Log.fault(cause),
           }),
         ),
       )
@@ -1821,7 +1821,7 @@ export const layer = Layer.effect(
         Effect.catchCause((cause) =>
           Log.event("session.memory.extract.failed", {
             "session.id": sessionID,
-            "session.cause": Cause.pretty(cause),
+            "session.cause": Log.fault(cause),
           }),
         ),
       )
@@ -1948,7 +1948,7 @@ export const layer = Layer.effect(
           Effect.catchDefect((defect) =>
             Log.event("session.strict.retention.failed", {
               "session.id": sessionID,
-              "session.defect": String(defect),
+              "session.defect": Log.fault(defect),
             }).pipe(Effect.as(0)),
           ),
         )
@@ -1956,7 +1956,7 @@ export const layer = Layer.effect(
           Effect.catchDefect((defect) =>
             Log.event("session.strict.resume.failed", {
               "session.id": sessionID,
-              "session.defect": String(defect),
+              "session.defect": Log.fault(defect),
             }).pipe(Effect.as(undefined)),
           ),
         )
@@ -2156,7 +2156,7 @@ export const layer = Layer.effect(
             Effect.catchCause((cause) =>
               Log.event("session.strict.action.failed", {
                 "session.id": sessionID,
-                "session.cause": Cause.pretty(cause),
+                "session.cause": Log.fault(cause),
               }),
             ),
           )
@@ -2194,7 +2194,7 @@ export const layer = Layer.effect(
               Log.event("session.strict.attempt.failed", {
                 "session.id": sessionID,
                 attempt: i + 1,
-                "session.cause": Cause.pretty(cause),
+                "session.cause": Log.fault(cause),
               }).pipe(Effect.as(undefined)),
             ),
           )
@@ -2271,7 +2271,7 @@ export const layer = Layer.effect(
             Effect.catchCause((cause) =>
               Log.event("session.strict.summary.failed", {
                 "session.id": sessionID,
-                "session.cause": Cause.pretty(cause),
+                "session.cause": Log.fault(cause),
               }),
             ),
             // The run message may already exist (tool parts) — a failed/empty summary must not
@@ -2378,7 +2378,7 @@ export const layer = Layer.effect(
           Effect.catchCause((cause) =>
             Log.event("session.strict.finalize.failed", {
               "session.id": sessionID,
-              "session.cause": Cause.pretty(cause),
+              "session.cause": Log.fault(cause),
             }),
           ),
         )
@@ -2416,7 +2416,7 @@ export const layer = Layer.effect(
           Effect.catchCause((cause: Cause.Cause<unknown>) =>
             Log.event("session.compaction.manual.failed", {
               "session.id": input.sessionID,
-              "session.cause": Cause.pretty(cause),
+              "session.cause": Log.fault(cause),
             }).pipe(
               Effect.andThen(
                 Effect.gen(function* () {
@@ -2478,7 +2478,7 @@ export const layer = Layer.effect(
         Effect.catchCause((cause) =>
           Log.event("session.changes.refresh.failed", {
             "session.id": input.sessionID,
-            "session.cause": Cause.pretty(cause),
+            "session.cause": Log.fault(cause),
           }),
         ),
       )
@@ -2727,7 +2727,7 @@ export const layer = Layer.effect(
                 Effect.catch((cause) =>
                   Log.event("session.introspection.judge.failed", {
                     "session.id": input.sessionID,
-                    "session.cause": String(cause),
+                    "session.cause": Log.fault(cause),
                   }),
                 ),
               )
@@ -2740,7 +2740,7 @@ export const layer = Layer.effect(
                   Effect.catchCause((cause) =>
                     Log.event("session.quality.check.errored", {
                       "session.id": input.sessionID,
-                      "session.cause": Cause.pretty(cause),
+                      "session.cause": Log.fault(cause),
                     }),
                   ),
                 )
@@ -2810,7 +2810,7 @@ export const layer = Layer.effect(
                   Effect.catchCause((cause) =>
                     Log.event("session.quality.check.errored", {
                       "session.id": input.sessionID,
-                      "session.cause": Cause.pretty(cause),
+                      "session.cause": Log.fault(cause),
                     }),
                   ),
                 )

@@ -55,15 +55,30 @@ const FAULT_SITES = SITES.filter((site) => classOf(site) === "fault")
 /**
  * 🔴 **The shrink-only ledger of `fault` values that do NOT yet go through `Log.fault`.**
  *
- * Seeded at **90** on 2026-08-07, parser-measured against app HEAD `34e45a066`. Modelled on
+ * Seeded at **90** on 2026-08-07, parser-measured against app HEAD `34e45a066`; **73** since the
+ * `packages/core/src/session/` pass on the same day. Modelled on
  * `log-event-migration-ledger.test.ts` (which ran 233 → 0) and on
  * `config-routing-ledger.test.ts` before it: a two-directional ratchet, so an unlisted site fails as
  * new and a listed site that no longer needs listing fails as stale. **The list can only shrink.**
  *
- * ⚠️ Why a ledger rather than an absolute rule today: two thirds of the remaining sites live under
- * `packages/core/src/session/`, which another agent holds this batch. The rule this file wants is
- * absolute; the honest state is that the migration has ten sites converted and ninety to go, and a
- * ratchet is the only thing that reports that truthfully while it is true.
+ * ⚠️ **The seed note claimed "two thirds of the remaining sites live under
+ * `packages/core/src/session/`". Re-derived with this file's own scanner, it was 20 of 90 — 22%.**
+ * The real concentration was elsewhere and diffuse: 18 in `session/runner/llm.ts`, then 10 in
+ * `novaclaw/src/snapshot/index.ts`, 5 in `novaclaw/src/worktree/index.ts`, 4 in
+ * `core/src/filesystem/watcher.ts`, and a tail of ~40 files holding 1–3 each. A prose share is not a
+ * measurement; the scanner is, and it is three lines to run.
+ *
+ * ⚠️ Why a ledger rather than an absolute rule today: the remaining 73 are spread across four
+ * packages, so no single agent can close them. The rule this file wants is absolute; a ratchet is
+ * the only thing that reports the half-done state truthfully while it is true.
+ *
+ * ⚠️ **Three session sites were deliberately NOT converted and are still listed:**
+ * `session.provider.attempt.retry` / `session.provider.response.broken` set
+ * `"session.provider.message"` from `transient.message` / `llmFailure.reason.message` — a **typed
+ * field of a structured `LLMError.reason`**, whose `_tag` is already carried by the sibling
+ * `session.provider.reason`. It is the provider's own message text, not a caught error; the class
+ * that fits it is `text`, and re-classing it is a `schema/log-events.ts` change, not a conversion.
+ * Wrapping a string in `Log.fault` would be a no-op that mislabels the field.
  *
  * ⚠️ **When it reaches zero, DELETE the fixture — do not empty it.** An empty JSON array still reads
  * as *add your entry here*; the next author under time pressure appends one line and the invariant

@@ -174,7 +174,7 @@ export const layer = Layer.effect(
           Effect.catch((cause) =>
             Log.event("session.adhoc.copy.failed", {
               "session.id": child.id,
-              "session.cause": String(cause),
+              "session.cause": Log.fault(cause),
             }).pipe(Effect.as(0)),
           ),
         )

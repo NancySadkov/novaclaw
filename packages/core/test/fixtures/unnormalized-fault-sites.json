@@ -72,72 +72,12 @@
     "count": 1
   },
   {
-    "name": "packages/core/src/session/execution/local.ts :: session.drain.failed.session.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/session/runner/llm.ts :: session.changes.refresh.failed.session.cause = Cause.pretty(…)",
-    "count": 2
-  },
-  {
-    "name": "packages/core/src/session/runner/llm.ts :: session.compaction.manual.failed.session.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/session/runner/llm.ts :: session.introspection.judge.failed.session.cause = String(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/session/runner/llm.ts :: session.memory.extract.failed.session.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
     "name": "packages/core/src/session/runner/llm.ts :: session.provider.attempt.retry.session.provider.message = transient.message",
     "count": 1
   },
   {
     "name": "packages/core/src/session/runner/llm.ts :: session.provider.response.broken.session.provider.message = llmFailure.reason.message",
     "count": 2
-  },
-  {
-    "name": "packages/core/src/session/runner/llm.ts :: session.quality.check.errored.session.cause = Cause.pretty(…)",
-    "count": 2
-  },
-  {
-    "name": "packages/core/src/session/runner/llm.ts :: session.strict.action.failed.session.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/session/runner/llm.ts :: session.strict.attempt.failed.session.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/session/runner/llm.ts :: session.strict.finalize.failed.session.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/session/runner/llm.ts :: session.strict.resume.failed.session.defect = String(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/session/runner/llm.ts :: session.strict.retention.failed.session.defect = String(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/session/runner/llm.ts :: session.strict.summary.failed.session.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/session/runner/llm.ts :: session.title.early.failed.session.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/session/runner/llm.ts :: session.title.generate.failed.session.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/session/spawner.ts :: session.adhoc.copy.failed.session.cause = String(…)",
-    "count": 1
   },
   {
     "name": "packages/core/src/skill/discovery.ts :: skill.discovery.download.failed.skill.error = error instanceof Error ? error.message : String(…)",

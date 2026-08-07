@@ -76,7 +76,7 @@ export const layer = Layer.effect(
               Effect.tapCause((cause) =>
                 Cause.hasInterruptsOnly(cause)
                   ? Effect.void
-                  : Log.event("session.drain.failed", { "session.id": sessionID, "session.cause": Cause.pretty(cause) }),
+                  : Log.event("session.drain.failed", { "session.id": sessionID, "session.cause": Log.fault(cause) }),
               ),
               // `ensuring` so success, failure, AND interrupt (Stop) all settle back to idle —
               // except a session that called exit(result) mid-drain: `exited` is the K1 terminal
