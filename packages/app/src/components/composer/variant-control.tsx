@@ -1,5 +1,5 @@
 import type { JSX } from "solid-js"
-import { Select } from "@novaclaw/ui/select"
+import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { useCommand } from "@/context/command"
@@ -38,18 +38,23 @@ export function ComposerVariantControl(props: { state: ComposerVariantControlSta
           </>
         }
       >
-        <Select
-          size="normal"
+        {/* `inline` is the v2 scale's chrome-less trigger — transparent, hover-overlay, fit-content —
+            which is what v1's `variant="ghost"` was reaching for through a Button. Its 24px is
+            overridden by the composer's own `control()` style (28px), the SAME height every other chip
+            on this row states; the row's height is the row's decision, not this widget's default. The
+            type utilities v1 carried here (13px/440) are dropped: select-v2.css already declares
+            exactly that, and re-stating a scale in a call site is how the scale stops being one. */}
+        <SelectV2
+          appearance="inline"
           options={props.state.variants}
           current={props.state.current ?? "default"}
           label={(x) => (x === "default" ? language.t("common.default") : x)}
           onOpenChange={props.state.onOpenChange}
-          onSelect={(value) => props.state.set(value === "default" ? undefined : value)}
-          class="capitalize max-w-[160px] justify-start text-v2-text-text-faint"
-          valueClass="truncate text-[13px] font-[440] leading-5 text-v2-text-text-faint"
-          triggerStyle={props.state.style}
-          triggerProps={{ "data-action": "prompt-model-variant" }}
-          variant="ghost"
+          onSelect={(value) => props.state.set(!value || value === "default" ? undefined : value)}
+          class="capitalize max-w-[160px]"
+          valueClass="text-v2-text-text-faint"
+          style={props.state.style}
+          data-action="prompt-model-variant"
         />
       </TooltipV2>
     </div>

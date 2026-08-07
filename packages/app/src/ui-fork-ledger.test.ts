@@ -10,15 +10,16 @@ import { dirname, join, normalize, relative, resolve } from "node:path"
  * standing contributor choice via a **ratchet test**."*
  *
  * `packages/ui` ships the same widget twice. `src/components/button.tsx` is v1;
- * `src/v2/components/button-v2.tsx` is v2; both are live, and (re-derived 2026-08-07) **27 files
- * import each side** — several files import BOTH (`pages/home.tsx` renders a v1 `Button` and a v2
- * `ButtonV2` on one screen). Reaching for `@novaclaw/ui/button` instead of `@novaclaw/ui/v2/button-v2`
+ * `src/v2/components/button-v2.tsx` is v2; both are live, and several files import BOTH
+ * (`pages/home.tsx` renders a v1 `Button` and a v2 `ButtonV2` on one screen). Reaching for `@novaclaw/ui/button` instead of `@novaclaw/ui/v2/button-v2`
  * is one import line that typechecks, renders, and reviews as consistent with its neighbours. That is
  * the defect class ruling 1 names — *an invariant whose violation compiles green ships with a
  * mechanical check, or the invariant does not exist* — so the choice is made red here instead.
  *
  * **This file does not migrate anything.** It measures the fork and pins the measurement. Every
- * number below is an honest count of today's tree, not a target.
+ * number below is an honest count of today's tree, not a target — and every number that a test does
+ * NOT re-derive has been deleted from the prose, because three rounds running those were the wrong
+ * ones (see `V1_CALL_SITES`).
  *
  * ## What is pinned, and what is deliberately NOT
  *
@@ -61,8 +62,8 @@ import { dirname, join, normalize, relative, resolve } from "node:path"
  *
  * ## Why this file lives in `packages/app/src`
  *
- * The fork spans three packages — the duplicated files are in `ui`, and 70 of the 83 call sites are
- * in `app` — so the ledger has to see all of them at once, exactly like
+ * The fork spans three packages — the duplicated files are in `ui` and the great majority of the call
+ * sites are in `app` — so the ledger has to see all of them at once, exactly like
  * `packages/app/src/renderer-dependency-ledger.test.ts`, which sweeps `app`/`ui`/`session-ui` from
  * this same directory. It is NOT in `packages/ui/test/`: `script/test.ts` runs the `ui` unit as
  * `bun test src`, so a file under `packages/ui/test/` would never execute — a guard nobody runs is
@@ -70,7 +71,7 @@ import { dirname, join, normalize, relative, resolve } from "node:path"
  *
  * ⚠️ It is also NOT shaped like `packages/app/src/app-routes.test.ts`. That file cites ruling 13
  * verbatim and so looks like the precedent, but it is a binary must-be-absent guard for a deleted
- * flag. v1 `Button` has 27 live call sites; "this stays deleted" is the wrong shape and would only
+ * flag. v1 `Button` still has live call sites; "this stays deleted" is the wrong shape and would only
  * fail.
  *
  * **Measured 2026-07-31**, in the same change that deleted seven fully dead v1 components
@@ -138,7 +139,12 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
 ]
 
 /**
- * **The forked widget names, re-derived 2026-08-07: 7.**
+ * **The forked widget names. The LIST is the count — do not write the number in this prose.**
+ *
+ * ⚠️ That is a rule now, not a style note. Every prose index in this file has been wrong at least
+ * once, three rounds running, always in the same way: the pins were re-derived and the sentence above
+ * them was not. A number a reader can check against the array two lines below is a number that will
+ * eventually disagree with it, and the disagreeing copy is the one people quote.
  *
  * A name is on this list when `ui/src/components/<name>.tsx` and its v2 twin both exist. The twin is
  * `v2/components/<name>-v2.tsx`, except `icon`, which is duplicated under the identical filename —
@@ -146,9 +152,9 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  * `{viewBox, body}` pairs), which is why `icon` is the expensive half of the migration rather than a
  * rename.
  *
- * This list may only ever get SHORTER. It was 14, then 12 (`text-shimmer` 2026-07-31), 11 (`switch`,
- * 2026-08-07), 8 (`keybind`, `progress-circle`, `diff-changes`, 2026-08-07), and is **7** since
- * `toast` was migrated and its v1 twin deleted (2026-08-07).
+ * This list may only ever get SHORTER. Retired so far, newest first: `select` (2026-08-08), `toast`,
+ * `keybind`, `progress-circle`, `diff-changes`, `switch` (all 2026-08-07), `text-shimmer`
+ * (2026-07-31), and the six v1-only components deleted alongside it.
  *
  * ⭐ **The shape the rest of this list should copy — a pair is RETIRABLE when nothing in
  * `packages/ui` composes its v1 side.** Then migrating the leaf call sites leaves the v1 file with
@@ -156,39 +162,41 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  * shrinks the fork's WIDTH. `switch` (4 call sites), then `keybind` (2), `progress-circle` (1),
  * `diff-changes` (1) and `toast` (3) went that way. A widget that `packages/ui` composes internally
  * (`button`, `icon`, `icon-button`, `tooltip`) cannot reach zero until its v1 consumers die, which
- * is why those lines sit in the second block below. `dialog`, `select` and `tabs` are the three that
- * are still retirable — nothing in `packages/ui` composes them — but each carries 4–9 call sites.
+ * is why those lines sit in the second block below. `dialog` and `tabs` are the two that are still
+ * retirable — nothing in `packages/ui` composes them.
  *
- * ⚠️ **`select` is retirable but is NOT a swap, and the next agent should budget for that.** Its
- * four call sites pass `size`, `variant`, `triggerStyle` and `triggerProps` — all of which reach v1's
- * trigger because v1 renders the trigger `as={Button}`. `SelectV2` renders its trigger as a bare
- * `div` with an `appearance` prop and forwards unknown props to the Kobalte ROOT, not the trigger, so
- * `app/e2e/regression/prompt-thinking-level.spec.ts` — which clicks
- * `[data-action="prompt-model-variant"]` — is pointing at an attribute that would land one element
- * up. Retiring `select` means deciding what v2's trigger contract is, not swapping an import.
+ * ⭐ **`select` was retired 2026-08-08, and the budget warning that stood here was RIGHT: it was a
+ * contract decision, not an import swap.** The warning read that v1's four call sites pass `size`,
+ * `variant`, `triggerStyle` and `triggerProps` — all of which reach v1's trigger only because v1
+ * renders it `as={Button}` — while `SelectV2` forwards unknown props to the Kobalte ROOT. Verified
+ * true, and worse than stated in two ways the import graph could not show:
+ *
+ *   - **One of the four call sites was DEAD.** `composer/legacy-model-controls.tsx` was imported by
+ *     `prompt-input.tsx` and rendered by nothing; the "legacy layout" its own doc comment said it
+ *     dies with was already gone. Deleted, taking four pairs with it.
+ *   - **The root/trigger split was already mis-serving the v2 side.** Eight live `SelectV2` call
+ *     sites in `settings-v2` passed `data-action="…"`, and one passed `aria-label`, all of which
+ *     were landing on Kobalte's `role="group"` wrapper. The `data-action`s looked fine because the
+ *     wrapper contains only the trigger; the `aria-label` left the combobox with no accessible name.
+ *
+ * The ruling: **the trigger is the component's element** — `class` already went there, so `style`,
+ * `data-*`, `aria-*` and DOM handlers go there too, and the Kobalte-root props are named
+ * exhaustively instead of being whatever is left over. No `triggerProps`/`triggerStyle` shim came
+ * back (ruling 13); sizing is `appearance`, and all three surviving call sites state `inline`.
  */
-export const FORKED_WIDGETS: readonly string[] = [
-  "button",
-  "dialog",
-  "icon",
-  "icon-button",
-  "select",
-  "tabs",
-  "tooltip",
-]
+export const FORKED_WIDGETS: readonly string[] = ["button", "dialog", "icon", "icon-button", "tabs", "tooltip"]
 
 /**
- * **Every file that imports the v1 side of a forked widget, re-derived 2026-08-07: 81 files, 132
- * (file, widget) pairs.** Grouped by package: `app` 69, `ui` 9, `session-ui` 3.
+ * **Every file that imports the v1 side of a forked widget, pinned by name.**
  *
- * Per-widget: icon 55 · button 24 · icon-button 18 · tooltip 15 · dialog 9 · tabs 7 · select 4.
- *
- * ⚠️ **Every figure in the two lines above was re-derived from the tree by a script that does not
- * import this file, and the previous version was wrong AGAIN.** It read `83 files / 140 pairs`
- * against pins of 83/137, and `icon 57` against a measured 56. The round before that it read
- * `88 / 162` against pins of `87 / 159`, carried an `avatar` row for a retired pair, and said
- * `icon-button 22` for a measured 21. **Twice in a row the pins were the measurement and this index
- * was decoration.** Re-derive before quoting it; never quote it from prose.
+ * ⛔ **There is deliberately no count and no per-widget breakdown in this comment.** There used to be
+ * both, and they were wrong three rounds in a row — `83 files / 140 pairs` against pins of 83/137
+ * and `icon 57` against a measured 56; before that `88 / 162` against pins of `87 / 159`, an
+ * `avatar` row for a retired pair, and `icon-button 22` for a measured 21. Every time, the pins were
+ * the measurement and the prose was decoration that read like one. The fix is not "re-derive more
+ * carefully" — it is to **let the list be the count**: `V1_CALL_SITE_FILES` and
+ * `V1_CALL_SITE_PAIRS` below are asserted against the tree on every run, so they cannot drift, and
+ * anything a reader wants to know is one `Object.keys(…).length` away. Do not restore the summary.
  *
  * ⚠️ **`toast` moved BOTH counts and by more than its own call sites** (2026-08-07): three v1 toast
  * pairs went, and deleting `ui/src/components/toast.tsx` took its own `icon` + `icon-button` pairs
@@ -218,11 +226,8 @@ export const FORKED_WIDGETS: readonly string[] = [
 export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/apps/manifest-apps.ts": ["icon"],
   "app/src/components/composer/features-control.tsx": ["icon"],
-  "app/src/components/composer/legacy-model-controls.tsx": ["button", "icon", "select", "tooltip"],
   "app/src/components/composer/model-control.tsx": ["button", "icon"],
-  "app/src/components/composer/permission-mode-control.tsx": ["select"],
   "app/src/components/composer/strict-control.tsx": ["button"],
-  "app/src/components/composer/variant-control.tsx": ["select"],
   "app/src/components/debug-bar.tsx": ["tooltip"],
   "app/src/components/dialog-edit-project.tsx": ["button", "dialog", "icon"],
   "app/src/components/dialog-fork.tsx": ["dialog"],
@@ -273,7 +278,7 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/pages/notes.tsx": ["icon"],
   "app/src/pages/recipes.tsx": ["icon"],
   "app/src/pages/registry.tsx": ["icon"],
-  "app/src/pages/session.tsx": ["button", "select", "tabs"],
+  "app/src/pages/session.tsx": ["button", "tabs"],
   "app/src/pages/session/composer/session-permission-dock.tsx": ["button", "icon"],
   "app/src/pages/session/composer/session-question-dock.tsx": ["button", "icon"],
   "app/src/pages/session/composer/session-responder-dock.tsx": ["button"],
@@ -297,7 +302,6 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "ui/src/components/image-preview.tsx": ["icon-button"],
   "ui/src/components/list.tsx": ["icon", "icon-button"],
   "ui/src/components/popover.tsx": ["icon-button"],
-  "ui/src/components/select.tsx": ["button", "icon"],
   "ui/src/components/text-field.tsx": ["icon-button", "tooltip"],
 }
 
@@ -313,11 +317,11 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
  * read 38 while the tree held 37 — one component had been deleted without the pin following, so a
  * new v1 component could have been added for free. Lower it in the same commit as any deletion.
  */
-const V1_COMPONENT_CEILING = 32
+const V1_COMPONENT_CEILING = 31
 
 /** Measured totals, pinned so the ledger stays a measurement rather than an aspiration. */
-const V1_CALL_SITE_FILES = 81
-const V1_CALL_SITE_PAIRS = 132
+const V1_CALL_SITE_FILES = 77
+const V1_CALL_SITE_PAIRS = 123
 
 // ---------------------------------------------------------------------------------------------
 // The sweep. Pure functions first so the negative controls can drive them without touching disk.
@@ -589,7 +593,7 @@ describe("the fork's DEPTH can only shrink", () => {
     expect(OBSERVED_PAIRS, "the observed (file, widget) pair count moved — reconcile V1_CALL_SITES").toBe(
       V1_CALL_SITE_PAIRS,
     )
-    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(7)
+    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(6)
   })
 
   test("both sides are genuinely live — this is a fork, not a finished migration", () => {

@@ -26,7 +26,6 @@
 @import "../components/popover.css" layer(components);
 @import "../components/radio-group.css" layer(components);
 @import "../components/resize-handle.css" layer(components);
-@import "../components/select.css" layer(components);
 @import "../components/spinner.css" layer(components);
 @import "../components/scroll-view.css" layer(components);
 @import "../components/sticky-accordion-header.css" layer(components);

@@ -23,7 +23,7 @@ import { useLocal } from "@/context/local"
 import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange } from "@/context/file"
 import { createStore } from "solid-js/store"
 import { ResizeHandle } from "@novaclaw/ui/resize-handle"
-import { Select } from "@novaclaw/ui/select"
+import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { Tabs } from "@novaclaw/ui/tabs"
 import { createAutoScroll } from "@novaclaw/ui/hooks"
 import { previewSelectedLines } from "@novaclaw/session-ui/pierre/selection-bridge"
@@ -802,14 +802,17 @@ export default function Page() {
 
     return (
       <div class="flex items-center gap-2">
-        <Select
+        {/* v1 asked for `variant="ghost" size="small"`, i.e. a 24px chrome-less trigger. That is
+            exactly `appearance="inline"` (24px, transparent, hover overlay) — the sizes match to the
+            pixel, so the v2 scale states this control's size instead of a Button size doing it. The
+            `text-14-medium` valueClass goes with it: v2's inline value text is the design system's
+            own step (13px/530), and pinning 14px here would re-fork the scale in a call site. */}
+        <SelectV2
+          appearance="inline"
           options={changesOptions()}
           current={store.changes}
           label={label}
           onSelect={(option) => option && setStore("changes", option)}
-          variant="ghost"
-          size="small"
-          valueClass="text-14-medium"
         />
         <Show when={store.changes === "turn" && sourceLabel()} keyed>
           {(value) => <span class="text-11-regular text-text-weak">{value}</span>}

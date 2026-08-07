@@ -1,5 +1,5 @@
 import { createMemo, type JSX } from "solid-js"
-import { Select } from "@novaclaw/ui/select"
+import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import type { PermissionMode } from "@/context/local"
 import { useExpertise, PERMISSION_MODE_MIN_LEVEL } from "@/context/expertise"
@@ -30,8 +30,12 @@ export function ComposerPermissionModeControl(props: { state: ComposerPermission
   )
   return (
     <TooltipV2 placement="top" gutter={4} value={props.state.title}>
-      <Select
-        size="normal"
+      {/* See ComposerVariantControl for why `inline` + the row's own 28px. The v1 call site also
+          carried `[&_[data-component=icon]]:…`, which targeted the v1 `Icon` its trigger rendered;
+          v2's chevron is an inline svg in `[data-slot="select-v2-chevron"]` with its own colour, so
+          that override had nothing to bind to here and is gone rather than translated. */}
+      <SelectV2
+        appearance="inline"
         options={options()}
         current={props.state.current}
         label={(mode) => props.state.label(mode)}
@@ -40,11 +44,10 @@ export function ComposerPermissionModeControl(props: { state: ComposerPermission
           // recreated (any composer-controls recompute) — only a real change may hit the server.
           if (value && value !== props.state.current) props.state.onSelect(value)
         }}
-        class="max-w-[190px] justify-start text-v2-text-text-faint [&_[data-component=icon]]:text-v2-icon-icon-muted"
-        valueClass="truncate text-[13px] font-[440] leading-5 text-v2-text-text-faint"
-        triggerStyle={props.state.style}
-        triggerProps={{ "data-action": "prompt-permission-mode" }}
-        variant="ghost"
+        class="max-w-[190px]"
+        valueClass="text-v2-text-text-faint"
+        style={props.state.style}
+        data-action="prompt-permission-mode"
       />
     </TooltipV2>
   )

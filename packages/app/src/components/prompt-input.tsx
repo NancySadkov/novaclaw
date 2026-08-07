@@ -37,7 +37,6 @@ import {
   ComposerAttachmentsTray,
   ComposerControlsRow,
   ComposerEditorSurface,
-  ComposerLegacyModelControls,
   ComposerVariantControl,
   type ComposerAttachmentsTrayState,
   type ComposerFeaturesControlState,

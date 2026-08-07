@@ -39,53 +39,127 @@ const CheckSmall = () => (
   </svg>
 )
 
-export type SelectV2Props<T> = Omit<
-  ComponentProps<typeof Kobalte<T, { category: string; options: T[] }>>,
-  "value" | "onSelect" | "children" | "options" | "itemComponent" | "sectionComponent" | "defaultValue" | "multiple"
-> & {
-  placeholder?: string
-  options: T[]
-  /** Selected option (single selection). */
-  current?: T
-  value?: (x: T) => string
-  label?: (x: T) => string
-  groupBy?: (x: T) => string
-  onSelect?: (value: T | null) => void
-  onHighlight?: (value: T | undefined) => void | (() => void)
-  /** `base` / `large` match text-input-v2; `inline` is a compact settings-row trigger. */
-  appearance?: "base" | "large" | "inline"
-  invalid?: boolean
-  numeric?: boolean
-  children?: (item: T) => JSX.Element
-  valueClass?: string
-}
+type KobalteRootProps<T> = ComponentProps<typeof Kobalte<T, { category: string; options: T[] }>>
+
+/**
+ * Popper geometry, which this component gives an `appearance`-derived default to before handing it
+ * on. Split into `local` rather than `root` only so those defaults can be applied.
+ */
+const POSITIONING_PROPS = ["placement", "gutter", "sameWidth", "flip", "slide", "fitViewport"] as const
+
+/**
+ * **The props that belong to the Kobalte ROOT, named exhaustively.** Everything not named here and
+ * not one of this component's own props is a **TRIGGER** prop — see the contract note on
+ * `SelectV2Props`. Kobalte's root renders a bare `role="group"` wrapper (`select-base.tsx` spreads
+ * its leftovers onto a `Polymorphic as="div" role="group"`), so it is the wrong home for anything an
+ * author writes to describe the control itself.
+ */
+const ROOT_PROPS = [
+  "open",
+  "defaultOpen",
+  "modal",
+  "preventScroll",
+  "forceMount",
+  "virtualized",
+  "optionDisabled",
+  "keyboardDelegate",
+  "shouldFocusWrap",
+  "disallowTypeAhead",
+  "disallowEmptySelection",
+  "closeOnSelection",
+  "selectionBehavior",
+  "allowDuplicateSelectionEvents",
+  "name",
+  "required",
+  "readOnly",
+  "validationState",
+  "getAnchorRect",
+  "shift",
+  "overlap",
+  "hideWhenDetached",
+  "detachedPadding",
+  "arrowPadding",
+  "overflowPadding",
+] as const
+
+/**
+ * ## The TRIGGER is this component's element (contract, 2026-08-08)
+ *
+ * A `SelectV2` renders two elements an author could mean: Kobalte's `role="group"` wrapper, and the
+ * trigger the user actually sees and clicks. **The trigger is the one.** `class`/`classList` already
+ * landed there; `style`, `data-*`, `aria-*`, `id`, `ref` and DOM event handlers now land there too,
+ * because a contract where half of what you write reaches the visible control and half reaches an
+ * invisible wrapper is not a contract — it is a coin flip that typechecks either way.
+ *
+ * ⚠️ **This was not hypothetical.** Before this change every `SelectV2` prop that was not explicitly
+ * split went to the ROOT, and eight live call sites were already writing trigger-shaped attributes:
+ * `settings-v2/appearance.tsx`, `general.tsx` and `computer.tsx` each pass `data-action="…"` naming
+ * the thing a user clicks, and `settings-v2/dialog-model-config.tsx` passes an `aria-label` for the
+ * combobox. All nine were landing on the `role="group"` div. The `data-action`s still *looked* right
+ * because the wrapper contains only the trigger, so a click at its centre hits the trigger anyway —
+ * the `aria-label` did not: it named a group and left the combobox with no accessible name.
+ *
+ * The v1 `Select` this replaces reached its trigger with a `triggerProps` bag, a `triggerStyle`
+ * escape hatch, and `size`/`variant` forwarded to a v1 `Button` it rendered `as={Button}`. **None of
+ * those come back** (todo.md ruling 13 — one design system, no compatibility shim). Sizing is
+ * `appearance`; everything else is just props on the element, which is what they would have been if
+ * the trigger had been treated as the component's element from the start.
+ */
+export type SelectV2Props<T> = Pick<
+  KobalteRootProps<T>,
+  (typeof ROOT_PROPS)[number] | (typeof POSITIONING_PROPS)[number]
+> &
+  // Every name this component defines itself is removed from the div side first, so an
+  // intersection can never quietly widen `appearance` back to `string`.
+  Omit<
+    ComponentProps<"div">,
+    "onSelect" | "children" | "appearance" | "placeholder" | "value" | "onChange" | "onInput"
+  > & {
+    /** Disables the control: Kobalte's root state AND the trigger's own attribute + styling. */
+    disabled?: boolean
+    placeholder?: string
+    options: T[]
+    /** Selected option (single selection). */
+    current?: T
+    value?: (x: T) => string
+    label?: (x: T) => string
+    groupBy?: (x: T) => string
+    onSelect?: (value: T | null) => void
+    onHighlight?: (value: T | undefined) => void | (() => void)
+    onOpenChange?: (open: boolean) => void
+    /** `base` / `large` match text-input-v2; `inline` is a compact chrome-less trigger. */
+    appearance?: "base" | "large" | "inline"
+    invalid?: boolean
+    numeric?: boolean
+    children?: (item: T) => JSX.Element
+    valueClass?: string
+  }
 
 export function SelectV2<T>(props: SelectV2Props<T>) {
-  const [local, others] = splitProps(props, [
-    "class",
-    "classList",
-    "placeholder",
-    "options",
-    "current",
-    "value",
-    "label",
-    "groupBy",
-    "onSelect",
-    "onHighlight",
-    "onOpenChange",
-    "children",
-    "appearance",
-    "invalid",
-    "numeric",
-    "disabled",
-    "valueClass",
-    "placement",
-    "gutter",
-    "sameWidth",
-    "flip",
-    "slide",
-    "fitViewport",
-  ])
+  const [local, root, trigger] = splitProps(
+    props,
+    [
+      "class",
+      "classList",
+      "placeholder",
+      "options",
+      "current",
+      "value",
+      "label",
+      "groupBy",
+      "onSelect",
+      "onHighlight",
+      "onOpenChange",
+      "children",
+      "appearance",
+      "invalid",
+      "numeric",
+      "disabled",
+      "valueClass",
+      ...POSITIONING_PROPS,
+    ],
+    [...ROOT_PROPS],
+  )
 
   const inline = () => (local.appearance ?? "base") === "inline"
 
@@ -118,7 +192,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
 
   return (
     <Kobalte<T, { category: string; options: T[] }>
-      {...others}
+      {...root}
       multiple={false}
       disabled={local.disabled}
       data-component="select-v2-root"
@@ -172,6 +246,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
       }}
     >
       <Kobalte.Trigger
+        {...trigger}
         as="div"
         data-component="select-v2"
         data-appearance={local.appearance ?? "base"}
