@@ -28,11 +28,16 @@ export interface Settings {
   general: {
     autoSave: boolean
     releaseNotes: boolean
-    showFileTree: boolean
-    showNavigation: boolean
-    showSearch: boolean
-    showStatus: boolean
-    showTerminal: boolean
+    // ⚠️ Six `show*` chrome toggles used to sit here — `showFileTree`, `showNavigation`,
+    // `showSearch`, `showStatus`, `showTerminal`, `showCustomAgents` — and every one of them was
+    // INERT (deleted 2026-08-07). The B2 UIX pass (b524c4ff3, uix.md §7 "Pruned 2026-07-02")
+    // decided session chrome is always REACHABLE and hard-wired the four `visibility.*` memos to
+    // `true`; `showNavigation`'s only reader was an uncalled local in `titlebar.tsx` naming
+    // back/forward BUTTONS the v2 titlebar no longer has (the commands `common.goBack`/`goForward`
+    // survive on mod+[ / mod+]); `showTerminal` and `showCustomAgents` had no reader at all. Their
+    // last writers went with the unreachable v1 settings panel (23c8fa6ac), so they were stored
+    // state nothing read and nothing could write. Chrome visibility is the LAYOUT's job — if a
+    // panel should be hideable, give it an affordance, not a settings key.
     showReasoningSummaries: boolean
     defaultPermissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
     // Feed expansion prefs for the NATIVE transcript: "auto" = the expertise-level default
@@ -41,7 +46,6 @@ export interface Settings {
     // the native transcript never read (owner-hit 2026-07-22).
     feedReasoningDisplay: "auto" | "expanded" | "collapsed"
     feedToolDisplay: "auto" | "expanded" | "collapsed"
-    showCustomAgents: boolean
     mobileTitlebarPosition: "top" | "bottom"
     expertiseLevel: ExpertiseLevel
   }
@@ -118,18 +122,12 @@ const defaultSettings: Settings = {
   general: {
     autoSave: true,
     releaseNotes: true,
-    showFileTree: false,
-    showNavigation: false,
-    showSearch: false,
-    showStatus: false,
-    showTerminal: false,
     showReasoningSummaries: true,
     // Write access to the PROJECT FOLDER by default (owner 2026-07-25). Outside the folder is still
     // guarded regardless of mode, so this is "trusted here", not "trusted everywhere".
     defaultPermissionMode: "bypass",
     feedReasoningDisplay: "auto",
     feedToolDisplay: "auto",
-    showCustomAgents: false,
     mobileTitlebarPosition: "top",
     expertiseLevel: "normal",
   },
@@ -168,18 +166,12 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
   gate: false,
   init: () => {
     const [store, setStore, _, ready] = persisted("settings.v3", createStore<Settings>(defaultSettings))
-    const showFileTree = withFallback(() => store.general?.showFileTree, defaultSettings.general.showFileTree)
-    const showSearch = withFallback(() => store.general?.showSearch, defaultSettings.general.showSearch)
-    const showStatus = withFallback(() => store.general?.showStatus, defaultSettings.general.showStatus)
-    const showCustomAgents = withFallback(
-      () => store.general?.showCustomAgents,
-      defaultSettings.general.showCustomAgents,
-    )
-    // Chrome visibility is the layout's job (uix.md): session chrome (file tree, search, status,
-    // custom agents) is always REACHABLE. The per-surface prefs only had writers in the pruned
-    // Advanced settings section — honoring them in the new layout would strand the chrome
-    // default-hidden with no remaining toggle. The stored show* keys are frozen legacy state.
-    const visible = (_preference: () => boolean) => createMemo(() => true)
+    // ⚠️ A `visibility` block used to sit here, and every member of it was `createMemo(() => true)`
+    // wrapping a preference it deliberately ignored. That shape is worse than no setting: three
+    // call sites read it as if it decided something, and the ONE place it mattered —
+    // `session-header.tsx`'s search button — was invisible for a completely different reason (no
+    // portal host). Deleted with the `show*` keys above; the readers now say `true` in their own
+    // words or drop the condition entirely.
 
     createEffect(() => {
       if (typeof document === "undefined") return
@@ -201,26 +193,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         releaseNotes: withFallback(() => store.general?.releaseNotes, defaultSettings.general.releaseNotes),
         setReleaseNotes(value: boolean) {
           setStore("general", "releaseNotes", value)
-        },
-        showFileTree,
-        setShowFileTree(value: boolean) {
-          setStore("general", "showFileTree", value)
-        },
-        showNavigation: withFallback(() => store.general?.showNavigation, defaultSettings.general.showNavigation),
-        setShowNavigation(value: boolean) {
-          setStore("general", "showNavigation", value)
-        },
-        showSearch,
-        setShowSearch(value: boolean) {
-          setStore("general", "showSearch", value)
-        },
-        showStatus,
-        setShowStatus(value: boolean) {
-          setStore("general", "showStatus", value)
-        },
-        showTerminal: withFallback(() => store.general?.showTerminal, defaultSettings.general.showTerminal),
-        setShowTerminal(value: boolean) {
-          setStore("general", "showTerminal", value)
         },
         showReasoningSummaries: withFallback(
           () => store.general?.showReasoningSummaries,
@@ -249,10 +221,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         setFeedToolDisplay(value: Settings["general"]["feedToolDisplay"]) {
           setStore("general", "feedToolDisplay", value)
         },
-        showCustomAgents,
-        setShowCustomAgents(value: boolean) {
-          setStore("general", "showCustomAgents", value)
-        },
         mobileTitlebarPosition: withFallback(
           () => store.general?.mobileTitlebarPosition,
           defaultSettings.general.mobileTitlebarPosition,
@@ -267,12 +235,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         setExpertiseLevel(value: ExpertiseLevel) {
           setStore("general", "expertiseLevel", value)
         },
-      },
-      visibility: {
-        fileTree: visible(showFileTree),
-        search: visible(showSearch),
-        status: visible(showStatus),
-        customAgents: visible(showCustomAgents),
       },
       appearance: {
         fontSize: withFallback(() => store.appearance?.fontSize, defaultSettings.appearance.fontSize),

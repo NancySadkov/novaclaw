@@ -42,7 +42,6 @@ import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServer } from "@/context/server"
-import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { retrySessionExecution, sessionExecutions, stopSessionExecution } from "@/utils/session-execution-api"
@@ -60,7 +59,6 @@ import {
   createSizing,
   focusTerminalById,
   shouldFocusTerminalOnKeyDown,
-  shouldShowFileTree,
 } from "@/pages/session/helpers"
 import { NativeTimeline } from "@/pages/session/timeline/native-timeline"
 import { createTimelineModel } from "@/pages/session/timeline/model"
@@ -82,7 +80,6 @@ import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/sessio
 import { createSessionOwnership } from "./session/session-ownership"
 import { createReviewController, resolveReviewSource, type ChangeMode } from "./session/review-source"
 import { visibleProviderRecovery } from "./session/composer/session-provider-recovery"
-
 
 type VcsMode = "git" | "branch"
 
@@ -128,7 +125,6 @@ export default function Page() {
   const sdk = useSDK()
   const serverSDK = useServerSDK()
   const server = useServer()
-  const settings = useSettings()
   const platform = usePlatform()
   const prompt = usePrompt()
   const comments = useComments()
@@ -210,14 +206,7 @@ export default function Page() {
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const size = createSizing()
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
-  const desktopFileTreeOpen = createMemo(
-    () =>
-      isDesktop() &&
-      shouldShowFileTree({
-        visible: settings.visibility.fileTree(),
-        opened: layout.fileTree.opened(),
-      }),
-  )
+  const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
   const desktopSidePanelOpen = createMemo(() => desktopReviewOpen() || desktopFileTreeOpen())
   const sessionPanelWidth = createMemo(() => {
     if (!desktopSidePanelOpen()) return "100%"

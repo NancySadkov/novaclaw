@@ -1,11 +1,5 @@
-import { AppIcon } from "@novaclaw/ui/app-icon"
-import { Button } from "@novaclaw/ui/button"
-import { DropdownMenu } from "@novaclaw/ui/dropdown-menu"
-import { Icon } from "@novaclaw/ui/icon"
-import { IconButton } from "@novaclaw/ui/icon-button"
-import { Spinner } from "@novaclaw/ui/spinner"
 import { showToast } from "@/utils/toast"
-import { Tooltip, TooltipKeybind } from "@novaclaw/ui/tooltip"
+import { Tooltip } from "@novaclaw/ui/tooltip"
 import { getFilename } from "@novaclaw/core/util/path"
 import { createEffect, createMemo, createSignal, For, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -16,7 +10,6 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
-import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { focusTerminalById } from "@/pages/session/helpers"
@@ -25,6 +18,7 @@ import { sessionAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
 import { Persist, persisted } from "@/utils/persist"
 import { StatusPopover, StatusPopoverV2 } from "../status-popover"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
@@ -140,7 +134,6 @@ export function SessionHeader() {
   const server = useServer()
   const platform = usePlatform()
   const language = useLanguage()
-  const settings = useSettings()
   const sync = useSync()
   const terminal = useTerminal()
   const { params, view } = useSessionLayout()
@@ -158,8 +151,6 @@ export function SessionHeader() {
   })
   const hotkey = createMemo(() => command.keybindParts("file.open"))
   const os = createMemo(() => detectOS(platform))
-  const search = settings.visibility.search
-  const status = settings.visibility.status
   const isDesktop = createMediaQuery("(min-width: 768px)")
 
   const [exists, setExists] = createStore<Partial<Record<OpenApp, boolean>>>({
@@ -238,7 +229,6 @@ export function SessionHeader() {
     sessionAgentColor(params.id ? sync().session.get(params.id)?.agent : undefined, sync().data.agent),
   )
   const v2ActionsState = createMemo<SessionHeaderV2ActionsState>(() => ({
-    statusVisible: status(),
     statusLabel: language.t("status.popover.trigger"),
     reviewLabel: language.t("command.review.toggle"),
     reviewKeybind: reviewTooltipKeybind(command),
@@ -293,31 +283,34 @@ export function SessionHeader() {
 
   return (
     <>
-      <Show when={search() && centerMount()}>
+      {/* 🔴 This button had NO HOST until 2026-08-07 — `#novaclaw-titlebar-center` was portalled
+          into and never created (`titlebar.tsx` made only `-right`), so the code was correct and
+          unreachable. Its `settings.visibility.search` guard was `createMemo(() => true)`, i.e.
+          inert from the other end too, and is gone. `<Show>` still wraps it because `centerMount()`
+          is null until `onMount` runs and on any surface that renders no titlebar. */}
+      <Show when={centerMount()}>
         {(mount) => (
           <Portal mount={mount()}>
-            <Button
+            <ButtonV2
               type="button"
-              variant="ghost"
+              variant="outline"
               size="small"
-              class="hidden md:flex w-[240px] max-w-full min-w-0 items-center gap-2 justify-between rounded-md border border-border-weak-base bg-surface-panel shadow-none cursor-default"
+              class="hidden md:flex w-[240px] max-w-full min-w-0 items-center gap-2 !justify-between cursor-default"
               onClick={() => command.trigger("file.open")}
               aria-label={language.t("session.header.searchFiles")}
             >
-              <div class="flex min-w-0 flex-1 items-center overflow-visible">
-                <span class="flex-1 min-w-0 text-12-regular text-text-weak truncate text-left">
-                  {language.t("session.header.search.placeholder", {
-                    project: name(),
-                  })}
-                </span>
-              </div>
+              <span class="min-w-0 flex-1 truncate text-left text-v2-text-text-muted">
+                {language.t("session.header.search.placeholder", {
+                  project: name(),
+                })}
+              </span>
 
               {/* The v1 twin was a single boxed span, and this call site spent four `!` utilities
                   cancelling that box. v2 says the same thing with `variant="ghost"`. */}
               <Show when={hotkey().length > 0}>
                 <KeybindV2 keys={hotkey()} variant="ghost" />
               </Show>
-            </Button>
+            </ButtonV2>
           </Portal>
         )}
       </Show>
@@ -333,7 +326,6 @@ export function SessionHeader() {
 }
 
 type SessionHeaderV2ActionsState = {
-  statusVisible: boolean
   statusLabel: string
   reviewLabel: string
   reviewKeybind: string[]
@@ -347,11 +339,9 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
 
   return (
     <div class="flex items-center gap-2">
-      <Show when={props.state.statusVisible}>
-        <Tooltip placement="bottom" value={props.state.statusLabel}>
-          <StatusPopoverV2 />
-        </Tooltip>
-      </Show>
+      <Tooltip placement="bottom" value={props.state.statusLabel}>
+        <StatusPopoverV2 />
+      </Tooltip>
       <Show when={props.state.reviewVisible}>
         <TooltipV2
           placement="bottom"

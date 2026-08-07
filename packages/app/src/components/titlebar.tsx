@@ -76,7 +76,10 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
     })
   })
 
-  const nav = createMemo(() => settings.general.showNavigation())
+  // ⚠️ A `const nav = createMemo(() => settings.general.showNavigation())` sat here and `nav()` was
+  // never called. It gated back/forward BUTTONS that the v2 titlebar does not have — the two
+  // commands below are all that survives of them, and they are reachable from the palette and on
+  // mod+[ / mod+]. Deleted with the setting (2026-08-07).
   const updateState = createMemo<TitlebarUpdatePillState>(() => {
     const installing = props.update?.installing() ?? false
     const version = props.update?.version()
@@ -335,7 +338,16 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
               }}
               onReorder={(keys) => tabsStoreActions.reorder(keys)}
             />
-            <div class="flex-1" />
+            {/* 🔴 The titlebar's CENTER portal host. `session-header.tsx` has portalled its
+                "search files" button into `#novaclaw-titlebar-center` since the v2 titlebar
+                landed, and nothing in the tree ever created that element — so the only labelled,
+                visible affordance for the file/command palette has never rendered for any user.
+                Found from the other end at the same time: the toggle that would have hidden it
+                (`settings.general.showSearch`) was equally unreachable. Principle 8 settles which
+                half was the bug — a keybind is an arcane incantation until something on screen
+                teaches it, and this button carries its own keybind chip. It is `flex-1` so it
+                takes the space the bare spacer used to, and empty it costs exactly that spacer. */}
+            <div id="novaclaw-titlebar-center" class="flex min-w-0 flex-1 items-center justify-center" />
             <TitlebarV2Right state={v2RightState()} />
           </div>
         )

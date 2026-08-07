@@ -20,9 +20,10 @@ type TabsInput = {
 
 export const getSessionKey = (dir: string | undefined, id: string | undefined) => `${dir ?? ""}${id ? `/${id}` : ""}`
 
-export function shouldShowFileTree(input: { visible: boolean; opened: boolean }) {
-  return input.opened && input.visible
-}
+// ⚠️ `shouldShowFileTree({visible, opened})` lived here and its `visible` arm was fed a memo that
+// returned `true` unconditionally (`settings.visibility.fileTree`, deleted 2026-08-07). Both call
+// sites now read `layout.fileTree.opened()` directly — a two-input predicate whose second input is
+// a constant is a predicate that lies about what decides the answer.
 
 export const createSessionTabs = (input: TabsInput) => {
   const review = input.review ?? (() => false)

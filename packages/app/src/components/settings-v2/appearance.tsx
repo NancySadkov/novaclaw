@@ -1,8 +1,10 @@
-import { Component, createMemo, onMount } from "solid-js"
+import { Component, createMemo, createResource, onMount, Show } from "solid-js"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
+import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useTheme, type ColorScheme } from "@novaclaw/ui/theme/context"
 import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
 import {
   monoDefault,
   monoFontFamily,
@@ -56,6 +58,32 @@ export const SettingsAppearanceV2: Component = () => {
   const theme = useTheme()
   const language = useLanguage()
   const settings = useSettings()
+  const platform = usePlatform()
+
+  // 🔴 RESTORED 2026-08-07. Pinch-to-zoom is the one of the seven orphaned settings that still
+  // drives real behaviour: `packages/desktop`'s main process persists it under the electron-store
+  // key `pinchZoomEnabled` (`main/store-keys.ts`), `main/windows.ts` reads it per BrowserWindow to
+  // gate `webContents.setVisualZoomLevelLimits`, and `renderer/webview-zoom.ts` gates the
+  // wheel/gesture handler on it. It defaults to OFF (`getStore().get(...) === true`), and its only
+  // writer went with the unreachable v1 settings panel — so a trackpad user had no way to turn
+  // their zoom gesture back on. The other six drove nothing and were deleted instead.
+  //
+  // Desktop-only by CAPABILITY, not by `platform.platform`: the whole chain is Electron IPC, and on
+  // the web the accessors are simply absent, so a missing accessor is the honest gate.
+  const pinchZoomSupported = createMemo(() => Boolean(platform.getPinchZoomEnabled && platform.setPinchZoomEnabled))
+  const [pinchZoom, { mutate: setPinchZoom }] = createResource(
+    pinchZoomSupported,
+    () => Promise.resolve(platform.getPinchZoomEnabled?.() ?? false).catch(() => false),
+    { initialValue: false },
+  )
+  // Optimistic, and it ROLLS BACK on rejection — the switch must never claim a state the main
+  // process refused, because nothing else on this screen would contradict it.
+  const onPinchZoomChange = (checked: boolean) => {
+    setPinchZoom(checked)
+    const update = platform.setPinchZoomEnabled?.(checked)
+    if (!update) return
+    void Promise.resolve(update).catch(() => setPinchZoom(!checked))
+  }
 
   const themeOptions = createMemo<ThemeOption[]>(() => theme.ids().map((id) => ({ id, name: theme.name(id) })))
   const colorSchemeOptions = createMemo((): { value: ColorScheme; label: string }[] => [
@@ -209,6 +237,21 @@ export const SettingsAppearanceV2: Component = () => {
             />
           </div>
         </SettingsRowV2>
+
+        <Show when={pinchZoomSupported()}>
+          <SettingsRowV2
+            title={language.t("settings.general.row.pinchZoom.title")}
+            description={language.t("settings.general.row.pinchZoom.description")}
+          >
+            <div data-action="settings-pinch-zoom">
+              <Switch
+                checked={pinchZoom.latest}
+                onChange={onPinchZoomChange}
+                aria-label={language.t("settings.general.row.pinchZoom.title")}
+              />
+            </div>
+          </SettingsRowV2>
+        </Show>
 
         <SettingsRowV2
           title={language.t("settings.general.row.terminalFont.title")}
