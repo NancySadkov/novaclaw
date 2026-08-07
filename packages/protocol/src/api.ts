@@ -45,8 +45,17 @@ const makeApiFromGroup = <
     .add(HealthGroup)
     .add(LocationGroup.middleware(locationMiddleware))
     .add(AgentGroup.middleware(locationMiddleware))
+    // 🔴 **Every SESSION-SCOPED group carries `workspaceRoutingMiddleware`, and this list is the place
+    // to check that.** A route naming a `:sessionID` may be for a session owned by a REMOTE workspace,
+    // and without this it is served here — on the wrong machine, against the wrong working tree.
+    //
+    // ⚠️ The reply routes are the sharpest case. A remote session asks for permission, the user
+    // answers, and the reply is handled LOCALLY: the session that is waiting never hears it and hangs
+    // on an ask that was, from the user's side, answered. Session routing was added to
+    // `makeSessionGroup` on 2026-08-07 and these three were missed in the same pass — the gap survives
+    // exactly as long as the declaration is per-group and invisible from one place.
     .add(makeSessionGroup(locationMiddleware, sessionLocationMiddleware, workspaceRoutingMiddleware))
-    .add(MessageGroup.middleware(sessionLocationMiddleware))
+    .add(MessageGroup.middleware(sessionLocationMiddleware).middleware(workspaceRoutingMiddleware))
     .add(ModelGroup.middleware(locationMiddleware))
     .add(ProviderGroup.middleware(locationMiddleware))
     .add(IntegrationGroup.middleware(locationMiddleware))
@@ -54,13 +63,13 @@ const makeApiFromGroup = <
     .add(MessengerGroup)
     .add(CalendarGroup)
     .add(RecipeGroup)
-    .add(makePermissionGroup(locationMiddleware, sessionLocationMiddleware))
+    .add(makePermissionGroup(locationMiddleware, sessionLocationMiddleware).middleware(workspaceRoutingMiddleware))
     .add(FileSystemGroup.middleware(locationMiddleware))
     .add(CommandGroup.middleware(locationMiddleware))
     .add(SkillGroup.middleware(locationMiddleware))
     .add(eventGroup)
     .add(PtyGroup.middleware(locationMiddleware))
-    .add(makeQuestionGroup(locationMiddleware, sessionLocationMiddleware))
+    .add(makeQuestionGroup(locationMiddleware, sessionLocationMiddleware).middleware(workspaceRoutingMiddleware))
     .add(ReferenceGroup.middleware(locationMiddleware))
     .annotateMerge(
       OpenApi.annotations({
