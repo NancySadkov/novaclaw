@@ -28,7 +28,12 @@ const stateLayer = Layer.effectDiscard(
 )
 
 const it = testEffect(stateLayer)
-const worktreeTest = process.platform === "win32" ? it.instance.skip : it.instance
+// 🔴 **Un-skipped on win32 2026-08-07.** The skip had no recorded reason and was hiding a test that
+// called `/project/current` — a route the project-entity kill removed — so it failed on EVERY
+// platform and the skip was the only thing keeping that off the gate. That test is gone (its scenario
+// cannot occur: the workspace adapter passes no start command) and the property it cared about moved
+// to the direct create, which now passes a real slow `startCommand`.
+const worktreeTest = it.instance
 type TestServer = ReturnType<typeof Server.Default>["app"]
 type CreatedWorktree = { directory: string }
 type ScopedWorktree = { directory: string; body: CreatedWorktree; ready: Effect.Effect<void, Error> }
@@ -141,23 +146,15 @@ function createWorktreeScoped(input: {
   ).pipe(Effect.map((created) => created.body))
 }
 
-function setProjectStartCommand(input: { server: TestServer; directory: string; command: string }) {
-  return Effect.gen(function* () {
-    const current = yield* request(input.server, `/project/current?directory=${encodeURIComponent(input.directory)}`)
-    expect(current.status).toBe(200)
-    const project = yield* json<{ id: string }>(current)
-    const updated = yield* request(
-      input.server,
-      `/project/${project.id}?directory=${encodeURIComponent(input.directory)}`,
-      {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ commands: { start: input.command } }),
-      },
-    )
-    expect(updated.status).toBe(200)
-  })
-}
+// `setProjectStartCommand` lived here until 2026-08-07. It read `/project/current` and PATCHed
+// `/project/:id {commands:{start}}` — a route AND a concept the T2/T3 project-entity kill removed, so
+// it 404'd and the whole file was skipped on win32, which is the only reason nobody saw it.
+//
+// ⚠️ The test it served ("workspace worktree create returns without waiting for project start
+// command") is deleted rather than repointed: the workspace adapter calls `createFromInfo(info)` with
+// NO start command, so that path cannot have one to wait for. The property it cared about now lives
+// on the direct create above, which passes a real slow `startCommand` — the only surface where a
+// start command still exists.
 
 describe("worktree endpoint reproduction", () => {
   worktreeTest(
@@ -166,6 +163,7 @@ describe("worktree endpoint reproduction", () => {
       Effect.gen(function* () {
         const test = yield* TestInstance
         const server = yield* serverScoped()
+        const started = Date.now()
 
         const response = yield* createWorktreeScoped({
           server,
@@ -174,12 +172,18 @@ describe("worktree endpoint reproduction", () => {
           init: {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({}),
+            // 🔴 A SLOW start command, because that is what "without waiting for boot" is ABOUT.
+            // This used to post `{}` — no start command at all — so it asserted that a create with
+            // nothing to wait for does not wait. The scenario moved here on 2026-08-07: `startCommand`
+            // on `CreateInput` is the only way a start command reaches a worktree now.
+            body: JSON.stringify({ startCommand: 'bun -e "setTimeout(() => {}, 2000)"' }),
           },
           timeoutLabel: "direct worktree create",
         })
 
         expect(response).toMatchObject({ directory: expect.any(String) })
+        // Returns while the 2 s command is still running — the whole point of the endpoint.
+        expect(Date.now() - started).toBeLessThan(1_500)
       }),
     { git: true },
   )
@@ -270,37 +274,6 @@ describe("worktree endpoint reproduction", () => {
           type: "worktree",
           directory: expect.any(String),
         })
-      }),
-    { git: true },
-  )
-
-  worktreeTest(
-    "workspace worktree create returns without waiting for project start command",
-    () =>
-      Effect.gen(function* () {
-        const test = yield* TestInstance
-        const server = yield* serverScoped()
-        yield* setProjectStartCommand({
-          server,
-          directory: test.directory,
-          command: 'bun -e "setTimeout(() => {}, 2000)"',
-        })
-
-        const started = Date.now()
-        yield* createWorktreeScoped({
-          server,
-          directory: test.directory,
-          path: `${WorkspacePaths.list}?directory=${encodeURIComponent(test.directory)}`,
-          init: {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ type: "worktree", branch: null }),
-          },
-          timeoutLabel: "workspace worktree create with project start command",
-          timeoutMs: 6_000,
-        })
-
-        expect(Date.now() - started).toBeLessThan(1_500)
       }),
     { git: true },
   )

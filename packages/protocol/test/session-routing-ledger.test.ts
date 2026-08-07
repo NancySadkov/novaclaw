@@ -38,7 +38,7 @@ const Api = makeDefaultApi({
   workspaceRoutingMiddleware: TestWorkspaceRoutingMiddleware,
 })
 
-type Route = { group: string; name: string; path: string; routed: boolean }
+type Route = { group: string; name: string; path: string; routed: boolean; routingAt: number; bindingAt: number }
 
 const routes: Route[] = []
 HttpApi.reflect(Api, {
@@ -53,6 +53,13 @@ HttpApi.reflect(Api, {
       // do not get it. Reading the endpoint is therefore the only honest check — a group that
       // declares the middleware before its last `.add()` would still leave routes unrouted.
       routed: [...endpoint.middlewares].some((key) => key === (TestWorkspaceRoutingMiddleware as never)),
+      // Insertion order = declaration order, and the LAST declared runs OUTERMOST (measured
+      // 2026-08-07: `.middleware(A).middleware(B)` runs B:in → A:in → handler).
+      // ⚠️ Compared as INDICES rather than "is it last": API-level middleware (`Authorization`,
+      // `SchemaErrorMiddleware`) is applied above every group and is correctly outermost of all. The
+      // contract is only that routing sits OUTSIDE session-location binding.
+      routingAt: [...endpoint.middlewares].indexOf(TestWorkspaceRoutingMiddleware as never),
+      bindingAt: [...endpoint.middlewares].indexOf(TestSessionLocationMiddleware as never),
     })
   },
 })
@@ -71,6 +78,30 @@ describe("session-scoped routes are workspace-routed", () => {
       sessionScoped
         .filter((route) => !route.routed)
         .map((route) => `${route.group} > ${route.name} (${route.path}) is not workspace-routed`),
+    ).toEqual([])
+  })
+
+  test("🔴 workspace routing is OUTERMOST — routed away before local services are bound", () => {
+    // ⚠️ **Order is a correctness property here, not style.** `sessionLocationMiddleware` binds local
+    // services to a session; `workspaceRoutingMiddleware` may send the request to another machine
+    // entirely. Binding first would boot a location graph for a request that is about to leave — work
+    // done on the wrong host, and for a session this instance does not own.
+    //
+    // Measured 2026-08-07 with a two-middleware probe: `.middleware(A).middleware(B)` runs
+    // `B:in → A:in → handler → A:out → B:out`, so the LAST declared is the OUTERMOST. `middlewares` is
+    // a Set and JS Sets iterate in insertion order, so the last entry is the outer one.
+    // Only routes that bind a session location can be misordered; the rest have nothing to order against.
+    const binding = sessionScoped.filter((route) => route.bindingAt >= 0)
+    expect(binding.length).toBeGreaterThan(5)
+    expect(
+      binding
+        .filter((route) => !(route.routingAt > route.bindingAt))
+        .map(
+          (route) =>
+            `${route.group} > ${route.name}: workspace routing (${route.routingAt}) is not outside session-location ` +
+            `binding (${route.bindingAt}) — this request would bind local services before discovering it belongs ` +
+            `to another machine`,
+        ),
     ).toEqual([])
   })
 

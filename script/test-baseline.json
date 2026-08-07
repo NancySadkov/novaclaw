@@ -6,7 +6,7 @@
   "units": {
     "llm": 30,
     "core": 8,
-    "novaclaw:server": 17,
+    "novaclaw:server": 11,
     "novaclaw:v2": 3,
     "schema": 0,
     "protocol": 0,
