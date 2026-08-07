@@ -183,6 +183,12 @@ export interface Options {
   readonly appendFn?: (fd: number, chunk: Buffer) => void
   /** Test seam: rename, so the Windows `EBUSY` rotation block is reproducible on any OS. */
   readonly renameFn?: (from: string, to: string) => void
+  /**
+   * Test seam: the hard-cap truncation. It exists because the branch it guards is the one whose
+   * failure is swallowed — and a swallowed failure whose recovery path nothing exercises is a claim
+   * with no evidence, which is how the `ftruncateSync` EPERM shipped green in the first place.
+   */
+  readonly truncateFn?: (file: string) => void
   /** Called once, when the writer degrades. `logging.ts` owns the user-facing wording. */
   readonly onDegrade?: (reason: string, file: string) => void
   /**
@@ -367,7 +373,15 @@ export class Writer {
       clearTimeout(this.timer)
       this.timer = undefined
     }
-    if (this.buffer.length === 0 || this.fd === undefined) return
+    if (this.buffer.length === 0) return
+    // ⚠️ A missing handle while the state still says `ok` is an invariant violation, and the
+    // tempting `return` here is a SILENT one: the buffer would grow in memory forever and every
+    // line would be lost with nothing said. Name it and degrade — the lines then go to stderr,
+    // which is the whole contract of this module.
+    if (this.fd === undefined) {
+      this.degrade("the log file handle was lost")
+      return
+    }
     const chunk = Buffer.from(this.buffer.join(""), "utf8")
     this.buffer = []
     this.buffered = 0
@@ -416,25 +430,35 @@ export class Writer {
     if (!renamed) {
       // The bound is mechanical or it is not a bound: a stuck reader must not buy unlimited growth.
       if (this.size >= this.segmentBytes * ROTATION_STUCK_MULTIPLE) {
+        // ⚠️ **`ftruncateSync` on an append-mode descriptor throws `EPERM` on win32** (measured
+        // 2026-08-07, bun 1.3.14): a handle opened `"a"` has no write access for `SetEndOfFile`.
+        // The first version of this branch did exactly that, and the failure was SILENT — the
+        // `catch` swallowed it, `truncations` stayed 0, and the "bounded by construction" claim was
+        // false on the one platform this ships on most. Truncate by PATH instead, which needs the
+        // handle closed first and works everywhere.
+        //
+        // ⚠️ The reopen is OUTSIDE the `try` on purpose. With it inside, a refused truncate left
+        // the writer holding no handle while its state still said `ok` — every later line silently
+        // dropped, no warning, nothing degraded. A cleanup that only runs on the happy path is not
+        // cleanup.
+        this.closeFd()
+        let truncated = false
         try {
-          // ⚠️ **`ftruncateSync` on an append-mode descriptor throws `EPERM` on win32** (measured
-          // 2026-08-07, bun 1.3.14): a handle opened `"a"` has no write access for `SetEndOfFile`.
-          // The first version of this branch did exactly that, and the failure was SILENT — the
-          // `catch` below swallowed it, `truncations` stayed 0, and the "bounded by construction"
-          // claim was false on the one platform this ships on most. Truncate by PATH instead, which
-          // needs the handle closed first and works everywhere.
-          this.closeFd()
-          fsSync.truncateSync(this.file, 0)
-          this.open()
-          if (!this.available) return
+          const truncate = this.options.truncateFn ?? ((file: string) => fsSync.truncateSync(file, 0))
+          truncate(this.file)
+          truncated = true
+        } catch {
+          // Even truncation refused. Nothing here is worth crashing the instance over.
+        }
+        this.open()
+        if (!this.available) return
+        if (truncated) {
           this.size = 0
           this.truncations++
           process.stderr.write(
             `[novaclaw] WARNING: ${this.file} could not be rotated (something else is holding it ` +
               `open) and passed its hard cap, so it was truncated. Earlier lines from this run are gone.\n`,
           )
-        } catch {
-          // Even truncation refused. Nothing is worth crashing the instance over here.
         }
       }
       return
@@ -547,13 +571,22 @@ export class Writer {
     return this.sweep(bytes)
   }
 
-  /** Flush, close the handle, and stop being a candidate for the exit hook. Never throws. */
+  /**
+   * Flush, close the handle, and stop being a candidate for the exit hook. Never throws.
+   *
+   * ⚠️ It also marks the writer unavailable — quietly, with no warning, because a clean close is
+   * not a fault. That matters for a line logged AFTER the scope closed (shutdown ordering is not
+   * something a logger gets to assume): without it such a line would be buffered into a writer
+   * nothing will ever flush and lost in silence. Marked, it returns `false` and the sink puts it on
+   * stderr, which is where a late shutdown line belongs anyway.
+   */
   close(): void {
     this.flush()
     this.closeFd()
     if (this.timer) clearTimeout(this.timer)
     this.timer = undefined
     live.delete(this)
+    if (this.state.kind === "ok") this.state = { kind: "unavailable", reason: "the log file was closed" }
   }
 
   /** Resolves when the deferred compression + sweep for every rotation so far has settled. */

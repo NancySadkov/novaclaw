@@ -354,6 +354,54 @@ describe("logging never takes the instance down", () => {
     expect(fsSync.readFileSync(file, "utf8")).toBe(line(0))
   })
 
+  test("a refused truncation still leaves a usable handle — the branch whose failure is swallowed", async () => {
+    await using dir = await tmpdir()
+    const file = path.join(dir.path, "novaclaw.log")
+    let truncates = 0
+    const truncateFn = () => {
+      truncates++
+      throw Object.assign(new Error("EPERM: operation not permitted, truncate"), { code: "EPERM" })
+    }
+    expect(() => truncateFn()).toThrow("EPERM") // the injector bites
+    truncates = 0
+
+    const writer = LogFile.open({
+      file,
+      segmentBytes: 200,
+      renameFn: () => {
+        throw Object.assign(new Error("EBUSY"), { code: "EBUSY" })
+      },
+      truncateFn,
+    })
+    for (let index = 0; index < 40; index++) writer.write(line(index), true)
+
+    // Rotation refused AND truncation refused — the worst case, and the writer is still writing.
+    expect(truncates).toBeGreaterThan(0)
+    expect(writer.truncations).toBe(0)
+    expect(writer.available).toBe(true)
+    writer.write("still-alive\n", true)
+    expect(fsSync.readFileSync(file, "utf8")).toContain("still-alive")
+    // ⚠️ This is the regression the code comment names: the reopen used to live INSIDE the `try`,
+    // so a refused truncate left `fd === undefined` with the state still `ok` — every later line
+    // dropped in silence, no warning, nothing degraded. Green tests, no log.
+    writer.close()
+  })
+
+  test("a line logged after close goes to stderr rather than into a buffer nobody will flush", async () => {
+    await using dir = await tmpdir()
+    const file = path.join(dir.path, "novaclaw.log")
+    const writer = LogFile.open({ file })
+    writer.write(line(0), true)
+    writer.close()
+
+    // Shutdown ordering is not something a logger gets to assume. A late line must be REFUSED, so
+    // the sink can put it on stderr — the alternative is buffering it into a writer whose timer is
+    // cleared and whose exit-hook registration is gone, which loses it in silence.
+    expect(writer.write(line(1))).toBe(false)
+    expect(writer.dropped).toBe(1)
+    expect(fsSync.readFileSync(file, "utf8")).toBe(line(0))
+  })
+
   test("a failing gzip leaves the plain segment readable and no half-written .gz", async () => {
     await using dir = await tmpdir()
     const file = path.join(dir.path, "novaclaw.log")
