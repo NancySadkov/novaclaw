@@ -149,7 +149,8 @@ export const REPAIRS_PER_STEP = 1
  * So the second attempt's **content** differs: {@link repeatEscalationNote} names the banned action
  * and the measurement behind it, narrows the free-proposal question to a CLOSED choice, and offers
  * `abstain` explicitly at the one moment it is the right answer. Then the run stops with a reason
- * that names the CAUSE, the way `pointer-not-reaching-target` outranks `no-progress` in {@link settle}.
+ * that names the SIGNATURE, the way `repeated-no-visible-effect` outranks `no-progress` in
+ * {@link settle}.
  *
  * **The bound, and why it costs nothing:** one escalated note per episode, and an episode is at most
  * two steps. Replayed against the §7d run the episode ends at step 18 instead of step 21 — **4
@@ -170,7 +171,19 @@ export const REPEAT_ESCALATIONS = 1
 
 export type BlockedReason =
   | "budget"
-  | "pointer-not-reaching-target"
+  /**
+   * **G13.** Two consecutive actions on DIFFERENT targets left their watch regions byte-identical.
+   *
+   * 🔴 **This used to be called `pointer-not-reaching-target` and that name was a DIAGNOSIS, which is
+   * the one thing this stop must not assert.** The signature has (at least) two causes and the
+   * measurement cannot tell them apart: the pointer is not reaching the target (capture/grab —
+   * DOSBox's `autolock`), or the pointer reaches it fine and the CONTROLS are not responding
+   * visibly. The 2026-08-07 acceptance run is the counter-example that forced the rename —
+   * `autolock=false` in that substrate and two of its steps were `attributed`, so the pointer
+   * demonstrably reached targets, while the old detail sent the reader to check the emulator.
+   * The name now states what was measured; {@link settle} carries the differential.
+   */
+  | "repeated-no-visible-effect"
   /** The planner will not stop proposing an action G6 has refused — see {@link REPEAT_ESCALATIONS}. */
   | "stuck-on-refused-action"
   | "no-progress"
@@ -300,6 +313,19 @@ export interface State {
    * repair, so one unit here is two refused planner calls.
    */
   readonly repeatEpisode: number
+  /**
+   * How many steps in the WHOLE run have measured `attributed`. Run-long and never reset — unlike
+   * every other counter here, which measures one episode.
+   *
+   * ⚠️ **It is reported by G13 and must never gate it.** See {@link g13Detail}: `autolock` captures
+   * on the first click, so the canonical captured-pointer run *starts* with an attributed step, and
+   * a guard gated on this being zero would be silent in exactly the case it exists for.
+   *
+   * ⚠️ Derived state, deliberately, rather than read back off the ledger's `verdict` column — that
+   * field is a ratcheted 28-char display string (`ledger.ts`), and the mechanical guards read the
+   * reducer's own counters and never that string.
+   */
+  readonly attributedSteps: number
   readonly noProgress: number
   /** Estimate of the prompt just sent, used when the driver reports no `usage.prompt_tokens`. */
   readonly lastPromptEstimate: number
@@ -333,6 +359,7 @@ export const initial = (spec: TaskSpec): State => ({
   consecutiveAbstains: 0,
   consecutiveNoEffect: 0,
   repeatEpisode: 0,
+  attributedSteps: 0,
   noProgress: 0,
   lastPromptEstimate: 0,
 })
@@ -409,6 +436,46 @@ const spend = (state: State, reported: number | undefined): State => ({
 // ---------------------------------------------------------------------------------------------
 
 /**
+ * **G13's detail — a DIFFERENTIAL, and the reason it is not a diagnosis.**
+ *
+ * 🔴 **The old text named DOSBox's `autolock` as the cause, and the 2026-08-07 acceptance run is the
+ * case where that is FALSE.** `autolock=false` in that substrate and two of its steps measured
+ * `attributed`, so the pointer demonstrably reached targets — yet the fix that made the run get
+ * further also made this stop reachable there. **A diagnosis that names the wrong cause is worse than
+ * a generic one: it sends the next reader to the emulator config while the real answer is on the
+ * screen.**
+ *
+ * ⚠️ **The other candidate fix — gate the stop on the run never having had an `attributed` step — was
+ * REFUSED, and the program's own measurement is what refuses it.** DOSBox `autolock` captures the
+ * mouse *on the first click* (`todo/computer-use.md`, 2026-08-06), so the canonical autolock run is
+ * one attributed step followed by an unbroken run of dead ones. Gating on "never attributed" would
+ * disable G13 in **exactly** the scenario it was written for. The attributed history is evidence to
+ * REPORT, never a condition to suppress the stop on.
+ *
+ * So: the observation is stated as fact, the causes are listed as a differential in both directions,
+ * and the run's own attributed count is handed over as the discriminator the reader should weigh.
+ * The one instruction that survives unchanged is *do not adjust coordinates* — §3 refuses automatic
+ * coordinate correction by construction, and a signal that is weak in the `changed` direction would
+ * walk the pointer into nonsense while every step reported progress.
+ */
+export const g13Detail = (attributedSteps: number): string =>
+  "two consecutive actions on DIFFERENT targets left their watch regions byte-identical: the " +
+  "commands ran and the screen did not move where they aimed. That measurement has two causes and " +
+  "does not distinguish them. (a) The pointer is not reaching the target — a pointer capture or " +
+  "grab, of which DOSBox's `autolock` is the known instance (it switches to relative motion after " +
+  "the first click, so the host pointer moves correctly while the application's cursor does not " +
+  "follow). (b) The pointer reaches the target and the CONTROLS do not respond visibly — an " +
+  "already-selected or inert control, a modal that ignores the click, or an effect that renders " +
+  "outside the watch region. " +
+  (attributedSteps === 0
+    ? "No step in this run has ever measured `attributed`, so nothing here has shown the pointer " +
+      "reaching anything: (a) is the first thing to check."
+    : `${attributedSteps} earlier step(s) in this run measured \`attributed\`, so the pointer HAS ` +
+      "reached a target here and a substrate-wide capture is unlikely — though not excluded, since " +
+      "`autolock` captures on the first click. Weigh (b) first: look at what was clicked.") +
+  " Do not adjust coordinates."
+
+/**
  * Everything that can end a run at the end of a step, then the next Observe.
  *
  * ⚠️ **The order is the design's and it is not interchangeable.** `Done` outranks every stop
@@ -433,16 +500,9 @@ const settle = (state: State): Transition => {
     )
   }
   if (state.consecutiveNoEffect >= 2) {
-    // G13 — the autolock signature. Do not spend 25 steps discovering it.
-    return blocked(
-      state,
-      "pointer-not-reaching-target",
-      "two consecutive actions on DIFFERENT targets left their watch regions byte-identical. The " +
-        "commands ran and the screen did not move where they aimed, which is what a captured pointer " +
-        "looks like (DOSBox's `autolock` switches to relative motion after the first click, so the " +
-        "host pointer moves correctly while the application's cursor does not follow). Fix the " +
-        "substrate; do not adjust coordinates.",
-    )
+    // G13. Do not spend 25 steps discovering this. See {@link g13Detail} for why the text is a
+    // DIFFERENTIAL and not the autolock diagnosis it used to be.
+    return blocked(state, "repeated-no-visible-effect", g13Detail(state.attributedSteps))
   }
   if (state.consecutiveAbstains >= 2) {
     return blocked(state, "cannot-see", "the planner abstained twice in a row — it cannot see the target")
@@ -723,6 +783,10 @@ const settleMeasured = (state: State, measured: Measured, advanced: boolean, unc
     checkpointIndex: advanced ? state.checkpointIndex + 1 : state.checkpointIndex,
     consecutiveNoEffect: measured.consecutiveNoEffect,
     lastNoEffect: measured.lastNoEffect,
+    // Run-long, never reset — G13's differential reports it. A REFUSED award still counts here if
+    // the screen moved: this asks whether the pointer ever reached anything, not whether the run
+    // made progress, and those are different questions (`noProgress` below answers the other one).
+    attributedSteps: state.attributedSteps + (measured.attributed ? 1 : 0),
     // ⚠️ A REFUSED award is not progress. It reads as an advance to a casual reader and is exactly
     // the inflation this gate exists to stop, so it falls through to the `attributed` test like any
     // other step and increments `noProgress` when the screen did not move either.

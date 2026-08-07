@@ -209,10 +209,10 @@ describe("a clean 3-step run reaches Done — and only through the harness's own
 })
 
 // ------------------------------------------------------------------------------------------------
-// G13 — autolock
+// G13 — two no-visible-effects on DIFFERENT targets
 // ------------------------------------------------------------------------------------------------
 
-describe("🔴 G13 — two no-visible-effects on DIFFERENT targets is the autolock signature", () => {
+describe("🔴 G13 — two no-visible-effects on DIFFERENT targets stops the run", () => {
   const autolock = drive(spec(), [
     ...CALIBRATE,
     ...step(proposeAt(464, 684), quiet(), { predicted: "no", checkpoint: "no" }, "s1"),
@@ -220,12 +220,59 @@ describe("🔴 G13 — two no-visible-effects on DIFFERENT targets is the autolo
     ...step(proposeAt(100, 100), moved(), { predicted: "yes", checkpoint: "no" }, "s3"),
   ])
 
-  test("the run stops at step 2 and names the cause", () => {
+  test("the run stops at step 2 and names the SIGNATURE, not a cause", () => {
     expect(autolock.outcome?.kind).toBe("blocked")
     if (autolock.outcome?.kind !== "blocked") return
-    expect(autolock.outcome.reason).toBe("pointer-not-reaching-target")
-    expect(autolock.outcome.detail).toContain("autolock")
+    expect(autolock.outcome.reason).toBe("repeated-no-visible-effect")
     expect(autolock.state.step).toBe(2)
+  })
+
+  /**
+   * 🔴 **The regression this pins, and it cost the program an item.** The detail used to assert
+   * DOSBox `autolock` as *the* cause. On the 2026-08-07 acceptance substrate `autolock=false` and two
+   * steps measured `attributed` — so the text sent the reader to the emulator config while the
+   * pointer was demonstrably fine. The detail is now a differential: both branches present, neither
+   * asserted, and the run's own attributed history handed over as the discriminator.
+   */
+  test("the detail is a DIFFERENTIAL — both causes present, neither asserted as the answer", () => {
+    if (autolock.outcome?.kind !== "blocked") return expect.unreachable()
+    const detail = autolock.outcome.detail
+    // Branch (a) survives — autolock is still the known instance and must stay nameable.
+    expect(detail).toContain("autolock")
+    // Branch (b) is the one that was missing, and the one that was true in the live run.
+    expect(detail).toContain("already-selected")
+    expect(detail).toContain("outside the watch region")
+    // It must state the measurement as the fact and the causes as candidates.
+    expect(detail).toContain("two causes and does not distinguish them")
+    // §3's standing refusal is unchanged.
+    expect(detail).toContain("Do not adjust coordinates")
+  })
+
+  test("with NO attributed step the detail points at (a); with one it points at (b)", () => {
+    // Zero attributed steps — nothing in the run has shown the pointer reaching anything.
+    if (autolock.outcome?.kind !== "blocked") return expect.unreachable()
+    expect(autolock.state.attributedSteps).toBe(0)
+    expect(autolock.outcome.detail).toContain("(a) is the first thing to check")
+
+    // 🔴 The live shape: an attributed step FIRST, then two dead ones on different targets. This is
+    // both the acceptance run's shape and — per `todo/computer-use.md` — autolock's own, since it
+    // captures on the FIRST click. So the stop must still fire, and only the emphasis moves.
+    const afterAttribution = drive(spec(), [
+      ...CALIBRATE,
+      ...step(proposeAt(464, 684), moved(), { predicted: "yes", checkpoint: "no" }, "s1"),
+      ...step(proposeAt(300, 200), quiet(), { predicted: "no", checkpoint: "no" }, "s2"),
+      ...step(proposeAt(100, 100), quiet(), { predicted: "no", checkpoint: "no" }, "s3"),
+    ])
+    expect(afterAttribution.outcome?.kind).toBe("blocked")
+    if (afterAttribution.outcome?.kind !== "blocked") return
+    // ⚠️ THE LOAD-BEARING ASSERTION. A guard gated on `attributedSteps === 0` would be silent here,
+    // and here is exactly where autolock lives. The stop fires regardless.
+    expect(afterAttribution.outcome.reason).toBe("repeated-no-visible-effect")
+    expect(afterAttribution.state.attributedSteps).toBe(1)
+    expect(afterAttribution.outcome.detail).toContain("1 earlier step(s) in this run measured `attributed`")
+    expect(afterAttribution.outcome.detail).toContain("Weigh (b) first")
+    // …and it does not claim autolock is excluded, because it is not.
+    expect(afterAttribution.outcome.detail).toContain("not excluded")
   })
 
   test("it does NOT spend the whole budget discovering it", () => {

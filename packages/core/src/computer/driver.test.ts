@@ -697,12 +697,12 @@ describe("the RunReport", () => {
     expect(report.acted).toBe(2)
   })
 
-  test("🔴 G13 through the driver — two dead clicks on DIFFERENT targets name the autolock class", async () => {
+  test("🔴 G13 through the driver — two dead clicks on DIFFERENT targets stop the run", async () => {
     const { report } = await drive({
       screen: substrate({ moves: () => false }),
       llm: model({ planner: [clickAt(464, 684), clickAt(300, 300)], adjudicator: CALIBRATED }),
     })
-    expect(report.outcome).toMatchObject({ kind: "blocked", reason: "pointer-not-reaching-target" })
+    expect(report.outcome).toMatchObject({ kind: "blocked", reason: "repeated-no-visible-effect" })
     expect(verdictKinds(report)).toEqual(["no-visible-effect", "no-visible-effect"])
     expect(report.verdicts[0]?.detail).toContain("byte-identical")
   })
