@@ -1723,9 +1723,10 @@ export const EVENTS = {
    * what `log-attributes.test.ts`'s seam-1 ratchet enforces, and it is why the class exists at all
    * beside `text` (the two records are otherwise identical: `content: "user"`, `value: "string"`, so
    * this carries **no** egress consequence). What the two events below set is
-   * `LLMError.message` / `LLMErrorReason.message` — a `Schema.String` FIELD of the structured
-   * `LLMErrorReason` union, whose discriminant is already on the same line as
-   * `session.provider.reason`. Reading a typed string field is not a normalization decision, and
+   * `LLMErrorReason.message` — a `Schema.String` FIELD of the structured `LLMErrorReason` union,
+   * whose discriminant is already on the same line as `session.provider.reason` — reached either
+   * directly (`.broken`) or through `LLMError`'s `message` getter, which is `module.method:` plus
+   * that same field (`.retry`). Reading a typed string field is not a normalization decision, and
    * `Log.fault` on a string is provably the identity branch — so wrapping it would turn the ratchet
    * green while normalizing nothing, which is the failure the ratchet exists to make visible.
    *
