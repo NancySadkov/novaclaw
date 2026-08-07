@@ -129,6 +129,41 @@ export const CHECKPOINT_CONFIRMATIONS = 1
 /** How many times one step may be re-prompted before the step is spent. G3: exactly one. */
 export const REPAIRS_PER_STEP = 1
 
+/**
+ * 🔴 **How many ESCALATED re-prompts a repeat-refusal episode gets before the run stops. MEASURED,
+ * 2026-08-07 — and the escalation is CHEAPER than what it replaces, not an extra call.**
+ *
+ * A structural repair says *"your reply was malformed"*; a repeat refusal says *"your reply was
+ * well-formed and you are stuck"*. Until now both spent the same single {@link REPAIRS_PER_STEP} and
+ * both ended the step the same way, and that conflation is what the 2.2 acceptance re-run ended on
+ * (`computer-use-loop-plan.md` §7d). At Master of Magic's Game Options dialog the planner clicked
+ * `(900,920)` → `attributed`, the identical click → `no-visible-effect`, and then **five consecutive
+ * steps of `refused: repeat` while re-emitting the identical proposal**, until `no-progress` fired.
+ *
+ * ⚠️ **More attempts at the SAME question are measurably worthless here.** Those five steps each
+ * carried a fresh repair, so the run drew **ten independent samples** — `temperature: 0` is not
+ * deterministic on this deployment (11 of 25 back-to-back pairs disagree) — and every one of the ten
+ * re-emitted `click(900,920)`. The observation prose differed on every line; the action never did. A
+ * retry that re-sends the same prompt is not a repair, it is the same inference run again.
+ *
+ * So the second attempt's **content** differs: {@link repeatEscalationNote} names the banned action
+ * and the measurement behind it, narrows the free-proposal question to a CLOSED choice, and offers
+ * `abstain` explicitly at the one moment it is the right answer. Then the run stops with a reason
+ * that names the CAUSE, the way `pointer-not-reaching-target` outranks `no-progress` in {@link settle}.
+ *
+ * **The bound, and why it costs nothing:** one escalated note per episode, and an episode is at most
+ * two steps. Replayed against the §7d run the episode ends at step 18 instead of step 21 — **4
+ * planner calls instead of 10.** The escalated note *replaces* a note that is measurably inert; it
+ * never adds a call, so its expected value is non-negative by construction. I do not expect it to
+ * convert often; I am re-spending a call that is provably wasted today and buying a named
+ * termination three steps earlier.
+ *
+ * ⚠️ **This changes nothing about G6 and nothing about §3.** The interlock still refuses the repeat
+ * before execution, and the harness still never computes a corrected coordinate — the escalated note
+ * suggests no target, and the model chooses from the image as it always did.
+ */
+export const REPEAT_ESCALATIONS = 1
+
 // ---------------------------------------------------------------------------------------------
 // Outcomes
 // ---------------------------------------------------------------------------------------------
@@ -136,6 +171,8 @@ export const REPAIRS_PER_STEP = 1
 export type BlockedReason =
   | "budget"
   | "pointer-not-reaching-target"
+  /** The planner will not stop proposing an action G6 has refused — see {@link REPEAT_ESCALATIONS}. */
+  | "stuck-on-refused-action"
   | "no-progress"
   | "cannot-see"
   | "capture-failed"
@@ -255,6 +292,14 @@ export interface State {
    * healthy — the same shape of silent wrongness the whole module is written against.
    */
   readonly lastNoEffect?: string
+  /**
+   * How many CONSECUTIVE steps have ended with nothing but `refused: repeat`. Zero after any step
+   * that ended any other way, so it measures one stuck episode rather than a run-long tally.
+   *
+   * ⚠️ It is a STEP counter, not a refusal counter: a step that ends this way has already spent its
+   * repair, so one unit here is two refused planner calls.
+   */
+  readonly repeatEpisode: number
   readonly noProgress: number
   /** Estimate of the prompt just sent, used when the driver reports no `usage.prompt_tokens`. */
   readonly lastPromptEstimate: number
@@ -287,6 +332,7 @@ export const initial = (spec: TaskSpec): State => ({
   repairs: 0,
   consecutiveAbstains: 0,
   consecutiveNoEffect: 0,
+  repeatEpisode: 0,
   noProgress: 0,
   lastPromptEstimate: 0,
 })
@@ -571,11 +617,84 @@ const buildAction = (draft: ComputerProposal.ProposalDraft, spec: TaskSpec): Bui
 // Re-prompting one step, and giving up on it
 // ---------------------------------------------------------------------------------------------
 
-/** One repair or Guard refusal, then the step is spent — G3: an unbounded repair loop is a budget leak. */
-const reprompt = (state: State, note: string, verdict: string, pending?: Pending): Transition => {
+/**
+ * G6's FIRST refusal note. Unchanged, and deliberately: as attempt one it is the cheap ask, and the
+ * §7d measurement is about what happens when it does not land — not about this wording.
+ */
+export const REPEAT_REFUSAL_NOTE =
+  "The harness REFUSED to execute that action: it is byte-identical to the previous one, which " +
+  "left the watched region unchanged. Repeating it cannot produce a different result. " +
+  "Re-ground from the current screen, or try a different target.\n\nRe-emit the WHOLE proposal, corrected."
+
+/**
+ * G6's SECOND note, and the whole point is that it is a **different question**, not the same one
+ * asked louder — see {@link REPEAT_ESCALATIONS} for why an identical re-ask is worthless here.
+ *
+ * Three things change: it states the harness's own MEASUREMENT (the command ran and the pixels did
+ * not move) rather than repeating the refusal; it narrows a free proposal to a **closed choice**;
+ * and it puts `abstain` in front of the planner at the one moment it is the correct answer, which
+ * `CONTRACT_LINES` only ever mentions in passing at the bottom of a contract the model has by then
+ * read many times.
+ *
+ * ⚠️ **No coordinate appears here that the model did not itself emit** (§3). `action` is
+ * `ComputerLedger.summarizeAction` of the planner's own draft — the harness names what is banned and
+ * never where to aim instead.
+ */
+export const repeatEscalationNote = (input: { readonly action: string; readonly steps: number }): string =>
+  [
+    `You have now proposed ${input.action} in ${input.steps} consecutive steps and the harness has ` +
+      "refused it every time. Before the first refusal it EXECUTED that action and MEASURED the " +
+      "region you asked it to watch: the pixels did not change. That is not an opinion about your " +
+      "aim — the command ran, and the screen did not move.",
+    "",
+    "Two things would produce that measurement and this log cannot tell them apart: the control you " +
+      "are aiming at is not the control you believe it is, or it is already in the state you want. " +
+      "Either way that action is spent for this screen and the harness will not run it again.",
+    "",
+    "Answer with exactly ONE of these two, and nothing else:",
+    `  1. an ACT proposal whose action differs from ${input.action} — a different target, or a ` +
+      "different KIND of action (key and type are actions too; the pointer is not the only channel).",
+    '  2. ABSTAIN — {"abstain": true, "reason": "…"} — if you cannot justify any other action from ' +
+      "this screen. Abstaining is a legal, correct answer, and it is the right one when the only " +
+      "move you can see has already been measured as doing nothing. It is not a failure and it is " +
+      "not giving up on the goal.",
+    "",
+    "Re-emit the WHOLE proposal, corrected.",
+  ].join("\n")
+
+const stuckDetail = (action: string, steps: number): string =>
+  `the planner proposed ${action} in ${steps} consecutive steps after the harness had measured that ` +
+  "exact action as leaving its own watched region unchanged, and it re-emitted it once more after the " +
+  "escalated refusal that names the measurement and offers `abstain` as the alternative. Each of " +
+  "those steps drew two independent samples, so re-asking is not a repair — the planner has one " +
+  "hypothesis and no way to generate a second. ⚠️ This is NOT a grounding failure for the harness to " +
+  "correct: no coordinate is inferred from a verdict here, by construction. The next lever is the " +
+  "task's own instructions or a different actuation channel, and both are outside this loop."
+
+/**
+ * One repair or Guard refusal, then the step is spent — G3: an unbounded repair loop is a budget leak.
+ *
+ * `repeat` is present only for a G6 refusal, which is the one refusal that is not about the shape of
+ * the reply. It carries the episode counter and, once {@link REPEAT_ESCALATIONS} is spent, ends the
+ * run naming the cause instead of leaving `no-progress` to report the symptom three steps later.
+ */
+const reprompt = (
+  state: State,
+  note: string,
+  verdict: string,
+  pending?: Pending,
+  repeat?: { readonly action: string },
+): Transition => {
   if (state.repairs >= REPAIRS_PER_STEP) {
+    // ⚠️ Any step that ends for a reason OTHER than a repeat refusal clears the episode. The counter
+    // measures "the planner is stuck on this one action", not "the planner has had a bad run".
+    const episode = repeat === undefined ? 0 : state.repeatEpisode + 1
     const settled = record({ ...state, pending }, { verdict })
-    return settle({ ...settled, noProgress: settled.noProgress + 1, pending: undefined })
+    const spent: State = { ...settled, noProgress: settled.noProgress + 1, pending: undefined, repeatEpisode: episode }
+    if (repeat !== undefined && state.repeatEpisode >= REPEAT_ESCALATIONS) {
+      return blocked(spent, "stuck-on-refused-action", stuckDetail(repeat.action, episode))
+    }
+    return settle(spent)
   }
   return ask(
     { ...state, repairs: state.repairs + 1 },
@@ -718,6 +837,9 @@ export function next(state: State, event: Event): Transition {
           },
           consecutiveAbstains: spent.consecutiveAbstains + 1,
           noProgress: spent.noProgress + 1,
+          // An abstain is the escalation's own preferred answer, so it ends the stuck episode: the
+          // planner stopped repeating, and `consecutiveAbstains` is now the counter that speaks.
+          repeatEpisode: 0,
         }
         return settle(record(abstained, { verdict: "abstained" }))
       }
@@ -728,6 +850,7 @@ export function next(state: State, event: Event): Transition {
           ...spent,
           phase: "adjudicate-claim",
           consecutiveAbstains: 0,
+          repeatEpisode: 0,
           pending: {
             observation: draft.observation ?? ComputerLedger.ABSENT,
             summary: "claim_done",
@@ -765,20 +888,20 @@ export function next(state: State, event: Event): Transition {
 
       // G6 — the repeat interlock. `NO_EFFECT_ADVICE` is a sentence; this is the constraint.
       if (spent.lastNoEffect !== undefined && spent.lastNoEffect === signature) {
-        return reprompt(
-          spent,
-          "The harness REFUSED to execute that action: it is byte-identical to the previous one, which " +
-            "left the watched region unchanged. Repeating it cannot produce a different result. " +
-            "Re-ground from the current screen, or try a different target.\n\nRe-emit the WHOLE proposal, corrected.",
-          "refused: repeat",
-          described,
-        )
+        // 🔴 The ESCALATION, not a retry. The first stuck step gets the plain refusal; a second one
+        // gets a different question (see {@link REPEAT_ESCALATIONS}) and then the run stops.
+        const note =
+          spent.repeatEpisode === 0
+            ? REPEAT_REFUSAL_NOTE
+            : repeatEscalationNote({ action: described.summary, steps: spent.repeatEpisode + 1 })
+        return reprompt(spent, note, "refused: repeat", described, { action: described.summary })
       }
 
       const acting: State = {
         ...spent,
         phase: "act",
         consecutiveAbstains: 0,
+        repeatEpisode: 0,
         pending: { ...described, signature, kind: build.action.kind },
       }
       return {
@@ -797,7 +920,7 @@ export function next(state: State, event: Event): Transition {
     case "act": {
       if (event.kind === "act-failed") {
         const failed = record(state, { verdict: `act-failed: ${event.reason}` })
-        return settle({ ...failed, noProgress: failed.noProgress + 1, pending: undefined })
+        return settle({ ...failed, noProgress: failed.noProgress + 1, pending: undefined, repeatEpisode: 0 })
       }
       if (event.kind !== "acted") return unexpected(state, event)
 

@@ -693,6 +693,132 @@ describe("🔴 G6 — an action byte-identical to one that just did nothing is r
 })
 
 // ------------------------------------------------------------------------------------------------
+// G3's repair, ESCALATED — the 2.2 acceptance re-run's binding constraint (§7d)
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * 🔴 **This is the §7d failure, scripted.** At Master of Magic's Game Options dialog the planner
+ * clicked `(900,920)` → `attributed`, the identical click → `no-visible-effect`, and then five
+ * consecutive steps of `refused: repeat` while re-emitting the identical proposal — ten independent
+ * planner samples, all the same action — until `no-progress` fired.
+ *
+ * Every test below is paired with the near-identical script that produces the opposite outcome,
+ * because an escalation that can only ever end a run is indistinguishable from making the repair
+ * unreachable, and a "different note" assertion is vacuous if the first note is never checked.
+ */
+describe("🔴 a repeat refusal escalates ONCE, with different CONTENT, then names the cause", () => {
+  const plannerPrompts = (run: Run): ReadonlyArray<string> =>
+    run.commands.flatMap((c) => (c.kind === "ask-planner" ? [c.prompt.user] : []))
+
+  /** Step 1 leaves `click(464,684)` banned; steps 2 and 3 are the planner refusing to let go. */
+  const stuckEpisode: ReadonlyArray<LOOP.Event> = [
+    ...CALIBRATE,
+    ...step(proposeAt(464, 684), quiet(), { checkpoint: "no" }, "s1"),
+    captured("s2"),
+    proposeAt(464, 684),
+    proposeAt(464, 684),
+    captured("s3"),
+    proposeAt(464, 684),
+    proposeAt(464, 684),
+  ]
+
+  const stuck = drive(spec(), stuckEpisode)
+  const prompts = plannerPrompts(stuck)
+
+  test("the FIRST stuck step still gets the plain G6 note — the control for 'the content differs'", () => {
+    // [0] step 1's ordinary ask, [1] step 2's ordinary ask, [2] step 2's repair.
+    expect(prompts[2]).toContain("byte-identical")
+    expect(prompts[2]).not.toContain("Answer with exactly ONE")
+  })
+
+  test("the SECOND stuck step's repair is a DIFFERENT question, not the same one asked again", () => {
+    const escalated = prompts[4] ?? ""
+    expect(escalated).not.toBe(prompts[2])
+    expect(escalated).not.toContain("byte-identical")
+    // It states the harness's own measurement, names what is banned, and counts the steps.
+    expect(escalated).toContain("2 consecutive steps")
+    expect(escalated).toContain("click(464,684)")
+    expect(escalated).toContain("the command ran, and the screen did not move")
+    // …and it narrows a free proposal to a closed choice with `abstain` in it.
+    expect(escalated).toContain("Answer with exactly ONE")
+    expect(escalated).toContain('{"abstain": true')
+  })
+
+  test("§3 — the escalated note suggests NO coordinate the model did not itself emit", () => {
+    // Asserted on the BUILDER, not on the rendered prompt: the prompt also carries the step log,
+    // whose step numbers and `0/1` checkpoint column would make this test about the ledger instead.
+    const note = LOOP.repeatEscalationNote({ action: "click(464,684)", steps: 2 })
+    const numbers = note.match(/\d+/g) ?? []
+    // 464 and 684 are the planner's own; 1 and 2 are the option list and the step count.
+    expect(new Set(numbers)).toEqual(new Set(["464", "684", "1", "2"]))
+    expect(prompts[4]).toContain(note)
+  })
+
+  test("declining the escalation ends the run naming the CAUSE, not `no-progress`", () => {
+    expect(stuck.outcome).toMatchObject({ kind: "blocked", reason: "stuck-on-refused-action" })
+    if (stuck.outcome?.kind !== "blocked") return
+    expect(stuck.outcome.detail).toContain("click(464,684)")
+    expect(stuck.outcome.detail).toContain("2 consecutive steps")
+    // The refused step is still RECORDED before the run ends — the report must show what happened.
+    expect(stuck.state.ledger.map((e) => e.verdict)).toEqual([
+      "no-visible-effect",
+      "refused: repeat",
+      "refused: repeat",
+    ])
+  })
+
+  test("the BOUND: one escalated note per episode, and the episode costs 4 planner calls not 10", () => {
+    expect(LOOP.REPEAT_ESCALATIONS).toBe(1)
+    // §7d spent 5 steps × 2 refused calls. The episode here is prompts[1..4].
+    expect(prompts).toHaveLength(5)
+    expect(prompts.filter((p) => p.includes("Answer with exactly ONE"))).toHaveLength(1)
+  })
+
+  test("🔴 the negative control: a DIFFERENT action on the escalated repair EXECUTES", () => {
+    const recovered = drive(spec(), [...stuckEpisode.slice(0, stuckEpisode.length - 1), proposeAt(300, 200)])
+    expect(recovered.last.kind).toBe("act")
+    expect(recovered.outcome).toBeUndefined()
+  })
+
+  test("🔴 the negative control: ABSTAIN on the escalated repair is ACCEPTED, not blocked", () => {
+    const abstained = drive(spec(), [
+      ...stuckEpisode.slice(0, stuckEpisode.length - 1),
+      propose({ abstain: true, reason: "the only control I can see has been measured as dead", action: null, expect: null }),
+    ])
+    expect(abstained.outcome).toBeUndefined()
+    expect(abstained.state.ledger.map((e) => e.verdict)).toEqual([
+      "no-visible-effect",
+      "refused: repeat",
+      "abstained",
+    ])
+  })
+
+  test("the episode is CLEARED by a step that ends any other way — a later stuck step starts plain", () => {
+    const reset = drive(spec(), [
+      ...CALIBRATE,
+      ...step(proposeAt(464, 684), quiet(), { checkpoint: "no" }, "s1"),
+      // Step 2 ends `refused: repeat` — the episode counter is now 1.
+      captured("s2"),
+      proposeAt(464, 684),
+      proposeAt(464, 684),
+      // Step 3 executes something else and it lands. That ends the episode.
+      captured("s3"),
+      proposeAt(300, 200),
+      acted(moved(), "s3-after"),
+      adjudged({ checkpoint: "no" }),
+      // A fresh no-effect, and a fresh repeat: it must get the PLAIN note, not the escalated one.
+      ...step(proposeAt(700, 700), quiet(), { checkpoint: "no" }, "s4"),
+      captured("s5"),
+      proposeAt(700, 700),
+    ])
+    expect(reset.outcome).toBeUndefined()
+    const last = plannerPrompts(reset).at(-1) ?? ""
+    expect(last).toContain("byte-identical")
+    expect(last).not.toContain("Answer with exactly ONE")
+  })
+})
+
+// ------------------------------------------------------------------------------------------------
 // The Guard calls ComputerActions.build — S1's named, deferred hole
 // ------------------------------------------------------------------------------------------------
 
