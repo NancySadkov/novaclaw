@@ -571,6 +571,13 @@ const NO_EXTERNAL = [
   "computer.ts",
   "configure.ts",
   "define-tool.ts",
+  // The shipped manual. Its bytes are OUR text, compiled into the binary from `src/tool/docs/*.txt`
+  // — there is no reader, no network and no store on the path, so the only party whose words can
+  // come back is us. ⚠️ It stops being true the moment a page can come from anywhere else: a
+  // user-authored page, a plugin-contributed topic or a fetched doc set are all third-party bytes,
+  // and the entry moves to FRAMED with them rather than being argued down.
+  "docs-index.ts",
+  "docs.ts",
   "edit-match.ts",
   "edit.ts",
   "exit.ts",

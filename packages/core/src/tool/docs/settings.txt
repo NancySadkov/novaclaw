@@ -1,0 +1,43 @@
+# Settings and expertise levels
+Where settings live, and why you only see some of them.
+
+Settings are stored in the instance's own database, not in a config file you have to
+edit. Every operational setting can be changed while NovaClaw is running, which is what
+makes it possible to ask an assistant to fix a broken one.
+
+## Expertise levels
+
+Settings has three levels, and you choose how much of NovaClaw you want to see. You can
+change this anytime, and switching back keeps everything you set.
+
+- **Normal** — the essentials: chat, notes, files, connecting models. The recommended way
+  to use NovaClaw.
+- **Advanced** — more controls: the agent's instructions, its step-by-step reasoning,
+  permission tuning, custom tools.
+- **Developer** — everything, including internals: raw model IDs, engine tuning, the
+  shell, and the unsafe permission modes.
+
+A control hidden at your level is not missing and not broken. It is a control we decided
+you should not have to meet before you need it.
+
+## What lives where
+
+- **Models** — providers, model entries, context limits.
+- **Tools** — which tools the assistant is offered at all.
+- **Storage** — disk and memory use, where the instance keeps its files.
+- **Recovery** — reset and restore, for when something is wrong.
+- **Instances** — reaching another NovaClaw, and letting one reach you.
+- **About** — the version you are running.
+
+## Import and export
+
+Settings can be exported to and imported from a `novaclaw.jsonc` file. That is a transport
+for backup and for bootstrapping a new machine — it is not read while NovaClaw runs. The
+running instance always reads its own store, so a file on disk can never silently disagree
+with what the app is doing.
+
+## Asking an assistant to change a setting
+
+You can. Describe what you want in plain language; the assistant can read the settings
+schema — the name, meaning, type and legal values of every key — and change it. It does
+not have to guess, and neither do you.

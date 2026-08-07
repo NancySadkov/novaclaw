@@ -28,6 +28,7 @@ const CORE_CATEGORIES: Readonly<Record<string, string>> = {
   bash: "shell",
   configure: "configuration",
   define_tool: "knowledge",
+  docs: "knowledge",
   edit: "files",
   exit: "agents",
   glob: "files",

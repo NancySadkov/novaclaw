@@ -7,6 +7,7 @@ import { BashJobs } from "./bash-jobs"
 import { ApplyPatchTool } from "./apply-patch"
 import { ConfigureTool } from "./configure"
 import { DefineToolTool } from "./define-tool"
+import { DocsTool } from "./docs"
 import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
@@ -64,6 +65,9 @@ export const locationLayer = Layer.mergeAll(
   // action. The tiering lives in the asserts, which is where a per-key decision belongs.
   ConfigureTool.layer,
   DefineToolTool.layer,
+  // RESIDENT on purpose (no `withDeferred`): the manual's topic NAMES are the index, and a deferred
+  // tool has no prompt presence to carry them. Pages stay out of the prompt; see `docs.ts`.
+  DocsTool.layer,
   EditTool.layer,
   GlobTool.layer,
   GrepTool.layer,
@@ -116,6 +120,7 @@ export const node = makeLocationNode({
     BashTool.node,
     ConfigureTool.node,
     DefineToolTool.node,
+    DocsTool.node,
     EditTool.node,
     GlobTool.node,
     GrepTool.node,

@@ -49,6 +49,8 @@ const residentTools = [
   "apply_patch",
   "bash",
   "define_tool",
+  // Resident by design (batch plan 4.2): the manual's topic names ARE the prompt-visible index.
+  "docs",
   "edit",
   "exit",
   "glob",
@@ -175,8 +177,21 @@ describe("LocationServiceMap", () => {
           //
           // ⚠️ Not pinned to the exact byte, deliberately: an equality here would flake on any
           // platform whose tool prose differs, and a flaky ratchet gets deleted rather than obeyed.
+          //
+          // RAISED 2026-08-07, 30,000 → 32,500, for `docs` (batch plan 4.2) — and the question this
+          // ratchet asks was answered before the number moved, not after. A/B measured on this box:
+          // **29,441 without the tool, 31,820 with it — a 2,379-byte resident cost.**
+          //
+          // *Should it be resident at all?* Yes, and it is the one tool where deferral defeats the
+          // feature rather than deferring it. The manual's index IS its topic names, so a deferred
+          // `docs` carries no names, and a model that does not know the manual exists never searches
+          // for it — which is exactly the hole the item was filed against (*we ship documentation the
+          // user can read and the agent cannot*). What the 2,379 bytes buy is the other 18,266: the
+          // pages themselves cost nothing until a session actually opens one, so the resident half is
+          // **13% of the manual** and the rest is genuinely on demand. `docs.test.ts` pins that split
+          // mechanically — a page body leaking into the description turns it red.
           const residentBytes = Buffer.byteLength(JSON.stringify(blockedState.tools))
-          expect(residentBytes).toBeLessThan(30_000) // observed 29,441 on 2026-08-06 (92% of 32,000)
+          expect(residentBytes).toBeLessThan(32_500) // observed 31,820 on 2026-08-07 (97.9% of 32,500)
           // The second location boots AFTER the policy is gone — its boot snapshot allows the
           // provider, and the first location's catalog transform never leaked into it.
           yield* settings.remove("experimental")
