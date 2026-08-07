@@ -328,11 +328,32 @@ export const layer: Layer.Layer<
       return info
     })
 
+    /**
+     * A path reduced for COMPARISON — lowercased on Windows, where the filesystem is case-insensitive.
+     *
+     * ⚠️ **Never return this to a caller.** Two names for one directory is exactly the confusion this
+     * resolves internally, and handing the lowered form outward recreates it one layer up.
+     */
     const canonical = Effect.fnUntraced(function* (input: string) {
       const abs = pathSvc.resolve(input)
       const real = yield* fs.realPath(abs).pipe(Effect.catch(() => Effect.succeed(abs)))
       const normalized = pathSvc.normalize(real)
       return process.platform === "win32" ? normalized.toLowerCase() : normalized
+    })
+
+    /**
+     * The same path as it actually IS on disk — resolved and normalized, casing intact.
+     *
+     * 🔴 `list` used to return `canonical(...)`, so on Windows it answered a lower-cased path while
+     * `create` answered the real one for the SAME worktree. A client cannot compare those, and one did
+     * not: `httpapi-experimental.test.ts` asserts the created directory appears in the list, which is
+     * why that test was **skipped on win32** — with no recorded reason, so the skip read as a platform
+     * quirk rather than as the API disagreeing with itself.
+     */
+    const displayPath = Effect.fnUntraced(function* (input: string) {
+      const abs = pathSvc.resolve(input)
+      const real = yield* fs.realPath(abs).pipe(Effect.catch(() => Effect.succeed(abs)))
+      return pathSvc.normalize(real)
     })
 
     function parseWorktreeList(text: string) {
@@ -385,12 +406,15 @@ export const layer: Layer.Layer<
       return yield* Effect.forEach(entries, (entry) =>
         Effect.gen(function* () {
           if (!entry.path) return undefined
+          // Compare canonically, REPORT truthfully — two different jobs that were one value until
+          // 2026-08-07.
           const directory = yield* canonical(entry.path)
           if (directory === primary) return undefined
+          const reported = yield* displayPath(entry.path)
           const name = pathSvc.basename(directory).toLowerCase()
           return {
             name: name === primaryName ? pathSvc.basename(pathSvc.dirname(directory)) : name,
-            directory,
+            directory: reported,
             ...(entry.branch ? { branch: entry.branch.replace(/^refs\/heads\//, "") } : {}),
           }
         }),

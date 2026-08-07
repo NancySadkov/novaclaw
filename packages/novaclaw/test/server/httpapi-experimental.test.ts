@@ -15,7 +15,16 @@ import { testEffect } from "../lib/effect"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
 const it = testEffect(Layer.mergeAll(Database.defaultLayer, httpApiLayer))
-const testWorktreeMutations = process.platform === "win32" ? it.instance.skip : it.instance
+// 🔴 **Un-skipped on win32 2026-08-07 — the skip was never about capability.** It read
+// `process.platform === "win32" ? it.instance.skip : it.instance` with NO recorded reason, so it said
+// "worktrees do not work on Windows", and the platform lost its only HTTP coverage of worktree
+// create/remove. Measured: the test needed a longer timeout (creating a real worktree here takes just
+// over the 5 s default) and it exposed a genuine defect — `list` returned a lower-cased path while
+// `create` returned the real one, so a client could not compare them. Both fixed; it passes.
+//
+// ⚠️ A skip without a cause is indistinguishable from a platform limitation, which is how one costs a
+// platform its coverage over a slow test and a two-line bug.
+const testWorktreeMutations = it.instance
 
 function request(path: string, directory: string, init: RequestInit = {}) {
   return requestInDirectory(path, directory, init)
@@ -223,5 +232,11 @@ describe("experimental HttpApi", () => {
         expect(yield* json(afterRemove)).toEqual([])
       }),
     { git: true, config: { formatter: false } },
+    // ⚠️ 30 s, not the 5 s default. Creating a real git worktree on Windows — `git worktree add`,
+    // fsmonitor, the startup-script hook — measured just over 5 s here, and the timeout is what the
+    // win32 skip was actually protecting against. Recording that as the reason: an unexplained skip
+    // reads as "this cannot work on Windows", which was false and cost the platform its only HTTP
+    // coverage of worktree create/remove.
+    30_000,
   )
 })
