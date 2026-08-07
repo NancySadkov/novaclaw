@@ -94,19 +94,31 @@ const PACKAGE_WALLCLOCK_MS = 150_000 // a HANG backstop, not a normal budget
 // would read exactly like a real failure — so the ceiling is set far above any plausible run (core's
 // ~2k tests produce a few hundred KB) rather than at bun's 1 MB default.
 const CAPTURE_MAX_BYTES = 64 * 1024 * 1024
-/** Above this, a peak sample is another process's memory rather than ours — see `spawnOnce`. */
-const IMPLAUSIBLE_PEAK_MB = 8192
+/**
+ * Above this, a peak sample is not a reading about the unit — see `spawnOnce`.
+ *
+ * ⚠️ **It moved into `lib/memory-plan.ts` on 2026-08-07 and that is not tidying.** The ceiling and
+ * the peak profile are one mechanism: a ceiling below an entry's true value discards exactly the
+ * reading that entry needs, and the entry then cannot be learned. They now live in one file with
+ * `MemoryPlan.unrecordableUnits` pinning them together. Re-declaring it here would let the pair
+ * drift apart again, which is the defect that kept `core` at 1 007 MB while it cost ~17 000.
+ */
+const IMPLAUSIBLE_PEAK_MB = MemoryPlan.IMPLAUSIBLE_PEAK_MB
 
 /**
  * Why a unit has no recorded peak.
  *
  * 🔴 **A bare `undefined` conflated two opposite facts and hid a live regression for three gates.**
- * `core` reported no peak on 2026-08-07 across three consecutive full runs, and the reason was
+ * `core` reported no peak on 2026-08-07 across four consecutive full runs, and the reason was
  * `discarded`, never `unsampled`: the sampler took 565 ticks in its window and peaked at 16 758 MB,
- * i.e. 2.05x this ceiling (core's OWN process was 7 381 MB against a 1 007 MB profile; the rest was
- * its own flock workers, which are `bun` because the tests spawn `process.execPath`). "Nothing was
- * measured" and "something enormous was measured and thrown away" want opposite responses, and only
- * the second is itself a finding — so the run must say which.
+ * i.e. 2.05x the 8 192 MB ceiling of the day (core's OWN process was 7 381 MB against a 1 007 MB
+ * profile; the rest was its own flock workers, which are `bun` because the tests spawn
+ * `process.execPath`). "Nothing was measured" and "something enormous was measured and thrown away"
+ * want opposite responses, and only the second is itself a finding — so the run must say which.
+ *
+ * ✅ **`core` is `measured` again as of the 2026-08-07 re-baseline** — the ceiling now clears its
+ * real cost. This type stays exactly as it is: `discarded` was never a `core` special case, it is
+ * what the reporting layer owes any reading it refuses.
  */
 type PeakStatus = "measured" | "discarded" | "unsampled"
 
@@ -856,19 +868,26 @@ if (measured.length) {
     // plans with the generous default, therefore shards, and without this would never learn its own
     // number and would shard forever. Marked, so the provenance is never invisible.
     const from = r.shards ? `  (from a sharded run — one shard's peak, which measures close to the whole)` : ""
-    const drift =
-      was === undefined
-        ? '  (not in profile — copy it into test-baseline.json\'s "peaks")'
-        : MemoryPlan.peakRegressed(was, r.peakMb ?? 0)
-          ? `  \x1b[33m<- profile says ${was}; that is a real jump, look at it\x1b[0m`
-          : ""
     // ⚠️ A peak taken from one or two samples is a LOWER BOUND, and saying so is the cheap half of
     // the fix that item 4 of todo/test-speed.md makes structural. A 300 ms unit gets 2–4 ticks at a
     // 200 ms interval and its child may be visible in none of them.
-    const thin =
-      r.ownTicks !== undefined && r.ownTicks > 0 && r.ownTicks < 3
-        ? `  \x1b[2m(${r.ownTicks} sample${r.ownTicks === 1 ? "" : "s"} — a lower bound, not a peak)\x1b[0m`
-        : ""
+    const bound = r.ownTicks !== undefined && r.ownTicks > 0 && r.ownTicks < 3
+    const drift =
+      was === undefined
+        ? // 🔴 This branch used to read "copy it into test-baseline.json's peaks" UNCONDITIONALLY,
+          // which told the reader to do the precise thing the 2026-08-07 re-baseline forbids: two
+          // units are absent from the profile ON PURPOSE because every reading of them is a lower
+          // bound, and pasting one in would put a guess into the ladder wearing a measurement's
+          // clothes. An instruction that contradicts the file it points at is worse than none.
+          bound
+          ? '  \x1b[2m(absent from "peaks" — do NOT paste a bound in; see peaksUnsampledNote)\x1b[0m'
+          : '  (not in profile — copy it into test-baseline.json\'s "peaks")'
+        : MemoryPlan.peakRegressed(was, r.peakMb ?? 0)
+          ? `  \x1b[33m<- profile says ${was}; that is a real jump, look at it\x1b[0m`
+          : ""
+    const thin = bound
+      ? `  \x1b[2m(${r.ownTicks} sample${r.ownTicks === 1 ? "" : "s"} — a lower bound, not a peak)\x1b[0m`
+      : ""
     process.stdout.write(`  ${r.name.padEnd(30)} ${String(r.peakMb).padStart(5)}${drift}${from}${thin}\n`)
   }
 }

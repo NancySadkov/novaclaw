@@ -9,11 +9,6 @@
  * blunt instrument sized from something it was not needed to prevent, and it was the arm that
  * actually blocked work.
  *
- * Measured 2026-08-05 (notes/test-harness-memory.md), sampling commit charge across the whole `bun`
- * tree every 200 ms: **`core`, the heaviest fast-tier unit, peaks at ~1.0 GB run whole.** The floor
- * was six times the measured need, and on a 15.7 GB desktop with a browser open the gate was
- * unrunnable for an entire working day.
- *
  * ⚠️ **And a refusal is not neutral.** The same day, the substitute for the refused gate — running
  * core's files in eight batches — was green in every batch while the unit as one process wedged for
  * ten minutes. The guard hid a real defect. That is the second reason to make the harness fit into
@@ -24,6 +19,38 @@
  * A LADDER, per unit, from measured headroom against that unit's own recorded peak — never from a
  * constant. `whole` is the canonical result; `sharded` is a deliberately WEAKER one (see
  * {@link Plan}); `refuse` is what remains when even one shard cannot fit.
+ *
+ * ─── 🔴 the measurement this file used to quote is DEAD, and so is everything derived from it ────
+ *
+ * Every number below was originally justified by one sentence: *"`core`, the heaviest fast-tier
+ * unit, peaks at ~1.0 GB run whole"* (2026-08-05). **That is false by ~17×.** The sampler summed
+ * every `bun` on the box by NAME, so it could not tell a unit's own children from a stray — and
+ * `core`'s two flock suites each spawn `const n = 16` workers with `process.execPath`, which under
+ * `bun test` is `bun.exe`. Its reading was therefore thrown away against an 8 192 MB implausibility
+ * ceiling on every gate, and the profile kept a 1 007 MB entry the instrument was structurally
+ * unable to correct.
+ *
+ * Attribution is now by process **birth time** (app `2d6ad8db7`), and the profile was re-derived on
+ * 2026-08-07 from twenty attributed units over the runs recorded in `tmp/peak-series.jsonl`.
+ * `core`'s attributed tree is **16 364–17 958 MB** across seven runs (own process ~7 330–7 381,
+ * flat; the rest is the sixteen workers it spawns itself). Each re-derivation is stated where the
+ * constant is declared, so a dead premise cannot sit next to a corrected number again.
+ *
+ * ─── ⛔ the yardstick does not match the measurement, and at core's scale that DECIDES ───────────
+ *
+ * A peak here is **commit charge** on Windows. `headroomBytes()` (heavy-guard.ts) returns
+ * `min(os.freemem(), commitFree)` — and `os.freemem()` can never exceed physical RAM. On the
+ * development laptop that is **15.72 GB**, while the commit limit is **~46 GB**. So:
+ *
+ *   requiredBytes(peak) ≤ 15.72 GB  ⟺  peak ≤ ~11 989 MB
+ *
+ * **Any unit whose commit peak exceeds ~12 GB can never plan `whole` on this machine, at any load,
+ * however idle the box is.** `core` at 16.7–18.0 GB is past that line by construction — against
+ * commit headroom alone (~25.7 GB free of 46) it plans `whole` comfortably. This is a comparison of
+ * two different quantities that was invisible while every peak was ~1 GB and is the dominant term
+ * now. It is recorded, NOT silently repaired: narrowing the ladder to the commit wall would weaken
+ * the arm that guards against thrashing, and that wants its own evidence (a resident-set peak
+ * beside the commit peak) rather than a convenient edit. Filed in todo/test-speed.md.
  */
 
 /** A unit's recorded peak, in MB of commit charge (Windows) or RSS (elsewhere). */
@@ -34,9 +61,15 @@ const MB = 1024 ** 2
 /**
  * Headroom a unit needs beyond its own peak before it may run whole.
  *
- * 1.3× is the working figure: `core` peaked at ~1.0 GB across five measurements that varied by under
- * 3 %, so the variance being covered is small, and the slack below carries the fixed cost (the
- * runner itself, bun's own startup) that scales with nothing.
+ * 1.3× is retained; **its old justification is retired.** That justification was *"`core` peaked at
+ * ~1.0 GB across five measurements that varied by under 3 %"* — a stability claim taken from the
+ * dead 1 007 MB reading. The attributed spread is nothing like 3 %: seven `core` runs span
+ * 16 364–17 958 MB (**9.6 %**) and nine `novaclaw:server` runs span 1 353–2 237 MB (**65 %**).
+ *
+ * What makes 1.3 defensible now is a different property of the profile: every entry is the
+ * **largest** attributed reading for that unit, not a typical one. So the factor is covering
+ * overshoot *beyond an observed maximum*, not the spread below it — and the slack below still
+ * carries the fixed cost (the runner itself, bun's own startup) that scales with nothing.
  */
 export const WHOLE_HEADROOM_FACTOR = 1.3
 
@@ -46,10 +79,15 @@ export const SLACK_BYTES = 512 * MB
 /**
  * The floor below which nothing runs, sharded or not.
  *
- * Measured: one shard of `core` (~40 files) peaked at 1 007 MB, and the smallest observed unit peak
- * is ~780 MB — peak is dominated by a per-process baseline (module graph, Effect runtime, sqlite)
- * and is nearly FLAT in file count, which is precisely why sharding buys so little peak and why this
- * floor cannot be lowered by splitting harder.
+ * 1200 MB is retained; **its old derivation is retired with the rest.** It used to read *"one shard
+ * of `core` (~40 files) peaked at 1 007 MB, and the smallest observed unit peak is ~780 MB"* — both
+ * halves are now false. No shard of `core` has ever been measured, and the smallest attributed
+ * whole-unit peaks are `script` at **270 MB** and `ui` at **415 MB**.
+ *
+ * What supports the floor now is the attributed distribution: sixteen of the twenty units sit
+ * between **415 and 1 000 MB**, which is a `bun` process carrying a module graph, an Effect runtime
+ * and sqlite and very little else. 1200 MB is a little over that per-process baseline — below it,
+ * nothing this harness spawns can start at all, so there is no split that helps.
  */
 export const MIN_VIABLE_BYTES = 1200 * MB
 
@@ -58,6 +96,32 @@ export const UNPROFILED_PEAK_MB = 1200
 
 /** Never split a unit into more shards than this — past it, per-process startup dominates. */
 export const MAX_SHARDS = 8
+
+/**
+ * Above this, a peak sample is not a reading about the unit — see `test.ts`'s `spawnOnce`.
+ *
+ * ⚠️ **This lives here rather than in `test.ts` because it is a property of the PROFILE.** A ceiling
+ * below an entry's true value silently discards the one reading that entry needs, and the profile
+ * can then never be corrected — which is exactly what happened: 8 192 MB against a `core` that
+ * really costs 16.4–18.0 GB, discarded on four consecutive gates while the entry stayed at 1 007.
+ * {@link unrecordableUnits} is the mechanical check that the pair can never drift apart again.
+ *
+ * ⚠️ **32 768 MB is a coarse backstop and must not be read as a fine filter.** Before attribution it
+ * was doing sensitive work — rejecting any stray `bun` on the box. It no longer is: birth-time
+ * attribution excludes every process older than the unit's window, so the fine-grained job is done
+ * upstream. What is left for the ceiling is the class attribution structurally cannot see:
+ *
+ *   · a reading larger than the machine could physically hold (this box's commit limit is ~46 GB),
+ *     which can only be broken arithmetic or a broken sampler;
+ *   · a runaway or leaking harness process;
+ *   · a large FOREIGN `bun` born *inside* a unit's window — the one attribution gap that remains.
+ *
+ * ⚠️ Be honest about what that costs: at 32 GB a sibling agent's `tsgo`/`bun` job (~3.8 GB) landing
+ * inside `core`'s window would no longer be rejected. That is accepted deliberately — the old
+ * ceiling "caught" it by throwing away the real reading too, which is strictly worse, and
+ * `heavy-guard` independently refuses to start beside a second suite or a build.
+ */
+export const IMPLAUSIBLE_PEAK_MB = 32_768
 
 export type Plan =
   | { readonly mode: "whole"; readonly requiredBytes: number }
@@ -85,10 +149,27 @@ export function planFor(peakMb: number, headroomBytes: number): Plan {
   if (!Number.isFinite(headroomBytes)) return { mode: "whole", requiredBytes: required }
   if (headroomBytes >= required) return { mode: "whole", requiredBytes: required }
   if (headroomBytes < MIN_VIABLE_BYTES) return { mode: "refuse", requiredBytes: required }
-  // Peak is nearly flat in file count, so shards do not divide the requirement — the split buys the
-  // GC and fixture churn of a shorter-lived process, not a proportionally smaller heap. Scale gently
-  // and cap: a shard count derived as `required/headroom` would promise a reduction we measured is
-  // not there.
+  // Shards do not divide the requirement: the split buys the GC and fixture churn of a shorter-lived
+  // process, not a proportionally smaller heap. Scale gently and cap, because a shard count derived
+  // as `required/headroom` would promise a reduction that is not there.
+  //
+  // 🔴 **The premise this comment used to give — "peak is nearly flat in file count" — was quoted
+  // from the dead 1 007 MB measurement, and the corrected data splits it in two.**
+  //
+  //   · **Accumulation.** Nineteen of twenty units are dominated by a per-process baseline
+  //     (415–2 237 MB attributed) that grows slowly with the files sharing the process. For these
+  //     the old sentence still holds and sharding buys a little — the gentle scaling above.
+  //   · **Fan-out.** `core` is not that shape at all. ~9.3 GB of its 16.4–18.0 GB is *sixteen*
+  //     concurrent `bun` workers spawned by `test/util/flock.test.ts` and `util/effect-flock.test.ts`
+  //     (`const n = 16`, `process.execPath`). Those live in ONE file, so they land in ONE shard —
+  //     **splitting `core` does not lower its peak by a byte.** For a fan-out unit the sharded rung
+  //     is inert: it reports DEGRADED, costs per-process startup, and mitigates nothing.
+  //
+  // ⚠️ The rung is left in place rather than special-cased, because the honest repair is not here:
+  // it is either the 16-way fan-out itself (a test-side item — do not "fix" the measurement by
+  // changing the thing measured) or the commit-vs-free-RAM yardstick described in this file's
+  // header. Both are filed in todo/test-speed.md. What must not happen is this comment claiming a
+  // reduction the data says is absent.
   const shards = Math.min(MAX_SHARDS, Math.max(2, Math.ceil(required / headroomBytes)))
   return { mode: "sharded", shards, requiredBytes: required }
 }
@@ -104,6 +185,25 @@ export const peakFor = (profile: PeakProfile, unit: string): number => profile[u
  */
 export function unitsThatFit(profile: PeakProfile, units: readonly string[], headroomBytes: number): string[] {
   return units.filter((unit) => planFor(peakFor(profile, unit), headroomBytes).mode === "whole")
+}
+
+/**
+ * Profile entries the instrument could never re-measure — i.e. at or above the discard ceiling.
+ *
+ * 🔴 **This is the mechanical check for the defect that produced this whole item.** `core` sat at
+ * 1 007 MB while costing ~17 000, and the entry could not be corrected because every reading of it
+ * was discarded against a ceiling below its true value. An entry the measurement cannot update is
+ * worse than an absent one: an absent entry announces itself by planning with
+ * {@link UNPROFILED_PEAK_MB}, whereas a stale one is indistinguishable from a fresh one.
+ *
+ * Returns the offending unit names, so a caller can say WHICH rather than only that something is
+ * wrong. Empty means the two knobs are consistent.
+ */
+export function unrecordableUnits(profile: PeakProfile, ceilingMb: number = IMPLAUSIBLE_PEAK_MB): string[] {
+  return Object.entries(profile)
+    .filter(([, mb]) => mb >= ceilingMb)
+    .map(([unit]) => unit)
+    .sort()
 }
 
 /**
