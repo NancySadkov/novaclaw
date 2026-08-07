@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { readFile } from "node:fs/promises"
 import net from "node:net"
+import path from "node:path"
 import { Flag } from "@novaclaw/core/flag/flag"
 import { Server } from "../../src/server/server"
 import { PtyPaths } from "@novaclaw/protocol/groups/pty"
@@ -15,6 +17,18 @@ const original = {
 }
 const auth = { username: "novaclaw", password: "listen-secret" }
 const testPty = process.platform === "win32" ? test.skip : test
+
+// ⏱ The port-fallback test's time budget. See `deadline()` and the mechanical check at the bottom of
+// the describe for why these three numbers are a single arithmetic invariant rather than three taste
+// calls: BUDGET + CLEANUP_STAGES × CLEANUP_FLOOR must stay under the gate's per-test timeout, or a
+// labelled stage failure is followed by cleanup that pushes the test past that timeout and bun kills
+// it anonymously — which is exactly the `[15002.85ms]` signature the labels were added to replace.
+const FALLBACK_BUDGET_MS = 12_000
+const FALLBACK_CLEANUP_FLOOR_MS = 1_000
+const FALLBACK_CLEANUP_STAGES = 2
+// Read, not remembered: `script/test.ts`'s `PER_TEST_TIMEOUT_MS` is the number this budget must clear,
+// and the check below re-derives it from that file rather than trusting this line.
+const SUITE_PER_TEST_TIMEOUT_MS = 15_000
 
 afterEach(async () => {
   Flag.NOVACLAW_SERVER_PASSWORD = original.NOVACLAW_SERVER_PASSWORD
@@ -133,6 +147,35 @@ async function expectSocketRejected(url: URL, init?: { headers?: Record<string, 
 
 function stop(listener: Awaited<ReturnType<typeof startListener>>, label: string) {
   return withTimeout(listener.stop(true), 10_000, label)
+}
+
+/**
+ * ⏱ ONE deadline for a whole test, handed out stage by stage.
+ *
+ * Bounding each stage separately (2026-08-05) was supposed to let a failure name itself. It could not:
+ * that test's four bounds summed to 28 s against a 15 s per-test timeout, so a labelled rejection was
+ * followed by cleanup stages that carried the test past 15 s, and bun's anonymous kill printed first.
+ * A shared deadline removes the arithmetic: a stage waits `min(its own cap, what is left)`, so the
+ * label always reaches the reporter, and it carries where in the budget the stage started.
+ *
+ * `cleanup` runs in a `finally`, i.e. usually *after* the budget has already been spent, so it gets a
+ * small floor instead of zero — enough to release a listener rather than leak it. That floor is what
+ * `CLEANUP_STAGES × CLEANUP_FLOOR` accounts for in the invariant above.
+ */
+function deadline(totalMs: number, floorMs: number) {
+  const started = Date.now()
+  const spent = () => Date.now() - started
+  const bound = <T>(promise: Promise<T>, capMs: number, label: string, leftMs: number) => {
+    const ms = Math.min(capMs, leftMs)
+    return withTimeout(promise, ms, `${label} — bounded at ${ms}ms, ${spent()}ms into a ${totalMs}ms test budget`)
+  }
+  return {
+    spent,
+    stage: <T>(promise: Promise<T>, capMs: number, label: string) =>
+      bound(promise, capMs, label, Math.max(totalMs - spent(), 0)),
+    cleanup: <T>(promise: Promise<T>, capMs: number, label: string) =>
+      bound(promise, capMs, label, Math.max(totalMs - spent(), floorMs)),
+  }
 }
 
 function waitForMessage(ws: WebSocket, predicate: (message: string) => boolean) {
@@ -303,6 +346,9 @@ describe("HttpApi Server.listen", () => {
   })
 
   test("port 0 prefers 4096 when free", async () => {
+    // 4096 is the product's preferred port, not this test's choice — see the fallback test below for
+    // why the number cannot be moved. If something else on this machine holds it there is no claim to
+    // make, so this passes vacuously; the fallback test is the one that stays meaningful either way.
     if (!(await isPortFree(4096))) return
     const listener = await startListener()
     try {
@@ -313,44 +359,80 @@ describe("HttpApi Server.listen", () => {
   })
 
   test("port 0 falls back when 4096 is taken", async () => {
-    // ⚠️ EVERY await here is bounded AND labelled, which the first three were not.
+    // ⚠️ 4096 IS THE SUBJECT OF THIS TEST, NOT AN ARBITRARY PORT — do not "fix" the sharing by moving
+    // it. `Server.listen`'s `startWithPortFallback` (src/server/server.ts) compiles the literal in:
+    // `port: 0` means *try 4096, then any free port*. Occupy any other port and the first attempt
+    // succeeds, so the fallback branch is never entered and this test asserts the opposite of the
+    // truth. The number is shared with `.claude/launch.json`'s webapp backend because it is the
+    // product's real default, which is the whole reason the claim is worth pinning.
     //
-    // This test fails intermittently in full `bun run test` runs and passes when the unit runs alone
-    // (measured twice, 2026-08-05) — and it failed at exactly `[15002.85ms]`, i.e. bun's per-test
-    // timeout, so all it could say was "something took 15 s". `stop()` was already bounded at 10 s
-    // with a label and would have named itself; the other three awaits had no inner bound, so the one
-    // that hung stayed anonymous and the diagnosis stalled at "it is slow under load".
-    //
-    // Bounding them is not a workaround for the flake — the budgets are far above any healthy run, so
-    // a green test stays green. It buys the NEXT failure a name, which is the thing that was missing.
-    // See todo/test-speed.md: do not pin this and do not raise the suite timeout; find the stage.
-    const blocker = await withTimeout(occupyPort(4096), 5_000, "timed out occupying 4096 for the fallback test")
-    if (!blocker) return
+    // What CAN be made immune is the environment, and this test now is, in three ways:
+    //  1. an externally-held 4096 satisfies the precondition just as well as our own blocker, so it
+    //     no longer skips out silently — a running web preview exercises the same product branch;
+    //  2. the blocker destroys connections on accept. It used to have no connection handler, so the
+    //     preview page's retry loop (which keeps hammering :4096 after `preview_stop` kills the
+    //     server) was ACCEPTED and parked here for the whole test — the measured ~5.2 s poisoner;
+    //  3. every stage draws on one shared deadline, so a stuck stage names itself instead of being
+    //     buried under bun's anonymous per-test kill.
+    // See todo/test-speed.md §gate hygiene: do not pin this, and do not raise the suite timeout.
+    const budget = deadline(FALLBACK_BUDGET_MS, FALLBACK_CLEANUP_FLOOR_MS)
+    const occupied = await budget.stage(occupyPort(4096), 5_000, "could not settle who holds 4096")
     try {
-      const listener = await withTimeout(
+      const listener = await budget.stage(
         startListener(),
         8_000,
-        "timed out starting the port-0 listener while 4096 was taken",
+        `timed out starting the port-0 listener while 4096 was held by ${occupied.held}`,
       )
       try {
-        expect(listener.port).not.toBe(4096)
+        // A bare `expect(listener.port).not.toBe(4096)` prints `expect(4096).not.toBe(4096)`, which
+        // names no cause — and the two ways this claim can break have different repairs.
+        if (listener.port === 4096) {
+          throw new Error(
+            occupied.held === "this test"
+              ? "the port-0 listener bound 4096 while this test's own blocker still held it — Server.listen's 4096-first fallback did not fall back"
+              : `4096 was held by another process when this test started (${occupied.code}) and was released before the listener bound, so the fallback branch was never entered. Nothing else on this machine may hold 4096 during the gate — the web preview's backend does (.claude/launch.json).`,
+          )
+        }
         expect(listener.port).toBeGreaterThan(0)
       } finally {
-        await stop(listener, "timed out cleaning up port-0 fallback listener")
+        await budget.cleanup(listener.stop(true), 10_000, "timed out cleaning up port-0 fallback listener")
       }
     } finally {
-      // `net.Server.close()` waits for every accepted connection to end, and this blocker has no
-      // connection handler — so anything that connects to 4096 mid-test parks a socket here and the
-      // callback never fires. Destroy them first, then bound what remains.
-      // Cast because the ambient `net.Server` type here predates it; it exists on Node 18.2+ and the
-      // optional call keeps it harmless if a runtime ever lacks it.
-      ;(blocker as { closeAllConnections?: () => void }).closeAllConnections?.()
-      await withTimeout(
-        new Promise<void>((resolve) => blocker.close(() => resolve())),
-        5_000,
-        "timed out releasing the 4096 blocker — a connection to it never closed",
-      )
+      if (occupied.held === "this test") {
+        // `net.Server.close()` waits for every accepted connection to end. The destroy-on-accept
+        // handler above means there should be none, but a socket accepted between the last destroy
+        // and this call would still park the callback forever, so drop them first.
+        // Cast because the ambient `net.Server` type here predates it; it exists on Node 18.2+ and the
+        // optional call keeps it harmless if a runtime ever lacks it.
+        const blocker = occupied.server
+        ;(blocker as { closeAllConnections?: () => void }).closeAllConnections?.()
+        await budget.cleanup(
+          new Promise<void>((resolve) => blocker.close(() => resolve())),
+          5_000,
+          "timed out releasing the 4096 blocker — a connection to it never closed",
+        )
+      }
     }
+  })
+
+  test("the port-fallback test's stage budget cannot outlive the gate's per-test timeout", async () => {
+    // Ruling 1: this invariant's violation compiles green. Raise a stage cap past the budget, add a
+    // third cleanup stage, or lower the gate's timeout, and the port-fallback test silently goes back
+    // to dying as an anonymous `[15002.85ms]` kill with its stage label unprinted — which is the
+    // single thing that stalled that diagnosis for a week. So it is asserted, not documented.
+    expect(FALLBACK_BUDGET_MS + FALLBACK_CLEANUP_STAGES * FALLBACK_CLEANUP_FLOOR_MS).toBeLessThan(
+      SUITE_PER_TEST_TIMEOUT_MS,
+    )
+
+    // ...and `SUITE_PER_TEST_TIMEOUT_MS` is re-derived from the gate rather than remembered. Comments
+    // are stripped first: a regex over source counts prose, and this file discusses the number it is
+    // matching. Exactly one declaration must survive — zero or two means the constant moved and this
+    // budget is being checked against a number that no longer sets anything.
+    const source = await readFile(path.resolve(import.meta.dir, "../../../../script/test.ts"), "utf8")
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
+    const declarations = [...code.matchAll(/const PER_TEST_TIMEOUT_MS = ([\d_]+)/g)]
+    expect(declarations).toHaveLength(1)
+    expect(Number(declarations[0][1].replaceAll("_", ""))).toBe(SUITE_PER_TEST_TIMEOUT_MS)
   })
 
   testPty("rejects unsafe PTY ticket mint and connect requests", async () => {
@@ -430,10 +512,32 @@ function isPortFree(port: number) {
   })
 }
 
+/**
+ * Settle who holds `port`, rather than only trying to take it.
+ *
+ * This used to resolve `undefined` on any bind error and the caller returned early — so a machine
+ * where the web preview already held 4096 turned the port-fallback claim into a vacuous pass, and the
+ * one environment that most needs the claim checked was the one that stopped checking it. An
+ * externally-held port satisfies the precondition exactly as well: `Server.listen` gets `EADDRINUSE`
+ * from whoever holds it and takes the same fallback branch, so report the holder and let the test run.
+ *
+ * `EACCES` counts as held too — on Windows it is what an excluded/reserved port range answers, and the
+ * product's bind fails there for the same reason ours did. Any other error is a real fault and rejects.
+ *
+ * ⚠️ The connection handler is load-bearing, not decoration. `net.createServer()` with no `connection`
+ * listener still ACCEPTS every inbound socket and parks it in the server's connection set; the preview
+ * page's retry loop against :4096 therefore accumulated sockets here for the whole test and blocked
+ * `close()`. Destroying on accept makes a retry loop cost a reset apiece and hold nothing.
+ */
+type PortHolder = { held: "this test"; server: net.Server } | { held: "another process"; code: string }
+
 function occupyPort(port: number) {
-  return new Promise<net.Server | undefined>((resolve) => {
-    const server = net.createServer()
-    server.once("error", () => resolve(undefined))
-    server.listen(port, "127.0.0.1", () => resolve(server))
+  return new Promise<PortHolder>((resolve, reject) => {
+    const server = net.createServer((socket) => socket.destroy())
+    server.once("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "EADDRINUSE" || error.code === "EACCES") resolve({ held: "another process", code: error.code })
+      else reject(error)
+    })
+    server.listen(port, "127.0.0.1", () => resolve({ held: "this test", server }))
   })
 }
