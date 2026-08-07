@@ -80,9 +80,23 @@ describe("model picker row shows the model, not its endpoint", () => {
     // honors 32k must not render as measured fact — the tag carries data-measured and the tooltip
     // says it in words.
     expect(selectModel).toMatch(/data-measured=\{window\(\) === undefined \? "false" : "true"\}/)
-    expect(selectModel).toMatch(/measured=\{window !== undefined\}/)
+    expect(selectModel).toMatch(/measured=\{window\(\) !== undefined\}/)
     const tooltip = fs.readFileSync(path.join(HERE, "model-tooltip.tsx"), "utf8")
     expect(tooltip).toContain("model.tooltip.context.measured")
+  })
+
+  test("the tooltip reads the probe through an ACCESSOR, so it is not stale on the first open", () => {
+    // Found in the live DOM 2026-08-07. The probes fire from onMount and resolve after the rows have
+    // rendered, so `const window = probeResult(...)` is undefined for the entire first open — the tag
+    // (an accessor) flipped to measured while the tooltip beside it still said declared, and in the
+    // general case printed the DECLARED number next to the tag's honored one. Holo hid it locally
+    // because its declared limit and its honored window are both 131072.
+    //
+    // Pinned as the absence of the captured form, not just the presence of the accessor: reverting
+    // one line is exactly how this comes back.
+    expect(selectModel).toMatch(/const window = \(\) => probeResult\(item\.provider\.id, item\.id\)\?\.window/)
+    expect(selectModel).not.toMatch(/const window = probeResult\(/)
+    expect(selectModel).toMatch(/model=\{tooltipModel\(\)\}/)
   })
 })
 

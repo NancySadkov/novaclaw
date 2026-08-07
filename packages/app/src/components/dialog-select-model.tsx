@@ -110,8 +110,19 @@ const ModelList: Component<{
       itemWrapper={(item, node) => {
         // The tooltip's context line shows the probed (honored) window when one is known —
         // same reuse of `model.tooltip.context`, no separate key.
-        const window = probeResult(item.provider.id, item.id)?.window
-        const tooltipModel = window === undefined ? item : { ...item, limit: { ...item.limit, context: window } }
+        //
+        // ⚠️ Accessors, not captured values, and the difference is visible rather than theoretical.
+        // The probes fire from onMount and resolve AFTER these rows have rendered, so a `const` read
+        // here is `undefined` for the whole of the FIRST open — the only open most sessions ever do.
+        // The row body below already reads through accessors, so a captured const left the two
+        // halves of one hover disagreeing: the tag rendered the honored window while the tooltip
+        // still worded it — and numbered it — as declared. (Measured in the live DOM 2026-08-07: the
+        // "confirmed by the server" line appeared only on a second open.)
+        const window = () => probeResult(item.provider.id, item.id)?.window
+        const tooltipModel = () => {
+          const honored = window()
+          return honored === undefined ? item : { ...item, limit: { ...item.limit, context: honored } }
+        }
         return (
           <Tooltip
             class="w-full"
@@ -120,10 +131,10 @@ const ModelList: Component<{
             openDelay={0}
             value={
               <ModelTooltip
-                model={tooltipModel}
+                model={tooltipModel()}
                 latest={item.latest}
                 free={isFree(item.provider.id, modelCost(item))}
-                measured={window !== undefined}
+                measured={window() !== undefined}
               />
             }
           >
