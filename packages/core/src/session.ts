@@ -1033,14 +1033,16 @@ export const layer = Layer.effect(
             introspection: inherited.introspection,
             quality: inherited.quality,
             affective: inherited.affective,
-            // The saved ruleset is classified `absent-from-row` in `SESSION_CONFIG_FIELDS`: it has
-            // a column but `sessionToConfig` does not map it, so the chain fold cannot see it
-            // (architecture.md Phase 1 step 4 is blocked on the V1/V2 ruleset reconciliation, and
-            // no V2 evaluator reads the column today). Copying the source's own column verbatim is
-            // the only faithful carry available and can only PRESERVE restrictions, never widen
-            // them. When step 4 lands and `permissionRules` joins `sessionToConfig`, this line goes
-            // away and the fold carries it — the descriptor entry flips to `"resolved"` and the
-            // fork test starts demanding it.
+            // The saved ruleset has a `session.permission` column but NO entry in
+            // `SESSION_CONFIG_FIELDS` — `SessionConfig.permissionRules` was deleted in B2 as a
+            // phantom (zero production consumers, measured over the whole tree). So the chain fold
+            // cannot see this column and copying the source's own verbatim is the only faithful
+            // carry; it can only PRESERVE restrictions, never widen them.
+            // ⚠️ The column itself is separately slated for deletion (v0.2.0 ruling 16). It is NOT
+            // deleted here: `Session.Info.permission` is on the wire and in the generated SDK, and
+            // `packages/novaclaw`'s `subagent-permissions.ts` still takes a `parentSessionPermission`
+            // — so removing it is a cross-package job with its own migration, not a side effect of
+            // deleting a config field nothing read. Whoever does it starts from this line.
             permission: source.permission ? [...source.permission] : undefined,
             // Carried directly since 2026-07-29. These four used to finish through
             // `FeatureSwitched`/`ResponderSwitched` events because `sessionRow` silently dropped

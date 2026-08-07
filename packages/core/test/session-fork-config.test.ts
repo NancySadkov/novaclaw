@@ -100,9 +100,15 @@ const createFullyConfigured = (session: SessionV2.Interface, parentID?: SessionS
 
 describe("SESSION_CONFIG_FIELDS — the descriptor is honest about what a row carries", () => {
   // The classification cannot be dodged: `"absent-from-row"` is only legitimate while
-  // `sessionToConfig` genuinely cannot produce the field. The moment the fold starts mapping one
-  // (architecture.md Phase 1 step 4 for `permissionRules`; B2 for `device`), this test fails until
-  // the entry flips to `"resolved"` — at which point the round-trip tests below demand the carry.
+  // `sessionToConfig` genuinely cannot produce the field, and `"resolved"` only while it can.
+  // Both directions are checked, so neither a field parked out of the fork nor one silently
+  // dropped from the fold can pass.
+  //
+  // ⚠️ The probe deliberately carries THREE keys that are no longer `SessionConfig` fields —
+  // `permissionRules`, `device`, `tools`, the phantom trio deleted in B2. They are here as the
+  // negative half of the second assertion below: if any of them ever reappears in the fold's
+  // output without a descriptor entry, that assertion names it. Keeping them costs nothing and
+  // makes the deletion mechanical rather than remembered.
   it.effect("classifies a field `resolved` exactly when the resolve fold maps it", () =>
     Effect.sync(() => {
       const everything = {
@@ -130,13 +136,30 @@ describe("SESSION_CONFIG_FIELDS — the descriptor is honest about what a row ca
       const mapped = sessionToConfig(everything) as Record<string, unknown>
       for (const key of SESSION_CONFIG_FIELD_KEYS)
         expectField(`sessionToConfig maps ${key}`, mapped[key] !== undefined, SESSION_CONFIG_FIELDS[key] === "resolved")
+      // The other direction: the fold may not produce a key the descriptor never declared.
+      expect(Object.keys(mapped).filter((key) => !(key in SESSION_CONFIG_FIELDS))).toEqual([])
     }),
   )
 
   it.effect("covers every SessionConfig field (no field left unclassified)", () =>
     Effect.sync(() => {
-      expect(SESSION_CONFIG_FIELD_KEYS.length).toBeGreaterThan(SESSION_CONFIG_FORK_FIELDS.length)
       for (const key of SESSION_CONFIG_FIELD_KEYS) expect(SESSION_CONFIG_FIELDS[key]).toBeDefined()
+    }),
+  )
+
+  // 🔴 A ratchet AT ZERO, which is the state the phantom-trio deletion left it in (v0.2.0 B2).
+  //
+  // This used to read `expect(KEYS.length).toBeGreaterThan(FORK_FIELDS.length)` — an assertion that
+  // REQUIRED at least one unresolved field, i.e. it encoded the phantoms as the intended state and
+  // would have gone red on the day they were removed. That is the wrong direction for a ledger.
+  //
+  // Zero is the honest floor: a `SessionConfig` field with no column resolves for nobody, which is
+  // exactly what the deleted trio was. Adding one now fails HERE, by name, which forces the column
+  // and its migration into the same commit rather than leaving a field to age into a phantom.
+  it.effect("no SessionConfig field is parked outside the row (the absent-from-row set is empty)", () =>
+    Effect.sync(() => {
+      expect(SESSION_CONFIG_FIELD_KEYS.filter((key) => SESSION_CONFIG_FIELDS[key] !== "resolved")).toEqual([])
+      expect(SESSION_CONFIG_FORK_FIELDS.length).toBe(SESSION_CONFIG_FIELD_KEYS.length)
     }),
   )
 })

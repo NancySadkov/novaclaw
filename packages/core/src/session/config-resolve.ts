@@ -3,12 +3,21 @@
 // (fetch `[root … session]` via `parentID`) lives in the runner and just feeds the chain here.
 //
 // Rule: `undefined` on a field means **inherit** (from the parent, or the global default at the
-// root); a set value **overrides**. Two fields are special:
+// root); a set value **overrides**. Exactly ONE field is special:
 //   - permissionMode NARROWS: the root session sets it freely (it defines the ceiling for its
 //     subtree), but every deeper session can only make it MORE restrictive — never escalate past
 //     its parent. This one invariant is what makes spawn and privilege self-revocation safe.
-//   - permissionRules ACCUMULATE down the chain (the evaluator is deny-wins, so more rules can
-//     only add restrictions).
+//
+// ⚠️ This header used to name a SECOND special field — *"permissionRules ACCUMULATE down the chain
+// (the evaluator is deny-wins, so more rules can only add restrictions)"*. Both halves were false
+// and the field is gone (v0.2.0 ruling 16 / decisions C6). The accumulation was **last-wins in a
+// concatenated list**, not deny-wins — nothing anywhere reduced that list with a deny-priority — and
+// it did not matter, because a comment- and string-stripped scan of all 2,421 tracked `.ts`/`.tsx`
+// files found `permissionRules` in exactly TWO files: this one and its own tests. It had zero
+// production consumers, so the "privilege-escalation hole" it looked like was a hole in dead code.
+// The narrowing guarantee above therefore holds for `permissionMode` **only**. If a per-session
+// ruleset returns under the 1K V1↔V2 reconciliation it must be deny-wins BY CONSTRUCTION — a
+// reducer that cannot express last-wins — never by a comment like the one that stood here.
 
 import { Effect } from "effect"
 
@@ -315,7 +324,6 @@ export interface StrictOverride {
 
 /** A session's on-record config OVERRIDES. Every field optional — `undefined` = inherit. */
 export interface SessionConfig {
-  readonly device?: string
   readonly model?: ModelRef
   readonly agent?: string
   readonly systemPromptOverride?: string
@@ -323,7 +331,6 @@ export interface SessionConfig {
   readonly priority?: number
   readonly responder?: Responder
   readonly permissionMode?: PermissionMode
-  readonly permissionRules?: readonly PermissionRule[]
   readonly introspection?: boolean
   readonly quality?: boolean
   readonly affective?: boolean
@@ -338,7 +345,6 @@ export interface SessionConfig {
   /** Tri-state: enforce typed context shares in this chat. Absent = inherit, then the instance Tune. */
   readonly contextBudget?: boolean
   readonly strict?: StrictOverride
-  readonly tools?: readonly string[]
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -384,9 +390,9 @@ export interface SessionConfig {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * The base effective config before any session override. `model`/`agent`/`device` are left
- * undefined so the runner's existing catalog/agent fallbacks still apply; permission mode + the
- * mode toggles carry safe defaults. Used as the root of the resolution chain.
+ * The base effective config before any session override. `model`/`agent` are left undefined so the
+ * runner's existing catalog/agent fallbacks still apply; permission mode + the mode toggles carry
+ * safe defaults. Used as the root of the resolution chain.
  */
 export const EFFECTIVE_CONFIG_DEFAULTS: EffectiveConfig = {
   type: "interactive",
@@ -395,12 +401,10 @@ export const EFFECTIVE_CONFIG_DEFAULTS: EffectiveConfig = {
   // Write access to the session's OWN folder by default (owner 2026-07-25). Writing outside it is
   // guarded independently of the mode, so the trust is scoped to the folder, not global.
   permissionMode: "bypass",
-  permissionRules: [],
 }
 
 /** The fully-resolved config a session actually runs with. */
 export interface EffectiveConfig {
-  readonly device?: string
   readonly model?: ModelRef
   readonly agent?: string
   readonly systemPromptOverride?: string
@@ -408,7 +412,6 @@ export interface EffectiveConfig {
   readonly priority: number
   readonly responder: Responder
   readonly permissionMode: PermissionMode
-  readonly permissionRules: readonly PermissionRule[]
   /** Harness-feature stances (tri-state): the nearest explicit true/false on the chain wins;
    *  `undefined` = no per-session stance — the runner falls back to the global config block. */
   readonly introspection?: boolean
@@ -427,7 +430,6 @@ export interface EffectiveConfig {
   readonly contextBudget?: boolean
   /** The nearest per-session Strict override on the chain; `undefined` = none (use global config). */
   readonly strict?: StrictOverride
-  readonly tools?: readonly string[]
 }
 
 /**
@@ -435,7 +437,6 @@ export interface EffectiveConfig {
  * `SessionConfig` overrides ordered **root-first** (`[rootSession, …, targetSession]`).
  */
 export function resolveConfig(defaults: EffectiveConfig, chain: readonly SessionConfig[]): EffectiveConfig {
-  let device = defaults.device
   let model = defaults.model
   let agent = defaults.agent
   let systemPromptOverride = defaults.systemPromptOverride
@@ -451,12 +452,9 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
   let safeMode = defaults.safeMode
   let contextBudget = defaults.contextBudget
   let strict = defaults.strict
-  let tools = defaults.tools
   let permissionMode = defaults.permissionMode
-  let permissionRules: readonly PermissionRule[] = defaults.permissionRules
 
   chain.forEach((layer, index) => {
-    if (layer.device !== undefined) device = layer.device
     if (layer.model !== undefined) model = layer.model
     if (layer.agent !== undefined) agent = layer.agent
     if (layer.systemPromptOverride !== undefined) systemPromptOverride = layer.systemPromptOverride
@@ -472,8 +470,6 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
     if (layer.safeMode !== undefined) safeMode = layer.safeMode
     if (layer.contextBudget !== undefined) contextBudget = layer.contextBudget
     if (layer.strict !== undefined) strict = layer.strict
-    if (layer.tools !== undefined) tools = layer.tools
-    if (layer.permissionRules !== undefined) permissionRules = [...permissionRules, ...layer.permissionRules]
     if (layer.permissionMode !== undefined) {
       // Root sets freely; deeper sessions can only narrow (never escalate past the parent).
       permissionMode = index === 0 ? layer.permissionMode : moreRestrictive(permissionMode, layer.permissionMode)
@@ -481,7 +477,6 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
   })
 
   return {
-    device,
     model,
     agent,
     systemPromptOverride,
@@ -489,7 +484,6 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
     priority,
     responder,
     permissionMode,
-    permissionRules,
     introspection,
     quality,
     affective,
@@ -499,7 +493,6 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
     safeMode,
     contextBudget,
     strict,
-    tools,
   }
 }
 
@@ -534,8 +527,6 @@ export interface SessionLike {
    *  means inherit, and the only way to diverge is an explicit `false` the user had to set. */
   readonly safeMode?: boolean
   readonly contextBudget?: boolean
-  // permissionRules / tools get mapped here as the session schema grows to carry them
-  // (see architecture.md Phase 1 step 4).
 }
 
 /** Project a session record onto its config OVERRIDES (only fields it actually carries today). */
@@ -652,11 +643,14 @@ export type SessionConfigForkCarry =
   /** The session row carries it (via `sessionToConfig`), so the fork gets the chain-resolved value. */
   | "resolved"
   /**
-   * A `SessionConfig` field NO session row can express yet, so there is nothing on the chain to
-   * copy: `device` and `tools` have no column at all, and `permissionRules` has a column
-   * (`session.permission`) that `sessionToConfig` does not map — architecture.md Phase 1 step 4
-   * is blocked on the V1/V2 ruleset reconciliation. The fork copies that column verbatim
-   * meanwhile (see `session.ts`), which can only preserve restrictions, never widen them.
+   * A `SessionConfig` field NO session row can express, so there is nothing on the chain to copy.
+   *
+   * ⚠️ **This category is EMPTY as of the phantom-trio deletion (v0.2.0 B2), and that is the point
+   * of keeping it.** It used to hold `device`, `tools` and `permissionRules` — three fields the
+   * merge algebra resolved for nobody. It stays as a legal classification because the only honest
+   * way to add a `SessionConfig` field ahead of its column is to say so here; what it must never
+   * again become is a parking space a field sits in indefinitely. A field classified here has no
+   * consumer by construction, so it owes a column (and its migration) or a deletion.
    */
   | "absent-from-row"
 
@@ -674,7 +668,6 @@ export type SessionConfigForkCarry =
  * Neither check repeats the field list — both read it from here.
  */
 export const SESSION_CONFIG_FIELDS: Readonly<Record<keyof SessionConfig, SessionConfigForkCarry>> = {
-  device: "absent-from-row",
   model: "resolved",
   agent: "resolved",
   systemPromptOverride: "resolved",
@@ -682,7 +675,6 @@ export const SESSION_CONFIG_FIELDS: Readonly<Record<keyof SessionConfig, Session
   priority: "resolved",
   responder: "resolved",
   permissionMode: "resolved",
-  permissionRules: "absent-from-row",
   introspection: "resolved",
   quality: "resolved",
   affective: "resolved",
@@ -695,7 +687,6 @@ export const SESSION_CONFIG_FIELDS: Readonly<Record<keyof SessionConfig, Session
   safeMode: "resolved",
   contextBudget: "resolved",
   strict: "resolved",
-  tools: "absent-from-row",
 }
 
 /** Every `SessionConfig` key, read off the descriptor (never re-typed). */
@@ -713,8 +704,7 @@ export const SESSION_CONFIG_FORK_FIELDS: readonly (keyof SessionConfig)[] = SESS
  * chain-RESOLVED value of every field some layer declared, and nothing else (see the block above).
  *
  * Resolution runs through the SAME `resolveConfig` a turn uses — including `permissionMode`
- * narrowing and `permissionRules` accumulation — so the fork cannot resolve to anything its source
- * did not.
+ * narrowing — so the fork cannot resolve to anything its source did not.
  */
 export const forkOverrides = (chain: readonly SessionConfig[]): SessionConfig => {
   const resolved = resolveConfig(EFFECTIVE_CONFIG_DEFAULTS, chain)

@@ -25,7 +25,6 @@ const DEFAULTS: EffectiveConfig = {
   priority: 0,
   responder: "nova",
   permissionMode: "ask",
-  permissionRules: [],
 }
 
 describe("resolveConfig — simple fields (undefined = inherit)", () => {
@@ -48,9 +47,9 @@ describe("resolveConfig — simple fields (undefined = inherit)", () => {
   })
 
   test("three-level chain: nearest-defined wins", () => {
-    const eff = resolveConfig(DEFAULTS, [{ agent: "a" }, { agent: "b" }, { device: "spark" }])
+    const eff = resolveConfig(DEFAULTS, [{ agent: "a" }, { agent: "b" }, { responder: "operator" }])
     expect(eff.agent).toBe("b") // grandchild didn't set agent -> nearest is level 2
-    expect(eff.device).toBe("spark")
+    expect(eff.responder).toBe("operator") // and the grandchild's own field still lands
   })
 
   test("systemPromptOverride inherits then overrides", () => {
@@ -160,19 +159,12 @@ describe("resolveConfig — permission MODE narrowing (the safety invariant)", (
   })
 })
 
-describe("resolveConfig — permission RULES accumulate", () => {
-  test("rules concatenate down the chain (a parent deny survives a child allow)", () => {
-    const eff = resolveConfig({ ...DEFAULTS, permissionRules: [{ action: "read", resource: "*", effect: "allow" }] }, [
-      { permissionRules: [{ action: "write", resource: "/etc/*", effect: "deny" }] },
-      { permissionRules: [{ action: "write", resource: "*", effect: "ask" }] },
-    ])
-    expect(eff.permissionRules).toEqual([
-      { action: "read", resource: "*", effect: "allow" },
-      { action: "write", resource: "/etc/*", effect: "deny" },
-      { action: "write", resource: "*", effect: "ask" },
-    ])
-  })
-})
+// ⚠️ A `describe("resolveConfig — permission RULES accumulate")` block stood here and is DELETED
+// with `SessionConfig.permissionRules` itself (v0.2.0 B2 / decisions C6). It was the only executing
+// claim about a field with zero production consumers, and it asserted plain CONCATENATION while the
+// file's header called the same behaviour "deny-wins" — so the test was green, the doc was wrong,
+// and neither described anything the product did. Nothing replaces it: `unattendedStanceRules` is
+// the surviving rule overlay and has its own claims below.
 
 describe("resolveSessionConfig — the effectful parentID walk", () => {
   const runWalk = (sessionID: string, sessions: Record<string, SessionLike>) =>
@@ -631,19 +623,10 @@ describe("unattendedStanceRules — the unattended confinement stance", () => {
     )
   })
 
-  // The stance is a RULE overlay, so it obeys the deny-wins evaluator: an accumulated rule set can
-  // only add restrictions, and an agent's allow-all cannot outrank the stance (the evaluator checks
-  // it in its own HARD arm — covered end-to-end in test/permission.test.ts).
-  test("stance rules survive rule ACCUMULATION down the chain", () => {
-    const resolved = resolveConfig(DEFAULTS, [
-      { permissionRules: [...UNATTENDED_CONFINED_RULES] },
-      { permissionRules: [{ action: "external_directory_write", resource: "*", effect: "allow" }] },
-    ])
-    // Accumulation keeps both; the deny is still present for the deny-wins evaluator to find.
-    expect(resolved.permissionRules).toContainEqual({
-      action: "external_directory_write",
-      resource: "*",
-      effect: "deny",
-    })
-  })
+  // ⚠️ A "stance rules survive rule ACCUMULATION down the chain" claim stood here and is deleted
+  // with `SessionConfig.permissionRules`. It was the weaker of two overlapping claims and the only
+  // one that depended on the phantom field: the stance is applied by the EVALUATOR in its own HARD
+  // arm, not by the config chain, and `test/permission.test.ts` covers that end to end. What
+  // survives is the claim that actually binds — the stance is a function of the ROOT's attendance
+  // and the resolved mode, pinned by the four tests above.
 })
