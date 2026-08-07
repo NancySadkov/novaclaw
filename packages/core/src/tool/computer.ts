@@ -3,12 +3,14 @@ export * as ComputerTool from "./computer"
 import { ToolFailure } from "@novaclaw/llm"
 import { ChildProcess } from "effect/unstable/process"
 import { Effect, Layer, Schema } from "effect"
+import fs from "node:fs/promises"
 import { makeLocationNode } from "../effect/app-node"
 import { Config } from "../config"
 import { ConfigComputer } from "../config/computer"
 import { ComputerActions } from "../computer/actions"
 import { ComputerCoordinates } from "../computer/coordinates"
 import { HostExec } from "../host-exec"
+import { Image } from "../image"
 import { Location } from "../location"
 import { AppProcess } from "../process"
 import { PermissionV2 } from "../permission"
@@ -21,6 +23,8 @@ export const name = "computer"
 export const description = `Observe and control a graphical desktop: screenshot, move, click, type, key, scroll.
 
 For tasks with no API and no text interface — a native app, a game, a site that will not work headlessly. Prefer a dedicated tool when one exists; this is the slow fallback.
+
+\`screenshot\` returns the captured image in its own result — look at it directly; do not call \`read\` on the path.
 
 Coordinates are SCREEN PIXELS from the top-left. Screenshot first and read the target off it; never reuse a position from before an action, because what you clicked may have moved it.
 
@@ -66,12 +70,103 @@ export const Input = Schema.Struct({
   }),
 }).annotate({ identifier: "ComputerTool.Input" })
 
+/** The captured pixels, base64, exactly as they will be handed to `Tool.Content`'s file part. */
+const CapturedImage = Schema.Struct({
+  data: Schema.String,
+  mime: Schema.String,
+}).annotate({ identifier: "ComputerTool.CapturedImage" })
+
 const Output = Schema.Struct({
   action: Schema.String,
   ok: Schema.Boolean,
   detail: Schema.String,
   screenshotPath: Schema.String.pipe(Schema.optional),
+  image: CapturedImage.pipe(Schema.optional),
 })
+
+/**
+ * What is PERSISTED and streamed to the UI — deliberately the output MINUS the pixels.
+ *
+ * ⚠️ **`structured` is a second copy of everything it holds.** `Tool.make` defaults `structured` to
+ * the encoded output, and `read.ts` takes that default — which is why `tool-result-media-gate.test.ts`
+ * has to prove that BLOCKING an image does not re-ship it as JSON from `structured`. The base64 there
+ * is stored in the session record, re-encoded on every SSE frame, and lowered as text on the error
+ * arm. A screenshot loop pays that per step, so `computer` declares a structured shape that simply
+ * does not contain the bytes: they travel exactly one way, as the file part below, through the ONE
+ * media gate. Stated as a test in `computer.test.ts` because dropping this pair compiles green.
+ */
+const StructuredOutput = Schema.Struct({
+  action: Schema.String,
+  ok: Schema.Boolean,
+  detail: Schema.String,
+  screenshotPath: Schema.String.pipe(Schema.optional),
+})
+
+type OutputEncoded = (typeof Output)["Encoded"]
+
+export const toStructured = (output: OutputEncoded): (typeof StructuredOutput)["Type"] => ({
+  action: output.action,
+  ok: output.ok,
+  detail: output.detail,
+  ...(output.screenshotPath === undefined ? {} : { screenshotPath: output.screenshotPath }),
+})
+
+/**
+ * 🔴 **THE SCREENSHOT'S PIXELS RIDE THE RESULT — always, for `screenshot`, and never for anything
+ * else. This is the decision; the reasoning is here because the P3 loop is budgeted against it.**
+ *
+ * Before this, `toModelOutput` was `[{type:"text", text: output.detail}]` for every action, so a
+ * `screenshot` returned a PATH and the model needed a **second** tool call (`read`) to see anything.
+ * Measured cost of that second call on our own wire: **12,945 prompt tokens** for the request
+ * (system prompt + tools + agent scaffolding) plus **~2.1–2.4 s**, against ~1,052 prompt tokens for
+ * the image itself. P3 observes once per step, so the extra round-trip is ~10× the thing it fetches,
+ * every step, forever.
+ *
+ * **Why not opt-in via an input field.** An opt-in recreates exactly that cost and does it
+ * *silently*: a model that forgets the flag gets a path, and the failure looks like the tool working.
+ * The whole purpose of `screenshot` is to be looked at.
+ *
+ * **Why not a model-facing opt-out either.** The one caller that wants a capture without pixels is
+ * the verifier — but `computer/verify.ts` decides on DIGESTS the harness computes, not on pixels the
+ * model reads, so it does not come through this projection at all. A knob with no consumer is
+ * schema bytes on a deferred tool plus a way for the model to blind itself. The lever that DOES
+ * exist is `region`: a crop is smaller in bytes, in image tokens and in ambiguity, and it is already
+ * the answer to "I do not need the whole screen".
+ *
+ * **Conditional on the action, which costs the other seven nothing.** `move` · `click` ·
+ * `double_click` · `type` · `key` · `scroll` · `cursor` produce no image, so `output.image` is
+ * absent and they lower exactly as before — one text part.
+ *
+ * ⚠️ **THE COST P3's AUTHOR MUST BUDGET, stated here rather than left to be discovered: history
+ * ACCUMULATES.** One screenshot is ~1,000–1,500 image tokens at 1280×800, but a settled tool result
+ * is durable — an N-step loop re-sends N screenshots on step N+1, so the context grows
+ * quadratically in steps while each individual result looks cheap. Lowering cannot fix that (by the
+ * time bytes arrive here the tool has already run); the loop must prune or compact its own stale
+ * observations, or run in a narrow session as `todo/computer-use.md` already warns.
+ *
+ * The file part is the shape `gateToolMedia` consumes (`session/runner/to-llm-message.ts`), which is
+ * what makes this honest on a model without vision: the bytes are REPLACED by a notice naming the
+ * tool rather than dropped or sent to fail at the provider (ruling 2).
+ *
+ * ⭐ **Verified on the wire, not by unit test alone (2026-08-07).** An isolated instance against
+ * `spark-holo/holo3.1` through a logging proxy: the third outbound request carried
+ * `{"type":"image_url","image_url":{"url":"data:image/png;base64,…"}}` with the capture's exact
+ * bytes, preceded by the media frame, and the model read words that exist only inside the pixels.
+ * Same run with the model's declared `input` set to `["text"]`: zero bytes on the wire, the
+ * `NOT sent to you` notice in their place, and the model said it could not see rather than guessing.
+ */
+export const toModelContent = (output: OutputEncoded): ReadonlyArray<Tool.Content> =>
+  output.image === undefined
+    ? [{ type: "text", text: output.detail }]
+    : [
+        { type: "text", text: output.detail },
+        {
+          type: "file",
+          data: output.image.data,
+          mime: output.image.mime,
+          ...(output.screenshotPath === undefined ? {} : { name: output.screenshotPath }),
+        },
+      ]
 
 /**
  * `"x,y,width,height"` → a region, or a refusal that says what was wrong.
@@ -153,6 +248,81 @@ export const UNCONFIGURED =
   "A display is never inherited from the environment: that would either fail on a headless host or " +
   "silently drive the operator's real screen."
 
+/**
+ * The MIME of the file `scrot` just wrote, read off the configured path's extension.
+ *
+ * `scrot` picks its output format from the extension, so the extension is the only fact we have —
+ * and it is a real one, not a guess: the path is the operator's own `computer.screenshotPath`, and
+ * the same string is what `scrot` was handed. PNG is the default because
+ * `ConfigComputer.DEFAULT_SCREENSHOT_PATH` is a `.png`, and because a wrong MIME here is not
+ * cosmetic — `attachmentModality` maps it onto the model's declared input modalities, so an
+ * unrecognised type would make the capability gate answer `unknown` instead of `image`.
+ */
+const captureMime = (screenshotPath: string): string => {
+  const extension = screenshotPath.slice(screenshotPath.lastIndexOf(".") + 1).toLowerCase()
+  if (extension === "jpg" || extension === "jpeg") return "image/jpeg"
+  if (extension === "webp") return "image/webp"
+  if (extension === "gif") return "image/gif"
+  return "image/png"
+}
+
+/**
+ * Read the capture back and prepare it for the result — or say, in words, why it is not there.
+ *
+ * ⚠️ **This never fails the tool.** The capture itself succeeded (`scrot` exited 0 and the actions
+ * layer already refused a bad region), so a file that cannot be read or attached is a degraded
+ * observation, not a failed action. Ruling 2 forbids the two easy wrong answers: pretending an image
+ * is there, and reporting the whole action as a failure the model should retry. It returns a note
+ * instead, which is appended to the same `detail` the model reads.
+ *
+ * 🔴 **Size is handled by the ONE image seam (`Image.normalize`), and the OUTCOME IS ANNOUNCED.**
+ * `read.ts` normalizes exactly these bytes, so a second size policy here would be the duplication
+ * ruling 6 exists to prevent. But a resize is a COORDINATE TRANSFORM, and this is the one tool where
+ * that is semantic rather than cosmetic: `computer/coordinates.ts` supports a `pixels` space, and a
+ * grounder that emits pixels off a silently downscaled frame misses every target while staying
+ * on-screen — precisely the failure mode `sniffSpace` is documented as unable to catch. So the
+ * common case (a substrate display within the limits) returns the bytes IDENTICALLY, and the
+ * downscaled case says so in the result rather than letting the model assume 1:1.
+ */
+const readCapture = (
+  images: Image.Interface,
+  screenshotPath: string,
+): Effect.Effect<{ readonly image?: { readonly data: string; readonly mime: string }; readonly note?: string }> =>
+  Effect.gen(function* () {
+    const bytes = yield* Effect.tryPromise({
+      try: () => fs.readFile(screenshotPath),
+      catch: (error) => error,
+    })
+    const content = {
+      uri: `file://${screenshotPath}`,
+      name: screenshotPath,
+      content: bytes.toString("base64"),
+      encoding: "base64" as const,
+      mime: captureMime(screenshotPath),
+    }
+    // Same fallback `read.ts` takes: no resizer (the wasm decoder failed to load) is not a reason to
+    // withhold a capture that is almost certainly within limits anyway.
+    const normalized = yield* images
+      .normalize(screenshotPath, content)
+      .pipe(Effect.catchTag("Image.ResizerUnavailableError", () => Effect.succeed(content)))
+    if (normalized.content === content.content) return { image: { data: content.content, mime: content.mime } }
+    return {
+      image: { data: normalized.content, mime: normalized.mime },
+      note:
+        " ⚠️ The attached image was DOWNSCALED to fit attachment limits, so its pixels are NOT 1:1 " +
+        "with screen pixels: give targets in normalized coordinates, or capture a `region` of the " +
+        "screen instead of the whole thing.",
+    }
+  }).pipe(
+    Effect.catch((error: unknown) =>
+      Effect.succeed({
+        note:
+          ` ⚠️ The image could NOT be attached to this result (${String(error)}), so you have not seen ` +
+          "it — say so rather than describing the screen. Capture a smaller `region` and try again.",
+      }),
+    ),
+  )
+
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
@@ -160,6 +330,7 @@ export const layer = Layer.effectDiscard(
     const permission = yield* PermissionV2.Service
     const processes = yield* AppProcess.Service
     const location = yield* Location.Service
+    const images = yield* Image.Service
 
     yield* tools
       .register({
@@ -184,7 +355,9 @@ export const layer = Layer.effectDiscard(
           description,
           input: Input,
           output: Output,
-          toModelOutput: ({ output }) => [{ type: "text", text: output.detail }],
+          structured: StructuredOutput,
+          toStructuredOutput: ({ output }) => toStructured(output),
+          toModelOutput: ({ output }) => toModelContent(output),
           execute: (input, context) =>
             Effect.gen(function* () {
               const settings = Config.latest(yield* config.entries(), "computer") as ConfigComputer.Info | undefined
@@ -242,6 +415,12 @@ export const layer = Layer.effectDiscard(
                 if (text) outputs.push(text)
               }
 
+              // The pixels are read back HERE rather than in `toModelOutput`, because that projection
+              // is pure and synchronous — it gets the encoded output and nothing else. So the bytes
+              // have to travel on the output, and `toStructuredOutput` above is what keeps them from
+              // being persisted a second time as JSON.
+              const capture = action.kind === "screenshot" ? yield* readCapture(images, screenshotPath) : {}
+
               const detail =
                 action.kind === "screenshot"
                   ? // The region is named back, because the file at `screenshotPath` is a CROP and a
@@ -252,12 +431,14 @@ export const layer = Layer.effectDiscard(
                     // `-a 1200,760,400,400` on a 1280x800 display wrote an 80x40 file with no error.
                     // The origin survives clipping, so it stays exact; asserting the requested size
                     // would be describing the file as something it is not.
-                    action.region
-                    ? `screenshot written to ${screenshotPath} — a CROP with its origin at ` +
-                      `(${action.region.x},${action.region.y}) and up to ` +
-                      `${action.region.width}x${action.region.height} (clipped at the screen edge). ` +
-                      `Coordinates read off it are relative to that origin: add it back before clicking.`
-                    : `screenshot written to ${screenshotPath}`
+                    (action.region
+                      ? `screenshot attached below — a CROP with its origin at ` +
+                        `(${action.region.x},${action.region.y}) and up to ` +
+                        `${action.region.width}x${action.region.height} (clipped at the screen edge). ` +
+                        `Coordinates read off it are relative to that origin: add it back before clicking. ` +
+                        `Also written to ${screenshotPath}.`
+                      : `screenshot attached below — look at the image in this result rather than ` +
+                        `reading ${screenshotPath}, which is the same capture.`) + (capture.note ?? "")
                   : outputs.length > 0
                     ? outputs.join("\n")
                     : `${input.action} done`
@@ -266,6 +447,7 @@ export const layer = Layer.effectDiscard(
                 ok: true,
                 detail,
                 ...(action.kind === "screenshot" ? { screenshotPath } : {}),
+                ...(capture.image === undefined ? {} : { image: capture.image }),
               }
             }).pipe(
               // The tool's contract is ToolFailure only. Config reads and the process runner have
@@ -284,7 +466,9 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/computer",
   layer,
-  deps: [ToolRegistry.node, PermissionV2.node, AppProcess.node, Location.node, Config.node],
+  // `Image.node` is here for the SAME reason `tool/read.ts` has it: a tool that returns pixels
+  // consults the one image seam before it does, so the size policy lives in a single place.
+  deps: [ToolRegistry.node, PermissionV2.node, AppProcess.node, Location.node, Config.node, Image.node],
 })
 
 /** Re-exported so a caller converting a grounder's output has one obvious place to look. */

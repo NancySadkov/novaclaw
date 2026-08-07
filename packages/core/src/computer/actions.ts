@@ -230,22 +230,26 @@ export const build = (action: Action, options: Options): Built => {
 }
 
 /**
- * 🔴 **THE GAP THIS MODULE CANNOT CLOSE ON ITS OWN.**
+ * ✅ **THE GAP THIS MODULE COULD NOT CLOSE ON ITS OWN — CLOSED 2026-08-06. The rule it left behind
+ * is what this note is now for.**
  *
- * Ruling 6 says containment, shell resolution and env composition live in ONE module that both
- * `tool/bash.ts` and the jh runner consume. That module's `Shape` is
- * `{kind:"shell-command", shell, command}` or `{kind:"runtime-eval", runtime, program}` — **there is
- * no plain-argv shape**, so today there is nowhere to hand these arrays that is both the sanctioned
- * gate and injection-safe.
+ * ⚠️ **An earlier version of this comment said `host-exec.ts` has "no plain-argv shape". It does,
+ * and has since 2026-08-06** — `Shape` is `{kind:"shell-command", …}` · `{kind:"runtime-eval", …}` ·
+ * **`{kind:"argv", argv}`** (`host-exec.ts:73`). `argvOf` returns that third member untouched, and
+ * `plan()` routes it to the **exec** arm in both postures — raw exec of `argv[0]`, or wrapped by
+ * `AgentJail.wrapArgv` when confined — with an empty argv DENIED rather than exec'ing the empty
+ * string. `tool/computer.ts` already hands every array this module builds to `HostExec.plan` in
+ * exactly that shape, and `DISPLAY` rides `EnvRequest.overlay`, so no new env mechanism was needed
+ * either.
  *
- * The two wrong answers are worth naming because both are one line away:
+ * **The two wrong answers are still one line away, which is why they stay named:**
  *  · Join the argv into a shell string to fit `shell-command`. That reintroduces exactly the
  *    injection this module exists to prevent, on text a model chose.
  *  · Exec argv directly and skip the gate. That is the second call site ruling 6 forbids, and it is
  *    the mechanism that produced the COMSPEC divergence.
  *
- * So the prerequisite for wiring a `computer` tool is a third `Shape` — an argv form — added to
- * `host-exec.ts` and honoured by `AgentJail.wrapArgv`, which the jail already has. Filed in
- * `todo/computer-use.md`.
+ * Both are now guarded mechanically rather than by this prose: `plan()` refuses to let an argv shape
+ * fall through to the `via:"shell"` arm, and `computer/one-exec-gate.test.ts` fails if anything in
+ * the computer path starts a process itself.
  */
 export const REQUIRES_ARGV_SHAPE = true

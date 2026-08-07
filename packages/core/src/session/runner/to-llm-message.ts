@@ -180,9 +180,13 @@ export const unreadableTurnAttachments = (
 //    that call `externalContentFrame` do so because THEY know they fetched a stranger's text. Pixels
 //    are different: instruction-shaped text painted into an image is read by a vision model and is
 //    invisible to every string check in this process, whichever tool produced it. That danger is
-//    identical for `webfetch`, for `read`, and for a screenshot tool that does not exist yet — so
-//    the frame belongs at the ONE place every tool result passes through, where a new tool cannot
-//    forget it. See `SessionOrigin.externalMediaFrame` for why it is a sibling text part and not a
+//    identical for `webfetch`, for `read`, and for the `computer` tool's screenshot — so the frame
+//    belongs at the ONE place every tool result passes through, where a new tool cannot forget it.
+//    ⚠️ **This clause used to say "a screenshot tool that does not exist yet". It exists.**
+//    `tool/computer.ts`'s `toModelContent` returns the capture as a `{type:"file"}` part, so the
+//    case this framing was written AHEAD of is now the live one, and screen pixels — which
+//    `todo/jail.md`'s threat model still lists as an unframed seam — arrive framed by construction.
+//    See `SessionOrigin.externalMediaFrame` for why it is a sibling text part and not a
 //    prefix, and why it is not a double-frame of a tool that already frames its own text.
 //    ⚠️ This deliberately overrides `read.ts`'s recorded decision not to frame — for its IMAGE
 //    branch only. Both halves of that decision's reasoning are about text: "the frame carries no
