@@ -4,6 +4,8 @@ import { Cause, DateTime, Effect, Exit, Layer } from "effect"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import { Database } from "@novaclaw/core/database/database"
 import { EventV2 } from "@novaclaw/core/event"
+import { Log } from "@novaclaw/schema/log"
+import { SessionPatch } from "@novaclaw/core/session/patch"
 import { Location } from "@novaclaw/core/location"
 import { LocationServiceMap } from "@novaclaw/core/location-service-map"
 import { PermissionV2 } from "@novaclaw/core/permission"
@@ -15,6 +17,7 @@ import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attemp
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { SessionRunCoordinator } from "@novaclaw/core/session/run-coordinator"
 import { SessionRunner } from "@novaclaw/core/session/runner"
+import * as SessionScratchFolder from "./scratch-folder"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionStore } from "@novaclaw/core/session/store"
@@ -64,8 +67,41 @@ export const layer = Layer.effect(
 
     const coordinator = yield* SessionRunCoordinator.make<SessionSchema.ID, SessionRunner.RunError>({
       drain: Effect.fnUntraced(function* (sessionID: SessionSchema.ID, force) {
-        const session = yield* store.get(sessionID)
-        if (!session) return yield* Effect.die(`Session not found: ${sessionID}`)
+        const stored = yield* store.get(sessionID)
+        if (!stored) return yield* Effect.die(`Session not found: ${sessionID}`)
+
+        // 🔴 **Degrade, don't die: a session whose working folder has gone runs in a scratch folder.**
+        // Before this the worker refused to start and the session was ISOLATED — legible but stopped,
+        // waiting for a human. Worse, the prompt that triggered it was accepted with `200` and then
+        // stranded `promoted_seq = NULL` with no `user` message ever written, so the user's words were
+        // nowhere they could be seen. Recovering the session is what lets that input promote normally.
+        //
+        // ⚠️ The row is PATCHED rather than the directory being swapped locally, and that is load-
+        // bearing in two ways. `runner/llm.ts` interrupts the turn when the session's stored directory
+        // disagrees with the location it was handed, so a local-only swap would abandon every turn.
+        // And the location GRAPH is keyed on the ref (`locations.get`), which is what
+        // `system-context/builtins.ts` reads to build the `<env>` block — so patching is also what
+        // makes the agent find out. That block is an Effect re-evaluated per turn precisely so
+        // `SystemContext.reconcile` reports a change, which is the owner's requirement: the switch is
+        // announced through the SAME channel that reports the working folder whenever it changes, not
+        // a bespoke notice that would drift from it.
+        const effective = SessionScratchFolder.workingDirectory(sessionID, stored.location.directory)
+        if (effective !== stored.location.directory) {
+          yield* Log.event("session.folder.substituted", {
+            "session.id": sessionID,
+            "session.folder.missing": stored.location.directory,
+            "session.folder.scratch": effective,
+          })
+          yield* SessionPatch.patchSessionRecord({ db: database.db, events }, sessionID, (info: SessionSchema.Info) => ({
+            ...info,
+            location: Location.Ref.make({
+              directory: effective,
+              ...(info.location.workspaceID ? { workspaceID: info.location.workspaceID } : {}),
+            }),
+          }))
+        }
+        const session = effective === stored.location.directory ? stored : ((yield* store.get(sessionID)) ?? stored)
+
         const located = locations.get(session.location)
         const location = new Location.Info({
           directory: session.location.directory,

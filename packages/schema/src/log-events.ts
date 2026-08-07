@@ -1122,6 +1122,17 @@ export const EVENTS = {
   },
 
   // ── session ───────────────────────────────────────────────────────────────────────────────────
+  // A session whose working folder vanished is now RUN in a scratch folder rather than isolated.
+  // `warn` not `info`: the session keeps working, but it is no longer where the user put it, and an
+  // operator reading the log needs to see that without hunting.
+  "session.folder.substituted": {
+    level: "warn",
+    message: "session working folder is gone; running in a scratch folder",
+    attributes: { "session.id": "id", "session.folder.missing": "path", "session.folder.scratch": "path" },
+    content: "user",
+    file: "packages/novaclaw/src/session-worker/execution.ts",
+  },
+
   "session.changes.refresh.failed": {
     level: "warn",
     message: "changes-summary refresh failed",
