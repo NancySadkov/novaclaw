@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { defaultMemoryLimitBytes, pausedNotice } from "./execution"
+import { defaultMemoryLimitBytes, folderSubstitutedNotice, pausedNotice } from "./execution"
 
 test("the production HTTP graph routes admitted drains through the worker executor", () => {
   const source = readFileSync(
@@ -29,4 +29,17 @@ test("paused sessions explain uncertainty and preserve selectable technical deta
   const repeated = pausedNotice("repeated-failure", "heartbeat timeout")
   expect(repeated).toContain("other chats are unaffected")
   expect(repeated).toContain("choose another model")
+})
+
+test("the folder-substitution notice names BOTH folders and says work continues", () => {
+  // The `<env>` block tells the model where it now is; this tells the PERSON why it moved. A user
+  // reading the chat would otherwise watch their working directory become `…/scratch/ses_…` with
+  // nothing saying why — and the behaviour this replaced (isolating the session) did explain itself.
+  const notice = folderSubstitutedNotice("D:\work\project", "C:\data\scratch\ses_1")
+  // ⚠️ Both paths, because "your folder is gone" is only actionable if the reader knows WHICH one,
+  // and "you are in a scratch folder" is only actionable if they know WHERE.
+  expect(notice).toContain("D:\work\project")
+  expect(notice).toContain("C:\data\scratch\ses_1")
+  // It must not read as a failure: the session is still working, which is the whole point.
+  expect(notice).toContain("Your work continues")
 })

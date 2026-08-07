@@ -50,6 +50,27 @@ export const pausedNotice = (reason: "outcome-unknown" | "repeated-failure", det
   return `⚠️ This session was isolated after its worker stopped. ${guidance}\n\nTechnical detail: ${detail}`
 }
 
+/**
+ * Told to the USER, in the transcript, when a session's working folder has gone and it is now running
+ * in a scratch folder.
+ *
+ * 🔴 **The `<env>` block tells the AGENT; this tells the person.** Context reports the new working
+ * directory on the next turn, which is what the owner asked for and is enough for the model. But a
+ * user reading the chat would otherwise see their working directory silently become
+ * `…/scratch/ses_…` with nothing saying why — and the behaviour this REPLACED (isolating the session)
+ * did explain itself. Degrading more gracefully must not mean explaining less.
+ *
+ * ⚠️ Names the missing folder, because "your folder is gone" is only actionable if the reader knows
+ * WHICH one — a session may have been pointed somewhere they have forgotten about.
+ */
+export const folderSubstitutedNotice = (missing: string, scratch: string) =>
+  `⚠️ This session's working folder is no longer there, so it is now running in a temporary scratch folder. ` +
+  `Your work continues, but it is not where you left it: files this session creates land in the scratch folder ` +
+  `until you point the session somewhere else.
+
+Missing folder: ${missing}
+Scratch folder: ${scratch}`
+
 /** Production session execution: the host owns admission, durable state and all privileged
  * capabilities; one disposable child owns one runner drain. Core's local layer remains the
  * explicit fallback for non-server embeddings and narrow tests. */
@@ -92,6 +113,18 @@ export const layer = Layer.effect(
             "session.folder.missing": stored.location.directory,
             "session.folder.scratch": effective,
           })
+          // The person, not just the model — see `folderSubstitutedNotice`. Published BEFORE the patch
+          // so it is stamped at the location the session is leaving, keeping the notice in the same
+          // stream a reader is already following rather than arriving from a folder they have not
+          // heard of yet.
+          yield* events
+            .publish(SessionEvent.Synthetic, {
+              sessionID,
+              messageID: SessionMessage.ID.create(),
+              timestamp: yield* DateTime.now,
+              text: folderSubstitutedNotice(stored.location.directory, effective),
+            })
+            .pipe(Effect.ignore)
           yield* SessionPatch.patchSessionRecord({ db: database.db, events }, sessionID, (info: SessionSchema.Info) => ({
             ...info,
             location: Location.Ref.make({
