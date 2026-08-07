@@ -136,7 +136,7 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
 ]
 
 /**
- * **The forked widget names, re-derived 2026-08-07: 11.**
+ * **The forked widget names, re-derived 2026-08-07: 8.**
  *
  * A name is on this list when `ui/src/components/<name>.tsx` and its v2 twin both exist. The twin is
  * `v2/components/<name>-v2.tsx`, except `icon`, which is duplicated under the identical filename —
@@ -144,23 +144,24 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  * `{viewBox, body}` pairs), which is why `icon` is 61 call sites and the expensive half of the
  * migration rather than a rename.
  *
- * This list may only ever get SHORTER. It was 14, then 12 (`text-shimmer` 2026-07-31), and is 11
- * since `switch` was migrated and its v1 twin deleted (2026-08-07).
+ * This list may only ever get SHORTER. It was 14, then 12 (`text-shimmer` 2026-07-31), 11 (`switch`,
+ * 2026-08-07), and is **8** since `keybind`, `progress-circle` and `diff-changes` were migrated and
+ * their v1 twins deleted (2026-08-07).
  *
- * ⭐ **`switch` is the shape the rest of this list should copy.** Its four call sites were all in
- * `app/src` — no `packages/ui` component composed it — so migrating them left `switch.tsx` with zero
- * importers and the pair could be RETIRED rather than merely thinned. A widget that `packages/ui`
- * composes internally (`button`, `icon`, `icon-button`, `tooltip`, `select`, `dialog`, `toast`) cannot
- * reach zero until its v1 consumers die, which is why those lines sit in the second block below.
+ * ⭐ **The shape the rest of this list should copy — a pair is RETIRABLE when nothing in
+ * `packages/ui` composes its v1 side.** Then migrating the leaf call sites leaves the v1 file with
+ * zero importers and the pair can be deleted rather than merely thinned, which is the only move that
+ * shrinks the fork's WIDTH. `switch` (4 call sites), then `keybind` (2), `progress-circle` (1) and
+ * `diff-changes` (1) went that way. A widget that `packages/ui` composes internally (`button`,
+ * `icon`, `icon-button`, `tooltip`) cannot reach zero until its v1 consumers die, which is why those
+ * lines sit in the second block below. `dialog`, `select`, `tabs` and `toast` are the four that are
+ * still retirable — nothing in `packages/ui` composes them — but each carries 3–10 call sites.
  */
 export const FORKED_WIDGETS: readonly string[] = [
   "button",
   "dialog",
-  "diff-changes",
   "icon",
   "icon-button",
-  "keybind",
-  "progress-circle",
   "select",
   "tabs",
   "toast",
@@ -168,11 +169,16 @@ export const FORKED_WIDGETS: readonly string[] = [
 ]
 
 /**
- * **Every file that imports the v1 side of a forked widget, re-derived 2026-08-07: 87 files, 155
+ * **Every file that imports the v1 side of a forked widget, re-derived 2026-08-07: 87 files, 151
  * (file, widget) pairs.** Grouped by package: `app` 74, `ui` 10, `session-ui` 3.
  *
  * Per-widget: icon 61 · button 27 · icon-button 21 · tooltip 16 · dialog 10 · tabs 8 · select 5 ·
- * toast 3 · keybind 2 · diff-changes 1 · progress-circle 1.
+ * toast 3.
+ *
+ * ⚠️ The file count did NOT move when `keybind`/`progress-circle`/`diff-changes` were migrated: all
+ * four of their call sites also import some other v1 widget, so every line survived with one name
+ * fewer. **Pairs and files move independently** — a migration that leaves the file count still is
+ * doing exactly as much work as one that lowers it.
  *
  * ⚠️ **Every number in the two lines above was wrong before 2026-08-07, and none of them was a
  * regression — the prose simply never moved when the pins did.** It claimed 88 files / 162 pairs
@@ -201,7 +207,7 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/components/dialog-release-notes.tsx": ["button", "dialog"],
   "app/src/components/dialog-select-directory-v2.tsx": ["icon"],
   "app/src/components/dialog-select-directory.tsx": ["dialog"],
-  "app/src/components/dialog-select-file.tsx": ["dialog", "icon", "keybind"],
+  "app/src/components/dialog-select-file.tsx": ["dialog", "icon"],
   "app/src/components/dialog-select-mcp.tsx": ["dialog"],
   "app/src/components/dialog-select-model.tsx": ["button", "dialog", "icon-button", "tooltip"],
   "app/src/components/dialog-select-server.tsx": ["button", "dialog", "icon", "icon-button"],
@@ -218,9 +224,9 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/components/prompt-project-selector.tsx": ["icon"],
   "app/src/components/prompt-workspace-selector.tsx": ["icon"],
   "app/src/components/server/server-row.tsx": ["tooltip"],
-  "app/src/components/session-context-usage.tsx": ["button", "progress-circle", "tooltip"],
+  "app/src/components/session-context-usage.tsx": ["button", "tooltip"],
   "app/src/components/session/session-context-tab.tsx": ["icon"],
-  "app/src/components/session/session-header.tsx": ["button", "icon", "icon-button", "keybind", "tooltip"],
+  "app/src/components/session/session-header.tsx": ["button", "icon", "icon-button", "tooltip"],
   "app/src/components/session/session-new-view.tsx": ["icon"],
   "app/src/components/session/session-sortable-tab.tsx": ["icon-button", "tabs", "tooltip"],
   "app/src/components/session/session-sortable-terminal-tab.tsx": ["icon", "icon-button", "tabs"],
@@ -264,7 +270,7 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/wsl/dialog-add-server.tsx": ["button", "toast"],
   "session-ui/src/components/file-search.tsx": ["icon"],
   "session-ui/src/components/line-comment.tsx": ["button", "icon"],
-  "session-ui/src/components/session-review.tsx": ["button", "diff-changes", "icon", "icon-button", "tooltip"],
+  "session-ui/src/components/session-review.tsx": ["button", "icon", "icon-button", "tooltip"],
   // `packages/ui`'s own v1 components composing other v1 components. Not migratable — see the
   // header. These lines retire by DELETING the component, which is how `card.tsx` left this list.
   "ui/src/components/button.tsx": ["icon"],
@@ -280,20 +286,21 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
 }
 
 /**
- * `ui/src/components/*.tsx` was 45, then 38 (2026-07-31), and is **36** after `switch.tsx` went.
- * A bound rather than a name list, because ruling 13 pins the FORK and a v1-only widget forks
- * nothing — see the header. It may fall freely; raising it means adding a v1 component under a
- * ruling that says new work is v2, so raise it only with a reason written next to it.
+ * `ui/src/components/*.tsx` was 45, then 38 (2026-07-31), 36 (`switch.tsx`, 2026-08-07), and is
+ * **33** after `keybind.tsx`, `progress-circle.tsx` and `diff-changes.tsx` went. A bound rather than
+ * a name list, because ruling 13 pins the FORK and a v1-only widget forks nothing — see the header.
+ * It may fall freely; raising it means adding a v1 component under a ruling that says new work is
+ * v2, so raise it only with a reason written next to it.
  *
  * ⚠️ **A ceiling that is not re-tightened stops ratcheting, and this one had already slipped.** It
  * read 38 while the tree held 37 — one component had been deleted without the pin following, so a
  * new v1 component could have been added for free. Lower it in the same commit as any deletion.
  */
-const V1_COMPONENT_CEILING = 36
+const V1_COMPONENT_CEILING = 33
 
 /** Measured totals, pinned so the ledger stays a measurement rather than an aspiration. */
 const V1_CALL_SITE_FILES = 87
-const V1_CALL_SITE_PAIRS = 155
+const V1_CALL_SITE_PAIRS = 151
 
 // ---------------------------------------------------------------------------------------------
 // The sweep. Pure functions first so the negative controls can drive them without touching disk.
@@ -565,7 +572,7 @@ describe("the fork's DEPTH can only shrink", () => {
     expect(OBSERVED_PAIRS, "the observed (file, widget) pair count moved — reconcile V1_CALL_SITES").toBe(
       V1_CALL_SITE_PAIRS,
     )
-    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(11)
+    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(8)
   })
 
   test("both sides are genuinely live — this is a fork, not a finished migration", () => {
@@ -765,11 +772,11 @@ describe("the seven deleted v1 components stay deleted", () => {
 
   test("🔴 every v2 @import comes AFTER every v1 @import — same layer, so ORDER decides", () => {
     // ⚠️ **This became load-bearing the moment v2 stylesheets joined `layer(components)`, and it was
-    // invisible before.** FIVE v2 sheets target a selector their v1 twin also targets (six until
-    // 2026-08-07): `badge-v2`/`tag.css` → `[data-component="tag"]`,
-    // `diff-changes-v2`/`diff-changes.css`, `dialog-v2`/`dialog.css`, plus `tabs-v2` and `toast-v2`
-    // on shared `icon`/`icon-button` selectors. `switch-v2`/`switch.css` left the list when v1
-    // `switch.css` was deleted — the only way a collision goes away for good.
+    // invisible before.** FOUR v2 sheets target a `[data-component]` a v1 sheet also targets (six on
+    // 2026-08-06, five that afternoon): `badge-v2` → `tag`, `dialog-v2` → `dialog-overlay`,
+    // `tabs-v2` → `icon-button`, `toast-v2` → `icon`. `switch-v2`/`switch.css` and then
+    // `diff-changes-v2`/`diff-changes.css` left the list when the v1 sheet was DELETED — the only
+    // way a collision goes away for good.
     //
     // While v2 was UNLAYERED it beat v1 unconditionally. Now both sit in `components`, equal
     // specificity, so the LATER declaration wins — i.e. the order of these `@import` lines is the only
@@ -785,6 +792,19 @@ describe("the seven deleted v1 components stay deleted", () => {
     // focus `box-shadow`. All THREE were painting v2 switches in `settings-v2`, which is what a
     // "v1-only" stylesheet is not supposed to be able to do. A shared selector is a live coupling in
     // both directions — deleting the v1 sheet is the fix, moving imports around is not.
+    //
+    // ⚠️ **`diff-changes` proved the SAME coupling running the OTHER way, measured in the browser
+    // 2026-08-07 — and this is the case order does hide.** Both sheets said
+    // `[data-component="diff-changes"]` (v2's selector carries no `-v2`), equal specificity, so v2
+    // won every property it declared — including on the v1 element. Rendered side by side through
+    // the dev server, v1 `DiffChanges` and v2 `DiffChanges` computed IDENTICAL type: 11px/440/0.05px
+    // in v2's `--v2-state-fg-success`, none of it v1's own 14px `--text-diff-add-base`. The single
+    // property flowing the other way was `font-family: var(--font-family-mono)`, which v2 never
+    // declares and therefore inherited from v1 — so the one v2 call site (`basic-tool-v2`) rendered
+    // its diff counts in mono while every sibling slot in that row is sans. Deleting v1's sheet
+    // settles both: v1's dead type scale goes with the component, and v2 finally renders what v2
+    // says. **Two sheets agreeing on a selector is not "harmless duplication" even when the
+    // rendered result looks right — it looked right because ONE of them was silently winning.**
     const barrel = readFileSync(join(PACKAGES, "ui", "src", "styles", "index.css"), "utf8")
     const lines = barrel.split("\n")
     const lastV1 = lines.reduce((last, line, index) => (/@import\s+["']\.\.\/components\/[^"']+\.css["']/.test(line) ? index : last), -1)

@@ -1,6 +1,5 @@
 import { Match, Show, Switch, createMemo } from "solid-js"
 import { Tooltip, type TooltipProps } from "@novaclaw/ui/tooltip"
-import { ProgressCircle } from "@novaclaw/ui/progress-circle"
 import { ProgressCircleV2 } from "@novaclaw/ui/v2/progress-circle-v2"
 import { Button } from "@novaclaw/ui/button"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
@@ -89,12 +88,10 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
     })
   }
 
+  // One gauge for every placement. The v1 twin took `size={16} strokeWidth={2}`; the v2 scale (14px
+  // ring, 1.5px stroke) is the end state per todo.md ruling 13, so the sizes are not carried over —
+  // and `tone` now reaches the side-panel indicator too, which the v1 ring could never show.
   const circle = () => (
-    <div class="flex items-center justify-center">
-      <ProgressCircle size={16} strokeWidth={2} percentage={context()?.usage ?? 0} />
-    </div>
-  )
-  const circleV2 = () => (
     <div class="flex items-center justify-center">
       <ProgressCircleV2 percentage={context()?.usage ?? 0} tone={tone()} />
     </div>
@@ -152,7 +149,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
               type="button"
               variant="ghost-muted"
               size="large"
-              icon={circleV2()}
+              icon={circle()}
               onClick={openContext}
               aria-label={language.t("context.usage.view")}
             />

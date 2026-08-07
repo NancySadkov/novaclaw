@@ -3,7 +3,6 @@ import { Button } from "@novaclaw/ui/button"
 import { DropdownMenu } from "@novaclaw/ui/dropdown-menu"
 import { Icon } from "@novaclaw/ui/icon"
 import { IconButton } from "@novaclaw/ui/icon-button"
-import { Keybind } from "@novaclaw/ui/keybind"
 import { Spinner } from "@novaclaw/ui/spinner"
 import { showToast } from "@/utils/toast"
 import { Tooltip, TooltipKeybind } from "@novaclaw/ui/tooltip"
@@ -157,7 +156,7 @@ export function SessionHeader() {
     if (current) return current.name || getFilename(current.worktree)
     return getFilename(projectDirectory())
   })
-  const hotkey = createMemo(() => command.keybind("file.open"))
+  const hotkey = createMemo(() => command.keybindParts("file.open"))
   const os = createMemo(() => detectOS(platform))
   const search = settings.visibility.search
   const status = settings.visibility.status
@@ -313,12 +312,10 @@ export function SessionHeader() {
                 </span>
               </div>
 
-              <Show when={hotkey()}>
-                {(keybind) => (
-                  <Keybind class="shrink-0 !border-0 !bg-transparent !shadow-none px-0 text-text-weaker">
-                    {keybind()}
-                  </Keybind>
-                )}
+              {/* The v1 twin was a single boxed span, and this call site spent four `!` utilities
+                  cancelling that box. v2 says the same thing with `variant="ghost"`. */}
+              <Show when={hotkey().length > 0}>
+                <KeybindV2 keys={hotkey()} variant="ghost" />
               </Show>
             </Button>
           </Portal>

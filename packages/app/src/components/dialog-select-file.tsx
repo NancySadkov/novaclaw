@@ -2,13 +2,13 @@ import { useDialog } from "@novaclaw/ui/context/dialog"
 import { Dialog } from "@novaclaw/ui/dialog"
 import { FileIcon } from "@novaclaw/ui/file-icon"
 import { Icon } from "@novaclaw/ui/icon"
-import { Keybind } from "@novaclaw/ui/keybind"
 import { List } from "@novaclaw/ui/list"
+import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { getDirectory, getFilename } from "@novaclaw/core/util/path"
 import { useNavigate } from "@solidjs/router"
 import { createMemo, createSignal, lazy, Match, onCleanup, Show, Switch } from "solid-js"
-import { formatKeybind, useCommand, type CommandOption } from "@/context/command"
+import { formatKeybindKeys, useCommand, type CommandOption } from "@/context/command"
 import { useServerSDK, type ServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useLayout } from "@/context/layout"
@@ -450,7 +450,10 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
                   </Show>
                 </div>
                 <Show when={item.keybind}>
-                  <Keybind class="rounded-[4px]">{formatKeybind(item.keybind ?? "", language.t)}</Keybind>
+                  {/* v2 renders one chip PER KEY, so the joined string becomes the parts array.
+                      The v1 twin's single 20px box needed `rounded-[4px]` to reach the 4px the
+                      design wanted; v2's key chips carry their own radius. */}
+                  <KeybindV2 keys={formatKeybindKeys(item.keybind ?? "", language.t)} />
                 </Show>
               </div>
             </Match>
