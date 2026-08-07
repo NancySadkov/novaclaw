@@ -529,6 +529,25 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/project/bootstrap.ts",
   },
+  /**
+   * The instance database could not be opened, upgraded, or recognised, so the boot STOPPED. The
+   * one fault on this list that is deliberately not survivable: coming up on an unusable or
+   * half-migrated store would let the user act on an instance that looks healthy. `kind` separates
+   * the cases that have different repairs (unreadable · corrupt · foreign · migration · unknown),
+   * and nothing on that path renames, moves or deletes the file.
+   */
+  "instance.database.refused": {
+    level: "error",
+    message: "the instance database could not be used; NovaClaw stopped rather than write into it",
+    attributes: {
+      "instance.database": "path",
+      "instance.database.kind": "id",
+      "instance.database.migration": "id",
+      "instance.cause": "fault",
+    },
+    content: "user",
+    file: "packages/core/src/database/database.ts",
+  },
   /** Disposing one instance failed while its HTTP lifecycle was tearing down; the response still returns. */
   "instance.dispose.failed": {
     level: "warn",
