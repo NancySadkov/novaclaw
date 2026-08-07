@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { Config } from "@novaclaw/core/config"
+import { ConfigProjection } from "@novaclaw/core/config-projection"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
@@ -148,8 +149,10 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
         .map(([key]) => key)
         .sort()
 
-    // Seven operational keys, and the shortness is the measurement rather than an oversight: the config
-    // surface really is mostly execution surfaces, prompt text and endpoint URLs (review finding S2).
+    // The operational tier is the SHORT list, and the shortness is the measurement rather than an
+    // oversight: the config surface really is mostly execution surfaces, prompt text and endpoint URLs
+    // (review finding S2). ⚠️ No count is written in this comment — the header used to carry one and it
+    // rotted the moment a key was added. The lists below ARE the count.
     expect(of("operational")).toEqual([
       "$schema",
       "attachments",
@@ -562,7 +565,7 @@ describe("read: no consent card, and no credentials", () => {
 
   it.live("this instance's own API token and its peer tokens read back REDACTED", () => {
     const asserted: Asserted[] = []
-    return withTool(recording(asserted), ({ registry }) =>
+    return withTool(recording(asserted), ({ registry, settings }) =>
       Effect.gen(function* () {
         // Both are privileged WRITES and both are allowed here — the point is the read side.
         yield* call(registry, { op: "set", config: { server: { port: 4096, password: "hunter2" } } })
@@ -573,6 +576,11 @@ describe("read: no consent card, and no credentials", () => {
 
         const read = yield* call(registry, { op: "read", keys: ["server", "instances"] })
         const text = textOf(read)
+        // ⚠️ PRESENCE CONTROL, without which the two absence assertions below are vacuous: the store
+        // really does hold both secrets, so "not in the reply" is a redaction and not an empty read.
+        const stored = yield* settings.all()
+        expect((stored.server as { password?: string }).password).toBe("hunter2")
+        expect((stored.instances as readonly { token?: string }[])[0]!.token).toBe("peer-secret")
         // `overlay` hands back both verbatim; a model that has seen one has put it in a transcript,
         // a compaction summary, and possibly a messenger reply.
         expect(text).not.toContain("hunter2")
@@ -586,12 +594,345 @@ describe("read: no consent card, and no credentials", () => {
     )
   })
 
+  /**
+   * v0.2.0 item 4.1 — the redactor under the read op is now `ConfigProjection.redact` (a walk of the
+   * VALUE against the SCHEMA) instead of `redactSecrets` (a test over KEY NAMES).
+   *
+   * `config-projection.test.ts` owns the side-by-side measurement that licensed the swap and pins the
+   * marker ledger; this suite owns the only question that file cannot answer — **did the read op
+   * actually change hands?** A swap made in a helper and not at the call site is the defect class this
+   * repo keeps finding (a guard's SITE is invisible to behaviour), so every assertion below runs the
+   * retired function over the SAME stored document as a control: it fails exactly where the shipped
+   * one now succeeds, at this call site, on this reply.
+   */
+  it.live("the read op's redactor is the schema marker: it closes three leaks the name test had", () =>
+    withTool(recording([]), ({ registry, settings }) =>
+      Effect.gen(function* () {
+        yield* settings.set("mcp", {
+          servers: {
+            weather: {
+              type: "remote",
+              url: "https://weather.example/mcp",
+              oauth: { client_id: "public-id", client_secret: "oauth-client-secret" },
+            },
+            files: {
+              type: "local",
+              command: ["node", "server.js"],
+              environment: { PATH: "/usr/bin", GITHUB_TOKEN: "ghp-local-mcp-env" },
+            },
+          },
+        })
+
+        const text = textOf(yield* call(registry, { op: "read", keys: ["mcp"] }))
+
+        // ⚠️ PRESENCE CONTROL first: the store holds all three verbatim, so the absence assertions
+        // below measure a redaction rather than an empty read.
+        const stored = yield* settings.all()
+        const raw = JSON.stringify(stored.mcp)
+        for (const secret of ["oauth-client-secret", "ghp-local-mcp-env"]) expect(raw).toContain(secret)
+
+        // ⚠️ NEGATIVE CONTROL on the swap itself: the retired name test, run over the same document,
+        // still hands both back in the clear. Without this the two lines below would also pass on the
+        // day before the swap, and would be measuring nothing.
+        const byName = JSON.stringify(ConfigureTool.redactSecrets(stored.mcp))
+        expect(byName).toContain("oauth-client-secret")
+        expect(byName).toContain("ghp-local-mcp-env")
+
+        expect(text).not.toContain("oauth-client-secret")
+        expect(text).not.toContain("ghp-local-mcp-env")
+        expect(text).toContain(ConfigureTool.REDACTED)
+        // The non-credential neighbours survive — a redaction, not a blanked subtree. `client_id` sits
+        // beside the secret INSIDE THE SAME OBJECT and reads back, which is the property that keeps an
+        // OAuth server repairable.
+        expect(text).toContain("public-id")
+        expect(text).toContain("https://weather.example/mcp")
+        // ⚠️ `environment` is marked secret WHOLE, not per entry — the entry names are the user's, so
+        // a name test over them is the guess this swap refuses (`config/mcp.ts` says so at the marker).
+        // Both VALUES are therefore blanked, `PATH` included; both KEYS survive, so "which variables
+        // are set" stays answerable. Asserting `/usr/bin` reads back would have been asserting the
+        // opposite of the design.
+        expect(text).toContain("GITHUB_TOKEN")
+        expect(text).toContain("PATH")
+        expect(text).not.toContain("/usr/bin")
+      }),
+    ),
+  )
+
+  it.live("…and it stops OVER-redacting an MCP server a user named `headers`, which made that repair unmakeable", () =>
+    withTool(recording([]), ({ registry, settings }) =>
+      Effect.gen(function* () {
+        // The name test replaces every string field of anything CALLED `headers`, so this server's own
+        // `type` and `url` came back as the redaction sentence — an agent asked to repair it could not
+        // read what it was repairing.
+        yield* settings.set("mcp", {
+          servers: { headers: { type: "remote", url: "https://named-headers.example/mcp" } },
+        })
+
+        const stored = yield* settings.all()
+        // NEGATIVE CONTROL: the retired function really does eat it, so the line below is a change.
+        const byName = ConfigureTool.redactSecrets(stored.mcp) as {
+          servers: { headers: { type: string; url: string } }
+        }
+        expect(byName.servers.headers.url).toBe(ConfigureTool.REDACTED)
+
+        const text = textOf(yield* call(registry, { op: "read", keys: ["mcp"] }))
+        expect(text).toContain("https://named-headers.example/mcp")
+        expect(text).toContain("remote")
+      }),
+    ),
+  )
+
   it.live("reading an undeclared key is refused by name", () =>
     withTool(recording([]), ({ registry }) =>
       Effect.gen(function* () {
         const result = yield* call(registry, { op: "read", keys: ["providerz"] })
         expect(result.type).toBe("error")
         expect(textOf(result)).toContain('"providerz"')
+      }),
+    ),
+  )
+})
+
+// ═══ the `schema` op (v0.2.0 item 4.1) ════════════════════════════════════════════════════════
+//
+// Item 4.1 shipped `ConfigProjection` and nothing called it. This is the op that makes it reachable
+// from a model, and the reason it had to exist: the tool's own description told the model to "READ A
+// KEY BEFORE YOU WRITE IT and follow the shape you get back", and `read` reports a VALUE — so the
+// key a repair most often targets, one this instance has never set, read back `(not set)`.
+//
+// ⚠️ These are NOT a second copy of `config-projection.test.ts`. That file measures the projection;
+// this one measures the OP — that it is reachable, ungated, value-free, and that the write its text
+// prescribes actually lands through the same tool.
+
+describe("schema: an agent can discover what is settable", () => {
+  it.live("the survey names every key with its tier, and asserts nothing", () => {
+    const asserted: Asserted[] = []
+    return withTool(recording(asserted), ({ registry }) =>
+      Effect.gen(function* () {
+        const result = yield* call(registry, { op: "schema" })
+        expect(result.type).toBe("text")
+        const text = textOf(result)
+
+        // Every key is named, derived rather than pinned — a literal list here would be the second
+        // source this whole item exists to remove.
+        const missing = ConfigProjection.keys().filter((key) => !text.includes(`\n${key} [`))
+        expect(missing).toEqual([])
+        expect(ConfigProjection.keys().length).toBeGreaterThan(40)
+        // …with the price of the write, which is the fact a model needs before it plans a repair.
+        expect(text).toContain("shell [privileged]")
+        expect(text).toContain("tool_output [operational]")
+        expect(text).toContain("model [consequential]")
+        // It points at the next call rather than dead-ending, and separates the two verbs.
+        expect(text).toContain('{"op":"schema","keys":["providers"],"depth":2}')
+        expect(text).toContain("Paths are SEGMENT ARRAYS")
+
+        // Ungated: describing the schema mutates nothing and reveals no stored value.
+        expect(asserted).toEqual([])
+      }),
+    )
+  })
+
+  it.live("the survey describes the SCHEMA and never the stored values", () =>
+    withTool(recording([]), ({ registry, settings }) =>
+      Effect.gen(function* () {
+        yield* settings.set("shell", "a-value-only-this-instance-has")
+        yield* settings.set("server", { port: 4096, password: "hunter2" })
+
+        for (const input of [{ op: "schema" }, { op: "schema", keys: ["shell", "server"], depth: 2 }]) {
+          const text = textOf(yield* call(registry, input))
+          // ⚠️ PRESENCE CONTROL: `read` over the same store DOES print the non-secret value, so the
+          // two absences below are a property of `schema` rather than of an empty store.
+          expect(textOf(yield* call(registry, { op: "read", keys: ["shell"] }))).toContain(
+            "a-value-only-this-instance-has",
+          )
+          expect(text).not.toContain("a-value-only-this-instance-has")
+          expect(text).not.toContain("hunter2")
+          // …and it did describe the key it was asked about, so the absences are not an empty reply.
+          expect(text).toContain("shell")
+        }
+      }),
+    ),
+  )
+
+  it.live("one key comes back with its fields, its legal values and its WRITE SHAPE", () => {
+    const asserted: Asserted[] = []
+    return withTool(recording(asserted), ({ registry }) =>
+      Effect.gen(function* () {
+        const text = textOf(yield* call(registry, { op: "schema", keys: ["providers"], depth: 3 }))
+
+        // The two sentences AGENTS.md spent two corrections learning by hand — now printed.
+        expect(text).toContain("Send one COMPLETE alternative including its `type`")
+        expect(text).toContain('type="native" needs {type, settings}')
+        expect(text).toContain('type="aisdk" needs {type, package}')
+        // …and the one it got WRONG: `request` really is partially patchable.
+        expect(text).toContain('["providers","<key>","request"]')
+        // Secrets are named as writable-but-unreadable rather than hidden, so the agent knows the
+        // field exists and can still repair it.
+        expect(text).toContain("[secret — writable, never read back]")
+        expect(text).toContain("[the apiKey entry is secret — writable, never read back]")
+        // The price, and the verb this tool can actually spend (the projection's own line names the
+        // HTTP surface, which nothing hands a session a URL or token for).
+        expect(text).toContain("price: privileged")
+        expect(text).toContain('{"op":"remove","paths":[["<key>","<segment>"]]}')
+
+        expect(asserted).toEqual([])
+      }),
+    )
+  })
+
+  it.live("an undeclared key is refused BY NAME, exactly as read and remove refuse one", () =>
+    withTool(recording([]), ({ registry }) =>
+      Effect.gen(function* () {
+        const result = yield* call(registry, { op: "schema", keys: ["providerz"] })
+        expect(result.type).toBe("error")
+        expect(textOf(result)).toContain('"providerz"')
+        expect(textOf(result)).toContain("providers") // the message lists the keys that DO exist
+      }),
+    ),
+  )
+
+  it.live("an empty or all-blank `keys` surveys everything rather than describing nothing", () =>
+    withTool(recording([]), ({ registry }) =>
+      Effect.gen(function* () {
+        for (const keys of [[], ["", "   "]]) {
+          const text = textOf(yield* call(registry, { op: "schema", keys }))
+          // The survey line, not a key rendering: a header promising fields over zero lines would be
+          // a report that describes itself falsely.
+          expect(text).toContain("configuration schema")
+          expect(text).toContain("shell [privileged]")
+        }
+      }),
+    ),
+  )
+
+  it.live("depth is CLAMPED, not refused — and the clamp is visible in the reply", () =>
+    withTool(recording([]), ({ registry }) =>
+      Effect.gen(function* () {
+        const at = (depth: number) => call(registry, { op: "schema", keys: ["providers"], depth })
+        const shallow = textOf(yield* at(0))
+        const deep = textOf(yield* at(40))
+        // Depth 0 is the key alone; the clamped request expands children. If the clamp had produced a
+        // `NaN` depth, `renderKey` would have rendered zero children and looked exactly like depth 0 —
+        // which is why these are compared against each other rather than each asserted non-empty.
+        expect(shallow).not.toContain('["providers","<key>","api"]')
+        expect(deep).toContain('["providers","<key>","api"]')
+        expect(deep.length).toBeGreaterThan(shallow.length)
+        // …and 40 really was clamped rather than honoured: the ceiling is 4, so it must equal depth 4.
+        expect(deep).toBe(textOf(yield* at(4)))
+      }),
+    ),
+  )
+
+  test("schemaDepth clamps every shape a model can send", () => {
+    expect(ConfigureTool.schemaDepth(undefined)).toBe(1)
+    expect(ConfigureTool.schemaDepth(2)).toBe(2)
+    expect(ConfigureTool.schemaDepth(0)).toBe(0)
+    // Out of range in both directions, and a fraction.
+    expect(ConfigureTool.schemaDepth(40)).toBe(4)
+    expect(ConfigureTool.schemaDepth(-3)).toBe(0)
+    expect(ConfigureTool.schemaDepth(2.9)).toBe(2)
+    // ⚠️ Measured, not assumed: `NaN <= 0` is FALSE and `NaN - 1` is `NaN`, so an unguarded `NaN`
+    // never stops the descent at any level — `renderKey("providers", NaN)` renders 153 lines /
+    // 12,398 chars against 8 lines at depth 1. It terminates (the AST is finite) and it ignores the
+    // budget completely, which is the failure a clamp exists to prevent.
+    // A non-finite value takes the DEFAULT rather than an end of the range — one rule, no special
+    // case for the sign. JSON cannot carry any of these three, so this guards a non-JSON caller and
+    // the `NaN` that a hand-built input would otherwise walk the whole schema with.
+    expect(ConfigureTool.schemaDepth(Number.NaN)).toBe(1)
+    expect(ConfigureTool.schemaDepth(Number.POSITIVE_INFINITY)).toBe(1)
+    expect(ConfigureTool.schemaDepth(Number.NEGATIVE_INFINITY)).toBe(1)
+  })
+})
+
+/**
+ * ⭐ **THE DECODE.** AGENTS.md: *"a repair path is only real if someone has decoded it."* So this does
+ * not compare the projection to itself. It asks the TOOL what `providers` is, copies the shape out of
+ * the sentence the tool printed, performs that write through the same tool, and re-reads the store —
+ * plus the negative arm, where the shape the reply explicitly refuses to license is refused by the
+ * surface too. If the description were wrong in either direction, one of these two fails.
+ */
+describe("a repair the schema op describes actually lands", () => {
+  it.live("describe providers → write exactly what it prescribes → read the store back", () =>
+    withTool(recording([]), ({ registry, catalog }) =>
+      Effect.gen(function* () {
+        // ── 1. what the TOOL says, through the registry, exactly as a model receives it ──────────
+        const described = textOf(yield* call(registry, { op: "schema", keys: ["providers"], depth: 3 }))
+        expect(described).toContain('type="native" needs {type, settings}')
+        expect(described).toContain('["providers","<key>","request"]')
+        expect(described).toContain(
+          "Send only the fields you are changing — every field is optional and objects merge.",
+        )
+
+        // ── 2. the write the sentence licenses: a COMPLETE `api` alternative including its `type` ──
+        const created = yield* call(registry, {
+          op: "set",
+          config: {
+            providers: {
+              drill: {
+                name: "Drill",
+                api: { type: "native", url: "http://127.0.0.1:9/v1", settings: {} },
+                models: { "holo3.1": { name: "Holo 3.1" } },
+              },
+            },
+          },
+        })
+        expect(created.type).toBe("text")
+
+        // ── 3. …and the `merge` sentence for `request`: only the field being changed, no spread ────
+        const patched = yield* call(registry, {
+          op: "set",
+          config: {
+            providers: {
+              drill: { models: { "holo3.1": { request: { body: { chat_template_kwargs: { enable_thinking: false } } } } } },
+            },
+          },
+        })
+        expect(patched.type).toBe("text")
+
+        // ── 4. read the STORE back, never the tool's success text ────────────────────────────────
+        // ⚠️ `providers` is NOT in the settings store — the router sends it to `CatalogStore`, which
+        // holds it as LAYERS. So the read goes two ways: the catalog for "it is really in that store",
+        // and a fresh `read` op for the composed document, which is the same `ConfigStoreWrite.overlay`
+        // call `GET /config` makes and is exactly what a repairing agent would do next.
+        expect(Object.keys(yield* catalog.providers())).toContain("drill")
+        const line = textOf(yield* call(registry, { op: "read", keys: ["providers"] }))
+          .split("\n")
+          .find((entry) => entry.startsWith("providers ["))!
+        // A truncated value would make the parse below throw for the wrong reason.
+        expect(line).not.toContain("truncated")
+        const stored = JSON.parse(line.slice(line.indexOf("= ") + 2)) as Record<
+          string,
+          { name?: string; api?: { url?: string }; models: Record<string, { name?: string; request?: unknown }> }
+        >
+        const model = stored.drill!.models["holo3.1"]!
+        expect(model.request).toEqual({ body: { chat_template_kwargs: { enable_thinking: false } } })
+        // The fragment merged rather than replacing: the entry's own name and its provider's `api`
+        // survived, which is the other half of what the `merge` sentence promised.
+        expect(model.name).toBe("Holo 3.1")
+        expect(stored.drill!.api!.url).toBe("http://127.0.0.1:9/v1")
+      }),
+    ),
+  )
+
+  it.live("…and the write the schema REFUSES to license is refused by the surface too", () =>
+    withTool(recording([]), ({ registry, catalog }) =>
+      Effect.gen(function* () {
+        const described = textOf(yield* call(registry, { op: "schema", keys: ["providers"], depth: 3 }))
+        // The reply never prints a bare `{url}` as a legal `api` patch — it prints the opposite.
+        expect(described).toContain("a fragment without the `type` matches no branch and cannot decode at all")
+
+        const result = yield* call(registry, {
+          op: "set",
+          config: { providers: { drill: { api: { url: "http://moved.example/v1" } } } },
+        })
+        expect(result.type).toBe("error")
+        // NEGATIVE CONTROL for the whole pair: nothing was stored, so the accepted write in the test
+        // above is a property of the SHAPE and not of a surface that accepts everything.
+        //
+        // ⚠️ Read the CATALOG, not the settings store. `settings.all().providers` is `undefined`
+        // whether or not the write landed — the router sends `providers` elsewhere — so asserting on
+        // it would have been the vacuous absence assertion this file keeps catching.
+        expect(Object.keys(yield* catalog.providers())).not.toContain("drill")
       }),
     ),
   )

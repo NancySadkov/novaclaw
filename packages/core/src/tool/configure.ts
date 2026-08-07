@@ -85,10 +85,17 @@
  * which binaries this instance runs. Consequential means none of those, but the instance behaves
  * differently afterwards in a way the user should get to see. Operational means neither.
  *
- * ⚠️ **The operational tier is FIVE keys out of 44, and that is the measurement, not a failure of
- * nerve.** The config surface really is mostly execution surfaces, prompt text and endpoint URLs —
- * which is architectural review finding S2 (*"the config store is a code-execution surface every
- * dimension modelled as data"*) restated as a count. The self-healing law is unharmed by that: it
+ * ⚠️ **The operational tier is the SHORT list, and that is the measurement, not a failure of nerve.**
+ * *No count is written in this sentence on purpose.* It used to read "FIVE keys out of 44" — true the
+ * day it was authored (`b5332b92f`, 2026-07-31) and false by 2026-08-07, because `context` and
+ * `provider_connection` joined the tier and four more keys joined the schema, and prose does not
+ * recompute. Re-derived 2026-08-07 it is **7 · 12 · 29 of 48**, and that number is written here only
+ * as a dated observation, never as the source: `KEY_TIERS` below is the source, and
+ * `test/tool-configure.test.ts` pins all three tiers BY NAME, so a re-pricing is a decision visible in
+ * a diff and a recount is a `filter` rather than an edit. The config surface really is mostly
+ * execution surfaces, prompt text and endpoint URLs — which is architectural review finding S2
+ * (*"the config store is a code-execution surface every dimension modelled as data"*) restated as a
+ * partition. The self-healing law is unharmed by that: it
  * demands that a repair be reachable BY ASKING AN AGENT rather than by editing a file, and a consent
  * card naming the key is the agent doing the repair with the user in the loop. What the law forbids
  * — "restart, hand-edit `novaclaw.jsonc`, rebuild" — is gone either way.
@@ -117,6 +124,39 @@
  * peer token *account-equivalent*). Handing those to a model puts them in a transcript, a compaction
  * summary and possibly a messenger reply. `read` is ungated precisely BECAUSE it is redacted; if the
  * redaction is ever removed, the read op has to be gated in the same edit.
+ *
+ * ⚠️ **What DOES the redacting changed on 2026-08-07, and the old answer's cost was measured rather
+ * than argued.** It was {@link redactSecrets} — a test over KEY NAMES — and half of this surface is
+ * user-chosen record keys, so a name test cannot be right: `config-projection.test.ts` runs both
+ * functions side by side over one document carrying a credential in every slot the schema declares
+ * as one, and the name test **leaks three** (`mcp.servers.<n>.oauth.client_secret` and the values of
+ * both `environment` maps) while **over-redacting** an MCP server a user happens to name `headers` —
+ * handing its own `type` and `url` back as the redaction sentence, which makes that server's repair
+ * unmakeable. `ConfigProjection.redact` walks the VALUE against the SCHEMA instead, so the
+ * `ConfigAnnotation.secret` marker is the single source of truth and the ledger of what it covers is
+ * pinned by name (`ConfigProjection.secretPaths()`). {@link redactSecrets} survives only as that
+ * measurement's control — see its own note.
+ *
+ * ── THE `schema` OP: WHY A READ OF VALUES WAS NEVER ENOUGH ──────────────────────────────────────
+ *
+ * ⚠️ **This tool shipped telling the model "READ A KEY BEFORE YOU WRITE IT and follow the shape you
+ * get back", and that instruction could not be followed.** `read` reports what the store HOLDS, so
+ * the key a repair is most likely to target — one this instance has never set — reads back
+ * `(not set)`, which is no shape at all; and where a value does exist it still cannot say which
+ * fields are legal, which are required, or that `providers.<id>.api` is a union tagged on `type`
+ * whose fragment decodes in no mode. That is AGENTS.md's own failure verbatim: *a repair path is only
+ * real if someone has decoded it*, and a model told to copy a shape it cannot see is guessing.
+ *
+ * `{"op":"schema"}` is the other half — item 4.1's `ConfigProjection` made agent-reachable. It
+ * describes the SCHEMA (meaning · legal values · constraints · declared defaults · `depends` · which
+ * fields are secret · and the write shape, which is derived from the AST and re-decoded on every test
+ * run rather than asserted). It asserts no permission for the same reason `read` does not — plus a
+ * stronger one: it touches no stored value at all, so there is nothing in its reply to redact.
+ *
+ * ⚠️ **It is a new OP, never a new tool.** `todo/tool-scale.md` puts reported degradation at 30–50
+ * tools and we are past it; the closed-op-vocabulary shape (`kb`, `docs`) is the house pattern, and
+ * `configure` is a DEFERRED core tool, so this costs **nothing** in the resident prompt — the
+ * `location-layer.test.ts` ratchet measures the resident set and this is not in it.
  *
  * ⚠️ **It is not the tier enforcement for `PATCH /config`.** That surface has its own caller (a user
  * in Settings, or Import) and its own guard (`rejectUnknownConfigKeys`). This table would make that
@@ -316,13 +356,21 @@ export const REDACTED = "(redacted — configure can WRITE this value, it will n
 const SECRET_FIELDS = new Set(["password", "token", "apikey", "api_key", "secret"])
 
 /**
- * Replace credential-shaped values with `REDACTED`, recursively.
+ * ⛔ **RETIRED FROM THE LIVE PATH 2026-08-07 (item 4.1). Do not call this from product code.** The
+ * read op now redacts with `ConfigProjection.redact`, which walks the value against the SCHEMA.
  *
- * Only STRING values are replaced, which is what keeps this from over-firing on a record KEY that
- * happens to be spelled like a secret: `providers.token` names a provider and holds an object, so it
- * recurses. The one residual over-fire is a provider (or model, or agent) literally named `headers`,
- * whose string fields would read back redacted — an over-redaction, never an under-redaction, and it
- * cannot affect a write, which never passes through here.
+ * It is kept, exported, for exactly one reason: it is the **control** in the measurement that
+ * licensed its own replacement. `config-projection.test.ts` runs both functions over one document and
+ * records what each does — the marker hides every credential in it, this hides all but three
+ * (`mcp.servers.<n>.oauth.client_secret`, and the values of both `environment` maps) and additionally
+ * blanks the `type` and `url` of an MCP server a user named `headers`. Delete this function and that
+ * comparison becomes a claim about a function nobody can run. **If it is ever deleted, the two lines
+ * in `config-projection.test.ts` that import it go in the same edit** — a heuristic kept as a museum
+ * piece with no test reading it is the cruft this repo names, and a control with no subject is worse.
+ *
+ * Why a name test cannot be repaired rather than replaced: half of this surface is USER-CHOSEN record
+ * keys, so `mcp.servers.headers` (a server called "headers") and `mcp.servers.weather.headers` (a
+ * bearer token) are the same string. The schema knows which is which; a string does not.
  */
 export const redactSecrets = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(redactSecrets)
@@ -412,6 +460,38 @@ export const unknownKeyMessage = (unknown: readonly string[], known: readonly st
 
 // ── the tool ──────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * v0.2.0 item 4.1 — the DISCOVERY op. See the header for why a read of VALUES was never enough.
+ *
+ * `depth` is clamped rather than validated, because a model that asks for depth 40 has made a
+ * harmless mistake and a refusal would cost it a turn to learn nothing. {@link MAX_SCHEMA_DEPTH} is a
+ * budget, not a schema fact: the deepest key renders ~5.8 KB at depth 3 (measured 2026-08-07 over
+ * every key), and past that the reply is larger than the repair.
+ */
+const MAX_SCHEMA_DEPTH = 4
+const DEFAULT_SCHEMA_DEPTH = 1
+
+/** The requested depth, made safe. A non-finite value falls back rather than propagating a `NaN`
+ *  into `renderKey`, where it would silently render zero children and look like an empty schema. */
+export const schemaDepth = (requested: number | undefined): number =>
+  requested === undefined || !Number.isFinite(requested)
+    ? DEFAULT_SCHEMA_DEPTH
+    : Math.min(MAX_SCHEMA_DEPTH, Math.max(0, Math.trunc(requested)))
+
+const SchemaOp = Schema.Struct({
+  op: Schema.Literal("schema"),
+  keys: Schema.Array(Schema.String).pipe(Schema.optional).annotate({
+    description:
+      'Configuration keys to describe in full, e.g. ["providers","mcp"]. Omit to survey every key, one ' +
+      "line each.",
+  }),
+  depth: Schema.Number.pipe(Schema.optional).annotate({
+    description:
+      "How many levels of nested fields to expand under each requested key. Default 1, maximum 4; a " +
+      "larger value is clamped, not refused. Only meaningful together with `keys`.",
+  }),
+})
+
 const ReadOp = Schema.Struct({
   op: Schema.Literal("read"),
   keys: Schema.Array(Schema.String).pipe(Schema.optional).annotate({
@@ -453,27 +533,40 @@ const RemoveOp = Schema.Struct({
   }),
 })
 
-export const Input = Schema.Union([ReadOp, SetOp, RemoveOp])
+export const Input = Schema.Union([SchemaOp, ReadOp, SetOp, RemoveOp])
 
 export const Output = Schema.Struct({
-  op: Schema.Literals(["read", "set", "remove"]),
+  op: Schema.Literals(["schema", "read", "set", "remove"]),
   message: Schema.String,
 })
 export type Output = typeof Output.Type
 
+/**
+ * ⚠️ **Every sentence here is a claim about what the tool does, and two of them had rotted** — the
+ * defect class this file was corrected for twice on 2026-08-07 (the description said *"this tool
+ * cannot DELETE a key"* after `remove` shipped, and *"READ A KEY BEFORE YOU WRITE IT and follow the
+ * shape you get back"*, which `read` cannot supply for a key this instance has never set). When you
+ * add an op, re-read all of this, not the line you are adding.
+ */
 export const description =
   "Repair or change THIS instance's own configuration — provider endpoints, models, presets, and every " +
   "instance setting — without editing files or restarting. Ops: " +
-  '{"op":"read"} — every configuration key, what it holds, and what changing it costs · ' +
-  '{"op":"read","keys":["providers"]} — one key in full · ' +
+  '{"op":"schema"} — every configuration key in one line: what it is and what changing it costs · ' +
+  '{"op":"schema","keys":["providers"],"depth":2} — one key\'s FIELDS: what each means, its legal ' +
+  "values, and the exact shape a write must take · " +
+  '{"op":"read"} — what this instance currently HOLDS, every key · ' +
+  '{"op":"read","keys":["providers"]} — one key\'s current value in full · ' +
   '{"op":"set","config":{"models":{"qwen":{"url":"http://192.168.1.5:8000/v1"}}}} — write · ' +
   '{"op":"remove","paths":[["mcp","servers","filesystem"]]} — DELETE. ' +
-  "READ A KEY BEFORE YOU WRITE IT and follow the shape you get back: a field name this instance does " +
-  "not have is refused by name rather than quietly dropped. " +
+  "ASK FOR THE SCHEMA BEFORE YOU WRITE A KEY YOU HAVE NOT WRITTEN BEFORE: `read` shows a VALUE and " +
+  "shows nothing at all for a key that was never set, while `schema` always names the fields, says " +
+  "which are required, and says whether a fragment is enough — some keys refuse a partial patch " +
+  "outright, so a guessed fragment is rejected whole. A field name this instance does not have is " +
+  "refused by name rather than quietly dropped. " +
   "Values MERGE into what is stored (objects merge, arrays replace wholesale), so `set` can never " +
   "remove anything — a null SETS null. Use `remove`, whose paths are ARRAYS OF SEGMENTS, never " +
   "dotted strings. Most writes ask the user first and say so before anything is stored; a write that " +
-  "is refused changes nothing at all. Credentials read back redacted."
+  "is refused changes nothing at all. Credentials are writable and never read back."
 
 const failure = (message: string) => new ToolFailure({ message })
 
@@ -557,6 +650,27 @@ export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
     const permission = yield* PermissionV2.Service
+    /**
+     * ⚠️ **A dynamic import, and it is not a style choice — a static one CRASHES on import order.**
+     * `config-projection.ts` reads `ConfigureTool.REDACTED` and `ConfigureTool.tierOf` (this module),
+     * so a static `import { ConfigProjection } from "../config-projection"` closes an ESM cycle. Both
+     * modules are `export * as Self from "./self"`, and the cycle is only safe in ONE direction:
+     * whichever module is evaluated FIRST runs the other's body before its own `const`s initialise,
+     * and `config-projection.ts`'s module-level `export const REDACTED = ConfigureTool.REDACTED` then
+     * reads a binding in the temporal dead zone. **Measured 2026-08-07 on these two files, not
+     * argued**: with the static import in place, a module importing `tool/configure` first died with
+     * *"ReferenceError: Cannot access 'REDACTED' before initialization"* at `config-projection.ts:580`,
+     * while one importing the projection first ran clean. `tsgo` is green either way — so it would
+     * have compiled, passed whichever tests happened to import in the lucky order, and crashed a boot
+     * somewhere else.
+     *
+     * Resolving it HERE — at layer construction, long after both module bodies have run — is safe in
+     * every order, costs one `await` per location boot (ESM caches the module), and keeps the fix
+     * inside this file. The clean end-state is to lift `KEY_TIERS`/`tierOf`/`REDACTED` into their own
+     * module so neither file imports the other; `packages/schema/src/resource-pressure.ts` already
+     * cites that module (`core/config-tier.ts`) as if it existed. That is a separate unit.
+     */
+    const { ConfigProjection } = yield* Effect.promise(() => import("../config-projection"))
     // The stores `ConfigStoreWrite.apply`/`overlay` resolve at call time. Captured once here rather
     // than threaded per call, because `Tool.make`'s `execute` must have `R = never` — the same
     // capture `filesystem/watcher.ts` and `pty.ts` use for their callbacks. Listing the union
@@ -584,6 +698,41 @@ export const layer = Layer.effectDiscard(
               Effect.gen(function* () {
                 const known = configKeys()
 
+                if (input.op === "schema") {
+                  // Same empty-array reading as `read`: an all-blank `keys` means "no filter", never
+                  // "describe nothing" — a header promising a key's fields over zero lines would be a
+                  // report that describes itself falsely.
+                  const trimmed = input.keys?.map((key) => key.trim()).filter((key) => key.length > 0)
+                  const requested = trimmed !== undefined && trimmed.length > 0 ? trimmed : undefined
+                  if (requested === undefined)
+                    return {
+                      op: "schema" as const,
+                      message: [
+                        ConfigProjection.renderOverview(),
+                        'Ask for one key with {"op":"schema","keys":["providers"],"depth":2} to see its fields, ' +
+                          "their legal values and the shape a write to it must take. " +
+                          '`schema` describes the SHAPE; {"op":"read"} shows what this instance currently HOLDS.',
+                      ].join("\n"),
+                    }
+                  const unknown = requested.filter((key) => !known.includes(key))
+                  if (unknown.length > 0) return yield* failure(unknownKeyMessage(unknown, known))
+                  const depth = schemaDepth(input.depth)
+                  return {
+                    op: "schema" as const,
+                    message: [
+                      ...requested.map((key) => ConfigProjection.renderKey(key, depth)),
+                      // ⚠️ The projection's `remove:` line names `POST /api/config/remove`, because the
+                      // projection also serves the HTTP surface. A MODEL cannot reach that — nothing
+                      // hands a session its own instance's URL or token, which is the whole reason this
+                      // tool is in-process (see the header). Naming the verb it CAN spend, right here,
+                      // is ruling 2: an instruction the reader cannot follow is worse than none.
+                      'From this tool the same delete is {"op":"remove","paths":[["<key>","<segment>"]]} — the ' +
+                        'same segment arrays that line prints. Write with {"op":"set","config":{…}}, and read ' +
+                        'the current value with {"op":"read","keys":[…]}.',
+                    ].join("\n\n"),
+                  }
+                }
+
                 if (input.op === "read") {
                   // An empty (or all-blank) `keys` array means "no filter" rather than "show nothing":
                   // rendering zero lines under a "Requested configuration keys:" header would be a
@@ -598,7 +747,11 @@ export const layer = Layer.effectDiscard(
                   // Redact BEFORE anything can be rendered: `overlay` returns `server.password` and
                   // every peer token verbatim, and a model that has seen one has put it in a
                   // transcript. See the ⚠️ in this file's header.
-                  const values = redactSecrets(stored) as Record<string, unknown>
+                  //
+                  // ⚠️ The redactor is the SCHEMA walk, not the name test this file used to carry —
+                  // the swap is licensed by the side-by-side measurement in `config-projection.test.ts`
+                  // rather than by the argument, and `redactSecrets` is retained only as its control.
+                  const values = ConfigProjection.redact(stored) as Record<string, unknown>
                   return {
                     op: "read" as const,
                     message: formatRead({
@@ -732,8 +885,15 @@ export const layer = Layer.effectDiscard(
                   // ⚠️ The verb matters, and this used to be "written" unconditionally. Telling a
                   // model that nothing was *written* when it asked to *remove* describes the outcome
                   // in the wrong vocabulary, and this tool's whole contract is that the model can
-                  // trust what it is told about its own repair (ruling 2).
-                  const nothing = input.op === "remove" ? "Nothing was removed." : "Nothing was written."
+                  // trust what it is told about its own repair (ruling 2). The same argument covers
+                  // the two reading ops: "nothing was written" after a failed `read`/`schema` invites
+                  // a model to go looking for the write it never asked for.
+                  const nothing = {
+                    schema: "Nothing was described.",
+                    read: "Nothing was read.",
+                    set: "Nothing was written.",
+                    remove: "Nothing was removed.",
+                  }[input.op]
                   // A denial keeps its identity — including the unattended deny-fast wording, which is
                   // the one an unattended repair run actually needs to read.
                   const denial = PermissionV2.denialMessage(error)
