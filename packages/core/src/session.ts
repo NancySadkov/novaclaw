@@ -144,6 +144,9 @@ type CreateInput = {
   parentID?: SessionSchema.ID
   agent?: AgentV2.ID
   model?: ModelV2.Ref
+  // Device affinity (v0.2.0 B2): the `DeviceRegistry` id this session's turns are scheduled on.
+  // undefined = inherit, then derive from the resolved model's endpoint.
+  device?: string
   systemPromptOverride?: string
   type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
   priority?: number
@@ -387,6 +390,7 @@ export const createSessionRecord = (
             variant: ModelV2.VariantID.make(input.model.variant ?? "default"),
           }
         : undefined,
+      device: input.device,
       systemPromptOverride: input.systemPromptOverride,
       type: input.type,
       priority: input.priority,
@@ -1025,6 +1029,10 @@ export const layer = Layer.effect(
                   variant: inherited.model.variant ? ModelV2.VariantID.make(inherited.model.variant) : undefined,
                 })
               : undefined,
+            // Device affinity rides the chain fold like the switches below: a fork of a session
+            // pinned to a device stays on that device, because a fork that silently moved to
+            // another backend would be scheduled against capacity its source never claimed.
+            device: inherited.device,
             systemPromptOverride: inherited.systemPromptOverride,
             type: inherited.type,
             priority: inherited.priority,

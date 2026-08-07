@@ -226,6 +226,12 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   folder_bookmarks: "operational",
   // The agent's own truncation budget. Raising it spends the agent's own context and nothing else.
   tool_output: "operational",
+  // The DEVICE registry: endpoint origins grouped into one backend, for the scheduler's admission
+  // gate. It passes all four tests — an endpoint listed here is COMPARED against a model's own
+  // `api.url` and never called, nothing here is executed, nothing egresses, and no string reaches a
+  // prompt. A hostile entry can only over-group backends, which serializes turns (a throughput
+  // loss) rather than oversubscribing hardware, and is undone by deleting the entry.
+  devices: "operational",
 
   // ── consequential: one card, savable per key ────────────────────────────────────────────────
   // Sampling numbers plus an enable flag. The nudge TEXT is compiled, not configured.

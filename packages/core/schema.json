@@ -1,8 +1,8 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "f2490e2a-9fd3-4a0a-8fcf-1cf242f9fca7",
-  "prevIds": ["7032d523-3e7a-459a-89a4-6b6b88ce97f6"],
+  "id": "e53287b5-f495-494c-a2e9-791e3707661d",
+  "prevIds": ["f2490e2a-9fd3-4a0a-8fcf-1cf242f9fca7"],
   "ddl": [
     {
       "name": "workspace",
@@ -2625,6 +2625,16 @@
       "default": null,
       "generated": null,
       "name": "model",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "device",
       "entityType": "columns",
       "table": "session"
     },

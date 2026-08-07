@@ -404,6 +404,7 @@ export default {
           \`permission\` text,
           \`agent\` text,
           \`model\` text,
+          \`device\` text,
           \`system_prompt_override\` text,
           \`type\` text,
           \`priority\` integer,

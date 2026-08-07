@@ -8958,6 +8958,9 @@
                   "model": {
                     "$ref": "#/components/schemas/ModelRef"
                   },
+                  "device": {
+                    "type": "string"
+                  },
                   "systemPromptOverride": {
                     "type": "string"
                   },
@@ -25907,6 +25910,9 @@
           "model": {
             "$ref": "#/components/schemas/ModelRef"
           },
+          "device": {
+            "type": "string"
+          },
           "systemPromptOverride": {
             "type": "string"
           },
@@ -30564,6 +30570,19 @@
         },
         "additionalProperties": false
       },
+      "ConfigV2Device": {
+        "type": "object",
+        "properties": {
+          "endpoints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["endpoints"],
+        "additionalProperties": false
+      },
       "ProviderAISDK": {
         "type": "object",
         "properties": {
@@ -31557,6 +31576,12 @@
           },
           "local_model_catalog": {
             "$ref": "#/components/schemas/ConfigV2LocalModelCatalog"
+          },
+          "devices": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ConfigV2Device"
+            }
           },
           "providers": {
             "type": "object",

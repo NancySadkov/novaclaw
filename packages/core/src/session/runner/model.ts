@@ -19,6 +19,7 @@ import { ModelV2 } from "../../model"
 import { PluginV2 } from "../../plugin"
 import { ProbeWindow } from "../../probe-window"
 import { ProviderV2 } from "../../provider"
+import { DeviceRegistry } from "../device-registry"
 import { SessionSchema } from "../schema"
 
 export class ModelNotSelectedError extends Schema.TaggedErrorClass<ModelNotSelectedError>()(
@@ -176,22 +177,47 @@ export const layerWith = (
  * would serialize unrelated background work for nothing. Known endpoint -> shared hardware ->
  * shared device; unknown endpoint -> no hardware of ours to protect -> leave them apart.
  *
- * ⚠️ **This is the SUBSTRATE for `deviceKey = resolvedDevice`, not the finished item.** B2's full
- * shape has a `session.device` column resolved through a `DeviceRegistry` store, which OVERRIDES
- * this. When that lands it overrides here — one function — rather than at the call site.
+ * ✅ **`deviceKey = resolvedDevice` LANDED HERE (B2, 2026-08-07), and this is the whole of it.** Both
+ * overrides resolve inside this one function rather than at the call site, which is why the previous
+ * pass wrote it as the single override point:
+ *
+ *  1. `override.declared` — the session's CHAIN-RESOLVED `SessionConfig.device`, i.e. the OS's
+ *     CPU-affinity: this thread runs on that CPU. It wins outright, including over an id no registry
+ *     entry names. That is safe by the asymmetry below: a declaration can only ever make turns queue
+ *     together, never make two gates out of one box.
+ *  2. `override.endpoints` — the `DeviceRegistry` index (`session/device-registry.ts`), which regroups
+ *     ORIGINS onto a declared device. This is the half `e5c4e4ec6` could not derive: `:8010` and
+ *     `:8011` on one host are two origins and one GPU, and no URL says so.
+ *
+ * ⚠️ **The two errors are not symmetric, and every fallback below picks the same side.** Over-sharing
+ * a key makes unrelated turns queue behind one another — a throughput loss, visible, undone by
+ * deleting a config entry. Under-sharing hands out `MAX_BATCH` twice for capacity that exists once,
+ * which oversubscribes real hardware. So a malformed URL, an unregistered origin and an unresolvable
+ * model all fall back to the per-model key (over-partition, the *cheap* error), while a declaration
+ * is honoured verbatim (over-group, also the cheap error).
+ *
  * ⚠️ And the third leg is still missing entirely: there is **no KV/VRAM accounting anywhere**, just
  * a global `MAX_BATCH = 2`. Grouping models onto their real device makes that cap *mean* something
- * for the first time, but it does not make it a measurement.
+ * for the first time, but it does not make it a measurement — and the registry entry deliberately
+ * carries no `concurrency` field until the scheduler can read one (`config/device.ts`).
  */
-export const deviceKeyFor = (model: ModelV2.Info): string => {
+export interface DeviceOverride {
+  /** The session's chain-resolved `SessionConfig.device`, if it declared one. */
+  readonly declared?: string
+  /** The `DeviceRegistry`'s normalized-origin → device-id index. */
+  readonly endpoints?: DeviceRegistry.EndpointMap
+}
+
+export const deviceKeyFor = (model: ModelV2.Info, override?: DeviceOverride): string => {
+  // An empty string is not a declaration — it is a column that was written blank, and treating it as
+  // a device id would collapse every such session onto one gate named "".
+  if (override?.declared !== undefined && override.declared !== "") return override.declared
   const url = model.api.url
   if (url !== undefined) {
-    try {
-      return new URL(url).origin.toLowerCase()
-    } catch {
-      // A malformed URL is a catalog defect, not a reason to fail a turn. Fall through to the
-      // per-model key: it is always safe (it can only over-partition, never over-share).
-    }
+    const origin = DeviceRegistry.normalizeOrigin(url)
+    // A malformed URL is a catalog defect, not a reason to fail a turn. Fall through to the
+    // per-model key: it is always safe (it can only over-partition, never over-share).
+    if (origin !== undefined) return override?.endpoints?.get(origin) ?? origin
   }
   return `${model.providerID}/${model.id}`
 }
@@ -362,6 +388,7 @@ export const locationLayer = Layer.effect(
   Effect.gen(function* () {
     const catalog = yield* Catalog.Service
     const config = yield* Config.Service
+    const devices = yield* DeviceRegistry.Service
     const integrations = yield* Integration.Service
     const localModels = yield* LocalModelManager.Service
     const plugins = yield* PluginV2.Service
@@ -431,9 +458,18 @@ export const locationLayer = Layer.effect(
       }),
       // Read exactly like `ref` above — no boot-latch wait, never fails. A scheduling key that
       // could fail a turn would be a worse defect than the one it fixes.
+      //
+      // `session.device` here is the CHAIN-RESOLVED declaration, not the raw row: the runner
+      // overlays `config.device` onto the session it hands us, exactly as it already overlays
+      // `config.model` (`runner/llm.ts`'s `modelSession`). So a sub-agent inherits its parent's
+      // device without declaring one, which is what makes this a config field rather than a column.
       device: Effect.fn("SessionRunnerModel.device")(function* (session) {
         const model = yield* select(session).pipe(Effect.orElseSucceed(() => undefined))
-        return model === undefined ? undefined : deviceKeyFor(model)
+        // A declared pin still holds when the model cannot be resolved — the turn is about to fail
+        // on `resolve` anyway, and dropping the declaration here would be the one case where an
+        // explicit affinity silently became a per-model key.
+        if (model === undefined) return session.device
+        return deviceKeyFor(model, { declared: session.device, endpoints: yield* devices.endpoints() })
       }),
     })
   }),
@@ -442,5 +478,5 @@ export const locationLayer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer: locationLayer,
-  deps: [Catalog.node, Config.node, Integration.node, LocalModelManager.node, PluginV2.node],
+  deps: [Catalog.node, Config.node, DeviceRegistry.node, Integration.node, LocalModelManager.node, PluginV2.node],
 })

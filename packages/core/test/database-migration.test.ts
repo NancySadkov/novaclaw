@@ -18,6 +18,7 @@ import simplifyIntegrationCredentialsMigration from "@novaclaw/core/database/mig
 import simplifySessionInputMigration from "@novaclaw/core/database/migration/20260622202450_simplify_session_input"
 import dropLegacyMessagePartMigration from "@novaclaw/core/database/migration/20260708000000_drop_legacy_message_part"
 import jhPlanTimeUpdatedIndexMigration from "@novaclaw/core/database/migration/20260728181001_add_jh_plan_time_updated_index"
+import sessionDeviceMigration from "@novaclaw/core/database/migration/20260807173556_add_session_device"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
@@ -432,6 +433,43 @@ describe("DatabaseMigration", () => {
             time_updated: 2,
           },
         ])
+      }),
+    )
+  })
+
+  // The same end-to-end proof, for B2's `session.device` column. A `session` table predates it by
+  // months, so the upgrade path runs `ALTER TABLE … ADD` against populated rows — and Wave 0's whole
+  // subject was that a drifted baseline makes the NEXT new table (or column) kill boot on every
+  // existing user database. This is that check, taken against a row that already has data in it.
+  test("adds the session device column to an existing populated database", async () => {
+    await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        // A pre-B2 session row: the columns this migration does NOT touch must come back unchanged.
+        yield* db.run(
+          sql`CREATE TABLE session (id text PRIMARY KEY, slug text NOT NULL, title text NOT NULL, agent text, permission_mode text)`,
+        )
+        yield* db.run(
+          sql`INSERT INTO session (id, slug, title, agent, permission_mode) VALUES ('ses_existing', 'existing', 'Before', 'plan', 'ask')`,
+        )
+
+        yield* DatabaseMigration.applyOnly(db, [sessionDeviceMigration])
+
+        const columns = (yield* db.all<{ name: string }>(sql`PRAGMA table_info(session)`)).map((column) => column.name)
+        expect(columns).toContain("device")
+        // NULL, not a default: `undefined` is what the inheritance algebra reads as INHERIT, so an
+        // existing session must come out of the migration declaring nothing rather than pinned to
+        // some device it never chose.
+        expect(yield* db.get(sql`SELECT id, title, agent, permission_mode, device FROM session`)).toEqual({
+          id: "ses_existing",
+          title: "Before",
+          agent: "plan",
+          permission_mode: "ask",
+          device: null,
+        })
+        // And the column accepts a declaration once one is written.
+        yield* db.run(sql`UPDATE session SET device = 'spark' WHERE id = 'ses_existing'`)
+        expect(yield* db.get(sql`SELECT device FROM session`)).toEqual({ device: "spark" })
       }),
     )
   })

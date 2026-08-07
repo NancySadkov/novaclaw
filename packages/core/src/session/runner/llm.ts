@@ -931,7 +931,15 @@ export const layer = Layer.effect(
             SessionContextEpoch.publishUpdate(db, events, update.data, update.snapshot),
           ),
         ).pipe(Effect.tapError(surfacePreTurnFailure)))
-      const modelSession = { ...session, model: config.model as typeof session.model }
+      // The RESOLVED config overlaid on the row, so every `models.*` read below sees what the chain
+      // decided rather than what this row happens to declare. `device` joins `model` here for
+      // exactly the reason `model` is here: a sub-agent that declared neither must inherit both, and
+      // `SessionRunnerModel.device` is where the declaration is cashed into a scheduler key.
+      const modelSession = {
+        ...session,
+        model: config.model as typeof session.model,
+        device: config.device,
+      }
       const model = yield* models.resolve(modelSession).pipe(Effect.tapError(surfacePreTurnFailure))
       const maxProviderAttempts = ProviderRetry.maxAttempts(yield* models.retryAttempts(modelSession))
       // Catalog identity, not the provider wire id: a model may deliberately route API requests

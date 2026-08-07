@@ -105,6 +105,10 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 parentID: ctx.payload.parentID,
                 agent: ctx.payload.agent,
                 model: ctx.payload.model,
+                // Device affinity (v0.2.0 B2). Forwarded raw like the tri-states below and for the
+                // same reason: `undefined` means INHERIT, so coalescing it to a derived key here
+                // would stamp one session's backend onto every child it ever spawns.
+                device: ctx.payload.device,
                 systemPromptOverride: ctx.payload.systemPromptOverride,
                 type: ctx.payload.type,
                 priority: ctx.payload.priority,

@@ -70,6 +70,9 @@ export const SETTINGS_KEYS = [
   "web_search",
   "provider_presets",
   "local_model_catalog",
+  // The device registry (v0.2.0 B2). It rides the settings store like every other operational key,
+  // which is what makes `PATCH /config` able to declare "these two endpoints are one box" at runtime.
+  "devices",
   "experimental",
 ] as const satisfies readonly (keyof Config.Info)[]
 

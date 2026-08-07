@@ -81,6 +81,10 @@ const createFullyConfigured = (session: SessionV2.Interface, parentID?: SessionS
       parentID,
       agent: AgentV2.ID.make("plan"),
       model: ModelV2.Ref.make({ id: ModelV2.ID.make("qwen"), providerID: ProviderV2.ID.make("dgx-spark") }),
+      // Device affinity: re-added WITH its column in B2's third step, so it is row-carried and the
+      // loop below requires a fork to carry it — a fork that silently moved to another backend would
+      // be scheduled against capacity its source never claimed.
+      device: "spark",
       systemPromptOverride: "You are Neo.",
       type: "goal-oriented",
       priority: 7,
@@ -106,11 +110,13 @@ describe("SESSION_CONFIG_FIELDS — the descriptor is honest about what a row ca
   // Both directions are checked, so neither a field parked out of the fork nor one silently
   // dropped from the fold can pass.
   //
-  // ⚠️ The probe deliberately carries THREE keys that are no longer `SessionConfig` fields —
-  // `permissionRules`, `device`, `tools`, the phantom trio deleted in B2. They are here as the
-  // negative half of the second assertion below: if any of them ever reappears in the fold's
-  // output without a descriptor entry, that assertion names it. Keeping them costs nothing and
-  // makes the deletion mechanical rather than remembered.
+  // ⚠️ The probe deliberately carries TWO keys that are no longer `SessionConfig` fields —
+  // `permissionRules` and `tools`, two thirds of the phantom trio deleted in B2. They are here as
+  // the negative half of the second assertion below: if either ever reappears in the fold's output
+  // without a descriptor entry, that assertion names it. Keeping them costs nothing and makes the
+  // deletion mechanical rather than remembered.
+  // ⚠️ `device` was the third, and it is now a POSITIVE case: it came back in B2's third step with a
+  // column, a migration, a store and a consumer, which is the only way a field is allowed back.
   it.effect("classifies a field `resolved` exactly when the resolve fold maps it", () =>
     Effect.sync(() => {
       const everything = {

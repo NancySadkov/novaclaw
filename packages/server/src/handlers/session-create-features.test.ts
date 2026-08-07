@@ -299,4 +299,38 @@ describe("session.create carries every per-chat switch a draft can stage", () =>
     ).toBe(true)
     expect(stored["askBeforeChanges"], "setting one switch invented a stance for another").toBeUndefined()
   })
+
+  // ── v0.2.0 B2: `session.device`, the same two drop points, and it is NOT a SessionFeature ──────
+  //
+  // It rides this file rather than a new one because the failure it guards is character-for-character
+  // the one above: `additionalProperties: false` means an unlisted field is REJECTED at the edge, and
+  // a handler that forwards seventeen fields and not the eighteenth is exactly how `thinkingBudget`,
+  // `surgicalEdits`, `askBeforeChanges` and `safeMode` were lost for a month. It cannot join the
+  // `FEATURES` loop — those are the boolean Tuning switches read off `SessionFeature.Name`, and a
+  // device affinity is a string naming a `DeviceRegistry` entry.
+  //
+  // ⭐ And it is this chain's INERT check at the wire: `session.device` has a column, a migration, a
+  // descriptor entry and a consumer, and if nothing outside the kernel can WRITE it, all of that
+  // ships doing nothing with every other test green.
+  test("a device affinity set on create reaches the persisted session", async () => {
+    const { echoed, stored } = await createAndReload({ device: "spark" })
+    expect(
+      stored["device"],
+      "the device affinity did not survive create — check the payload schema (packages/protocol) and the handler's forward list",
+    ).toBe("spark")
+    // The echo matters for the same reason it does above: it is what the client reads back.
+    expect(echoed["device"], "the created session's response omits the device the row carries").toBe("spark")
+  })
+
+  // The tri-state direction, and here it is sharper than for the switches: `undefined` means DERIVE
+  // the device from the resolved model's endpoint. A handler that coalesced it to anything concrete
+  // would pin every new session to one backend and, worse, freeze that pin into every child it
+  // spawns — inheritance is the whole mechanism by which a sub-agent lands on its parent's device.
+  test("a create that names no device stays absent, so the runner derives one", async () => {
+    const { stored } = await createAndReload({})
+    expect(
+      stored["device"],
+      "the create INVENTED a device affinity — absent must mean inherit-then-derive, never a stamped default",
+    ).toBeUndefined()
+  })
 })

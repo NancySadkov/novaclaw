@@ -63,6 +63,7 @@ const VALID: Record<string, unknown> = {
   web_search: { timeoutMs: 8000 },
   provider_presets: {},
   local_model_catalog: {},
+  devices: { spark: { endpoints: ["http://192.168.178.40:8010"] } },
   experimental: {},
 }
 

@@ -50,6 +50,10 @@ export const SessionTable = sqliteTable(
       providerID: string
       variant?: string
     }>(),
+    // DEVICE AFFINITY (v0.2.0 B2): the `DeviceRegistry` id whose admission gate, batch cap and
+    // fairness ledger this session's turns queue on. NULL = inherit (parent chain), then derive from
+    // the resolved model's endpoint origin. A scheduling key only — it never selects the model.
+    device: text(),
     system_prompt_override: text(),
     type: text().$type<"interactive" | "sub-agent" | "auto-prompting" | "goal-oriented">(),
     priority: integer(),

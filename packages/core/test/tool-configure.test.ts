@@ -158,6 +158,11 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "attachments",
       "compaction",
       "context",
+      // v0.2.0 B2. Priced operational deliberately: an endpoint listed under `devices` is COMPARED
+      // against a model's own `api.url` and never called, nothing here is executed or egresses, and
+      // no string reaches a prompt. The worst a hostile entry does is group unrelated backends,
+      // which makes turns queue behind one another — a throughput loss undone by deleting the entry.
+      "devices",
       "folder_bookmarks",
       "provider_connection",
       "tool_output",

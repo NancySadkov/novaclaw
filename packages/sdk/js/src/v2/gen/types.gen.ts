@@ -2003,6 +2003,7 @@ export type SessionV2Info = {
   }
   agent?: string
   model?: ModelRef
+  device?: string
   systemPromptOverride?: string
   type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
   priority?: number
@@ -3498,6 +3499,10 @@ export type ConfigV2LocalModelCatalog = {
   }
 }
 
+export type ConfigV2Device = {
+  endpoints: Array<string>
+}
+
 export type ProviderAisdk = {
   type: "aisdk"
   package: string
@@ -3826,6 +3831,9 @@ export type ConfigInfo = {
     [key: string]: ConfigV2ProviderPreset
   }
   local_model_catalog?: ConfigV2LocalModelCatalog
+  devices?: {
+    [key: string]: ConfigV2Device
+  }
   providers?: {
     [key: string]: ConfigV2Provider
   }
@@ -10576,6 +10584,7 @@ export type V2SessionCreateData = {
     parentID?: string
     agent?: string
     model?: ModelRef
+    device?: string
     systemPromptOverride?: string
     type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
     priority?: number

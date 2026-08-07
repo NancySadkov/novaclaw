@@ -251,6 +251,12 @@ export const makeSessionGroup = <
           parentID: Session.ID.pipe(Schema.optional),
           agent: Agent.ID.pipe(Schema.optional),
           model: Model.Ref.pipe(Schema.optional),
+          // Device affinity (v0.2.0 B2) — the `DeviceRegistry` id whose admission gate and fairness
+          // ledger this session's turns queue on. The payload is `additionalProperties: false`, so
+          // without this line the field is REJECTED at the edge rather than passed through: a
+          // `session.device` column with no wire writer would be settable by nothing outside the
+          // kernel, which is the inert shape B2's first step deleted three fields for.
+          device: Schema.String.pipe(Schema.optional),
           systemPromptOverride: Schema.String.pipe(Schema.optional),
           type: Schema.Literals(["interactive", "sub-agent", "auto-prompting", "goal-oriented"]).pipe(Schema.optional),
           priority: Schema.Finite.pipe(Schema.optional),

@@ -326,6 +326,23 @@ export interface StrictOverride {
 export interface SessionConfig {
   readonly model?: ModelRef
   readonly agent?: string
+  /**
+   * DEVICE AFFINITY — the id of a `DeviceRegistry` entry this session's turns are scheduled on
+   * (v0.2.0 B2). `undefined` = inherit, then derive from the resolved model's endpoint.
+   *
+   * ⚠️ It is a SCHEDULING key, not a router: it decides which admission gate, batch cap and fairness
+   * ledger the turn queues on (`session/scheduler.ts`), and never which model answers. The two error
+   * directions are not symmetric — over-grouping makes unrelated turns queue behind one another (a
+   * throughput loss), while under-grouping hands out `MAX_BATCH` twice for capacity that exists once
+   * (oversubscription of real hardware). A declaration can therefore only ever cost throughput,
+   * which is why an id no registry entry names is honoured verbatim rather than discarded.
+   *
+   * ⚠️ This field NAME existed before and resolved for nobody; app `cdf8e2218` deleted it with the
+   * rest of the phantom trio precisely so it could come back with a column, a store and a consumer
+   * in one slice. Do not let it regress to a knob again — `session-fork-config.test.ts` ratchets the
+   * column-less set at ZERO, so it cannot.
+   */
+  readonly device?: string
   readonly systemPromptOverride?: string
   readonly type?: SessionType
   readonly priority?: number
@@ -407,6 +424,9 @@ export const EFFECTIVE_CONFIG_DEFAULTS: EffectiveConfig = {
 export interface EffectiveConfig {
   readonly model?: ModelRef
   readonly agent?: string
+  /** The chain-resolved device affinity (see `SessionConfig.device`); `undefined` = derive it from
+   *  the resolved model's endpoint. This is the value `deviceKey = resolvedDevice` refers to. */
+  readonly device?: string
   readonly systemPromptOverride?: string
   readonly type: SessionType
   readonly priority: number
@@ -475,6 +495,8 @@ export interface SessionLike {
   readonly parentID?: string
   readonly model?: ModelRef
   readonly agent?: string
+  /** Device affinity (see `SessionConfig.device`); `undefined` = inherit. */
+  readonly device?: string
   readonly systemPromptOverride?: string
   readonly type?: SessionType
   readonly priority?: number
@@ -680,6 +702,10 @@ export interface SessionConfigField {
 export const SESSION_CONFIG_FIELDS = {
   model: { column: "model", merge: "override" },
   agent: { column: "agent", merge: "override" },
+  // Re-added in B2's third step WITH its column, its store (`session/device-registry.ts`) and its
+  // consumer (`SessionRunnerModel.deviceKeyFor`) in one slice — the forced order the decisions doc
+  // gives, and the reason the phantom was deleted first rather than repaired in place.
+  device: { column: "device", merge: "override" },
   systemPromptOverride: { column: "system_prompt_override", merge: "override" },
   type: { column: "type", merge: "override" },
   priority: { column: "priority", merge: "override" },

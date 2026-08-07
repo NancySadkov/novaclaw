@@ -54,6 +54,10 @@ export const Info = Schema.Struct({
   metadata: Schema.Record(Schema.String, Schema.Unknown).pipe(optional),
   agent: Agent.ID.pipe(optional),
   model: Model.Ref.pipe(optional),
+  // Device affinity (v0.2.0 B2): the id of the model BACKEND this session's turns are scheduled on
+  // — one admission gate, one batch cap, one fairness ledger per device. Absent = inherit, then
+  // derive from the resolved model's endpoint. A scheduling key, never a model router.
+  device: Schema.String.pipe(optional),
   systemPromptOverride: Schema.String.pipe(optional),
   type: SessionType.Info.pipe(optional),
   priority: Schema.Finite.pipe(optional),

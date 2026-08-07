@@ -4276,6 +4276,7 @@ export class Session extends HeyApiClient {
       parentID?: string
       agent?: string
       model?: ModelRef
+      device?: string
       systemPromptOverride?: string
       type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
       priority?: number
@@ -4304,6 +4305,7 @@ export class Session extends HeyApiClient {
             { in: "body", key: "parentID" },
             { in: "body", key: "agent" },
             { in: "body", key: "model" },
+            { in: "body", key: "device" },
             { in: "body", key: "systemPromptOverride" },
             { in: "body", key: "type" },
             { in: "body", key: "priority" },

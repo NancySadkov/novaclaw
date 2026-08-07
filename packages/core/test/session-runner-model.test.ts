@@ -12,6 +12,7 @@ import { ModelV2 } from "@novaclaw/core/model"
 import { ProbeWindow } from "@novaclaw/core/probe-window"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { ProjectV2 } from "@novaclaw/core/project"
+import { DeviceRegistry } from "@novaclaw/core/session/device-registry"
 import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
 import { SessionV2 } from "@novaclaw/core/session"
 import { AbsolutePath } from "@novaclaw/core/schema"
@@ -470,6 +471,60 @@ describe("deviceKeyFor — a DEVICE is a backend, not a model", () => {
       expect(SessionRunnerModel.deviceKeyFor(named("m", "p", "not a url"))).toBe("p/m")
     }),
   )
+
+  // ── B2: `deviceKey = resolvedDevice`. Both overrides land in this ONE function. ──────────────
+  const spark: DeviceRegistry.EndpointMap = DeviceRegistry.endpointMap({
+    spark: { endpoints: ["http://192.168.178.40:8010", "http://192.168.178.40:8011"] },
+  })
+
+  // ⭐ THE CLAIM THE REGISTRY EXISTS FOR, and the half `e5c4e4ec6` could not derive: two SERVING
+  // PROCESSES on one box are two origins and one GPU. Under the derived key alone these are two
+  // devices, so the gate hands out MAX_BATCH twice for capacity that exists once.
+  it.effect("two PROCESSES on one registered device are ONE device", () =>
+    Effect.sync(() => {
+      const vllm = SessionRunnerModel.deviceKeyFor(named("holo3.1", "spark-holo", "http://192.168.178.40:8010/v1"), {
+        endpoints: spark,
+      })
+      const llama = SessionRunnerModel.deviceKeyFor(named("gemma", "spark-gguf", "http://192.168.178.40:8011/v1"), {
+        endpoints: spark,
+      })
+      expect(vllm).toBe("spark")
+      expect(llama).toBe("spark")
+      // …and without the registry they are still two, so this measures the registry and not the URL.
+      expect(SessionRunnerModel.deviceKeyFor(named("gemma", "spark-gguf", "http://192.168.178.40:8011/v1"))).not.toBe(
+        SessionRunnerModel.deviceKeyFor(named("holo3.1", "spark-holo", "http://192.168.178.40:8010/v1")),
+      )
+    }),
+  )
+
+  it.effect("an origin no device claims keeps its own derived key", () =>
+    Effect.sync(() => {
+      expect(
+        SessionRunnerModel.deviceKeyFor(named("m", "p", "http://192.168.178.41:8010/v1"), { endpoints: spark }),
+      ).toBe("http://192.168.178.41:8010")
+    }),
+  )
+
+  // The session's own declaration — the OS's CPU affinity — outranks both. It is honoured even for
+  // an id no registry entry names, because the error it can cause (turns queue together) is the
+  // cheap one; discarding it would silently ignore a user's explicit choice.
+  it.effect("a session's declared device wins over the registry AND the endpoint", () =>
+    Effect.sync(() => {
+      const model = named("holo3.1", "spark-holo", "http://192.168.178.40:8010/v1")
+      expect(SessionRunnerModel.deviceKeyFor(model, { declared: "laptop", endpoints: spark })).toBe("laptop")
+      expect(SessionRunnerModel.deviceKeyFor(model, { declared: "never-registered" })).toBe("never-registered")
+    }),
+  )
+
+  // A column written blank is not a declaration; treating it as one would collapse every such
+  // session onto a single gate named "".
+  it.effect("an empty declaration is not a device", () =>
+    Effect.sync(() => {
+      expect(SessionRunnerModel.deviceKeyFor(named("m", "p", "http://192.168.178.40:8010/v1"), { declared: "" })).toBe(
+        "http://192.168.178.40:8010",
+      )
+    }),
+  )
 })
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -515,6 +570,26 @@ describe("the runner CONSULTS the device key (source ratchet)", () => {
       // It may still appear — as the `??` arm — but only on the line that also asks the service.
       for (const line of code.split("\n"))
         if (line.includes("${model.provider}/${model.id}")) expect(line).toContain("models.device(")
+    }),
+  )
+
+  // ⭐ THE INERT CASE, and it is the one this ratchet earns its keep on. `session.device` can have a
+  // column, a migration, a descriptor entry, a wire field, a registry and a fully-tested
+  // `deviceKeyFor` — and if the runner never hands the CHAIN-RESOLVED value to the service, the
+  // whole chain ships doing nothing with every test on this page green. `models.device(session)`
+  // reads `session.device` off the object it is given, and the object it is given is `modelSession`,
+  // so the declaration reaches the key ONLY if `modelSession` overlays `config.device` the way it
+  // already overlays `config.model`. Nothing observable to the drain harness says whether it does.
+  it.effect("hands the CHAIN-RESOLVED device to the model service, not the raw row", () =>
+    Effect.sync(() => {
+      const code = runnerSource()
+      const start = code.indexOf("const modelSession")
+      expect(start).toBeGreaterThan(0)
+      // The literal, from `const modelSession` to its closing brace — small enough that a match here
+      // cannot be some other `device:` elsewhere in a 2,200-line file.
+      const literal = code.slice(start, code.indexOf("\n      }", start))
+      expect(literal).toContain("model: config.model")
+      expect(literal).toContain("device: config.device")
     }),
   )
 })

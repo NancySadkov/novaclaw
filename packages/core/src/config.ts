@@ -16,6 +16,7 @@ import { ConfigAttachments } from "./config/attachments"
 import { ConfigCompaction } from "./config/compaction"
 import { ConfigContext } from "./config/context"
 import { ConfigCommand } from "./config/command"
+import { ConfigDevice } from "./config/device"
 import { ConfigExperimental } from "./config/experimental"
 import { ConfigFormatter } from "./config/formatter"
 import { ConfigAdhocTools } from "./config/adhoc-tools"
@@ -403,6 +404,26 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       "runtime/models URL and SHA-256 fields here win so an agent can repair a moved mirror or republished artifact " +
       "through PATCH /config without rebuilding NovaClaw. PRIVILEGED: these values select downloaded executable bytes.",
   }),
+  // The DEVICE registry (v0.2.0 B2) — which endpoints share one model backend. See
+  // `config/device.ts` for why this is declared rather than derived.
+  // ⚠️ Ruling 4: OPERATIONAL, and the argument is the same one that made `MAX_BATCH` matter. This
+  // key carries no URL the instance will ever call, no bytes it will execute and no text that
+  // reaches a prompt: an endpoint listed here is only ever COMPARED against a model's own `api.url`,
+  // and a device id is only ever a scheduler map key. The worst a hostile entry can do is group
+  // unrelated backends, i.e. make turns queue behind one another — a throughput loss, recoverable by
+  // deleting the entry, and strictly the safe direction of the two errors available (the other one
+  // oversubscribes real hardware).
+  devices: Schema.Record(Schema.String, ConfigDevice.Info)
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        "Model BACKENDS keyed by device id, each listing the endpoint origins it serves — e.g. " +
+        '{"spark":{"endpoints":["http://192.168.178.40:8010","http://192.168.178.40:8011"]}} tells the ' +
+        "scheduler those two servers are ONE box, so they share one admission gate and one fairness " +
+        "ledger instead of handing out the batch cap twice for capacity that exists once. Unlisted " +
+        "endpoints keep a per-origin device of their own. Purely a scheduling grouping: nothing here " +
+        "is ever called, executed or put in a prompt.",
+    }),
   // ⚠️ Ruling 4: PRIVILEGED, and the reason is not the URL alone. Each nested model carries a
   // `prePrompt` that `config/provider.ts` describes as "prepended to the system context" — so this key
   // is a prompt-text channel as well as an endpoint, and it fails ruling 4's fourth test outright.
