@@ -77,9 +77,41 @@ describe("sidecar health failures are named", () => {
     expect(Exit.isFailure(exit)).toBe(true)
     if (Exit.isSuccess(exit)) return
 
-    const failure = describeSidecarFailure(exit.cause)
+    const failure = describeSidecarFailure(exit.cause, "health")
     expect(failure.kind).toBe("timeout")
+    expect(failure.code).toBe("sidecar.health.timeout")
     expect(failure.summary).toContain("did not pass its health check in time")
+  })
+
+  /**
+   * Ruling 2 against this function itself. The port probe is deadlined too, and its timeout reaches
+   * `onSidecarSettled` with a `TimeoutError` indistinguishable from the health gate's — so a single
+   * wording would report *"did not pass its health check"* for a failure that never got as far as
+   * spawning anything, and send the next reader to the wrong subsystem.
+   */
+  test("a startup-stage timeout is NOT described as a health-check failure", async () => {
+    const exit = await Effect.runPromiseExit(Effect.never.pipe(Effect.timeout("10 millis")))
+    if (Exit.isSuccess(exit)) return
+
+    const failure = describeSidecarFailure(exit.cause, "startup")
+    expect(failure.kind).toBe("timeout")
+    expect(failure.code).toBe("sidecar.startup.timeout")
+    expect(failure.summary).toBe("The local server did not finish starting in time.")
+    expect(failure.summary).not.toContain("health")
+  })
+
+  test("a startup-stage error names the stage it actually failed in", async () => {
+    const exit = await Effect.runPromiseExit(
+      Effect.fail(new Error("listen EADDRINUSE: address already in use 127.0.0.1:4096")),
+    )
+    if (Exit.isSuccess(exit)) return
+
+    const failure = describeSidecarFailure(exit.cause, "startup")
+    expect(failure.code).toBe("sidecar.startup.failed")
+    expect(failure.summary).toBe(
+      "The local server could not be started: listen EADDRINUSE: address already in use 127.0.0.1:4096",
+    )
+    expect(failure.summary).not.toContain("health")
   })
 
   test("a sidecar that exits mid-startup is caught and its reason survives", async () => {
@@ -92,7 +124,7 @@ describe("sidecar health failures are named", () => {
         Effect.timeout("30 seconds"),
         Effect.catchCause((cause) =>
           Effect.sync(() => {
-            const failure = describeSidecarFailure(cause)
+            const failure = describeSidecarFailure(cause, "health")
             logged.push({ kind: failure.kind, summary: failure.summary })
           }),
         ),

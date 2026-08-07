@@ -19,7 +19,20 @@ export type SidecarHealthFailure = StartupNotice & {
 }
 
 /**
- * Classify a failed sidecar health wait.
+ * Which wait failed. There are two, and they fail for different reasons — the `stage` exists
+ * because the first draft of this function had ONE wording and used it for both, so a port probe
+ * that timed out would have been reported to the log as *"did not pass its health check"*. That is
+ * ruling 2 broken by the very function written to satisfy it: a fault described falsely is worse
+ * than a fault described vaguely, because it sends the next reader to the wrong subsystem.
+ */
+export type SidecarStage =
+  /** Anything up to and including the spawn: `preferAppEnv`, the port probe, `superviseLocalServer`. */
+  | "startup"
+  /** The post-spawn `/global/health` gate, by which point credentials are already published. */
+  | "health"
+
+/**
+ * Classify a failed sidecar wait.
  *
  * ⚠️ This exists because of a defect/typed-error mismatch that swallowed a real crash. `index.ts`
  * used to wrap `Effect.promise(() => health.wait)` in `Effect.catch` — and `Effect.catch` does not
@@ -34,30 +47,41 @@ export type SidecarHealthFailure = StartupNotice & {
  * So the call site now uses `catchCause`, and the classification lives here where it can be
  * exercised without Electron.
  */
-export function describeSidecarFailure(cause: Cause.Cause<unknown>): SidecarHealthFailure {
+export function describeSidecarFailure(
+  cause: Cause.Cause<unknown>,
+  stage: SidecarStage = "startup",
+): SidecarHealthFailure {
+  const detail = Cause.pretty(cause)
+
   if (Cause.hasInterruptsOnly(cause))
     return {
       kind: "interrupted",
-      code: "sidecar.health.interrupted",
+      code: `sidecar.${stage}.interrupted`,
       summary: "NovaClaw stopped waiting for the local server because the app is shutting down.",
-      detail: Cause.pretty(cause),
+      detail,
     }
 
   const squashed = Cause.squash(cause)
   if (Cause.isTimeoutError(squashed))
     return {
       kind: "timeout",
-      code: "sidecar.health.timeout",
-      summary: "The local server did not pass its health check in time — NovaClaw will keep trying to reconnect.",
-      detail: Cause.pretty(cause),
+      code: `sidecar.${stage}.timeout`,
+      summary:
+        stage === "health"
+          ? "The local server did not pass its health check in time — NovaClaw will keep trying to reconnect."
+          : "The local server did not finish starting in time.",
+      detail,
     }
 
   const message = squashed instanceof Error ? squashed.message : String(squashed)
   return {
     kind: "error",
-    code: "sidecar.health.failed",
-    summary: `The local server stopped before it finished starting: ${message}`,
-    detail: Cause.pretty(cause),
+    code: `sidecar.${stage}.failed`,
+    summary:
+      stage === "health"
+        ? `The local server stopped before it finished starting: ${message}`
+        : `The local server could not be started: ${message}`,
+    detail,
   }
 }
 

@@ -91,6 +91,13 @@ describe("desktop boot order", () => {
     expect(at("preferAppEnv(")).toBeLessThan(bootCallAt())
   })
 
+  test("each failure site names the stage it is actually reporting on", () => {
+    // Both stages can surface a bare TimeoutError; the argument is the only thing that keeps the
+    // port probe from being logged as a health-check failure (ruling 2).
+    expect(source).toContain('describeSidecarFailure(cause, "health")')
+    expect(source).toContain('describeSidecarFailure(exit.cause, "startup")')
+  })
+
   test("the ephemeral-port probe is deadlined", () => {
     expect(source).toMatch(/Deferred\.await\(res\)[\s\S]{0,200}Effect\.timeout\("10 seconds"\)/)
   })

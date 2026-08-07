@@ -427,7 +427,7 @@ const main = Effect.gen(function* () {
       Effect.timeout("30 seconds"),
       Effect.catchCause((cause) =>
         Effect.sync(() => {
-          const failure = describeSidecarFailure(cause)
+          const failure = describeSidecarFailure(cause, "health")
           logger.error("sidecar health check failed", {
             kind: failure.kind,
             summary: failure.summary,
@@ -481,7 +481,7 @@ const main = Effect.gen(function* () {
     sidecar: startSidecar,
     onSidecarSettled: (exit) => {
       if (Exit.isSuccess(exit)) return
-      const failure = describeSidecarFailure(exit.cause)
+      const failure = describeSidecarFailure(exit.cause, "startup")
       logger.error("local server startup failed", {
         kind: failure.kind,
         summary: failure.summary,
