@@ -342,9 +342,13 @@ fi
 # Build phase (exit 20 on failure)
 # ---------------------------------------------------------------------------------------------------
 
-progress "Installing dependencies (bun install)"
-if ! bun install >> "$LOG" 2>&1; then
-  fail 20 "build" "bun install failed."
+# --frozen-lockfile: install exactly what bun.lock names, and REFUSE rather than re-resolve. The repo
+# root bunfig sets `frozenLockfile = true` so this holds even without the flag; it is spelled out here
+# because a build is the one place a silent re-resolve would be invisible and consequential (the
+# 2026-08-04 keyv/cacheable compromise put three poisoned versions inside our declared ranges).
+progress "Installing dependencies (bun install --frozen-lockfile)"
+if ! bun install --frozen-lockfile >> "$LOG" 2>&1; then
+  fail 20 "build" "bun install --frozen-lockfile failed — bun.lock and the manifests disagree. Commit an updated bun.lock rather than loosening the flag."
 fi
 
 BINARY_PATH=""

@@ -89,6 +89,17 @@ bun run dev:web      # the web UI in a browser
 
 See [README.md](README.md) for the full build matrix and the packaged-build steps.
 
+**Installs are frozen.** `bunfig.toml` sets `frozenLockfile = true`, so every install replays `bun.lock`
+and *refuses* rather than re-resolving. This is deliberate: in the August 2026 `keyv`/`cacheable`
+compromise, poisoned releases carrying valid npm provenance landed inside a lot of projects' declared
+version ranges, and the lockfile was the only thing that stopped them. If `bun install` reports
+`lockfile had changes, but lockfile is frozen`, your manifest and `bun.lock` disagree — commit the
+updated lockfile, don't loosen the setting.
+
+**Changing a dependency** therefore takes one extra step, and there is no CLI flag for it: comment out
+`frozenLockfile` in `bunfig.toml`, run `bun add`/`bun install`, put the line back, and commit `bun.lock`
+**together with** the manifest change. A dependency change should be visible in the diff.
+
 ## Reporting bugs and security issues
 
 **Bugs:** tell us what you did, what happened, what you expected, and your platform and version.
