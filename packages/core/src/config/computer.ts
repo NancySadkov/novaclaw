@@ -1,7 +1,12 @@
 export * as ConfigComputer from "./computer"
 
 import { Schema } from "effect"
+import { ConfigAnnotation } from "@novaclaw/schema/config-annotation"
 import { optional } from "@novaclaw/schema/schema"
+
+/** The default capture path when none is configured. Declared above `Info` because the schema's own
+ *  `default` annotation names this binding rather than repeating its value. */
+export const DEFAULT_SCREENSHOT_PATH = "/tmp/novaclaw-computer.png"
 
 /**
  * Where the `computer` tool sends its input, and where it captures from.
@@ -33,10 +38,21 @@ export const Info = Schema.Struct({
    * Where screenshots are written inside the substrate. One reused path: the capture is read back
    * immediately, and a per-call filename would litter the sandbox for no benefit.
    */
-  screenshotPath: Schema.String.pipe(optional).annotate({
-    description: "Path inside the substrate where screenshots are written. Defaults to a temp file.",
-  }),
+  screenshotPath: ConfigAnnotation.depends(
+    ConfigAnnotation.withDefault(
+      Schema.String.pipe(optional).annotate({
+        description: "Path inside the substrate where screenshots are written. Defaults to a temp file.",
+      }),
+      // Declared as the constant, not as a copy of it — `config-projection.test.ts` pins the two together.
+      { value: DEFAULT_SCREENSHOT_PATH, source: "config/computer.ts DEFAULT_SCREENSHOT_PATH" },
+    ),
+    [
+      {
+        path: ["computer", "display"],
+        when: "set",
+        effect: "the computer tool is unavailable and captures nothing, so the path is never written",
+        source: "packages/core/src/config/computer.ts (display: 'Absent = the tool is unavailable')",
+      },
+    ],
+  ),
 }).annotate({ identifier: "ConfigComputer.Info" })
-
-/** The default capture path when none is configured. */
-export const DEFAULT_SCREENSHOT_PATH = "/tmp/novaclaw-computer.png"

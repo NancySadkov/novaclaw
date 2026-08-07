@@ -3,6 +3,7 @@ export * as Config from "./config"
 import { makeLocationNode } from "./effect/app-node"
 import path from "path"
 import { Context, Effect, Layer, Schema } from "effect"
+import { ConfigAnnotation } from "@novaclaw/schema/config-annotation"
 import { Permission } from "@novaclaw/schema/permission"
 import { ResourcePressure } from "@novaclaw/schema/resource-pressure"
 import { FSUtil } from "./fs-util"
@@ -164,9 +165,13 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     Schema.Struct({
       name: Schema.String.annotate({ description: "Peer name (also keys the NOVACLAW_INSTANCE_<NAME>_* env vars)" }),
       url: Schema.String.annotate({ description: "The peer's base URL, e.g. http://127.0.0.1:4097" }),
-      token: Schema.String.pipe(Schema.optional).annotate({
-        description: "The peer's incoming API token (its server.password)",
-      }),
+      // Ruling 5: a peer token is ACCOUNT-EQUIVALENT — the same class as `server.password`, so it
+      // carries the same schema marker rather than relying on being spelled "token".
+      token: ConfigAnnotation.secret(
+        Schema.String.pipe(Schema.optional).annotate({
+          description: "The peer's incoming API token (its server.password)",
+        }),
+      ),
     }),
   )
     .pipe(Schema.optional)
@@ -201,9 +206,21 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   // the two are held apart on purpose and `telemetry.test.ts` fails if either starts reading the
   // other's source.
   telemetry: Schema.Struct({
-    enabled: Schema.Boolean.pipe(Schema.optional).annotate({
-      description: "Allow crash telemetry uploads (default: true; offline/airgap mode forces off independently)",
-    }),
+    enabled: ConfigAnnotation.depends(
+      Schema.Boolean.pipe(Schema.optional).annotate({
+        description: "Allow crash telemetry uploads (default: true; offline/airgap mode forces off independently)",
+      }),
+      [
+        {
+          path: ["offline"],
+          when: "unset",
+          effect:
+            "airgap mode force-disables telemetry and this consent flag does not override it — an explicit " +
+            "true still refuses. Airgap OVERRIDES consent, it does not withdraw it",
+          source: "packages/core/src/observability/telemetry.ts resolveGate",
+        },
+      ],
+    ),
   })
     .pipe(Schema.optional)
     .annotate({
@@ -215,25 +232,55 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       description:
         "Remember things across chats (graph memory / KB-G). Default ON; OFF = the runtime flows stand down (no auto-recall, auto-extraction, `kb` tool, or consolidation) — a privacy switch. The engine still needs the NOVACLAW_KB_MEMORY env to run at all",
     }),
-    rerank: Schema.Boolean.pipe(Schema.optional).annotate({
-      description:
-        "Let the MODEL order recalled memories (it reads the wording, so a definitive older statement can outrank a newer offhand musing — measured 4/4 vs 1/4 for metadata ordering). Costs one short call per turn (~0.4s at 5 candidates). Default ON; off = metadata ordering only",
-    }),
-    embedding: Schema.Struct({
-      url: Schema.String.pipe(Schema.optional).annotate({
+    rerank: ConfigAnnotation.depends(
+      Schema.Boolean.pipe(Schema.optional).annotate({
         description:
-          "OpenAI-compatible embeddings base URL for the LAN embedding device (e.g. http://spark:8001/v1). Unset = keyword-only (FTS) memory search",
+          "Let the MODEL order recalled memories (it reads the wording, so a definitive older statement can outrank a newer offhand musing — measured 4/4 vs 1/4 for metadata ordering). Costs one short call per turn (~0.4s at 5 candidates). Default ON; off = metadata ordering only",
       }),
-      model: Schema.String.pipe(Schema.optional).annotate({
-        description:
-          "Embedding model id as served (e.g. qwen3-embedding). Its width must match the graph's vector column (1024)",
-      }),
-    })
-      .pipe(Schema.optional)
-      .annotate({
-        description:
-          "The memory VECTOR leg (measured: hybrid vector+FTS retrieval 85% vs keyword-only 77%). LAN-local, airgap-safe; unreachable = degrade to FTS, never fail",
-      }),
+      [
+        {
+          path: ["memory", "enabled"],
+          when: "set",
+          effect: "there is nothing to order — auto-recall does not run at all",
+          source: "packages/core/src/config.ts (memory.enabled: 'OFF = the runtime flows stand down')",
+        },
+      ],
+    ),
+    embedding: ConfigAnnotation.depends(
+      Schema.Struct({
+        url: Schema.String.pipe(Schema.optional).annotate({
+          description:
+            "OpenAI-compatible embeddings base URL for the LAN embedding device (e.g. http://spark:8001/v1). Unset = keyword-only (FTS) memory search",
+        }),
+        model: ConfigAnnotation.depends(
+          Schema.String.pipe(Schema.optional).annotate({
+            description:
+              "Embedding model id as served (e.g. qwen3-embedding). Its width must match the graph's vector column (1024)",
+          }),
+          [
+            {
+              path: ["memory", "embedding", "url"],
+              when: "set",
+              effect: "no embedding device is called, so the model id is never used",
+              source: "packages/core/src/config.ts (embedding.url: 'Unset = keyword-only (FTS) memory search')",
+            },
+          ],
+        ),
+      })
+        .pipe(Schema.optional)
+        .annotate({
+          description:
+            "The memory VECTOR leg (measured: hybrid vector+FTS retrieval 85% vs keyword-only 77%). LAN-local, airgap-safe; unreachable = degrade to FTS, never fail",
+        }),
+      [
+        {
+          path: ["memory", "enabled"],
+          when: "set",
+          effect: "the memory flows stand down entirely, vector leg included",
+          source: "packages/core/src/config.ts (memory.enabled: 'OFF = the runtime flows stand down')",
+        },
+      ],
+    ),
   })
     .pipe(Schema.optional)
     .annotate({
@@ -266,10 +313,20 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     searxngUrl: Schema.String.pipe(Schema.optional).annotate({
       description: "A SearXNG instance URL (e.g. http://localhost:8080). When set it REPLACES the built-in engines.",
     }),
-    disabledEngines: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
-      description:
-        "Built-in engine ids to turn off (currently: duckduckgo, wikipedia) — for one that starts misbehaving.",
-    }),
+    disabledEngines: ConfigAnnotation.depends(
+      Schema.String.pipe(Schema.Array, Schema.optional).annotate({
+        description:
+          "Built-in engine ids to turn off (currently: duckduckgo, wikipedia) — for one that starts misbehaving.",
+      }),
+      [
+        {
+          path: ["web_search", "searxngUrl"],
+          when: "unset",
+          effect: "there are no built-in engines left to disable — SearXNG replaces the whole set",
+          source: "packages/core/src/websearch/service.ts resolveEngines (searxngUrl returns before the filter)",
+        },
+      ],
+    ),
     timeoutMs: Schema.Finite.pipe(Schema.optional).annotate({ description: "Per-engine timeout in ms (default 8000)" }),
     // The web traffic governor (core/web/fetch-pace.ts). Governs ALL outbound web reads — search AND
     // article fetches — not just search; it lives here because this is the user-facing home for web
@@ -322,7 +379,11 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   plugins: ConfigPlugin.Plugins.pipe(Schema.optional).annotate({
     description: "Ordered external plugin packages to load",
   }),
-  experimental: ConfigExperimental.Experimental.pipe(Schema.optional),
+  experimental: ConfigExperimental.Experimental.pipe(Schema.optional).annotate({
+    description:
+      "Unstable settings, including `policies` — the provider allow/deny rules `catalog.ts` evaluates. " +
+      "Nothing here carries a compatibility promise.",
+  }),
   provider_presets: Schema.Record(Schema.String, ConfigProviderPreset.Info)
     .pipe(Schema.optional)
     .annotate({
@@ -345,7 +406,14 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   // ⚠️ Ruling 4: PRIVILEGED, and the reason is not the URL alone. Each nested model carries a
   // `prePrompt` that `config/provider.ts` describes as "prepended to the system context" — so this key
   // is a prompt-text channel as well as an endpoint, and it fails ruling 4's fourth test outright.
-  providers: Schema.Record(Schema.String, ConfigProvider.Info).pipe(Schema.optional),
+  providers: Schema.Record(Schema.String, ConfigProvider.Info)
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        "Installed providers keyed by id, each carrying its endpoint (`api`), default request headers/body " +
+        "and its models. This is where a moved vendor endpoint is repaired at runtime. ⚠️ `api` is a union " +
+        "tagged on `type`, so it takes a COMPLETE alternative — a bare {url} decodes in no mode at all.",
+    }),
   // Models-primary (notes/models-primary-plan.md P1): the flat successor to `providers` — a map
   // of models keyed by id, each with its OWN endpoint `url` + params + `tier`. Decoded in
   // PARALLEL with `providers` (both accepted) until P6 retires the nested path. Inert until the

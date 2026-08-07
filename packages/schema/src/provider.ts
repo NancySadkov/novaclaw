@@ -2,8 +2,19 @@ export * as Provider from "./provider"
 
 import { Schema } from "effect"
 import { optional } from "./schema"
+import { ConfigAnnotation } from "./config-annotation"
 import { Integration } from "./integration"
 import { statics } from "./schema"
+
+/**
+ * The provider SDK's own options object, reachable from config as `providers.<id>.api.settings`.
+ *
+ * ⚠️ Its `apiKey` entry is a LIVE credential — `core/session/runner/model.ts:202` reads
+ * `model.request.body.apiKey ?? model.api.settings?.apiKey` — while `baseURL` and the rest are
+ * ordinary settings an agent must be able to read back in order to repair a moved endpoint. So the
+ * marker names the entry rather than the record; see `config-annotation.ts` → `secretEntries`.
+ */
+const Settings = ConfigAnnotation.secretEntries(Schema.Record(Schema.String, Schema.Unknown), ["apiKey"])
 
 export const ID = Schema.String.pipe(
   Schema.brand("ProviderV2.ID"),
@@ -27,14 +38,14 @@ export const AISDK = Schema.Struct({
   type: Schema.Literal("aisdk"),
   package: Schema.String,
   url: Schema.String.pipe(optional),
-  settings: Schema.Record(Schema.String, Schema.Unknown).pipe(optional),
+  settings: Settings.pipe(optional),
 }).annotate({ identifier: "Provider.AISDK" })
 
 export interface Native extends Schema.Schema.Type<typeof Native> {}
 export const Native = Schema.Struct({
   type: Schema.Literal("native"),
   url: Schema.String.pipe(optional),
-  settings: Schema.Record(Schema.String, Schema.Unknown),
+  settings: Settings,
 }).annotate({ identifier: "Provider.Native" })
 
 export const Api = Schema.Union([AISDK, Native])

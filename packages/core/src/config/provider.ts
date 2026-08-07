@@ -3,6 +3,7 @@ export * as ConfigProvider from "./provider"
 import { Schema } from "effect"
 import { ProviderV2 } from "../provider"
 import { ModelV2 } from "../model"
+import { ConfigAnnotation } from "@novaclaw/schema/config-annotation"
 
 // Models-primary capability tier — the single source of truth is `ModelV2.Tier` (schema/model.ts),
 // re-exported here for config authoring. See notes/models-primary-plan.md.
@@ -10,8 +11,28 @@ export const Tier = ModelV2.Tier
 export type Tier = ModelV2.Tier
 
 export class Request extends Schema.Class<Request>("ConfigV2.Provider.Request")({
-  headers: Schema.Record(Schema.String, Schema.String).pipe(Schema.optional),
-  body: Schema.Record(Schema.String, Schema.Unknown).pipe(Schema.optional),
+  // Reached from five places — `providers.<id>.request`, `providers.<id>.models.<m>.request`, that
+  // model's `variants[]`, `agents.<n>.request` and `models.<id>.request` — so marking it here is what
+  // makes ONE marker cover the whole Authorization-header surface.
+  headers: ConfigAnnotation.secret(
+    Schema.Record(Schema.String, Schema.String).pipe(Schema.optional).annotate({
+      description: "Extra HTTP headers on every request to this endpoint (where an Authorization token goes).",
+    }),
+  ),
+  // ⚠️ NOT marked wholly secret, and that is the point of `secretEntries`. `apiKey` here is a live
+  // credential (`session/runner/model.ts:202` reads `model.request.body.apiKey`) while the rest of
+  // this record is the repair target AGENTS.md's own decoded example writes to. Blanking the whole
+  // map to hide one key would destroy the one repair the self-healing law cites as proof it works.
+  body: ConfigAnnotation.secretEntries(
+    Schema.Record(Schema.String, Schema.Unknown)
+      .pipe(Schema.optional)
+      .annotate({
+        description:
+          "Extra JSON merged into every request body to this endpoint — e.g. " +
+          '{"chat_template_kwargs":{"enable_thinking":false}}. The `apiKey` entry is a credential.',
+      }),
+    ["apiKey"],
+  ),
 }) {}
 
 class Cache extends Schema.Class<Cache>("ConfigV2.Model.Cost.Cache")({
