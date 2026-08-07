@@ -469,13 +469,16 @@ describe("only DECLARED, egress-safe, well-shaped attributes survive", () => {
 
 describe("normalisation strips what identifies the reporter", () => {
   test("releaseLine drops the build stamp — a per-build timestamp is near-unique", () => {
-    expect(releaseLine("0.1.57")).toBe("0.1.57")
+    // ⚠️ Never spell the CURRENT version here — `test/version-single-source.test.ts` sweeps
+    // `packages/core/src` for that literal and this file is in its walk. A sample release only has
+    // to be a well-formed one, so use a version that can never be current.
+    expect(releaseLine("0.1.55")).toBe("0.1.55")
     expect(releaseLine("0.2.0-nightly.20260731t065756")).toBe("0.2.0")
     expect(releaseLine("1.10.3+sha.abcdef0")).toBe("1.10.3")
     expect(releaseLine("dev")).toBe("unknown")
     expect(releaseLine(undefined)).toBe("unknown")
     // and whatever it returns is always admissible as an `id`
-    for (const v of ["0.1.57", "0.2.0-nightly.20260731t065756", "dev", undefined])
+    for (const v of ["0.1.55", "0.2.0-nightly.20260731t065756", "dev", undefined])
       expect(valueFault("id", releaseLine(v))).toBeUndefined()
   })
 
