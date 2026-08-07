@@ -793,6 +793,28 @@ describe("🔴 a repeat refusal escalates ONCE, with different CONTENT, then nam
     ])
   })
 
+  /**
+   * ⚠️ **Added because the mutation that broke this behaviour produced ZERO failures.** The reset on
+   * the abstain branch was the one episode-clearing site with no coverage, and an escalation that
+   * silently keeps counting through an abstain would block a whole step early on the relapse — while
+   * every other test stayed green.
+   */
+  test("an ABSTAIN ends the episode, so a later relapse gets the full ladder again", () => {
+    const relapse = drive(spec({ budget: { maxSteps: 12, maxPromptTokens: 500_000 }, noProgressLimit: 9 }), [
+      ...stuckEpisode.slice(0, stuckEpisode.length - 1),
+      // The escalation's own preferred answer, taken.
+      propose({ abstain: true, reason: "the only control I can see has been measured as dead", action: null, expect: null }),
+      // …and then the planner relapses to the banned action two steps later.
+      captured("s4"),
+      proposeAt(464, 684),
+      proposeAt(464, 684),
+    ])
+    expect(relapse.outcome).toBeUndefined()
+    const last = plannerPrompts(relapse).at(-1) ?? ""
+    expect(last).toContain("byte-identical")
+    expect(last).not.toContain("Answer with exactly ONE")
+  })
+
   test("the episode is CLEARED by a step that ends any other way — a later stuck step starts plain", () => {
     const reset = drive(spec(), [
       ...CALIBRATE,
