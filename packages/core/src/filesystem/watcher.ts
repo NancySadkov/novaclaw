@@ -4,7 +4,7 @@ export * as Watcher from "./watcher"
 import { createWrapper } from "@parcel/watcher/wrapper"
 import type ParcelWatcher from "@parcel/watcher"
 import { makeLocationNode } from "../effect/app-node"
-import { Cause, Context, Effect, Layer, Semaphore } from "effect"
+import { Context, Effect, Layer, Semaphore } from "effect"
 import { FileSystemWatcher } from "@novaclaw/schema/filesystem-watcher"
 import path from "path"
 import { Config } from "../config"
@@ -201,7 +201,7 @@ export const layer = Layer.effect(
             pending.then((subscription) => subscription.unsubscribe()).catch(() => {})
             return Log.event("filesystem.watcher.subscribe.failed", {
               directory,
-              "filesystem.cause": Cause.pretty(cause),
+              "filesystem.cause": Log.fault(cause),
             }).pipe(Effect.as(undefined))
           }),
         )
@@ -227,7 +227,7 @@ export const layer = Layer.effect(
               // becomes an unexplained event storm later.
               Log.event("filesystem.watcher.release.failed", {
                 directory,
-                "filesystem.cause": String(cause),
+                "filesystem.cause": Log.fault(cause),
               }),
         ),
       )
@@ -358,7 +358,7 @@ export const layer = Layer.effect(
         // One location's failure must never abort the config write that fanned out to it.
         Log.event("filesystem.watcher.resubscribe.failed", {
           directory: location.directory,
-          "filesystem.cause": Cause.pretty(cause),
+          "filesystem.cause": Log.fault(cause),
         }),
       ),
     )
@@ -390,7 +390,7 @@ export const layer = Layer.effect(
     return Service.of({})
   }).pipe(
     Effect.catchCause((cause) => {
-      return Log.event("filesystem.watcher.init.failed", { "filesystem.cause": Cause.pretty(cause) }).pipe(
+      return Log.event("filesystem.watcher.init.failed", { "filesystem.cause": Log.fault(cause) }).pipe(
         Effect.as(Service.of({})),
       )
     }),

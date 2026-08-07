@@ -9,7 +9,7 @@ import { Slug } from "@novaclaw/core/util/slug"
 import { errorMessage } from "../util/error"
 import { GlobalBus } from "@/bus/global"
 import { Git } from "@/git"
-import { Cause, Effect, Layer, Path, Schema, Scope, Context } from "effect"
+import { Effect, Layer, Path, Schema, Scope, Context } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { NodePath } from "@effect/platform-node"
 import { FSUtil } from "@novaclaw/core/fs-util"
@@ -279,10 +279,14 @@ export const layer: Layer.Layer<
         Effect.as(true),
         Effect.catch((error) =>
           Effect.gen(function* () {
+            // Two readers, two renderings, and they are deliberately different: the bus payload
+            // below is what the UI shows a person, so it stays the SHORT `errorMessage`, while the
+            // log column takes the whole fault — `Log.fault` keeps the stack, which is the half
+            // `.message` throws away and the half an agent repairing this instance needs.
             const message = errorMessage(error)
             yield* Log.event("worktree.bootstrap.load.failed", {
               "worktree.directory": info.directory,
-              "worktree.cause": message,
+              "worktree.cause": Log.fault(error),
             })
             GlobalBus.emit("event", {
               directory: info.directory,
@@ -315,7 +319,7 @@ export const layer: Layer.Layer<
         Effect.catchCause((cause) =>
           Log.event("worktree.bootstrap.run.failed", {
             "worktree.directory": info.directory,
-            "worktree.cause": Cause.pretty(cause),
+            "worktree.cause": Log.fault(cause),
           }),
         ),
         Effect.forkIn(scope),
@@ -551,7 +555,15 @@ export const layer: Layer.Layer<
         )
         return { code: result.exitCode, stderr: result.stderr.toString("utf8") }
       },
-      Effect.catch(() => Effect.succeed({ code: 1, stderr: "" })),
+      // 🔴 **Ruling 2 — a fault is never described falsely.** This arm used to discard the error and
+      // answer `stderr: ""`, so `worktree.start.command.failed` below logged an EMPTY cause: the line
+      // said the start command failed and named no reason, for a failure we were holding in our hand.
+      // A spawn that never produced a process has no stderr; the honest value in that column is the
+      // fault itself, normalized once by `Log.fault`.
+      // ⚠️ `Effect.catch` does not see defects (measured, effect@4.0.0-beta.83) — deliberately: a
+      // defect here must keep travelling to the `catchCause` arms in `createFromInfo`/`reset`, which
+      // name it rather than folding it into an exit code.
+      Effect.catch((cause) => Effect.succeed({ code: 1, stderr: Log.fault(cause) })),
     )
 
     const runStartScript = Effect.fnUntraced(function* (directory: string, cmd: string, kind: string) {
@@ -684,7 +696,7 @@ export const layer: Layer.Layer<
         Effect.catchCause((cause) =>
           Log.event("worktree.start.task.failed", {
             "worktree.directory": worktreePath,
-            "worktree.cause": Cause.pretty(cause),
+            "worktree.cause": Log.fault(cause),
           }),
         ),
         Effect.forkIn(scope),

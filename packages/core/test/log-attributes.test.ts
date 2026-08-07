@@ -55,8 +55,9 @@ const FAULT_SITES = SITES.filter((site) => classOf(site) === "fault")
 /**
  * 🔴 **The shrink-only ledger of `fault` values that do NOT yet go through `Log.fault`.**
  *
- * Seeded at **90** on 2026-08-07, parser-measured against app HEAD `34e45a066`; **73** since the
- * `packages/core/src/session/` pass on the same day. Modelled on
+ * Seeded at **90** on 2026-08-07, parser-measured against app HEAD `34e45a066`; **73** after the
+ * `packages/core/src/session/` pass on the same day; **61** after the snapshot/worktree/watcher pass
+ * on 2026-08-08 (8 conversions and 4 re-classifications — see below). Modelled on
  * `log-event-migration-ledger.test.ts` (which ran 233 → 0) and on
  * `config-routing-ledger.test.ts` before it: a two-directional ratchet, so an unlisted site fails as
  * new and a listed site that no longer needs listing fails as stale. **The list can only shrink.**
@@ -68,17 +69,27 @@ const FAULT_SITES = SITES.filter((site) => classOf(site) === "fault")
  * `core/src/filesystem/watcher.ts`, and a tail of ~40 files holding 1–3 each. A prose share is not a
  * measurement; the scanner is, and it is three lines to run.
  *
- * ⚠️ Why a ledger rather than an absolute rule today: the remaining 73 are spread across four
+ * ⚠️ Why a ledger rather than an absolute rule today: the remaining 61 are spread across four
  * packages, so no single agent can close them. The rule this file wants is absolute; a ratchet is
  * the only thing that reports the half-done state truthfully while it is true.
  *
- * ⚠️ **Three session sites were deliberately NOT converted and are still listed:**
- * `session.provider.attempt.retry` / `session.provider.response.broken` set
- * `"session.provider.message"` from `transient.message` / `llmFailure.reason.message` — a **typed
- * field of a structured `LLMError.reason`**, whose `_tag` is already carried by the sibling
- * `session.provider.reason`. It is the provider's own message text, not a caught error; the class
- * that fits it is `text`, and re-classing it is a `schema/log-events.ts` change, not a conversion.
- * Wrapping a string in `Log.fault` would be a no-op that mislabels the field.
+ * ✅ **The three session sites left by the previous pass are GONE — by re-classification, which was
+ * the right exit (2026-08-08).** `session.provider.message` is now `text`, because `fault` means
+ * *produced by `Log.fault` from a caught error* and that value is a `Schema.String` field of the
+ * structured `LLMErrorReason`. The reasoning, and the conversion that WAS available and why it was
+ * rejected, live on the declaration in `schema/log-events.ts` rather than here — the class table is
+ * where the next author will look. `snapshot.header` moved for the same reason.
+ * ⚠️ **The filed claim that those sites "can leave the ledger only by re-classification, never by
+ * conversion" was FALSE and the correction matters more than the pin.** `transient` and
+ * `llmFailure` are caught `LLMError`s in hand, so `Log.fault(transient)` was expressible; the choice
+ * between the two exits is a judgement about what the line should SAY, and an entry that says one
+ * exit is impossible stops the next reader from making it.
+ *
+ * 🔧 **OPENED — eight `snapshot.*.stderr` sites are blocked on a question nobody has answered:**
+ * may a caught spawn failure live in a field called `stderr`? `snapshot/index.ts`'s `git` helper
+ * puts one there, which is the only reason those columns are `fault` rather than `text`. Answer it
+ * and they leave the ledger; leave it and they can never be converted, because `Log.fault` on
+ * git's own stderr string is the identity.
  *
  * ⚠️ **When it reaches zero, DELETE the fixture — do not empty it.** An empty JSON array still reads
  * as *add your entry here*; the next author under time pressure appends one line and the invariant

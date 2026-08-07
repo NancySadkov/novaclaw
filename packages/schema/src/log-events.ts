@@ -1716,6 +1716,27 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/server/src/handlers/session.ts",
   },
+  /**
+   * ⚠️ **`session.provider.message` is `text`, not `fault`, and the distinction is the whole of 1h.**
+   *
+   * The `fault` class means *this value is a caught error, normalized once by `Log.fault`* — that is
+   * what `log-attributes.test.ts`'s seam-1 ratchet enforces, and it is why the class exists at all
+   * beside `text` (the two records are otherwise identical: `content: "user"`, `value: "string"`, so
+   * this carries **no** egress consequence). What the two events below set is
+   * `LLMError.message` / `LLMErrorReason.message` — a `Schema.String` FIELD of the structured
+   * `LLMErrorReason` union, whose discriminant is already on the same line as
+   * `session.provider.reason`. Reading a typed string field is not a normalization decision, and
+   * `Log.fault` on a string is provably the identity branch — so wrapping it would turn the ratchet
+   * green while normalizing nothing, which is the failure the ratchet exists to make visible.
+   *
+   * ⚠️ **These sites COULD have been converted instead — `transient` and `llmFailure` are caught
+   * `LLMError`s in hand, so `Log.fault(transient)` is expressible.** It was rejected on what the
+   * reader needs: both events are **handled and non-fatal** (a bounded retry, and a damaged SSE
+   * epilogue after a semantically complete reply), an Effect stack through our own runner says
+   * nothing about a refused connection, and `session.provider.attempt.retry` can fire three times a
+   * turn against a restarting local vLLM. The file's name for a normalized caught error is
+   * `session.cause`, used at fifteen sites — and these two events deliberately do not carry one.
+   */
   "session.provider.attempt.retry": {
     level: "warn",
     message: "provider attempt failed — retrying",
@@ -1724,7 +1745,7 @@ export const EVENTS = {
       attempt: "count",
       "session.attempts.max": "count",
       "session.provider.reason": "id",
-      "session.provider.message": "fault",
+      "session.provider.message": "text",
     },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
@@ -1735,7 +1756,7 @@ export const EVENTS = {
     attributes: {
       "session.id": "correlate",
       "session.provider.reason": "id",
-      "session.provider.message": "fault",
+      "session.provider.message": "text",
     },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
@@ -2050,11 +2071,27 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/snapshot/index.ts",
   },
-  /** Batched object output was malformed and the diff falls back to individual git-show calls. */
+  /**
+   * Batched object output was malformed and the diff falls back to individual git-show calls.
+   *
+   * ⚠️ **`snapshot.header` is `text`, not `fault`** — same reasoning as `session.provider.message`
+   * above. It carries a line of git's `cat-file --batch` STDOUT (`<sha> blob <size>`), decoded and
+   * handed straight to the log; it is never a caught error, so no `Log.fault` call could ever
+   * produce it and the classification could only ever be satisfied by a no-op wrapper. `text` is
+   * the class the table already defines for *free text from a foreign process*, the sibling
+   * `snapshot.reason` carries the classification, and both classes are `content: "user"` — so the
+   * event's derived content class is unchanged and nothing new may egress.
+   *
+   * ⚠️ **This is NOT a licence to reclassify the `snapshot.*.stderr` attributes the same way**, even
+   * though they also carry git output. `GitResult.stderr` is a UNION: the `git` helper's catch arm
+   * in `snapshot/index.ts` puts a caught spawn failure into the same field, so those columns really
+   * can hold our own error text. Deciding whether a spawn failure belongs in a `stderr` field is the
+   * open question that keeps eight sites on the ledger; it is not answered here.
+   */
   "snapshot.diff.parse.fallback": {
     level: "info",
     message: "git cat-file --batch output was malformed during snapshot diff, falling back to per-file git show",
-    attributes: { "snapshot.reason": "id", "snapshot.header": "fault" },
+    attributes: { "snapshot.reason": "id", "snapshot.header": "text" },
     content: "user",
     file: "packages/novaclaw/src/snapshot/index.ts",
   },

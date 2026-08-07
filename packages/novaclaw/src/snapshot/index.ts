@@ -1,6 +1,6 @@
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { ChangesetBudget } from "@novaclaw/core/changeset-budget"
-import { Cause, Duration, Effect, Layer, Schedule, Schema, Semaphore, Context } from "effect"
+import { Duration, Effect, Layer, Schedule, Schema, Semaphore, Context } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { formatPatch, structuredPatch } from "diff"
 import path from "path"
@@ -92,11 +92,18 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
               stderr: result.stderr.toString("utf8"),
             } satisfies GitResult
           },
+          // ⚠️ **This one line feeds eight `snapshot.*.stderr` log columns**, so the normalization it
+          // chose was the normalization all of them got — and `err instanceof Error ? err.message :
+          // String(err)` is one of the 21 drifted shapes `Log.fault` exists to replace: it throws
+          // away the stack, which for a spawn that never produced a process is the ONLY thing that
+          // says why. `Log.fault` is the one normalization (`todo/logging.md` 1h).
+          // ⚠️ A defect is deliberately not caught here (`Effect.catch` does not see one — measured,
+          // effect@4.0.0-beta.83): a broken spawner must not read as `git exited 1`.
           Effect.catch((err) =>
             Effect.succeed({
               code: ChildProcessSpawner.ExitCode(1),
               text: "",
-              stderr: err instanceof Error ? err.message : String(err),
+              stderr: Log.fault(err),
             }),
           ),
         )
@@ -814,7 +821,7 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
 
         yield* cleanup().pipe(
           Effect.catchCause((cause) =>
-            Log.event("snapshot.cleanup.loop.failed", { "snapshot.cause": Cause.pretty(cause) }),
+            Log.event("snapshot.cleanup.loop.failed", { "snapshot.cause": Log.fault(cause) }),
           ),
           Effect.repeat(Schedule.spaced(Duration.hours(1))),
           Effect.delay(Duration.minutes(1)),

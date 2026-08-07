@@ -24,22 +24,6 @@
     "count": 2
   },
   {
-    "name": "packages/core/src/filesystem/watcher.ts :: filesystem.watcher.init.failed.filesystem.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/filesystem/watcher.ts :: filesystem.watcher.release.failed.filesystem.cause = String(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/filesystem/watcher.ts :: filesystem.watcher.resubscribe.failed.filesystem.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/filesystem/watcher.ts :: filesystem.watcher.subscribe.failed.filesystem.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
     "name": "packages/core/src/kb-graph/memory.ts :: kb.memory.open.failed.kb.cause = String(…)",
     "count": 1
   },
@@ -70,14 +54,6 @@
   {
     "name": "packages/core/src/schedule/scheduler.ts :: instance.scheduler.tick.failed.instance.cause = Cause.pretty(…)",
     "count": 1
-  },
-  {
-    "name": "packages/core/src/session/runner/llm.ts :: session.provider.attempt.retry.session.provider.message = transient.message",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/session/runner/llm.ts :: session.provider.response.broken.session.provider.message = llmFailure.reason.message",
-    "count": 2
   },
   {
     "name": "packages/core/src/skill/discovery.ts :: skill.discovery.download.failed.skill.error = error instanceof Error ? error.message : String(…)",
@@ -192,10 +168,6 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.cleanup.loop.failed.snapshot.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.cleanup.run.failed.snapshot.stderr = result.stderr",
     "count": 1
   },
@@ -205,10 +177,6 @@
   },
   {
     "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.diff.load.fallback.snapshot.stderr = batch.stderr.toString(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.diff.parse.fallback.snapshot.header = header",
     "count": 1
   },
   {
@@ -248,23 +216,11 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/worktree/index.ts :: worktree.bootstrap.load.failed.worktree.cause = message",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/worktree/index.ts :: worktree.bootstrap.run.failed.worktree.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/worktree/index.ts :: worktree.checkout.failed.worktree.cause = message",
     "count": 1
   },
   {
     "name": "packages/novaclaw/src/worktree/index.ts :: worktree.start.command.failed.worktree.cause = result.stderr",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/worktree/index.ts :: worktree.start.task.failed.worktree.cause = Cause.pretty(…)",
     "count": 1
   },
   {
