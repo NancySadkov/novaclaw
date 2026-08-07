@@ -6,17 +6,26 @@ import { homedir, tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app, BrowserWindow } from "electron"
+import { app, BrowserWindow, dialog } from "electron"
 
-import { Deferred, Effect, Fiber } from "effect"
+import { Cause, Deferred, Effect, Exit } from "effect"
 import contextMenu from "electron-context-menu"
 
 import type { ServerReadyData } from "../preload/types"
 import { checkAppExists, resolveAppPath } from "./apps"
+import { bootWindowFirst, describeSidecarFailure } from "./boot"
 import { CHANNEL } from "./constants"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
 import { forwardInitializationFailure } from "./initialization"
-import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
+import { logDirectoryNotice } from "./log-directory"
+import {
+  exportDebugLogs,
+  getLogDirectory,
+  initCrashReporter,
+  initLogging,
+  startNetLog,
+  write as writeLog,
+} from "./logging"
 import { parseMarkdown } from "./markdown"
 import { createMenu } from "./menu"
 import {
@@ -219,8 +228,6 @@ const main = Effect.gen(function* () {
     return
   }
 
-  preferAppEnv(app.getPath("userData"))
-
   app.on("second-instance", (_event: Event, argv: string[]) => {
     const urls = argv.filter((arg: string) => arg.startsWith("novaclaw://"))
     if (urls.length) {
@@ -267,7 +274,21 @@ const main = Effect.gen(function* () {
 
   const serverReady = Deferred.makeUnsafe<ServerReadyData, unknown>()
 
-  yield* Effect.promise(() => app.whenReady())
+  // `Effect.promise` makes a rejection a DEFECT, and nothing downstream was looking for one — so a
+  // failed `whenReady` ended the main fiber with no window, no dialog and no log line. It stays a
+  // hard stop (nothing can be drawn without a ready Electron), but it now says so.
+  const electronReady = yield* Effect.promise(() => app.whenReady()).pipe(
+    Effect.as(true),
+    Effect.catchCause((cause) =>
+      Effect.sync(() => {
+        logger.error("electron never became ready", Cause.pretty(cause))
+        dialog.showErrorBox("NovaClaw could not start", "Electron did not finish starting up. Please try again.")
+        app.exit(1)
+        return false
+      }),
+    ),
+  )
+  if (!electronReady) return
 
   app.setAsDefaultProtocolClient("novaclaw")
   registerRendererProtocol()
@@ -311,46 +332,64 @@ const main = Effect.gen(function* () {
     }
     await (kind === "start" ? updater.start() : updater.check())
   }
-  void pollUpdater("start")
-  const updateTimer = setInterval(() => void pollUpdater("poll"), 10 * 60 * 1000)
+  // ⚠️ `updater.start()`'s persistence awaits sit outside `check()`'s own `.catch`, and neither
+  // call site below had one — an unhandled rejection whose fate under Electron 42's default
+  // `--unhandled-rejections` mode is not measured. One catch at the source covers both.
+  const pollUpdaterSafely = (kind: "start" | "poll") =>
+    void pollUpdater(kind).catch((error: unknown) => logger.warn("updater poll failed", error))
+  pollUpdaterSafely("start")
+  const updateTimer = setInterval(() => pollUpdaterSafely("poll"), 10 * 60 * 1000)
   updateTimer.unref()
   app.once("will-quit", () => clearInterval(updateTimer))
+
+  // Net logging is diagnostics; it must never sit between the user and their window. Forked, and
+  // caught with `catchCause` because `Effect.promise` rejects into a defect that `Effect.catch`
+  // cannot see (the same mismatch that hid the sidecar crash below).
   yield* Effect.promise(() => startNetLog()).pipe(
-    Effect.catch((error) =>
-      Effect.sync(() => {
-        logger.warn("failed to start net log", error)
-      }),
-    ),
+    Effect.catchCause((cause) => Effect.sync(() => logger.warn("failed to start net log", Cause.pretty(cause)))),
+    Effect.forkChild,
   )
 
-  const port = yield* Effect.gen(function* () {
-    const fromEnv = process.env.NOVACLAW_PORT
-    if (fromEnv) {
-      const parsed = Number.parseInt(fromEnv, 10)
-      if (!Number.isNaN(parsed)) return parsed
-    }
+  // Everything the local server needs, in one effect that runs BEHIND the window.
+  //
+  // `preferAppEnv` moved in here from before `app.whenReady()`. On macOS/Linux it runs two
+  // `spawnSync` login-shell probes at 5 s each, which used to be up to ~10 s of blank screen before
+  // anything was drawn. Its only contract is that it runs before `createSidecarEnv()` copies
+  // `process.env`, and being the first statement of this effect keeps that exactly.
+  const startSidecar = Effect.gen(function* () {
+    preferAppEnv(app.getPath("userData"))
 
-    const res = yield* Deferred.make<number, unknown>()
-    const server = createServer()
-    server.on("error", (e) => Deferred.failSync(res, () => e))
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address()
-      if (typeof address !== "object" || !address) {
-        server.close()
-        Deferred.failSync(res, () => new Error("Failed to get port"))
-        return
+    const port = yield* Effect.gen(function* () {
+      const fromEnv = process.env.NOVACLAW_PORT
+      if (fromEnv) {
+        const parsed = Number.parseInt(fromEnv, 10)
+        if (!Number.isNaN(parsed)) return parsed
       }
-      const port = address.port
-      server.close(() => Effect.runSync(Deferred.succeed(res, port)))
-    })
 
-    return yield* Deferred.await(res)
-  })
-  const hostname = "127.0.0.1"
-  const url = `http://${hostname}:${port}`
-  const password = randomUUID()
+      const res = yield* Deferred.make<number, unknown>()
+      const server = createServer()
+      server.on("error", (e) => Deferred.failSync(res, () => e))
+      server.listen(0, "127.0.0.1", () => {
+        const address = server.address()
+        if (typeof address !== "object" || !address) {
+          server.close()
+          Deferred.failSync(res, () => new Error("Failed to get port"))
+          return
+        }
+        const port = address.port
+        server.close(() => Effect.runSync(Deferred.succeed(res, port)))
+      })
 
-  const loadingTask = yield* Effect.gen(function* () {
+      return yield* Deferred.await(res)
+      // ⚠️ Neither callback is guaranteed to fire (a broken loopback stack answers neither), and an
+      // un-deadlined Deferred.await is a silent hang. Bounded, so it becomes the renderer's named
+      // "could not start the local server" page instead of a splash that never ends.
+    }).pipe(Effect.timeout("10 seconds"))
+
+    const hostname = "127.0.0.1"
+    const url = `http://${hostname}:${port}`
+    const password = randomUUID()
+
     logger.log("sidecar connection started", { url })
 
     ensureLoopbackNoProxy()
@@ -378,35 +417,78 @@ const main = Effect.gen(function* () {
       void wslServers.initialize().catch((error) => logger.error("wsl server initialization failed", error))
     }
 
-    yield* Effect.promise(() => health.wait).pipe(
+    // ⚠️ `tryPromise` + `catchCause`, and both halves matter. `health.wait` REJECTS when the child
+    // dies mid-startup ("Sidecar exited before health check passed with code …"); under
+    // `Effect.promise` that rejection was a defect, and the `Effect.catch` that used to sit here
+    // does not see defects — so the crash arm was logged nowhere at all while the timeout arm was
+    // handled correctly. The credentials are already published above, so the renderer's connection
+    // banner owns the user-visible half; this handler owns naming the reason.
+    yield* Effect.tryPromise({ try: () => health.wait, catch: (error) => error }).pipe(
       Effect.timeout("30 seconds"),
-      Effect.catch((e) =>
+      Effect.catchCause((cause) =>
         Effect.sync(() => {
-          logger.error("sidecar health check failed", e.toString())
+          const failure = describeSidecarFailure(cause)
+          logger.error("sidecar health check failed", {
+            kind: failure.kind,
+            summary: failure.summary,
+            detail: failure.detail,
+          })
         }),
       ),
     )
 
     logger.log("loading task finished")
-  }).pipe(forwardInitializationFailure(serverReady), Effect.forkChild)
+  }).pipe(forwardInitializationFailure(serverReady))
 
-  yield* Fiber.await(loadingTask)
+  yield* bootWindowFirst({
+    openWindow: () => {
+      const win = createMainWindow()
+      mainWindow = win
+      createMenu({
+        trigger: (id) => {
+          const focused = BrowserWindow.getFocusedWindow() ?? mainWindow
+          if (focused) sendMenuCommand(focused, id)
+        },
+        checkForUpdates: () => {
+          void showUpdaterDialog(updater, true)
+        },
+        relaunch: () => {
+          relaunch()
+        },
+      })
 
-  mainWindow = createMainWindow()
-  if (mainWindow) {
-    createMenu({
-      trigger: (id) => {
-        const win = BrowserWindow.getFocusedWindow() ?? mainWindow
-        if (win) sendMenuCommand(win, id)
-      },
-      checkForUpdates: () => {
-        void showUpdaterDialog(updater, true)
-      },
-      relaunch: () => {
-        relaunch()
-      },
-    })
-  }
+      // Ruling 2, at the one point where it can actually be said: if the profile folder refused
+      // every log destination there is no log for anyone to read afterwards, so the window that
+      // now exists carries the sentence instead.
+      const notice = logDirectoryNotice(getLogDirectory())
+      if (notice)
+        void dialog
+          .showMessageBox(win, {
+            type: "warning",
+            buttons: ["Continue"],
+            defaultId: 0,
+            message: notice.summary,
+            detail: notice.detail,
+          })
+          .catch(() => undefined)
+
+      return win
+    },
+    onWindowFailed: (notice) => {
+      logger.error(notice.summary, notice.detail)
+      dialog.showErrorBox("NovaClaw could not start", `${notice.summary}\n\n${notice.detail}`)
+    },
+    sidecar: startSidecar,
+    onSidecarSettled: (exit) => {
+      if (Exit.isSuccess(exit)) return
+      const failure = describeSidecarFailure(exit.cause)
+      logger.error("local server startup failed", {
+        kind: failure.kind,
+        summary: failure.summary,
+        detail: failure.detail,
+      })
+    },
+  })
 })
 
 Effect.runFork(main)

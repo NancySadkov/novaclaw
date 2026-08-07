@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
 import { Cause, Deferred, Effect, Exit, Fiber } from "effect"
 import { forwardInitializationFailure } from "./initialization"
 
@@ -35,3 +36,109 @@ describe("desktop initialization", () => {
     expectFailure(exit)
   })
 })
+
+/**
+ * The SOURCE ledger for the boot order.
+ *
+ * `boot.test.ts` proves that `bootWindowFirst` opens the window before its sidecar effect settles.
+ * It cannot prove that `index.ts` still *uses* it, nor that nothing new has been slipped in front
+ * of the window — and an Electron main module cannot be booted inside `bun test`, so this is the
+ * only mechanical check available for the placement itself. A reader who thinks a source assertion
+ * is weak is right; it is here because the alternative is nothing at all, and the defect it guards
+ * (`yield* Fiber.await(loadingTask)` above `createMainWindow()`) shipped for months while every
+ * behavioural test in the package stayed green.
+ *
+ * ⚠️ Comments are stripped first. This file's own prose names every symbol below, and a raw regex
+ * over source counts prose — the standing rule, and the reason the stripper is a scanner rather
+ * than `/\/\*[\s\S]*?\*\//`, which eats a line the moment a string literal contains `/*`.
+ */
+describe("desktop boot order", () => {
+  const source = stripComments(readFileSync(new URL("./index.ts", import.meta.url), "utf8"))
+  const at = (needle: string) => {
+    const index = source.indexOf(needle)
+    expect(index, `${needle} is missing from index.ts`).toBeGreaterThan(-1)
+    return index
+  }
+
+  // ⚠️ These are CONTAINMENT assertions, not "line A runs before line B". Once the sidecar work
+  // moved inside an effect that is *passed* to `bootWindowFirst`, source position stopped tracking
+  // execution order — `superviseLocalServer` sits textually above `createMainWindow()` and still
+  // runs after it. What is actually checkable is which region each call lives in, so that is what
+  // is checked: everything that can block must be inside `startSidecar`, and the window opener must
+  // be the `openWindow` argument.
+  const startSidecarAt = () => at("const startSidecar")
+  const bootCallAt = () => at("bootWindowFirst({")
+
+  test("the window opener is the openWindow argument, not something the boot waits for", () => {
+    expect(bootCallAt()).toBeLessThan(at("openWindow:"))
+    expect(at("openWindow:")).toBeLessThan(at("createMainWindow()"))
+    expect(at("createMainWindow()")).toBeLessThan(at("sidecar: startSidecar"))
+  })
+
+  test("nothing in this module awaits a fiber — bootWindowFirst owns the ordering", () => {
+    // `yield* Fiber.await(loadingTask)` above `createMainWindow()` IS the defect being removed.
+    expect(source).not.toContain("Fiber.await")
+  })
+
+  test("spawning the sidecar happens inside startSidecar, so it cannot precede the window", () => {
+    expect(startSidecarAt()).toBeLessThan(at("superviseLocalServer("))
+    expect(at("superviseLocalServer(")).toBeLessThan(bootCallAt())
+  })
+
+  test("preferAppEnv's login-shell probes moved inside startSidecar", () => {
+    // Two 5s spawnSync probes on macOS/Linux; before the move they ran ahead of app.whenReady().
+    expect(startSidecarAt()).toBeLessThan(at("preferAppEnv("))
+    expect(at("preferAppEnv(")).toBeLessThan(bootCallAt())
+  })
+
+  test("the ephemeral-port probe is deadlined", () => {
+    expect(source).toMatch(/Deferred\.await\(res\)[\s\S]{0,200}Effect\.timeout\("10 seconds"\)/)
+  })
+
+  test("the health wait is caught with catchCause, never catch", () => {
+    expect(source).toMatch(/health\.wait[\s\S]{0,400}Effect\.catchCause\(/)
+    expect(source).not.toMatch(/health\.wait[\s\S]{0,400}Effect\.catch\(/)
+  })
+})
+
+/** Strip `//` and block comments without being fooled by `"/*"` inside a string or template. */
+function stripComments(input: string) {
+  let out = ""
+  let i = 0
+  while (i < input.length) {
+    const ch = input[i]!
+    const next = input[i + 1]
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const quote = ch
+      out += ch
+      i++
+      while (i < input.length) {
+        const c = input[i]!
+        out += c
+        i++
+        if (c === "\\") {
+          if (i < input.length) {
+            out += input[i]
+            i++
+          }
+          continue
+        }
+        if (c === quote) break
+      }
+      continue
+    }
+    if (ch === "/" && next === "/") {
+      while (i < input.length && input[i] !== "\n") i++
+      continue
+    }
+    if (ch === "/" && next === "*") {
+      i += 2
+      while (i < input.length && !(input[i] === "*" && input[i + 1] === "/")) i++
+      i += 2
+      continue
+    }
+    out += ch
+    i++
+  }
+  return out
+}

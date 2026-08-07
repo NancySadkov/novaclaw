@@ -4,7 +4,8 @@ import { app, crashReporter, netLog, shell } from "electron"
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { ZipWriter, BlobWriter, BlobReader } from "@zip.js/zip.js"
 import { dirname, join } from "node:path"
-import { homedir } from "node:os"
+import { homedir, tmpdir } from "node:os"
+import { describeLogDirectory, resolveLogDirectory, type LogDirectory } from "./log-directory"
 
 const MAX_LOG_AGE_DAYS = 7
 const TAIL_LINES = 1000
@@ -15,34 +16,64 @@ const NET_LOG_SIZE = 20 * 1024 * 1024
 let root = ""
 let run = ""
 let netLogPath: string | undefined
+let directory: LogDirectory = { kind: "unavailable", attempted: [], reason: "logging has not been initialised" }
+// `write()` used to gate on `run`, which conflated "not initialised yet" with "no file destination".
+// Keep the pre-init guard, but let the console transport carry the run once the file leg is off.
+let initialised = false
 
 let logger: MainLogger
 export const getLogger = () => logger
 
+/** What happened to this run's log directory. `index.ts` reads it to decide whether to say so. */
+export const getLogDirectory = (): LogDirectory => directory
+
 export function initLogging() {
-  initRunDirectory()
-  log.transports.file.maxSize = 5 * 1024 * 1024
-  log.transports.file.resolvePathFn = (_vars, message) =>
-    join(
-      run,
-      `${safeLogName(message?.scope ?? (message?.variables?.processType === "renderer" ? "renderer" : "main"))}.log`,
-    )
+  directory = initRunDirectory()
+
+  if (directory.kind === "unavailable") {
+    // ⚠️ Do NOT leave the file transport pointing at `join("", "main.log")` — that resolves to the
+    // process cwd, which `index.ts` has set to the user's home. Scattering a log file across a
+    // stranger's home directory is exactly what AGENTS.md principle 11 forbids. Off is honest.
+    log.transports.file.level = false
+  } else {
+    log.transports.file.maxSize = 5 * 1024 * 1024
+    log.transports.file.resolvePathFn = (_vars, message) =>
+      join(
+        run,
+        `${safeLogName(message?.scope ?? (message?.variables?.processType === "renderer" ? "renderer" : "main"))}.log`,
+      )
+  }
+
   log.initialize({ preload: false, spyRendererConsole: true })
   initConsoleTransport()
   cleanup()
-  return (logger = log)
+  initialised = true
+  logger = log
+
+  const report = describeLogDirectory(directory)
+  if (report) write("logging", report.message, report.meta, report.level)
+  return logger
 }
 
 export function initCrashReporter() {
-  const dir = join(app.getPath("userData"), "Crashpad")
-  mkdirSync(dir, { recursive: true })
-  app.setPath("crashDumps", dir)
-  crashReporter.start({ uploadToServer: false, compress: true })
-  write("crash", "crash reporter started", { path: dir })
+  // Same shape as the log directory: an unguarded mkdirSync here died before any window existed.
+  try {
+    const dir = join(app.getPath("userData"), "Crashpad")
+    mkdirSync(dir, { recursive: true })
+    app.setPath("crashDumps", dir)
+    crashReporter.start({ uploadToServer: false, compress: true })
+    write("crash", "crash reporter started", { path: dir })
+  } catch (error) {
+    write("crash", "crash reporter unavailable", { error: String(error) }, "warn")
+  }
 }
 
 export async function startNetLog() {
   if (netLog.currentlyLogging) return
+  if (!run) {
+    write("network", "net log skipped — no writable log directory", undefined, "warn")
+    return
+  }
   netLogPath = join(run, "network.netlog")
   await netLog.startLogging(netLogPath, { captureMode: "default", maxFileSize: NET_LOG_SIZE })
   write("network", "net log started", { path: netLogPath })
@@ -78,7 +109,7 @@ export function write(
   extra?: Record<string, unknown>,
   level: "info" | "warn" | "error" = "info",
 ) {
-  if (!run) return
+  if (!initialised) return
   const scoped = log.scope(safeLogName(name))
   if (extra !== undefined) {
     scoped[level](message, extra)
@@ -98,10 +129,18 @@ export function tail(): string {
   }
 }
 
-function initRunDirectory() {
-  root = join(app.getPath("userData"), "logs")
-  run = join(root, stamp())
-  mkdirSync(run, { recursive: true })
+function initRunDirectory(): LogDirectory {
+  // The profile folder first; the OS temp dir second. Both are locations AGENTS.md principle 11
+  // allows NovaClaw to write to, and the second exists so an unwritable profile degrades to
+  // "logs land somewhere else and say so" instead of killing the process.
+  const result = resolveLogDirectory(
+    [join(app.getPath("userData"), "logs"), join(tmpdir(), "novaclaw-logs")],
+    stamp(),
+    (dir) => mkdirSync(dir, { recursive: true }),
+  )
+  root = result.kind === "unavailable" ? "" : result.root
+  run = result.kind === "unavailable" ? "" : result.run
+  return result
 }
 
 function stamp() {
@@ -116,10 +155,27 @@ function safeLogName(name: string) {
 }
 
 function cleanup() {
-  const dir = root || dirname(log.transports.file.getFile().path)
+  // ⚠️ Both `getFile()` and `readdirSync` throw on an unwritable/absent profile folder, and this
+  // runs inside initLogging — i.e. before the logger exists and before any window does. Retiring
+  // old logs is housekeeping; it must never be the reason the app fails to start.
+  let dir: string
+  try {
+    dir = root || dirname(log.transports.file.getFile().path)
+  } catch {
+    return
+  }
+  if (!dir) return
+
   const cutoff = Date.now() - MAX_LOG_AGE_DAYS * 24 * 60 * 60 * 1000
 
-  for (const entry of readdirSync(dir)) {
+  let entries: string[]
+  try {
+    entries = readdirSync(dir)
+  } catch {
+    return
+  }
+
+  for (const entry of entries) {
     const file = join(dir, entry)
     try {
       const info = statSync(file)

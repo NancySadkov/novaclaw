@@ -26,6 +26,7 @@ import { render } from "solid-js/web"
 import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
 import { initializationData, initializationReady } from "./initialization"
+import { splashMessageKey, splashPhase, type SplashPhase } from "./splash"
 import { setPinchZoomEnabled, webviewZoom } from "./webview-zoom"
 import { availableStartupServer, readyWslConnections } from "./wsl/connections"
 import "./styles.css"
@@ -297,9 +298,23 @@ render(() => {
 
   function App() {
     const wslServers = useWslServers()
+    // The main process now opens this window immediately, so the splash is what a user sees while
+    // the local server comes up — including when it never does. Say which it is.
+    const [phase, setPhase] = createSignal<SplashPhase>("starting")
+    onMount(() => {
+      const startedAt = Date.now()
+      const timer = setInterval(() => setPhase(splashPhase(Date.now() - startedAt)), 1000)
+      onCleanup(() => clearInterval(timer))
+    })
     const splash = (
-      <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
-        <img src={publicAssetUrl("/logo.png")} alt="NovaClaw" draggable={false} class="w-20 h-20 opacity-80 animate-pulse select-none" />
+      <div class="h-dvh w-screen flex flex-col items-center justify-center gap-6 bg-background-base">
+        <img
+          src={publicAssetUrl("/logo.png")}
+          alt="NovaClaw"
+          draggable={false}
+          class="w-20 h-20 opacity-80 animate-pulse select-none"
+        />
+        <p class="max-w-80 px-6 text-center text-12-regular text-text-muted">{t(splashMessageKey(phase()))}</p>
       </div>
     )
 
