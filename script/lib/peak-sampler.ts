@@ -32,6 +32,17 @@ export interface Sample {
   readonly treeMb?: number
   /** Peak host commit charge as a percentage of the limit in the window, or undefined. */
   readonly hostCommitPct?: number
+  /**
+   * How many timeline rows landed inside the window.
+   *
+   * ⚠️ **Without this, `treeMb === undefined` is two different facts wearing one face:** the sampler
+   * never ticked here (dead child, unreadable file, a unit shorter than the interval), or it ticked
+   * and the caller threw the number away. Measured 2026-08-07: `core` recorded `peakMb: null` on
+   * three consecutive gates and the cause was the SECOND — 565 ticks, peak 16 758 MB — while the row
+   * read exactly like the first. `ticks` is what tells them apart, and it is on the Sample rather
+   * than inferred by the caller because only this function knows.
+   */
+  readonly ticks: number
 }
 
 export interface Sampler {
@@ -42,7 +53,7 @@ export interface Sampler {
 }
 
 /** A sampler that measures nothing — used when the platform probe is unavailable. */
-const INERT: Sampler = { window: () => ({}), stop: () => {} }
+const INERT: Sampler = { window: () => ({ ticks: 0 }), stop: () => {} }
 
 /** 200 ms: fast enough that a sub-second unit still lands two or three ticks. */
 const INTERVAL_MS = 200
@@ -133,21 +144,24 @@ export function start(): Sampler {
     window: (fromMs, toMs) => {
       let treeMb = 0
       let hostCommitPct = 0
-      let seen = false
+      let ticks = 0
       try {
         for (const line of readFileSync(file, "utf8").split("\n")) {
           const [at, tree, host] = line.trim().split(/\s+/)
           const ts = Number(at)
           if (!Number.isFinite(ts) || ts < fromMs || ts > toMs) continue
-          seen = true
+          ticks++
           treeMb = Math.max(treeMb, Number(String(tree).replace(/[^\d]/g, "")) || 0)
           hostCommitPct = Math.max(hostCommitPct, Number(String(host).replace(/[^\d]/g, "")) || 0)
         }
       } catch {
-        return {}
+        // An unreadable timeline is indistinguishable from an empty one to the caller, and both are
+        // honestly "no tick reached me" — the distinction that mattered is measured-vs-discarded.
+        return { ticks: 0 }
       }
-      if (!seen) return {}
+      if (ticks === 0) return { ticks: 0 }
       return {
+        ticks,
         ...(treeMb > 0 ? { treeMb } : {}),
         ...(hostCommitPct > 0 ? { hostCommitPct } : {}),
       }

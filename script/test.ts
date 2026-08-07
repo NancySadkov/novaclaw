@@ -98,6 +98,19 @@ const CAPTURE_MAX_BYTES = 64 * 1024 * 1024
 const IMPLAUSIBLE_PEAK_MB = 8192
 
 /**
+ * Why a unit has no recorded peak.
+ *
+ * 🔴 **A bare `undefined` conflated two opposite facts and hid a live regression for three gates.**
+ * `core` reported no peak on 2026-08-07 across three consecutive full runs, and the reason was
+ * `discarded`, never `unsampled`: the sampler took 565 ticks in its window and peaked at 16 758 MB,
+ * i.e. 2.05x this ceiling (core's OWN process was 7 381 MB against a 1 007 MB profile; the rest was
+ * its own flock workers, which are `bun` because the tests spawn `process.execPath`). "Nothing was
+ * measured" and "something enormous was measured and thrown away" want opposite responses, and only
+ * the second is itself a finding — so the run must say which.
+ */
+type PeakStatus = "measured" | "discarded" | "unsampled"
+
+/**
  * `packages/novaclaw/test/` subdirs promoted OUT of the `--full` tier into fast-tier run units of their
  * own. This is the ONE list: the entries below are generated from it, and `subUnits()` skips it, so
  * `--full` cannot run a promoted subdir twice. ⚠️ These may not all pass on Windows — finding that out
@@ -230,6 +243,10 @@ type Result = {
   failing: string[]
   /** Peak MB this unit's processes held, when the sampler could measure it. Feeds the peak profile. */
   peakMb?: number
+  /** Which of the three states above produced (or withheld) `peakMb`. */
+  peakStatus?: PeakStatus
+  /** What the sampler actually read, INCLUDING a reading that `peakMb` refused. See `PeakStatus`. */
+  sampledMb?: number
   /** How many shards this unit was split into, when memory pressure forced the degraded rung. */
   shards?: number
 }
@@ -460,7 +477,9 @@ function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], wallcl
         `   flushes nothing. Silence here is a property of the kill, not evidence the child was quiet.)\n`,
     )
 
-  const sample = kind === "test" ? sampler.window(start, Date.now()) : {}
+  // Annotated, not inferred: the false branch is a bare literal, and letting the union widen is how a
+  // later field silently stops being reachable on one arm.
+  const sample: PeakSampler.Sample = kind === "test" ? sampler.window(start, Date.now()) : { ticks: 0 }
 
   let note = ""
   if (timedOut) {
@@ -489,14 +508,21 @@ function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], wallcl
   // bun inflates it — once, measured, `core` reported 12 014 MB against a hand-measured ~1 000. A
   // number that wrong feeds the ladder, so refusing to record it is the honest outcome; the profile
   // simply stays as it was and the unit plans with its previous figure or the generous default.
-  const believable = sample.treeMb !== undefined && sample.treeMb <= IMPLAUSIBLE_PEAK_MB
+  //
+  // ⚠️ **The discard is no longer silent.** Dropping the number and leaving no trace is what made
+  // `core`'s 16 758 MB read as "not measured" for three gates; the reading is reported as
+  // `sampledMb` whatever the verdict, and only `peakMb` is withheld.
+  const peakStatus: PeakStatus =
+    sample.treeMb === undefined ? "unsampled" : sample.treeMb > IMPLAUSIBLE_PEAK_MB ? "discarded" : "measured"
   return {
     ok,
     ms,
     note,
     captured,
     upstreamCrash: kind === "test" && !ok && !timedOut && isUpstreamWatcherCrash(proc.status, captured),
-    ...(believable ? { peakMb: sample.treeMb } : {}),
+    peakStatus,
+    ...(sample.treeMb !== undefined ? { sampledMb: sample.treeMb } : {}),
+    ...(peakStatus === "measured" ? { peakMb: sample.treeMb } : {}),
   }
 }
 
@@ -568,6 +594,14 @@ function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs:
       ? undefined
       : perShardSkips.reduce<number>((a, s) => a + (s ?? 0), 0)
   const peaks = runs.map((r) => r.peakMb).filter((mb): mb is number => mb !== undefined)
+  const sampled = runs.map((r) => r.sampledMb).filter((mb): mb is number => mb !== undefined)
+  // A shard that measured beats one that did not, and a DISCARD beats silence — the ranking is by how
+  // much the reader learns, so a unit is only "unsampled" when no shard saw anything at all.
+  const peakStatus: PeakStatus = peaks.length
+    ? "measured"
+    : runs.some((r) => r.peakStatus === "discarded")
+      ? "discarded"
+      : "unsampled"
 
   // Only a bun test run has a skip count or a parseable failure list. Reading tsgo's output with either
   // parser would invent numbers, so a typecheck unit reports neither and both ledgers below ignore it.
@@ -583,6 +617,8 @@ function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs:
     skipped,
     failing: kind === "test" ? [...new Set(runs.flatMap((r) => readFailingNames(r.captured)))] : [],
     ...(peaks.length ? { peakMb: Math.max(...peaks) } : {}),
+    ...(kind === "test" ? { peakStatus } : {}),
+    ...(sampled.length ? { sampledMb: Math.max(...sampled) } : {}),
     ...(sharded ? { shards: sharded } : {}),
   })
 
@@ -782,6 +818,30 @@ if (measured.length) {
           : ""
     process.stdout.write(`  ${r.name.padEnd(30)} ${String(r.peakMb).padStart(5)}${drift}${from}\n`)
   }
+}
+
+/**
+ * ─── the units with NO peak, and WHICH kind of no ──────────────────────────────────────────────────
+ *
+ * 🔴 The block above prints only what it measured, so a unit that produced no number simply vanished
+ * from it — and `core`, the unit the whole profile exists to watch, vanished from three consecutive
+ * gates while its sampler was working perfectly. A discard is a MEASUREMENT above a ceiling; it is
+ * strictly more information than a green row, and printing nothing was ruling 2 at the reporting
+ * layer (a fault described falsely — as an absence).
+ */
+const unmeasured = results.filter((r) => r.kind === "test" && (r.peakStatus ?? "unsampled") !== "measured")
+if (unmeasured.length) {
+  process.stdout.write(`\n\x1b[1m── peak NOT recorded ──\x1b[0m\n`)
+  for (const r of unmeasured)
+    process.stdout.write(
+      r.peakStatus === "discarded"
+        ? `  ${r.name.padEnd(30)} \x1b[33mDISCARDED\x1b[0m  sampled ${r.sampledMb} MB, over the ` +
+            `${IMPLAUSIBLE_PEAK_MB} MB ceiling` +
+            `${peakProfile[r.name] === undefined ? "" : ` (profile ${peakProfile[r.name]})`}\n` +
+            `  ${" ".repeat(30)} the sampler WORKED — this is a reading, not an absence. Either this unit\n` +
+            `  ${" ".repeat(30)} really costs that, or the sum caught \`bun\` processes that are not it.\n`
+        : `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  no timeline row landed in this unit's window\n`,
+    )
 }
 
 /**

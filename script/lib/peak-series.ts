@@ -49,9 +49,24 @@ export interface Observation {
   readonly ms: number
   /** Absent when the sampler caught nothing, or when the sample was discarded as implausible. */
   readonly peakMb?: number
+  /** Which of those two it was. Absent on rows built before the distinction existed. */
+  readonly peakStatus?: PeakStatus
+  /** What the sampler read, including a reading `peakMb` refused. */
+  readonly sampledMb?: number
   /** Absent unless memory pressure forced the degraded rung. */
   readonly shards?: number
 }
+
+/**
+ * Why a row has no `peakMb`.
+ *
+ * 🔴 **This is the field the file was missing, and its absence cost three gates.** `core` wrote
+ * `peakMb: null` on 2026-08-07 at 06:28, 07:26 and 10:02, and every reader took that for "the
+ * sampler saw nothing". It was `discarded`: 565 ticks, peak **16 758 MB** against a **1 007 MB**
+ * profile. A null that means *nothing was observed* and a null that means *17 GB was observed and
+ * rejected* are opposite facts, and the second is the finding.
+ */
+export type PeakStatus = "measured" | "discarded" | "unsampled"
 
 export interface Row {
   /** The RUN stamp — identical across every row of one invocation, so a run is one `grep`. */
@@ -64,8 +79,12 @@ export interface Row {
   readonly ms: number
   /** 1 for a whole run. A sharded peak is one shard's, which measures close to the whole. */
   readonly shards: number
-  /** Observed peak, or null when nothing believable was sampled. */
+  /** Observed peak, or null when nothing believable was sampled. `peakStatus` says which. */
   readonly peakMb: number | null
+  /** `measured` | `discarded` | `unsampled` — never infer this from `peakMb === null`. */
+  readonly peakStatus: PeakStatus
+  /** The raw sampled figure, present even when it was rejected. Null when nothing was sampled. */
+  readonly sampledMb: number | null
   /** The hand-maintained profile figure, or null when this unit is not in it yet. */
   readonly profileMb: number | null
   /** `peakMb - profileMb`, in MB. Null whenever either side is. */
@@ -104,6 +123,11 @@ export function buildRow(
   // dividing by it. `readPeaks()` already filters these out; this holds if that ever stops being true.
   const profileMb = typeof fromProfile === "number" && Number.isFinite(fromProfile) && fromProfile > 0 ? fromProfile : null
   const comparable = peakMb !== null && profileMb !== null
+  const sampledMb = Number.isFinite(observation.sampledMb) ? (observation.sampledMb as number) : null
+  // Derived, never guessed: a caller that predates the field still gets a row that is TRUE, because
+  // "there is a peak" does imply it was measured. Only the two no-peak cases need telling apart, and
+  // a caller who cannot tell them apart says `unsampled` — the weaker, non-alarming claim.
+  const peakStatus: PeakStatus = observation.peakStatus ?? (peakMb !== null ? "measured" : "unsampled")
   return {
     run,
     scope,
@@ -113,6 +137,8 @@ export function buildRow(
     ms: observation.ms,
     shards: observation.shards ?? 1,
     peakMb,
+    peakStatus,
+    sampledMb,
     profileMb,
     deltaMb: comparable ? peakMb - profileMb : null,
     ratio: comparable ? round3(peakMb / profileMb) : null,
