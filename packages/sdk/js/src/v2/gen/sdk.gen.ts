@@ -545,7 +545,7 @@ export class App extends HeyApiClient {
   /**
    * Write log
    *
-   * Write a log entry to the server logs with specified level and metadata.
+   * Report a CLIENT process's own fault into this instance's log, so UI and server faults land in one file under one run id. Not a general write endpoint: the level and the message text of the line are the instance's, caller metadata is namespaced under 'client.extra.', and posts are rate limited (240 burst, 5/s sustained) so a client in a crash loop cannot evict the history that explains it. A dropped post answers false.
    */
   public log<ThrowOnError extends boolean = false>(
     parameters?: {

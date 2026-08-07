@@ -7336,7 +7336,7 @@ export type AuthSetResponse = AuthSetResponses[keyof AuthSetResponses]
 export type AppLogData = {
   body?: {
     /**
-     * Service name for the log entry
+     * Which client emitted this — e.g. 'renderer', 'desktop-main'. Reduced to [A-Za-z0-9._-] and 64 characters: it is a grouping label from a small vocabulary, not free text.
      */
     service: string
     /**
@@ -7344,7 +7344,7 @@ export type AppLogData = {
      */
     level: "debug" | "info" | "error" | "warn"
     /**
-     * Log message
+     * Log message. Truncated at 4000 characters, never rejected.
      */
     message: string
     extra?: {
@@ -7370,7 +7370,7 @@ export type AppLogError = AppLogErrors[keyof AppLogErrors]
 
 export type AppLogResponses = {
   /**
-   * Log entry written successfully
+   * true when the entry was written; false when it was dropped by the rate limit. Never an exception: logging must not be able to take the instance down.
    */
   200: boolean
 }

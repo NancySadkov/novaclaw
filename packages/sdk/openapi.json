@@ -145,12 +145,12 @@
         ],
         "responses": {
           "200": {
-            "description": "Log entry written successfully",
+            "description": "true when the entry was written; false when it was dropped by the rate limit. Never an exception: logging must not be able to take the instance down.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "boolean",
-                  "description": "Log entry written successfully"
+                  "description": "true when the entry was written; false when it was dropped by the rate limit. Never an exception: logging must not be able to take the instance down."
                 }
               }
             }
@@ -173,7 +173,7 @@
             }
           }
         },
-        "description": "Write a log entry to the server logs with specified level and metadata.",
+        "description": "Report a CLIENT process's own fault into this instance's log, so UI and server faults land in one file under one run id. Not a general write endpoint: the level and the message text of the line are the instance's, caller metadata is namespaced under 'client.extra.', and posts are rate limited (240 burst, 5/s sustained) so a client in a crash loop cannot evict the history that explains it. A dropped post answers false.",
         "summary": "Write log",
         "requestBody": {
           "content": {
@@ -183,7 +183,7 @@
                 "properties": {
                   "service": {
                     "type": "string",
-                    "description": "Service name for the log entry"
+                    "description": "Which client emitted this — e.g. 'renderer', 'desktop-main'. Reduced to [A-Za-z0-9._-] and 64 characters: it is a grouping label from a small vocabulary, not free text."
                   },
                   "level": {
                     "type": "string",
@@ -192,7 +192,7 @@
                   },
                   "message": {
                     "type": "string",
-                    "description": "Log message"
+                    "description": "Log message. Truncated at 4000 characters, never rejected."
                   },
                   "extra": {
                     "type": "object"
