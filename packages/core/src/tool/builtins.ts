@@ -13,6 +13,7 @@ import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
 import { JsTool } from "./js"
 import { KbTool } from "./kb"
+import { LogTool } from "./log"
 import { MessengerTool } from "./messenger"
 import { PermissionTool } from "./permission"
 import { ProfileTool } from "./profile"
@@ -73,6 +74,9 @@ export const locationLayer = Layer.mergeAll(
   GrepTool.layer,
   JsTool.layer,
   KbTool.layer,
+  // DEFERRED (see log.ts): a diagnostic reached after something failed, not a per-turn capability,
+  // so it costs no prompt tokens until tool_search discloses it. Same call as resource_status.
+  LogTool.layer,
   MessengerTool.layer,
   // Auto mode (`tool/permission.ts`). Registered under its own name with no `Tool.withPermission`
   // wrap, for the same reason `configure` and `recipe` are: the name fallback in `tool.ts` already
@@ -126,6 +130,7 @@ export const node = makeLocationNode({
     GrepTool.node,
     JsTool.node,
     KbTool.node,
+    LogTool.node,
     MessengerTool.node,
     PermissionTool.node,
     ProfileTool.node,
