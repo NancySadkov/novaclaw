@@ -39,6 +39,9 @@ describe("Worktree.remove", () => {
 
         const refused = yield* svc.remove({ directory: dir }).pipe(Effect.flip)
         expect(refused._tag).toBe("WorktreeDirtyError")
+        // The directory travels on the error, not just in the sentence: a client offering
+        // "delete anyway" needs to know WHICH worktree without parsing the message.
+        expect((refused as { directory?: string }).directory).toBe(dir)
         // The directory is still there — the refusal is not a partial removal reported as an error.
         expect(yield* Effect.promise(() => fs.stat(dir).then(() => true).catch(() => false))).toBe(true)
 

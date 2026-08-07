@@ -2143,6 +2143,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "WorktreeDirtyError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorktreeDirtyError"
+                }
+              }
+            }
           }
         },
         "description": "Remove a git worktree and delete its branch.",
@@ -23535,7 +23545,6 @@
               "WorktreeCreateFailedError",
               "WorktreeStartCommandFailedError",
               "WorktreeRemoveFailedError",
-              "WorktreeDirtyError",
               "WorktreeResetFailedError",
               "WorktreeListFailedError"
             ]
@@ -23594,6 +23603,34 @@
           }
         },
         "required": ["directory"],
+        "additionalProperties": false
+      },
+      "WorktreeDirtyError": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": ["WorktreeDirtyError"]
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "directory": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "forceRequired": {
+                "type": "boolean",
+                "enum": [true]
+              }
+            },
+            "required": ["directory", "message", "forceRequired"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["name", "data"],
         "additionalProperties": false
       },
       "WorktreeResetInput": {

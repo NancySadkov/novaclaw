@@ -9,7 +9,7 @@ import { Worktree } from "@/worktree"
 import { Effect, Layer } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { SessionListQuery, ToolListQuery, WorktreeApiError } from "../groups/experimental"
+import { SessionListQuery, ToolListQuery, WorktreeApiError, WorktreeDirtyApiError } from "../groups/experimental"
 
 function mapWorktreeError<A, R>(self: Effect.Effect<A, Worktree.Error, R>) {
   return self.pipe(
@@ -62,7 +62,20 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     const worktreeRemove = Effect.fn("ExperimentalHttpApi.worktreeRemove")(function* (input: {
       payload: Worktree.RemoveInput
     }) {
-      yield* mapWorktreeError(worktreeSvc.remove(input.payload))
+      // 🔴 The dirty refusal is NOT folded into `mapWorktreeError`'s 400. It is a 409 carrying
+      // `forceRequired: true`, so a client can offer "delete anyway" instead of showing an error —
+      // the difference between a choice and a dead end, which is what the vision's "never breaks in
+      // your hands" is about at the API boundary.
+      yield* worktreeSvc.remove(input.payload).pipe(
+        Effect.mapError((error) =>
+          error._tag === "WorktreeDirtyError"
+            ? new WorktreeDirtyApiError({
+                name: "WorktreeDirtyError",
+                data: { directory: error.directory, message: error.message, forceRequired: true },
+              })
+            : new WorktreeApiError({ name: error._tag, data: { message: error.message } }),
+        ),
+      )
       return true
     })
 

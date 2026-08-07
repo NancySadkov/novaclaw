@@ -114,7 +114,6 @@ export type Error =
   | CreateFailedError
   | StartCommandFailedError
   | RemoveFailedError
-  | DirtyWorktreeError
   | ResetFailedError
   | ListFailedError
 
@@ -151,7 +150,13 @@ export interface Interface {
   readonly createFromInfo: (info: Info, startCommand?: string) => Effect.Effect<void, Error>
   readonly create: (input?: CreateInput) => Effect.Effect<Info, Error>
   readonly list: () => Effect.Effect<(Omit<Info, "branch"> & { branch?: string })[], Error>
-  readonly remove: (input: RemoveInput) => Effect.Effect<boolean, Error>
+  /**
+   * ⚠️ `DirtyWorktreeError` is declared HERE and deliberately kept out of the shared `Error` union:
+   * only a removal can be refused for holding uncommitted work. Widening the union would force every
+   * caller of `create`/`reset`/`list` to handle a case they cannot produce, and — worse — would let a
+   * generic error mapper answer "worktree is dirty" for an operation where that is meaningless.
+   */
+  readonly remove: (input: RemoveInput) => Effect.Effect<boolean, Error | DirtyWorktreeError>
   readonly reset: (input: ResetInput) => Effect.Effect<boolean, Error>
 }
 
@@ -462,9 +467,14 @@ export const layer: Layer.Layer<
       // untracked files, use --force to delete it"; that text is git's, so match on the stable part.
       if (removed.code !== 0 && input.force !== true && /use --force|not empty|contains modified/i.test(removed.stderr || removed.text || "")) {
         return yield* new DirtyWorktreeError({
-          directory: entry.path,
+          // ⚠️ The CALLER's path, not git's `entry.path`. git reports worktrees with forward slashes
+          // on Windows, so `entry.path` differs from the string the client passed in — and this field
+          // exists so a client can retry `remove({directory, force: true})` with it. Handing back a
+          // value they did not send makes the round trip a guess. (Caught by the test asserting the
+          // field equals the requested directory; the message keeps git's form out of it too.)
+          directory: input.directory,
           message:
-            `Worktree has uncommitted changes or untracked files: ${entry.path}. ` +
+            `Worktree has uncommitted changes or untracked files: ${input.directory}. ` +
             `Removing it would discard that work — retry with force to delete it anyway.`,
         })
       }

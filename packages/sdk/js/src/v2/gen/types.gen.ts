@@ -1264,7 +1264,6 @@ export type WorktreeError = {
     | "WorktreeCreateFailedError"
     | "WorktreeStartCommandFailedError"
     | "WorktreeRemoveFailedError"
-    | "WorktreeDirtyError"
     | "WorktreeResetFailedError"
     | "WorktreeListFailedError"
   data: {
@@ -1289,6 +1288,15 @@ export type Worktree = {
 export type WorktreeRemoveInput = {
   directory: string
   force?: boolean
+}
+
+export type WorktreeDirtyError = {
+  name: "WorktreeDirtyError"
+  data: {
+    directory: string
+    message: string
+    forceRequired: true
+  }
 }
 
 export type WorktreeResetInput = {
@@ -7917,6 +7925,10 @@ export type WorktreeRemoveErrors = {
    * WorktreeError | InvalidRequestError
    */
   400: WorktreeError | InvalidRequestError
+  /**
+   * WorktreeDirtyError
+   */
+  409: WorktreeDirtyError
 }
 
 export type WorktreeRemoveError = WorktreeRemoveErrors[keyof WorktreeRemoveErrors]

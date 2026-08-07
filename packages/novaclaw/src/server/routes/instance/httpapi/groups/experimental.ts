@@ -35,14 +35,36 @@ const WorktreeErrorName = Schema.Union([
   Schema.Literal("WorktreeCreateFailedError"),
   Schema.Literal("WorktreeStartCommandFailedError"),
   Schema.Literal("WorktreeRemoveFailedError"),
-  // The SAFE refusal — a worktree holding uncommitted work, removable by retrying with `force`.
-  // ⚠️ It shares this envelope's 400 with the genuine failures, which is adequate but not ideal: a
-  // client cannot tell "you must confirm" from "it broke" without reading `name`. The pre-2.0 surface
-  // answered `400 {forceRequired: true}` for exactly this and clients keyed on that field.
-  Schema.Literal("WorktreeDirtyError"),
   Schema.Literal("WorktreeResetFailedError"),
   Schema.Literal("WorktreeListFailedError"),
 ])
+/**
+ * 🔴 **The refusable case, with its own STATUS — a client must be able to tell "confirm this" from
+ * "this broke" without parsing an error name.**
+ *
+ * `409 Conflict` is the honest code: the request cannot be applied to the current state, and the
+ * caller can make it applicable — here by retrying with `force`. A `400` says the request was
+ * malformed, which this one is not.
+ *
+ * ⚠️ Split out on 2026-08-07 when `worktree remove` stopped destroying uncommitted work by default.
+ * The refusal initially shared `WorktreeApiError`'s 400 envelope with genuine failures, so a UI could
+ * not offer "delete anyway" without string-matching `name` — and the pre-2.0 surface it replaced had
+ * `400 {forceRequired: true}`, a field clients keyed on. Losing that distinction is how a confirmable
+ * refusal turns into an error message nobody can act on.
+ */
+export class WorktreeDirtyApiError extends Schema.ErrorClass<WorktreeDirtyApiError>("WorktreeDirtyError")(
+  {
+    name: Schema.Literal("WorktreeDirtyError"),
+    data: Schema.Struct({
+      directory: Schema.String,
+      message: Schema.String,
+      /** Machine-checkable "retry with force" — the affordance the pre-2.0 surface exposed. */
+      forceRequired: Schema.Literal(true),
+    }),
+  },
+  { httpApiStatus: 409 },
+) {}
+
 export class WorktreeApiError extends Schema.ErrorClass<WorktreeApiError>("WorktreeError")(
   {
     name: WorktreeErrorName,
@@ -124,7 +146,8 @@ export const ExperimentalApi = HttpApi.make("experimental")
           query: WorkspaceRoutingQuery,
           payload: Worktree.RemoveInput,
           success: described(Schema.Boolean, "Worktree removed"),
-          error: WorktreeApiError,
+          // Two error types: the refusable 409 and everything else. Only `remove` can be refused.
+          error: [WorktreeApiError, WorktreeDirtyApiError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "worktree.remove",
