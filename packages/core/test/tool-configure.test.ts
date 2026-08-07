@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import fs from "node:fs"
+import path from "node:path"
 import { Effect, Layer } from "effect"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { Config } from "@novaclaw/core/config"
@@ -243,6 +245,89 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
     expect(ConfigureTool.TIER_ACTION.privileged).toBe("configure_privileged")
     expect(ConfigureTool.TIER_ACTION.consequential).not.toBe(ConfigureTool.TIER_ACTION.privileged)
     expect(Object.keys(ConfigureTool.TIER_ACTION).sort()).toEqual(["consequential", "privileged"])
+  })
+
+  test("the tool's own name IS the consequential action — one string, now spelled in two files", () => {
+    // `TIER_ACTION` used to be built from `name` in this very module, so the two could not diverge.
+    // The tier table is a LEAF now (see below) and may not import the tool, so the derivation became
+    // two literals — and a literal in two files is exactly what drifts when somebody renames one.
+    // A card that asks for `configure` while the registry spends `config` would gate nothing.
+    expect(ConfigureTool.TIER_ACTION.consequential).toBe(ConfigureTool.name)
+    expect(ConfigureTool.TIER_ACTION.privileged).toBe(`${ConfigureTool.name}_privileged`)
+    // NEGATIVE CONTROL: the two lines above would also pass if `name` were the empty string and both
+    // actions were derived from it, which is the one way this pin could be true and useless.
+    expect(ConfigureTool.name).toBe("configure")
+  })
+})
+
+// ═══ 1b. the tier table is a LEAF — the source ratchet under a defect `tsgo` cannot see ═══════════
+
+/**
+ * **`config-tier.ts` must never gain a runtime import, and `config-projection.ts` must never import
+ * this tool.** Ruling 1: the invariant this pins is invisible to the typechecker and to any test that
+ * happens to import in the lucky order, which is precisely how it shipped.
+ *
+ * ⚠️ **Measured 2026-08-07, twice.** While `KEY_TIERS`/`tierOf`/`REDACTED` lived in `tool/configure.ts`
+ * and the tool statically imported `config-projection.ts`, the two files closed an ESM cycle that was
+ * safe in ONE import order only: a module importing **`tool/configure` first** died with
+ * *"ReferenceError: Cannot access 'REDACTED' before initialization"* at `config-projection.ts:580`,
+ * while one importing the projection first ran clean — and **`tsgo --noEmit` was green in both
+ * cases**. The fix was to lift the shared table into `config-tier.ts`, whose only import is
+ * `type`-only, so it has no runtime edge and cannot participate in a cycle at all.
+ *
+ * ⚠️ A regex over source counts PROSE, and this file's own header names the very import it forbids —
+ * so comments and template/quoted text are stripped before anything is matched. A guard that reads
+ * its own warning as a violation is the failure mode this repo hit three times in one day.
+ */
+describe("the ESM cycle stays gone: config-tier.ts is a leaf", () => {
+  const srcDir = path.join(import.meta.dir, "..", "src")
+
+  /** Source with block comments, line comments and string bodies removed — imports survive, prose does not. */
+  const codeOf = (file: string): string =>
+    fs
+      .readFileSync(path.join(srcDir, file), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1")
+
+  /** Every module specifier the file imports AT RUNTIME. `import type` carries no runtime edge. */
+  const runtimeImports = (file: string): string[] => {
+    const code = codeOf(file)
+    const found: string[] = []
+    for (const match of code.matchAll(/(?:^|\n)\s*import\s+([\s\S]*?)from\s*["']([^"']+)["']/g)) {
+      if (/^\s*type\s/.test(match[1]!)) continue
+      found.push(match[2]!)
+    }
+    // `export … from` is also a runtime edge; `export * as X from "./self"` is the house self-alias.
+    for (const match of code.matchAll(/(?:^|\n)\s*export\s+(?!type\b)([\s\S]*?)from\s*["']([^"']+)["']/g)) {
+      found.push(match[2]!)
+    }
+    return found
+  }
+
+  test("config-tier.ts imports NOTHING at runtime but itself", () => {
+    const imports = runtimeImports("config-tier.ts")
+    // Negative control on the scanner: it must actually find the self-alias, or an empty answer here
+    // would be what a BROKEN regex also returns and every assertion below would be vacuous.
+    expect(imports).toEqual(["./config-tier"])
+    // …and it must see the `import type` line it is required to ignore, so "no runtime edge" is a
+    // measurement about that line rather than a scanner that cannot read the file.
+    expect(codeOf("config-tier.ts")).toContain('import type { Config } from "./config"')
+  })
+
+  test("the scanner is not blind — it sees the edges the two consumers really have", () => {
+    // The positive control the test above needs: run the same function over files that DO import.
+    expect(runtimeImports("config-projection.ts")).toContain("./config-tier")
+    expect(runtimeImports("tool/configure.ts")).toContain("../config-tier")
+    // The static import that the extraction bought back. It is the whole point of the unit: before
+    // it, the tool resolved the projection through a dynamic `import()` inside its layer.
+    expect(runtimeImports("tool/configure.ts")).toContain("../config-projection")
+  })
+
+  test("config-projection.ts does not import the tool — the edge that closed the cycle", () => {
+    expect(runtimeImports("config-projection.ts")).not.toContain("./tool/configure")
+    // And the workaround is gone rather than merely unused: a dynamic import of the projection here
+    // would mean somebody re-created the cycle and papered over it a second time.
+    expect(codeOf("tool/configure.ts")).not.toContain('import("../config-projection")')
   })
 })
 

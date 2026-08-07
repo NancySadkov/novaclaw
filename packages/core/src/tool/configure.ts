@@ -58,56 +58,15 @@
  * write and the argument is stronger here: a wildcard "always" answered once for `tool_output` would
  * be a standing grant to rewrite `permissions` in every later session. Per-key is the honest price.
  *
- * ── UNCLASSIFIED ⇒ PRIVILEGED, STRUCTURALLY ────────────────────────────────────────────────────
+ * ── WHERE THE TABLE LIVES ──────────────────────────────────────────────────────────────────────
  *
- * `KEY_TIERS` is typed `Readonly<Record<keyof Config.Info, Tier>>` — the `SESSION_CONFIG_FIELDS`
- * idiom (`session/config-resolve.ts`) — so a new `Config.Info` field is a COMPILE error here until
- * somebody classifies it. That is one of three layers, because ruling 1 wants the invariant to hold
- * even when the first layer is bypassed:
- *  1. the `Record` type — a missing key does not compile;
- *  2. `tierOf()` answers `"privileged"` for any key it does not know, so an incomplete table is
- *     SAFE at runtime rather than open;
- *  3. `test/tool-configure.test.ts` compares the table against `Config.Info.fields` in BOTH
- *     directions and pins the three tiers by name, so a reclassification is a deliberate edit that
- *     shows up in a diff rather than a quiet widening.
- *
- * ── HOW A KEY IS PRICED ────────────────────────────────────────────────────────────────────────
- *
- * **A key's tier is the highest privilege ANY value it can carry commands.** The table is per
- * TOP-LEVEL key (ruling 4's "scope it per-key"), so a key with one dangerous leaf is dangerous:
- * `providers` would look operational if you only read `api.url`, but `providers.<id>.models.<id>.
- * prePrompt` is *"prepended to the system context"* (`config/provider.ts`), so the key carries a
- * prompt-text channel and is priced at the top tier.
- *
- * Privileged means the write can, by itself: (a) execute something on the host, (b) send user data
- * to a destination the write chooses, (c) put text into a future session's prompt, (d) change who
- * may do what — permissions, credentials, account tokens, the airgap, a consent flag — or (e) change
- * which binaries this instance runs. Consequential means none of those, but the instance behaves
- * differently afterwards in a way the user should get to see. Operational means neither.
- *
- * ⚠️ **The operational tier is the SHORT list, and that is the measurement, not a failure of nerve.**
- * *No count is written in this sentence on purpose.* It used to read "FIVE keys out of 44" — true the
- * day it was authored (`b5332b92f`, 2026-07-31) and false by 2026-08-07, because `context` and
- * `provider_connection` joined the tier and four more keys joined the schema, and prose does not
- * recompute. Re-derived 2026-08-07 it is **7 · 12 · 29 of 48**, and that number is written here only
- * as a dated observation, never as the source: `KEY_TIERS` below is the source, and
- * `test/tool-configure.test.ts` pins all three tiers BY NAME, so a re-pricing is a decision visible in
- * a diff and a recount is a `filter` rather than an edit. The config surface really is mostly
- * execution surfaces, prompt text and endpoint URLs — which is architectural review finding S2
- * (*"the config store is a code-execution surface every dimension modelled as data"*) restated as a
- * partition. The self-healing law is unharmed by that: it
- * demands that a repair be reachable BY ASKING AN AGENT rather than by editing a file, and a consent
- * card naming the key is the agent doing the repair with the user in the loop. What the law forbids
- * — "restart, hand-edit `novaclaw.jsonc`, rebuild" — is gone either way.
- *
- * ⚠️ **The endpoint keys were priced deliberately, not reflexively.** A hostile `baseURL` is not "a
- * setting"; every later turn POSTs the whole prompt — the user's code, files and recalled memories —
- * to the attacker's host, with the provider Authorization header attached. That is total data-plane
- * exfiltration against AGENTS.md's *"your data never egresses"*, so `providers`/`models`/`memory`/
- * `web_search` are privileged. `provider_presets` is NOT, and the distinction is real rather than
- * cosmetic: a preset changes no live provider — it "only shape[s] FUTURE imports"
- * (`config/provider-preset.ts`), and an import is a user-driven flow that shows the URL and asks for
- * a key. It is also the exact repair AGENTS.md names as its worked example.
+ * **`../config-tier.ts`** — `TIERS`, `TIER_ACTION`, `KEY_TIERS`, `tierOf` and `REDACTED`, re-exported
+ * from here so this module's surface is unchanged. Read it for how a key is priced, why the
+ * `Record<keyof Config.Info, Tier>` annotation is the ratchet, and why the operational tier is short.
+ * It is a LEAF with no runtime import at all, and that is load-bearing rather than tidy: this tool
+ * needs `config-projection.ts`, the projection needs the tiers, and while the two shared one file
+ * that was an ESM cycle safe in only one import order — measured, and invisible to `tsgo`. The
+ * ⚠️ at the head of `config-tier.ts` records the measurement; do not give that file a runtime import.
  *
  * ── WHAT THIS TOOL DELIBERATELY DOES NOT DO ────────────────────────────────────────────────────
  *
@@ -157,10 +116,6 @@
  * tools and we are past it; the closed-op-vocabulary shape (`kb`, `docs`) is the house pattern, and
  * `configure` is a DEFERRED core tool, so this costs **nothing** in the resident prompt — the
  * `location-layer.test.ts` ratchet measures the resident set and this is not in it.
- *
- * ⚠️ **It is not the tier enforcement for `PATCH /config`.** That surface has its own caller (a user
- * in Settings, or Import) and its own guard (`rejectUnknownConfigKeys`). This table would make that
- * work cheaper — it is per-key and it is exported — but wiring it there is a different unit.
  */
 export * as ConfigureTool from "./configure"
 
@@ -170,7 +125,9 @@ import { AgentConfigStore } from "../agent-config-store"
 import { CatalogStore } from "../catalog-store"
 import { CommandConfigStore } from "../command-config-store"
 import { Config } from "../config"
+import { ConfigProjection } from "../config-projection"
 import { ConfigStoreWrite } from "../config-store-write"
+import { KEY_TIERS, REDACTED, TIER_ACTION, TIERS, tierOf, type Tier } from "../config-tier"
 import { Database } from "../database/database"
 import { makeLocationNode } from "../effect/app-node"
 import { PermissionV2 } from "../permission"
@@ -182,172 +139,21 @@ import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
 
+/** ⚠️ The registered tool name is also the CONSEQUENTIAL tier's permission action
+ *  (`ConfigTier.TIER_ACTION.consequential`), and those two literals now live in two files — the tier
+ *  table is a leaf that may not import this module. `test/tool-configure.test.ts` pins the
+ *  relationship in both directions, so a rename of either is a test failure rather than a silent
+ *  split between the action a card asks for and the tool that spends it. */
 export const name = "configure"
 
 // ── the tiers ─────────────────────────────────────────────────────────────────────────────────
 
-export const TIERS = ["operational", "consequential", "privileged"] as const
-export type Tier = (typeof TIERS)[number]
-
-/** The permission action each GATED tier spends. `operational` is absent because it asserts nothing —
- *  that absence is the tier, and a reader looking for a third entry should find this sentence. */
-export const TIER_ACTION = {
-  consequential: name,
-  privileged: `${name}_privileged`,
-} as const satisfies Record<Exclude<Tier, "operational">, string>
-
 /**
- * **Every `Config.Info` key, priced.** See the header for the rule (a key's tier is the highest
- * privilege any value it can carry commands) and for what each tier costs.
- *
- * ⚠️ The `Record<keyof Config.Info, Tier>` annotation is the ratchet: a new config key does not
- * compile until it is classified here. Do not widen the type.
+ * Re-exported from `../config-tier.ts`, which OWNS them — see this file's header for why they had to
+ * leave. Every existing `ConfigureTool.KEY_TIERS` / `.tierOf` / `.REDACTED` caller keeps working, and
+ * a reader who lands here follows one hop to the table and its reasoning.
  */
-export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
-  // ── operational: no card ────────────────────────────────────────────────────────────────────
-  // Inert by construction: on `ConfigStoreWrite.NOT_ROUTED_KEYS`, so it is accepted and discarded,
-  // and no runtime reader consults it. It exists so the product's own export→import round trip works.
-  $schema: "operational",
-  // Image resize thresholds. Numbers and a boolean; no command, no endpoint, no text.
-  attachments: "operational",
-  // The session's own context-reclaim policy. `prune` MARKS rows already out of the model's context
-  // (`session/compaction-prune.ts`); it destroys no stored message, so "a read never destroys" holds.
-  compaction: "operational",
-  // Closed percentages governing what the agent sends to its own model; no text, endpoint,
-  // execution, egress, or destructive store action. Like compaction, this is self-repairable policy.
-  context: "operational",
-  // A bounded numeric liveness limit for the agent's own provider connection. It changes no
-  // endpoint, prompt, permission or host state, and is the self-healing escape hatch for a slow
-  // local model whose first event legitimately takes longer than the compiled default.
-  provider_connection: "operational",
-  // Pins in the directory picker's rail. Grepped 2026-07-31: the only consumers are
-  // `dialog-select-directory-v2.tsx` and `pages/files.tsx` — presentation, granting no access, and
-  // `config.ts` already documents the key as agent-editable for self-healing.
-  folder_bookmarks: "operational",
-  // The agent's own truncation budget. Raising it spends the agent's own context and nothing else.
-  tool_output: "operational",
-  // The DEVICE registry: endpoint origins grouped into one backend, for the scheduler's admission
-  // gate. It passes all four tests — an endpoint listed here is COMPARED against a model's own
-  // `api.url` and never called, nothing here is executed, nothing egresses, and no string reaches a
-  // prompt. A hostile entry can only over-group backends, which serializes turns (a throughput
-  // loss) rather than oversubscribing hardware, and is undone by deleting the entry.
-  devices: "operational",
-
-  // ── consequential: one card, savable per key ────────────────────────────────────────────────
-  // Sampling numbers plus an enable flag. The nudge TEXT is compiled, not configured.
-  affective: "consequential",
-  // Both provider filters can leave the instance with NO working model — and "at least one working
-  // model remains" is the self-healing law's own precondition, i.e. the one outage this tool could
-  // create that this tool could not then repair. Not privileged: no execution, no egress, no text.
-  disabled_providers: "consequential",
-  enabled_providers: "consequential",
-  // A closed enum of three. It selects a COMPILED prompt hint (`harness-config.ts` maps "normal" to
-  // `EXPERTISE_HINT`) and the UI's disclosure tier, so it changes a future prompt without being able
-  // to carry a single byte of attacker text — which is why it clears the fourth test and stops here.
-  expertise: "consequential",
-  // Selects which ALREADY-INSTALLED model every later turn runs on: it redirects the conversation to
-  // a different endpoint the user set up, and a bad value leaves nothing that answers.
-  model: "consequential",
-  // Changes no live provider — presets "only shape FUTURE imports", and an import is a user-driven
-  // flow that shows the URL and asks for a key. This is AGENTS.md's own worked repair example.
-  provider_presets: "consequential",
-  // ⚠️ Ruling 4's own annotation, already in `config.ts`: "CONSEQUENTIAL, never operational — an
-  // agent that can lower its own floor has exempted itself from the guard."
-  resource_pressure: "consequential",
-  // Turning snapshots off removes the user's undo/revert safety net. Same shape as lowering the
-  // resource floor: nothing runs, nothing leaves, but a guard the user relies on is gone.
-  snapshots: "consequential",
-  // Harness booleans and budgets (jh.md). No prompt text, no command, no endpoint.
-  strict: "consequential",
-  // Ordered booleans over ALREADY-REGISTERED tools. The table can change a model's working set or
-  // strand its repair tool, but registry permissions remain the final ceiling and cannot be widened.
-  tool_routing: "consequential",
-  // Real filesystem vs an app-private root — it decides what the product will browse at all.
-  virtualFs: "consequential",
-  // The FS watcher's ignore globs: it decides which file changes the product NOTICES, so a write
-  // here can make the agent's own edits invisible in the user's live view.
-  watcher: "consequential",
-
-  // ── privileged: one card each, never pre-grantable with a single `configure` rule ────────────
-  // Manuals the model pulls into its context on demand — ruling 4 names this key by itself.
-  adhoc_tools: "privileged",
-  // Markdown that BECOMES a system prompt, plus each agent's own permission ruleset and tool list.
-  agents: "privileged",
-  // Governs whether this instance downloads and runs new binaries; AGENTS.md gates the switch behind
-  // Developer mode.
-  autoupdate: "privileged",
-  // Markdown that becomes a prompt (slash commands).
-  commands: "privileged",
-  // Selection is authorship here: the default agent decides the system prompt AND the permission
-  // ruleset every future session opens with.
-  default_agent: "privileged",
-  // `experimental.policies` are provider allow/deny rules — a policy surface, evaluated in `catalog.ts`.
-  experimental: "privileged",
-  // `command: string[]`, executed over the user's files. An execution surface.
-  formatter: "privileged",
-  // Paths or URLs whose contents become ambient instructions in the prompt.
-  instructions: "privileged",
-  // A peer URL plus its token. Ruling 5: the peer token is ACCOUNT-EQUIVALENT, and `config.ts`
-  // documents the entry as granting full API access — sessions, registry, config.
-  instances: "privileged",
-  // `prompt` and `interjection` are text steered into a running session; `model` picks the judge.
-  introspection: "privileged",
-  // Chooses the URL and expected digest of binaries/models Nova downloads and executes.
-  local_model_catalog: "privileged",
-  // `mcp.servers` spawns a child process — ruling 4 names it as an execution surface.
-  mcp: "privileged",
-  // `memory.embedding.url` is the endpoint the user's own memories are POSTed to for embedding.
-  memory: "privileged",
-  // The flat models-primary map: every entry carries its own endpoint `url` AND a `prePrompt` that is
-  // prepended to the system context. Both halves are top-tier on their own.
-  models: "privileged",
-  // The airgap itself. Turning it off RELEASES the egress guard, which is the one switch that makes
-  // every other egress possible.
-  offline: "privileged",
-  // The gate itself. Nothing else on this list is worth much if an agent can rewrite this one.
-  permissions: "privileged",
-  // Prepended to EVERY agent's system prompt. Ruling 4 names it.
-  persona: "privileged",
-  // `npm.add` + `import()` — outside code in our process. Ruling 5 is retiring this arm entirely.
-  plugins: "privileged",
-  // Endpoint URLs (egress of every prompt and the Authorization header) plus per-model `prePrompt`,
-  // which `config/provider.ts` describes as "prepended to the system context".
-  providers: "privileged",
-  // `quality.commands` are command lines the runner executes. An execution surface (S2 names it).
-  quality: "privileged",
-  // Named local directories or GIT REPOSITORIES: a remote entry fetches, writes to disk, and its
-  // content becomes context.
-  references: "privileged",
-  // `password` is this instance's own incoming API token; `hostname` and `cors` decide who can reach
-  // it at all.
-  server: "privileged",
-  // The shell every terminal and `bash` call runs through. Ruling 4 names it.
-  shell: "privileged",
-  // Which SCREEN the `computer` tool drives. An execution surface in ruling 4's sense, and the
-  // sharpest one we have: moving it from a sandbox display to `:0` promotes the agent from clicking
-  // inside a disposable container to clicking on the operator's real desktop -- which is P6, and the
-  // build order's sequence law puts P6 behind the P4 guardrails. A value, but not an inert one.
-  computer: "privileged",
-  // Paths or URLs skills are discovered from — a skill is instructions the model reads, and a URL
-  // entry fetches them from a third party.
-  skills: "privileged",
-  // A consent flag for outbound reporting. Flipping a user's consent on their behalf is theirs to do.
-  telemetry: "privileged",
-  // Free text the `profile` tool hands to the model on demand (`tool/profile.ts`).
-  user_profile: "privileged",
-  // Not cosmetic: `tool/profile.ts` falls back to `username` as the profile name it delivers to the
-  // model, so this key is free text that reaches a future session's context.
-  username: "privileged",
-  // `searxngUrl` REPLACES the built-in engines, so every later search query goes to that host and
-  // whatever it returns becomes context.
-  web_search: "privileged",
-}
-
-/**
- * The tier a key is written at. **Unknown ⇒ privileged**, so an incomplete table is safe rather than
- * open — layer 2 of the three the header describes.
- */
-export const tierOf = (key: string): Tier => (KEY_TIERS as Record<string, Tier | undefined>)[key] ?? "privileged"
+export { KEY_TIERS, REDACTED, TIER_ACTION, TIERS, tierOf, type Tier }
 
 /** Every key `Config.Info` declares, read off the schema rather than re-typed.
  *  A function, not a module-level constant: `config.ts` sits in an import cycle with the settings
@@ -355,8 +161,6 @@ export const tierOf = (key: string): Tier => (KEY_TIERS as Record<string, Tier |
 export const configKeys = (): string[] => Object.keys(Config.Info.fields)
 
 // ── rendering (pure; unit-tested) ─────────────────────────────────────────────────────────────
-
-export const REDACTED = "(redacted — configure can WRITE this value, it will not read one back)"
 
 /** Scalar fields whose value is a credential wherever it appears in a config document. */
 const SECRET_FIELDS = new Set(["password", "token", "apikey", "api_key", "secret"])
@@ -656,27 +460,6 @@ export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
     const permission = yield* PermissionV2.Service
-    /**
-     * ⚠️ **A dynamic import, and it is not a style choice — a static one CRASHES on import order.**
-     * `config-projection.ts` reads `ConfigureTool.REDACTED` and `ConfigureTool.tierOf` (this module),
-     * so a static `import { ConfigProjection } from "../config-projection"` closes an ESM cycle. Both
-     * modules are `export * as Self from "./self"`, and the cycle is only safe in ONE direction:
-     * whichever module is evaluated FIRST runs the other's body before its own `const`s initialise,
-     * and `config-projection.ts`'s module-level `export const REDACTED = ConfigureTool.REDACTED` then
-     * reads a binding in the temporal dead zone. **Measured 2026-08-07 on these two files, not
-     * argued**: with the static import in place, a module importing `tool/configure` first died with
-     * *"ReferenceError: Cannot access 'REDACTED' before initialization"* at `config-projection.ts:580`,
-     * while one importing the projection first ran clean. `tsgo` is green either way — so it would
-     * have compiled, passed whichever tests happened to import in the lucky order, and crashed a boot
-     * somewhere else.
-     *
-     * Resolving it HERE — at layer construction, long after both module bodies have run — is safe in
-     * every order, costs one `await` per location boot (ESM caches the module), and keeps the fix
-     * inside this file. The clean end-state is to lift `KEY_TIERS`/`tierOf`/`REDACTED` into their own
-     * module so neither file imports the other; `packages/schema/src/resource-pressure.ts` already
-     * cites that module (`core/config-tier.ts`) as if it existed. That is a separate unit.
-     */
-    const { ConfigProjection } = yield* Effect.promise(() => import("../config-projection"))
     // The stores `ConfigStoreWrite.apply`/`overlay` resolve at call time. Captured once here rather
     // than threaded per call, because `Tool.make`'s `execute` must have `R = never` — the same
     // capture `filesystem/watcher.ts` and `pty.ts` use for their callbacks. Listing the union

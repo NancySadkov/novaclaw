@@ -48,7 +48,11 @@ import { Schema, SchemaAST } from "effect"
 import { Config } from "./config"
 import { ConfigAnnotation } from "@novaclaw/schema/config-annotation"
 import { ConfigStoreWrite } from "./config-store-write"
-import { ConfigureTool } from "./tool/configure"
+// ⚠️ The TIER TABLE, never `tool/configure` itself. This module and that tool need each other —
+// the tool renders the projection for its `schema` op, the projection prices a key — and a direct
+// edge between them is an ESM cycle safe in only ONE import order (measured; `tsgo` green either
+// way, see `config-tier.ts`'s header). `config-tier.ts` is the leaf both sides read instead.
+import { ConfigTier } from "./config-tier"
 
 // ── the shapes ────────────────────────────────────────────────────────────────────────────────
 
@@ -108,8 +112,8 @@ export interface Field {
 
 /** A top-level `Config.Info` key: a {@link Field} plus the three facts that only apply to a key. */
 export interface Key extends Field {
-  /** From `tool/configure.ts`'s `KEY_TIERS` — the price of the write, not a second table. */
-  readonly tier: ConfigureTool.Tier
+  /** From `config-tier.ts`'s `KEY_TIERS` — the price of the write, not a second table. */
+  readonly tier: ConfigTier.Tier
   /** `discarded` = the router accepts it and stores nothing (`NOT_ROUTED_KEYS`). */
   readonly stored: { readonly kind: "stored" } | { readonly kind: "discarded"; readonly reason: string }
   /** Whether `POST /api/config/remove` accepts a path under this key (`REMOVE_REFUSED_KEYS`). */
@@ -506,7 +510,7 @@ export const key = (name: string, depth = 1): Key | undefined => {
   const restart = ConfigStoreWrite.RESTART_REQUIRED_KEYS.get(name)
   return {
     ...field,
-    tier: ConfigureTool.tierOf(name),
+    tier: ConfigTier.tierOf(name),
     stored: discarded === undefined ? { kind: "stored" } : { kind: "discarded", reason: discarded },
     removable: refused === undefined ? { kind: "yes" } : { kind: "no", reason: refused },
     live: restart === undefined ? { kind: "immediate" } : { kind: "restart", reason: restart },
@@ -576,8 +580,10 @@ export const ambiguousSecretNames = (
 
 // ── redaction ─────────────────────────────────────────────────────────────────────────────────
 
-/** The same sentence `configure`'s read op already uses, so the two cannot drift into two vocabularies. */
-export const REDACTED = ConfigureTool.REDACTED
+/** The same sentence `configure`'s read op already uses, so the two cannot drift into two vocabularies.
+ *  Both read it from `config-tier.ts`; neither owns it, which is what makes "the same sentence" true
+ *  by construction rather than by convention. */
+export const REDACTED = ConfigTier.REDACTED
 
 /**
  * Replace every primitive under a {@link ConfigAnnotation.secret} node, walking the VALUE against the
