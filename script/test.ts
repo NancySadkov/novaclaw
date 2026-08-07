@@ -247,6 +247,25 @@ type Result = {
   peakStatus?: PeakStatus
   /** What the sampler actually read, INCLUDING a reading that `peakMb` refused. See `PeakStatus`. */
   sampledMb?: number
+  /**
+   * Peak MB of the `bun` processes the sampler EXCLUDED from this unit because they predate it.
+   *
+   * On a healthy gate this is the ~43 MB `bun run test` shim that used to be added into every unit's
+   * peak. Recorded so the exclusion is a printed number rather than a claim in a comment.
+   */
+  foreignMb?: number
+  /** Ticks that actually saw one of this unit's processes — see `PeakSampler.Sample.ownTicks`. */
+  ownTicks?: number
+  /**
+   * Ticks the sampler took inside this unit's window at all, whoever they belonged to.
+   *
+   * ⚠️ Carried because attribution created a THIRD kind of no-peak, and the rule that a null must say
+   * which null applies to it too: `ticks > 0 && ownTicks === 0` means the sampler was alive and
+   * looking and this unit owned nothing it saw — a sub-second unit whose child fits between two
+   * heartbeats. That is a different fact from `ticks === 0` (the sampler was not there), and only the
+   * second is an instrument failure.
+   */
+  ticks?: number
   /** How many shards this unit was split into, when memory pressure forced the degraded rung. */
   shards?: number
 }
@@ -479,7 +498,11 @@ function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], wallcl
 
   // Annotated, not inferred: the false branch is a bare literal, and letting the union widen is how a
   // later field silently stops being reachable on one arm.
-  const sample: PeakSampler.Sample = kind === "test" ? sampler.window(start, Date.now()) : { ticks: 0 }
+  // ⚠️ `start` is BOTH the window's left edge and the attribution cutoff, and that is the whole point:
+  // a process born at or after this stamp was created by this spawn, and everything older — the
+  // runner's `bun run test` parent shim, the previous unit's dying child, a stray — is somebody
+  // else's. See `peak-sampler.ts`'s header for why ancestry and PID-set membership both failed here.
+  const sample: PeakSampler.Sample = kind === "test" ? sampler.window(start, Date.now()) : { ticks: 0, ownTicks: 0 }
 
   let note = ""
   if (timedOut) {
@@ -503,15 +526,20 @@ function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], wallcl
     note = `exit ${proc.status}${excerpt ? ` · ${excerpt}` : ""}`
   }
 
-  // ⚠️ Discard a sample nothing on this machine could plausibly have produced. The sampler sums every
-  // `bun` but the runner (see lib/peak-sampler.ts for why the precise walk was abandoned), so a stray
-  // bun inflates it — once, measured, `core` reported 12 014 MB against a hand-measured ~1 000. A
-  // number that wrong feeds the ladder, so refusing to record it is the honest outcome; the profile
-  // simply stays as it was and the unit plans with its previous figure or the generous default.
+  // ⚠️ Discard a sample nothing on this machine could plausibly have produced.
   //
-  // ⚠️ **The discard is no longer silent.** Dropping the number and leaving no trace is what made
-  // `core`'s 16 758 MB read as "not measured" for three gates; the reading is reported as
-  // `sampledMb` whatever the verdict, and only `peakMb` is withheld.
+  // ⚠️ **What this ceiling means CHANGED on 2026-08-07 and the old reading of it was the bug.** It
+  // used to guard a sum of every `bun` on the box, where a dev server or a stray from a killed run
+  // was indistinguishable from the unit — and it was that guard, not a blind sampler, that made
+  // `core` report `peakMb: null` for four consecutive gates: core's own sixteen flock workers are
+  // `bun`, so its tree summed to 16 758 MB and was thrown away whole. The sample is now attributed by
+  // process birth time, so a stray older than the unit never reaches here at all. What remains is a
+  // sanity bound on OUR OWN processes, and a reading above it is now a finding about the unit rather
+  // than a suspicion about the box.
+  //
+  // ⚠️ **The discard is not silent.** Dropping the number and leaving no trace is what made `core`'s
+  // 16 758 MB read as "not measured"; the reading is reported as `sampledMb` whatever the verdict,
+  // and only `peakMb` is withheld.
   const peakStatus: PeakStatus =
     sample.treeMb === undefined ? "unsampled" : sample.treeMb > IMPLAUSIBLE_PEAK_MB ? "discarded" : "measured"
   return {
@@ -521,7 +549,10 @@ function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], wallcl
     captured,
     upstreamCrash: kind === "test" && !ok && !timedOut && isUpstreamWatcherCrash(proc.status, captured),
     peakStatus,
+    ownTicks: sample.ownTicks,
+    ticks: sample.ticks,
     ...(sample.treeMb !== undefined ? { sampledMb: sample.treeMb } : {}),
+    ...(sample.foreignMb !== undefined ? { foreignMb: sample.foreignMb } : {}),
     ...(peakStatus === "measured" ? { peakMb: sample.treeMb } : {}),
   }
 }
@@ -595,6 +626,11 @@ function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs:
       : perShardSkips.reduce<number>((a, s) => a + (s ?? 0), 0)
   const peaks = runs.map((r) => r.peakMb).filter((mb): mb is number => mb !== undefined)
   const sampled = runs.map((r) => r.sampledMb).filter((mb): mb is number => mb !== undefined)
+  const foreign = runs.map((r) => r.foreignMb).filter((mb): mb is number => mb !== undefined)
+  // Summed, not maxed: each shard is a separate window, so its `ownTicks` are separate samples of the
+  // same unit. `treeMb` is maxed for the opposite reason — a peak is not additive across windows.
+  const ownTicks = runs.reduce((a, r) => a + (r.ownTicks ?? 0), 0)
+  const ticks = runs.reduce((a, r) => a + (r.ticks ?? 0), 0)
   // A shard that measured beats one that did not, and a DISCARD beats silence — the ranking is by how
   // much the reader learns, so a unit is only "unsampled" when no shard saw anything at all.
   const peakStatus: PeakStatus = peaks.length
@@ -617,8 +653,9 @@ function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs:
     skipped,
     failing: kind === "test" ? [...new Set(runs.flatMap((r) => readFailingNames(r.captured)))] : [],
     ...(peaks.length ? { peakMb: Math.max(...peaks) } : {}),
-    ...(kind === "test" ? { peakStatus } : {}),
+    ...(kind === "test" ? { peakStatus, ownTicks, ticks } : {}),
     ...(sampled.length ? { sampledMb: Math.max(...sampled) } : {}),
+    ...(foreign.length ? { foreignMb: Math.max(...foreign) } : {}),
     ...(sharded ? { shards: sharded } : {}),
   })
 
@@ -802,6 +839,15 @@ for (const r of results) {
 const measured = results.filter((r) => r.peakMb !== undefined)
 if (measured.length) {
   process.stdout.write(`\n\x1b[1m── peak memory (MB) ──\x1b[0m\n`)
+  // 🔴 State what these numbers ARE, in the place they are read. Until 2026-08-07 every row here also
+  // contained the runner's `bun run test` parent shim — a constant 41–45 MB — and for a sub-second
+  // unit the shim was the ONLY thing in it (`schema` 43, `effect-drizzle-sqlite` 45, with a `ratio`
+  // derived from them). Nothing printed said so, which is how a fabrication passed for a measurement.
+  const excluded = Math.max(0, ...results.map((r) => r.foreignMb ?? 0))
+  process.stdout.write(
+    `  \x1b[2mown processes only — every \`bun\` born before a unit started is excluded from it` +
+      `${excluded > 0 ? ` (peak excluded this run: ${excluded} MB, normally the \`bun run test\` shim)` : ""}\x1b[0m\n`,
+  )
   for (const r of measured) {
     const was = peakProfile[r.name]
     // ⚠️ A SHARDED run's peak is recorded too, and that is sound rather than sloppy: measurement
@@ -816,7 +862,14 @@ if (measured.length) {
         : MemoryPlan.peakRegressed(was, r.peakMb ?? 0)
           ? `  \x1b[33m<- profile says ${was}; that is a real jump, look at it\x1b[0m`
           : ""
-    process.stdout.write(`  ${r.name.padEnd(30)} ${String(r.peakMb).padStart(5)}${drift}${from}\n`)
+    // ⚠️ A peak taken from one or two samples is a LOWER BOUND, and saying so is the cheap half of
+    // the fix that item 4 of todo/test-speed.md makes structural. A 300 ms unit gets 2–4 ticks at a
+    // 200 ms interval and its child may be visible in none of them.
+    const thin =
+      r.ownTicks !== undefined && r.ownTicks > 0 && r.ownTicks < 3
+        ? `  \x1b[2m(${r.ownTicks} sample${r.ownTicks === 1 ? "" : "s"} — a lower bound, not a peak)\x1b[0m`
+        : ""
+    process.stdout.write(`  ${r.name.padEnd(30)} ${String(r.peakMb).padStart(5)}${drift}${from}${thin}\n`)
   }
 }
 
@@ -838,9 +891,16 @@ if (unmeasured.length) {
         ? `  ${r.name.padEnd(30)} \x1b[33mDISCARDED\x1b[0m  sampled ${r.sampledMb} MB, over the ` +
             `${IMPLAUSIBLE_PEAK_MB} MB ceiling` +
             `${peakProfile[r.name] === undefined ? "" : ` (profile ${peakProfile[r.name]})`}\n` +
-            `  ${" ".repeat(30)} the sampler WORKED — this is a reading, not an absence. Either this unit\n` +
-            `  ${" ".repeat(30)} really costs that, or the sum caught \`bun\` processes that are not it.\n`
-        : `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  no timeline row landed in this unit's window\n`,
+            `  ${" ".repeat(30)} the sampler WORKED — this is a reading, not an absence, and it is now\n` +
+            `  ${" ".repeat(30)} attributed: only processes this unit itself created are in it.\n`
+        : // ⚠️ THREE nulls, not two. Attribution added the middle one, and it is the benign case that
+          // used to be reported as a 43 MB measurement — so it must not now be reported as an
+          // instrument failure either. Say which of the three this is.
+          (r.ticks ?? 0) > 0
+          ? `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  ${r.ticks} tick(s) landed here and this unit owned\n` +
+            `  ${" ".repeat(30)} none of them — its process fit between two 200 ms heartbeats. The\n` +
+            `  ${" ".repeat(30)} instrument is fine; the unit is too short to measure this way.\n`
+          : `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  no timeline row landed in this unit's window at all\n`,
     )
 }
 

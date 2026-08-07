@@ -53,6 +53,10 @@ export interface Observation {
   readonly peakStatus?: PeakStatus
   /** What the sampler read, including a reading `peakMb` refused. */
   readonly sampledMb?: number
+  /** Peak MB the sampler EXCLUDED as not belonging to this unit (the shim, a stray, a dying child). */
+  readonly foreignMb?: number
+  /** Ticks that saw a process belonging to this unit. Absent on rows built before attribution. */
+  readonly ownTicks?: number
   /** Absent unless memory pressure forced the degraded rung. */
   readonly shards?: number
 }
@@ -85,6 +89,23 @@ export interface Row {
   readonly peakStatus: PeakStatus
   /** The raw sampled figure, present even when it was rejected. Null when nothing was sampled. */
   readonly sampledMb: number | null
+  /**
+   * What the window excluded as not this unit's, in MB. Null on a row built before attribution.
+   *
+   * 🔴 **This column is what makes the series comparable across 2026-08-07.** Every `peakMb` written
+   * before that date silently included the `bun run test` parent shim (41–45 MB), and `core`'s
+   * included its own sixteen flock workers. A reader averaging old rows with new ones is averaging
+   * two different measurements; a non-null `foreignMb` is the marker that says which side a row is on.
+   */
+  readonly foreignMb: number | null
+  /**
+   * How many 200 ms ticks actually saw one of this unit's processes. Null before attribution.
+   *
+   * ⚠️ **`peakMb` with `ownTicks: 1` is a lower bound, not a peak** — the number the profile needs is
+   * a maximum over the unit's life, and one sample cannot be that. This is the column that would have
+   * exposed `schema: 43` as an artefact instead of a measurement.
+   */
+  readonly ownTicks: number | null
   /** The hand-maintained profile figure, or null when this unit is not in it yet. */
   readonly profileMb: number | null
   /** `peakMb - profileMb`, in MB. Null whenever either side is. */
@@ -139,6 +160,8 @@ export function buildRow(
     peakMb,
     peakStatus,
     sampledMb,
+    foreignMb: Number.isFinite(observation.foreignMb) ? (observation.foreignMb as number) : null,
+    ownTicks: Number.isFinite(observation.ownTicks) ? (observation.ownTicks as number) : null,
     profileMb,
     deltaMb: comparable ? peakMb - profileMb : null,
     ratio: comparable ? round3(peakMb / profileMb) : null,
