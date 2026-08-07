@@ -519,3 +519,138 @@ describe("the repair re-prompt (G3 — one shot, then it costs budget)", () => {
     )
   })
 })
+
+// ------------------------------------------------------------------------------------------------
+// 🔴 The ONE textual repair — the omitted `"y":` key
+// ------------------------------------------------------------------------------------------------
+
+describe('🔴 `{"x": N, N}` — the omitted `"y":` key, recovered; everything else refused', () => {
+  // MEASURED, not imagined. Over the 362 recorded replies of the §7c grounding study a sweep for
+  // every bare numeric literal sitting in JSON member position found exactly ONE shape — 94
+  // occurrences, all `keys=[x] bare=1` — and it accounted for 94 of the 104 replies the shipped
+  // parser rejected. The coordinates inside those rejected replies were CORRECT, so the loop was
+  // throwing away two thirds of its planner's good work. On the same frozen corpus the shipped
+  // parser goes 149/272 → 232/272 on planner replies, and every one of the 40 that still fail is a
+  // TRUNCATED reply, which stays refused.
+  const real =
+    '{"observation": "The main menu is displayed.", "action": {"kind": "click", "point": {"x": 623, 884}, ' +
+    '"button": "left"}, "expect": "The Game Options dialog is showing.", ' +
+    '"watch": {"x": 550, "y": 850, "width": 150, "height": 100}}'
+
+  test("the real recorded shape decodes, and the whole proposal survives with it", () => {
+    const parsed = CP.parseProposal(real)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.draft.action?.point).toEqual({ x: 623, y: 884 })
+    // Not just the point: the reply the loop lost carried the prediction and the watch region too.
+    expect(parsed.draft.expect).toBe("The Game Options dialog is showing.")
+    expect(parsed.draft.watch).toEqual({ x: 550, y: 850, width: 150, height: 100 })
+    expect(CP.errorsOf(CP.structuralIssues(parsed.draft))).toEqual([])
+  })
+
+  test("the recovery is NAMED in the result, never silent", () => {
+    const parsed = CP.parseProposal(real)
+    expect(parsed.ok && parsed.repairs).toEqual(["positional_y"])
+    // Control: a well-formed reply reports no repair at all, so the field means something.
+    const clean = CP.parseProposal(real.replace('"x": 623, 884', '"x": 623, "y": 884'))
+    expect(clean.ok && clean.repairs).toBeUndefined()
+    // …and both readings agree on the coordinate — the repair is not a different answer.
+    expect(clean.ok && clean.draft.action?.point).toEqual({ x: 623, y: 884 })
+  })
+
+  test("a well-formed reply is never rewritten — the repair is unreachable unless JSON.parse failed", () => {
+    // `repairPositionalY` would happily match this if it were run, so the guarantee is the CALL
+    // SITE: `parseProposal` only reaches it on an `invalid_json` failure.
+    const wellFormed = '{"observation": "note: {\\"x\\": 1, 2}", "abstain": true, "reason": "cannot see it"}'
+    const parsed = CP.parseProposal(wellFormed)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.repairs).toBeUndefined()
+    expect(parsed.draft.observation).toBe('note: {"x": 1, 2}')
+  })
+
+  describe("what it REFUSES to recover — a guess about a coordinate is the failure to avoid", () => {
+    const refuses = (json: string) => {
+      const parsed = CP.parseProposal(json)
+      expect(parsed.ok).toBe(false)
+      return parsed
+    }
+
+    test("`{623, 884}` — no `x` key, so which axis is which would be a guess", () => {
+      refuses('{"action": {"kind": "click", "point": {623, 884}}, "expect": "e"}')
+      expect(CP.repairPositionalY('{"point": {623, 884}}').repairs).toBe(0)
+    })
+
+    test("the object must OPEN on `x` — a lost key earlier is not this defect", () => {
+      refuses('{"action": {"kind": "click", "point": {"z": 1, "x": 623, 884}}, "expect": "e"}')
+      expect(CP.repairPositionalY('{"z": 1, "x": 623, 884}').repairs).toBe(0)
+    })
+
+    test("the object must CLOSE on the bare number — two bare values are not a point", () => {
+      refuses('{"action": {"kind": "click", "point": {"x": 623, 884, 12}}, "expect": "e"}')
+      expect(CP.repairPositionalY('{"x": 623, 884, 12}').repairs).toBe(0)
+      expect(CP.repairPositionalY('{"x": 623, 884, "button": "left"}').repairs).toBe(0)
+    })
+
+    test('`{"y": 884, 623}` — the contract order is x then y, so this is not a positional y', () => {
+      refuses('{"action": {"kind": "click", "point": {"y": 884, 623}}, "expect": "e"}')
+      expect(CP.repairPositionalY('{"y": 884, 623}').repairs).toBe(0)
+    })
+
+    test("🔴 a TRUNCATED reply stays refused — inventing a brace would be inventing an action", () => {
+      // 40 of the 40 replies the fixed parser still rejects are this: `finish_reason: length`. A
+      // truncated reply is a BUDGET reading, never a capability one, and never an action.
+      const truncated = '{"observation": "the menu", "action": {"kind": "click", "point": {"x": 623, 884}}, "expect": "the dial'
+      const parsed = refuses(truncated)
+      if (parsed.ok) return
+      expect(parsed.issue).toContain("unbalanced")
+    })
+
+    test("🔴 it never rewrites text INSIDE a JSON string — the mis-escaped case is the real one", () => {
+      // ⚠️ This test was VACUOUS in its first form and only running the mutation showed it. The
+      // obvious fixture escapes the inner quotes (`{\"x\": 5, 6}`), and the raw bytes are then
+      // `{\"x"` — which the anchored regex cannot match whether or not the scan tracks strings. So
+      // it proved nothing about string-awareness.
+      //
+      // The case where it MATTERS is the reply that forgot to escape them, which is a floor-model
+      // failure `jh/extract.ts` names by hand ("unterminated string"). Here the raw text really does
+      // contain a literal `{"x": 5, 6}` inside model-authored prose read off an untrusted screen,
+      // and rewriting it would silently edit what the screen said.
+      const misescaped = '{"observation": "the panel shows {"x": 5, 6} in a tooltip", "abstain": true, "reason": "r"}'
+      expect(misescaped).toContain('{"x": 5, 6}') // the raw bytes the anchored regex WOULD match
+      expect(CP.repairPositionalY(misescaped).repairs).toBe(0)
+
+      // …and the escaped form is left alone too, while the genuine malformed point beside it is
+      // repaired — exactly ONE repair in a reply that contains two candidate-looking blocks.
+      const escaped =
+        '{"observation": "the file reads {\\"x\\": 5, 6} on screen", "action": {"kind": "click", "point": {"x": 623, 884}}, "expect": "e", "watch": {"x": 600, "y": 860, "width": 60, "height": 50}}'
+      expect(CP.repairPositionalY(escaped).repairs).toBe(1)
+      const parsed = CP.parseProposal(escaped)
+      expect(parsed.ok).toBe(true)
+      if (!parsed.ok) return
+      expect(parsed.draft.observation).toBe('the file reads {"x": 5, 6} on screen')
+      expect(parsed.draft.action?.point).toEqual({ x: 623, y: 884 })
+    })
+  })
+
+  test("a positional ARRAY was already accepted and is a different thing", () => {
+    // `[a, b]` is valid JSON that MEANS an ordered pair; reading it in the declared order is a
+    // convention, not a recovery. It decodes with no repair recorded.
+    const parsed = CP.parseProposal('{"action":{"kind":"click","point":[623,884]},"expect":"e","watch":"600,860,60,50"}')
+    expect(parsed.ok && parsed.draft.action?.point).toEqual({ x: 623, y: 884 })
+    expect(parsed.ok && parsed.repairs).toBeUndefined()
+  })
+
+  test("two malformed points in one reply are both repaired, and counted", () => {
+    const two = '{"a": {"x": 1, 2}, "b": {"x": 3, 4}}'
+    const repaired = CP.repairPositionalY(two)
+    expect(repaired.repairs).toBe(2)
+    expect(JSON.parse(repaired.text)).toEqual({ a: { x: 1, y: 2 }, b: { x: 3, y: 4 } })
+  })
+
+  test("negative and fractional coordinates survive the rewrite unrounded", () => {
+    const repaired = CP.repairPositionalY('{"x": -1.5, 884.25}')
+    expect(repaired.repairs).toBe(1)
+    expect(JSON.parse(repaired.text)).toEqual({ x: -1.5, y: 884.25 })
+  })
+})

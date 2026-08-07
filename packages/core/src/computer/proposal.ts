@@ -498,8 +498,82 @@ export const errorsOf = (issues: ReadonlyArray<StructuralIssue>): ReadonlyArray<
 // ---------------------------------------------------------------------------------------------
 
 export type ParseResult =
-  | { readonly ok: true; readonly draft: ProposalDraft }
+  | { readonly ok: true; readonly draft: ProposalDraft; readonly repairs?: ReadonlyArray<RepairKind> }
   | { readonly ok: false; readonly issue: string }
+
+/** A named textual repair applied before the extractor. One name per shape, so a report can say which. */
+export type RepairKind = "positional_y"
+
+/**
+ * The shape: `{"x": 623, 884}` — the `"y":` key omitted, the value left in place. It is NOT valid
+ * JSON, so `JhExtract` rejects the WHOLE reply and the observation, the prediction and the watch
+ * region go with it, even though the coordinate inside is right.
+ *
+ * ⚠️ **Sticky (`y`), anchored at a `{` the caller has proven is outside a string.** A regex swept over
+ * the raw reply would also match inside a model-authored `observation`, and silently rewriting text
+ * the model read off an untrusted screen is a worse defect than the one being fixed.
+ */
+const POSITIONAL_Y = /\{\s*"x"\s*:\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\}/y
+
+/**
+ * Supply the omitted `"y":` key, and **refuse everything else.**
+ *
+ * 🔴 **Measured, not imagined.** Across the 362 recorded planner/grounding replies of the §7c study
+ * this is the ONLY malformed shape the floor model produces: a survey of every bare numeric literal
+ * sitting in member position found **94 occurrences, all of them `keys=[x] bare=1`**, and it accounts
+ * for **94 of the 104** replies the shipped parser rejected. The other 10 are truncated replies
+ * (`unbalanced`), which stay rejected — a truncated reply is a *budget* reading, and inventing a
+ * closing brace would be inventing an action.
+ *
+ * 🔴 **What this REFUSES to recover, deliberately — a guess about a coordinate is the failure
+ * `coordinates.ts` argues must never be *usually* right:**
+ * - **`{623, 884}`** — no `"x"` key. Which axis is which would be a guess, and the object must OPEN
+ *   on `"x"`, so `{"a": 1, "x": 2, 3}` is refused too.
+ * - **`{"x": 1, 2, 3}`** and **`{"x": 1, 2, "button": "left"}`** — the object must CLOSE on the bare
+ *   number. Two bare values are not a point, and a bare value followed by more members means the
+ *   model lost a key somewhere this rule cannot name.
+ * - **`{"y": 884, 623}`** — the contract's order is x then y; a bare number after `"y"` is not a
+ *   positional y, whatever it is.
+ * - **anything inside a JSON string** — the scan is string- and escape-aware, so an `observation`
+ *   quoting `{"x": 5, 6}` is left exactly as the model wrote it.
+ * - **a reply that already parses** — {@link parseProposal} only reaches this on an `invalid_json`
+ *   failure, so no well-formed reply is ever rewritten, and there is no regression surface at all.
+ * - **a repair that does not then parse** — the caller keeps the ORIGINAL failure, so an error message
+ *   can never describe text the model did not write.
+ *
+ * ⚠️ A positional ARRAY (`"point": [623, 884]`) is a different thing and was already accepted by
+ * {@link coercePoint} before this existed: `[a, b]` is JSON that *means* an ordered pair, and reading
+ * it in the contract's declared order is a convention, not a recovery.
+ */
+export function repairPositionalY(text: string): { readonly text: string; readonly repairs: number } {
+  let out = ""
+  let last = 0
+  let repairs = 0
+  let inString = false
+  let escape = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (inString) {
+      if (escape) escape = false
+      else if (ch === "\\") escape = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') {
+      inString = true
+      continue
+    }
+    if (ch !== "{") continue
+    POSITIONAL_Y.lastIndex = i
+    const match = POSITIONAL_Y.exec(text)
+    if (match === null) continue
+    out += `${text.slice(last, i)}{"x": ${match[1]}, "y": ${match[2]}}`
+    last = i + match[0].length
+    i = last - 1
+    repairs += 1
+  }
+  return { text: repairs === 0 ? text : out + text.slice(last), repairs }
+}
 
 /**
  * Free-form reply → draft. Extract the JSON object out of whatever prose surrounds it, coerce the
@@ -513,7 +587,23 @@ export type ParseResult =
  * second opinion about the same model, and the weaker one.
  */
 export function parseProposal(text: string): ParseResult {
-  const extracted = JhExtract.extractJsonObject(text)
+  const first = JhExtract.extractJsonObject(text)
+  // 🔴 The ONE named textual repair, and it is reached only after the extractor has already refused.
+  // A well-formed reply never touches `repairPositionalY`, so this cannot change any reply that
+  // works today; and if the repaired text still does not extract, the ORIGINAL failure is reported,
+  // so the message never describes bytes the model did not write.
+  let extracted = first
+  const repairs: RepairKind[] = []
+  if (!first.ok && first.failure.reason === "invalid_json") {
+    const repaired = repairPositionalY(text)
+    if (repaired.repairs > 0) {
+      const retry = JhExtract.extractJsonObject(repaired.text)
+      if (retry.ok) {
+        extracted = retry
+        repairs.push("positional_y")
+      }
+    }
+  }
   if (!extracted.ok) {
     const f = extracted.failure
     const parts = [`${f.reason}: ${f.detail}`]
@@ -523,7 +613,8 @@ export function parseProposal(text: string): ParseResult {
     return { ok: false, issue: parts.join(" — ") }
   }
   try {
-    return { ok: true, draft: Schema.decodeUnknownSync(ProposalDraft)(coerceProposalShape(extracted.value)) }
+    const draft = Schema.decodeUnknownSync(ProposalDraft)(coerceProposalShape(extracted.value))
+    return repairs.length === 0 ? { ok: true, draft } : { ok: true, draft, repairs }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     return { ok: false, issue: msg.replace(/\s+/g, " ").trim().slice(0, 300) }

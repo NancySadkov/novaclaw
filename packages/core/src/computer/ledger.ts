@@ -30,10 +30,46 @@ import type { ComputerProposal } from "./proposal"
  * width from another one.
  *
  * 🔴 **Every field is collapsed to a single line before it is stored, and that is a guard rather than
- * formatting.** The observation and the prediction are model-authored text read partly off an
- * untrusted screen. A newline inside one of them would forge an extra ledger line — a step that never
- * happened, with a verdict the harness never issued, in the harness's own voice. Whitespace collapse
- * makes that inexpressible; `renderLine` cannot emit a line break it was not asked for.
+ * formatting.** The action summary carries the model's own `type` text, read partly off an untrusted
+ * screen. A newline inside it would forge an extra ledger line — a step that never happened, with a
+ * verdict the harness never issued, in the harness's own voice. Whitespace collapse makes that
+ * inexpressible; `renderLine` cannot emit a line break it was not asked for.
+ *
+ * ---
+ *
+ * 🔴 **WHAT IS STORED AND WHAT IS RE-SHOWN ARE DIFFERENT SETS, and that separation is a MEASURED fix
+ * rather than a preference (2026-08-07).** The acceptance run (`computer-use-loop-plan.md` §7b) missed
+ * a menu row by ~40 normalized units against a 45-unit pitch, and §7c took it to measurement on one
+ * frozen frame with mechanical ground truth, varying ONLY the ledger inside the run's own
+ * reconstructed planner prompt:
+ *
+ * | ledger the planner was re-shown | correct menu row |
+ * |---|---|
+ * | empty | **10/10** |
+ * | the run's own six real lines | **0/10** — every miss `New Game → Load Game`, the run's own failure |
+ * | six NEUTRAL lines (every column `—`) | **10/10** |
+ * | six real lines, PROSE COLUMNS DROPPED (this shape) | **10/10** |
+ * | six real lines, only `expect` dropped | 8/10 |
+ * | six real lines, only `observation` dropped | 6/10 |
+ *
+ * Two mechanism hypotheses died to their controls first: stripping the ledger's own coordinates did
+ * not recover (0/10) and moving them to (900,900) pushed the answer *further* the other way, so it is
+ * not anchoring; and neutral lines scoring 10/10 says the STEP LOG block itself is harmless. **It is
+ * the model's own recorded PROSE** — its observations and its predictions — which make it answer from
+ * its narrative instead of from the pixels. Neither prose column is innocent: dropping one leaves 8/10
+ * and 6/10, and only dropping BOTH returns 10/10.
+ *
+ * So {@link Entry} keeps all six fields — the `RunReport` is item 2.2's artefact and a run a human
+ * cannot read is not a measurement — and {@link renderLine} emits only the four MECHANICAL columns:
+ * `n · action · verdict · checkpoint`. That is precisely what the planner needs the log for, which is
+ * to tell *"I tried that and it did nothing"* from *"I have not tried that"* (G6's repeat interlock
+ * and G13's autolock signature are both mechanical, in the reducer — they never read this string).
+ *
+ * ⚠️ **Deleting the ledger was never an option and is not what this is.** The ledger is what makes the
+ * run's cost LINEAR (G11: exactly one image in context, older frames represented by their line); the
+ * acceptance run measured ≈96,000 prompt tokens over 25 steps *with* it against the naive loop's
+ * 638,625. Dropping the two prose columns makes it **cheaper**, not absent — the run's own six lines
+ * render at 569 characters instead of 1,205.
  */
 
 // ---------------------------------------------------------------------------------------------
@@ -41,12 +77,15 @@ import type { ComputerProposal } from "./proposal"
 // ---------------------------------------------------------------------------------------------
 
 /**
- * One step, as the planner sees it on every later step.
+ * One step, as the RUN RECORDS it.
  *
- * The six fields are the design's: `n · observation · action · expect · verdict · checkpoint`. They
- * are the four things the model committed to plus the two things the harness measured, which is
- * exactly the pairing that lets the planner tell "I tried that and it did nothing" from "I have not
- * tried that".
+ * The six fields are the design's: `n · observation · action · expect · verdict · checkpoint` — the
+ * four things the model committed to plus the two things the harness measured.
+ *
+ * ⚠️ **Not all six are re-shown to the planner.** {@link renderLine} emits the mechanical four; the
+ * two prose columns are kept here for the report and withheld from the prompt, for the measured
+ * reason in the module note. Adding a field here does NOT put it in front of the model, and that is
+ * deliberate: this type is the record, {@link renderLine} is the prompt.
  */
 export interface Entry {
   readonly n: number
@@ -63,7 +102,9 @@ export interface Entry {
 }
 
 /**
- * Per-field character budgets. Sum + separators + the step number is {@link LINE_CHAR_CEILING}.
+ * Per-field character budgets. The RENDERED fields' sum + separators + the step number is
+ * {@link LINE_CHAR_CEILING}; `observation` and `expect` are budgets for the RECORD only, since those
+ * two columns never reach the prompt.
  *
  * ⚠️ **`verdict` carries the harness's own MEASUREMENT, so its budget is sized so that no measurement
  * is ever clipped** — a truncated verdict is a lie about what was observed rather than an abbreviated
@@ -83,11 +124,15 @@ export const FIELD_LIMIT = {
 
 const SEPARATOR = " · "
 
-/** Ratchet. May shrink, never grow — see the module note. */
-export const LINE_CHAR_CEILING = 200
+/**
+ * Ratchet. May shrink, never grow — see the module note. **Shrunk 200 → 80 on 2026-08-07**, which is
+ * what dropping the two prose columns is worth: the worst renderable line is now
+ * `9999 · <28> · <28> · <10>` = 79 characters.
+ */
+export const LINE_CHAR_CEILING = 80
 
-/** Ratchet, at the repo's ~4 chars/token estimate. May shrink, never grow. */
-export const LINE_TOKEN_CEILING = 50
+/** Ratchet, at the repo's ~4 chars/token estimate. May shrink, never grow. **Shrunk 50 → 20.** */
+export const LINE_TOKEN_CEILING = 20
 
 /** Shown for a field the step never produced, so the column count is constant. */
 export const ABSENT = "—"
@@ -134,13 +179,18 @@ export const summarizeAction = (action: ComputerProposal.ActionDraft | null | un
   }
 }
 
-/** `n · observation · action · expect · verdict · checkpoint`, one line, always six columns. */
+/**
+ * The columns the PLANNER is re-shown, in order. `observation` and `expect` are deliberately absent —
+ * see the module note's table. **This list is the fix**; a later editor who adds a prose column back
+ * is re-introducing a measured 100% → 0% grounding collapse, so `ledger.test.ts` pins it by name.
+ */
+export const RENDERED_COLUMNS = ["action", "verdict", "checkpoint"] as const
+
+/** `n · action · verdict · checkpoint`, one line, always four columns. */
 export const renderLine = (entry: Entry): string =>
   [
     String(entry.n),
-    clip(entry.observation, FIELD_LIMIT.observation),
     clip(entry.action, FIELD_LIMIT.action),
-    clip(entry.expect, FIELD_LIMIT.expect),
     clip(entry.verdict, FIELD_LIMIT.verdict),
     clip(entry.checkpoint, FIELD_LIMIT.checkpoint),
   ].join(SEPARATOR)
@@ -172,4 +222,4 @@ export const render = (ledger: Ledger): string => ledger.map(renderLine).join("\
 export const lineLength = (entry: Entry): number => renderLine(entry).length
 
 /** The column header, so a floor model reads the log as a table rather than as prose. */
-export const HEADER = "n · saw · did · predicted · measured · checkpoint"
+export const HEADER = "n · did · measured · checkpoint"

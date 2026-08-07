@@ -69,11 +69,14 @@ describe("🔴 G5 — the adjudication prompt contains NEITHER the goal NOR the 
     expect(text).not.toContain("684")
     expect(text).not.toContain("SENTINEL_OBSERVATION")
     expect(text).not.toContain("no-visible-effect")
-    // Controls, all four, in the prompt that is supposed to carry them.
+    // Controls, in the prompt that is supposed to carry them: the coordinate and the verdict.
     const plan = whole(planning)
     expect(plan).toContain("464")
-    expect(plan).toContain("SENTINEL_OBSERVATION")
     expect(plan).toContain("no-visible-effect")
+    // ⚠️ `SENTINEL_OBSERVATION` is deliberately NOT a control here any more. Since 2026-08-07 the
+    // model's own prose is withheld from the PLANNER too (`ledger.ts`, measured), so it is absent
+    // from both prompts and would be a vacuous control. The property that replaced it has its own
+    // test below, with its own non-vacuity checks.
   })
 
   test("…and it is not blind because it is empty: the prediction and the question ARE there", () => {
@@ -212,6 +215,33 @@ describe("🔴 G11 — growth per step is under the ratcheted ceiling, and the r
 // ------------------------------------------------------------------------------------------------
 // The planner's contract
 // ------------------------------------------------------------------------------------------------
+
+describe("🔴 the planner is re-shown the MECHANICAL columns only — 10/10 vs 0/10, measured", () => {
+  // The acceptance run's own six ledger lines, replayed into its own reconstructed planner prompt on
+  // one frozen frame with mechanical ground truth, took the grounder from 10/10 correct menu rows to
+  // **0/10** — every miss reproducing the run's `New Game → Load Game` failure. Six NEUTRAL lines
+  // scored 10/10 and stripping the ledger's coordinates did not recover, so the cause is the model's
+  // own recorded PROSE, not the log block and not its numbers. With the prose columns dropped the
+  // same six real lines score **10/10** (`computer-use-loop-plan.md` §7c and its 08-07 follow-up).
+  const planning = CP.planner({ goal: GOAL, ledger: ledgerOf(6), image: img("now") })
+
+  test("the model's own observation and prediction never reach the planner prompt", () => {
+    expect(whole(planning)).not.toContain("SENTINEL_OBSERVATION")
+    expect(whole(planning)).not.toContain(EXPECT)
+  })
+
+  test("…and it is not absent because the log is empty — the mechanical columns ARE there", () => {
+    // Three non-vacuity checks, because "not found" is trivially true of an unpopulated block.
+    // ① the entries the ledger was built from really carry the prose the assertion above searches for
+    expect(ledgerOf(6).every((e) => e.observation.includes("SENTINEL_OBSERVATION"))).toBe(true)
+    expect(ledgerOf(6).every((e) => e.expect === EXPECT)).toBe(true)
+    // ② the log block is populated, down to the sixth line
+    expect(whole(planning)).toContain("6 · click(464,684)")
+    // ③ the columns G6/G13's planner-facing half needs did survive
+    expect(whole(planning)).toContain("no-visible-effect")
+    expect(whole(planning)).toContain("0/9")
+  })
+})
 
 describe("the planner prompt states the contract the validator enforces", () => {
   test("it renders `CONTRACT_LINES` rather than restating them", () => {
