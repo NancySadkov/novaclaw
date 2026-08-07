@@ -1,6 +1,27 @@
 import { Select as Kobalte } from "@kobalte/core/select"
 import { Show, createMemo, onCleanup, splitProps, type ComponentProps, type JSX } from "solid-js"
 
+/**
+ * ⚠️ **This wraps UNCONDITIONALLY — with no `groupBy` every option lands in one `""` section — and
+ * that is the shape v1 `Select`'s postmortem calls the bug it shipped** (`46c13ee3c`, ported from
+ * PR #12: *"telling Kobalte to read section children from an `options` key made it treat ordinary
+ * entries as sections — so the control rendered EMPTY"*). v1 was given a `selectIsGrouped` predicate
+ * so the two props could not disagree; this component never was, and the difference was left
+ * unexplained when `select` was retired.
+ *
+ * **Measured in the browser 2026-08-08, and v2 does NOT have that defect.** Settings → General's
+ * language select — no `groupBy` — renders all **18** `[role="option"]` nodes, plus exactly one
+ * zero-height `<li role="presentation">` for the anonymous section (its label is suppressed by the
+ * `<Show>` in `sectionComponent` below). The mechanism, read out of kobalte 0.13.11: `buildNodes`
+ * (`primitives/create-collection/utils.ts`) emits a **FLAT** array — a section node followed by its
+ * children as further top-level nodes — and `listbox-root` iterates `[...collection()]`, so a
+ * section costs one empty `<li>` and nothing else. Whatever made v1 render empty, it was not this
+ * pairing on this version of Kobalte.
+ *
+ * So do not "fix" this by copying v1's predicate across. If you change it, re-measure the option
+ * count in the browser first: the failure it would guard against is invisible to typecheck and to
+ * every unit test, which is exactly how it shipped the first time.
+ */
 function groupOptions<T>(options: T[], groupBy?: (x: T) => string): { category: string; options: T[] }[] {
   if (!groupBy) {
     return [{ category: "", options }]

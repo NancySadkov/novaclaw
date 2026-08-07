@@ -653,10 +653,11 @@ describe("the guard actually bites (negative control)", () => {
     expect(classify(from, "@novaclaw/ui/spinner", forked)).toBeUndefined()
     expect(classify(from, "solid-js", forked)).toBeUndefined()
     // Relative imports inside packages/ui reach the same files without naming the package.
-    const inUi = join(PACKAGES, "ui", "src", "components", "select.tsx")
+    const inUi = join(PACKAGES, "ui", "src", "components", "list.tsx")
     expect(classify(inUi, "./button", forked)).toEqual({ widget: "button", side: "v1" })
     expect(classify(inUi, "../v2/components/button-v2", forked)).toEqual({ widget: "button", side: "v2" })
-    expect(classify(inUi, "./select-groups", forked)).toBeUndefined()
+    // A sibling in the same directory that is not a forked widget.
+    expect(classify(inUi, "./scroll-view", forked)).toBeUndefined()
   })
 
   test("the growth half reports a v1 import the ledger does not excuse", () => {
