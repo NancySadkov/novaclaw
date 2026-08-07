@@ -10,6 +10,8 @@
 //       write only session_message (the pre-F0 history lapses from the native
 //       fetch, owner decision ①).
 
+import fs from "node:fs/promises"
+import fsSync from "node:fs"
 import { afterEach, describe, expect } from "bun:test"
 import { Deferred, Effect, Layer } from "effect"
 import type * as Scope from "effect/Scope"
@@ -227,6 +229,51 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
           // (`protocol/groups/session.ts`), so 204 IS its success status. The comment above states
           // the actual intent — "no 400" — and this asserted a status the endpoint never returns.
           expect(summarizeStatus).toBe(204)
+        }),
+      ),
+    30_000,
+  )
+
+  it.live(
+    "🔴 a session whose working folder is deleted keeps running, in a scratch folder",
+    () =>
+      withFakeLlm(({ sdk, directory }) =>
+        Effect.gen(function* () {
+          // Ruling 1's missing half for the 2026-08-07 lost-folder recovery. `scratch-folder.test.ts`
+          // covers the helper in isolation; nothing asserted that a LIVE session survives its
+          // directory disappearing, which is the behaviour the owner asked for and the only thing a
+          // user would notice. `tests/lost-folder-probe.ts` does exactly this against a fleet model —
+          // this is that probe reduced to the part a gate can run.
+          const created = yield* Effect.promise(() => sdk.v2.session.create({ title: "folder goes away" }))
+          const sessionID = String(record(record(created.data).data).id)
+
+          // Out from under it, while the session exists and is otherwise healthy.
+          yield* Effect.promise(() => fs.rm(directory, { recursive: true, force: true }))
+
+          const prompted = yield* Effect.promise(() =>
+            sdk.v2.session.prompt({ sessionID, prompt: { text: "still here?" } }),
+          )
+          expect(prompted.response.status).toBe(200)
+
+          // The drain substitutes and PATCHES the row before the turn runs, so the recovery is
+          // observable without waiting for the model. ⚠️ Asserted by polling the session's own
+          // location rather than by log text: the point is that the session MOVED, not that something
+          // was printed about it.
+          const moved = yield* pollWithTimeout(
+            Effect.promise(() => sdk.v2.session.get({ sessionID })).pipe(
+              Effect.map((response) => {
+                const where = String(record(record(record(response.data).data).location).directory ?? "")
+                return where && where !== directory ? where : undefined
+              }),
+            ),
+            "the session never moved out of its deleted folder",
+            "20 seconds",
+          )
+          expect(moved).toContain("scratch")
+          expect(moved).toContain(sessionID)
+          // It must be REAL — a path the worker can actually start in. Returning a plausible-looking
+          // string that does not exist would move the failure rather than fix it.
+          expect(fsSync.existsSync(moved)).toBe(true)
         }),
       ),
     30_000,
