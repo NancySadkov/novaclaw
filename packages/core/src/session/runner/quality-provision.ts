@@ -79,6 +79,158 @@ export interface Proposal {
  */
 export const FILE_RENDERED_SLOTS: readonly (keyof Commands)[] = ["syntax", "check"]
 
+/**
+ * ── THE MIGRATION FOR THE STORES THAT WERE WRITTEN BEFORE THAT FIX ──────────────────────────────
+ *
+ * `FILE_RENDERED_SLOTS` tightened the RULES. It did nothing for the DATA: an instance provisioned
+ * before it still carries `quality.commands.check = "cargo check --quiet"`, and that value is read
+ * on every write, rendered with the touched file appended, and reported as a failing quality gate
+ * forever. Ruling 2 broken twice — the fault does not exist, and it cannot be fixed from Settings →
+ * Quality, because every value in that tab looks correct; the wrongness is which ROW it sits in.
+ *
+ * **The decision: RELOCATE, do not drop.** The stored command is not junk — it is a real, working
+ * whole-project verifier that was filed under the wrong step. Dropping it would silently remove a
+ * gate the user asked for, which is the same ruling-2 defect from the other side (and worse: a
+ * quality gate that disappeared is invisible, while one that fails is at least loud). So the
+ * migration puts each value in the slot the CURRENT table would give it, and only drops it when
+ * that slot is already taken by something else — a case where keeping it would mean overwriting a
+ * setting the user still has.
+ *
+ * ⚠️ **The match is by EXACT VALUE against the closed set below, never by "has no `{file}`".** A
+ * missing placeholder is not the defect: `Quality.renderCommand` appends the path, and for a real
+ * per-file tool (`ruff check` → `ruff check "a.py"`) that is correct and deliberate. The defect is a
+ * WHOLE-PROJECT command sitting in a per-file slot, and only the old scan's own proposals are known
+ * to be that. A heuristic here would delete hand-written commands that work.
+ *
+ * ⚠️ **A migration is a statement about HISTORY, so this list cannot be derived from `MANIFESTS` —
+ * the old table is gone.** What IS pinned to the live table is every `to` below:
+ * `quality-provision.test.ts` drives the current `scan` over a project that triggers the owning
+ * rule and fails if the command has moved, been reworded, or landed in a different slot. Change the
+ * table and this migration's destinations go red rather than quietly sending a command somewhere
+ * the product no longer puts it.
+ */
+export interface StaleFileRenderedClaim {
+  /** The exact command the pre-2026-07-30 scan wrote into `check`. */
+  readonly command: string
+  /** Destination slots in preference order — the first FREE one wins. */
+  readonly to: readonly (keyof Commands)[]
+  /** Why it is whole-project, in the words the user is shown. */
+  readonly why: string
+}
+
+export const STALE_FILE_RENDERED_CLAIMS: readonly StaleFileRenderedClaim[] = [
+  {
+    command: "cargo check --quiet",
+    to: ["typecheck"],
+    why: "cargo takes no file path, so appending one makes it exit 1 with `unexpected argument`",
+  },
+  {
+    command: "go vet ./...",
+    to: ["typecheck"],
+    why: "`./...` already names the whole module, so appending a file is a contradictory second target",
+  },
+  {
+    command: "make check",
+    to: ["test"],
+    why: "make reads the appended path as a TARGET NAME, so it fails with `No rule to make target`",
+  },
+  // The node rule's aggregate `check` script — one entry per package manager, since the old scan
+  // interpolated the detected manager into the string. `lint` first, then `typecheck`: the same
+  // preference the live rule uses (see MANIFESTS → node).
+  ...(["npm", "bun", "pnpm", "yarn"] as const).map((pm) => ({
+    command: `${pm} run check`,
+    to: ["lint", "typecheck"] as const,
+    why: "an aggregate project script has its own target list, so the appended path is a stray extra argument",
+  })),
+]
+
+/** One thing the migration did to one stored slot — the record the user is shown. */
+export interface CommandRepair {
+  readonly slot: keyof Commands
+  readonly command: string
+  readonly action: "moved" | "dropped"
+  /** Where it went (`moved`), or the slot that was already taken (`dropped`). */
+  readonly to?: keyof Commands
+  /** Complete, self-contained English. This is what reaches the user. */
+  readonly note: string
+}
+
+export interface CommandMigration {
+  /** The repaired record. Identical to the input (by value) when `repairs` is empty. */
+  readonly commands: Commands
+  /** Empty = nothing to do. Non-empty = the stored value CHANGED and must be re-saved. */
+  readonly repairs: readonly CommandRepair[]
+}
+
+const normalize = (command: string) => command.trim().replace(/\s+/g, " ")
+
+/**
+ * Repair a stored `quality.commands` record in place. Pure, total, and IDEMPOTENT — running it on
+ * its own output returns no repairs, which is what makes it safe to run on every boot.
+ */
+export function migrateCommands(commands: Commands): CommandMigration {
+  const next: { -readonly [K in keyof Commands]: Commands[K] } = { ...commands }
+  const repairs: CommandRepair[] = []
+  const occupied = (slot: keyof Commands) => {
+    const value = next[slot]
+    return value !== undefined && value.trim() !== ""
+  }
+
+  for (const slot of FILE_RENDERED_SLOTS) {
+    const stored = next[slot]
+    if (!stored) continue
+    const claim = STALE_FILE_RENDERED_CLAIMS.find((entry) => entry.command === normalize(stored))
+    if (!claim) continue
+    const head =
+      `Quality: your ${slot} command ${JSON.stringify(stored)} checks the WHOLE project, but the ` +
+      `${slot} step runs once per file you write and appends that file's path — ` +
+      `${claim.why}. It was reporting a failure on every write that nothing could fix.`
+
+    const duplicate = claim.to.find(
+      (target) => next[target] !== undefined && normalize(next[target]) === normalize(stored),
+    )
+    if (duplicate !== undefined) {
+      delete next[slot]
+      repairs.push({
+        slot,
+        command: stored,
+        action: "dropped",
+        to: duplicate,
+        note: `${head} It was removed as a duplicate — your ${duplicate} command already runs exactly that.`,
+      })
+      continue
+    }
+
+    const free = claim.to.find((target) => !occupied(target))
+    if (free !== undefined) {
+      delete next[slot]
+      next[free] = stored
+      repairs.push({
+        slot,
+        command: stored,
+        action: "moved",
+        to: free,
+        note: `${head} It has been MOVED to your ${free} command, where it runs as intended.`,
+      })
+      continue
+    }
+
+    const taken = claim.to[0]
+    delete next[slot]
+    repairs.push({
+      slot,
+      command: stored,
+      action: "dropped",
+      to: taken,
+      note:
+        `${head} It was removed, because your ${taken} command is already set to ` +
+        `${JSON.stringify(next[taken] ?? "")}. Nothing else changed — re-add it in Settings → Quality if you want it back.`,
+    })
+  }
+
+  return { commands: next, repairs }
+}
+
 /** What a rule may do: look at the project, read the files IT declared, claim a slot. */
 export interface RuleContext {
   readonly shell: ShellFamily

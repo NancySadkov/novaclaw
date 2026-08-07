@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import { MANIFESTS, classifyRun, scan, verifiableCommand } from "./quality-provision"
+import {
+  FILE_RENDERED_SLOTS,
+  MANIFESTS,
+  STALE_FILE_RENDERED_CLAIMS,
+  classifyRun,
+  migrateCommands,
+  scan,
+  verifiableCommand,
+} from "./quality-provision"
+import { Quality } from "./quality"
 
 const reader = (files: Record<string, string>) => (name: string) => files[name]
 
@@ -217,3 +226,174 @@ describe("QE-A run classification", () => {
 
 // The project-config patch suite died with patchProjectConfig (config-sqlite: the tool
 // saves to the instance settings store; nothing reads a project jsonc at runtime).
+
+/**
+ * ── the migration for stores written BEFORE FILE_RENDERED_SLOTS ─────────────────────────────────
+ *
+ * Ruling 1: an invariant whose violation compiles green ships with a mechanical check — and a
+ * migration nothing tests is a migration nobody knows ran. Three properties are load-bearing:
+ * every destination still matches the LIVE table, the repair is idempotent, and a command that is
+ * fine is not touched.
+ */
+
+/**
+ * The synthetic project that makes the CURRENT scan propose each stale command. Keyed by command so
+ * a new entry in the table without a probe fails below rather than going unchecked.
+ */
+const PROBES: Record<string, Parameters<typeof scan>[0]> = {
+  "cargo check --quiet": { files: ["Cargo.toml"], read: () => undefined },
+  "go vet ./...": { files: ["go.mod"], read: () => undefined },
+  "make check": {
+    files: ["Makefile"],
+    read: (name) => (name === "Makefile" ? "all:\n\tcc\ncheck:\n\t./t\n" : undefined),
+  },
+  ...Object.fromEntries(
+    (
+      [
+        ["npm", []],
+        ["bun", ["bun.lock"]],
+        ["pnpm", ["pnpm-lock.yaml"]],
+        ["yarn", ["yarn.lock"]],
+      ] as const
+    ).map(([pm, lock]) => [
+      `${pm} run check`,
+      {
+        files: ["package.json", ...lock],
+        read: (name: string) =>
+          name === "package.json" ? JSON.stringify({ scripts: { check: "biome check ." } }) : undefined,
+      },
+    ]),
+  ),
+}
+
+/** Every QE slot, in step order — the search space for "where does the live table put this?". */
+const ALL_SLOTS = ["syntax", "check", "typecheck", "test", "lint"] as const
+
+describe("QE-A migration: the stale table is PINNED to the live table", () => {
+  test("every claim's command and destination are what the current scan actually produces", () => {
+    // This is the whole reason the migration may hard-code a historical list: the DESTINATIONS are
+    // not historical. If someone reworded `cargo check --quiet`, or moved it out of `typecheck`,
+    // the migration would quietly relocate a command to a slot the product no longer uses. It
+    // fails here instead.
+    const faults: string[] = []
+    for (const claim of STALE_FILE_RENDERED_CLAIMS) {
+      const probe = PROBES[claim.command]
+      if (!probe) {
+        faults.push(`${claim.command}: no probe project — add one so this claim is checked`)
+        continue
+      }
+      const proposed = scan(probe).commands
+      const landed = ALL_SLOTS.filter((slot) => proposed[slot] === claim.command)
+      if (landed.length === 0) faults.push(`${claim.command}: the current scan no longer proposes this command at all`)
+      else if (landed[0] !== claim.to[0])
+        faults.push(`${claim.command}: the current scan puts it in \`${landed[0]}\`, the claim says \`${claim.to[0]}\``)
+    }
+    expect(faults).toEqual([])
+    // …and the loop really ran over something.
+    expect(STALE_FILE_RENDERED_CLAIMS.length).toBeGreaterThanOrEqual(7)
+  })
+
+  test("no claim's command is one the scan would put in a FILE-RENDERED slot", () => {
+    // The premise of the whole migration. If the table ever legitimately claims `check` again, this
+    // list must be re-derived rather than trusted.
+    for (const claim of STALE_FILE_RENDERED_CLAIMS) {
+      const proposed = scan(PROBES[claim.command]).commands
+      for (const slot of FILE_RENDERED_SLOTS) expect(proposed[slot], `${claim.command} → ${slot}`).toBeUndefined()
+    }
+  })
+})
+
+describe("QE-A migration: repair, not drop", () => {
+  test("the measured case — `cargo check --quiet` moves to the free whole-project slot", () => {
+    const before = { check: "cargo check --quiet", test: "cargo test --quiet" }
+    const { commands, repairs } = migrateCommands(before)
+    expect(commands).toEqual({ typecheck: "cargo check --quiet", test: "cargo test --quiet" })
+    expect(repairs).toHaveLength(1)
+    expect(repairs[0]).toMatchObject({ slot: "check", action: "moved", to: "typecheck" })
+    // The note is self-contained: it names the value, the fault, and where the value went.
+    expect(repairs[0].note).toContain('"cargo check --quiet"')
+    expect(repairs[0].note).toContain("unexpected argument")
+    expect(repairs[0].note).toContain("MOVED")
+    // …and the rendered command the runner would have produced is gone from the per-file steps.
+    const config = Quality.resolve({ enabled: true, commands })
+    const due = Quality.dueMidLoop(config, Quality.initialState(), ["src/lib.rs"])
+    expect(due.map((step) => step.command)).not.toContain('cargo check --quiet "src/lib.rs"')
+    expect(due.some((step) => step.label === "check")).toBe(false)
+  })
+
+  test("`make check` → test, `go vet ./...` → typecheck, `<pm> run check` → lint", () => {
+    expect(migrateCommands({ check: "make check" }).commands).toEqual({ test: "make check" })
+    expect(migrateCommands({ check: "go vet ./..." }).commands).toEqual({ typecheck: "go vet ./..." })
+    for (const pm of ["npm", "bun", "pnpm", "yarn"])
+      expect(migrateCommands({ check: `${pm} run check` }).commands).toEqual({ lint: `${pm} run check` })
+    // …and the node entry falls through to its SECOND destination when lint is taken, exactly as
+    // the live rule does.
+    expect(migrateCommands({ check: "bun run check", lint: "biome check ." }).commands).toEqual({
+      lint: "biome check .",
+      typecheck: "bun run check",
+    })
+  })
+
+  test("a `syntax` slot carrying the same value is repaired identically", () => {
+    // The old scan only ever claimed `check`, but `syntax` is file-rendered by the same rule and a
+    // person can paste a value into either row. Matching on the VALUE covers both for free.
+    const { commands, repairs } = migrateCommands({ syntax: "go vet ./..." })
+    expect(commands).toEqual({ typecheck: "go vet ./..." })
+    expect(repairs[0]).toMatchObject({ slot: "syntax", action: "moved", to: "typecheck" })
+  })
+
+  test("DROPS only when the destination is already taken — and says what it dropped and why", () => {
+    const { commands, repairs } = migrateCommands({
+      check: "cargo check --quiet",
+      typecheck: "cargo build --quiet",
+    })
+    // The setting the user still has is never overwritten.
+    expect(commands).toEqual({ typecheck: "cargo build --quiet" })
+    expect(repairs[0]).toMatchObject({ slot: "check", action: "dropped", to: "typecheck" })
+    expect(repairs[0].note).toContain('"cargo build --quiet"')
+    expect(repairs[0].note).toContain("Settings → Quality")
+  })
+
+  test("an exact duplicate is removed as a duplicate, not reported as a loss", () => {
+    const { commands, repairs } = migrateCommands({
+      check: "cargo check --quiet",
+      typecheck: "cargo check --quiet",
+    })
+    expect(commands).toEqual({ typecheck: "cargo check --quiet" })
+    expect(repairs[0].note).toContain("duplicate")
+  })
+
+  test("NEGATIVE CONTROL — a valid saved command is left exactly as it was", () => {
+    // The defect is a WHOLE-PROJECT command in a per-file slot, never "no {file} placeholder":
+    // `renderCommand` appends the path and `ruff check "a.py"` is correct. A heuristic on the
+    // placeholder would delete every one of these.
+    const untouched = [
+      { check: "ruff check", typecheck: "cargo check --quiet" },
+      { check: "eslint {file}", syntax: "bun build --no-bundle {file}" },
+      { check: "cargo check --quiet --manifest-path Cargo.toml" }, // near-miss, NOT the old value
+      { check: "make checkall" }, // prefix of a stale value
+      { typecheck: "cargo check --quiet", test: "make check", lint: "npm run check" }, // already correct
+      {},
+    ]
+    for (const commands of untouched) {
+      const result = migrateCommands(commands)
+      expect(result.repairs, JSON.stringify(commands)).toEqual([])
+      expect(result.commands, JSON.stringify(commands)).toEqual(commands)
+    }
+  })
+
+  test("IDEMPOTENT — a second pass over its own output is a no-op", () => {
+    // It runs on every boot. If it were not idempotent it would keep rewriting the store and
+    // re-notifying the user forever.
+    const first = migrateCommands({ check: "cargo check --quiet", syntax: "make check", lint: "npm run lint" })
+    expect(first.repairs).toHaveLength(2)
+    const second = migrateCommands(first.commands)
+    expect(second.repairs).toEqual([])
+    expect(second.commands).toEqual(first.commands)
+  })
+
+  test("whitespace variants of the stale value are still recognised", () => {
+    expect(migrateCommands({ check: "  cargo   check  --quiet " }).repairs).toHaveLength(1)
+    expect(migrateCommands({ check: "  cargo   check  --quiet " }).commands.typecheck).toBe("  cargo   check  --quiet ")
+  })
+})

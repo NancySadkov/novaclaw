@@ -316,6 +316,18 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/config-store-write.ts",
   },
+  /**
+   * A boot-time DATA repair changed a stored setting. `warn`, and content-bearing, because the
+   * notice quotes the user's own command back at them: a repair the user cannot read about is a
+   * setting that silently stopped being what they typed (ruling 2).
+   */
+  "config.settings.migrated": {
+    level: "warn",
+    message: "a stored setting was repaired by a migration",
+    attributes: { "config.notice": "text" },
+    content: "user",
+    file: "packages/core/src/settings-config-migrate.ts",
+  },
   /** A partially invalid config still seeded its valid keys. Never faults startup. */
   "config.settings.seed.skipped": {
     level: "warn",
@@ -1202,7 +1214,12 @@ export const EVENTS = {
   "session.compaction.prune.planned": {
     level: "info",
     message: "compaction prune planned",
-    attributes: { "session.commit": "flag", "session.targets": "count", "session.reclaim": "count", "session.scanned": "count" },
+    attributes: {
+      "session.commit": "flag",
+      "session.targets": "count",
+      "session.reclaim": "count",
+      "session.scanned": "count",
+    },
     content: "none",
     file: "packages/core/src/session/compaction.ts",
   },
@@ -1210,7 +1227,13 @@ export const EVENTS = {
   "session.compaction.stale.rejected": {
     level: "warn",
     message: "stale session compaction rejected",
-    attributes: { "session.id": "id", "session.compaction.id": "id", "session.prefix.seq": "count", "session.hash.expected": "id", "session.hash.actual": "id" },
+    attributes: {
+      "session.id": "id",
+      "session.compaction.id": "id",
+      "session.prefix.seq": "count",
+      "session.hash.expected": "id",
+      "session.hash.actual": "id",
+    },
     content: "none",
     file: "packages/core/src/session/history.ts",
   },

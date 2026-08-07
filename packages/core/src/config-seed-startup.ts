@@ -6,6 +6,7 @@ import { CatalogSeed } from "./catalog-seed"
 import { CommandConfigSeed } from "./command-config-seed"
 import { PluginConfigSeed } from "./plugin-config-seed"
 import { ReferenceConfigSeed } from "./reference-config-seed"
+import { SettingsConfigMigrate } from "./settings-config-migrate"
 import { SettingsConfigSeed } from "./settings-config-seed"
 import { SkillConfigSeed } from "./skill-config-seed"
 
@@ -34,4 +35,10 @@ export const seedAll = (globalConfigDir: string, home: string) =>
     yield* ReferenceConfigSeed.seedFromDirectory(globalConfigDir, home).pipe(Effect.ignore)
     yield* PluginConfigSeed.seedFromDirectory(globalConfigDir).pipe(Effect.ignore)
     yield* SettingsConfigSeed.seedFromDirectory(globalConfigDir).pipe(Effect.ignore)
+    // …and THEN the data repairs over whatever is already stored. Ordered last on purpose: the
+    // seeds above are isEmpty-gated first-boot IMPORTS, so a value that just arrived from a
+    // hand-authored jsonc must still pass through the same migrations an existing row does — a
+    // user restoring an exported config carries the same stale `quality.commands.check` an
+    // upgrading instance does. Runs on every boot (idempotent by contract), not just the first.
+    yield* SettingsConfigMigrate.migrateAll().pipe(Effect.ignore)
   })
