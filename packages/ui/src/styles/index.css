@@ -31,7 +31,6 @@
 @import "../components/resize-handle.css" layer(components);
 @import "../components/select.css" layer(components);
 @import "../components/spinner.css" layer(components);
-@import "../components/switch.css" layer(components);
 @import "../components/scroll-view.css" layer(components);
 @import "../components/sticky-accordion-header.css" layer(components);
 @import "../components/tabs.css" layer(components);

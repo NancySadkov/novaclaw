@@ -10,8 +10,8 @@ import { dirname, join, normalize, relative, resolve } from "node:path"
  * standing contributor choice via a **ratchet test**."*
  *
  * `packages/ui` ships the same widget twice. `src/components/button.tsx` is v1;
- * `src/v2/components/button-v2.tsx` is v2; both are live, and 27 files import one side while 57
- * import the other — several files import BOTH (`pages/home.tsx` renders a v1 `Button` and a v2
+ * `src/v2/components/button-v2.tsx` is v2; both are live, and (re-derived 2026-08-07) **27 files
+ * import each side** — several files import BOTH (`pages/home.tsx` renders a v1 `Button` and a v2
  * `ButtonV2` on one screen). Reaching for `@novaclaw/ui/button` instead of `@novaclaw/ui/v2/button-v2`
  * is one import line that typechecks, renders, and reviews as consistent with its neighbours. That is
  * the defect class ruling 1 names — *an invariant whose violation compiles green ships with a
@@ -61,7 +61,7 @@ import { dirname, join, normalize, relative, resolve } from "node:path"
  *
  * ## Why this file lives in `packages/app/src`
  *
- * The fork spans three packages — the duplicated files are in `ui`, and 76 of the 88 call sites are
+ * The fork spans three packages — the duplicated files are in `ui`, and 74 of the 87 call sites are
  * in `app` — so the ledger has to see all of them at once, exactly like
  * `packages/app/src/renderer-dependency-ledger.test.ts`, which sweeps `app`/`ui`/`session-ui` from
  * this same directory. It is NOT in `packages/ui/test/`: `script/test.ts` runs the `ui` unit as
@@ -136,7 +136,7 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
 ]
 
 /**
- * **The forked widget names, measured 2026-07-31: 13.**
+ * **The forked widget names, re-derived 2026-08-07: 11.**
  *
  * A name is on this list when `ui/src/components/<name>.tsx` and its v2 twin both exist. The twin is
  * `v2/components/<name>-v2.tsx`, except `icon`, which is duplicated under the identical filename —
@@ -144,7 +144,14 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  * `{viewBox, body}` pairs), which is why `icon` is 61 call sites and the expensive half of the
  * migration rather than a rename.
  *
- * This list may only ever get SHORTER. It was 14 before this change.
+ * This list may only ever get SHORTER. It was 14, then 12 (`text-shimmer` 2026-07-31), and is 11
+ * since `switch` was migrated and its v1 twin deleted (2026-08-07).
+ *
+ * ⭐ **`switch` is the shape the rest of this list should copy.** Its four call sites were all in
+ * `app/src` — no `packages/ui` component composed it — so migrating them left `switch.tsx` with zero
+ * importers and the pair could be RETIRED rather than merely thinned. A widget that `packages/ui`
+ * composes internally (`button`, `icon`, `icon-button`, `tooltip`, `select`, `dialog`, `toast`) cannot
+ * reach zero until its v1 consumers die, which is why those lines sit in the second block below.
  */
 export const FORKED_WIDGETS: readonly string[] = [
   "button",
@@ -155,18 +162,23 @@ export const FORKED_WIDGETS: readonly string[] = [
   "keybind",
   "progress-circle",
   "select",
-  "switch",
   "tabs",
   "toast",
   "tooltip",
 ]
 
 /**
- * **Every file that imports the v1 side of a forked widget, measured 2026-07-31: 88 files, 162
- * (file, widget) pairs.** Grouped by package: `app` 76, `ui` 9, `session-ui` 3.
+ * **Every file that imports the v1 side of a forked widget, re-derived 2026-08-07: 87 files, 155
+ * (file, widget) pairs.** Grouped by package: `app` 74, `ui` 10, `session-ui` 3.
  *
- * Per-widget: icon 61 · button 28 · icon-button 22 · tooltip 16 · dialog 10 · tabs 8 · select 5 ·
- * switch 4 · toast 3 · keybind 2 · avatar 1 · diff-changes 1 · progress-circle 1.
+ * Per-widget: icon 61 · button 27 · icon-button 21 · tooltip 16 · dialog 10 · tabs 8 · select 5 ·
+ * toast 3 · keybind 2 · diff-changes 1 · progress-circle 1.
+ *
+ * ⚠️ **Every number in the two lines above was wrong before 2026-08-07, and none of them was a
+ * regression — the prose simply never moved when the pins did.** It claimed 88 files / 162 pairs
+ * against pins of 87 / 159, an `avatar` row for a pair that no longer exists, and `icon-button 22`
+ * for a measured 21. The pins are the measurement; treat this paragraph as a convenience index and
+ * re-derive before quoting it.
  *
  * **Migrating a file means deleting its line here.** Adding a widget to a file that is already
  * listed is also new debt, so the widget arrays are compared exactly, not just the file names.
@@ -190,7 +202,7 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/components/dialog-select-directory-v2.tsx": ["icon"],
   "app/src/components/dialog-select-directory.tsx": ["dialog"],
   "app/src/components/dialog-select-file.tsx": ["dialog", "icon", "keybind"],
-  "app/src/components/dialog-select-mcp.tsx": ["dialog", "switch"],
+  "app/src/components/dialog-select-mcp.tsx": ["dialog"],
   "app/src/components/dialog-select-model.tsx": ["button", "dialog", "icon-button", "tooltip"],
   "app/src/components/dialog-select-server.tsx": ["button", "dialog", "icon", "icon-button"],
   "app/src/components/dialog-session-info.tsx": ["button", "icon"],
@@ -212,9 +224,9 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/components/session/session-new-view.tsx": ["icon"],
   "app/src/components/session/session-sortable-tab.tsx": ["icon-button", "tabs", "tooltip"],
   "app/src/components/session/session-sortable-terminal-tab.tsx": ["icon", "icon-button", "tabs"],
-  "app/src/components/settings-general.tsx": ["button", "icon", "select", "switch", "tooltip"],
+  "app/src/components/settings-general.tsx": ["button", "icon", "select", "tooltip"],
   "app/src/components/settings-keybinds.tsx": ["button", "icon", "icon-button"],
-  "app/src/components/settings-models.tsx": ["icon", "icon-button", "switch"],
+  "app/src/components/settings-models.tsx": ["icon", "icon-button"],
   "app/src/components/settings-server-picker.tsx": ["button", "icon"],
   "app/src/components/settings-v2/dialog-expertise.tsx": ["icon"],
   "app/src/components/settings-v2/dialog-model-tier.tsx": ["icon"],
@@ -222,7 +234,7 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/components/settings-v2/dialog-settings-v2.tsx": ["icon"],
   "app/src/components/settings-v2/models.tsx": ["icon"],
   "app/src/components/settings-v2/storage.tsx": ["icon"],
-  "app/src/components/status-popover-body.tsx": ["button", "icon", "switch", "tabs"],
+  "app/src/components/status-popover-body.tsx": ["button", "icon", "tabs"],
   "app/src/components/status-popover.tsx": ["button", "icon"],
   "app/src/pages/calendar.tsx": ["icon"],
   "app/src/pages/debug.tsx": ["icon"],
@@ -268,16 +280,20 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
 }
 
 /**
- * `ui/src/components/*.tsx` was 45 before this change and is **38** after it. A bound rather than a
- * name list, because ruling 13 pins the FORK and a v1-only widget forks nothing — see the header.
- * It may fall freely; raising it means adding a v1 component under a ruling that says new work is
- * v2, so raise it only with a reason written next to it.
+ * `ui/src/components/*.tsx` was 45, then 38 (2026-07-31), and is **36** after `switch.tsx` went.
+ * A bound rather than a name list, because ruling 13 pins the FORK and a v1-only widget forks
+ * nothing — see the header. It may fall freely; raising it means adding a v1 component under a
+ * ruling that says new work is v2, so raise it only with a reason written next to it.
+ *
+ * ⚠️ **A ceiling that is not re-tightened stops ratcheting, and this one had already slipped.** It
+ * read 38 while the tree held 37 — one component had been deleted without the pin following, so a
+ * new v1 component could have been added for free. Lower it in the same commit as any deletion.
  */
-const V1_COMPONENT_CEILING = 38
+const V1_COMPONENT_CEILING = 36
 
 /** Measured totals, pinned so the ledger stays a measurement rather than an aspiration. */
 const V1_CALL_SITE_FILES = 87
-const V1_CALL_SITE_PAIRS = 159
+const V1_CALL_SITE_PAIRS = 155
 
 // ---------------------------------------------------------------------------------------------
 // The sweep. Pure functions first so the negative controls can drive them without touching disk.
@@ -549,7 +565,7 @@ describe("the fork's DEPTH can only shrink", () => {
     expect(OBSERVED_PAIRS, "the observed (file, widget) pair count moved — reconcile V1_CALL_SITES").toBe(
       V1_CALL_SITE_PAIRS,
     )
-    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(12)
+    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(11)
   })
 
   test("both sides are genuinely live — this is a fork, not a finished migration", () => {
@@ -749,16 +765,26 @@ describe("the seven deleted v1 components stay deleted", () => {
 
   test("🔴 every v2 @import comes AFTER every v1 @import — same layer, so ORDER decides", () => {
     // ⚠️ **This became load-bearing the moment v2 stylesheets joined `layer(components)`, and it was
-    // invisible before.** Six v2 sheets target a selector their v1 twin also targets:
-    // `badge-v2`/`tag.css` → `[data-component="tag"]`, `diff-changes-v2`/`diff-changes.css`,
-    // `switch-v2`/`switch.css`, `dialog-v2`/`dialog.css`, plus `tabs-v2` and `toast-v2` on shared
-    // `icon`/`icon-button` selectors.
+    // invisible before.** FIVE v2 sheets target a selector their v1 twin also targets (six until
+    // 2026-08-07): `badge-v2`/`tag.css` → `[data-component="tag"]`,
+    // `diff-changes-v2`/`diff-changes.css`, `dialog-v2`/`dialog.css`, plus `tabs-v2` and `toast-v2`
+    // on shared `icon`/`icon-button` selectors. `switch-v2`/`switch.css` left the list when v1
+    // `switch.css` was deleted — the only way a collision goes away for good.
     //
     // While v2 was UNLAYERED it beat v1 unconditionally. Now both sit in `components`, equal
     // specificity, so the LATER declaration wins — i.e. the order of these `@import` lines is the only
     // thing keeping v2 in front. Verified in the browser 2026-08-06: `[data-component="tag"]` computes
     // v2's values (gap 4px, height 16px, padding 0 4px, radius 2px), not v1's (no gap, 18px, 0 6px).
     // Inserting a v1 import below the v2 block would silently hand those components back to v1.
+    //
+    // ⚠️ **Order is not the whole story, and `switch` is the counter-example — measured in the browser
+    // 2026-08-07.** Order only settles ties at EQUAL specificity. v1 `switch.css` carried three rules
+    // that outranked v2's on specificity and therefore won despite sitting above it:
+    // `[data-checked] [data-slot="switch-thumb"] { border: none }`,
+    // `[data-disabled] [data-slot="switch-thumb"] { background-color: var(--icon-disabled) }`, and a
+    // focus `box-shadow`. All THREE were painting v2 switches in `settings-v2`, which is what a
+    // "v1-only" stylesheet is not supposed to be able to do. A shared selector is a live coupling in
+    // both directions — deleting the v1 sheet is the fix, moving imports around is not.
     const barrel = readFileSync(join(PACKAGES, "ui", "src", "styles", "index.css"), "utf8")
     const lines = barrel.split("\n")
     const lastV1 = lines.reduce((last, line, index) => (/@import\s+["']\.\.\/components\/[^"']+\.css["']/.test(line) ? index : last), -1)

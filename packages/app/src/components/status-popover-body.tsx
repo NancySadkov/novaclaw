@@ -1,7 +1,7 @@
 import { Button } from "@novaclaw/ui/button"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { Icon } from "@novaclaw/ui/icon"
-import { Switch } from "@novaclaw/ui/switch"
+import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { Tabs } from "@novaclaw/ui/tabs"
 import { showToast } from "@/utils/toast"
 import { useNavigate } from "@solidjs/router"

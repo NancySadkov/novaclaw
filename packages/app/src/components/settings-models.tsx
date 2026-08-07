@@ -1,6 +1,6 @@
 import { useFilteredList } from "@novaclaw/ui/hooks"
 import { ProviderIcon } from "@novaclaw/ui/provider-icon"
-import { Switch } from "@novaclaw/ui/switch"
+import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { Icon } from "@novaclaw/ui/icon"
 import { IconButton } from "@novaclaw/ui/icon-button"
 import { TextField } from "@novaclaw/ui/text-field"

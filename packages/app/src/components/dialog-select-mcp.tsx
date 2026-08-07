@@ -2,7 +2,7 @@ import { Component, createMemo, Show } from "solid-js"
 import { useSync } from "@/context/sync"
 import { Dialog } from "@novaclaw/ui/dialog"
 import { List } from "@novaclaw/ui/list"
-import { Switch } from "@novaclaw/ui/switch"
+import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { useLanguage } from "@/context/language"
 import { useMcpToggle } from "@/context/mcp"
 
