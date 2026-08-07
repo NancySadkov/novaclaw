@@ -60,8 +60,14 @@ const AgentCreateCommand = effectCmd({
     if (!maybeCtx) return yield* Effect.die("InstanceRef not provided")
     const ctx = maybeCtx
     const agentSvc = yield* Agent.Service
+    // 🔴 Same boundary as `cmd/run.ts`: the body below runs in plain `async`, outside the Effect
+    // fiber, so a bare `Effect.runPromise` here would start with DEFAULT fiber references and quietly
+    // drop `References.MinimumLogLevel` — the mechanism that made `NOVACLAW_LOG_LEVEL=DEBUG` a no-op
+    // on the `run` path (proven 2026-08-07 with a three-way control). Capturing the CONTEXT restores
+    // every reference the boundary drops, not just the one that was noticed there.
+    const captured = yield* Effect.context<never>()
     const runLocalEffect = <A, E>(effect: Effect.Effect<A, E>) =>
-      Effect.runPromise(effect.pipe(Effect.provideService(InstanceRef, ctx)))
+      Effect.runPromise(effect.pipe(Effect.provideService(InstanceRef, ctx), Effect.provide(captured)))
     yield* Effect.promise(async () => {
       const cliPath = args.path
       const cliDescription = args.description
