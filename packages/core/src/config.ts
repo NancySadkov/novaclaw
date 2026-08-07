@@ -191,17 +191,24 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     description:
       "Offline/airgap mode (OFF-A): outbound HTTP restricted to loopback + configured provider hosts, fail-closed. GLOBAL config only — the chokepoint is machine-level",
   }),
-  // Dependability P6: the telemetry CONTRACT. No upload system exists today — nothing is ever sent
-  // regardless of this value; the field gates any future crash/usage reporting (which must obey the
-  // scrub spec: no user content, ever) and airgap mode force-disables it independently.
+  // Dependability P6 / batch item 3.2: the telemetry CONSENT field. This is one of the TWO
+  // independent conditions the upload path consults — the other is the live offline/airgap policy,
+  // which force-disables telemetry regardless of this value (AGENTS.md design-principle 4). The
+  // path itself is `observability/telemetry.ts`; it carries only `egress: true` attributes and a
+  // crash SIGNATURE (error kind, a hash of the frames, OS, release line), never user content, and
+  // it refuses with a named reason — `no_endpoint` — until a collector is configured, which is the
+  // state on every machine today. ⚠️ Do not fold the airgap condition into this field's default:
+  // the two are held apart on purpose and `telemetry.test.ts` fails if either starts reading the
+  // other's source.
   telemetry: Schema.Struct({
     enabled: Schema.Boolean.pipe(Schema.optional).annotate({
-      description: "Allow future crash/usage telemetry uploads (default: true; offline mode forces off)",
+      description: "Allow crash telemetry uploads (default: true; offline/airgap mode forces off independently)",
     }),
   })
     .pipe(Schema.optional)
     .annotate({
-      description: "Telemetry consent — gates any future crash/usage reporting; no upload exists today",
+      description:
+        "Telemetry consent — gates crash reporting (crash signatures only, never user content); no collector is configured yet, so nothing is sent",
     }),
   memory: Schema.Struct({
     enabled: Schema.Boolean.pipe(Schema.optional).annotate({

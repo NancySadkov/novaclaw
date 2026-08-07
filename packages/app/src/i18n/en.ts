@@ -1424,7 +1424,12 @@ export const dict = {
   "settings.general.row.shellBundle.provisioning": "Provisioning…",
   "settings.general.row.telemetry.title": "Telemetry",
   "settings.general.row.telemetry.description":
-    "Consent for future crash/usage reporting. Nothing is uploaded today — no telemetry system exists yet; this switch is the contract it will obey, and offline mode forces it off regardless.",
+    "Consent for crash reporting. A crash report carries a fingerprint of the fault — the error's type, a hash of where it happened, your OS and release — and never your chats, code, file paths or error text. Nothing is uploaded today: no collector is configured, so every report is refused before it is even built.",
+  // ⚠️ Ruling 2, and Kiro Crew's disclosure in spirit: when something else pins the switch off, the
+  // switch says so instead of sitting there looking effective. Airgap is an INDEPENDENT veto — it
+  // does not withdraw consent, it overrides it — so the copy states the override rather than
+  // silently flipping the toggle the user set.
+  "settings.general.row.telemetry.forcedOff": "forced off — offline/airgap mode is on",
   "settings.general.row.offline.title": "Offline / airgap mode",
   "settings.general.row.offline.description":
     "Block all network access except your model providers, so nothing else can phone home (fail-closed: if in doubt, it's blocked). This stops package installs, usage/telemetry uploads, and any network calls the agent's shell tries to make. Restart the server to apply.",

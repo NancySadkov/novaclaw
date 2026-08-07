@@ -403,14 +403,28 @@ export const SettingsGeneralV2: Component<{
           </div>
         </SettingsRowV2>
 
+        {/*
+          The disable switch is Developer-gated by design (AGENTS.md design-principle 4: on by
+          default, disableable only in Developer mode — a common user is maintained, not
+          surveilled). ⚠️ The DISCLOSURE must never inherit that gate: what a crash report contains
+          belongs in the description above, which every expertise level reads.
+
+          ⚠️ Airgap is shown as an OVERRIDE, not as the toggle's value. Rendering `checked={false}`
+          while offline is on would tell the user they withdrew consent when they did not — the two
+          conditions are independent (`core/src/observability/telemetry.ts`), and a surface that
+          collapses them is how the independence gets refactored away later.
+        */}
         <SettingsRowV2
           minLevel="developer"
           title={language.t("settings.general.row.telemetry.title")}
-          description={language.t("settings.general.row.telemetry.description")}
+          description={`${language.t("settings.general.row.telemetry.description")}${
+            offlineEnabled() ? ` — ${language.t("settings.general.row.telemetry.forcedOff")}` : ""
+          }`}
         >
           <div data-action="settings-telemetry">
             <Switch
               checked={(serverSync().data.config as { telemetry?: { enabled?: boolean } }).telemetry?.enabled !== false}
+              disabled={offlineEnabled()}
               onChange={(checked) => void serverSync().updateConfig({ telemetry: { enabled: checked } } as never)}
             />
           </div>
