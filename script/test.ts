@@ -65,6 +65,7 @@ import { enforce, headroomBytes, topConsumers } from "./lib/heavy-guard"
 import * as LedgerDrift from "./lib/ledger-drift"
 import * as MemoryPlan from "./lib/memory-plan"
 import * as PeakSampler from "./lib/peak-sampler"
+import * as PeakSeries from "./lib/peak-series"
 import { readFailingNames, stripAnsi } from "./lib/test-output"
 import { isUpstreamWatcherCrash } from "./lib/upstream-crash"
 import { typecheckUnits } from "./lib/typecheck-units"
@@ -420,6 +421,16 @@ function planUnit(name: string, kind: Kind): MemoryPlan.Plan {
  */
 const sampler = PeakSampler.start()
 
+/**
+ * ONE stamp for the whole invocation, taken where the work starts.
+ *
+ * There was no run id anywhere in this file before, which is why the peak block below could only ever
+ * describe the run in hand — every row of the series carries this, so "one run" is a `grep` rather
+ * than a guess about which lines arrived together. `Date.now()` is enough: nothing correlates these
+ * rows with anything outside this process.
+ */
+const RUN_STAMP = new Date().toISOString()
+
 /** One spawn of one command, with its peak sampled. The unit-level orchestration is in `run`. */
 function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], wallclockMs: number) {
   const start = Date.now()
@@ -772,6 +783,34 @@ if (measured.length) {
     process.stdout.write(`  ${r.name.padEnd(30)} ${String(r.peakMb).padStart(5)}${drift}${from}\n`)
   }
 }
+
+/**
+ * ─── the peak SERIES ───────────────────────────────────────────────────────────────────────────────
+ * The block above is per-run and ephemeral, so *"does gate degradation accumulate across consecutive
+ * runs?"* has never had more than one point to answer it with. Append the same numbers, one row per
+ * test unit per run, and it becomes a series. `lib/peak-series.ts` holds the row shape and its check.
+ *
+ * ⚠️ **It cannot fail the run, and that is deliberate.** `append` returns its failure as a value; a
+ * full disk or a locked file prints a warning and the exit code below never sees it. An instrument
+ * that can take down the thing it measures is worse than no instrument.
+ *
+ * ⚠️ **`tmp/` (gitignored), never a tracked artifact.** The gate observes the profile here; it does
+ * NOT write `test-baseline.json`, which stays hand-maintained — a baseline that ratchets to whatever
+ * the machine last did is not a baseline.
+ */
+const series = PeakSeries.append(
+  PeakSeries.seriesPath(REPO_ROOT),
+  PeakSeries.buildRows(RUN_STAMP, PeakSeries.scopeLabel(FULL, ONLY), results, peakProfile),
+)
+// Self-describing, because the block header above only prints when something was MEASURED while a row
+// is appended for every test unit that ran — the two can legitimately disagree.
+if (series.ok && series.rows > 0)
+  process.stdout.write(`  peak series  +${series.rows} row(s) -> ${series.path}  (run ${RUN_STAMP})\n`)
+else if (!series.ok)
+  process.stdout.write(
+    `  \x1b[33mpeak series NOT appended\x1b[0m (${series.path}): ${series.reason}\n` +
+      `  The gate is unaffected — this is a log, and a log may never decide a run.\n`,
+  )
 
 /**
  * ─── the SKIPPED ledger ────────────────────────────────────────────────────────────────────────────
