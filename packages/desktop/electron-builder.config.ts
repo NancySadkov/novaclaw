@@ -78,11 +78,6 @@ const getBase = (appId: string): Configuration => ({
       from: "resources/icons/",
       to: "icons/",
     },
-    {
-      from: "native/",
-      to: "native/",
-      filter: ["index.js", "index.d.ts", "build/Release/mac_window.node", "swift-build/**"],
-    },
     ...(process.platform === "win32"
       ? [
           {

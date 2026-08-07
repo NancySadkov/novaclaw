@@ -198,8 +198,15 @@ without it the packaging step fails with _Need executable 'rpmbuild' to convert 
 The build targets your host architecture. Cross-building (an arm64 package on an x64 host, or the
 reverse) is _not verified here_.
 
-Two harmless lines you will see in the log: `file source doesn't exist … packages/desktop/native`
-(a macOS-only helper that is not built on Linux) and a bun dependency-tree note.
+One harmless line you will see in the log: a bun dependency-tree note.
+
+> **Removed 2026-08-07.** This paragraph also listed `file source doesn't exist …
+> packages/desktop/native` and explained it as *"a macOS-only helper that is not built on Linux"*.
+> That explanation was wrong and it is why the entry survived: the directory was absent on **every**
+> platform, never tracked in any commit, and nothing in `src/main` ever loaded it. Its `native:build`
+> script failed with `ENOENT` when finally run. Both the script and the `extraResources` entry are
+> deleted. ⚠️ The lesson is the plausible-sounding explanation, not the dead entry — *"it's for the
+> other platform"* is exactly the shape that makes a reader stop checking.
 
 ## 6. Where NovaClaw keeps its files
 
