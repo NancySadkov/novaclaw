@@ -1,0 +1,276 @@
+import { describe, expect, test } from "bun:test"
+import { ComputerPrompt as CP } from "./prompt"
+import { ComputerLedger } from "./ledger"
+import { ComputerProposal } from "./proposal"
+
+/**
+ * S3 — the two prompt builders, and the two guards that only exist as properties of the RENDERED
+ * STRING.
+ *
+ * 🔴 **G5 (the adjudicator sees neither the goal nor the action) and G11 (exactly one image, a stable
+ * prefix, bounded growth) are both ABSENCE assertions**, which is the failure mode this repo fears
+ * most: an absence assertion over a builder that renders nothing at all is green forever. So every
+ * one below is paired with a control that finds the very same sentinel in the planner prompt, where
+ * it belongs. If the sentinels stop being findable, the controls go red before the guards go
+ * vacuously green.
+ */
+
+const GOAL = "SENTINEL_GOAL_zylophant — start a new game of Master of Magic and end turn one"
+const OBSERVATION = "SENTINEL_OBSERVATION_qorvex: the main menu with four buttons"
+const EXPECT = "The Game Options dialog is showing."
+const CHECKPOINT = { id: "cp9", question: "Is a dialog headed 'Choose a new spell to research' visible?" }
+
+const img = (tag: string): CP.Image => ({ mime: "image/png", data: `BASE64_${tag}_PAYLOAD` })
+
+const entry = (n: number): ComputerLedger.Entry => ({
+  n,
+  observation: `${OBSERVATION} @${n}`,
+  action: `click(464,684)`,
+  expect: EXPECT,
+  verdict: "no-visible-effect",
+  checkpoint: `0/9`,
+})
+
+const ledgerOf = (n: number): ComputerLedger.Ledger => {
+  let ledger = ComputerLedger.empty
+  for (let i = 1; i <= n; i++) ledger = ComputerLedger.append(ledger, entry(i))
+  return ledger
+}
+
+const whole = (prompt: CP.Prompt): string => `${prompt.system}\n${prompt.user}`
+
+// ------------------------------------------------------------------------------------------------
+// G5 — the adjudicator is blind
+// ------------------------------------------------------------------------------------------------
+
+describe("🔴 G5 — the adjudication prompt contains NEITHER the goal NOR the action", () => {
+  const adjudication = CP.adjudicator({ prediction: EXPECT, checkpoint: CHECKPOINT, image: img("after") })
+  const planning = CP.planner({ goal: GOAL, ledger: ledgerOf(3), image: img("now") })
+
+  test("the goal string appears nowhere in the rendered adjudication prompt", () => {
+    expect(whole(adjudication)).not.toContain(GOAL)
+    expect(whole(adjudication)).not.toContain("SENTINEL_GOAL")
+    expect(whole(adjudication)).not.toContain("Master of Magic")
+    // The control: the identical sentinel IS findable where it belongs, so this is a real search.
+    expect(whole(planning)).toContain(GOAL)
+  })
+
+  test("no action verb the planner can propose reaches the reader", () => {
+    const text = whole(adjudication).toLowerCase()
+    for (const kind of ComputerProposal.ACTION_KINDS) expect(text).not.toContain(kind)
+    // The control: the planner prompt teaches every one of those verbs, so the scan finds them there.
+    const plannerText = whole(planning).toLowerCase()
+    for (const kind of ComputerProposal.ACTION_KINDS) expect(plannerText).toContain(kind)
+  })
+
+  test("neither the coordinates nor the step log reach the reader", () => {
+    const text = whole(adjudication)
+    expect(text).not.toContain("464")
+    expect(text).not.toContain("684")
+    expect(text).not.toContain("SENTINEL_OBSERVATION")
+    expect(text).not.toContain("no-visible-effect")
+    // Controls, all four, in the prompt that is supposed to carry them.
+    const plan = whole(planning)
+    expect(plan).toContain("464")
+    expect(plan).toContain("SENTINEL_OBSERVATION")
+    expect(plan).toContain("no-visible-effect")
+  })
+
+  test("…and it is not blind because it is empty: the prediction and the question ARE there", () => {
+    // Without this the three assertions above would pass on a builder that renders nothing.
+    expect(whole(adjudication)).toContain(EXPECT)
+    expect(whole(adjudication)).toContain(CHECKPOINT.question)
+    expect(adjudication.image).toEqual(img("after"))
+  })
+
+  test("the output schema is asked for in the causal field order: observed, then the answers", () => {
+    const system = adjudication.system
+    expect(system.indexOf('"observed"')).toBeGreaterThan(-1)
+    expect(system.indexOf('"observed"')).toBeLessThan(system.indexOf('"predicted"'))
+    expect(system.indexOf('"predicted"')).toBeLessThan(system.indexOf('"checkpoint"'))
+  })
+
+  test("a calibration call drops `predicted` from the schema rather than asking about nothing", () => {
+    const calibration = CP.adjudicator({ checkpoint: CHECKPOINT, image: img("start") })
+    expect(calibration.system).not.toContain('"predicted"')
+    expect(calibration.user).toContain(CHECKPOINT.question)
+    expect(calibration.user).not.toContain("STATEMENT")
+  })
+
+  test("⚠️ the one leak G5 cannot close is the model's OWN prediction sentence", () => {
+    // Named rather than hidden. `expect` is the only model-authored text the reader must see, and a
+    // planner that writes its plan into it leaks the plan. The harness adds nothing; this pins that
+    // the leak, when it happens, comes from the sentence and not from us.
+    const leaky = CP.adjudicator({ prediction: "After clicking New Game the options dialog appears" })
+    expect(leaky.user).toContain("clicking New Game")
+    const clean = CP.adjudicator({ prediction: EXPECT, checkpoint: CHECKPOINT })
+    expect(whole(clean).toLowerCase()).not.toContain("click")
+  })
+})
+
+// ------------------------------------------------------------------------------------------------
+// G11 — one image, a stable prefix, bounded growth
+// ------------------------------------------------------------------------------------------------
+
+describe("🔴 G11 — exactly one image, regardless of N", () => {
+  test("across 25 steps every planner prompt carries exactly the newest frame", () => {
+    for (let n = 1; n <= 25; n++) {
+      const prompt = CP.planner({ goal: GOAL, ledger: ledgerOf(n - 1), image: img(`frame${n}`) })
+      expect(prompt.image).toEqual(img(`frame${n}`))
+    }
+  })
+
+  test("🔴 no EARLIER frame's payload survives anywhere in the prompt", () => {
+    // This is what stops the quadratic blow-up returning the first time someone "helpfully" keeps
+    // the last three frames: an older payload appearing in the rendered text would be found here.
+    const text = whole(CP.planner({ goal: GOAL, ledger: ledgerOf(24), image: img("frame25") }))
+    for (let n = 1; n <= 24; n++) expect(text).not.toContain(img(`frame${n}`).data)
+    // Controls: the payload string is findable when it IS present, and it is never inlined as text.
+    expect(img("frame1").data).toContain("BASE64")
+    expect(text).not.toContain("BASE64")
+    expect(text).not.toContain("data:image")
+  })
+
+  test("the image is a single optional field, so N frames are unrepresentable by type", () => {
+    const prompt = CP.planner({ goal: GOAL, ledger: ledgerOf(3), image: img("only") })
+    expect(Object.keys(prompt).filter((k) => k === "image")).toHaveLength(1)
+    expect(CP.planner({ goal: GOAL, ledger: ledgerOf(3) }).image).toBeUndefined()
+  })
+})
+
+describe("🔴 G11 — the prefix is byte-identical across steps", () => {
+  const prompts = Array.from({ length: 25 }, (_, i) =>
+    CP.planner({ goal: GOAL, ledger: ledgerOf(i), image: img(`frame${i + 1}`) }),
+  )
+
+  test("`system` never changes during a run", () => {
+    for (const prompt of prompts) expect(prompt.system).toBe(prompts[0]!.system)
+    // Control: it does change when the run changes, so this is not comparing a constant.
+    expect(CP.planner({ goal: "a different goal", ledger: ledgerOf(0) }).system).not.toBe(prompts[0]!.system)
+  })
+
+  const HEADER_LINE = `STEP LOG (oldest first) — ${ComputerLedger.HEADER}`
+
+  test("each step's `user` extends the previous one rather than rewriting it", () => {
+    let shared = ""
+    for (let i = 1; i < prompts.length; i++) {
+      const previousLog = ComputerLedger.render(ledgerOf(i - 1))
+      shared = previousLog === "" ? HEADER_LINE : `${HEADER_LINE}\n${previousLog}`
+      expect(prompts[i - 1]!.user.startsWith(shared)).toBe(true)
+      expect(prompts[i]!.user.startsWith(shared)).toBe(true)
+    }
+    // Non-vacuity: by step 25 the shared prefix is nearly the whole user block, which is the point —
+    // a run prefills the preamble and the log once, not twice per step.
+    expect(shared.length).toBeGreaterThan(prompts[prompts.length - 1]!.user.length * 0.8)
+  })
+
+  test("the per-step `note` is appended LAST, so it cannot move the cache boundary", () => {
+    const plain = CP.planner({ goal: GOAL, ledger: ledgerOf(4), image: img("f") })
+    const noted = CP.planner({ goal: GOAL, ledger: ledgerOf(4), image: img("f"), note: "REPAIR_SENTINEL" })
+    expect(noted.system).toBe(plain.system)
+    expect(noted.user.startsWith(plain.user)).toBe(true)
+    expect(noted.user).toContain("REPAIR_SENTINEL")
+  })
+})
+
+describe("🔴 G11 — growth per step is under the ratcheted ceiling, and the run stays linear", () => {
+  test("each additional step adds at most one ledger line's worth of tokens", () => {
+    let previous = 0
+    const deltas: number[] = []
+    for (let n = 0; n < 25; n++) {
+      const tokens = CP.estimateTokens(CP.planner({ goal: GOAL, ledger: ledgerOf(n), image: img("f") }))
+      if (n > 0) deltas.push(tokens - previous)
+      previous = tokens
+    }
+    for (const delta of deltas) expect(delta).toBeLessThanOrEqual(ComputerLedger.LINE_TOKEN_CEILING)
+    // Non-vacuity: the lines here are real, near-full ones — the ceiling is being approached.
+    expect(Math.max(...deltas)).toBeGreaterThan(ComputerLedger.LINE_TOKEN_CEILING / 2)
+  })
+
+  test("🔴 25 designed steps cost a fraction of the 665,000 tokens the naive loop would", () => {
+    // The measured naive figure (`computer-use-loop-plan.md` §4): Σ (12,945 + 1,050·n) over 25 steps
+    // is ≈665,000 prompt tokens, quadratic in n, because a settled tool result is durable.
+    const naive = Array.from({ length: 25 }, (_, i) => 12_945 + 1_050 * i).reduce((a, b) => a + b, 0)
+    expect(naive).toBeGreaterThan(600_000)
+
+    let designed = 0
+    for (let n = 0; n < 25; n++) {
+      designed += CP.estimateTokens(CP.planner({ goal: GOAL, ledger: ledgerOf(n), image: img("f") }))
+      designed += CP.estimateTokens(CP.adjudicator({ prediction: EXPECT, checkpoint: CHECKPOINT, image: img("f") }))
+    }
+    expect(designed).toBeLessThan(naive / 4)
+  })
+
+  test("the image dominates a step, which is why the ONE-image rule is the whole design", () => {
+    const prompt = CP.planner({ goal: GOAL, ledger: ledgerOf(3), image: img("f") })
+    const withoutImage = CP.estimateTokens({ system: prompt.system, user: prompt.user })
+    expect(CP.estimateTokens(prompt) - withoutImage).toBe(CP.IMAGE_PROMPT_TOKENS)
+    expect(CP.IMAGE_PROMPT_TOKENS).toBeGreaterThan(withoutImage / 2)
+  })
+})
+
+// ------------------------------------------------------------------------------------------------
+// The planner's contract
+// ------------------------------------------------------------------------------------------------
+
+describe("the planner prompt states the contract the validator enforces", () => {
+  test("it renders `CONTRACT_LINES` rather than restating them", () => {
+    const system = CP.planner({ goal: GOAL, ledger: ComputerLedger.empty }).system
+    for (const line of ComputerProposal.CONTRACT_LINES) expect(system).toContain(line)
+  })
+
+  test("the first step says the log is empty instead of showing a blank table", () => {
+    const user = CP.planner({ goal: GOAL, ledger: ComputerLedger.empty }).user
+    expect(user).toContain("no steps yet")
+    expect(user).toContain(ComputerLedger.HEADER)
+  })
+})
+
+// ------------------------------------------------------------------------------------------------
+// Reading the adjudicator's answer
+// ------------------------------------------------------------------------------------------------
+
+describe("the adjudication reply is read with the same tolerance as a proposal", () => {
+  test("the plain shape", () => {
+    const parsed = CP.parseAdjudication('{"observed": "a dialog", "predicted": "yes", "checkpoint": "no"}')
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.reply).toEqual({ observed: "a dialog", predicted: "yes", checkpoint: "no" })
+  })
+
+  test("prose around a fenced block, and booleans instead of strings", () => {
+    const parsed = CP.parseAdjudication(
+      'Looking at the screen:\n```json\n{"observed": "the map", "predicted": true, "checkpoint": false}\n```\nHope that helps.',
+    )
+    if (!parsed.ok) throw new Error("expected a parse")
+    expect(parsed.reply.predicted).toBe("yes")
+    expect(parsed.reply.checkpoint).toBe("no")
+  })
+
+  test("🔴 an answer that is not yes/no is UNKNOWN — never `yes`, and never quietly `no`", () => {
+    for (const value of ["maybe", "probably", "", "unclear", "1"]) {
+      const parsed = CP.parseAdjudication(JSON.stringify({ observed: "x", predicted: value, checkpoint: value }))
+      if (!parsed.ok) throw new Error("expected a parse")
+      expect(parsed.reply.predicted).toBeUndefined()
+      expect(parsed.reply.checkpoint).toBeUndefined()
+    }
+    // Control: the same field with a real answer does come through, so `undefined` means unanswered
+    // rather than "this parser never reads that field".
+    const good = CP.parseAdjudication('{"observed": "x", "checkpoint": "yes"}')
+    if (!good.ok) throw new Error("expected a parse")
+    expect(good.reply.checkpoint).toBe("yes")
+  })
+
+  test("a missing `observed` is tolerated — the answers are what the loop consumes", () => {
+    const parsed = CP.parseAdjudication('{"checkpoint": "yes"}')
+    if (!parsed.ok) throw new Error("expected a parse")
+    expect(parsed.reply.observed).toBe("")
+  })
+
+  test("a reply with no JSON at all fails, and says so", () => {
+    const parsed = CP.parseAdjudication("I cannot tell from this image.")
+    expect(parsed.ok).toBe(false)
+    if (parsed.ok) return
+    expect(parsed.issue.length).toBeGreaterThan(0)
+  })
+})

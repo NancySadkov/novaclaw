@@ -1,0 +1,304 @@
+export * as ComputerPrompt from "./prompt"
+
+import { JhExtract } from "../jh/extract"
+import { ComputerLedger } from "./ledger"
+import { ComputerProposal } from "./proposal"
+
+/**
+ * Computer Use 2.1 / S3 — the two prompts the loop sends, and the one it must never send.
+ *
+ * There are exactly two model calls per step and they are built here because the thing that makes
+ * them safe is a property of the RENDERED STRING, not of the call site:
+ *
+ * | builder | sees | answers |
+ * |---|---|---|
+ * | {@link planner} | the goal, the append-only ledger, the newest frame | one proposal |
+ * | {@link adjudicator} | one prediction sentence, one closed question, one frame | `observed` / `predicted` / `checkpoint` |
+ *
+ * 🔴 **G5 — the adjudicator is BLIND, and that separation is the whole of rung 2.** A model shown
+ * *"I clicked New Game"* and asked *"is the New Game screen showing?"* will ratify itself; a model
+ * shown only a frame and a sentence has to look. So {@link adjudicator}'s input has no field for the
+ * goal, the action, or the ledger — the leak is not merely discouraged, it is unrepresentable — and
+ * `prompt.test.ts` asserts over the rendered system+user strings that neither appears, with the
+ * planner prompt for the same fixture as the non-vacuity control.
+ *
+ * ⚠️ **What G5 cannot cover, named rather than hidden: the model's own `expect` sentence.** The
+ * prediction is the one piece of model-authored text the adjudicator must see, and nothing stops a
+ * planner writing *"after clicking New Game the options dialog appears"*. The harness leaks nothing;
+ * the model may still leak its own plan into the only channel it has. `CONTRACT_LINES` pushes against
+ * it (*"write what will be VISIBLE, not what you intended"*) and that is a prompt, which
+ * `todo.md` says is not a constraint on this floor model. Treat a `predicted: yes` as the WEAK half
+ * of the ladder it already is — the strong direction is rung 1's unchanged region, which no wording
+ * can talk its way past.
+ *
+ * 🔴 **G11 — exactly one image, and the prefix is byte-stable.** {@link Prompt} carries at most one
+ * {@link Image}, so "helpfully" keeping the last three frames cannot be expressed without changing
+ * this type; and the render order is `[stable preamble][append-only ledger][newest image][the one
+ * question]`, so everything a step adds lands AFTER everything the previous step sent. vLLM
+ * prefix-caches on an exact token prefix, so that ordering is what makes the run prefill the preamble
+ * once instead of 25 times. ⚠️ Whether the cache spans the multimodal segment is *expected, not
+ * verified* — S7's usage series is what will say.
+ */
+
+// ---------------------------------------------------------------------------------------------
+// The shapes
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * One screenshot, as base64 payload plus its mime type.
+ *
+ * ⚠️ **`data` is the bare base64 — never a `data:` URI.** `tool/computer.ts` records why: settlement
+ * builds the URI, so a producer that emits one too yields
+ * `data:image/png;base64,data:image/png;base64,…`. The driver (S5) is the producer here.
+ */
+export interface Image {
+  readonly mime: string
+  readonly data: string
+}
+
+/**
+ * A built prompt. **At most one image**, by construction — see G11 above.
+ *
+ * `{system, user}` is `JhExpander.PromptPair`'s shape, deliberately: the loop is `JhEngine` applied
+ * to a screen, and a driver that already knows how to send one pair can send this one.
+ */
+export interface Prompt {
+  readonly system: string
+  readonly user: string
+  readonly image?: Image
+}
+
+/**
+ * Prompt tokens one 1280×800 PNG costs, MEASURED 2026-08-06 (`todo/computer-use.md`): a 20 KB
+ * screenshot came back as 1,052 prompt tokens on `holo3.1`, and the identical question without the
+ * image cost essentially nothing.
+ *
+ * ⚠️ It scales with the display, so a larger screen costs multiples of this — which is exactly why
+ * the budget has a token counter beside its step counter (G7). It is an ESTIMATE used only until the
+ * driver has a real `usage.prompt_tokens` off the response.
+ */
+export const IMAGE_PROMPT_TOKENS = 1052
+
+/**
+ * ~4 characters per token. Coarse on purpose: it seeds the budget counter, and the wire corrects it
+ * the moment a real `usage.prompt_tokens` comes back.
+ *
+ * ⚠️ **The design's `P ≈ 800` for the planner preamble is an estimate it explicitly asked to have
+ * MEASURED, and this is a partial answer, not the answer.** Rendering the real preamble (purpose +
+ * `CONTRACT_LINES` + a one-line goal) gives **494** by this estimator — under the guess, in the
+ * cheap direction. But 494 is a character count divided by four, not a tokenizer's opinion and
+ * certainly not the wire's: S5's driver reads `usage.prompt_tokens` off every response and S7's live
+ * step produces the first real series. **That number, not this one, goes in the Phase 2 ledger
+ * line.** Whole-run arithmetic from this estimator, for scale: 25 planner calls + 25 adjudications
+ * ≈ **82,700** prompt tokens against the naive loop's measured **638,625** — 7.7×, and linear.
+ */
+export const estimateTextTokens = (text: string): number => Math.ceil(text.length / 4)
+
+export const estimateTokens = (prompt: Prompt): number =>
+  estimateTextTokens(prompt.system) + estimateTextTokens(prompt.user) + (prompt.image === undefined ? 0 : IMAGE_PROMPT_TOKENS)
+
+// ---------------------------------------------------------------------------------------------
+// The planner
+// ---------------------------------------------------------------------------------------------
+
+const PLANNER_PURPOSE = [
+  "You are driving a computer screen toward a goal, one action at a time.",
+  "",
+  "A harness owns the horizon, not you. It takes every screenshot, executes the single action you",
+  "propose, measures whether the screen actually responded, and decides when the task is finished.",
+  "You never see your own history as pictures: the image below is the screen RIGHT NOW, and every",
+  "earlier step is one line in the log. Propose ONE action — the next one — and nothing else.",
+]
+
+const PLANNER_QUESTION = [
+  "The image is the screen as it is right now.",
+  "Emit ONE proposal for the next single action, as one JSON object in the shapes above.",
+]
+
+/**
+ * The planner call: purpose + vocabulary + goal in `system`, the log + question + newest frame in
+ * `user`.
+ *
+ * 🔴 **The goal lives in `system` and the step number does NOT, so `system` is byte-identical for
+ * every step of a run.** Anything that varies per step would move the cache boundary to the very
+ * front of the prompt and the prefix cache would never hit.
+ *
+ * `note` is the one per-step addition and it is APPENDED LAST for the same reason — a repair
+ * re-prompt (`ComputerProposal.repairPrompt`) or a Guard refusal is new information, and new
+ * information goes after everything already sent, never in front of it.
+ */
+export function planner(input: {
+  readonly goal: string
+  readonly ledger: ComputerLedger.Ledger
+  readonly image?: Image
+  /** A repair re-prompt or a Guard refusal. Rendered last so the stable prefix stays stable. */
+  readonly note?: string
+}): Prompt {
+  const system = [...PLANNER_PURPOSE, "", `GOAL: ${input.goal}`, "", ...ComputerProposal.CONTRACT_LINES].join("\n")
+
+  // ⚠️ The header line is emitted UNCONDITIONALLY, including on step 1. A first step whose log block
+  // is worded differently would move the divergence point of the cached prefix to the very first
+  // line of `user`, throwing away the one segment every step of the run shares.
+  const rendered = ComputerLedger.render(input.ledger)
+  const log = [
+    `STEP LOG (oldest first) — ${ComputerLedger.HEADER}`,
+    rendered === "" ? "(no steps yet — this is the first)" : rendered,
+  ]
+
+  const user = [
+    ...log,
+    "",
+    ...PLANNER_QUESTION,
+    ...(input.note === undefined || input.note.trim() === "" ? [] : ["", input.note]),
+  ].join("\n")
+
+  return input.image === undefined ? { system, user } : { system, user, image: input.image }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The adjudicator
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * 🔴 **Every sentence here is written so the rendered string names no task and no action.** The
+ * obvious phrasing — *"you are not told what was clicked"* — contains the action verb it promises to
+ * withhold, and G5's test compares substrings, so it would fail against a `click` proposal. That is
+ * the test working: a prompt that mentions clicking has taught the reader that a click happened.
+ */
+const ADJUDICATOR_PURPOSE = [
+  "You are shown ONE screenshot and asked closed questions about it.",
+  "",
+  "You are not told what task is being performed, what was done to this screen, who did it, or what",
+  "anyone expected to happen. That is deliberate — your answers are only useful if they come from",
+  "looking at the image. If the image does not settle a question, answer no.",
+]
+
+/**
+ * The output schema, **in this field order because generation order is causal.** `observed` is
+ * emitted first, so the yes/no follows a description of the screen instead of leading it. There is
+ * evidence this helps on our grounder specifically: the 08-06 probe found Holo's `reasoning` field
+ * describing a screen correctly and unprompted — colours, relative positions, three named buttons —
+ * on a task that only asked for a point.
+ */
+const schemaLine = (withPrediction: boolean): string =>
+  withPrediction
+    ? '{"observed": "<one line describing this screen>", "predicted": "yes|no", "checkpoint": "yes|no"}'
+    : '{"observed": "<one line describing this screen>", "checkpoint": "yes|no"}'
+
+export interface AdjudicatorQuestion {
+  readonly id: string
+  readonly question: string
+}
+
+/**
+ * The blind reader. **Takes a sentence, a question and a picture — there is no parameter for the
+ * goal, the action, or the log, and adding one is what G5's test exists to catch.**
+ *
+ * Both halves are optional so the same builder serves all three uses, and the schema line adapts:
+ * - **calibration** (G14): `checkpoint` only, asked against the START frame where the answer is
+ *   known to be *no*. A yes means the channel is a yes-machine and the run is `Void`.
+ * - **a step**: `prediction` + the next unsatisfied `checkpoint` — one call, two answers, which is
+ *   how 2.2's 9-checkpoint score comes out of the same image at no extra cost.
+ * - **a `claim_done`** (G1): the terminal `checkpoint` only. The model's claim is the reason we ask;
+ *   it is never the answer, and it is not repeated into this prompt.
+ */
+export function adjudicator(input: {
+  readonly prediction?: string
+  readonly checkpoint?: AdjudicatorQuestion
+  readonly image?: Image
+}): Prompt {
+  const withPrediction = input.prediction !== undefined && input.prediction.trim() !== ""
+  const system = [
+    ...ADJUDICATOR_PURPOSE,
+    "",
+    "Reply with exactly one JSON object and nothing else, with the fields in this order:",
+    `  ${schemaLine(withPrediction)}`,
+    "Describe what you see first, then answer. Do not explain your answers.",
+  ].join("\n")
+
+  const parts: string[] = []
+  if (withPrediction) {
+    parts.push(
+      "STATEMENT — is this true of the image?",
+      `  ${(input.prediction ?? "").replace(/\s+/g, " ").trim()}`,
+      '  → "predicted": "yes" if the image shows it, "no" if it does not.',
+    )
+  }
+  if (input.checkpoint !== undefined) {
+    if (parts.length > 0) parts.push("")
+    parts.push(
+      "QUESTION — answer from the image alone.",
+      `  ${input.checkpoint.question.replace(/\s+/g, " ").trim()}`,
+      '  → "checkpoint": "yes" or "no".',
+    )
+  }
+  if (parts.length === 0) parts.push("QUESTION — describe what is on this screen.")
+
+  const user = parts.join("\n")
+  return input.image === undefined ? { system, user } : { system, user, image: input.image }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Reading the answer
+// ---------------------------------------------------------------------------------------------
+
+export interface Adjudication {
+  readonly observed: string
+  /** `undefined` when the reader did not answer, or answered something that is not yes/no. */
+  readonly predicted?: "yes" | "no"
+  readonly checkpoint?: "yes" | "no"
+}
+
+export type AdjudicationResult =
+  | { readonly ok: true; readonly reply: Adjudication }
+  | { readonly ok: false; readonly issue: string }
+
+/**
+ * `"yes"` / `"no"` / a boolean / `"true"` / `"y"` — and **anything else is `undefined`, never `no`
+ * and above all never `yes`.**
+ *
+ * ⚠️ The two unknown-readings are not symmetric. Reading an unparseable answer as `no` would silently
+ * stall a run that is actually finished; reading it as `yes` would declare victory on a screen nobody
+ * looked at, which is the `claim_done` failure wearing the adjudicator's hat. `undefined` is a third
+ * state and both callers handle it as "not answered".
+ */
+const yesNo = (value: unknown): "yes" | "no" | undefined => {
+  if (typeof value === "boolean") return value ? "yes" : "no"
+  if (typeof value !== "string") return undefined
+  const v = value.trim().toLowerCase()
+  if (v === "yes" || v === "y" || v === "true") return "yes"
+  if (v === "no" || v === "n" || v === "false") return "no"
+  return undefined
+}
+
+/**
+ * The adjudicator's reply → an {@link Adjudication}.
+ *
+ * ⚠️ **`jh/extract.ts` again, reused rather than rewritten** — the same balanced-brace scanner
+ * `ComputerProposal.parseProposal` uses, for the same reason: a second extractor would be a second
+ * opinion about one model's habits, and the weaker one. `observed` is tolerated as absent (the model
+ * answered without describing), because the answers are what the loop consumes; the loop only records
+ * the description.
+ */
+export function parseAdjudication(text: string): AdjudicationResult {
+  const extracted = JhExtract.extractJsonObject(text)
+  if (!extracted.ok) {
+    const f = extracted.failure
+    return { ok: false, issue: `${f.reason}: ${f.detail}` }
+  }
+  const value = extracted.value
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return { ok: false, issue: "the reply is not a JSON object" }
+  }
+  const observed = "observed" in value && typeof value.observed === "string" ? value.observed : ""
+  const predicted = "predicted" in value ? yesNo(value.predicted) : undefined
+  const checkpoint = "checkpoint" in value ? yesNo(value.checkpoint) : undefined
+  return {
+    ok: true,
+    reply: {
+      observed,
+      ...(predicted === undefined ? {} : { predicted }),
+      ...(checkpoint === undefined ? {} : { checkpoint }),
+    },
+  }
+}
