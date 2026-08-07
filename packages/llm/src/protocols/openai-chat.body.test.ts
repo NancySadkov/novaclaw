@@ -6,9 +6,14 @@ import { OpenAIChat } from "./openai-chat"
 
 // `fromRequest` reads model/messages/tools/generation — a minimal cast drives the real
 // body construction without a live model (same pattern as the recovery test).
+// ⚠️ The `prompt` is REQUIRED, not decoration: `Protocol.make` refuses a body whose conversation
+// array lowered to empty, and this helper used to build a request with no messages and no system.
+// The tool-discovery tests below replace `messages` wholesale, so the prompt only serves the
+// sampling tests — which are about `top_k`, not about emptiness.
 const request = (generation: GenerationOptions.Input) =>
   makeRequest({
     model: Model.make({ id: "qwen3.6-35b", provider: "dgx-spark", route: OpenAIChat.route }),
+    prompt: "Say hello.",
     generation,
   })
 

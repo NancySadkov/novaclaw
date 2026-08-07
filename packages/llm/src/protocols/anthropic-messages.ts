@@ -837,6 +837,9 @@ export const protocol = Protocol.make({
   body: {
     schema: AnthropicMessagesBody,
     from: fromRequest,
+    // `system` is its OWN top-level field here, so — unlike the two OpenAI wires — a system prompt
+    // does not populate `messages`. Empty still means nothing to answer.
+    conversation: { name: "messages", read: (body) => body.messages },
   },
   stream: {
     event: Protocol.jsonEvent(AnthropicEvent),

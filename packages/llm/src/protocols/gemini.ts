@@ -488,6 +488,9 @@ export const protocol = Protocol.make({
   body: {
     schema: GeminiBody,
     from: fromRequest,
+    // Gemini spells the turn array `contents`; the system prompt is the separate
+    // `systemInstruction`, so an empty `contents` is empty regardless of it.
+    conversation: { name: "contents", read: (body) => body.contents },
   },
   stream: {
     event: Protocol.jsonEvent(GeminiEvent),

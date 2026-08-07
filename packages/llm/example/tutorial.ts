@@ -189,6 +189,12 @@ const FakeProtocol = Protocol.make<FakeBody, string, string, void>({
           .map((part) => part.text)
           .join("\n"),
       }),
+    // Every protocol must say which part of its body carries the turns, and `Protocol.make` refuses
+    // to send a request where that part came out empty. This fake flattens the conversation into
+    // one string rather than an array, so it reports one element when there is text and none when
+    // there is not — the question the guard asks is "did anything get carried", not "is it an
+    // array". A protocol that omits this field does not compile.
+    conversation: { name: "input", read: (body) => (body.input === "" ? [] : [body.input]) },
   },
   stream: {
     event: Schema.String,

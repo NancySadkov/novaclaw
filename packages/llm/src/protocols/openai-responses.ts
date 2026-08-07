@@ -961,6 +961,10 @@ export const protocol = Protocol.make({
   body: {
     schema: OpenAIResponsesBody,
     from: fromRequest,
+    // `input` carries the system prompt too, and this wire has the SAME residual openai-chat has:
+    // `lowerReasoning` returns undefined without an itemId and the `store: false` filter drops
+    // reasoning items lacking encrypted state, so a non-empty request can lower to an empty `input`.
+    conversation: { name: "input", read: (body) => body.input },
   },
   stream: {
     event: Protocol.jsonEvent(OpenAIResponsesEvent),

@@ -59,6 +59,9 @@ const fakeProtocol = Protocol.make<FakeBody, FakeEvent, FakeEvent, void>({
           ...request.tools.map((tool) => `tool:${tool.name}:${tool.description}`),
         ].join("\n"),
       }),
+    // This fake flattens the conversation to one string; report one element when it carries
+    // anything, none when it does not. See `ProtocolBody.conversation`.
+    conversation: { name: "body", read: (body) => (body.body === "" ? [] : [body.body]) },
   },
   stream: {
     event: FakeEvent,

@@ -49,6 +49,18 @@ export const protocol = Protocol.make({
             }) as OpenRouterBody,
         ),
       ),
+    // ⚠️ This protocol was invisible to a `grep` for `protocols/*.ts` — it lives under `providers/`.
+    // The REQUIRED `conversation` field is what surfaced it: it did not compile without one.
+    //
+    // 🔴 **This declaration is INERT today, and saying so is the point.** `from` above delegates to
+    // `OpenAIChat.protocol.body.from`, which `Protocol.make` already wrapped, so an empty body is
+    // refused by the INNER guard and this one is never reached — measured, not assumed: a mutation
+    // making this `read` always non-empty changes no test. Ruling 1's discriminator says an
+    // unreachable guard is not a guard, so what is pinned instead is the reachable fact — that an
+    // openrouter refusal is attributed to `openai-chat`, because the openai-chat lowering is what
+    // produced nothing. `test/empty-conversation.test.ts`'s `EXPECTED.OpenRouter.refusedBy` holds
+    // it, and goes red the day `from` stops delegating, which is the day this line wakes up.
+    conversation: { name: "messages", read: (body) => body.messages },
   },
   stream: OpenAIChat.protocol.stream,
 })

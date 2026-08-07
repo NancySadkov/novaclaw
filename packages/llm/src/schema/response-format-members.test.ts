@@ -59,8 +59,17 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
 
 // Same minimal cast the protocol's own body tests use: `fromRequest` reads model/messages/tools/
 // generation/responseFormat, so this drives real body construction without a live model.
+// ⚠️ The one user turn is REQUIRED, not decoration: `Protocol.make` refuses a body whose
+// conversation array lowered to empty, so a cast with `messages: []` now fails before it can say
+// anything about `response_format`. Keep a turn here — this file is about the format, not emptiness.
 const request = (patch: Record<string, unknown>) =>
-  ({ model: { id: "qwen3.6-35b" }, system: [], messages: [], tools: [], ...patch }) as unknown as LLMRequest
+  ({
+    model: { id: "qwen3.6-35b" },
+    system: [],
+    messages: [{ role: "user", content: [{ type: "text", text: "Say hello." }] }],
+    tools: [],
+    ...patch,
+  }) as unknown as LLMRequest
 
 const body = (patch: Record<string, unknown>) =>
   Effect.runSync(OpenAIChat.protocol.body.from(request(patch))) as Record<string, unknown>

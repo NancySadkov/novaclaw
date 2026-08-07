@@ -643,6 +643,8 @@ export const protocol = Protocol.make({
   body: {
     schema: BedrockConverseBody,
     from: fromRequest,
+    // Converse keeps `system` beside `messages`, same split as Anthropic's own wire.
+    conversation: { name: "messages", read: (body) => body.messages },
   },
   stream: {
     event: BedrockEvent,

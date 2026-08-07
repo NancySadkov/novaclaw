@@ -733,6 +733,10 @@ export const protocol = Protocol.make({
   body: {
     schema: OpenAIChatBody,
     from: fromRequest,
+    // This wire carries the system prompt INSIDE `messages`, so an empty array means the request
+    // said nothing at all — not merely "no user turn". This is the array the KNOWN RESIDUAL noted
+    // in `lowerAssistantMessage` above lands in; `Protocol.make` now refuses it by name.
+    conversation: { name: "messages", read: (body) => body.messages },
   },
   stream: {
     event: Protocol.jsonEvent(OpenAIChatEvent),
