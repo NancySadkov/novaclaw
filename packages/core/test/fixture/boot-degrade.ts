@@ -84,4 +84,11 @@ const booted = await Effect.runPromiseExit(
 )
 report["booted"] = Exit.isSuccess(booted)
 
+// …and what actually landed IN THE FILE. `Effect.scoped` above released the writer, which flushes.
+// ⚠️ Reporting only `booted` would assert that the layer BUILT — the healthy case would stay green
+// with a sink that writes nowhere, which is exactly the failure Phase 2's writer could introduce and
+// exactly the shape a "green suite proves nothing about the packaged app" pitfall takes. Read the
+// bytes.
+report["logFileContent"] = fsSync.existsSync(logFile) ? fsSync.readFileSync(logFile, "utf8") : null
+
 process.stdout.write(JSON.stringify(report) + "\n")

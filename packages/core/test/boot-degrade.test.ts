@@ -56,6 +56,7 @@ interface Report {
   unguardedLogger: "failed" | "opened"
   guardedLogger: "stderr" | "file" | "DIED"
   booted: boolean
+  logFileContent: string | null
 }
 
 /** Boot the fixture under `home` and read back what it observed. */
@@ -138,6 +139,14 @@ describe("Global's directory creation", () => {
     expect(report.unguardedLogger).toBe("opened")
     expect(report.guardedLogger).toBe("file")
     expect(stderr).not.toContain("[novaclaw] WARNING")
+
+    // ⭐ The end-to-end claim for Phase 2's writer, and the one that cannot be faked by a layer that
+    // merely BUILDS: the line the real `Observability.layer` emitted is in `<data>/log/novaclaw.log`,
+    // in the production logfmt, flushed by the scope release. A sink that wrote nowhere would pass
+    // every other assertion in this file.
+    expect(report.logFileContent).toContain('message="boot-degrade probe reached the logger"')
+    expect(report.logFileContent).toContain("level=INFO")
+    expect(report.logFileContent!.endsWith("\n")).toBe(true)
   })
 })
 
