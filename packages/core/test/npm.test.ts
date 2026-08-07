@@ -9,6 +9,28 @@ import { tmpdir } from "./fixture/tmpdir"
 
 const win = process.platform === "win32"
 
+/**
+ * **`Npm.add`'s budget, and why it is not the suite's 15 s.** See `repository-cache.test.ts`'s
+ * `BUDGET_MS` for the full derivation — same failure, same day, same cause, and 60 s comes from
+ * `core`'s 600 s wall-clock backstop rather than from rounding a failure up.
+ *
+ * What is specific to this one is *which* resource it is waiting on. It is not concurrency: run units
+ * are sequential in `script/test.ts`, and this test's paths are a per-test `mkdtemp` plus a `cache`
+ * and `state` root inside it. It is **cold I/O** — the `@npmcli/arborist` graph is `import()`ed on
+ * first `reify` and then a real reify runs. Measured here with bun's junit reporter:
+ *
+ * | condition | this test |
+ * | --- | --- |
+ * | warm, idle | **0.86 s** |
+ * | warm, 16 concurrent bun test processes | 7.72 s |
+ * | **cold** (first run of the day), idle | **7.58 s** |
+ *
+ * A ~9× cold/warm ratio, and the gate reported it failing at **16.4 s** — i.e. cold and loaded at
+ * once, which is exactly the state a `core` run near 8 GB puts the host file cache in. 15 s was never
+ * a stuck-test guard for this test; it was a coin flip.
+ */
+const BUDGET_MS = 60_000
+
 const writePackage = (dir: string, pkg: Record<string, unknown>) =>
   Bun.write(
     path.join(dir, "package.json"),
@@ -36,25 +58,29 @@ describe("Npm.sanitize", () => {
 })
 
 describe("Npm.add", () => {
-  test("reifies when package cache directory exists without the package installed", async () => {
-    await using tmp = await tmpdir()
-    await fs.mkdir(path.join(tmp.path, "fixture-provider"))
-    await writePackage(path.join(tmp.path, "fixture-provider"), {
-      name: "fixture-provider",
-      main: "index.js",
-    })
-    await Bun.write(path.join(tmp.path, "fixture-provider", "index.js"), "export const fixture = true\n")
+  test(
+    "reifies when package cache directory exists without the package installed",
+    async () => {
+      await using tmp = await tmpdir()
+      await fs.mkdir(path.join(tmp.path, "fixture-provider"))
+      await writePackage(path.join(tmp.path, "fixture-provider"), {
+        name: "fixture-provider",
+        main: "index.js",
+      })
+      await Bun.write(path.join(tmp.path, "fixture-provider", "index.js"), "export const fixture = true\n")
 
-    const spec = `fixture-provider@file:${path.join(tmp.path, "fixture-provider")}`
-    await fs.mkdir(path.join(tmp.path, "cache", "packages", Npm.sanitize(spec)), { recursive: true })
+      const spec = `fixture-provider@file:${path.join(tmp.path, "fixture-provider")}`
+      await fs.mkdir(path.join(tmp.path, "cache", "packages", Npm.sanitize(spec)), { recursive: true })
 
-    const entry = await Effect.gen(function* () {
-      const npm = yield* Npm.Service
-      return yield* npm.add(spec)
-    }).pipe(Effect.scoped, Effect.provide(npmLayer(path.join(tmp.path, "cache"))), Effect.runPromise)
+      const entry = await Effect.gen(function* () {
+        const npm = yield* Npm.Service
+        return yield* npm.add(spec)
+      }).pipe(Effect.scoped, Effect.provide(npmLayer(path.join(tmp.path, "cache"))), Effect.runPromise)
 
-    expect(entry.entrypoint).toBeDefined()
-  })
+      expect(entry.entrypoint).toBeDefined()
+    },
+    BUDGET_MS,
+  )
 })
 
 describe("Npm.install", () => {
