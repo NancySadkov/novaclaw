@@ -1,5 +1,6 @@
-import { Config, ConfigProvider, Context, Effect, Layer, Option } from "effect"
+import { Cause, Config, ConfigProvider, Context, Effect, Exit, Layer, Option } from "effect"
 import { ConfigService } from "@/effect/config-service"
+import { Log } from "@novaclaw/schema/log"
 
 const bool = (name: string) => Config.boolean(name).pipe(Config.withDefault(false))
 const positiveInteger = (name: string) =>
@@ -17,7 +18,11 @@ const enabledByExperimental = (name: string) =>
 // core's V2 loader (`core/config/plugin/external.ts`) and reads `Flag.NOVACLAW_PURE` directly — one
 // reader, at the seam it protects. `NOVACLAW_DISABLE_DEFAULT_PLUGINS` is gone with the V1 arm: it
 // gated an internal-plugin list that had been empty since the NovaClaw detach.
-export class Service extends ConfigService.Service<Service>()("@novaclaw/RuntimeFlags", {
+/**
+ * The flag declarations, hoisted out of the `Service` call so the resilient resolver below can walk
+ * them field by field. `Service` is still the only consumer that decides the service SHAPE.
+ */
+const fields = {
   disableEmbeddedWebUi: bool("NOVACLAW_DISABLE_EMBEDDED_WEB_UI"),
   disableExternalSkills: bool("NOVACLAW_DISABLE_EXTERNAL_SKILLS"),
   disableClaudeCodePrompt: Config.all({
@@ -54,14 +59,105 @@ export class Service extends ConfigService.Service<Service>()("@novaclaw/Runtime
   // back to the legacy V1 prompt stack (it is removed wholesale in F1f).
   experimentalWebSockets: bool("NOVACLAW_EXPERIMENTAL_WEBSOCKETS"),
   client: Config.string("NOVACLAW_CLIENT").pipe(Config.withDefault("cli")),
-}) {}
+} as const
+
+export class Service extends ConfigService.Service<Service>()("@novaclaw/RuntimeFlags", fields) {}
 
 export type Info = Context.Service.Shape<typeof Service>
 
-const emptyConfigLayer = Service.defaultLayer.pipe(
-  Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
-  Layer.orDie,
+/** The provider that answers "nothing is set", i.e. the source of every flag's declared default. */
+const noEnvironment = ConfigProvider.fromUnknown({})
+
+/** One flag that could not be read from the environment, and what NovaClaw is using instead. */
+export interface FlagFault {
+  /** The service field, e.g. `enableExa`. */
+  readonly field: string
+  /** Every environment variable that flag reads. Recorded from the `Config`, never hand-kept. */
+  readonly variables: readonly string[]
+  /** The parse failure, rendered — it names the variable and the values that would have been legal. */
+  readonly cause: string
+}
+
+export interface Resolution {
+  readonly flags: Info
+  readonly faults: readonly FlagFault[]
+}
+
+/**
+ * Which environment variables a flag reads, measured by resolving it against a provider that answers
+ * `undefined` for everything and remembers each path it was asked for.
+ *
+ * Derived rather than declared on purpose: a hand-written name list beside the `Config` definitions
+ * would drift the first time somebody adds a second variable to a composite flag, and it would drift
+ * silently, in the one message a user with a typo'd variable is going to read.
+ */
+const variablesOf = (config: Config.Config<unknown>): readonly string[] => {
+  const seen = new Set<string>()
+  const recorder = ConfigProvider.make((path) => {
+    seen.add(path.map(String).join("_"))
+    return Effect.succeed(undefined)
+  })
+  try {
+    Effect.runSync(Effect.exit(config.pipe(Effect.provideService(ConfigProvider.ConfigProvider, recorder))))
+  } catch {
+    // A reporter must never become the next boot-killer. An empty list is a worse message, not a
+    // dead process; the `cause` below still names the variable.
+    return []
+  }
+  return [...seen].sort()
+}
+
+/**
+ * **Resolve every flag, and never fail.**
+ *
+ * ⚠️ This used to be `Service.defaultLayer.pipe(Layer.orDie)` — one `Config.all` over ~18 boolean
+ * variables, with any `ConfigError` erased into a defect. `Config.withDefault` and `Config.option`
+ * only cover MISSING data (measured against `effect@4.0.0-beta.83`: *"Only applies when the error is
+ * a SchemaError caused exclusively by missing data … Validation errors still propagate"*), so
+ * `NOVACLAW_ENABLE_EXA=yess` was an unrecoverable boot defect. An environment variable is an
+ * operational fact, which is exactly the class AGENTS.md's self-healing law says must be repairable
+ * by asking an agent — and no agent can be asked anything inside a process that never came up.
+ * (`notes/reports/startup-classification-2026-08-07.md` §5, finding 1.)
+ *
+ * Each field is resolved on its own, always — not only after a combined read has failed — so the
+ * degraded path IS the path and cannot rot as a branch nothing exercises. One malformed variable now
+ * costs exactly one flag, which falls back to its declared default and is named in the log.
+ *
+ * `Effect.exit` is what makes this hold: `Effect.catch` and `Effect.ignore` do NOT see defects, and a
+ * defect is what a `Config` decode failure becomes downstream. An `Exit` carries the whole `Cause`.
+ */
+export const resolve: Effect.Effect<Resolution> = Effect.gen(function* () {
+  const flags: Record<string, unknown> = {}
+  const faults: FlagFault[] = []
+  // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- the field types differ per key; this walk only needs "some Config".
+  const declarations = Object.entries(fields) as ReadonlyArray<readonly [string, Config.Config<unknown>]>
+  for (const [field, config] of declarations) {
+    const attempt = yield* Effect.exit(config)
+    if (Exit.isSuccess(attempt)) {
+      flags[field] = attempt.value
+      continue
+    }
+    const fallback = yield* Effect.exit(config.pipe(Effect.provideService(ConfigProvider.ConfigProvider, noEnvironment)))
+    flags[field] = Exit.isSuccess(fallback) ? fallback.value : undefined
+    faults.push({ field, variables: variablesOf(config), cause: Cause.pretty(attempt.cause) })
+  }
+  // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- every key of `fields` is assigned above, in order.
+  return { flags: flags as Info, faults }
+})
+
+/** The resolution, with any faults named in the log before the service is handed out. */
+const announced = Effect.flatMap(resolve, (resolution) =>
+  resolution.faults.length === 0
+    ? Effect.succeed(resolution.flags)
+    : Log.event("instance.flags.parse.failed", {
+        "instance.flags": resolution.faults.flatMap((fault) => fault.variables).join(","),
+        "instance.cause": resolution.faults.map((fault) => `${fault.field}: ${fault.cause}`).join(" | "),
+      }).pipe(Effect.as(resolution.flags)),
 )
+
+export const defaultLayer = Layer.effect(Service, Effect.map(announced, Service.of))
+
+const emptyConfigLayer = defaultLayer.pipe(Layer.provide(ConfigProvider.layer(noEnvironment)))
 
 export const layer = (overrides: Partial<Info> = {}) =>
   Layer.effect(
@@ -71,8 +167,6 @@ export const layer = (overrides: Partial<Info> = {}) =>
       return Service.of({ ...flags, ...overrides })
     }),
   ).pipe(Layer.provide(emptyConfigLayer))
-
-export const defaultLayer = Service.defaultLayer.pipe(Layer.orDie)
 
 export const node = LayerNode.make({ service: Service, layer: defaultLayer, deps: [] })
 

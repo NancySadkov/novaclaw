@@ -537,6 +537,18 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/lifecycle.ts",
   },
+  /**
+   * One or more runtime flags could not be parsed from the environment, so each fell back to its
+   * declared default and the instance booted anyway. Before this key existed, a single malformed
+   * variable was an unrecoverable boot defect.
+   */
+  "instance.flags.parse.failed": {
+    level: "warn",
+    message: "runtime flags could not be parsed; the affected flags fell back to their defaults",
+    attributes: { "instance.flags": "id", "instance.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/effect/runtime-flags.ts",
+  },
   /** Disposing every instance failed during a swallow-errors shutdown; the disposed event is still emitted. */
   "instance.global.dispose.failed": {
     level: "warn",

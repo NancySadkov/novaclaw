@@ -2,7 +2,7 @@ export * as Observability from "./observability"
 
 import { NodeFileSystem } from "@effect/platform-node"
 import { LayerNode } from "./effect/layer-node"
-import { Effect, Layer, Logger, References } from "effect"
+import { Cause, Effect, Layer, Logger, References } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientError } from "effect/unstable/http"
 import { OtlpSerialization } from "effect/unstable/observability"
 import { Global } from "./global"
@@ -56,10 +56,29 @@ export const layer = Layer.unwrap(
           ),
         ).pipe(Layer.provide(FetchHttpClient.layer)),
       ),
-      Layer.orDie,
+      // ⚠️ NO `Layer.orDie` here, deliberately, and the type is what holds the line: the only
+      // failure this composition could ever carry was `Logger.toFile`'s `PlatformError`, and
+      // `Logging.fileLoggerOrStderr` now absorbs that into the stderr sink. `OtlpLogger.make`'s
+      // error channel is `never`. So this layer's error channel is `never` by construction, and
+      // re-adding an `orDie` would be re-arming the boot-killer this line used to be
+      // (`notes/reports/startup-classification-2026-08-07.md` §5, finding 2).
       Layer.merge(Layer.succeed(References.MinimumLogLevel, Logging.minimumLogLevel())),
     )
-    return Layer.merge(logs, otlp ? yield* Effect.promise(Otlp.tracingLayer) : Layer.empty)
+    // The tracing layer is a dynamic import of the OpenTelemetry SDK, so a broken or partial install
+    // is a rejected promise — which `Effect.promise` turns into a defect on the boot path. Tracing
+    // is the most optional thing in this file; losing it must cost a warning, never the instance.
+    const tracing = otlp
+      ? yield* Effect.tryPromise(Otlp.tracingLayer).pipe(
+          Effect.catchCause((cause) => {
+            console.error(
+              `[novaclaw] WARNING: OpenTelemetry tracing could not be initialised ` +
+                `(${Cause.pretty(cause)}); this run has logs but no traces.`,
+            )
+            return Effect.succeed(Layer.empty)
+          }),
+        )
+      : Layer.empty
+    return Layer.merge(logs, tracing)
   }),
 )
 

@@ -33,6 +33,76 @@ const emergencyRoot = () => path.join(os.tmpdir(), `${app}-home`)
 let cached: Xdg.Dirs | undefined
 
 /**
+ * **What happened when the instance tried to create its directories.**
+ *
+ * A VALUE rather than a throw, because this function runs at the very first step of the boot, inside
+ * `Effect.sync` on the most dependency-central node in the graph — so an exception here is a defect
+ * that no caller can catch and the self-healing law ("as long as one working model remains, the
+ * system must be restorable by asking an agent") is void for the whole process. See
+ * `notes/reports/startup-classification-2026-08-07.md` §4.1, `Global`.
+ *
+ * ⚠️ This does NOT make the directories usable. It makes the FAILURE reportable: the instance comes
+ * up, the state is named, and whatever later tries to write into a missing directory fails as an
+ * ordinary error at its own call site instead of as a dead process.
+ */
+export type DirectoryStatus =
+  /** All seven directories exist. */
+  | { readonly state: "ok" }
+  /** The chosen home could not be created, so the instance is running out of the emergency root. */
+  | { readonly state: "relocated"; readonly root: string; readonly failures: readonly DirectoryFault[] }
+  /** Neither the chosen home NOR the emergency root could be created. Named, not fatal. */
+  | { readonly state: "degraded"; readonly failures: readonly DirectoryFault[] }
+
+export interface DirectoryFault {
+  readonly directory: string
+  readonly message: string
+}
+
+let status: DirectoryStatus = { state: "ok" }
+
+/**
+ * The seven instance directories, derived from an XDG layout. Pure — it names paths and touches no
+ * disk, so the guard below can be exercised against a root that is guaranteed to fail.
+ */
+export const directoriesOf = (chosen: Xdg.Dirs, tmpDir: string): readonly string[] => [
+  chosen.data,
+  chosen.config,
+  chosen.state,
+  tmpDir,
+  path.join(chosen.data, "log"),
+  path.join(chosen.cache, "bin"),
+  path.join(chosen.data, "repos"),
+]
+
+/**
+ * `mkdirSync` every directory, and report the ones that refused instead of throwing on the first.
+ *
+ * Every directory is attempted even after one fails: a single unwritable path (a stale file where a
+ * directory belongs, a revoked ACL on `state`) should not hide the state of the other six from
+ * whoever has to repair this.
+ */
+export const ensureDirectories = (directories: readonly string[]): readonly DirectoryFault[] => {
+  const failures: DirectoryFault[] = []
+  for (const directory of directories) {
+    try {
+      fsSync.mkdirSync(directory, { recursive: true })
+    } catch (cause) {
+      failures.push({ directory, message: cause instanceof Error ? cause.message : String(cause) })
+    }
+  }
+  return failures
+}
+
+/**
+ * What the last (and only) directory-creation attempt did. Resolves the directories if nothing has
+ * yet — otherwise a caller asking "is this instance healthy?" would get `ok` for a boot that never ran.
+ */
+export const directoryStatus = (): DirectoryStatus => {
+  dirs()
+  return status
+}
+
+/**
  * Resolve the instance directories ONCE, on first use.
  *
  * Lazy on purpose. Resolving at module load is what shipped v0.1.0 broken: the import ran in Electron's
@@ -66,20 +136,60 @@ const dirs = (): Xdg.Dirs => {
     chosen = found
   }
 
-  cached = chosen
-  Flock.setGlobal({ state: chosen.state })
   // Synchronous: callers read these paths and immediately write into them, and the old module-level
   // `await` is gone now that resolution is lazy.
-  for (const dir of [
-    chosen.data,
-    chosen.config,
-    chosen.state,
-    tmp,
-    path.join(chosen.data, "log"),
-    path.join(chosen.cache, "bin"),
-    path.join(chosen.data, "repos"),
-  ])
-    fsSync.mkdirSync(dir, { recursive: true })
+  //
+  // ⚠️ This used to be a bare `fsSync.mkdirSync(dir, …)` loop, i.e. seven unguarded syscalls inside
+  // `Effect.sync` on the boot path: EACCES/EPERM/EROFS/ENOSPC on any one of them was an
+  // unrecoverable boot defect. It degrades now instead, in the same shape the home-resolution branch
+  // above already used — the emergency root, loudly named.
+  const failures = ensureDirectories(directoriesOf(chosen, tmp))
+  // ⚠️ Only an unusable HOME earns a relocation, never one bad subdirectory. Moving the whole
+  // instance because `<data>/log` could not be created would orphan the user's existing sessions
+  // database in their real home and start them in an empty one — the "quarantine is scarier than a
+  // hard fail if done sloppily" case ruling 2 names. A failed subdirectory degrades in place and
+  // says which one; the subsystem that needed it (the logger) has its own fallback.
+  const unusableHome = failures.some((fault) => [chosen.data, chosen.config, chosen.state].includes(fault.directory))
+  const root = emergencyRoot()
+  if (unusableHome && chosen.explicitHome !== root) {
+    const relocated: Xdg.Dirs = {
+      data: path.join(root, "data"),
+      cache: path.join(root, "cache"),
+      config: path.join(root, "config"),
+      state: path.join(root, "state"),
+      explicitHome: root,
+    }
+    const second = ensureDirectories(directoriesOf(relocated, tmp))
+    if (second.length === 0) {
+      console.error(
+        `[novaclaw] WARNING: NovaClaw could not create its directories under the home it resolved ` +
+          `(${failures.map((fault) => `${fault.directory}: ${fault.message}`).join("; ")}), so it is ` +
+          `storing its files under ${root} for this run. Pass --home <dir> (or set NOVACLAW_HOME) to ` +
+          `choose where they live.`,
+      )
+      chosen = relocated
+      status = { state: "relocated", root, failures }
+    } else {
+      status = { state: "degraded", failures: [...failures, ...second] }
+    }
+  } else if (failures.length > 0) {
+    status = { state: "degraded", failures }
+  }
+
+  if (status.state === "degraded") {
+    // Nothing left to fall back to. The instance still comes up — a running process that can be
+    // asked to repair itself beats a dead one — and every later write fails as an ordinary error at
+    // its own call site, naming its own path.
+    console.error(
+      `[novaclaw] WARNING: NovaClaw could not create these directories and no fallback worked: ` +
+        `${status.failures.map((fault) => `${fault.directory}: ${fault.message}`).join("; ")}. ` +
+        `The instance is starting anyway; features that need those directories will fail and say so. ` +
+        `Pass --home <dir> (or set NOVACLAW_HOME) to choose where they live.`,
+    )
+  }
+
+  cached = chosen
+  Flock.setGlobal({ state: chosen.state })
 
   return cached
 }

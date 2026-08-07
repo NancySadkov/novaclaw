@@ -1,4 +1,4 @@
-import { Formatter, Logger, type LogLevel } from "effect"
+import { Cause, Effect, Formatter, Logger, type LogLevel } from "effect"
 import path from "path"
 import { Global } from "../global"
 import { runID } from "./shared"
@@ -61,7 +61,39 @@ export function fileLogger(file = path.join(Global.Path.log, "novaclaw.log"), id
   return Logger.toFile(formatter(id), file, { flag: "a" })
 }
 
-const stderrLogger = Logger.make((options) => process.stderr.write(formatter().log(options) + "\n"))
+/**
+ * The stderr sink. Exported because it is also the FALLBACK below, and the fallback has to be this
+ * exact object: `Logger.layer` collects its loggers into a `Set`, so returning the same instance is
+ * what stops `NOVACLAW_PRINT_LOGS=1` printing every line twice when the file leg has degraded.
+ */
+export const stderrLogger = Logger.make((options) => process.stderr.write(formatter().log(options) + "\n"))
+
+/**
+ * **The file leg, made unfailable — an unwritable log directory must not kill the boot.**
+ *
+ * `Logger.toFile` opens the file at layer-BUILD time and its error channel is `PlatformError`, and
+ * `observability.ts` piped `Layer.orDie` over the layer carrying it. So EACCES/EROFS/ENOSPC on
+ * `<data>/log` was a boot defect — in the one subsystem you most need when a boot is failing, and
+ * against `todo/logging.md` phase 2's own rule that logging must never take the instance down
+ * (`notes/reports/startup-classification-2026-08-07.md` §5, finding 2).
+ *
+ * ⚠️ The warning goes to `console.error`, not through `Log.event`/`Effect.log*`, and that is not an
+ * exemption from the keyed-log rule: this runs *while the logger layer is being built*, so there is
+ * no sink to emit into yet. It is the same shape `global.ts` already uses for an unresolvable home.
+ */
+export function fileLoggerOrStderr(file = path.join(Global.Path.log, "novaclaw.log"), id: string = runID) {
+  return Effect.matchCause(fileLogger(file, id), {
+    onFailure: (cause) => {
+      console.error(
+        `[novaclaw] WARNING: could not open the log file ${file} (${Cause.pretty(cause)}), so this ` +
+          `run logs to stderr instead. Nothing else is disabled. Pass --home <dir> (or set ` +
+          `NOVACLAW_HOME) to put the instance somewhere writable.`,
+      )
+      return stderrLogger
+    },
+    onSuccess: (logger) => logger as typeof stderrLogger,
+  })
+}
 
 export function minimumLogLevel() {
   const value = process.env.NOVACLAW_LOG_LEVEL?.toUpperCase()
@@ -75,7 +107,7 @@ export function minimumLogLevel() {
 }
 
 export function loggers() {
-  return process.env.NOVACLAW_PRINT_LOGS === "1" ? [fileLogger(), stderrLogger] : [fileLogger()]
+  return process.env.NOVACLAW_PRINT_LOGS === "1" ? [fileLoggerOrStderr(), stderrLogger] : [fileLoggerOrStderr()]
 }
 
 export * as Logging from "./logging"
