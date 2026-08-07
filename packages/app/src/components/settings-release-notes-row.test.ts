@@ -2,17 +2,28 @@ import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
 
-// The release-notes toggle exists in TWO Settings panels — the v1 `settings-general.tsx` and the v2
-// `settings-v2/general.tsx` — because the v1→v2 component fork is still live (todo.md ruling 13). The
-// release-notes status shipped 2026-07-28 has to appear under BOTH toggles, and the roadmap item that
-// asked for it said, in as many words, "both panels must stay in sync".
+// The release-notes toggle used to exist in TWO Settings panels — the v1 `settings-general.tsx` and the
+// v2 `settings-v2/general.tsx` — because the v1→v2 component fork was live on this surface (todo.md
+// ruling 13). The release-notes status shipped 2026-07-28 had to appear under BOTH toggles, and the
+// roadmap item that asked for it said, in as many words, "both panels must stay in sync".
 //
 // Two panels hand-copying one sentence is a drift generator: someone improves the wording in the panel
 // they happen to have open, the other keeps the old text, both compile green, and the product now says
 // two different things about one subsystem — which is the "a fault is never described falsely" half of
-// ruling 2 failing quietly. So the sentence is not copied. Both panels render ONE component
+// ruling 2 failing quietly. So the sentence is not copied. Every panel renders ONE component
 // (`ReleaseNotesStatusLine`, exported from context/highlights.tsx) whose text comes from ONE pure
 // projector over ONE set of i18n keys. Drift is unrepresentable for the wording itself.
+//
+// ⚠️ **2026-08-07 — `PANELS` is down to ONE, and the agreement test was DELETED rather than left to
+// pass vacuously.** The v1 panel was found to have had zero importers since 2026-06-26 (every
+// `DialogSettings` call site dynamic-`import()`s `./settings-v2`) and was deleted, so the drift this
+// file was written against currently has nothing to drift between. `distinct.size === 1` over a
+// one-element set is TRUE for free — a green assertion that proves nothing is worse than no assertion,
+// because a reader counts it. What carries the invariant now is the per-panel rule below, which pins
+// each panel's gate to a DECIDED value (`[]` for the row, `["desktop()"]` for the update check)
+// rather than to its neighbour: agreement between N panels follows from N panels each matching one
+// literal, and it keeps working the moment `PANELS` grows again — which the renderer census forces to
+// be a declared act.
 //
 // ⚠️ 2026-07-28 — THIS FILE WAS ITSELF THE DEFECT CLASS IT WAS WRITTEN AGAINST, and the bug it missed
 // had already shipped. The rules below assert that both panel FILES contain the shared component. They
@@ -30,8 +41,12 @@ import path from "node:path"
 
 const SRC = path.resolve(import.meta.dir, "..")
 
-/** The two Settings panels that carry the release-notes toggle. Neither may be dropped from this list. */
-const PANELS = ["components/settings-general.tsx", "components/settings-v2/general.tsx"] as const
+/**
+ * Every Settings panel that carries the release-notes toggle. A panel may only leave this list when its
+ * FILE is deleted — the census below fails if a panel renders the shared line without being declared,
+ * and the per-panel rules fail if a declared panel stops carrying the row.
+ */
+const PANELS = ["components/settings-v2/general.tsx"] as const
 
 /** The one file allowed to define the shared line. */
 const OWNER = "context/highlights.tsx"

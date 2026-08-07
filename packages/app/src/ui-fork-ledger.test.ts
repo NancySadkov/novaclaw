@@ -61,7 +61,7 @@ import { dirname, join, normalize, relative, resolve } from "node:path"
  *
  * ## Why this file lives in `packages/app/src`
  *
- * The fork spans three packages — the duplicated files are in `ui`, and 74 of the 87 call sites are
+ * The fork spans three packages — the duplicated files are in `ui`, and 70 of the 83 call sites are
  * in `app` — so the ledger has to see all of them at once, exactly like
  * `packages/app/src/renderer-dependency-ledger.test.ts`, which sweeps `app`/`ui`/`session-ui` from
  * this same directory. It is NOT in `packages/ui/test/`: `script/test.ts` runs the `ui` unit as
@@ -169,11 +169,19 @@ export const FORKED_WIDGETS: readonly string[] = [
 ]
 
 /**
- * **Every file that imports the v1 side of a forked widget, re-derived 2026-08-07: 87 files, 151
- * (file, widget) pairs.** Grouped by package: `app` 74, `ui` 10, `session-ui` 3.
+ * **Every file that imports the v1 side of a forked widget, re-derived 2026-08-07: 83 files, 140
+ * (file, widget) pairs.** Grouped by package: `app` 70, `ui` 10, `session-ui` 3.
  *
- * Per-widget: icon 61 · button 27 · icon-button 21 · tooltip 16 · dialog 10 · tabs 8 · select 5 ·
+ * Per-widget: icon 57 · button 24 · icon-button 19 · tooltip 15 · dialog 9 · tabs 7 · select 4 ·
  * toast 3.
+ *
+ * ⚠️ **Four lines left in one commit and NONE of them was a migration — the files were DELETED**
+ * (2026-08-07): `dialog-settings.tsx` and the three panels only it imported (`settings-general`,
+ * `settings-models`, `settings-server-picker`; `settings-servers` was already v1-free). The v1
+ * Settings dialog had had **zero importers since 2026-06-26** — every `DialogSettings` call site
+ * dynamic-`import()`s `./settings-v2` — so 11 of these pairs were fork debt on a surface no user
+ * could open. **A pair leaving the ledger is not automatically progress on the migration**; here it
+ * is progress on the *tree*, and the distinction matters because the remaining 140 are all live.
  *
  * ⚠️ The file count did NOT move when `keybind`/`progress-circle`/`diff-changes` were migrated: all
  * four of their call sites also import some other v1 widget, so every line survived with one name
@@ -212,7 +220,6 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/components/dialog-select-model.tsx": ["button", "dialog", "icon-button", "tooltip"],
   "app/src/components/dialog-select-server.tsx": ["button", "dialog", "icon", "icon-button"],
   "app/src/components/dialog-session-info.tsx": ["button", "icon"],
-  "app/src/components/dialog-settings.tsx": ["dialog", "icon", "tabs"],
   "app/src/components/file-tree.test.ts": ["icon", "tooltip"],
   "app/src/components/file-tree.tsx": ["icon"],
   "app/src/components/prompt-input.tsx": ["button", "icon", "icon-button", "tooltip"],
@@ -230,10 +237,7 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/components/session/session-new-view.tsx": ["icon"],
   "app/src/components/session/session-sortable-tab.tsx": ["icon-button", "tabs", "tooltip"],
   "app/src/components/session/session-sortable-terminal-tab.tsx": ["icon", "icon-button", "tabs"],
-  "app/src/components/settings-general.tsx": ["button", "icon", "select", "tooltip"],
   "app/src/components/settings-keybinds.tsx": ["button", "icon", "icon-button"],
-  "app/src/components/settings-models.tsx": ["icon", "icon-button"],
-  "app/src/components/settings-server-picker.tsx": ["button", "icon"],
   "app/src/components/settings-v2/dialog-expertise.tsx": ["icon"],
   "app/src/components/settings-v2/dialog-model-tier.tsx": ["icon"],
   "app/src/components/settings-v2/dialog-new-model.tsx": ["icon"],
@@ -299,8 +303,8 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
 const V1_COMPONENT_CEILING = 33
 
 /** Measured totals, pinned so the ledger stays a measurement rather than an aspiration. */
-const V1_CALL_SITE_FILES = 87
-const V1_CALL_SITE_PAIRS = 151
+const V1_CALL_SITE_FILES = 83
+const V1_CALL_SITE_PAIRS = 140
 
 // ---------------------------------------------------------------------------------------------
 // The sweep. Pure functions first so the negative controls can drive them without touching disk.

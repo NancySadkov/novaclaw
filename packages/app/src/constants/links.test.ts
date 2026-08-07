@@ -49,12 +49,9 @@ const LEDGER: Entry[] = [
     status: "dead",
     note: "Help → 'NovaClaw Documentation' in the desktop menu bar. 404: no docs site has been published yet. Left pointing at the intended home rather than repointed at Discord — a menu item that says Documentation must not open a chat server (standing decision 3: a fault is never described falsely). Fixing it means publishing /docs.",
   },
-  {
-    file: "components/settings-general.tsx",
-    url: "https://novaclaw.app/docs/themes/",
-    status: "dead",
-    note: "Settings → Appearance 'Learn more' (legacy settings surface). Same 404 as /docs.",
-  },
+  // `components/settings-general.tsx` held a second copy of the /docs/themes/ link until 2026-08-07.
+  // The v1 Settings panel had had zero importers since 2026-06-26 and was deleted; the surviving copy
+  // is the v2 Appearance tab below, which is the one a user can actually reach.
   {
     file: "components/settings-v2/appearance.tsx",
     url: "https://novaclaw.app/docs/themes/",

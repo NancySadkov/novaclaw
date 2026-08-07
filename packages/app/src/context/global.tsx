@@ -1,6 +1,5 @@
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { createEffect, createMemo, createRoot } from "solid-js"
-import { createStore } from "solid-js/store"
 import { createServerProjects, ServerConnection, useServer } from "./server"
 import { useServerHealth } from "@/utils/server-health"
 import { createServerSdkContext } from "./server-sdk"
@@ -17,23 +16,11 @@ export const { use: useGlobal, provider: GlobalProvider } = createSimpleContext(
       () => server.list,
       () => true,
     )
-    const [store, setStore] = createStore({
-      settings: {
-        serverKey: undefined as ServerConnection.Key | undefined,
-      },
-    })
-
-    const settingsServer = createMemo(() => {
-      const list = server.list
-      return list.find((conn) => ServerConnection.key(conn) === store.settings.serverKey) ?? list[0]
-    })
-
-    createEffect(() => {
-      const conn = settingsServer()
-      const key = conn ? ServerConnection.key(conn) : undefined
-      if (store.settings.serverKey !== key) setStore("settings", "serverKey", key)
-    })
-
+    // `settings.serverKey` lived here until 2026-08-07: a per-panel "which instance's catalog am I
+    // editing" selection whose only reader and only writer were `settings-server-picker.tsx`, inside
+    // the unreachable v1 Settings dialog. Deleted with it — both halves, per todo.md's *we discard
+    // all the cruft* ruling. The v2 Models tab derives its connection from the ACTIVE instance
+    // (`settings-v2/models.tsx`), so nothing here has a second reader waiting.
     const serverCtxs = new Map<
       ServerConnection.Key,
       { dispose: () => void; serverCtx: ReturnType<typeof createServerCtx>; auth: string }
@@ -84,17 +71,6 @@ export const { use: useGlobal, provider: GlobalProvider } = createSimpleContext(
       servers: {
         list: () => server.list,
         health: serverHealth,
-      },
-      settings: {
-        server: {
-          get key() {
-            return store.settings.serverKey
-          },
-          selected: settingsServer,
-          set(key: ServerConnection.Key) {
-            if (store.settings.serverKey !== key) setStore("settings", "serverKey", key)
-          },
-        },
       },
       ensureServerCtx(conn: ServerConnection.Any) {
         return ensureServerCtx(conn)
