@@ -250,6 +250,16 @@ export interface CaptureRecord {
   readonly exitCode?: number
   readonly mtimeMs?: number
   readonly size?: number
+  /**
+   * The backend's digest over the captured bytes — present whenever a file was found at all, so a
+   * REJECTED capture carries the digest that G2 refused to believe as well.
+   *
+   * 🔴 **Without this the `RunReport` structurally cannot hold the evidence the loop exists to
+   * produce.** Every verdict in `verify.ts` is a string comparison between two of these, and S7 had
+   * to keep a parallel log in its harness because the report dropped them — which is exactly how the
+   * "there is no measured region-after digest anywhere in this program" debt lasted two days.
+   */
+  readonly digest?: string
 }
 
 /**
@@ -427,7 +437,9 @@ export function run(spec: ComputerLoop.TaskSpec, deps: Deps): Effect.Effect<RunR
             accepted: false,
             reason,
             ...(outcome === undefined ? {} : { exitCode: outcome.exitCode }),
-            ...(outcome?.file === undefined ? {} : { mtimeMs: outcome.file.mtimeMs, size: outcome.file.size }),
+            ...(outcome?.file === undefined
+              ? {}
+              : { mtimeMs: outcome.file.mtimeMs, size: outcome.file.size, digest: outcome.file.digest }),
           })
           return { capture: ComputerEvidence.captureFailed(reason) }
         }
@@ -481,6 +493,7 @@ export function run(spec: ComputerLoop.TaskSpec, deps: Deps): Effect.Effect<RunR
           exitCode: outcome.exitCode,
           mtimeMs: outcome.file.mtimeMs,
           size: outcome.file.size,
+          digest: outcome.file.digest,
         })
         return {
           capture: ComputerEvidence.captured(outcome.file.digest),

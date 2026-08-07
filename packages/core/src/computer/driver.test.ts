@@ -776,3 +776,72 @@ describe("the RunReport", () => {
     }
   })
 })
+
+// ================================================================================================
+// 2.2 — the report must be able to HOLD the evidence the loop exists to produce
+// ================================================================================================
+
+/**
+ * 🔴 **S7 found `CaptureRecord` had no digest field and had to keep a parallel log in its own
+ * harness to write down the first measured region-after digest.** A report that drops the digests
+ * cannot state *why* a verdict was reached: every verdict in `verify.ts` is a string comparison
+ * between two of them, and the acceptance run's whole artefact is the `RunReport`.
+ */
+describe("2.2 — CaptureRecord carries the digest", () => {
+  test("🔴 the report's own digests REPRODUCE the verdict — idle pair equal, after different", async () => {
+    const { report } = await drive({
+      spec: spec({ budget: { maxSteps: 1, maxPromptTokens: 500_000 } }),
+      llm: model({ adjudicator: CALIBRATED }),
+    })
+    const digestOf = (label: string) => report.captures.find((c) => c.label === label)?.digest
+    // Not merely "a string is present": the three digests that decide the verdict, read off the
+    // report alone, must say what the verdict said.
+    expect(digestOf("watch-idle-a")).toBeDefined()
+    expect(digestOf("watch-idle-a")).toBe(digestOf("watch-idle-b")!)
+    expect(digestOf("watch-after")).not.toBe(digestOf("watch-idle-b")!)
+    expect(verdictKinds(report)).toEqual(["attributed"])
+    for (const record of report.captures) expect(typeof record.digest).toBe("string")
+  })
+
+  test("✅ the negative case is equally readable off the report — a still region reads as equal", async () => {
+    const { report } = await drive({
+      screen: substrate({ moves: () => false }),
+      llm: model({ adjudicator: CALIBRATED }),
+    })
+    const digestOf = (label: string) => report.captures.find((c) => c.label === label)?.digest
+    // ⚠️ `toBe` alone would be VACUOUS here: with no digest field at all both sides are `undefined`
+    // and the equality holds. Measured — this test stayed green under the mutation that deleted the
+    // write, which is exactly the vacuous-pass shape this repo keeps finding.
+    expect(digestOf("watch-after")).toBeDefined()
+    expect(digestOf("watch-after")).toBe(digestOf("watch-idle-b")!)
+    expect(verdictKinds(report)).toContain("no-visible-effect")
+  })
+
+  test("🔴 a REJECTED capture carries the digest G2 refused to believe — the forgery is visible", async () => {
+    // The `exit` fault leaves the PREVIOUS frame at the path, so a report that recorded its digest
+    // as if accepted would read `no-visible-effect`. Recording it beside `accepted: false` is what
+    // lets a reader SEE that the forged digest was available and was refused.
+    const { report } = await drive({
+      screen: substrate({
+        moves: () => false,
+        fault: (label) => (label === "watch-after" ? { kind: "exit", stderr: "giblib error" } : undefined),
+      }),
+      llm: model({ adjudicator: CALIBRATED }),
+    })
+    const failed = report.captures.find((c) => c.label === "watch-after")
+    expect(failed?.accepted).toBe(false)
+    expect(failed?.digest).toBeDefined()
+    expect(failed?.digest).toBe(report.captures.find((c) => c.label === "watch-idle-b")?.digest)
+    expect(verdictKinds(report)).toEqual(["capture-failed"])
+  })
+
+  test("no file at all ⇒ NO digest — absent means absent, never an empty string", async () => {
+    const { report } = await drive({
+      screen: substrate({ fault: (label) => (label === "watch-after" ? { kind: "missing" } : undefined) }),
+      llm: model({ adjudicator: CALIBRATED }),
+    })
+    const failed = report.captures.find((c) => c.label === "watch-after")
+    expect(failed?.accepted).toBe(false)
+    expect(failed?.digest).toBeUndefined()
+  })
+})
