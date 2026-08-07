@@ -335,6 +335,8 @@ import type {
   V2SessionCommandResponses,
   V2SessionCompactErrors,
   V2SessionCompactResponses,
+  V2SessionConfigErrors,
+  V2SessionConfigResponses,
   V2SessionContextErrors,
   V2SessionContextResponses,
   V2SessionCreateErrors,
@@ -4439,6 +4441,25 @@ export class Session extends HeyApiClient {
     const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
     return (options?.client ?? this.client).get<V2SessionChildrenResponses, V2SessionChildrenErrors, ThrowOnError>({
       url: "/api/session/{sessionID}/children",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Resolve session config
+   *
+   * Resolve a session's effective configuration by walking its parent chain root-ward (undefined = inherit), and report which ancestor supplied each field. Covers the SessionConfig fields only: the saved permission ruleset does not resolve through this walk, the reported permissionMode is the config-walk result before auto-mode grants and the unattended stance narrow it further, and systemPromptOverride is the per-session override rather than the composed system prompt.
+   */
+  public config<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2SessionConfigResponses, V2SessionConfigErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/config",
       ...options,
       ...params,
     })

@@ -9632,6 +9632,88 @@
         ]
       }
     },
+    "/api/session/{sessionID}/config": {
+      "get": {
+        "tags": ["sessions"],
+        "operationId": "v2.session.config",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SessionConfigResolved"
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Resolve a session's effective configuration by walking its parent chain root-ward (undefined = inherit), and report which ancestor supplied each field. Covers the SessionConfig fields only: the saved permission ruleset does not resolve through this walk, the reported permissionMode is the config-walk result before auto-mode grants and the unattended stance narrow it further, and systemPromptOverride is the per-session override rather than the composed system prompt.",
+        "summary": "Resolve session config",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.config({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/session/{sessionID}/fork": {
       "post": {
         "tags": ["sessions"],
@@ -24532,6 +24614,59 @@
           }
         },
         "required": ["type"],
+        "additionalProperties": false
+      },
+      "SessionConfigFieldResolution": {
+        "type": "object",
+        "properties": {
+          "value": {},
+          "merge": {
+            "type": "string",
+            "enum": ["override", "narrow"]
+          },
+          "origin": {
+            "type": "string",
+            "pattern": "^ses"
+          },
+          "declaredBy": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^ses"
+            }
+          }
+        },
+        "required": ["merge", "declaredBy"],
+        "additionalProperties": false
+      },
+      "SessionConfigResolved": {
+        "type": "object",
+        "properties": {
+          "sessionID": {
+            "type": "string",
+            "pattern": "^ses"
+          },
+          "chain": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^ses"
+            }
+          },
+          "defaults": {
+            "type": "object"
+          },
+          "resolved": {
+            "type": "object"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SessionConfigFieldResolution"
+            }
+          }
+        },
+        "required": ["sessionID", "chain", "defaults", "resolved", "fields"],
         "additionalProperties": false
       },
       "MessageNotFoundError": {

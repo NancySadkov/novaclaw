@@ -1574,6 +1574,27 @@ export type SessionActive = {
   type: "running"
 }
 
+export type SessionConfigFieldResolution = {
+  value?: unknown
+  merge: "override" | "narrow"
+  origin?: string
+  declaredBy: Array<string>
+}
+
+export type SessionConfigResolved = {
+  sessionID: string
+  chain: Array<string>
+  defaults: {
+    [key: string]: unknown
+  }
+  resolved: {
+    [key: string]: unknown
+  }
+  fields: {
+    [key: string]: SessionConfigFieldResolution
+  }
+}
+
 export type MessageNotFoundError = {
   _tag: "MessageNotFoundError"
   sessionID: string
@@ -10886,6 +10907,43 @@ export type V2SessionChildrenResponses = {
 }
 
 export type V2SessionChildrenResponse = V2SessionChildrenResponses[keyof V2SessionChildrenResponses]
+
+export type V2SessionConfigData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/config"
+}
+
+export type V2SessionConfigErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionConfigError = V2SessionConfigErrors[keyof V2SessionConfigErrors]
+
+export type V2SessionConfigResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: SessionConfigResolved
+  }
+}
+
+export type V2SessionConfigResponse = V2SessionConfigResponses[keyof V2SessionConfigResponses]
 
 export type V2SessionForkData = {
   body?: never
