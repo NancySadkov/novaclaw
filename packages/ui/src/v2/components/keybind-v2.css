@@ -1,9 +1,3 @@
-* {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: geometricPrecision;
-}
-
 [data-component="keybind-v2"] {
   box-sizing: border-box;
   font-variant-numeric: tabular-nums;

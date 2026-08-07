@@ -1,9 +1,3 @@
-* {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: geometricPrecision;
-}
-
 [data-component="text-shimmer-v2"] {
   --_step: 45ms;
   --_duration: 1200ms;

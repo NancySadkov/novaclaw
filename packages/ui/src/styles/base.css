@@ -34,6 +34,16 @@ html,
   font-feature-settings: var(--font-family-sans--font-feature-settings, normal); /* 5 */
   font-variation-settings: var(--font-family-sans--font-variation-settings, normal); /* 6 */
   -webkit-tap-highlight-color: transparent; /* 7 */
+  /* 8. Text rendering, app-wide ON PURPOSE and declared HERE rather than in a component sheet.
+     Five v2 component sheets (button · icon-button · keybind · tabs · text-shimmer) each opened with
+     a bare `*` selector setting this plus the two font-smoothing properties — a per-component
+     stylesheet reaching every element in the app, five times over, from a design-tool export.
+     ⚠️ The two smoothing properties were already redundant: both shells put Tailwind's `antialiased`
+     on `<body>` (`packages/app/index.html` and `packages/desktop/src/renderer/index.html`), and both
+     are inherited. `text-rendering` was NOT covered anywhere else, so it moves here instead of being
+     dropped — it is inherited too, so one declaration reproduces exactly what the five `*` rules did.
+     `menu-v2.css` also sets all three, but scoped inside its own component; that one is correct. */
+  text-rendering: geometricPrecision; /* 8 */
 }
 
 /*
