@@ -8667,39 +8667,6 @@ export type AppAgentsResponses = {
 
 export type AppAgentsResponse = AppAgentsResponses[keyof AppAgentsResponses]
 
-export type AppSkillsData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/skill"
-}
-
-export type AppSkillsErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type AppSkillsError = AppSkillsErrors[keyof AppSkillsErrors]
-
-export type AppSkillsResponses = {
-  /**
-   * List of skills
-   */
-  200: Array<{
-    name: string
-    description?: string
-    location: string
-    content: string
-  }>
-}
-
-export type AppSkillsResponse = AppSkillsResponses[keyof AppSkillsResponses]
-
 export type FormatterStatusData = {
   body?: never
   path?: never

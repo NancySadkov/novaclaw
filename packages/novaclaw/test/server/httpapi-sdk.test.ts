@@ -447,7 +447,10 @@ describe("HttpApi SDK", () => {
         const findFiles = yield* capture(() => sdk.find.files({ query: "hello", limit: 10 }))
         const findText = yield* capture(() => sdk.find.text({ pattern: "sdk-parity" }))
         const agents = yield* capture(() => sdk.app.agents())
-        const skills = yield* capture(() => sdk.app.skills())
+        // The legacy `GET /skill` route is DELETED (ruling 11 ratchet 83 → 82): `Skill.Service` is
+        // `InstanceState.make` and registers for no reload domain, so it served a stale list after
+        // any config write. Skills are read through core's `SkillV2` at `/api/skill`, which is
+        // registered for the `skills` reload domain — covered by the core config-plugin suite.
         const tools = yield* capture(() => sdk.tool.ids())
         const vcs = yield* capture(() => sdk.vcs.get())
         const formatter = yield* capture(() => sdk.formatter.status())
@@ -463,7 +466,6 @@ describe("HttpApi SDK", () => {
             findFiles,
             findText,
             agents,
-            skills,
             tools,
             vcs,
             formatter,

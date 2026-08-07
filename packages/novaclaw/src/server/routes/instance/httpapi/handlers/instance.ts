@@ -16,7 +16,6 @@ import { VirtualFs } from "@novaclaw/core/virtual-fs"
 import { Scratch } from "@novaclaw/core/scratch"
 import { Vcs } from "@/project/vcs"
 import { OsPlaces } from "@/server/os-places"
-import { Skill } from "@/skill"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { Effect, Layer } from "effect"
 import fs from "fs/promises"
@@ -49,7 +48,6 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
   Effect.gen(function* () {
     const locations = yield* LocationServiceMap.Service
     const format = yield* Format.Service
-    const skill = yield* Skill.Service
     const vcs = yield* Vcs.Service
     const settingsStore = yield* SettingsConfigStore.Service
 
@@ -166,10 +164,6 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       )
     })
 
-    const getSkill = Effect.fn("InstanceHttpApi.skill")(function* () {
-      return yield* skill.all()
-    })
-
     const getFormatter = Effect.fn("InstanceHttpApi.formatter")(function* () {
       return yield* format.status()
     })
@@ -215,7 +209,6 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       .handle("vcsApply", applyVcs)
       .handle("command", getCommand)
       .handle("agent", getAgent)
-      .handle("skill", getSkill)
       .handle("formatter", getFormatter)
       .handle("appList", listApp)
       .handle("appRegister", registerApp)

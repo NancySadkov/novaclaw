@@ -37,17 +37,27 @@ import path from "node:path"
  * outright; a listed path the spec no longer declares fails with "delete the ledger line", so
  * un-pinning is mandatory rather than optional and the set can only get smaller.
  *
- * ⚠️ **Measured 2026-08-04, and it bounds what this file claims.** 176 paths: 93 under `/api/*`,
- * **83 legacy** (94 legacy operations across the five methods). Ruling 11 was written against 97
- * legacy paths, so the set has already shrunk by fourteen — this file is what stops it going back. It
+ * ⚠️ **Measured 2026-08-07, and it bounds what this file claims.** 176 paths: 94 under `/api/*`,
+ * **82 legacy** (93 legacy operations across the five methods). Ruling 11 was written against 97
+ * legacy paths, so the set has already shrunk by fifteen — this file is what stops it going back. It
  * closes no live bug; it is a guard against the NEXT route, which is the only form this invariant
- * can take.
+ * can take. (The `/api/*` half moved 93 → 94 over the same window; it is free to grow, which is why
+ * only the legacy half is pinned.)
  *
  * ⚠️ **The 2026-07-31 shrink is `GET /permission` + `POST /permission/{requestID}/reply`** — the V1
  * permission routes, deleted with the V1 engine they served (v0.2.0-prep Wave 4 §5). This edit is
  * only true once `bun run --cwd packages/sdk/js regen` has rewritten `openapi.json`: the ledger
  * measures the committed spec, so ledger and spec must move in the SAME commit or this file is red
  * either way round.
+ *
+ * ⚠️ **The 2026-08-07 shrink is `GET /skill`, and it was a live staleness bug rather than tidy-up.**
+ * The legacy route read `Skill.Service`, which is `InstanceState.make` and registers for NO reload
+ * domain — so a config write left it serving a stale list until the instance was disposed. `/api/skill`
+ * is served by core's `SkillV2` (`packages/server/src/handlers/skill.ts`), registered for the `skills`
+ * domain, and is a superset (adds `slash?`) though wrapped as `{location, data: […]}` rather than a
+ * bare array. Ruling 11 plus design-principle 1 say delete the legacy path, not build it a second
+ * refresh path. `Skill.Service` itself STAYS — `agent/agent.ts` needs `skill.dirs()` for the
+ * `external_directory` whitelist and `novaclaw debug skill` calls `skill.all()`.
  */
 
 /** `packages/sdk/js/test` → `packages/sdk/openapi.json`, the committed generated spec. */
@@ -65,8 +75,8 @@ const METHODS = ["get", "post", "put", "delete", "patch"] as const
 type Document = { paths: Record<string, Record<string, unknown>> }
 
 /**
- * **The legacy paths, pinned as of 2026-07-31.** Grouped by first segment with its count so the
- * shape is readable at a glance: 26 families, 86 paths. This list may only ever get SHORTER.
+ * **The legacy paths, pinned as of 2026-08-07.** Grouped by first segment with its count so the
+ * shape is readable at a glance: 24 families, 82 paths. This list may only ever get SHORTER.
  *
  * There is no production module that owns this set — it is a property of the union of two route
  * trees — so the ledger lives here, next to the assertions that read it.
@@ -167,8 +177,6 @@ export const LEGACY_PATHS: readonly string[] = [
   "/shell/offline",
   "/shell/provision",
   "/shell/status",
-  // /skill — 1
-  "/skill",
   // /sync — 4
   "/sync/history",
   "/sync/replay",
@@ -183,14 +191,19 @@ export const LEGACY_PATHS: readonly string[] = [
 ]
 
 /**
- * Legacy OPERATIONS (method + path), measured 2026-07-31: GET 47, POST 42, DELETE 6, PUT 3,
- * PATCH 2.
+ * Legacy OPERATIONS (method + path), measured 2026-08-07: GET 43, POST 41, DELETE 5, PUT 2,
+ * PATCH 2 — 93 in total.
+ *
+ * ⚠️ The line above used to read "measured 2026-07-31: GET 47, POST 42, DELETE 6, PUT 3, PATCH 2",
+ * which sums to 100 against a pin of 94: prose that was never re-measured when the pin moved. These
+ * five numbers are re-derived from the committed spec and DO sum to the constant below — if you
+ * change one, re-derive all five rather than adjusting by hand.
  *
  * The path ledger alone would let `POST /file` be added beside the existing `GET /file` — a new
  * legacy route on an already-pinned path, which is the same widening under a different name. This
  * number closes that seam without a second 102-line list.
  */
-const LEGACY_OPERATION_COUNT = 94
+const LEGACY_OPERATION_COUNT = 93
 
 const PINNED = new Set(LEGACY_PATHS)
 
@@ -313,11 +326,11 @@ describe("every legacy path is on the ledger, and the ledger can only shrink", (
     // Pinned as a MEASUREMENT, not a preference: the honest answer to "how big is the legacy surface
     // right now". Removing a legacy route is supposed to fail here — that failure IS the ratchet
     // clicking, and lowering these numbers is how the removal gets recorded.
-    expect(LEGACY_PATHS.length, "the ledger's own length moved — recount and update this pin").toBe(83)
+    expect(LEGACY_PATHS.length, "the ledger's own length moved — recount and update this pin").toBe(82)
     expect(
       SPEC_LEGACY_PATHS.length,
       "the spec's legacy path count moved — reconcile LEGACY_PATHS and update this pin",
-    ).toBe(83)
+    ).toBe(82)
     expect(
       legacyOperations(DOCUMENT).length,
       [

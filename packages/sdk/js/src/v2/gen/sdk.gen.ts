@@ -17,8 +17,6 @@ import type {
   AppLogResponses,
   AppRegisterErrors,
   AppRegisterResponses,
-  AppSkillsErrors,
-  AppSkillsResponses,
   Auth as Auth3,
   AuthRemoveErrors,
   AuthRemoveResponses,
@@ -609,36 +607,6 @@ export class App extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<AppAgentsResponses, AppAgentsErrors, ThrowOnError>({
       url: "/agent",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * List skills
-   *
-   * Get a list of all available skills in the NovaClaw system.
-   */
-  public skills<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<AppSkillsResponses, AppSkillsErrors, ThrowOnError>({
-      url: "/skill",
       ...options,
       ...params,
     })

@@ -2,7 +2,6 @@ import { Agent } from "@/agent/agent"
 import { Command } from "@/command"
 import { Format } from "@/format"
 import { Vcs } from "@/project/vcs"
-import { Skill } from "@/skill"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { Authorization } from "../middleware/authorization"
@@ -122,7 +121,6 @@ export const InstancePaths = {
   vcsApply: "/vcs/apply",
   command: "/command",
   agent: "/agent",
-  skill: "/skill",
   formatter: "/formatter",
   app: "/app",
   scheduler: "/scheduler/snapshot",
@@ -227,16 +225,6 @@ export const InstanceApi = HttpApi.make("instance")
             identifier: "app.agents",
             summary: "List agents",
             description: "Get a list of all available AI agents in the NovaClaw system.",
-          }),
-        ),
-        HttpApiEndpoint.get("skill", InstancePaths.skill, {
-          query: WorkspaceRoutingQuery,
-          success: described(Schema.Array(Skill.Info), "List of skills"),
-        }).annotateMerge(
-          OpenApi.annotations({
-            identifier: "app.skills",
-            summary: "List skills",
-            description: "Get a list of all available skills in the NovaClaw system.",
           }),
         ),
         HttpApiEndpoint.get("formatter", InstancePaths.formatter, {
