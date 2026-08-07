@@ -25,7 +25,9 @@ import { describe, expect, test } from "bun:test"
 import { Effect, Layer, Schema } from "effect"
 import { Authorization } from "@novaclaw/protocol/middleware/authorization"
 import { SchemaErrorMiddleware } from "@novaclaw/protocol/middleware/schema-error"
+import { AgentV2 } from "@novaclaw/core/agent"
 import { Database } from "@novaclaw/core/database/database"
+import { AbsolutePath } from "@novaclaw/core/schema"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
@@ -51,7 +53,10 @@ import { WorkspaceRoutingMiddleware } from "../middleware/workspace-routing"
 import { SessionHandler } from "./session"
 import { resolvedConfigView } from "./session-config"
 
-const DIRECTORY = "C:/tmp/session-config-resolve"
+// ⚠️ Branded at the constant, not at each call site: `location.directory` is
+// `string & Brand<"AbsolutePath">`, and a raw literal typechecks nowhere while passing every runtime
+// assertion — this file was 40/40 green with `typecheck:server` red. Brand once, here.
+const DIRECTORY = AbsolutePath.make("C:/tmp/session-config-resolve")
 
 const ROOT = "ses_root" as SessionSchema.ID
 const MIDDLE = "ses_middle" as SessionSchema.ID
@@ -323,7 +328,7 @@ describe("GET /api/session/:id/config over a real parent and child", () => {
           parentID: parent.id,
           // Declares exactly ONE field of its own, and asks for MORE capability than the parent
           // allows — so this single session exercises inheritance, override and narrowing at once.
-          agent: "child-agent",
+          agent: AgentV2.ID.make("child-agent"),
           permissionMode: "yolo",
         })
         const stored = yield* sessions.get(child.id)
