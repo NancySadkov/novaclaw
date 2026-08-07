@@ -83,6 +83,12 @@
  * never in advance. The value is the human label that surface will show.
  */
 export const SUBSYSTEMS = {
+  // Log lines RELAYED from a client process (the renderer's ring, via `POST /log`) rather than
+  // produced here. Its own subsystem instead of folding into `server`, because these subsystems exist
+  // to give per-subsystem log LEVELS: an operator turning down renderer chatter should not have to
+  // turn down the HTTP server's own logs to do it, and the two genuinely come from different
+  // processes. Added 2026-08-07 with the `client.log.*` events.
+  client: "Client-relayed logs",
   config: "Configuration",
   credential: "Credentials",
   filesystem: "Files and watchers",
@@ -1125,6 +1131,44 @@ export const EVENTS = {
   // A session whose working folder vanished is now RUN in a scratch folder rather than isolated.
   // `warn` not `info`: the session keeps working, but it is no longer where the user put it, and an
   // operator reading the log needs to see that without hunting.
+  // The renderer's own log ring, relayed through `POST /log`. FOUR entries rather than one with the
+  // level as an attribute: a registered event's level is fixed by its declaration, and collapsing
+  // them would make every client line arrive at one severity — so an operator filtering for errors
+  // would either miss the client's errors or drown in its debug.
+  //
+  // ⚠️ These exist because the handler previously called `Effect.logDebug`/`logInfo`/… selected into a
+  // variable, which the log-event ledger could not see: it matched CALLS, and a reference assigned to
+  // a variable is not one. Free-form client text is exactly what the keyed vocabulary is for — the
+  // message is DATA on a keyed event, not an unkeyed log line.
+  "client.log.debug": {
+    level: "debug",
+    message: "client log",
+    attributes: { "client.service": "id", "client.message": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/control.ts",
+  },
+  "client.log.info": {
+    level: "info",
+    message: "client log",
+    attributes: { "client.service": "id", "client.message": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/control.ts",
+  },
+  "client.log.warn": {
+    level: "warn",
+    message: "client log",
+    attributes: { "client.service": "id", "client.message": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/control.ts",
+  },
+  "client.log.error": {
+    level: "error",
+    message: "client log",
+    attributes: { "client.service": "id", "client.message": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/control.ts",
+  },
+
   "session.folder.substituted": {
     level: "warn",
     message: "session working folder is gone; running in a scratch folder",

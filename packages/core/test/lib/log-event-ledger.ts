@@ -57,6 +57,25 @@ export const scanLogSource = (file: string, sourceText: string): readonly LogSit
   const sites: LogSite[] = []
 
   const visit = (node: ts.Node): void => {
+    // 🔴 **A REFERENCE to `Effect.log*` counts, not just a call.** `const write = Effect.logDebug`
+    // followed by `write(message)` is a direct log by any honest reading, and it was invisible here
+    // until 2026-08-07 because the check below only matched call expressions. That is not theoretical:
+    // `httpapi/handlers/control.ts` selects a level that way, so a live site sat inside the blind spot
+    // of a ledger whose own comment claims no direct call survives ANYWHERE in shipping source.
+    // ⚠️ A guard that can be stepped around by assigning the function to a variable is a guard whose
+    // scope is "authors who did not think of that".
+    if (
+      ts.isPropertyAccessExpression(node) &&
+      !ts.isCallExpression(node.parent) &&
+      node.expression.getText(source) === "Effect" &&
+      /^log[A-Z]/.test(node.name.text)
+    ) {
+      sites.push({
+        kind: "unkeyed",
+        name: `${file} :: Effect.${node.name.text} (referenced, not called)`,
+        reserved: false,
+      })
+    }
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
       const receiver = node.expression.expression.getText(source)
       const method = node.expression.name.text
@@ -96,6 +115,25 @@ const sourceFiles = (directory: string): readonly string[] => {
   return found.sort()
 }
 
+/**
+ * 🔴 **The ONE file that may touch `Effect.log*`: the keyed logger's own implementation.**
+ *
+ * `schema/log.ts` IS `Log.event` — it dispatches through a `LOG_AT[level]` table of Effect's loggers.
+ * Something has to call Effect eventually, and that something is not a "caller" in the sense this
+ * ledger polices; excluding it DEFINES the boundary rather than weakening the rule. Everything else
+ * in every package's `src` is held to the absolute rule.
+ *
+ * ⚠️ **This is one FILE, named explicitly — not a list that accepts additions.** An allowance array
+ * was deliberately deleted when the migration hit zero, because an empty array reads as "add your
+ * entry here"; a single named path keeps that property. Adding a second entry should require arguing
+ * that a second file implements the logger.
+ *
+ * ⚠️ An earlier note claimed this file "does not call `Effect.log*`, so it needs no carve-out". That
+ * was accidentally true and substantively wrong: it REFERENCES them in the dispatch table, which the
+ * scanner could not see until references were added to it on 2026-08-07.
+ */
+const LOGGER_IMPLEMENTATION = "packages/schema/src/log.ts"
+
 /** Walk the shipping source boundary named by `todo/logging.md`: every package's `src` tree. */
 export const scanPackageSources = (root: string): readonly LogSite[] => {
   const packages = path.join(root, "packages")
@@ -107,6 +145,7 @@ export const scanPackageSources = (root: string): readonly LogSite[] => {
       if (!fs.existsSync(sourceRoot)) return []
       return sourceFiles(sourceRoot).flatMap((file) => {
         const relative = path.relative(root, file).replaceAll(path.sep, "/")
+        if (relative === LOGGER_IMPLEMENTATION) return []
         return scanLogSource(relative, fs.readFileSync(file, "utf8"))
       })
     })

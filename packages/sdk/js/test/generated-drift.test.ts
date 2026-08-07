@@ -170,6 +170,13 @@ describe("the SDK's generated artifacts", () => {
         cwd: path.join(root, "packages/novaclaw"),
         stdout: "pipe",
         stderr: "pipe",
+        // 🔴 The child INHERITS `NODE_ENV=test` from this test process, and generation is an
+        // in-process read of the HttpApi that has no business touching the developer's instance
+        // store. Pinning the database says so explicitly — without it the child resolves the real
+        // path, which `db-path.ts` now refuses under `NODE_ENV=test` (added 2026-08-07 after fixture
+        // rows were found in the owner's store). ⚠️ Generation reading real user state would also make
+        // the "byte-exact" claim above depend on whose machine ran it.
+        env: { ...process.env, NOVACLAW_DB: ":memory:" },
       })
       const [fresh, stderr, exitCode] = await Promise.all([
         new Response(child.stdout).text(),
