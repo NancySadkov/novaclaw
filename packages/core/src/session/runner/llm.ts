@@ -1371,7 +1371,15 @@ export const layer = Layer.effect(
       // covers the window between admission and the mask. `admit` itself stays INTERRUPTIBLE
       // on purpose: a queued batch turn must remain stoppable, and its own `onInterrupt`
       // drops the waiter (releasing a slot that was never held is a no-op).
-      const deviceKey = `${model.provider}/${model.id}`
+      // ⚠️ A DEVICE IS A BACKEND, NOT A MODEL. This was `${model.provider}/${model.id}`, so two
+      // models served by ONE vLLM process were two devices with independent `MAX_BATCH` capacity
+      // and separate fairness ledgers — a claim about the hardware that is false, and one that
+      // oversubscribes exactly the box the gate above exists to protect. `deviceKeyFor` keys on the
+      // normalized endpoint ORIGIN instead; see its own comment for the cloud-model carve-out and
+      // for why this is the substrate for `deviceKey = resolvedDevice` rather than the whole of it.
+      // The `??` keeps a scheduling key from ever failing a turn: `device` is best-effort, and the
+      // old per-model key is always safe (it can only over-partition, never over-share).
+      const deviceKey = (yield* models.device(modelSession)) ?? `${model.provider}/${model.id}`
       const dispatchSlot = {
         sessionID: session.id as string,
         deviceKey,

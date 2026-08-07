@@ -1,4 +1,6 @@
 import { describe, expect } from "bun:test"
+import fs from "node:fs"
+import path from "node:path"
 import { LLM } from "@novaclaw/llm"
 import { LLMClient } from "@novaclaw/llm/route"
 import { DateTime, Effect } from "effect"
@@ -405,6 +407,114 @@ describe("SessionRunnerModel", () => {
         ),
       ).toBe(false)
       expect(SessionRunnerModel.supported(model({ type: "native", settings: {} }))).toBe(false)
+    }),
+  )
+})
+
+describe("deviceKeyFor — a DEVICE is a backend, not a model", () => {
+  const named = (id: string, providerID: string, url?: string) =>
+    ModelV2.Info.make({
+      ...model(url === undefined ? { type: "native", settings: {} } : { type: "aisdk", package: "@ai-sdk/openai-compatible", url }),
+      id: ModelV2.ID.make(id),
+      providerID: ProviderV2.ID.make(providerID),
+    })
+
+  // ⭐ THE CLAIM THE CHANGE EXISTS FOR. Under the old `${provider}/${model}` key these two were
+  // two devices, so the scheduler gave each its own MAX_BATCH and its own fairness ledger while
+  // they shared one vLLM process. Anything weaker than this assertion does not test the fix.
+  it.effect("two models on ONE vLLM backend are ONE device", () =>
+    Effect.sync(() => {
+      const a = SessionRunnerModel.deviceKeyFor(named("holo3.1", "spark-holo", "http://192.168.178.40:8010/v1"))
+      const b = SessionRunnerModel.deviceKeyFor(named("qwen3.6-35b", "dgx-spark", "http://192.168.178.40:8010/v1"))
+      expect(a).toBe(b)
+    }),
+  )
+
+  it.effect("normalizes the three ways two catalog entries for one server differ", () =>
+    Effect.sync(() => {
+      const canonical = SessionRunnerModel.deviceKeyFor(named("m", "p", "http://192.168.178.40:8010/v1"))
+      for (const url of [
+        "http://192.168.178.40:8010/v1/",
+        "http://192.168.178.40:8010",
+        "HTTP://192.168.178.40:8010/V1",
+        "http://192.168.178.40:8010/v1/chat/completions",
+      ])
+        expect(SessionRunnerModel.deviceKeyFor(named("m", "p", url))).toBe(canonical)
+    }),
+  )
+
+  // The control. Grouping must not become "everything is one device": a different PORT is a
+  // different serving process, and a different host is a different machine.
+  it.effect("a different port or host stays a different device", () =>
+    Effect.sync(() => {
+      const base = SessionRunnerModel.deviceKeyFor(named("m", "p", "http://192.168.178.40:8010/v1"))
+      expect(SessionRunnerModel.deviceKeyFor(named("m", "p", "http://192.168.178.40:8011/v1"))).not.toBe(base)
+      expect(SessionRunnerModel.deviceKeyFor(named("m", "p", "http://192.168.178.41:8010/v1"))).not.toBe(base)
+      expect(SessionRunnerModel.deviceKeyFor(named("m", "p", "https://192.168.178.40:8010/v1"))).not.toBe(base)
+    }),
+  )
+
+  // The deliberate carve-out (see `deviceKeyFor`): no endpoint means no shared local capacity to
+  // protect, so those models keep a per-model key rather than being collapsed onto one gate.
+  it.effect("models with no endpoint keep a per-model key", () =>
+    Effect.sync(() => {
+      expect(SessionRunnerModel.deviceKeyFor(named("a", "openai"))).toBe("openai/a")
+      expect(SessionRunnerModel.deviceKeyFor(named("b", "openai"))).toBe("openai/b")
+    }),
+  )
+
+  // A catalog defect must not fail a turn, and the fallback must be the SAFE direction: a
+  // per-model key can only over-partition (waste capacity), never over-share (oversubscribe).
+  it.effect("a malformed endpoint falls back to the per-model key instead of throwing", () =>
+    Effect.sync(() => {
+      expect(SessionRunnerModel.deviceKeyFor(named("m", "p", "not a url"))).toBe("p/m")
+    }),
+  )
+})
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// A SOURCE ratchet, because the CALL SITE is invisible to behaviour.
+//
+// `deviceKeyFor` above is fully tested and still worth nothing if the runner never calls it: the
+// scheduler key is not observable in any assertion the drain harness can make, so a `deviceKeyFor`
+// that nothing consumes would ship inert and every test on this page would stay green. That is the
+// "a guard's SITE is invisible to behaviour, so it needs a SOURCE ledger" lesson, applied before
+// it costs anything.
+//
+// ⚠️ Comments are stripped first. This repo has produced three wrong numbers in one day from
+// regexes that counted PROSE, twice inside guards that then reported the very thing they existed
+// to prevent — and the call site here sits under an eight-line comment that quotes the old
+// expression verbatim.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe("the runner CONSULTS the device key (source ratchet)", () => {
+  const stripComments = (text: string) =>
+    text.replaceAll(/\/\*[\s\S]*?\*\//g, "").replaceAll(/(^|[^:])\/\/[^\n]*/g, "$1")
+
+  const runnerSource = () => {
+    const file = path.resolve(import.meta.dir, "../src/session/runner/llm.ts")
+    const raw = fs.readFileSync(file, "utf8")
+    // Non-vacuity: an empty or moved file must FAIL rather than satisfy every "not present" check.
+    expect(raw.length).toBeGreaterThan(10_000)
+    const code = stripComments(raw)
+    expect(code).toContain("const deviceKey")
+    return code
+  }
+
+  it.effect("computes deviceKey from SessionRunnerModel.device, not from the wire model id", () =>
+    Effect.sync(() => {
+      const code = runnerSource()
+      const line = code.split("\n").find((text) => text.includes("const deviceKey"))
+      expect(line).toBeDefined()
+      expect(line).toContain("models.device(")
+    }),
+  )
+
+  it.effect("the retired per-model expression survives ONLY as the never-fails fallback", () =>
+    Effect.sync(() => {
+      const code = runnerSource()
+      // It may still appear — as the `??` arm — but only on the line that also asks the service.
+      for (const line of code.split("\n"))
+        if (line.includes("${model.provider}/${model.id}")) expect(line).toContain("models.device(")
     }),
   )
 })

@@ -131,6 +131,12 @@ export interface Interface {
   /** Catalog identity of the model `resolve` selects. Unlike the wire route's `model.id`, this is
    * the stable user-facing id and is therefore the identity model-routing config matches. */
   readonly ref: (session: SessionSchema.Info) => Effect.Effect<ModelV2.Ref | undefined>
+  /**
+   * The SCHEDULER's device key for the model this session would resolve to (`deviceKeyFor` below).
+   * Best-effort like `tier`/`ref` — an unresolvable model yields `undefined` and the runner keeps
+   * its own fallback, because a scheduling key must never be able to fail a turn.
+   */
+  readonly device: (session: SessionSchema.Info) => Effect.Effect<string | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/SessionRunnerModel") {}
@@ -145,7 +151,50 @@ export const layerWith = (
   capabilities: Interface["capabilities"] = () => Effect.succeed(undefined),
   ref: Interface["ref"] = () => Effect.succeed(undefined),
   retryAttempts: Interface["retryAttempts"] = () => Effect.succeed(undefined),
-) => Layer.succeed(Service, Service.of({ resolve, tier, prePrompt, retryAttempts, capabilities, ref }))
+  device: Interface["device"] = () => Effect.succeed(undefined),
+) => Layer.succeed(Service, Service.of({ resolve, tier, prePrompt, retryAttempts, capabilities, ref, device }))
+
+/**
+ * THE SCHEDULER'S NOTION OF A DEVICE — one physical backend, not one model on it.
+ *
+ * `session/scheduler.ts` keys its admission gate, its `MAX_BATCH` cap and its EEVDF fairness
+ * ledger on a `deviceKey`. The runner computed that key as `${provider}/${model}`, which means two
+ * models served by ONE vLLM process were two devices with independent batch capacity — a claim
+ * about hardware that is simply false, and the failure mode it produces is oversubscription of the
+ * exact box the scheduler exists to protect. (`notes/reports/decisions-v0.2.0.md` step 29 / the
+ * `devices-phantom` review; AGENTS.md *the organizing metaphor* -> "a device is NOT
+ * single-threaded", where a Device is a model BACKEND.)
+ *
+ * The key is therefore the model's ENDPOINT ORIGIN, normalized, so every model on one server
+ * shares one gate, one cap and one fairness ledger. `new URL(...).origin` collapses the trailing
+ * slash, the `/v1` path and case, which are the three ways two catalog entries for one server
+ * differ in practice.
+ *
+ * ⚠️ **A model with NO `api.url` deliberately keeps a PER-MODEL key, and that is not a shortcut.**
+ * The batch cap exists to stop us oversubscribing a *local* box with finite KV and bandwidth. A
+ * hosted API has no such shared local capacity, so collapsing several cloud models onto one key
+ * would serialize unrelated background work for nothing. Known endpoint -> shared hardware ->
+ * shared device; unknown endpoint -> no hardware of ours to protect -> leave them apart.
+ *
+ * ⚠️ **This is the SUBSTRATE for `deviceKey = resolvedDevice`, not the finished item.** B2's full
+ * shape has a `session.device` column resolved through a `DeviceRegistry` store, which OVERRIDES
+ * this. When that lands it overrides here — one function — rather than at the call site.
+ * ⚠️ And the third leg is still missing entirely: there is **no KV/VRAM accounting anywhere**, just
+ * a global `MAX_BATCH = 2`. Grouping models onto their real device makes that cap *mean* something
+ * for the first time, but it does not make it a measurement.
+ */
+export const deviceKeyFor = (model: ModelV2.Info): string => {
+  const url = model.api.url
+  if (url !== undefined) {
+    try {
+      return new URL(url).origin.toLowerCase()
+    } catch {
+      // A malformed URL is a catalog defect, not a reason to fail a turn. Fall through to the
+      // per-model key: it is always safe (it can only over-partition, never over-share).
+    }
+  }
+  return `${model.providerID}/${model.id}`
+}
 
 const apiKey = (model: ModelV2.Info, credential?: Credential.Value) => {
   if (credential?.type === "key") return Auth.value(credential.key)
@@ -379,6 +428,12 @@ export const locationLayer = Layer.effect(
       ref: Effect.fn("SessionRunnerModel.ref")(function* (session) {
         const model = yield* select(session).pipe(Effect.orElseSucceed(() => undefined))
         return model === undefined ? undefined : { providerID: model.providerID, id: model.id }
+      }),
+      // Read exactly like `ref` above — no boot-latch wait, never fails. A scheduling key that
+      // could fail a turn would be a worse defect than the one it fixes.
+      device: Effect.fn("SessionRunnerModel.device")(function* (session) {
+        const model = yield* select(session).pipe(Effect.orElseSucceed(() => undefined))
+        return model === undefined ? undefined : deviceKeyFor(model)
       }),
     })
   }),
