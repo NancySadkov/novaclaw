@@ -1,5 +1,6 @@
 export * as ModelPrune from "./model-prune"
 
+import { MergePatch } from "../merge-patch"
 import type { ConfigProvider } from "../config/provider"
 
 /**
@@ -34,6 +35,13 @@ import type { ConfigProvider } from "../config/provider"
  * ⚠️ Layers are rewritten rather than filtered away even when a layer becomes model-less, because a
  * layer carries more than its `models` map and the fold that merges them is positional. Dropping an
  * emptied layer would silently change how the remaining layers combine.
+ *
+ * ⚠️ **The stripping itself is `MergePatch.removeAt`, and sharing it is the point** (item 4.3,
+ * 2026-08-07). The general config-removal verb prunes every layered store the same way, so a
+ * private copy of this loop here would be a second implementation of one rule — the drift
+ * `ConfigStoreWrite.refreshDomain` already warns about, at a place where a divergence means one
+ * delete route strips a layer the other leaves behind. What stays local is everything ABOVE the
+ * strip: which layers, the found/not-found distinction, and the provider-is-kept decision.
  */
 export const stripModel = (
   layers: ReadonlyArray<ConfigProvider.Info>,
@@ -41,12 +49,10 @@ export const stripModel = (
 ): ConfigProvider.Info[] | undefined => {
   let found = false
   const next = layers.map((layer) => {
-    const models = layer.models
-    if (!models || !Object.prototype.hasOwnProperty.call(models, modelID)) return layer
+    const pruned = MergePatch.removeAt(layer, ["models", modelID])
+    if (pruned === undefined) return layer
     found = true
-    const remaining: Record<string, unknown> = {}
-    for (const [id, entry] of Object.entries(models)) if (id !== modelID) remaining[id] = entry
-    return { ...layer, models: remaining } as ConfigProvider.Info
+    return pruned.value as ConfigProvider.Info
   })
   return found ? next : undefined
 }

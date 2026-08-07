@@ -104,10 +104,12 @@
  *
  * ── WHAT THIS TOOL DELIBERATELY DOES NOT DO ────────────────────────────────────────────────────
  *
- * ⚠️ **It cannot DELETE a key.** `ConfigStoreWrite` is patch-MERGE with no null-deletion
- * (`merge-patch.ts`), so there is no value that means "unset this". Saying so in the description is
- * ruling 2 — a model that believes it removed a setting and did not would report a repair it never
- * made. Clearing a value is a Settings-UI job today.
+ * ⚠️ **`set` cannot DELETE a key, and that is now a ruling rather than a limitation** (item 4.3,
+ * 2026-08-07). `ConfigStoreWrite` is patch-MERGE with no null-deletion, so a `null` SETS null; the
+ * argument for refusing RFC-7396's tombstone is at the top of `merge-patch.ts`. Deletion is the
+ * separate `remove` op below, over `ConfigStoreWrite.remove`. Saying which verb does what in the
+ * description is ruling 2 — a model that believes it removed a setting and did not would report a
+ * repair it never made, and before this op existed that was the only outcome available to it.
  *
  * ⚠️ **`read` redacts credentials and cannot un-redact them.** `overlay` returns everything the
  * settings store holds, including `server.password` (this instance's own incoming API token) and
@@ -374,7 +376,7 @@ export const formatRead = (input: {
     ...lines,
     "",
     "operational = written without asking · consequential = one approval, per key · privileged = one approval, per key, and it cannot be pre-granted by a rule that covers consequential writes.",
-    'Write with {"op":"set","config":{"<key>":<value>}}. Values MERGE (objects merge, arrays replace); nothing here can delete a key.',
+    'Write with {"op":"set","config":{"<key>":<value>}}. Values MERGE (objects merge, arrays replace), so a null SETS null — delete with {"op":"remove","paths":[["<key>","<name>"]]}.',
   ].join("\n")
 }
 
@@ -429,10 +431,32 @@ const SetOp = Schema.Struct({
   }),
 })
 
-export const Input = Schema.Union([ReadOp, SetOp])
+/**
+ * v0.2.0 item 4.3 — the DELETE op. Until 2026-08-07 this tool could genuinely not remove anything
+ * and said so; `ConfigStoreWrite.remove` is the verb that changed that, and leaving the tool without
+ * it would have kept the self-healing law true only for whoever can reach raw HTTP.
+ *
+ * ⚠️ **Paths are SEGMENT ARRAYS, not dotted strings**, and this is the field a model is most likely
+ * to get wrong. Config ids routinely contain dots and slashes (`holo3.1`, `openai/gpt-oss-120b`), so
+ * a dotted path would name nothing — the description says so with the worked example, because the
+ * shape a model copies is the shape it sees.
+ */
+const RemoveOp = Schema.Struct({
+  op: Schema.Literal("remove"),
+  paths: Schema.Array(Schema.Array(Schema.String)).annotate({
+    description:
+      "Configuration locations to delete, each an ARRAY OF SEGMENTS (never a dotted string — config " +
+      'ids contain dots and slashes). Examples: ["mcp","servers","filesystem"] removes one MCP server; ' +
+      '["providers","spark-holo","models","holo3.1"] removes one stale model and keeps its provider; ' +
+      '["model"] clears the default model. Applied all-or-nothing: if any path names nothing, NOTHING ' +
+      "is removed and the reply says which one.",
+  }),
+})
+
+export const Input = Schema.Union([ReadOp, SetOp, RemoveOp])
 
 export const Output = Schema.Struct({
-  op: Schema.Literals(["read", "set"]),
+  op: Schema.Literals(["read", "set", "remove"]),
   message: Schema.String,
 })
 export type Output = typeof Output.Type
@@ -442,11 +466,13 @@ export const description =
   "instance setting — without editing files or restarting. Ops: " +
   '{"op":"read"} — every configuration key, what it holds, and what changing it costs · ' +
   '{"op":"read","keys":["providers"]} — one key in full · ' +
-  '{"op":"set","config":{"models":{"qwen":{"url":"http://192.168.1.5:8000/v1"}}}} — write. ' +
+  '{"op":"set","config":{"models":{"qwen":{"url":"http://192.168.1.5:8000/v1"}}}} — write · ' +
+  '{"op":"remove","paths":[["mcp","servers","filesystem"]]} — DELETE. ' +
   "READ A KEY BEFORE YOU WRITE IT and follow the shape you get back: a field name this instance does " +
   "not have is refused by name rather than quietly dropped. " +
-  "Values MERGE into what is stored (objects merge, arrays replace wholesale); this tool cannot " +
-  "DELETE a key. Most writes ask the user first and say so before anything is stored; a write that " +
+  "Values MERGE into what is stored (objects merge, arrays replace wholesale), so `set` can never " +
+  "remove anything — a null SETS null. Use `remove`, whose paths are ARRAYS OF SEGMENTS, never " +
+  "dotted strings. Most writes ask the user first and say so before anything is stored; a write that " +
   "is refused changes nothing at all. Credentials read back redacted."
 
 const failure = (message: string) => new ToolFailure({ message })
@@ -583,6 +609,60 @@ export const layer = Layer.effectDiscard(
                   }
                 }
 
+                if (input.op === "remove") {
+                  const paths = input.paths.filter((path) => path.length > 0)
+                  if (paths.length === 0)
+                    return yield* failure(
+                      'Nothing was removed: `paths` was empty. Name at least one location, e.g. ' +
+                        '{"op":"remove","paths":[["mcp","servers","filesystem"]]}.',
+                    )
+                  // The first segment is the config key, so a removal is priced exactly like a write
+                  // to that key — same `KEY_TIERS` table, same cards, same "answer before anything is
+                  // written" ordering. Deleting `agents` is not cheaper than editing it.
+                  const targets = [...new Set(paths.map((path) => path[0]!))]
+                  const unknown = targets.filter((key) => !known.includes(key))
+                  if (unknown.length > 0) return yield* failure(unknownKeyMessage(unknown, known))
+                  for (const tier of ["consequential", "privileged"] as const) {
+                    const keys = targets.filter((key) => tierOf(key) === tier)
+                    if (keys.length === 0) continue
+                    yield* permission.assert({
+                      action: TIER_ACTION[tier],
+                      resources: keys,
+                      save: keys,
+                      metadata: { tier, paths: paths.filter((path) => keys.includes(path[0]!)) },
+                      sessionID: context.sessionID,
+                      agent: context.agent,
+                      source: {
+                        type: "tool" as const,
+                        messageID: context.assistantMessageID,
+                        callID: context.toolCallID,
+                      },
+                    })
+                  }
+                  const outcome = yield* ConfigStoreWrite.remove(paths).pipe(Effect.provide(stores), Effect.exit)
+                  if (Exit.isFailure(outcome))
+                    // The refusal message already names every offending path and says the whole
+                    // request rolled back — passing it through beats paraphrasing it into something
+                    // the model cannot act on.
+                    return yield* failure(`Nothing was removed. The kernel reported: ${decodeReason(outcome.cause)}`)
+                  const cleared = outcome.value.cleared
+                  return {
+                    op: "remove" as const,
+                    message: [
+                      `Removed from this instance's configuration: ${paths
+                        .map((path) => path.join(" → "))
+                        .join(", ")}. It is live now — no restart.`,
+                      cleared.length > 0
+                        ? `Also cleared ${cleared.join(", ")}, which pointed at something just removed — a ` +
+                          `default left dangling reads as configured and resolves to nothing. Set a new one.`
+                        : "",
+                      `Read it back with {"op":"read","keys":["${paths[0]![0]}"]}.`,
+                    ]
+                      .filter(Boolean)
+                      .join("\n"),
+                  }
+                }
+
                 const requested = Object.keys(input.config).filter((key) => input.config[key] !== undefined)
                 if (requested.length === 0)
                   return yield* failure(
@@ -649,10 +729,15 @@ export const layer = Layer.effectDiscard(
               }).pipe(
                 Effect.mapError((error) => {
                   if (error instanceof ToolFailure) return error
+                  // ⚠️ The verb matters, and this used to be "written" unconditionally. Telling a
+                  // model that nothing was *written* when it asked to *remove* describes the outcome
+                  // in the wrong vocabulary, and this tool's whole contract is that the model can
+                  // trust what it is told about its own repair (ruling 2).
+                  const nothing = input.op === "remove" ? "Nothing was removed." : "Nothing was written."
                   // A denial keeps its identity — including the unattended deny-fast wording, which is
                   // the one an unattended repair run actually needs to read.
                   const denial = PermissionV2.denialMessage(error)
-                  if (denial) return failure(`Nothing was written. ${denial}`)
+                  if (denial) return failure(`${nothing} ${denial}`)
                   return failure(`configure failed: ${error instanceof Error ? error.message : String(error)}`)
                 }),
               ),

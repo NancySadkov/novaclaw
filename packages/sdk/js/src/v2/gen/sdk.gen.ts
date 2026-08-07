@@ -31,6 +31,7 @@ import type {
   ConfigInfo,
   ConfigProvidersErrors,
   ConfigProvidersResponses,
+  ConfigRemoveRequest,
   ConfigUpdateErrors,
   ConfigUpdateResponses,
   ConfigV2McpLocal,
@@ -206,6 +207,8 @@ import type {
   V2CommandListResponses,
   V2CommandRemoveErrors,
   V2CommandRemoveResponses,
+  V2ConfigRemoveErrors,
+  V2ConfigRemoveResponses,
   V2CredentialRemoveErrors,
   V2CredentialRemoveResponses,
   V2CredentialUpdateErrors,
@@ -7241,6 +7244,32 @@ export class Reference extends HeyApiClient {
   }
 }
 
+export class Config3 extends HeyApiClient {
+  /**
+   * Remove config values
+   *
+   * Delete one or more values from the instance configuration by path. `PATCH /config` merges and can never remove a key; this is the deletion verb. Instance-wide, applied in one transaction, and live without a restart. A path that names nothing is a 400 and NOTHING is removed.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      configRemoveRequest: ConfigRemoveRequest
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "configRemoveRequest", map: "body" }] }])
+    return (options?.client ?? this.client).post<V2ConfigRemoveResponses, V2ConfigRemoveErrors, ThrowOnError>({
+      url: "/api/config/remove",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class V2 extends HeyApiClient {
   private _health?: Health
   get health(): Health {
@@ -7335,6 +7364,11 @@ export class V2 extends HeyApiClient {
   private _reference?: Reference
   get reference(): Reference {
     return (this._reference ??= new Reference({ client: this.client }))
+  }
+
+  private _config?: Config3
+  get config(): Config3 {
+    return (this._config ??= new Config3({ client: this.client }))
   }
 }
 

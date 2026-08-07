@@ -1871,6 +1871,26 @@ export type ForbiddenError = {
   message: string
 }
 
+export type ConfigPath = Array<string>
+
+export type ConfigRemoveRequest = {
+  /**
+   * The paths to remove. Applied all-or-nothing: if any one names nothing, none are removed.
+   */
+  paths: Array<ConfigPath>
+}
+
+export type ConfigRemoveResult = {
+  /**
+   * The paths that were removed.
+   */
+  removed: Array<ConfigPath>
+  /**
+   * Default refs cleared because they pointed at something removed (`model`, `default_agent`). A dangling default reads as configured and resolves to nothing, so it is pruned with its target.
+   */
+  cleared: Array<string>
+}
+
 export type CredentialValue = CredentialOAuth | CredentialKey
 
 export type IntegrationInputs = {
@@ -14721,3 +14741,32 @@ export type V2ReferenceRemoveResponses = {
 }
 
 export type V2ReferenceRemoveResponse = V2ReferenceRemoveResponses[keyof V2ReferenceRemoveResponses]
+
+export type V2ConfigRemoveData = {
+  body: ConfigRemoveRequest
+  path?: never
+  query?: never
+  url: "/api/config/remove"
+}
+
+export type V2ConfigRemoveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2ConfigRemoveError = V2ConfigRemoveErrors[keyof V2ConfigRemoveErrors]
+
+export type V2ConfigRemoveResponses = {
+  /**
+   * ConfigRemoveResult
+   */
+  200: ConfigRemoveResult
+}
+
+export type V2ConfigRemoveResponse = V2ConfigRemoveResponses[keyof V2ConfigRemoveResponses]

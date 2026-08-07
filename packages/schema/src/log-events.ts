@@ -300,6 +300,19 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/config/config.ts",
   },
+  /**
+   * A `ConfigStoreWrite.remove` committed. `info` and content-bearing: a deletion is the one config
+   * write that cannot be undone by re-reading the previous value, so the paths it took — and any
+   * default ref cleared as a consequence — are what an operator needs when asking *where did my
+   * model entry go*.
+   */
+  "config.remove.applied": {
+    level: "info",
+    message: "config paths were removed",
+    attributes: { "config.paths": "text", "config.cleared": "text" },
+    content: "user",
+    file: "packages/core/src/config-store-write.ts",
+  },
   /** A config write committed, but one or more live runtime domains could not re-materialise it. */
   "config.runtime.reload.failed": {
     level: "error",

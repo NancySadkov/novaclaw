@@ -14,6 +14,7 @@ import { ConfigProvider } from "./config/provider"
 import { ConfigReference } from "./config/reference"
 import { Database } from "./database/database"
 import { Watcher } from "./filesystem/watcher"
+import { ModelPrune } from "./catalog/model-prune"
 import { MergePatch } from "./merge-patch"
 import { Offline } from "./offline"
 import { PluginConfigSeed } from "./plugin-config-seed"
@@ -183,10 +184,16 @@ export const unroutedKeys = (patch: Config.Info, consumed: ReadonlySet<string>):
  * else has already written by then.
  */
 
-/** The store operations one layered arm needs, resolved from context when the arm actually fires. */
+/** The store operations one layered arm needs, resolved from context when the arm actually fires.
+ *
+ *  ⚠️ `removeEntity` is here rather than in a second table because MERGE and REMOVE are two verbs
+ *  over ONE routing table (item 4.3). A parallel remove-table would be four more rows that have to
+ *  agree with these four about which store owns which key — and the failure mode of a disagreement
+ *  is a delete that lands in the wrong store, silently. */
 interface LayeredWriter<Item> {
   readonly read: () => Effect.Effect<Record<string, Item[]>>
   readonly write: (name: string, layers: Item[]) => Effect.Effect<void>
+  readonly removeEntity: (name: string) => Effect.Effect<void>
 }
 
 /**
@@ -217,6 +224,38 @@ const layeredArm = <Item, R>(spec: {
       for (const [name, fragment] of Object.entries(fragments)) {
         yield* store.write(name, collapseLayers(layers[name] ?? [], fragment, spec.encode, spec.decode))
       }
+      return true
+    }),
+  /**
+   * The REMOVE verb for this key. `rest` is the path with the top-level key already consumed:
+   * `[name]` drops the whole entity, `[name, ...inner]` prunes one field out of it.
+   *
+   * ⚠️ **`inner` is stripped from EVERY layer, not just the top one, and that is the defect this
+   * whole design exists to avoid.** A layered entity's served value is a positional left fold, so
+   * removing a model from the newest layer alone lets the seeded layer underneath resurrect it on
+   * the next read — a delete that reports success and then undoes itself. `ModelPrune.stripModel`
+   * already learned this for models; the fold is the same for agents, commands and references.
+   */
+  remove: (rest: MergePatch.Path): Effect.Effect<boolean, never, R> =>
+    Effect.gen(function* () {
+      const store = yield* spec.store
+      const layers = yield* store.read()
+      const [name, ...inner] = rest as [string, ...string[]]
+      const existing = layers[name]
+      if (existing === undefined || existing.length === 0) return false
+      if (inner.length === 0) {
+        yield* store.removeEntity(name)
+        return true
+      }
+      let found = false
+      const next = existing.map((layer) => {
+        const pruned = MergePatch.removeAt(layer, inner)
+        if (pruned === undefined) return layer
+        found = true
+        return pruned.value as Item
+      })
+      if (!found) return false
+      yield* store.write(name, next)
       return true
     }),
 })
@@ -261,6 +300,7 @@ const LAYERED_ARMS = [
       return {
         read: () => catalog.providers(),
         write: (id, layers: ConfigProvider.Info[]) => catalog.setLayers(ProviderV2.ID.make(id), layers),
+        removeEntity: (id) => catalog.removeProvider(ProviderV2.ID.make(id)),
       }
     }),
     ...providerCodec,
@@ -273,6 +313,11 @@ const LAYERED_ARMS = [
       return {
         read: () => agents.agents(),
         write: (name, layers: ConfigAgent.Info[]) => agents.setLayers(name, layers),
+        // ⚠️ This drops the ROW ONLY. Pruning a `default_agent` that pointed at it is NOT in the
+        // store — it lives in `packages/server/src/handlers/agent.ts`, and `provider.remove` /
+        // `provider.removeModel` each carry their own copy of the same rule. `pruneDanglingDefaults`
+        // below is this module's copy, and the duplication is filed rather than hidden.
+        removeEntity: (name) => agents.removeAgent(name),
       }
     }),
     ...agentCodec,
@@ -285,6 +330,7 @@ const LAYERED_ARMS = [
       return {
         read: () => commands.commands(),
         write: (name, layers: ConfigCommand.Info[]) => commands.setLayers(name, layers),
+        removeEntity: (name) => commands.removeCommand(name),
       }
     }),
     ...commandCodec,
@@ -297,6 +343,7 @@ const LAYERED_ARMS = [
       return {
         read: () => references.references(),
         write: (name, layers: ConfigReference.Entry[]) => references.setLayers(name, layers),
+        removeEntity: (name) => references.removeReference(name),
       }
     }),
     ...referenceCodec,
@@ -862,6 +909,318 @@ export const apply = (patch: Config.Info) =>
   })
 
 const policyKey = (policy: Offline.Policy) => `${policy.enabled}:${[...policy.allowedHosts].sort().join(",")}`
+
+/**
+ * ═══ the REMOVE verb ════════════════════════════════════════════════════════════════════════════
+ *
+ * v0.2.0 item 4.3, 2026-08-07. **`PATCH /config` merges and never deletes; deletion is a second
+ * verb that takes explicit paths.** The `null`-as-tombstone question and why it is refused are
+ * argued at the top of `merge-patch.ts` — short version: the patch body is decoded through
+ * `Config.Info` BEFORE any merge, so a tombstone would have to be a legal value of the slot it
+ * deletes, and making it one is how you *acquire* RFC-7396's ambiguity rather than dodge it.
+ *
+ * **Why one general verb and not more delete routes.** Five already exist — `agent.remove`,
+ * `command.remove`, `reference.remove`, `provider.remove`, `provider.removeModel` — and each closed
+ * a real hole. But the route-per-key answer does not reach the end: the map-shaped slots still
+ * without one are `mcp.servers.<name>` (the Phase-1 finding this item folds in),
+ * `provider_presets.<id>`, `permissions.<object>`, `formatter.<name>`, `tool_routing.tools.<name>`,
+ * `local_model_catalog.models.<id>`, `providers.<id>.api.headers.<h>` and
+ * `mcp.servers.<n>.environment.<k>` — eight more, several nested two and three levels inside a
+ * single settings VALUE, where a dedicated HTTP route would be absurd. Nine routes for nine shapes
+ * is nine chances to forget the tenth. One path-addressed verb over the routing table that already
+ * exists is the same capability with no per-key surface, and it is what makes AGENTS.md's
+ * self-healing law true for the whole config rather than for five lucky keys.
+ *
+ * ⚠️ **This does NOT retire the five routes.** They are shipped, the UI calls them, and
+ * `provider.removeModel` carries a query-parameter design that is load-bearing for ids with
+ * slashes. What it does retire is the reason to add a sixth.
+ */
+
+/** Why one path could not be removed. `missing` = the path names nothing; `refused` = the shape
+ *  cannot be addressed this way and the reason says what to do instead. */
+export interface RemovalRefusal {
+  readonly path: MergePatch.Path
+  readonly kind: "missing" | "refused"
+  readonly reason: string
+}
+
+/**
+ * A removal request that changed nothing, in whole or in part — so the WHOLE request rolled back.
+ *
+ * v0.2.0 ruling 2, *a failed mutation never reports success*, and the honest answer here is
+ * all-or-nothing rather than best-effort. An agent repairing an instance sends the paths it
+ * believes are stale; if one of them was never there, the agent's model of the instance is wrong
+ * and it needs to know that BEFORE the other three are gone — a 204 for "3 of 4" is the shape that
+ * makes a repair loop believe it has finished. `provider.removeModel` already answers a no-op with
+ * 404 for exactly this reason; this is the same rule with more than one path in flight.
+ */
+export class ConfigRemoveRefused extends Schema.TaggedErrorClass<ConfigRemoveRefused>()(
+  "ConfigStoreWrite.ConfigRemoveRefused",
+  {
+    message: Schema.String,
+    refusals: Schema.Array(
+      Schema.Struct({
+        path: Schema.Array(Schema.String),
+        kind: Schema.Literals(["missing", "refused"]),
+        reason: Schema.String,
+      }),
+    ),
+  },
+) {}
+
+/** The one place the refusal message is written, so the wire, the log and a test all read the same
+ *  sentence — and every offending path is named, because "some path was wrong" is not actionable. */
+export const refusalMessage = (refusals: readonly RemovalRefusal[]): string =>
+  `config: NOTHING was removed — ${refusals
+    .map((refusal) => `${MergePatch.showPath(refusal.path)}: ${refusal.reason}`)
+    .join("; ")}. The whole request was rolled back rather than report success for a path that named nothing.`
+
+/**
+ * ─── keys the REMOVE verb refuses by name, each with what to send instead ────────────────────────
+ *
+ * The twin of `NOT_ROUTED_KEYS`, and the same ruling-1 shape: a `Config.Info` key that neither
+ * routes for removal nor appears here is a hole that compiles green, so
+ * `config-remove-ledger.test.ts` ratchets this map in both directions.
+ *
+ * ⚠️ Every entry is a redirect, never a shrug. "You cannot delete this" with no next step is the
+ * self-healing law failing quietly; each reason names the operation that DOES work.
+ */
+export const REMOVE_REFUSED_KEYS: ReadonlyMap<string, string> = new Map([
+  [
+    "$schema",
+    "not stored — it describes the FILE, not the instance (see NOT_ROUTED_KEYS), so there is " +
+      "nothing to remove. Omit it from the next export and it is gone.",
+  ],
+  [
+    "skills",
+    "an ARRAY, and arrays replace wholesale under the merge contract — so `PATCH /config` already " +
+      'deletes an entry: send `{"skills": [...]}` without it. Commit 53051cca8 ruled on this and ' +
+      "deliberately left the array-shaped keys without delete routes for the same reason.",
+  ],
+  [
+    "plugins",
+    "an ARRAY — same as `skills`: re-send the list without the entry through `PATCH /config`.",
+  ],
+  [
+    "models",
+    "the FLAT authoring shape, which normalizes into `providers` on write and is never stored under " +
+      'this key. Remove the stored entry: `["providers", "<providerID>", "models", "<modelID>"]`.',
+  ],
+])
+
+/**
+ * Route ONE path. Returns the consumed top-level key on success (for the reload triggers), or a
+ * refusal naming what went wrong.
+ *
+ * ⚠️ The first segment is a top-level `Config.Info` key and nothing else. There is no wildcard, no
+ * glob and no "remove everything under" form: a repair verb whose blast radius depends on how a
+ * pattern happens to match is not a repair verb, and the one destructive mistake this surface could
+ * make is the one it must not be able to express.
+ */
+const removeOne = (
+  path: MergePatch.Path,
+): Effect.Effect<
+  { readonly key: string } | RemovalRefusal,
+  never,
+  | SettingsConfigStore.Service
+  | CatalogStore.Service
+  | AgentConfigStore.Service
+  | CommandConfigStore.Service
+  | ReferenceConfigStore.Service
+> =>
+  Effect.gen(function* () {
+    const refuse = (kind: "missing" | "refused", reason: string): RemovalRefusal => ({ path, kind, reason })
+    if (path.length === 0) return refuse("refused", "an empty path names nothing")
+    const [key, ...rest] = path as [string, ...string[]]
+
+    const declared = Object.prototype.hasOwnProperty.call(Config.Info.fields, key)
+    if (!declared)
+      return refuse("refused", `"${key}" is not a config key — GET /config for the keys this instance accepts`)
+
+    const excused = REMOVE_REFUSED_KEYS.get(key)
+    if (excused !== undefined) return refuse("refused", excused)
+
+    const layered = LAYERED_ARMS.find((arm) => arm.key === key)
+    if (layered !== undefined) {
+      if (rest.length === 0)
+        return refuse(
+          "refused",
+          `removing all of "${key}" at once is not expressible — name the entry, e.g. ["${key}", "<name>"]`,
+        )
+      return (yield* layered.remove(rest)) ? { key } : refuse("missing", `no such ${key} entry`)
+    }
+
+    // The two singleton default refs. They are settings ROWS, not a nested value, so "remove" means
+    // delete the row — an empty string is still a value and would block `setDefaultIfEmpty` forever
+    // (commit 53051cca8, which added `clearDefault` for precisely this).
+    if (key === "model" || key === "default_agent") {
+      if (rest.length > 0) return refuse("refused", `"${key}" is a single value — it has no fields to remove`)
+      if (key === "model") {
+        const catalog = yield* CatalogStore.Service
+        if ((yield* catalog.getDefault()) === undefined) return refuse("missing", "no default model is set")
+        yield* catalog.clearDefault()
+      } else {
+        const agents = yield* AgentConfigStore.Service
+        if ((yield* agents.getDefault()) === undefined) return refuse("missing", "no default agent is set")
+        yield* agents.clearDefault()
+      }
+      return { key }
+    }
+
+    // Everything else is a settings key: ONE whole JSON value per key in the settings store, so a
+    // nested removal is read → prune → write back, and a bare key drops the row.
+    if ((SettingsConfigSeed.SETTINGS_KEYS as readonly string[]).includes(key)) {
+      const settings = yield* SettingsConfigStore.Service
+      const current = yield* settings.all()
+      if (current[key] === undefined) return refuse("missing", `"${key}" is not set`)
+      if (rest.length === 0) {
+        yield* settings.remove(key)
+        return { key }
+      }
+      const pruned = MergePatch.removeAt(current[key], rest)
+      // ⚠️ Says "no such value", not "no such key": `removeAt` also returns undefined when a segment
+      // tries to index an ARRAY, and calling that "missing" would be true but useless. The array
+      // rule is in the ledger; naming the path is what the caller can act on.
+      if (pruned === undefined) return refuse("missing", `no such value under "${key}"`)
+      yield* settings.set(key, pruned.value)
+      return { key }
+    }
+
+    // Unreachable while `config-remove-ledger.test.ts` is green: a declared key that is neither
+    // layered, nor a default ref, nor a settings key, nor ledgered. Named rather than silently
+    // treated as missing, because "was never there" would be a false description of our own gap.
+    return refuse("refused", `"${key}" has no removal route — this is a NovaClaw defect, please report it`)
+  })
+
+/**
+ * Clear a default that now points at something this request removed.
+ *
+ * ⚠️ **This rule already exists three times** — in `handlers/agent.ts`, `handlers/provider.ts`
+ * (twice) — and each copy was written because a dangling default is worse than a missing one: it
+ * reads as CONFIGURED and resolves to nothing, so V2 silently falls back to `build` while
+ * `packages/novaclaw` throws. A fourth caller that forgot it would re-open that defect through a
+ * new door, which is why it is here rather than in the route above. The three handler copies are
+ * filed for consolidation; consolidating them is not this item.
+ *
+ * Conditional, never blanket: removing some OTHER agent or provider must leave the default alone.
+ */
+const pruneDanglingDefaults = (removed: readonly MergePatch.Path[]) =>
+  Effect.gen(function* () {
+    const cleared: string[] = []
+    const agentNames = removed.filter((path) => path.length === 2 && path[0] === "agents").map((path) => path[1]!)
+    if (agentNames.length > 0) {
+      const agents = yield* AgentConfigStore.Service
+      const current = yield* agents.getDefault()
+      if (current !== undefined && agentNames.includes(current)) {
+        yield* agents.clearDefault()
+        cleared.push("default_agent")
+      }
+    }
+    const catalog = yield* CatalogStore.Service
+    const current = yield* catalog.getDefault()
+    if (current === undefined) return cleared
+    const orphaned = removed.some((path) => {
+      if (path[0] !== "providers") return false
+      // `["providers", id]` — the whole provider went. `["providers", id, "models", modelID]` — one
+      // model went; `refNamesModel` splits the stored ref on the FIRST slash only, because model ids
+      // contain slashes of their own.
+      if (path.length === 2) return current.startsWith(`${path[1]}/`)
+      return path.length === 4 && path[2] === "models" && ModelPrune.refNamesModel(current, path[1]!, path[3]!)
+    })
+    if (orphaned) {
+      yield* catalog.clearDefault()
+      cleared.push("model")
+    }
+    return cleared
+  })
+
+/** What a completed `remove` did, so the caller can report it rather than assert it. */
+export interface RemovalReport {
+  readonly removed: readonly MergePatch.Path[]
+  /** Default refs cleared because they pointed at something removed (`model`, `default_agent`). */
+  readonly cleared: readonly string[]
+}
+
+/**
+ * Remove each path, ALL-OR-NOTHING, and make the result live.
+ *
+ * Structurally the twin of {@link apply}: one `db.transaction`, the same rollback argument, the
+ * same post-commit `Offline.reload` / `Watcher.reload` / `refreshDomains` chain keyed off the same
+ * `staleDomains` table. That is deliberate — a removal that is durable but not live is the exact
+ * "deleted a model, the row is still on screen" defect `refreshDomain` was added to close, and a
+ * second refresh path is the kind of duplicate that drifts until the two disagree about what live
+ * means.
+ *
+ * ⚠️ `ConfigRemoveRefused` is caught OUTSIDE the transaction and re-failed, rather than being let
+ * through `Effect.orDie`. Failing inside is what rolls the transaction back; `orDie` would convert
+ * a caller's bad path into a 500, blaming us for their typo — the same distinction
+ * `rejectUnknownConfigKeys` draws against `unroutedKeys`.
+ */
+export const remove = (
+  paths: readonly MergePatch.Path[],
+): Effect.Effect<
+  RemovalReport,
+  ConfigRemoveRefused,
+  | Database.Service
+  | SettingsConfigStore.Service
+  | CatalogStore.Service
+  | AgentConfigStore.Service
+  | CommandConfigStore.Service
+  | ReferenceConfigStore.Service
+> =>
+  Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    const outcome = yield* db
+      .transaction(() =>
+        Effect.gen(function* () {
+          const refusals: RemovalRefusal[] = []
+          const consumed = new Set<string>()
+          for (const path of paths) {
+            const result = yield* removeOne(path)
+            if ("kind" in result) refusals.push(result)
+            else consumed.add(result.key)
+          }
+          if (paths.length === 0)
+            refusals.push({ path: [], kind: "refused", reason: "no paths were given, so nothing was removed" })
+          if (refusals.length > 0)
+            return yield* Effect.fail(new ConfigRemoveRefused({ message: refusalMessage(refusals), refusals }))
+          const cleared = yield* pruneDanglingDefaults(paths)
+          for (const key of cleared) consumed.add(key)
+          return { consumed, cleared }
+        }),
+      )
+      .pipe(
+        // Succeed with the error so the `orDie` below cannot reach it, then re-fail. The transaction
+        // has already rolled back at this point — it keys on the body's Exit, not on this.
+        Effect.catchTag("ConfigStoreWrite.ConfigRemoveRefused", (error) => Effect.succeed(error)),
+        Effect.orDie,
+      )
+    if (outcome instanceof ConfigRemoveRefused) return yield* Effect.fail(outcome)
+
+    const { consumed, cleared } = outcome
+    if (consumed.has("offline") || consumed.has("providers") || consumed.has("models")) {
+      const before = Offline.currentPolicy()
+      const policy = yield* Effect.sync(() => Offline.reload())
+      if (policyKey(before) !== policyKey(policy))
+        yield* Log.event("config.offline.change", {
+          "config.offline.enabled": policy.enabled,
+          "config.offline.hosts": JSON.stringify([...policy.allowedHosts]),
+        })
+    }
+    if (consumed.has("watcher")) yield* Watcher.reload()
+    const stuck = restartRequired(consumed)
+    if (stuck.length > 0)
+      yield* Log.event("config.runtime.restart.required", {
+        "config.keys": JSON.stringify(stuck),
+        "config.reasons": JSON.stringify(stuck.map((key) => RESTART_REQUIRED_KEYS.get(key))),
+      })
+    yield* Log.event("config.remove.applied", {
+      "config.paths": JSON.stringify(paths),
+      "config.cleared": JSON.stringify(cleared),
+    })
+    yield* refreshDomains(staleDomains(consumed))
+    return { removed: paths, cleared }
+  })
 
 /** Fold a layered-store record into one merged config fragment per name (layers in order). */
 function foldLayers<A>(layers: Record<string, A[]>, encode: (layer: A) => unknown) {

@@ -23,6 +23,7 @@ import { CredentialGroup } from "./groups/credential"
 import { MessengerGroup } from "./groups/messenger"
 import { CalendarGroup } from "./groups/calendar"
 import { RecipeGroup } from "./groups/recipe"
+import { ConfigGroup } from "./groups/config"
 
 // Protocol owns middleware placement, while Server injects concrete keys so Core service identities stay downstream.
 const makeApiFromGroup = <
@@ -71,6 +72,8 @@ const makeApiFromGroup = <
     .add(PtyGroup.middleware(locationMiddleware))
     .add(makeQuestionGroup(locationMiddleware, sessionLocationMiddleware).middleware(workspaceRoutingMiddleware))
     .add(ReferenceGroup.middleware(locationMiddleware))
+    // Instance-wide, so no location middleware: the config stores are global nodes.
+    .add(ConfigGroup)
     .annotateMerge(
       OpenApi.annotations({
         title: "novaclaw HttpApi",

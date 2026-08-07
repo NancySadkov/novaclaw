@@ -645,3 +645,94 @@ describe("formatWrite", () => {
     expect(ConfigureTool.formatWrite({ requested: ["$schema"], consumed: new Set() })).toContain("Nothing was stored")
   })
 })
+
+// ═══ the `remove` op (v0.2.0 item 4.3) ════════════════════════════════════════════════════════
+//
+// Until 2026-08-07 this tool could not delete anything and its description said so — which made
+// AGENTS.md's self-healing law true only for whoever could reach raw HTTP. These drive the op
+// against the same real store the write tests use.
+
+describe("configure remove — the agent's half of the deletion verb", () => {
+  it.live("removes ONE mcp server and leaves its sibling, asking on the key's own tier", () => {
+    const asserted: Asserted[] = []
+    return withTool(recording(asserted), ({ registry, settings }) =>
+      Effect.gen(function* () {
+        yield* settings.set("mcp", {
+          servers: {
+            filesystem: { type: "local", command: ["npx", "x"] },
+            weather: { type: "remote", url: "https://example.invalid/mcp" },
+          },
+        })
+
+        const result = yield* call(registry, { op: "remove", paths: [["mcp", "servers", "weather"]] })
+        expect(textOf(result)).toContain("Removed")
+
+        // Priced exactly like a WRITE to the same key — deleting `mcp` is not cheaper than editing it.
+        expect(asserted).toHaveLength(1)
+        expect(asserted[0]!.resources).toEqual(["mcp"])
+
+        // Read the store the product reads, never the tool's success text.
+        const stored = (yield* settings.all()).mcp as { servers: Record<string, unknown> }
+        expect(Object.keys(stored.servers)).toEqual(["filesystem"])
+      }),
+    )
+  })
+
+  it.live("a path that names nothing removes NOTHING and says which path was wrong", () => {
+    const asserted: Asserted[] = []
+    return withTool(recording(asserted), ({ registry, settings }) =>
+      Effect.gen(function* () {
+        yield* settings.set("mcp", { servers: { filesystem: { type: "local", command: ["npx", "x"] } } })
+
+        const result = yield* call(registry, {
+          op: "remove",
+          paths: [
+            ["mcp", "servers", "filesystem"],
+            ["mcp", "servers", "ghost"],
+          ],
+        })
+        expect(textOf(result)).toContain("Nothing was removed")
+        expect(textOf(result)).toContain("ghost")
+
+        // All-or-nothing: the GOOD path rolled back with the bad one. A model told "done" while one
+        // of its two repairs silently did not happen is the loop ruling 2 exists to prevent.
+        const stored = (yield* settings.all()).mcp as { servers: Record<string, unknown> }
+        expect(Object.keys(stored.servers)).toEqual(["filesystem"])
+      }),
+    )
+  })
+
+  it.live("a refused consent card removes nothing at all", () =>
+    withTool(denying, ({ registry, settings }) =>
+      Effect.gen(function* () {
+        yield* settings.set("mcp", { servers: { filesystem: { type: "local", command: ["npx", "x"] } } })
+        const result = yield* call(registry, { op: "remove", paths: [["mcp", "servers", "filesystem"]] })
+        expect(textOf(result)).toContain("Nothing was removed")
+        const stored = (yield* settings.all()).mcp as { servers: Record<string, unknown> }
+        expect(Object.keys(stored.servers)).toEqual(["filesystem"])
+      }),
+    ))
+
+  it.live("an unknown top-level key is refused by name, before any card is raised", () => {
+    const asserted: Asserted[] = []
+    return withTool(recording(asserted), ({ registry }) =>
+      Effect.gen(function* () {
+        const result = yield* call(registry, { op: "remove", paths: [["provider_preset", "x"]] })
+        expect(textOf(result)).toContain("not a configuration key")
+        // NEGATIVE CONTROL for the ordering claim: asking the user to approve a write that cannot
+        // happen is consent spent on nothing.
+        expect(asserted).toEqual([])
+      }),
+    )
+  })
+
+  it.live("an empty path list is refused rather than reported as a successful no-op", () =>
+    withTool(
+      recording([]),
+      ({ registry }) =>
+        Effect.gen(function* () {
+          const result = yield* call(registry, { op: "remove", paths: [] })
+          expect(textOf(result)).toContain("Nothing was removed")
+        }),
+    ))
+})

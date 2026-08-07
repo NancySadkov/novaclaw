@@ -19281,6 +19281,71 @@
           }
         ]
       }
+    },
+    "/api/config/remove": {
+      "post": {
+        "tags": ["config"],
+        "operationId": "v2.config.remove",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "ConfigRemoveResult",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigRemoveResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Delete one or more values from the instance configuration by path. `PATCH /config` merges and can never remove a key; this is the deletion verb. Instance-wide, applied in one transaction, and live without a restart. A path that names nothing is a 400 and NOTHING is removed.",
+        "summary": "Remove config values",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigRemoveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.config.remove({\n  ...\n})"
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -25388,6 +25453,47 @@
           }
         },
         "required": ["_tag", "message"],
+        "additionalProperties": false
+      },
+      "ConfigPath": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "ConfigRemoveRequest": {
+        "type": "object",
+        "properties": {
+          "paths": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfigPath"
+            },
+            "description": "The paths to remove. Applied all-or-nothing: if any one names nothing, none are removed."
+          }
+        },
+        "required": ["paths"],
+        "additionalProperties": false
+      },
+      "ConfigRemoveResult": {
+        "type": "object",
+        "properties": {
+          "removed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfigPath"
+            },
+            "description": "The paths that were removed."
+          },
+          "cleared": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Default refs cleared because they pointed at something removed (`model`, `default_agent`). A dangling default reads as configured and resolves to nothing, so it is pruned with its target."
+          }
+        },
+        "required": ["removed", "cleared"],
         "additionalProperties": false
       },
       "CredentialValue": {
@@ -42818,6 +42924,10 @@
     {
       "name": "reference",
       "description": "Location-scoped project references."
+    },
+    {
+      "name": "config",
+      "description": "Instance-wide configuration deletion."
     }
   ]
 }
