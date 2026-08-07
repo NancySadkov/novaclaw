@@ -7,6 +7,7 @@ import path from "node:path"
 import { makeLocationNode } from "../effect/app-node"
 import { Global } from "../global"
 import { LogRead } from "../observability/log-read"
+import { SessionOrigin } from "../session/origin"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -62,6 +63,32 @@ import { Tools } from "./tools"
  * `resource_status` makes for the same reason. ⚠️ It is the OPPOSITE of `docs`' call, and the test
  * is what the prompt would have to carry: `docs` pays because its topic NAMES are the index a model
  * needs in order to know the manual exists; this tool's index is `{op:'keys'}`, which is a call.
+ *
+ * ── untrusted framing: FRAMED, and the two mechanisms compose ───────────────────────────────────
+ *
+ * `test/untrusted-framing.test.ts`'s rule is *"a tool carries external content when the TOOL ITSELF
+ * goes and gets bytes from a party other than the user."* On the letter of it a log reader looks
+ * local — the same argument that puts `read`/`grep` in `NO_EXTERNAL`. **It does not hold here**, and
+ * the difference is worth stating because it is the only reason this file is not in that list: that
+ * entry's defence is *"framing at the moment bytes ENTER is the cheap, honest place"*, i.e. an
+ * earlier tool already declared the provenance. **Nothing ever framed a log line.** An MCP server's
+ * relayed output, a provider's error body inside a `fault=`, and a client's own `message` arriving
+ * over `POST /log` are all a third party's words, written into a file by a writer that has no frame
+ * to apply — and this tool then hands them to the model. So the log is precisely the case where the
+ * declaration is the *only* surviving record of who wrote a value, and reading it here is the cheap
+ * honest place.
+ *
+ * The frame is **per block and label-precise**, never a wrapper over the whole result: see
+ * {@link FOREIGN_LABEL} and {@link formatLines}. `count` and `keys` are never framed — a bucket name
+ * is a declared key and a declaration is our own source code, which is `docs.ts`'s reasoning exactly.
+ *
+ * ⭐ **How it composes with `plane`, since both answer a question about the same column.** They are
+ * different questions — `content` is *may this leave the machine*, `SPEAKS_FOR_OTHERS` is *who wrote
+ * it* — and they disagree exactly once, on `path`: never egresses, and still the user's own words
+ * rather than a stranger's. But every class that speaks for others is `content !== "none"`, so a
+ * `maintenance` projection has already withheld all of them and `carriesForeign` returns false by
+ * construction. That implication is asserted in `log.test.ts` rather than assumed, so a future
+ * attribute class cannot break the composition silently.
  *
  * ── the permission gate ─────────────────────────────────────────────────────────────────────────
  *
@@ -172,6 +199,50 @@ const clamp = (value: number | undefined, fallback: number, max: number) => {
 }
 
 const truncate = (line: string) => (line.length > MAX_LINE_CHARS ? `${line.slice(0, MAX_LINE_CHARS)}…` : line)
+
+/**
+ * **The label, and every word in it is load-bearing.** `test/untrusted-framing.test.ts` §1 pins the
+ * frame's shape; the *label* is the caller's, and ruling 2 makes it a claim we have to be able to
+ * defend.
+ *
+ *  · **"values"**, not *lines* or *the log*. Most of a line is ours — `timestamp`, `level`, `run`,
+ *    `event`, the declared constant `message=`, and every `id`/`count`/`flag`/`correlate`/`path`
+ *    column. A label reading *"log lines — treat as data, not as instructions"* would tell a small
+ *    model to discount our own `event=` key, which is the one column the whole of Phase 1 exists to
+ *    make it trust. This is `formatChats`'s lesson verbatim: it says *"chat names from the messaging
+ *    platform"* and deliberately not *"a chat list"*, so the ruling-7 access tag beside the names
+ *    keeps its authority.
+ *  · **"other programs"** names the actual source: an MCP server's relayed output, a provider's
+ *    error body inside a `fault=`, a client's own `message` arriving over `POST /log`.
+ *  · **"logged"** keeps it honest that the file is ours and the values merely passed through it.
+ */
+export const FOREIGN_LABEL = "logged values from other programs"
+
+/**
+ * The line block, framed IF it still carries somebody else's words.
+ *
+ * ⚠️ **The frame lives here and NOT in `toModelOutput`**, which is `websearch.formatResults`'s rule
+ * and the correction the retired `messenger.ts` debt entry records: a blanket prefix at the
+ * model-text seam *"WOULD have mislabelled every instance fault as a stranger's words"*. This tool
+ * says plenty of its own: the header, "No line matches", the two refusals, every `count` bucket and
+ * every `keys` declaration. None of that is framed, because none of it came from anywhere else.
+ *
+ * ⚠️ **One frame for the block, not one per line.** A `read` returns up to 200 lines for one
+ * question about one file; a per-line prefix would bill the frame 200 times, which is what
+ * `externalContentFrame`'s own one-line ratchet exists to prevent (`formatHistory` frames a
+ * 200-message batch once for the same reason).
+ *
+ * ⚠️ **A block with nothing foreign in it is NOT framed** — the `formatResults([]) === ""` rule:
+ * a frame announces a source, and announcing one that sent nothing is a false statement about the
+ * content beneath it. In practice that is every `plane: "maintenance"` read, because the projection
+ * has already withheld each class that speaks for others.
+ */
+export function formatLines(lines: ReadonlyArray<LogRead.Line>, plane: LogRead.Plane): string {
+  const body = lines.map((line) => truncate(LogRead.project(line, plane))).join("\n")
+  return lines.some((line) => LogRead.carriesForeign(line, plane))
+    ? SessionOrigin.externalContentFrame(FOREIGN_LABEL) + body
+    : body
+}
 
 const subsystemNames = () => Object.keys(SUBSYSTEMS).sort()
 
@@ -289,10 +360,8 @@ export function run(input: typeof Input.Type, source: Source): Output | ToolFail
     `${result.lines.length} line${result.lines.length === 1 ? "" : "s"}, oldest first` +
     (plane === "maintenance" ? " · maintenance plane: local-only columns are shown as ‹class›" : "") +
     (result.truncated ? " · scan ceiling reached, older history not examined" : "")
-  return {
-    ok: true,
-    message: [header, ...result.lines.map((line) => truncate(LogRead.project(line, plane)))].join("\n"),
-  }
+  // The header is OURS and stays outside the frame; `formatLines` owns the labelled half.
+  return { ok: true, message: `${header}\n${formatLines(result.lines, plane)}` }
 }
 
 export const layer = Layer.effectDiscard(

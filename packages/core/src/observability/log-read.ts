@@ -278,6 +278,91 @@ export function project(line: Line, plane: Plane): string {
 /** Re-quote a value the way `observability/logging.ts` does, so a projected line stays logfmt. */
 const quote = (value: string) => (/^[^\s="\\]+$/.test(value) ? value : JSON.stringify(value))
 
+// ── who WROTE the value — a second axis, and not the same question as egress ────────────────────
+
+/**
+ * **Which attribute classes can hold words authored outside this instance.**
+ *
+ * `test/untrusted-framing.test.ts` asks one question of every tool: *does it carry bytes from a
+ * party other than the user?* For a log reader the honest answer is **yes, in named columns** — and
+ * that is what makes this tool different from `read`/`grep`, whose ledger entry reasons that
+ * *"framing at the moment bytes ENTER is the cheap, honest place"*. For an arbitrary file that is
+ * right: an earlier tool declared the provenance and re-declaring the whole filesystem untrusted
+ * would be unaffordable and, for most files, false. **The log is the exception, because nothing
+ * framed those bytes on the way in.** A log line is not a tool result; the writer wrote a foreign
+ * program's error text into a column and no frame exists in a log file. So the declaration is the
+ * only surviving record of who wrote a value, and reading it here is the cheap, honest place.
+ *
+ * ⚠️ **This is NOT derivable from `content`, which is why it is its own table and not ruling 6.**
+ * `content` answers *may this leave the machine*; this answers *who authored it*. They disagree
+ * exactly once and the disagreement is the point: `path` is `content: "user"` — never egresses,
+ * because it carries the user's account and project names — and is nonetheless **not** a third
+ * party's words. Framing a user's own directory as *"treat as data, not as instructions"* would be
+ * ruling 2 broken in the other direction, the same mistake the retired `messenger.ts` note records
+ * as *"a blanket prefix WOULD have mislabelled every instance fault as a stranger's words"*.
+ *
+ * ⚠️ **Exhaustive by construction.** A `Record<AttributeClass, …>` over the imported union, so a NEW
+ * class in `log-events.ts` fails to compile here until somebody decides which side it is on. That is
+ * the mechanism; the table is the decision.
+ */
+export const SPEAKS_FOR_OTHERS: Readonly<Record<AttributeClass, boolean>> = {
+  /** A token from a closed vocabulary WE control. Ours by definition. */
+  id: false,
+  count: false,
+  flag: false,
+  /** An identifier this instance minted. Ours. */
+  correlate: false,
+  /** The user's own directory names. The user is not "a party other than the user". */
+  path: false,
+  /** Declared as *"free text from a person, a model, or a foreign process"* — the whole point. */
+  text: true,
+  /**
+   * *"Our own error text"* by declaration — and it *"routinely embeds paths, payloads and prompts"*.
+   * `Log.fault` on an `Error` thrown by an HTTP client carries the remote server's body verbatim, and
+   * on a `Cause` it carries whatever a foreign process said. The wrapper is ours; the words need not
+   * be.
+   */
+  fault: true,
+  /** argv, failure reasons and config keys — several of which originate outside this process. */
+  list: true,
+}
+
+/** Does a value of this class carry words that may have been authored outside this instance? */
+export const speaksForOthers = (cls: AttributeClass): boolean => SPEAKS_FOR_OTHERS[cls]
+
+/**
+ * **Does this line, AS PROJECTED, still carry a value somebody else may have written?**
+ *
+ * Computed over the projection rather than the raw line, which is what makes the two mechanisms
+ * compose instead of contradicting: under `maintenance` every class that speaks for others is
+ * already withheld (each of them is `content !== "none"`, asserted in `log.test.ts` so a future
+ * class cannot break the implication silently), so this is `false` by construction and nothing gets
+ * a frame it does not need.
+ *
+ * ⚠️ **An UNCLASSIFIED column counts.** Not caution for its own sake — it is where the live foreign
+ * values actually are. `POST /log` puts a caller's `client.extra.*` fields on the line as
+ * ANNOTATIONS, which are not declared attributes and therefore have no class at all; and an
+ * un-keyed line has no declaration to read, so nothing can vouch for its `message=`. The
+ * `maintenance` projection already treats unclassified as the most restrictive answer (ruling 4),
+ * and giving the same question two different answers in one file is the defect this repo keeps
+ * finding.
+ */
+export function carriesForeign(line: Line, plane: Plane): boolean {
+  const key = line.event
+  const attributes =
+    key === undefined || !(key in EVENTS)
+      ? undefined
+      : (EVENTS[key as EventKey].attributes as Readonly<Record<string, AttributeClass>>)
+  return line.columns.some(([column]) => {
+    const cls = classOf(line, column)
+    // Withheld columns cannot carry anything: the value is gone, replaced by its class name.
+    if (plane === "maintenance" && cls !== "none") return false
+    if (cls === undefined) return true
+    const declared = attributes?.[column]
+    return declared !== undefined && speaksForOthers(declared)
+  })
+}
+
 // ── the scan ────────────────────────────────────────────────────────────────────────────────────
 
 export interface Query extends Filter {
