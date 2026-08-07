@@ -2722,13 +2722,22 @@ export const layer = Layer.effect(
             // P2 (2A): cadence-gated introspection judge — an out-of-band model call that
             // asks "is this agent stuck?"; a YES steers the interjection (2B). Best-effort:
             // never allowed to fail the drain it watches.
+            // ⚠️ This read `Effect.catch`, which sees the ERROR channel only — a defect thrown
+            // anywhere under `introspect` (a bug in the judge, a `die`, an unexpected throw inside
+            // a `gen`) walked straight past it and killed the drain the comment promises it can
+            // never fail. Every sibling best-effort at this level (`runQualityCheck` below,
+            // `generateTitleOnce`, `extractMemory`) already uses `catchCause`; this one was the
+            // odd one out. The interrupt arm is `execution/local.ts`'s idiom and it is ruling 2:
+            // a Stop is not a judge failure, and logging it as one describes a fault falsely.
             if (introspectionOn && Introspection.shouldJudge(step, harness.introspection.cadence))
               yield* introspect(input.sessionID, harness.introspection).pipe(
-                Effect.catch((cause) =>
-                  Log.event("session.introspection.judge.failed", {
-                    "session.id": input.sessionID,
-                    "session.cause": Log.fault(cause),
-                  }),
+                Effect.catchCause((cause) =>
+                  Cause.hasInterruptsOnly(cause)
+                    ? Effect.void
+                    : Log.event("session.introspection.judge.failed", {
+                        "session.id": input.sessionID,
+                        "session.cause": Log.fault(cause),
+                      }),
                 ),
               )
             // QE-B steps 1–3: per touched file after a write-class tool settles (syntax +
