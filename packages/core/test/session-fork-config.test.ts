@@ -24,6 +24,7 @@ import { SessionV2 } from "@novaclaw/core/session"
 import {
   EFFECTIVE_CONFIG_DEFAULTS,
   forkOverrides,
+  isRowCarried,
   resolveSessionConfig,
   SESSION_CONFIG_FIELD_KEYS,
   SESSION_CONFIG_FIELDS,
@@ -69,8 +70,9 @@ const expectField = (label: string, actual: unknown, expected: unknown) =>
   expect(`${label}=${JSON.stringify(actual)}`).toBe(`${label}=${JSON.stringify(expected)}`)
 
 /**
- * A session declaring EVERY `"resolved"` field, each at a NON-default value. The `permission`
- * ruleset rides along even though it is `absent-from-row` for the fold (see the descriptor).
+ * A session declaring EVERY row-carried field, each at a NON-default value. The `permission`
+ * ruleset rides along even though it is NOT a `SessionConfig` field at all — its config twin
+ * (`permissionRules`) was deleted as a phantom in B2, while the COLUMN survives for now.
  */
 const createFullyConfigured = (session: SessionV2.Interface, parentID?: SessionSchema.ID) =>
   Effect.gen(function* () {
@@ -135,7 +137,7 @@ describe("SESSION_CONFIG_FIELDS — the descriptor is honest about what a row ca
       } as unknown as SessionLike
       const mapped = sessionToConfig(everything) as Record<string, unknown>
       for (const key of SESSION_CONFIG_FIELD_KEYS)
-        expectField(`sessionToConfig maps ${key}`, mapped[key] !== undefined, SESSION_CONFIG_FIELDS[key] === "resolved")
+        expectField(`sessionToConfig maps ${key}`, mapped[key] !== undefined, isRowCarried(key))
       // The other direction: the fold may not produce a key the descriptor never declared.
       expect(Object.keys(mapped).filter((key) => !(key in SESSION_CONFIG_FIELDS))).toEqual([])
     }),
@@ -144,6 +146,27 @@ describe("SESSION_CONFIG_FIELDS — the descriptor is honest about what a row ca
   it.effect("covers every SessionConfig field (no field left unclassified)", () =>
     Effect.sync(() => {
       for (const key of SESSION_CONFIG_FIELD_KEYS) expect(SESSION_CONFIG_FIELDS[key]).toBeDefined()
+    }),
+  )
+
+  // ⚠️ Written because a NEGATIVE CONTROL exposed the gap. Pointing `safeMode` at
+  // `context_budget` — a real column, so the compile-time existence check in `config-columns.ts`
+  // is happy — went red in SEVEN places across three files, none of which said "two fields claim
+  // one column". A collision is a corruption (whichever field is written second wins the row and
+  // the other reads its neighbour's value), so it deserves an assertion that NAMES it rather than
+  // a scatter of downstream behaviour failures.
+  it.effect("no two config fields claim the same session column", () =>
+    Effect.sync(() => {
+      const byColumn = new Map<string, string[]>()
+      for (const key of SESSION_CONFIG_FIELD_KEYS) {
+        const column = SESSION_CONFIG_FIELDS[key].column
+        if (column === undefined) continue
+        byColumn.set(column, [...(byColumn.get(column) ?? []), key])
+      }
+      expect([...byColumn].filter(([, keys]) => keys.length > 1)).toEqual([])
+      // Non-vacuity: an empty descriptor would satisfy the line above trivially.
+      expect(byColumn.size).toBe(SESSION_CONFIG_FORK_FIELDS.length)
+      expect(byColumn.size).toBeGreaterThan(0)
     }),
   )
 
@@ -158,7 +181,7 @@ describe("SESSION_CONFIG_FIELDS — the descriptor is honest about what a row ca
   // and its migration into the same commit rather than leaving a field to age into a phantom.
   it.effect("no SessionConfig field is parked outside the row (the absent-from-row set is empty)", () =>
     Effect.sync(() => {
-      expect(SESSION_CONFIG_FIELD_KEYS.filter((key) => SESSION_CONFIG_FIELDS[key] !== "resolved")).toEqual([])
+      expect(SESSION_CONFIG_FIELD_KEYS.filter((key) => !isRowCarried(key))).toEqual([])
       expect(SESSION_CONFIG_FORK_FIELDS.length).toBe(SESSION_CONFIG_FIELD_KEYS.length)
     }),
   )

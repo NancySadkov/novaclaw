@@ -139,7 +139,7 @@ describe("safe mode — the session column", () => {
 
 describe("safe mode — the descriptor and the row inverse", () => {
   test("`SESSION_CONFIG_FIELDS` classifies it `resolved`, so `fork` carries it", () => {
-    expect(SESSION_CONFIG_FIELDS.safeMode).toBe("resolved")
+    expect(SESSION_CONFIG_FIELDS.safeMode.column).toBe("safe_mode")
     expect(SESSION_CONFIG_FORK_FIELDS).toContain("safeMode")
     // The classification is only legitimate while the fold genuinely maps it. (The fork suite
     // asserts the biconditional over every field; this is the same claim, named.)

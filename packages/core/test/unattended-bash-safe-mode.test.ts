@@ -156,7 +156,7 @@ describe("② safe mode restores the refusal, and the refusal NAMES ITSELF (ruli
     // of a safe-mode session is in safe mode — which is what ruling 8 demands of a RESTRICTION.
     // (This line held `"absent-from-row"` while the column did not exist. It was the second of the
     // two ratchets that forced whoever added the column to finish the job.)
-    expect(SESSION_CONFIG_FIELDS.safeMode).toBe("resolved")
+    expect(SESSION_CONFIG_FIELDS.safeMode.column).toBe("safe_mode")
   })
 })
 

@@ -435,65 +435,33 @@ export interface EffectiveConfig {
 /**
  * Resolve the effective config for a session from the global `defaults` and the `chain` of
  * `SessionConfig` overrides ordered **root-first** (`[rootSession, …, targetSession]`).
+ *
+ * ⚠️ **Generated from `SESSION_CONFIG_FIELDS`, and that is the whole point of the descriptor.**
+ * This used to be 17 `let`s, 17 `if (layer.x !== undefined) x = layer.x` lines and a 17-key return
+ * literal — three lists that had to agree, inside one function, with nothing checking that they
+ * did. They did not: the fork defect ruling 8 came from (app `1fbfd4ffd`) was exactly a field
+ * present in one list and missing from another. A field can no longer be added to the merge
+ * algebra and forgotten by it, because there is one list now and the type system demands an entry.
  */
 export function resolveConfig(defaults: EffectiveConfig, chain: readonly SessionConfig[]): EffectiveConfig {
-  let model = defaults.model
-  let agent = defaults.agent
-  let systemPromptOverride = defaults.systemPromptOverride
-  let type = defaults.type
-  let priority = defaults.priority
-  let responder = defaults.responder
-  let introspection = defaults.introspection
-  let quality = defaults.quality
-  let affective = defaults.affective
-  let thinkingBudget = defaults.thinkingBudget
-  let surgicalEdits = defaults.surgicalEdits
-  let askBeforeChanges = defaults.askBeforeChanges
-  let safeMode = defaults.safeMode
-  let contextBudget = defaults.contextBudget
-  let strict = defaults.strict
-  let permissionMode = defaults.permissionMode
-
+  // Only what a LAYER declared is accumulated; `defaults` supplies the rest at the end. That keeps
+  // the return typed `EffectiveConfig` by construction — `defaults` carries the four required
+  // fields — instead of needing an `as unknown as` over a bare record.
+  const overrides: Record<string, unknown> = {}
   chain.forEach((layer, index) => {
-    if (layer.model !== undefined) model = layer.model
-    if (layer.agent !== undefined) agent = layer.agent
-    if (layer.systemPromptOverride !== undefined) systemPromptOverride = layer.systemPromptOverride
-    if (layer.type !== undefined) type = layer.type
-    if (layer.priority !== undefined) priority = layer.priority
-    if (layer.responder !== undefined) responder = layer.responder
-    if (layer.introspection !== undefined) introspection = layer.introspection
-    if (layer.quality !== undefined) quality = layer.quality
-    if (layer.affective !== undefined) affective = layer.affective
-    if (layer.thinkingBudget !== undefined) thinkingBudget = layer.thinkingBudget
-    if (layer.surgicalEdits !== undefined) surgicalEdits = layer.surgicalEdits
-    if (layer.askBeforeChanges !== undefined) askBeforeChanges = layer.askBeforeChanges
-    if (layer.safeMode !== undefined) safeMode = layer.safeMode
-    if (layer.contextBudget !== undefined) contextBudget = layer.contextBudget
-    if (layer.strict !== undefined) strict = layer.strict
-    if (layer.permissionMode !== undefined) {
-      // Root sets freely; deeper sessions can only narrow (never escalate past the parent).
-      permissionMode = index === 0 ? layer.permissionMode : moreRestrictive(permissionMode, layer.permissionMode)
+    for (const key of SESSION_CONFIG_FIELD_KEYS) {
+      const value = layer[key]
+      if (value === undefined) continue // `undefined` means INHERIT — never "clear it"
+      if (SESSION_CONFIG_FIELDS[key].merge === "narrow") {
+        // Root sets freely; deeper sessions can only narrow (never escalate past the parent).
+        const current = (overrides[key] ?? defaults[key]) as PermissionMode
+        overrides[key] = index === 0 ? value : moreRestrictive(current, value as PermissionMode)
+        continue
+      }
+      overrides[key] = value
     }
   })
-
-  return {
-    model,
-    agent,
-    systemPromptOverride,
-    type,
-    priority,
-    responder,
-    permissionMode,
-    introspection,
-    quality,
-    affective,
-    thinkingBudget,
-    surgicalEdits,
-    askBeforeChanges,
-    safeMode,
-    contextBudget,
-    strict,
-  }
+  return { ...defaults, ...(overrides as Partial<EffectiveConfig>) }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -529,25 +497,37 @@ export interface SessionLike {
   readonly contextBudget?: boolean
 }
 
-/** Project a session record onto its config OVERRIDES (only fields it actually carries today). */
-export const sessionToConfig = (session: SessionLike): SessionConfig => ({
-  model: session.model,
-  agent: session.agent,
-  systemPromptOverride: session.systemPromptOverride,
-  type: session.type,
-  priority: session.priority,
-  responder: session.responder,
-  permissionMode: session.permissionMode,
-  strict: session.strict,
-  introspection: session.introspection,
-  quality: session.quality,
-  affective: session.affective,
-  thinkingBudget: session.thinkingBudget,
-  surgicalEdits: session.surgicalEdits,
-  askBeforeChanges: session.askBeforeChanges,
-  safeMode: session.safeMode,
-  contextBudget: session.contextBudget,
-})
+/**
+ * ⚠️ A COMPILE-TIME guard, not a runtime one, and it closes the exact hole ruling 8 was written
+ * about. `sessionToConfig` below reads each field off a `SessionLike` by descriptor key. If a new
+ * `SessionConfig` field were added and `SessionLike` not widened, that read would silently yield
+ * `undefined` — the field would resolve for nobody, forever, and every test would stay green
+ * because `undefined` means *inherit*. This makes it a type error instead. The failing branch
+ * carries the missing keys so the compiler NAMES them rather than only refusing.
+ */
+type SessionLikeCarriesEveryConfigField =
+  keyof SessionConfig extends keyof SessionLike
+    ? true
+    : ["SessionLike is missing", Exclude<keyof SessionConfig, keyof SessionLike>]
+const _sessionLikeCarriesEveryConfigField: SessionLikeCarriesEveryConfigField = true
+void _sessionLikeCarriesEveryConfigField
+
+/**
+ * Project a session record onto its config OVERRIDES — every field the ROW carries, generated from
+ * `SESSION_CONFIG_FIELDS` rather than re-listed. A field with no column is skipped, which makes the
+ * descriptor's `column !== undefined ⇔ this fold maps it` equivalence true by construction instead
+ * of by a test that notices afterwards.
+ */
+export const sessionToConfig = (session: SessionLike): SessionConfig => {
+  const config: Record<string, unknown> = {}
+  for (const key of SESSION_CONFIG_FIELD_KEYS) {
+    if (!isRowCarried(key)) continue
+    // Safe by the compile-time guard directly above: every `SessionConfig` key IS a `SessionLike`
+    // key, so this index cannot miss. Without that guard it silently could, forever.
+    config[key] = session[key as keyof SessionLike]
+  }
+  return config as SessionConfig
+}
 
 /**
  * The `[root … session]` chain of config OVERRIDES for a session, walking `parentID` root-ward.
@@ -638,66 +618,105 @@ export const resolveSessionConfig = <E, R>(
 // through the walk, and the fork's type is now its own declared value.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** How `fork` carries one `SessionConfig` field. */
-export type SessionConfigForkCarry =
-  /** The session row carries it (via `sessionToConfig`), so the fork gets the chain-resolved value. */
-  | "resolved"
+/**
+ * How the chain fold combines one `SessionConfig` field across layers.
+ *
+ * There are exactly TWO strategies, and that is a claim about the product rather than a limitation:
+ * a third one (`permissionRules`' concatenation) existed until B2 and turned out to serve nobody.
+ * Adding a strategy means adding an arm to `resolveConfig`'s fold, which is the point — the merge
+ * algebra is now enumerable instead of spread across 17 hand-written `if`s.
+ */
+export type SessionConfigMerge =
+  /** The nearest layer that declares it wins. The default, and what every field but one uses. */
+  | "override"
   /**
-   * A `SessionConfig` field NO session row can express, so there is nothing on the chain to copy.
-   *
-   * ⚠️ **This category is EMPTY as of the phantom-trio deletion (v0.2.0 B2), and that is the point
-   * of keeping it.** It used to hold `device`, `tools` and `permissionRules` — three fields the
-   * merge algebra resolved for nobody. It stays as a legal classification because the only honest
-   * way to add a `SessionConfig` field ahead of its column is to say so here; what it must never
-   * again become is a parking space a field sits in indefinitely. A field classified here has no
-   * consumer by construction, so it owes a column (and its migration) or a deletion.
+   * `permissionMode` only: the ROOT sets it freely (it defines the ceiling for its subtree) and
+   * every deeper layer can only make it MORE restrictive. This is the keystone that makes spawn
+   * and privilege self-revocation safe.
    */
-  | "absent-from-row"
+  | "narrow"
+
+/** What one `SessionConfig` field declares, once, for every generator that consumes it. */
+export interface SessionConfigField {
+  /**
+   * The `session` table column that carries it — the literal column NAME, because this module is
+   * dependency-free by design (its merge algebra is unit-tested without a DB) and so may not import
+   * `sql.ts`. `session/config-columns.ts` closes that loop with a TYPE-level check that every name
+   * here is a real column, so the string cannot rot into a typo or outlive a rename.
+   *
+   * `undefined` = no session row can express this field, so there is nothing on a chain to copy and
+   * `fork` cannot carry it.
+   * ⚠️ **That set is EMPTY as of B2's phantom-trio deletion, and `session-fork-config.test.ts`
+   * ratchets it at zero.** `device`, `tools` and `permissionRules` all sat here resolving for
+   * nobody. A field with no column has no consumer by construction — it owes a column (and its
+   * migration) in the same commit, or it owes a deletion.
+   */
+  readonly column: string | undefined
+  readonly merge: SessionConfigMerge
+}
 
 /**
- * Ruling 8's *"declare every `SessionConfig` field once in a `SESSION_CONFIG_FIELDS` descriptor"*,
- * in its FORK-sized first cut. The full descriptor (schema field ↔ column ↔ merge strategy, driving
- * `fromRow`/`sessionRow`/`sessionToConfig`/the resolve fold/`CreateInput`) is Wave 3's **B2**; this
- * declares the one axis `fork` needs and gives B2 a home to widen rather than a list to discover.
+ * Ruling 8's *"declare every `SessionConfig` field ONCE in a `SESSION_CONFIG_FIELDS` descriptor"*,
+ * at its full width (B2). Schema field ↔ column ↔ merge strategy, with every generator reading it
+ * rather than repeating the list: `resolveConfig`'s fold, `sessionToConfig`, `forkOverrides`, and
+ * `session/config-columns.ts`'s row ⇄ config halves (which `fromRow` and `sessionRow` spread).
  *
- * ⚠️ It is a RATCHET, not documentation, and it bites from two directions:
- *  · the type annotation makes a new `SessionConfig` field a COMPILE error until it is classified;
- *  · `session-fork-config.test.ts` asserts `"resolved" ⇔ sessionToConfig maps it`, so classifying a
- *    row-carried field as `absent-from-row` to dodge the work fails a test, and it then asserts the
- *    fork actually round-trips every `"resolved"` field through a real DB.
- * Neither check repeats the field list — both read it from here.
+ * ⚠️ **`as const satisfies` rather than a type ANNOTATION, and the difference is load-bearing.**
+ * `satisfies` still makes a new `SessionConfig` field a COMPILE error until it is declared here
+ * (and an entry for a field that no longer exists an error too), while `as const` preserves the
+ * literal column names — which is what lets `SessionConfigColumn` below be a union of real column
+ * names instead of `string`. An annotation widens them and throws that away.
+ *
+ * ⚠️ It is a RATCHET, not documentation, and it now bites from four directions:
+ *  · a new field is a compile error until it is declared here;
+ *  · a declared column that is not a real `session` column is a compile error (`config-columns.ts`);
+ *  · a field `SessionLike` cannot carry is a compile error (the guard above `sessionToConfig`) —
+ *    without it a forgotten `SessionLike` field makes the fold emit `undefined` forever, which is
+ *    EXACTLY the shape of the fork defect ruling 8 was written about;
+ *  · `session-fork-config.test.ts` asserts `column !== undefined ⇔ sessionToConfig maps it` in both
+ *    directions, and then round-trips every carried field through a real DB.
+ * None of those repeats the field list — all read it from here.
  */
-export const SESSION_CONFIG_FIELDS: Readonly<Record<keyof SessionConfig, SessionConfigForkCarry>> = {
-  model: "resolved",
-  agent: "resolved",
-  systemPromptOverride: "resolved",
-  type: "resolved",
-  priority: "resolved",
-  responder: "resolved",
-  permissionMode: "resolved",
-  introspection: "resolved",
-  quality: "resolved",
-  affective: "resolved",
-  thinkingBudget: "resolved",
-  surgicalEdits: "resolved",
-  askBeforeChanges: "resolved",
-  // Flipped from `absent-from-row` when the `safe_mode` column landed (2026-07-31, see §SAFE MODE).
-  // It is a RESTRICTION, so this is precisely the case ruling 8 exists for: a fork of a safe-mode
-  // session resolves to safe mode, because `"resolved"` puts it in `SESSION_CONFIG_FORK_FIELDS`.
-  safeMode: "resolved",
-  contextBudget: "resolved",
-  strict: "resolved",
-}
+export const SESSION_CONFIG_FIELDS = {
+  model: { column: "model", merge: "override" },
+  agent: { column: "agent", merge: "override" },
+  systemPromptOverride: { column: "system_prompt_override", merge: "override" },
+  type: { column: "type", merge: "override" },
+  priority: { column: "priority", merge: "override" },
+  responder: { column: "responder", merge: "override" },
+  // The one narrowing field. See `SessionConfigMerge` above and this file's header.
+  permissionMode: { column: "permission_mode", merge: "narrow" },
+  introspection: { column: "introspection", merge: "override" },
+  quality: { column: "quality", merge: "override" },
+  affective: { column: "affective", merge: "override" },
+  thinkingBudget: { column: "thinking_budget", merge: "override" },
+  surgicalEdits: { column: "surgical_edits", merge: "override" },
+  askBeforeChanges: { column: "ask_before_changes", merge: "override" },
+  // Gained its column 2026-07-31 (see §SAFE MODE). It is a RESTRICTION, so this is precisely the
+  // case ruling 8 exists for: a fork of a safe-mode session resolves to safe mode, because a
+  // carried column puts it in `SESSION_CONFIG_FORK_FIELDS`.
+  safeMode: { column: "safe_mode", merge: "override" },
+  contextBudget: { column: "context_budget", merge: "override" },
+  strict: { column: "strict", merge: "override" },
+} as const satisfies Readonly<Record<keyof SessionConfig, SessionConfigField>>
 
 /** Every `SessionConfig` key, read off the descriptor (never re-typed). */
 export const SESSION_CONFIG_FIELD_KEYS: readonly (keyof SessionConfig)[] = Object.keys(
   SESSION_CONFIG_FIELDS,
 ) as (keyof SessionConfig)[]
 
-/** The keys a fork must carry — the descriptor's `"resolved"` half. */
-export const SESSION_CONFIG_FORK_FIELDS: readonly (keyof SessionConfig)[] = SESSION_CONFIG_FIELD_KEYS.filter(
-  (key) => SESSION_CONFIG_FIELDS[key] === "resolved",
-)
+/** Does a session ROW carry this field? DERIVED from the column — never declared a second time. */
+export const isRowCarried = (key: keyof SessionConfig): boolean => SESSION_CONFIG_FIELDS[key].column !== undefined
+
+/** The keys a fork must carry — the descriptor's row-carried half. */
+export const SESSION_CONFIG_FORK_FIELDS: readonly (keyof SessionConfig)[] =
+  SESSION_CONFIG_FIELD_KEYS.filter(isRowCarried)
+
+/**
+ * The `session` columns the config descriptor claims, as a union of literal names. Consumed by
+ * `session/config-columns.ts`, which is where it is checked against the real table.
+ */
+export type SessionConfigColumn = NonNullable<(typeof SESSION_CONFIG_FIELDS)[keyof SessionConfig]["column"]>
 
 /**
  * The overrides a FORK's own row must carry, given its source's `[root … source]` chain: the

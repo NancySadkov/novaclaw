@@ -16,6 +16,7 @@ import { WorkspaceV2 } from "../workspace"
 import { SessionContextEpoch } from "./context-epoch"
 import { SessionCompactionTable, SessionInputTable, SessionMessageTable, SessionTable } from "./sql"
 import { SessionSchema } from "./schema"
+import { SessionConfigColumns } from "./config-columns"
 
 type DatabaseService = Database.Interface["db"]
 
@@ -52,17 +53,10 @@ export function sessionRow(info: SessionSchema.Info): typeof SessionTable.$infer
     directory: info.location.directory,
     path: info.subpath,
     title: info.title,
-    agent: info.agent,
-    model: info.model,
-    system_prompt_override: info.systemPromptOverride,
-    type: info.type,
-    priority: info.priority,
-    responder: info.responder,
-    permission_mode: info.permissionMode,
-    strict: info.strict,
-    introspection: info.introspection,
-    quality: info.quality,
-    affective: info.affective,
+    // The sixteen per-session CONFIG columns, generated from `SESSION_CONFIG_FIELDS` — the same
+    // descriptor `info.ts`'s `fromRow` reads, so the two directions cannot drift. See the ⚠️ below
+    // about the four months in which they did.
+    ...SessionConfigColumns.configToRow(info),
     result: info.result,
     version: info.version,
     summary_additions: info.summary?.additions,
@@ -81,21 +75,19 @@ export function sessionRow(info: SessionSchema.Info): typeof SessionTable.$infer
     tokens_cache_write: (info.tokens ?? { cache: { write: 0 } }).cache.write,
     revert: info.revert ? { ...info.revert, messageID: SessionMessage.ID.make(info.revert.messageID) } : null,
     permission: info.permission ? [...info.permission] : undefined,
-    // ⚠️ These three were MISSING until 2026-07-29, which made the "fromRow's inverse" claim above
-    // false and cost the fork fix a workaround. Measured by publishing a `Created` whose `Info`
-    // carried all three `true`: the projected row came back all-NULL. Their only writer was
-    // `SessionEvent.FeatureSwitched`, so no create path could set them — and two of the three
-    // (`surgical_edits`, `ask_before_changes`) are RESTRICTIONS, so a create that meant to restrict
-    // silently did not. Safe on the `Updated` arm because drizzle omits `undefined` keys from a SET
-    // clause: an unrelated `setTitle`/`setMetadata` round-trips the whole `Info`, so a session that
-    // has these set carries them back in, and one that never did keeps writing `undefined`.
-    thinking_budget: info.thinkingBudget,
-    surgical_edits: info.surgicalEdits,
-    ask_before_changes: info.askBeforeChanges,
-    // Same class as the two above, and for the same reason: safe mode is a RESTRICTION, so a create
-    // that meant to restrict must not silently produce an unrestricted session.
-    safe_mode: info.safeMode,
-    context_budget: info.contextBudget,
+    // ⚠️ THREE of the config columns above — `thinking_budget`, `surgical_edits`,
+    // `ask_before_changes` — were MISSING from this function until 2026-07-29, which made the
+    // "fromRow's inverse" claim false and cost the fork fix a workaround. Measured by publishing a
+    // `Created` whose `Info` carried all three `true`: the projected row came back all-NULL. Their
+    // only writer was `SessionEvent.FeatureSwitched`, so no create path could set them — and two of
+    // the three are RESTRICTIONS, so a create that meant to restrict silently did not.
+    // They are now generated from `SESSION_CONFIG_FIELDS` (`configToRow` above), so the omission is
+    // no longer expressible: a config field the descriptor declares is written here by
+    // construction, and one it does not declare fails to compile.
+    // ⚠️ `undefined` (not `null`) is still what an unset field writes, and that is deliberate:
+    // drizzle omits `undefined` keys from a SET clause, so an unrelated `setTitle`/`setMetadata`
+    // round-tripping the whole `Info` does not blank every config column. `configToRow` preserves
+    // that and says so at its own definition.
     provider_recovery: info.providerRecovery
       ? { ...info.providerRecovery, startedAt: DateTime.toEpochMillis(info.providerRecovery.startedAt) }
       : undefined,

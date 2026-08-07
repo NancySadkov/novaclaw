@@ -1,9 +1,7 @@
 import { DateTime } from "effect"
-import { AgentV2 } from "../agent"
 import { Location } from "../location"
-import { ModelV2 } from "../model"
-import { ProviderV2 } from "../provider"
 import { AbsolutePath, RelativePath } from "../schema"
+import { SessionConfigColumns } from "./config-columns"
 import { WorkspaceV2 } from "../workspace"
 import { SessionSchema } from "./schema"
 import { SessionTable } from "./sql"
@@ -19,28 +17,11 @@ export function fromRow(row: typeof SessionTable.$inferSelect): SessionSchema.In
     metadata: row.metadata ?? undefined,
     title: row.title,
     parentID: row.parent_id ? SessionSchema.ID.make(row.parent_id) : undefined,
-    agent: row.agent ? AgentV2.ID.make(row.agent) : undefined,
-    model: row.model
-      ? {
-          id: ModelV2.ID.make(row.model.id),
-          providerID: ProviderV2.ID.make(row.model.providerID),
-          variant: ModelV2.VariantID.make(row.model.variant ?? "default"),
-        }
-      : undefined,
-    systemPromptOverride: row.system_prompt_override ?? undefined,
-    type: row.type ?? undefined,
-    priority: row.priority ?? undefined,
-    responder: row.responder ?? undefined,
-    permissionMode: row.permission_mode ?? undefined,
-    strict: row.strict ?? undefined,
-    introspection: row.introspection ?? undefined,
-    quality: row.quality ?? undefined,
-    affective: row.affective ?? undefined,
-    thinkingBudget: row.thinking_budget ?? undefined,
-    surgicalEdits: row.surgical_edits ?? undefined,
-    askBeforeChanges: row.ask_before_changes ?? undefined,
-    safeMode: row.safe_mode ?? undefined,
-    contextBudget: row.context_budget ?? undefined,
+    // The sixteen per-session CONFIG fields (`model`, `agent`, the mode, the Tuning switches, …)
+    // are generated from `SESSION_CONFIG_FIELDS` — one descriptor, so this direction and
+    // `projector.ts`'s `sessionRow` cannot disagree about which columns exist. They disagreed for
+    // four months (`sessionRow` dropped three of them); see `config-columns.ts`.
+    ...SessionConfigColumns.configFromRow(row),
     providerRecovery: row.provider_recovery
       ? { ...row.provider_recovery, startedAt: DateTime.makeUnsafe(row.provider_recovery.startedAt) }
       : undefined,
