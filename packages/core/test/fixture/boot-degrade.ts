@@ -18,7 +18,7 @@
  */
 import fsSync from "node:fs"
 import path from "node:path"
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Logger } from "effect"
 import { NodeFileSystem } from "@effect/platform-node"
 import { Global } from "@novaclaw/core/global"
 import { Observability } from "@novaclaw/core/observability"
@@ -52,8 +52,16 @@ report["unguarded"] = (original === undefined ? [] : [path.join(original, "data"
 const logFile = path.join(paths.log, "novaclaw.log")
 
 // The unguarded twin: `Logger.toFile` on its own, which is what `Layer.orDie` used to sit over.
+//
+// ⚠️ It is spelled out here rather than reached through `Logging.fileLogger`, and that is the whole
+// point of a control: `fileLogger` IS the fix now (Phase 2 replaced `Logger.toFile` with a writer
+// that has no error channel), so calling it here would make the "unguarded" arm the guarded one and
+// the test would pass while asserting nothing. The control has to be the operation being replaced.
 const raw = await Effect.runPromise(
-  Effect.exit(Logging.fileLogger(logFile)).pipe(Effect.provide(NodeFileSystem.layer), Effect.scoped),
+  Effect.exit(Logger.toFile(Logging.formatter(), logFile, { flag: "a" })).pipe(
+    Effect.provide(NodeFileSystem.layer),
+    Effect.scoped,
+  ),
 )
 report["unguardedLogger"] = Exit.isFailure(raw) ? "failed" : "opened"
 
