@@ -250,7 +250,11 @@ export class Writer {
   /** Lines that never reached the file because the writer was already degraded. */
   dropped = 0
   rotations = 0
-  /** Rotation attempts refused by the filesystem (the Windows reader-lock case). */
+  /**
+   * Rotation attempts the filesystem refused — a permission error, an antivirus lock, or a reader
+   * that opened without share-delete. ⚠️ NOT the `EPERM` §0.10 predicts for a plain open handle:
+   * that was measured and does not happen (see this module's header).
+   */
   rotationsBlocked = 0
   /** Times the active segment was truncated because rotation stayed blocked past the hard cap. */
   truncations = 0
