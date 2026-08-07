@@ -35,19 +35,25 @@
  * The claim that matters is about DATA and NAMES: no file is renamed or removed, and the rows that
  * were in the database are still in it afterwards.
  *
- * **NEGATIVE CONTROLS — 7 mutations, 7 red, each restored. Measured 2026-08-07 (win32, bun 1.3.14,
- * `#sqlite` → `sqlite.bun.ts`), baseline 19 pass / 0 fail.** Each one edits `src/database/database.ts`,
- * re-runs this file, and puts the original back (`tmp/negctl.py`, throwaway):
+ * **NEGATIVE CONTROLS — 9 mutations, 9 red, each restored. Measured 2026-08-07 (win32, bun 1.3.14,
+ * `#sqlite` → `sqlite.bun.ts`), baseline 22 pass / 0 fail.** Each one edits `src/database/database.ts`,
+ * re-runs this file, and puts the original back (throwaway harness, not committed):
  *
- * | mutation | result |
+ * | mutation | fails |
  * |---|---|
- * | `Layer.catchCause` → `Layer.catch` in `layerFromPath` | **7 fail** — a defect is not a typed error, so nothing is caught at all |
- * | the catch moved INSIDE `Layer.effect(Service, …)`, i.e. before `Layer.provide` | **3 fail** — the driver's own open throw is never seen |
- * | `faultFrom` always calling `classifyOpenFailure` | **3 fail** — `foreign` and `migration` both come back `unknown` |
- * | `Effect.catchCause` → `Effect.catch` around `DatabaseMigration.apply` | **3 fail** — the foreign arm dies, so `catch` misses it |
- * | `refuse` without the `process.stderr.write` | **5 fail** — the log event alone is invisible in the packaged app |
- * | the whole pre-fix module restored (`Effect.orDie` over the build) | **9 fail** |
- * | the five summaries collapsed into one wording | **2 fail** |
+ * | **a fresh `Layer.effect` per `layerFromPath` call — THE REGRESSION** | **3** — two connections, two `:memory:` databases |
+ * | `defaultLayer` building its own service layer (the `Layer.unwrap` half of it) | **3** |
+ * | `Layer.catchCause` → `Layer.catch` in `layerFromPath` | **7** — a defect is not a typed error, so nothing is caught at all |
+ * | the catch moved INSIDE, i.e. before `Layer.provide` | **3** — the driver's own open throw is never seen |
+ * | `faultFrom` always calling `classifyOpenFailure` | **3** — `foreign` and `migration` both come back `unknown` |
+ * | `Effect.catchCause` → `Effect.catch` around `DatabaseMigration.apply` | **3** — the foreign arm dies, so `catch` misses it |
+ * | `refuse` without the `process.stderr.write` | **5** — the log event alone is invisible in the packaged app |
+ * | the whole pre-fix module restored (`Effect.orDie` over the build) | **10** |
+ * | the five summaries collapsed into one wording | **2** |
+ *
+ * …and the *"two memo maps are two databases"* control is itself arrangement-sensitive rather than
+ * trivially true: handing its two builds ONE memo map instead of two turns it red (1 fail), measured
+ * the same way.
  */
 import { describe, expect, test } from "bun:test"
 import fsSync from "node:fs"
@@ -55,8 +61,10 @@ import path from "node:path"
 import { Database as BunSqlite } from "bun:sqlite"
 import { EffectDrizzleSqlite } from "@novaclaw/effect-drizzle-sqlite"
 import { layer as sqliteLayer } from "#sqlite"
-import { Cause, Effect, Exit } from "effect"
+import { sql } from "drizzle-orm"
+import { Cause, Context, Effect, Exit, Layer, Scope } from "effect"
 import { Database } from "@novaclaw/core/database/database"
+import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { DatabaseMigration } from "@novaclaw/core/database/migration"
 import { migrations } from "@novaclaw/core/database/migration.gen"
 import { tmpdir } from "./fixture/tmpdir"
@@ -401,6 +409,114 @@ describe("what the user reads", () => {
     for (const kind of ["unreadable", "corrupt", "foreign", "migration", "unknown"] as const)
       for (const line of Database.repairsFor(sample(kind)))
         expect(/novaclaw (will|would) (rename|move|delete)/i.test(line)).toBe(false)
+  })
+})
+
+// ── the invariant this fix BROKE once, and the guard that did not exist ─────────────────────────
+//
+// 🔴 The first version of this work shipped a real regression and 19 green tests plus a live `serve`
+// smoke all missed it, because every one of them built ONE composition of `Database`. Server tests
+// went 259/11 with `Session.NotFoundError` on a session that had just been created: two SQLite
+// connections in one process, so the write landed in one `:memory:` database and the read went to
+// the other.
+//
+// The mechanism, read out of `effect@4.0.0-beta.83` rather than guessed: `MemoMap` is
+// `new Map<Layer<any, any, any>, MemoMapEntry>()` — keyed on layer **object identity** — and only
+// `Layer.effect` (via `fromBuildMemo`) is ever a key; `Layer.provide`/`catchCause`/`unwrap` are
+// `fromBuildUnsafe` pass-throughs that forward the same memo map down. Making the service layer a
+// function of the filename allocated a fresh key per call, so `Database.node` (built once at module
+// load) and `Database.defaultLayer` (rebuilt through `Layer.unwrap`) stopped sharing.
+//
+// `layer-node.ts`'s own `compile` comment states the invariant in as many words — *"Effect memoizes
+// by the inner reference, not by the `Layer.provide` wrapper … a node with `deps: []` is returned as
+// its module-level layer object unchanged"* — and nothing enforced it. This does.
+describe("one process, one database", () => {
+  /** Any composition that yields a Database — what a memo map is asked to share. */
+  type Composition = Layer.Layer<Database.Service, never, never>
+  const NODE = LayerNode.compile(Database.node) as Composition
+  const DEFAULT = Database.defaultLayer as Composition
+
+  /**
+   * Build several compositions in ONE memo map, exactly as a `serve` boot does, and hand the test
+   * the resolved services.
+   */
+  const share = <A>(
+    use: (get: (layer: Composition) => Effect.Effect<Database.Interface>) => Effect.Effect<A, unknown>,
+  ): Promise<A> =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const memoMap = yield* Layer.makeMemoMap
+        const scope = yield* Scope.make()
+        try {
+          return yield* use((layer) =>
+            Layer.buildWithMemoMap(layer, memoMap, scope).pipe(
+              Effect.map((context) => Context.getUnsafe(context, Database.Service)),
+            ),
+          )
+        } finally {
+          yield* Scope.close(scope, Exit.void)
+        }
+      }) as Effect.Effect<A>,
+    )
+
+  test("Database.node and Database.defaultLayer resolve to the SAME connection", async () => {
+    const [viaNode, viaDefault, viaDefaultAgain] = await share((get) =>
+      Effect.gen(function* () {
+        const a = yield* get(NODE)
+        const b = yield* get(DEFAULT)
+        const c = yield* get(DEFAULT)
+        return [a, b, c] as const
+      }),
+    )
+    expect(viaNode.db).toBe(viaDefault.db)
+    expect(viaDefault.db).toBe(viaDefaultAgain.db)
+  })
+
+  test("…and it is one DATABASE, not merely one object — a write through either is visible to both", async () => {
+    // The behavioural half, and the one that matches the production symptom. `NOVACLAW_DB` is
+    // `:memory:` under the suite, so two connections are two EMPTY databases: a row written through
+    // one is simply absent from the other, which is what `Session.NotFoundError` was.
+    const seen = await share((get) =>
+      Effect.gen(function* () {
+        const writer = yield* get(NODE)
+        const reader = yield* get(DEFAULT)
+        yield* writer.db.run("CREATE TABLE IF NOT EXISTS one_process_one_database (id TEXT PRIMARY KEY)")
+        yield* writer.db.run("DELETE FROM one_process_one_database")
+        yield* writer.db.run("INSERT INTO one_process_one_database (id) VALUES ('shared')")
+        return yield* reader.db
+          .all<{ id: string }>(sql`SELECT id FROM one_process_one_database`)
+          .pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+      }),
+    )
+    expect(seen).toEqual([{ id: "shared" }])
+  })
+
+  test("the guard bites: two memo maps are two databases (negative control)", async () => {
+    // The same two builds under SEPARATE memo maps must NOT share — otherwise the assertions above
+    // would pass for a reason that has nothing to do with memoization, and would keep passing after
+    // the regression came back. This is the failing shape, reproduced on purpose.
+    const separate = await Effect.runPromise(
+      Effect.gen(function* () {
+        const scope = yield* Scope.make()
+        try {
+          const first = yield* Layer.buildWithMemoMap(NODE, yield* Layer.makeMemoMap, scope)
+          const second = yield* Layer.buildWithMemoMap(DEFAULT, yield* Layer.makeMemoMap, scope)
+          const writer = Context.getUnsafe(first, Database.Service)
+          const reader = Context.getUnsafe(second, Database.Service)
+          yield* writer.db.run("CREATE TABLE IF NOT EXISTS two_memo_maps (id TEXT PRIMARY KEY)")
+          const visible = yield* reader.db
+            .all<{ name: string }>(
+              sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'two_memo_maps'`,
+            )
+            .pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+          return { same: writer.db === reader.db, visible }
+        } finally {
+          yield* Scope.close(scope, Exit.void)
+        }
+      }),
+    )
+    expect(separate.same).toBe(false)
+    expect(separate.visible).toEqual([])
   })
 })
 

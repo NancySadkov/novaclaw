@@ -134,6 +134,33 @@ export class Unusable extends Data.TaggedError("DatabaseUnusable")<{
   readonly message: string
 }> {}
 
+/**
+ * **What the failure IS, before it is written down — and deliberately WITHOUT the file path.**
+ *
+ * 🔴 The path's absence here is load-bearing, not an oversight. The first version of this fix made
+ * the service layer a *function of the filename* so the migration classifier could name the file,
+ * which meant `Layer.effect(Service, build(filename))` allocated a **new layer object per call** —
+ * and Effect's `MemoMap` is a `Map<Layer, Entry>` keyed on **object identity**
+ * (`effect@4.0.0-beta.83`, `Layer.ts`: `readonly map = new Map<Layer<any, any, any>, MemoMapEntry>()`).
+ * So `Database.node` and `Database.defaultLayer` stopped sharing a memo entry and the process opened
+ * **two SQLite connections**; under `:memory:` that is two separate databases, and a session created
+ * through one was `NotFoundError` when read through the other. 11 server tests, all of them
+ * "create a session, then read it back".
+ *
+ * The classifier never needed the path — only the *message* does, and the message is assembled at
+ * the outer boundary where the filename is in scope anyway. So the inner layer stays path-free, and
+ * therefore stays ONE object. `test/database-refuses.test.ts` pins the sharing behaviourally.
+ */
+interface Diagnosis {
+  readonly kind: FaultKind
+  readonly detail: string
+  readonly migration?: string
+  readonly tables?: readonly string[]
+}
+
+/** The inner layer's typed failure. Module-private: it is an intermediate, not a reportable fault. */
+class Diagnosed extends Data.TaggedError("DatabaseDiagnosed")<{ readonly diagnosis: Diagnosis }> {}
+
 // SQLite's own error text, which both drivers surface verbatim (`bun:sqlite` as `SQLiteError`,
 // `node:sqlite` as `ERR_SQLITE_ERROR`). Matching the message rather than a driver-specific code is
 // what keeps one classifier correct under both halves of the `#sqlite` import map.
@@ -243,30 +270,31 @@ export const classifyOpenFailure = (file: string, cause: Cause.Cause<unknown>): 
  * initial schema creation is what failed and no id is claimed — a guessed id would be ruling 2's
  * *described falsely*, which is worse than saying nothing.
  */
-const describeMigrationFailure = (db: DatabaseShape, file: string, cause: Cause.Cause<unknown>) =>
+const describeMigrationFailure = (db: DatabaseShape, cause: Cause.Cause<unknown>): Effect.Effect<Diagnosis> =>
   Effect.gen(function* () {
     const detail = Cause.pretty(cause)
     const tables = yield* db
       .all<{ name: string }>(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`)
       .pipe(Effect.catchCause(() => Effect.succeed(undefined)))
 
-    // The connection itself is gone — that is an open-class fault, not a migration one.
-    if (tables === undefined) return classifyOpenFailure(file, cause)
+    // The connection itself is gone — that is an open-class fault, not a migration one, and the
+    // outer boundary re-reads the cause text for it.
+    if (tables === undefined) return { kind: "unknown", detail }
 
     const names = tables.map((table) => table.name)
     if (names.length > 0 && !names.includes("session"))
-      return faultOf("foreign", file, detail, { tables: names.slice().sort() })
+      return { kind: "foreign", detail, tables: names.slice().sort() }
 
-    if (!names.includes("migration")) return faultOf("migration", file, detail)
+    if (!names.includes("migration")) return { kind: "migration", detail }
 
     const completed = yield* db
       .all<{ id: string }>(sql`SELECT id FROM ${sql.identifier("migration")}`)
       .pipe(Effect.catchCause(() => Effect.succeed(undefined)))
-    if (completed === undefined) return faultOf("migration", file, detail)
+    if (completed === undefined) return { kind: "migration", detail }
 
     const done = new Set(completed.map((row) => row.id))
     const pending = migrations.find((migration) => !done.has(migration.id))
-    return faultOf("migration", file, detail, pending === undefined ? {} : { migration: pending.id })
+    return pending === undefined ? { kind: "migration", detail } : { kind: "migration", detail, migration: pending.id }
   })
 
 /**
@@ -320,43 +348,52 @@ const refuse = (fault: Fault): Effect.Effect<never> =>
     return yield* Effect.die(new Unusable({ fault, message: fault.summary }))
   })
 
-const build = (filename: string) =>
-  Effect.gen(function* () {
-    const db = yield* makeDatabase
+const build = Effect.gen(function* () {
+  const db = yield* makeDatabase
 
-    yield* db.run("PRAGMA journal_mode = WAL")
-    yield* db.run("PRAGMA synchronous = NORMAL")
-    yield* db.run("PRAGMA busy_timeout = 5000")
-    yield* db.run("PRAGMA cache_size = -64000")
-    yield* db.run("PRAGMA foreign_keys = ON")
-    yield* db.run("PRAGMA wal_checkpoint(PASSIVE)")
-    // `catchCause`, never `catch`: `DatabaseMigration.apply` reaches an `Effect.die` (the foreign-file
-    // arm) and a raw driver throw, and `Effect.catch`/`Effect.ignore` do not see defects
-    // (effect@4.0.0-beta.83, `Effect.catch`'s own doc: *"It will not recover from unrecoverable
-    // defects."*). A seam built on `catch` would have caught NONE of the faults this module has.
-    yield* DatabaseMigration.apply(db).pipe(
-      Effect.catchCause((cause) =>
-        Effect.flatMap(describeMigrationFailure(db, filename, cause), (fault) =>
-          Effect.fail(new Unusable({ fault, message: fault.summary })),
-        ),
-      ),
-    )
+  yield* db.run("PRAGMA journal_mode = WAL")
+  yield* db.run("PRAGMA synchronous = NORMAL")
+  yield* db.run("PRAGMA busy_timeout = 5000")
+  yield* db.run("PRAGMA cache_size = -64000")
+  yield* db.run("PRAGMA foreign_keys = ON")
+  yield* db.run("PRAGMA wal_checkpoint(PASSIVE)")
+  // `catchCause`, never `catch`: `DatabaseMigration.apply` reaches an `Effect.die` (the foreign-file
+  // arm) and a raw driver throw, and `Effect.catch`/`Effect.ignore` do not see defects
+  // (effect@4.0.0-beta.83, `Effect.catch`'s own doc: *"It will not recover from unrecoverable
+  // defects."*). A seam built on `catch` would have caught NONE of the faults this module has.
+  yield* DatabaseMigration.apply(db).pipe(
+    Effect.catchCause((cause) =>
+      Effect.flatMap(describeMigrationFailure(db, cause), (diagnosis) => Effect.fail(new Diagnosed({ diagnosis }))),
+    ),
+  )
 
-    return { db }
-  })
+  return { db }
+})
 
 /**
- * The fault behind a failed build, however it arrived.
+ * 🔴 **ONE object, at module scope, and it must stay that way.** This is the key Effect's `MemoMap`
+ * uses to share a single `Database` across the whole process — see the note on `Diagnosis`. Building
+ * it inside `layerFromPath` allocates a fresh key per call and silently splits the instance in two.
+ * Nothing here may close over a per-call value.
+ */
+const serviceLayer = Layer.effect(Service, build)
+
+/**
+ * The fault behind a failed build, however it arrived — and this is the only place a path is
+ * attached, because it is the only place one is known without costing the memo key above.
  *
  * Two shapes reach here and they must not be confused: `describeMigrationFailure` already did the
- * work and failed with a typed `Unusable` (it had a live connection and could ask the file what it
- * was), while a driver throw during the open is an unclassified defect. Re-running
- * `classifyOpenFailure` over the former would relabel a migration fault as `unknown` — a fault
- * described falsely, which is the thing this whole module is for.
+ * work with a live connection in hand and failed with a typed `Diagnosed`, while a driver throw
+ * during the open is an unclassified defect. Re-running `classifyOpenFailure` over the former would
+ * relabel a migration fault as `unknown` — a fault described falsely, which is the thing this whole
+ * module is for.
  */
 const faultFrom = (filename: string, cause: Cause.Cause<unknown>): Fault => {
   const found = Cause.findErrorOption(cause)
-  if (Option.isSome(found) && found.value instanceof Unusable) return found.value.fault
+  if (Option.isSome(found) && found.value instanceof Diagnosed) {
+    const { kind, detail, migration, tables } = found.value.diagnosis
+    return faultOf(kind, filename, detail, { migration, tables })
+  }
   return classifyOpenFailure(filename, cause)
 }
 
@@ -369,9 +406,15 @@ const faultFrom = (filename: string, cause: Cause.Cause<unknown>): Fault => {
  * `that` first, so a `catchCause` inside `Layer.effect(Service, …)` never sees the driver's own
  * `new Database(file)` throw — which is exactly where the *corrupt* and *unreadable* cases land.
  * Measured, not assumed: with the catch on the inner layer the corrupt arm still killed the boot.
+ *
+ * ⚠️ **And the wrappers are per-call while `serviceLayer` is not, which is the whole point.**
+ * `Layer.provide` and `Layer.catchCause` are `fromBuildUnsafe` pass-throughs (`Layer.ts`): they
+ * forward the same `memoMap` down to `serviceLayer.build(...)` and are never memo keys themselves.
+ * So a fresh wrapper per call costs nothing, and the shared instance is decided entirely by
+ * `serviceLayer`'s identity. Both properties therefore hold at once.
  */
 export function layerFromPath(filename: string) {
-  return Layer.effect(Service, build(filename)).pipe(
+  return serviceLayer.pipe(
     Layer.provide(sqliteLayer({ filename })),
     Layer.catchCause((cause) => Layer.effect(Service, refuse(faultFrom(filename, cause)))),
   )
