@@ -98,6 +98,34 @@ export interface TaskSpec {
 
 export const DEFAULT_NO_PROGRESS_LIMIT = 4
 
+/**
+ * 🔴 **How many times a checkpoint award must be adjudicated before it counts. MEASURED, 2026-08-07.**
+ *
+ * G14 calibrates the TERMINAL checkpoint against the start frame, where the answer is known to be
+ * `no`. The intermediate checkpoints had no such gate, and the 2.2 acceptance run awarded checkpoint
+ * 3 at step 1 in all three runs on a frame where `CD MOM` had been *typed but not executed* — in one
+ * run it never became true at all, so that run's honest score was 2/9 rather than the 3/9 printed.
+ *
+ * ⚠️ **The obvious generalization — ask every checkpoint against the start frame — was built and
+ * MEASURED and it would NOT have caught this.** All seven questions of that battery answer 0/8 `yes`
+ * on the start frame; the battery is calibrated in G14's sense. The false award happened on a NEAR
+ * MISS (`C:\>CD MOM` typed, not executed), where the same question answered `yes` **11 times in 33**
+ * across two probes while answering `no` correctly the rest of the time and `yes` 25/25 on the frame
+ * where it is genuinely true. So the question discriminates; the *award* did not, because the loop
+ * turned ONE sample of a stochastic channel into a PERMANENT advance.
+ *
+ * ⭐ **The premise that makes a re-ask worth anything is that it is an INDEPENDENT sample, and that
+ * was measured rather than assumed**: every call is `temperature: 0`, and on this deployment two
+ * identical back-to-back asks of the same question about the same frame **disagreed in 11 of 25
+ * pairs**. Measured effect of requiring two: false awards **40% → 12%**, true awards **25/25 →
+ * 25/25** — the positive control, without which suppressing false awards is indistinguishable from
+ * making the checkpoint unreachable.
+ *
+ * Cost: one extra adjudication per CANDIDATE award, never per step. Raising this number lowers the
+ * false rate further (the samples are near-independent) at one call each.
+ */
+export const CHECKPOINT_CONFIRMATIONS = 1
+
 /** How many times one step may be re-prompted before the step is spent. G3: exactly one. */
 export const REPAIRS_PER_STEP = 1
 
@@ -181,6 +209,7 @@ export type Phase =
   | "propose"
   | "act"
   | "adjudicate-step"
+  | "confirm-checkpoint"
   | "adjudicate-claim"
   | "terminal"
 
@@ -229,7 +258,23 @@ export interface State {
   readonly noProgress: number
   /** Estimate of the prompt just sent, used when the driver reports no `usage.prompt_tokens`. */
   readonly lastPromptEstimate: number
+  /**
+   * Everything the step already measured, parked while a candidate checkpoint award is confirmed.
+   *
+   * ⚠️ It exists so the confirmation cannot RE-DERIVE the step's verdict. The attribution ladder ran
+   * once, inside `next()`, and a second derivation would be a second opinion about one evidence set —
+   * the same reason the driver reads verdicts off the reducer instead of recomputing them.
+   */
+  readonly confirming?: Measured
   readonly outcome?: Outcome
+}
+
+/** The step's own measurements, complete before the confirmation call is even sent. */
+interface Measured {
+  readonly verdict: string
+  readonly consecutiveNoEffect: number
+  readonly lastNoEffect?: string
+  readonly attributed: boolean
 }
 
 export const initial = (spec: TaskSpec): State => ({
@@ -268,9 +313,21 @@ const blocked = (state: State, reason: BlockedReason, detail: string): Transitio
 const voided = (state: State, reason: VoidReason, detail: string): Transition =>
   finish(state, { kind: "void", reason, detail })
 
-const checkpointColumn = (state: State): string => `${state.checkpointIndex}/${state.spec.checkpoints.length}`
+/**
+ * `n/m`, and `n/m?` when a checkpoint award was CLAIMED this step and the confirming re-ask did not
+ * agree.
+ *
+ * ⚠️ **The marker lives in this column rather than in `verdict` because `verdict` is a ratcheted
+ * field.** `FIELD_LIMIT.verdict` is 28 and the longest verdict the ladder can produce is
+ * `needs-adjudication/pred:yes` at 27, pinned by `ledger.test.ts` against every attribution kind —
+ * so appending anything there would start silently CLIPPING a measurement, which `ledger.ts` says
+ * in-file is a lie about what was observed rather than an abbreviation. One character here costs
+ * nothing and the planner still sees that its claim was refused.
+ */
+const checkpointColumn = (state: State, unconfirmed: boolean): string =>
+  `${state.checkpointIndex}/${state.spec.checkpoints.length}${unconfirmed ? "?" : ""}`
 
-const record = (state: State, fields: { readonly verdict: string }): State => ({
+const record = (state: State, fields: { readonly verdict: string; readonly unconfirmed?: boolean }): State => ({
   ...state,
   ledger: ComputerLedger.append(state.ledger, {
     n: state.step,
@@ -278,7 +335,7 @@ const record = (state: State, fields: { readonly verdict: string }): State => ({
     action: state.pending?.summary ?? ComputerLedger.ABSENT,
     expect: state.pending?.expect ?? ComputerLedger.ABSENT,
     verdict: fields.verdict,
-    checkpoint: checkpointColumn(state),
+    checkpoint: checkpointColumn(state, fields.unconfirmed === true),
   }),
 })
 
@@ -533,6 +590,29 @@ const reprompt = (state: State, note: string, verdict: string, pending?: Pending
 
 const unexpected = (state: State, event: Event): Transition =>
   voided(state, "protocol", `a ${event.kind} event arrived in phase ${state.phase}`)
+
+/**
+ * Fold a step's already-taken measurements into the state and settle.
+ *
+ * Split out of `adjudicate-step` when the confirmation gate landed, because the fold now has two
+ * call sites — the ordinary step and the confirmed award — and two copies of it would be two
+ * opinions about how a step ends.
+ */
+const settleMeasured = (state: State, measured: Measured, advanced: boolean, unconfirmed = false): Transition => {
+  const advancedState: State = {
+    ...state,
+    checkpointIndex: advanced ? state.checkpointIndex + 1 : state.checkpointIndex,
+    consecutiveNoEffect: measured.consecutiveNoEffect,
+    lastNoEffect: measured.lastNoEffect,
+    // ⚠️ A REFUSED award is not progress. It reads as an advance to a casual reader and is exactly
+    // the inflation this gate exists to stop, so it falls through to the `attributed` test like any
+    // other step and increments `noProgress` when the screen did not move either.
+    noProgress: advanced || measured.attributed ? 0 : state.noProgress + 1,
+    confirming: undefined,
+  }
+  const logged = record(advancedState, { verdict: measured.verdict, unconfirmed })
+  return settle({ ...logged, pending: undefined })
+}
 
 export function next(state: State, event: Event): Transition {
   if (state.phase === "terminal") {
@@ -793,15 +873,54 @@ export function next(state: State, event: Event): Transition {
       const verdict = attribution === undefined ? "no verdict" : attribution.kind
       const predicted = parsed.ok && parsed.reply.predicted !== undefined ? `/pred:${parsed.reply.predicted}` : ""
 
-      const advancedState: State = {
-        ...spent,
-        checkpointIndex: advanced ? spent.checkpointIndex + 1 : spent.checkpointIndex,
+      const measured: Measured = {
+        verdict: `${verdict}${predicted}`,
         consecutiveNoEffect,
-        lastNoEffect: noEffect ? signature : undefined,
-        noProgress: advanced || attribution?.kind === "attributed" ? 0 : spent.noProgress + 1,
+        ...(noEffect && signature !== undefined ? { lastNoEffect: signature } : {}),
+        attributed: attribution?.kind === "attributed",
       }
-      const logged = record(advancedState, { verdict: `${verdict}${predicted}` })
-      return settle({ ...logged, pending: undefined })
+
+      // 🔴 A CLAIMED checkpoint is not an awarded one. See {@link CHECKPOINT_CONFIRMATIONS} for the
+      // measurement: on the near-miss frame that actually produced the 2.2 false positive this
+      // question answers `yes` ~40% of the time and `no` the rest, at temperature 0, so a single
+      // sample turned into a permanent advance is the defect. Nothing else about the step waits on
+      // this — every measurement is already in `measured` — so a confirmation that never arrives
+      // costs the award and not the step.
+      if (advanced) {
+        const confirming: State = { ...spent, phase: "confirm-checkpoint", confirming: measured }
+        return ask(
+          confirming,
+          ComputerPrompt.adjudicator({
+            // ⚠️ The checkpoint ALONE, deliberately. The prediction was answered by the first call
+            // and re-asking it would spend a second answer on a settled question — and a prompt
+            // that differs from the first is a *less* correlated sample, which is the direction
+            // this guard wants.
+            checkpoint: spent.spec.checkpoints[spent.checkpointIndex],
+            image: spent.image,
+          }),
+          "ask-adjudicator",
+        )
+      }
+      return settleMeasured(spent, measured, false)
+    }
+
+    // ── Confirm (the intermediate-checkpoint gate) ────────────────────────────────────────────
+    case "confirm-checkpoint": {
+      if (event.kind !== "adjudicated") return unexpected(state, event)
+      const spent = spend(state, event.promptTokens)
+      const measured = state.confirming
+      // A harness bug, not a task outcome: the phase cannot be entered without parking a
+      // measurement, so arriving here without one means the reducer was driven wrongly.
+      if (measured === undefined) {
+        return voided(spent, "protocol", "a checkpoint confirmation arrived with no parked measurement to settle")
+      }
+      const parsed = ComputerPrompt.parseAdjudication(event.text)
+      // ⚠️ The third state again: an unreadable confirmation, or one the reader never answered, is
+      // NOT a confirmation. `prompt.ts` argues the asymmetry — reading an unknown as `yes` declares
+      // victory on a screen nobody looked at — and it binds here with more force, because this
+      // question exists precisely to be the second opinion.
+      const confirmed = parsed.ok && parsed.reply.checkpoint === "yes"
+      return settleMeasured(spent, measured, confirmed, !confirmed)
     }
   }
 }

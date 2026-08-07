@@ -104,13 +104,29 @@ const drive = (task: LOOP.TaskSpec, events: ReadonlyArray<LOOP.Event>): Run => {
 /** Calibration: capture the start frame, and the reader correctly answers `no` (G14). */
 const CALIBRATE: ReadonlyArray<LOOP.Event> = [captured("start"), adjudged({ checkpoint: "no" })]
 
-/** One whole step: observe → propose → act → adjudicate. */
+/**
+ * One whole step: observe → propose → act → adjudicate, plus the CONFIRMATION when the step claims
+ * a checkpoint.
+ *
+ * ⚠️ The confirmation event is appended automatically from the step's own `checkpoint` answer rather
+ * than being passed at every call site, so a fixture cannot silently drift out of protocol — a step
+ * that claims and is never confirmed would otherwise leave the reducer parked in
+ * `confirm-checkpoint` and the failure would read as a missing command somewhere else entirely.
+ * `confirm` overrides it, which is how the refusal cases are written.
+ */
 const step = (
   proposal: LOOP.Event,
   evidence: CE.Input,
   verdict: Record<string, unknown>,
   tag: string,
-): ReadonlyArray<LOOP.Event> => [captured(tag), proposal, acted(evidence, `${tag}-after`), adjudged(verdict)]
+  confirm?: Record<string, unknown>,
+): ReadonlyArray<LOOP.Event> => [
+  captured(tag),
+  proposal,
+  acted(evidence, `${tag}-after`),
+  adjudged(verdict),
+  ...(verdict.checkpoint === "yes" ? [adjudged(confirm ?? { checkpoint: "yes" })] : []),
+]
 
 const commandKinds = (run: Run) => run.commands.map((c) => c.kind)
 
@@ -144,7 +160,7 @@ describe("a clean 3-step run reaches Done — and only through the harness's own
     expect(run.outcome?.kind === "done" && run.outcome.detail).toContain("harness-captured frame")
   })
 
-  test("the command sequence is calibrate → (observe · plan · act · adjudicate) × 3 → finish", () => {
+  test("the command sequence is calibrate → (observe · plan · act · adjudicate) × 3 → confirm → finish", () => {
     expect(commandKinds(run)).toEqual([
       "capture",
       "ask-adjudicator",
@@ -159,6 +175,9 @@ describe("a clean 3-step run reaches Done — and only through the harness's own
       "capture",
       "ask-planner",
       "act",
+      "ask-adjudicator",
+      // The CONFIRMING re-ask, and it appears exactly once in a three-step run because only step 3
+      // claimed a checkpoint. That is the whole cost model: per candidate award, never per step.
       "ask-adjudicator",
       "finish",
     ])
@@ -409,6 +428,160 @@ describe("🔴 G14 — a yes-machine adjudicator voids the run rather than scori
     expect(run.outcome?.kind).toBe("void")
     if (run.outcome?.kind !== "void") return
     expect(run.outcome.reason).toBe("adjudicator-unreadable")
+  })
+})
+
+// ------------------------------------------------------------------------------------------------
+// The intermediate-checkpoint confirmation gate
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * 🔴 **A claimed checkpoint is not an awarded one.** The 2.2 acceptance run awarded checkpoint 3 at
+ * step 1 in all three runs on a frame where `CD MOM` had been typed but not executed, and in one run
+ * it never became true at all — so the printed 3/9 was really 2/9. `CHECKPOINT_CONFIRMATIONS` carries
+ * the measurement; this block is the mechanism.
+ *
+ * ⚠️ **Every refusal test here is paired with the near-identical script that AWARDS.** A gate that
+ * refuses everything passes every negative assertion while being worse than no gate at all — it would
+ * make the battery unscoreable rather than honest, which is the failure direction the live positive
+ * control (true awards 25/25 → 25/25) was measured to rule out.
+ */
+describe("🔴 a checkpoint award is CONFIRMED before it counts", () => {
+  const twoCheckpoints = spec({
+    checkpoints: [{ id: "cp1", question: "Is the C:\\MOM> prompt showing?" }, CP9],
+    noProgressLimit: 99,
+  })
+
+  /** A step that claims `cp1`, with the confirmation answer under the test's control. */
+  const claiming = (confirm: Record<string, unknown>) =>
+    drive(twoCheckpoints, [
+      ...CALIBRATE,
+      ...step(proposeAt(464, 684), moved(), { predicted: "yes", checkpoint: "yes" }, "s1", confirm),
+    ])
+
+  test("POSITIVE CONTROL — a confirmed claim advances the checkpoint", () => {
+    const run = claiming({ checkpoint: "yes" })
+    expect(run.state.checkpointIndex).toBe(1)
+    expect(run.state.ledger.at(-1)?.checkpoint).toBe("1/2")
+  })
+
+  test("a claim the confirming re-ask REFUSES advances nothing", () => {
+    const run = claiming({ checkpoint: "no" })
+    expect(run.state.checkpointIndex).toBe(0)
+  })
+
+  test("an UNREADABLE confirmation advances nothing either — never `yes` on an unanswered question", () => {
+    const run = drive(twoCheckpoints, [
+      ...CALIBRATE,
+      captured("s1"),
+      proposeAt(464, 684),
+      acted(moved(), "s1-after"),
+      adjudged({ predicted: "yes", checkpoint: "yes" }),
+      { kind: "adjudicated", text: "the screen looks right to me" },
+    ])
+    expect(run.state.checkpointIndex).toBe(0)
+  })
+
+  test("a confirmation that ANSWERS NOTHING advances nothing — the third state, not a `yes`", () => {
+    // Readable JSON, no `checkpoint` field at all. `parseAdjudication` returns ok with the answer
+    // absent, so this exercises a different branch from the unreadable case above.
+    const run = drive(twoCheckpoints, [
+      ...CALIBRATE,
+      captured("s1"),
+      proposeAt(464, 684),
+      acted(moved(), "s1-after"),
+      adjudged({ predicted: "yes", checkpoint: "yes" }),
+      { kind: "adjudicated", text: JSON.stringify({ observed: "a screen" }) },
+    ])
+    expect(run.state.checkpointIndex).toBe(0)
+  })
+
+  test("a REFUSED award is visible in the ledger, so the planner is not told it advanced", () => {
+    expect(claiming({ checkpoint: "no" }).state.ledger.at(-1)?.checkpoint).toBe("0/2?")
+    // …and the marker is absent when the award stood, or it would mean nothing.
+    expect(claiming({ checkpoint: "yes" }).state.ledger.at(-1)?.checkpoint).toBe("1/2")
+  })
+
+  test("the confirmation asks the SAME checkpoint that was claimed, not the next one", () => {
+    const asks = claiming({ checkpoint: "yes" }).commands.filter((c) => c.kind === "ask-adjudicator")
+    const confirmation = asks.at(-1)
+    if (confirmation?.kind !== "ask-adjudicator") throw new Error("expected a confirming adjudication")
+    expect(confirmation.prompt.user).toContain("Is the C:\\MOM> prompt showing?")
+    expect(confirmation.prompt.user).not.toContain(CP9.question)
+  })
+
+  test("G5 still holds on the SECOND call — the confirmation is blind, and carries no prediction", () => {
+    const asks = claiming({ checkpoint: "yes" }).commands.filter((c) => c.kind === "ask-adjudicator")
+    const confirmation = asks.at(-1)
+    if (confirmation?.kind !== "ask-adjudicator") throw new Error("expected a confirming adjudication")
+    const rendered = `${confirmation.prompt.system}${confirmation.prompt.user}`
+    expect(rendered).not.toContain(twoCheckpoints.goal)
+    expect(rendered).not.toContain("click")
+    // The prediction is deliberately dropped: it was already answered, and a differently-shaped
+    // prompt is a LESS correlated second sample, which is the direction this guard wants.
+    expect(rendered).not.toContain("The Game Options dialog is showing.")
+    expect(confirmation.prompt.user).not.toContain("STATEMENT")
+    // Non-vacuity: the FIRST adjudication of that step did carry the prediction, so the assertions
+    // above are about the confirmation and not about a prompt builder that never emits predictions.
+    const first = asks.at(-2)
+    if (first?.kind !== "ask-adjudicator") throw new Error("expected the step adjudication")
+    expect(first.prompt.user).toContain("The Game Options dialog is showing.")
+  })
+
+  test("it costs ONE extra call, and only on a step that claims something", () => {
+    const claimed = claiming({ checkpoint: "yes" }).commands.filter((c) => c.kind === "ask-adjudicator").length
+    const quietRun = drive(twoCheckpoints, [
+      ...CALIBRATE,
+      ...step(proposeAt(464, 684), moved(), { predicted: "yes", checkpoint: "no" }, "s1"),
+    ])
+    const unclaimed = quietRun.commands.filter((c) => c.kind === "ask-adjudicator").length
+    expect(claimed - unclaimed).toBe(LOOP.CHECKPOINT_CONFIRMATIONS)
+  })
+
+  test("a refused award is NOT progress — it must not reset the no-progress counter", () => {
+    // The screen did not move AND the award was refused, so the step advanced nothing at all. If a
+    // refusal reset `noProgress` the run would be kept alive by its own rejected claims.
+    const run = drive(spec({ checkpoints: [{ id: "cp1", question: "q1" }, CP9], noProgressLimit: 99 }), [
+      ...CALIBRATE,
+      ...step(proposeAt(464, 684), quiet(), { predicted: "yes", checkpoint: "yes" }, "s1", { checkpoint: "no" }),
+    ])
+    expect(run.state.noProgress).toBe(1)
+  })
+
+  test("the terminal checkpoint is gated too — a refused claim does not reach `Done`", () => {
+    const run = drive(spec(), [
+      ...CALIBRATE,
+      ...step(proposeAt(464, 684), moved(), { predicted: "yes", checkpoint: "yes" }, "s1", { checkpoint: "no" }),
+    ])
+    expect(run.outcome?.kind).not.toBe("done")
+    // The pair: the identical script with the confirmation agreeing DOES finish, so the assertion
+    // above is about the gate and not about an unreachable `Done`.
+    const confirmed = drive(spec(), [
+      ...CALIBRATE,
+      ...step(proposeAt(464, 684), moved(), { predicted: "yes", checkpoint: "yes" }, "s1"),
+    ])
+    expect(confirmed.outcome?.kind).toBe("done")
+  })
+
+  /**
+   * ⚠️ **This test was VACUOUS in its first form and the mutation is what said so.** It asserted
+   * `promptTokens >= 1300` after a run whose planner call alone estimates over a thousand (one image
+   * is `IMAGE_PROMPT_TOKENS`), so the threshold was already met without the confirmation spending
+   * anything — deleting the `spend` left it green. A budget assertion has to measure the DIFFERENCE
+   * the call makes, not a total that other calls can satisfy on its own.
+   */
+  test("the confirmation SPENDS budget like any other call — G7 has no free calls", () => {
+    const script = (confirmationTokens: number) => [
+      ...CALIBRATE,
+      captured("s1"),
+      proposeAt(464, 684),
+      acted(moved(), "s1-after"),
+      adjudged({ predicted: "yes", checkpoint: "yes" }, 1_200),
+      adjudged({ checkpoint: "yes" }, confirmationTokens),
+    ]
+    const cheap = drive(spec(), script(0))
+    const dear = drive(spec(), script(1_300))
+    expect(dear.state.promptTokens - cheap.state.promptTokens).toBe(1_300)
   })
 })
 
