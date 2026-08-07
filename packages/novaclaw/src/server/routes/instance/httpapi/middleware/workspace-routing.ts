@@ -12,7 +12,7 @@ import { Flag } from "@novaclaw/core/flag/flag"
 import { existsSync } from "node:fs"
 import { Context, Data, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { HttpApiMiddleware } from "effect/unstable/httpapi"
+import { WorkspaceRouteContext, WorkspaceRoutingMiddleware } from "@novaclaw/server/middleware/workspace-routing"
 import * as Socket from "effect/unstable/socket/Socket"
 import { InvalidRequestError } from "../errors"
 
@@ -45,23 +45,13 @@ type RequestPlan = Data.TaggedEnum<{
 const RequestPlan = Data.taggedEnum<RequestPlan>()
 const InvalidWorkspaceID = Symbol("InvalidWorkspaceID")
 
-export class WorkspaceRouteContext extends Context.Service<
-  WorkspaceRouteContext,
-  {
-    readonly directory: string
-    readonly workspaceID?: WorkspaceV2.ID
-  }
->()("@novaclaw/ExperimentalHttpApiWorkspaceRouteContext") {}
+// 🔴 The KEYS moved to `@novaclaw/server/middleware/workspace-routing` and are re-exported here so
+// the twelve existing declaration sites keep their import. They had to move: the native API is
+// defined in `packages/protocol` and assembled in `packages/server`, neither of which can see this
+// package — which is precisely why `/api/**` had no workspace routing at all. The LAYER stays here,
+// because it needs `Workspace.Service`, the control plane and an HttpClient. See that file.
+export { WorkspaceRouteContext, WorkspaceRoutingMiddleware }
 
-// F1c: the per-request session lookup reads the raw row via core `SessionRead` (Database is a
-// global singleton resolved at layer build), so the middleware no longer REQUIRES the V1
-// Session.Service from the route context.
-export class WorkspaceRoutingMiddleware extends HttpApiMiddleware.Service<
-  WorkspaceRoutingMiddleware,
-  {
-    provides: WorkspaceRouteContext
-  }
->()("@novaclaw/ExperimentalHttpApiWorkspaceRouting") {}
 
 function requestURL(request: HttpServerRequest.HttpServerRequest): URL {
   return new URL(request.url, "http://localhost")

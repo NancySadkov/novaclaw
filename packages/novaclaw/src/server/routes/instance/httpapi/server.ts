@@ -178,7 +178,11 @@ const instanceRoutes = instanceApiRoutes.pipe(
 )
 const serverRoutes = HttpApiBuilder.layer(Api).pipe(
   Layer.provide(handlers),
-  Layer.provide([serverAuthorizationLayer, v2SchemaErrorLayer]),
+  // 🔴 `workspaceRoutingLive` — the line that was missing. `eventApiRoutes` and `instanceRoutes` both
+  // had it; the NATIVE api did not, so no `/api/**` request was ever routed to the instance owning
+  // its session. A prompt for a remotely-owned session ran locally, against the wrong working tree,
+  // and answered 200 — which is exactly what a correctly proxied call looks like from outside.
+  Layer.provide([serverAuthorizationLayer, v2SchemaErrorLayer, workspaceRoutingLive]),
 )
 
 // `OpenApi.fromApi` is non-trivial; defer until /doc is actually hit so

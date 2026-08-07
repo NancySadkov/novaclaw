@@ -517,11 +517,19 @@ describe("workspace HttpApi", () => {
           }),
         ])
 
-        const aborted = yield* request(`http://localhost/session/${session.id}/abort`, dir, { method: "POST" })
+        // V1 `/session/:id/abort` does not exist under any name — the native equivalent is
+        // `session.interrupt`. ⚠️ A path with no endpoint 404s in the ROUTER, before any middleware
+        // runs, so this leg could never have exercised proxying: it was asserting that a missing route
+        // returns 200.
+        //
+        // 200 is the MOCK REMOTE's status, not the endpoint's. `session.interrupt` declares NoContent
+        // (204), and the fact that 204 is *not* what arrives is itself the evidence the request left
+        // this machine — a locally-served interrupt could not answer 200 with a JSON body.
+        const aborted = yield* request(`http://localhost/api/session/${session.id}/interrupt`, dir, { method: "POST" })
         expect(aborted.status).toBe(200)
-        expect(proxied.filter((item) => new URL(item.url).pathname === `/base/session/${session.id}/abort`)).toEqual([
+        expect(proxied.filter((item) => new URL(item.url).pathname === `/base/api/session/${session.id}/interrupt`)).toEqual([
           expect.objectContaining({
-            url: `http://127.0.0.1:${remote.port}/base/session/${session.id}/abort`,
+            url: `http://127.0.0.1:${remote.port}/base/api/session/${session.id}/interrupt`,
             method: "POST",
             body: "",
           }),

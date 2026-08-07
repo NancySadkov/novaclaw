@@ -135,9 +135,12 @@ export const makeSessionGroup = <
   LocationService,
   I extends HttpApiMiddleware.AnyId,
   S,
+  WorkspaceRoutingId extends HttpApiMiddleware.AnyId,
+  WorkspaceRoutingService,
 >(
   locationMiddleware: Context.Key<LocationId, LocationService>,
   sessionLocationMiddleware: Context.Key<I, S>,
+  workspaceRoutingMiddleware: Context.Key<WorkspaceRoutingId, WorkspaceRoutingService>,
 ) =>
   HttpApiGroup.make("server.session")
     .add(
@@ -783,3 +786,13 @@ export const makeSessionGroup = <
         description: "Experimental session routes.",
       }),
     )
+    // 🔴 **Workspace routing, at the GROUP level — the whole native session surface, not one endpoint.**
+    // Until 2026-08-07 this group declared no workspace routing at all, because the middleware KEY
+    // lived in `packages/novaclaw` where this package cannot reach it. The consequence was not
+    // cosmetic: a request for a session owned by a REMOTE workspace was served LOCALLY, against the
+    // wrong working tree, and answered 200 — indistinguishable from a correctly proxied call.
+    //
+    // ⚠️ Group level rather than per-endpoint deliberately: session OWNERSHIP is a property of the
+    // session, not of the verb, so any route naming a session can need proxying. Picking endpoints
+    // one at a time is how the gap appeared in the first place.
+    .middleware(workspaceRoutingMiddleware)

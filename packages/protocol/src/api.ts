@@ -31,16 +31,21 @@ const makeApiFromGroup = <
   LocationService,
   SessionLocationId extends HttpApiMiddleware.AnyId,
   SessionLocationService,
+  WorkspaceRoutingId extends HttpApiMiddleware.AnyId,
+  WorkspaceRoutingService,
 >(
   eventGroup: Group,
   locationMiddleware: Context.Key<LocationId, LocationService>,
   sessionLocationMiddleware: Context.Key<SessionLocationId, SessionLocationService>,
+  // 🔴 Routes a request to the instance that OWNS its session. Threaded in rather than imported:
+  // the implementation needs the control plane, which lives in a package that depends on this one.
+  workspaceRoutingMiddleware: Context.Key<WorkspaceRoutingId, WorkspaceRoutingService>,
 ) =>
   HttpApi.make("server")
     .add(HealthGroup)
     .add(LocationGroup.middleware(locationMiddleware))
     .add(AgentGroup.middleware(locationMiddleware))
-    .add(makeSessionGroup(locationMiddleware, sessionLocationMiddleware))
+    .add(makeSessionGroup(locationMiddleware, sessionLocationMiddleware, workspaceRoutingMiddleware))
     .add(MessageGroup.middleware(sessionLocationMiddleware))
     .add(ModelGroup.middleware(locationMiddleware))
     .add(ProviderGroup.middleware(locationMiddleware))
@@ -72,19 +77,35 @@ export const makeApi = <
   LocationService,
   SessionLocationId extends HttpApiMiddleware.AnyId,
   SessionLocationService,
+  WorkspaceRoutingId extends HttpApiMiddleware.AnyId,
+  WorkspaceRoutingService,
 >(options: {
   readonly definitions: ReadonlyArray<Definition>
   readonly locationMiddleware: Context.Key<LocationId, LocationService>
   readonly sessionLocationMiddleware: Context.Key<SessionLocationId, SessionLocationService>
+  readonly workspaceRoutingMiddleware: Context.Key<WorkspaceRoutingId, WorkspaceRoutingService>
 }) =>
-  makeApiFromGroup(makeEventGroup(options.definitions), options.locationMiddleware, options.sessionLocationMiddleware)
+  makeApiFromGroup(
+    makeEventGroup(options.definitions),
+    options.locationMiddleware,
+    options.sessionLocationMiddleware,
+    options.workspaceRoutingMiddleware,
+  )
 
 export const makeDefaultApi = <
   LocationId extends HttpApiMiddleware.AnyId,
   LocationService,
   SessionLocationId extends HttpApiMiddleware.AnyId,
   SessionLocationService,
+  WorkspaceRoutingId extends HttpApiMiddleware.AnyId,
+  WorkspaceRoutingService,
 >(options: {
   readonly locationMiddleware: Context.Key<LocationId, LocationService>
   readonly sessionLocationMiddleware: Context.Key<SessionLocationId, SessionLocationService>
-}) => makeApiFromGroup(EventGroup, options.locationMiddleware, options.sessionLocationMiddleware)
+  readonly workspaceRoutingMiddleware: Context.Key<WorkspaceRoutingId, WorkspaceRoutingService>
+}) => makeApiFromGroup(
+    EventGroup,
+    options.locationMiddleware,
+    options.sessionLocationMiddleware,
+    options.workspaceRoutingMiddleware,
+  )

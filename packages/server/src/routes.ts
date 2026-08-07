@@ -1,3 +1,4 @@
+import { localWorkspaceRoutingLayer } from "./middleware/workspace-routing"
 import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { httpClient } from "@novaclaw/core/effect/app-node-platform"
@@ -65,6 +66,9 @@ function makeRoutes<AuthError, AuthServices>(auth: Layer.Layer<ServerAuth.Config
 
   return HttpApiBuilder.layer(Api, { openapiPath: "/openapi.json" }).pipe(
     Layer.provide(handlers),
+    // Local-only: this package has no control plane to proxy to. `packages/novaclaw` builds its
+    // own routes and supplies the proxying implementation instead.
+    Layer.provide(localWorkspaceRoutingLayer),
     Layer.provide(sessionLocationLayer),
     Layer.provide(locationLayer),
     Layer.provide(authorizationLayer),

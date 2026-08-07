@@ -72,9 +72,16 @@ class TestSessionLocationMiddleware extends HttpApiMiddleware.Service<TestSessio
   { error: [InvalidRequestError, SessionNotFoundError] },
 ) {}
 
+class TestWorkspaceRoutingMiddleware extends HttpApiMiddleware.Service<TestWorkspaceRoutingMiddleware>()(
+  "@novaclaw/protocol/test/WorkspaceRoutingMiddleware",
+) {}
+
 const Api = makeDefaultApi({
   locationMiddleware: TestLocationMiddleware,
   sessionLocationMiddleware: TestSessionLocationMiddleware,
+  // Routes a request to the instance owning its session. Declared on the native session group since
+  // 2026-08-07 — before that the whole `/api/**` surface had no workspace routing at all.
+  workspaceRoutingMiddleware: TestWorkspaceRoutingMiddleware,
 })
 
 type Route = {

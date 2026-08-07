@@ -26,6 +26,7 @@ import { WorkspaceApi } from "./groups/workspace"
 import { makeApi } from "@novaclaw/protocol/api"
 import { LocationMiddleware } from "@novaclaw/server/location"
 import { SessionLocationMiddleware } from "@novaclaw/server/middleware/session-location"
+import { WorkspaceRoutingMiddleware } from "@novaclaw/server/middleware/workspace-routing"
 import { GlobalApi } from "./groups/global"
 import { Authorization } from "./middleware/authorization"
 import { ExperimentalSchemaErrorMiddleware } from "./middleware/schema-error"
@@ -47,6 +48,9 @@ export const ServerApi = makeApi({
   definitions: EventManifest.Latest.values().toArray(),
   locationMiddleware: LocationMiddleware,
   sessionLocationMiddleware: SessionLocationMiddleware,
+  // The PROXYING implementation lives in this package (`./middleware/workspace-routing`); the KEY is
+  // shared so `packages/protocol` can declare it on the native session group.
+  workspaceRoutingMiddleware: WorkspaceRoutingMiddleware,
 })
 
 export const RootHttpApi = HttpApi.make("novaclaw-root")

@@ -24,7 +24,6 @@
   },
   "failing": {
     "novaclaw:server": [
-      "workspace HttpApi > proxies remote workspace requests selected from session ownership"
     ]
   },
   "peaks": {

@@ -56,6 +56,7 @@ import { SessionFeature } from "@novaclaw/schema/session-feature"
 import { Api } from "../api"
 import { LocationMiddleware } from "../location"
 import { SessionLocationMiddleware } from "../middleware/session-location"
+import { WorkspaceRoutingMiddleware } from "../middleware/workspace-routing"
 import { SessionHandler } from "./session"
 
 const DIRECTORY = "C:/tmp/session-create-features"
@@ -101,12 +102,20 @@ const middleware = Layer.mergeAll(
     LocationMiddleware,
     LocationMiddleware.of((effect) => effect as never),
   ),
-  // `session.create` itself declares no middleware — it has no `:sessionID` to resolve a location
-  // from — but sibling endpoints in the same GROUP do, and building the group runs
-  // `handlerToRoute` for every one of them.
+  // ⚠️ `session.create` DOES declare middleware now — `locationMiddleware` since 2026-08-07, because
+  // without it the handler had no request location and filed sessions under `process.cwd()`. Sibling
+  // endpoints in the same GROUP declare `sessionLocationMiddleware`, and building the group runs
+  // `handlerToRoute` for every one of them, so all of them must be satisfiable here.
   Layer.succeed(
     SessionLocationMiddleware,
     SessionLocationMiddleware.of((effect) => effect as never),
+  ),
+  // Group-level on the session group since 2026-08-07: it routes a request to the instance that owns
+  // its session. Faked pass-through like its neighbours — this file makes no claim about transport,
+  // and `session.create`'s handler does not read `WorkspaceRouteContext`.
+  Layer.succeed(
+    WorkspaceRoutingMiddleware,
+    WorkspaceRoutingMiddleware.of((effect) => effect as never),
   ),
   Layer.succeed(
     Authorization,
