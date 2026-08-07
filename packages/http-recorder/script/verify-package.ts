@@ -49,7 +49,17 @@ HttpRecorder.socket("consumer/socket", options).pipe(
       }),
     )
 
-    await run(["npm", "install", archive, "typescript@5.8.2"], directory)
+    // `--ignore-scripts` because this is npm, not bun: bun runs install scripts only for
+    // `trustedDependencies`, npm runs EVERY dependency's `postinstall` by default. This step exists
+    // to prove the packed tarball RESOLVES and TYPECHECKS in a consumer — neither of which can
+    // depend on a dependency's install script running, so the flag costs the verification nothing.
+    // ⚠️ It is not hypothetical: `todo/supply-chain.md` §6 records `@tailwindcss/oxide`'s
+    // `postinstall` constructing a registry URL and extracting a tarball with no checksum, no
+    // signature and no pin — inert today ONLY because bun does not run it. This script is the one
+    // place in the tree that reaches for npm, and it runs on the machine holding the signing and
+    // release credentials.
+    // `--no-audit --no-fund` are noise suppression, not security.
+    await run(["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund", archive, "typescript@5.8.2"], directory)
     await run(
       [
         "node",
