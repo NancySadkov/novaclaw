@@ -1,0 +1,627 @@
+export * as ComputerProposal from "./proposal"
+
+import { Schema } from "effect"
+import { JhExtract } from "../jh/extract"
+
+/**
+ * Computer Use 2.1 / S1 — the PLANNER's wire schema: what one proposal from the model looks like,
+ * how it is decoded when the floor model gets it slightly wrong, and what the harness says back when
+ * it gets it wrong in a way that cannot be repaired silently.
+ *
+ * **Three legal shapes, and exactly one per reply** (`notes/plan/computer-use-loop-plan.md` §2):
+ *
+ * | shape | fields | meaning |
+ * |---|---|---|
+ * | act | `{observation, action, expect, watch?}` | do one thing, and say what the screen should look like afterwards |
+ * | abstain | `{abstain, reason}` | *"I cannot see the target"* — A14.3, first-class |
+ * | claim done | `{claim_done, evidence}` | a PROPOSAL, never a transition (G1) |
+ *
+ * 🔴 **`expect` is REQUIRED on an act, and that is the whole point of the schema.** Rung 2 of the
+ * verification ladder adjudicates a *prior commitment*: the adjudicator is shown the after-frame and
+ * the prediction sentence, and nothing else — no goal, no plan, no action. A proposal with no
+ * prediction leaves nothing to adjudicate, so the step's only evidence is a digest, and on an
+ * animated screen a digest says nothing. A model that skips `expect` therefore silently downgrades
+ * the run to the state the 08-06 substrate probe was in, where all three steps came back
+ * `inconclusive (animated)` and the loop was blind. It is caught here, mechanically, because
+ * `holo3.1` ignores negative instructions (`todo.md`) and a sentence in a prompt is not a constraint.
+ *
+ * 🔴 **`watch` is required for pointer actions AND must contain the acted point (G3).** The region is
+ * where rung 1 looks for evidence; a watch box aimed somewhere else — an animating clock, a progress
+ * bar, the whole screen — measures the wrong pixels and reports a verdict about them. That is worse
+ * than no region at all, because it looks like evidence.
+ *
+ * **The decode is TOLERANT and the validation is SEPARATE, which is `jh/step.ts`'s pattern and it is
+ * here for `jh/step.ts`'s reason.** The engine needs the parsed draft in order to build the repair
+ * re-prompt: a reply rejected by the codec can only be answered with a schema error, while a reply
+ * that decodes and then fails `structuralIssues` can be answered with *"you emitted a click at
+ * (594,547) and a watch box that does not contain it"*. So every optional field also accepts `null`
+ * (measured on qwen 2026-07-09: small models write `"watch": null` rather than omitting the key),
+ * and every contradiction the codec would have to reject is caught below instead.
+ *
+ * ⚠️ **What this module deliberately does NOT do.** It does not convert coordinates (that is
+ * `coordinates.ts`, and the space is DECLARED per model — never sniffed, G8), it does not build argv
+ * (`actions.ts`), and it does not validate action PAYLOADS beyond their presence: a keysym spec, a
+ * scroll bound, whole-pixel integrality and an empty `type` string are all `ComputerActions.build`'s
+ * to reject, at the Guard, in the one place that knows the tool. Duplicating them here would create a
+ * second opinion about `xdotool`, and this program has already paid once for a unit test that pinned
+ * the author's belief about a tool rather than the tool (`xdotool --display`, a flag that does not
+ * exist, under 23 green tests).
+ */
+
+// ---------------------------------------------------------------------------------------------
+// The vocabulary
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The actions a planner may propose.
+ *
+ * ⚠️ **`screenshot` and `cursor` are absent, and their absence is load-bearing.** Both are
+ * observations the HARNESS owns: the four-capture protocol requires (idle, idle, act, after) with
+ * *nothing* between the idle pair, and a model that can insert a capture of its own can break that
+ * invisibly. A model proposing one is not an error to be silently dropped (ruling 2) — it is
+ * reported by name, so the repair prompt can say *"the harness captures; propose an action"*.
+ */
+export const ACTION_KINDS = ["move", "click", "double_click", "type", "key", "scroll"] as const
+export type ActionKind = (typeof ACTION_KINDS)[number]
+
+/** Kinds that aim at a point, and therefore need a watch region containing it. */
+export const POINTER_KINDS = ["move", "click", "double_click"] as const
+export type PointerKind = (typeof POINTER_KINDS)[number]
+
+/** Kinds the harness owns. Proposing one is a structural error, not an unknown kind. */
+export const HARNESS_OWNED_KINDS = ["screenshot", "cursor"] as const
+
+export const isActionKind = (kind: string): kind is ActionKind =>
+  (ACTION_KINDS as ReadonlyArray<string>).includes(kind)
+
+export const isPointerKind = (kind: string): kind is PointerKind =>
+  (POINTER_KINDS as ReadonlyArray<string>).includes(kind)
+
+/** The payload field each kind cannot be executed without. Presence only — values belong to `build`. */
+const REQUIRED_PAYLOAD: Partial<Record<ActionKind, ReadonlyArray<"text" | "keys" | "direction" | "amount">>> = {
+  type: ["text"],
+  key: ["keys"],
+  scroll: ["direction", "amount"],
+}
+
+// ---------------------------------------------------------------------------------------------
+// The wire schema
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * A point in the MODEL's declared output space — normalized 0–1000 for `holo3.1`, and never
+ * inferred from the numbers (`coordinates.ts`). Both fields are required: a point with one axis is
+ * not a point, and letting it decode would push the failure downstream where it reads as a misclick.
+ */
+export interface PointDraft {
+  readonly x: number
+  readonly y: number
+}
+export const PointDraft = Schema.Struct({ x: Schema.Number, y: Schema.Number })
+
+/**
+ * The watch rectangle, in the SAME units as the point beside it.
+ *
+ * ⚠️ **All four fields are required, and that is the same property `tool/computer.ts` bought with its
+ * `"x,y,width,height"` string:** a half-built rectangle cannot be expressed, so it can never be
+ * silently completed with a default. Here it is enforced by the codec rather than by a parser, which
+ * is why a partial region shows up as a decode failure the repair prompt quotes.
+ */
+export interface RegionDraft {
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
+}
+export const RegionDraft = Schema.Struct({
+  x: Schema.Number,
+  y: Schema.Number,
+  width: Schema.Number,
+  height: Schema.Number,
+})
+
+export interface ActionDraft {
+  /** Optional in the CODEC on purpose — an absent or unknown kind is reported structurally, so the
+   *  repair prompt can name what was actually written instead of a schema error. */
+  readonly kind?: string | null
+  readonly point?: PointDraft | null
+  readonly button?: string | null
+  readonly text?: string | null
+  readonly keys?: string | null
+  readonly direction?: string | null
+  readonly amount?: number | null
+}
+export const ActionDraft = Schema.Struct({
+  kind: Schema.optional(Schema.NullOr(Schema.String)),
+  point: Schema.optional(Schema.NullOr(PointDraft)),
+  button: Schema.optional(Schema.NullOr(Schema.String)),
+  text: Schema.optional(Schema.NullOr(Schema.String)),
+  keys: Schema.optional(Schema.NullOr(Schema.String)),
+  direction: Schema.optional(Schema.NullOr(Schema.String)),
+  amount: Schema.optional(Schema.NullOr(Schema.Number)),
+})
+
+/**
+ * ONE struct for all three shapes — `jh/step.ts`'s decision, for its reason: a single tolerant codec
+ * plus a structural pass beats a tagged union that rejects the reply before anyone can quote it.
+ */
+export interface ProposalDraft {
+  readonly observation?: string | null
+  readonly action?: ActionDraft | null
+  readonly expect?: string | null
+  readonly watch?: RegionDraft | null
+  readonly abstain?: boolean | null
+  readonly reason?: string | null
+  readonly claim_done?: boolean | null
+  readonly evidence?: string | null
+}
+export const ProposalDraft = Schema.Struct({
+  observation: Schema.optional(Schema.NullOr(Schema.String)),
+  action: Schema.optional(Schema.NullOr(ActionDraft)),
+  expect: Schema.optional(Schema.NullOr(Schema.String)),
+  watch: Schema.optional(Schema.NullOr(RegionDraft)),
+  abstain: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  reason: Schema.optional(Schema.NullOr(Schema.String)),
+  claim_done: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  evidence: Schema.optional(Schema.NullOr(Schema.String)),
+})
+
+// ---------------------------------------------------------------------------------------------
+// Shape tolerance
+// ---------------------------------------------------------------------------------------------
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v)
+
+/** A number, or a string that is entirely one finite numeral. Anything else passes through. */
+const numeric = (v: unknown): unknown => {
+  if (typeof v !== "string") return v
+  const trimmed = v.trim()
+  if (trimmed === "") return v
+  const n = Number(trimmed)
+  return Number.isFinite(n) ? n : v
+}
+
+/** `[x, y]` · `{x, y}` — the two forms a grounder emits. Anything else passes through untouched. */
+const coercePoint = (v: unknown): unknown => {
+  if (Array.isArray(v) && v.length === 2) return { x: numeric(v[0]), y: numeric(v[1]) }
+  if (!isRecord(v)) return v
+  return { ...v, ...(v.x === undefined ? {} : { x: numeric(v.x) }), ...(v.y === undefined ? {} : { y: numeric(v.y) }) }
+}
+
+/**
+ * `"x,y,w,h"` · `[x,y,w,h]` · `{x,y,width,height}` · `{x,y,w,h}`.
+ *
+ * ⚠️ **The string form is not speculation — it is the shape OUR OWN tool advertises.** `computer`'s
+ * `region` input is the string `"x,y,width,height"` (it was made a string to get the tool out of the
+ * resident set), so a model that has ever seen this tool's schema has been taught to write a region
+ * that way. Refusing it here would reject the model for having read our documentation.
+ */
+const coerceRegion = (v: unknown): unknown => {
+  if (typeof v === "string") {
+    const parts = v.split(",").map((p) => p.trim())
+    if (parts.length !== 4) return v
+    const [x, y, width, height] = parts.map(numeric)
+    return { x, y, width, height }
+  }
+  if (Array.isArray(v) && v.length === 4) {
+    const [x, y, width, height] = v.map(numeric)
+    return { x, y, width, height }
+  }
+  if (!isRecord(v)) return v
+  const out: Record<string, unknown> = { ...v }
+  if (out.width === undefined && out.w !== undefined) out.width = out.w
+  if (out.height === undefined && out.h !== undefined) out.height = out.h
+  for (const key of ["x", "y", "width", "height"]) if (out[key] !== undefined) out[key] = numeric(out[key])
+  return out
+}
+
+/**
+ * A boolean flag the floor model wrote as prose. `{"abstain": "I cannot see the target"}` is the
+ * shape to expect, because the field NAME already carries the meaning and the model fills it with
+ * the only thing it has left to say. Returns the flag plus the text it displaced, so the caller can
+ * put that text where it belongs (`reason` / `evidence`).
+ */
+const coerceFlag = (v: unknown): { readonly flag: unknown; readonly displaced?: string } => {
+  if (typeof v !== "string") return { flag: v }
+  const normalized = v.trim().toLowerCase()
+  if (normalized === "true" || normalized === "yes") return { flag: true }
+  if (normalized === "false" || normalized === "no") return { flag: false }
+  if (normalized === "") return { flag: v }
+  return { flag: true, displaced: v }
+}
+
+/**
+ * Pre-decode shape tolerance. Pure and total — a non-object passes through unchanged.
+ *
+ * 🔴 **The FLAT form is the one that matters most, and it is our own fault.** `tool/computer.ts`'s
+ * Input is flat — `{action: "click", x, y, button, text, keys, direction, amount, region}` — so a
+ * model that has been shown the `computer` tool has been trained by us to emit exactly that, not the
+ * nested `{action: {kind, point}}` this schema wants. Rejecting it would be rejecting our own
+ * teaching. So a string `action` becomes `{kind}`, and the flat payload keys are hoisted into it.
+ * (Hoisting only fills fields the nested action left empty, so an explicit nested value always wins.)
+ */
+export function coerceProposalShape(value: unknown): unknown {
+  if (!isRecord(value)) return value
+  const out: Record<string, unknown> = { ...value }
+
+  // ── the act shape ─────────────────────────────────────────────────────────────────────────
+  if (typeof out.action === "string") out.action = { kind: out.action }
+  if (isRecord(out.action)) {
+    const action: Record<string, unknown> = { ...out.action }
+    // `{"action": {"action": "click"}}` and `{"action": {"type": "click"}}` — the field renamed after
+    // the model flattened it once already.
+    if (action.kind == null && typeof action.action === "string") action.kind = action.action
+    if (action.kind == null && typeof action.type === "string") action.kind = action.type
+    for (const key of ["button", "text", "keys", "direction", "amount"]) {
+      if (action[key] == null && out[key] != null) action[key] = out[key]
+    }
+    if (action.amount !== undefined) action.amount = numeric(action.amount)
+    // The point: nested, or flat x/y on the action, or flat x/y on the proposal itself.
+    const flatOnAction = action.x != null && action.y != null ? { x: action.x, y: action.y } : undefined
+    const flatOnRoot = out.x != null && out.y != null ? { x: out.x, y: out.y } : undefined
+    const point = action.point ?? flatOnAction ?? flatOnRoot
+    if (point !== undefined && point !== null) action.point = coercePoint(point)
+    out.action = action
+  }
+
+  // `expected` is what `jh`'s own Check vocabulary calls this field, so a model that has seen the
+  // harness's other schema reaches for it here.
+  if (out.expect == null && typeof out.expected === "string") out.expect = out.expected
+
+  // `region` is the tool's name for the same rectangle; accept it as an alias for `watch`.
+  const watch = out.watch ?? out.region
+  if (watch !== undefined && watch !== null) out.watch = coerceRegion(watch)
+
+  // ── the abstain and claim-done shapes ─────────────────────────────────────────────────────
+  if (out.abstain !== undefined) {
+    const { flag, displaced } = coerceFlag(out.abstain)
+    out.abstain = flag
+    if (displaced !== undefined && out.reason == null) out.reason = displaced
+  }
+  if (out.claim_done !== undefined) {
+    const { flag, displaced } = coerceFlag(out.claim_done)
+    out.claim_done = flag
+    if (displaced !== undefined && out.evidence == null) out.evidence = displaced
+  }
+
+  return out
+}
+
+// ---------------------------------------------------------------------------------------------
+// Structural validation — what the codec cannot express
+// ---------------------------------------------------------------------------------------------
+
+export type IssueCode =
+  /** None of the three legal shapes is present. */
+  | "no_proposal"
+  /** More than one is. */
+  | "ambiguous_shape"
+  /** An act with no prediction — nothing for rung 2 to adjudicate. */
+  | "missing_expect"
+  /** An act with no `observation` line (warning: it costs prompt quality, not verifiability). */
+  | "missing_observation"
+  | "unknown_action_kind"
+  /** `screenshot` / `cursor` — the harness owns capture. */
+  | "harness_owned_action"
+  /** A pointer action with no point: there is nothing for `watch` to contain. */
+  | "pointer_missing_point"
+  | "bad_point"
+  | "missing_watch"
+  | "bad_watch"
+  | "watch_excludes_point"
+  /** The point is exactly on the region's far edge (warning — see `watchContains`). */
+  | "watch_point_on_edge"
+  /** The kind's payload field is absent, so no action can be built at all. */
+  | "missing_action_payload"
+  | "abstain_missing_reason"
+  | "claim_done_missing_evidence"
+
+export interface StructuralIssue {
+  readonly severity: "error" | "warning"
+  readonly code: IssueCode
+  /** The field that is wrong, e.g. `action.point` — quoted back in the repair prompt. */
+  readonly path: string
+  readonly detail?: string
+}
+
+/**
+ * Is the acted point inside the watch rectangle?
+ *
+ * **Both are in the model's own units, and checking there rather than in pixels is deliberate.** The
+ * conversion to pixels is affine and per-axis (`px = norm / 1000 × dimension`) followed by rounding,
+ * and both of those are monotone non-decreasing — so `wx ≤ x ≤ wx + ww` in model units implies the
+ * same ordering after conversion. Containment therefore survives the conversion, and checking it here
+ * means the check runs before a viewport is even known, which is what makes S1 pure.
+ *
+ * ⚠️ **CLOSED interval, and the far edge is a WARNING rather than a rejection.** `scrot -a x,y,w,h`
+ * captures columns `x … x+w-1`, so a point landing exactly on `x+w` is one pixel outside the pixels
+ * that will actually be compared. A strict half-open test here would REJECT such a proposal and spend
+ * repair budget on a model that was essentially right, and rounding can move that boundary by a pixel
+ * in either direction anyway — so the honest answer is to accept it and say so. Pixel-space
+ * resolution belongs to the Guard, which has the viewport.
+ */
+export const watchContains = (watch: RegionDraft, point: PointDraft): boolean =>
+  point.x >= watch.x &&
+  point.x <= watch.x + watch.width &&
+  point.y >= watch.y &&
+  point.y <= watch.y + watch.height
+
+const onEdge = (watch: RegionDraft, point: PointDraft): boolean =>
+  point.x === watch.x + watch.width || point.y === watch.y + watch.height
+
+const blank = (v: string | null | undefined): boolean => v == null || v.trim() === ""
+
+/**
+ * Pure and total. A codec-valid draft can still be structurally wrong; this is what catches it, and
+ * what the repair re-prompt is rendered from.
+ *
+ * "error" is grounds to reject-and-repair. "warning" is tolerated — the harness proceeds and the
+ * planner is told, because spending the repair budget on an abstention with no reason would punish
+ * exactly the behaviour A14.3 exists to encourage (G12: `abstain` is a legal shape, not an error).
+ */
+export function structuralIssues(draft: ProposalDraft): ReadonlyArray<StructuralIssue> {
+  const issues: StructuralIssue[] = []
+  const acting = draft.action != null
+  const abstaining = draft.abstain === true
+  const claiming = draft.claim_done === true
+  const shapes = [acting, abstaining, claiming].filter(Boolean).length
+
+  if (shapes === 0) {
+    issues.push({
+      severity: "error",
+      code: "no_proposal",
+      path: "",
+      detail: "expected one of `action` + `expect`, `abstain` + `reason`, or `claim_done` + `evidence`",
+    })
+  }
+  if (shapes > 1) {
+    // 🔴 Not pedantry: `claim_done` is adjudicated against a frame the harness captured (G1). Pairing
+    // it with an action that has not run yet asks for a verdict on a screen that does not exist.
+    issues.push({
+      severity: "error",
+      code: "ambiguous_shape",
+      path: "",
+      detail: [acting && "action", abstaining && "abstain", claiming && "claim_done"].filter(Boolean).join(" + "),
+    })
+  }
+
+  if (abstaining && blank(draft.reason)) {
+    issues.push({ severity: "warning", code: "abstain_missing_reason", path: "reason" })
+  }
+  if (claiming && blank(draft.evidence)) {
+    issues.push({ severity: "warning", code: "claim_done_missing_evidence", path: "evidence" })
+  }
+
+  const action = draft.action
+  if (action == null) return issues
+
+  const kind = typeof action.kind === "string" ? action.kind.trim() : ""
+
+  if (blank(draft.expect)) {
+    issues.push({
+      severity: "error",
+      code: "missing_expect",
+      path: "expect",
+      detail: "an action with no prediction cannot be adjudicated, so the step produces no evidence",
+    })
+  }
+  if (blank(draft.observation)) {
+    issues.push({ severity: "warning", code: "missing_observation", path: "observation" })
+  }
+
+  if ((HARNESS_OWNED_KINDS as ReadonlyArray<string>).includes(kind)) {
+    issues.push({
+      severity: "error",
+      code: "harness_owned_action",
+      path: "action.kind",
+      detail: kind,
+    })
+    return issues
+  }
+  if (!isActionKind(kind)) {
+    issues.push({
+      severity: "error",
+      code: "unknown_action_kind",
+      path: "action.kind",
+      detail: kind === "" ? "(absent)" : kind,
+    })
+    return issues
+  }
+
+  for (const field of REQUIRED_PAYLOAD[kind] ?? []) {
+    if (action[field] == null) {
+      issues.push({ severity: "error", code: "missing_action_payload", path: `action.${field}`, detail: kind })
+    }
+  }
+
+  const point = action.point ?? undefined
+  if (point && (!Number.isFinite(point.x) || !Number.isFinite(point.y))) {
+    issues.push({ severity: "error", code: "bad_point", path: "action.point", detail: `${point.x},${point.y}` })
+  }
+
+  const watch = draft.watch ?? undefined
+  if (watch) {
+    const bad = ([["x", watch.x], ["y", watch.y], ["width", watch.width], ["height", watch.height]] as const).find(
+      ([name, value]) => !Number.isFinite(value) || ((name === "width" || name === "height") && value <= 0),
+    )
+    if (bad) {
+      issues.push({ severity: "error", code: "bad_watch", path: `watch.${bad[0]}`, detail: String(bad[1]) })
+    }
+  }
+
+  if (!isPointerKind(kind)) return issues
+
+  // 🔴 A pointer action with no point makes `watch_excludes_point` VACUOUS — there would be nothing
+  // to test, so the guard would pass and report nothing. That is the failure mode the whole design
+  // is written against, so the missing point is the error, not the missing containment.
+  if (!point) {
+    issues.push({ severity: "error", code: "pointer_missing_point", path: "action.point", detail: kind })
+    if (!watch) issues.push({ severity: "error", code: "missing_watch", path: "watch", detail: kind })
+    return issues
+  }
+  if (!watch) {
+    issues.push({
+      severity: "error",
+      code: "missing_watch",
+      path: "watch",
+      detail: `${kind} at (${point.x},${point.y}) — a pointer action needs a region to measure`,
+    })
+    return issues
+  }
+  if (issues.some((i) => i.code === "bad_watch" || i.code === "bad_point")) return issues
+
+  if (!watchContains(watch, point)) {
+    issues.push({
+      severity: "error",
+      code: "watch_excludes_point",
+      path: "watch",
+      detail: `(${point.x},${point.y}) is outside ${watch.x},${watch.y},${watch.width},${watch.height}`,
+    })
+  } else if (onEdge(watch, point)) {
+    issues.push({
+      severity: "warning",
+      code: "watch_point_on_edge",
+      path: "watch",
+      detail: `(${point.x},${point.y}) sits on the far edge of ${watch.x},${watch.y},${watch.width},${watch.height}`,
+    })
+  }
+
+  return issues
+}
+
+export const errorsOf = (issues: ReadonlyArray<StructuralIssue>): ReadonlyArray<StructuralIssue> =>
+  issues.filter((i) => i.severity === "error")
+
+// ---------------------------------------------------------------------------------------------
+// Parsing
+// ---------------------------------------------------------------------------------------------
+
+export type ParseResult =
+  | { readonly ok: true; readonly draft: ProposalDraft }
+  | { readonly ok: false; readonly issue: string }
+
+/**
+ * Free-form reply → draft. Extract the JSON object out of whatever prose surrounds it, coerce the
+ * known floor-model shapes, decode. **No structural validation** — same split as
+ * `JhExpander.parseReply`, and for the same reason: the caller needs the draft to build a repair.
+ *
+ * ⚠️ **The extractor is `jh/extract.ts`, reused rather than rewritten.** It is a single-pass balanced
+ * brace scanner that is string- and escape-aware, prefers the LAST fenced block, and repairs exactly
+ * two things (trailing commas, invalid backslash escapes) while never eval-ing, JSON5-ing or
+ * "healing" quotes. That behaviour was tuned against real qwen replies; a second copy here would be a
+ * second opinion about the same model, and the weaker one.
+ */
+export function parseProposal(text: string): ParseResult {
+  const extracted = JhExtract.extractJsonObject(text)
+  if (!extracted.ok) {
+    const f = extracted.failure
+    const parts = [`${f.reason}: ${f.detail}`]
+    if (f.position !== undefined) parts.push(`near position ${f.position}`)
+    if (f.snippet) parts.push(`context: ${f.snippet}`)
+    if (f.cause) parts.push(`likely cause: ${f.cause}`)
+    return { ok: false, issue: parts.join(" — ") }
+  }
+  try {
+    return { ok: true, draft: Schema.decodeUnknownSync(ProposalDraft)(coerceProposalShape(extracted.value)) }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { ok: false, issue: msg.replace(/\s+/g, " ").trim().slice(0, 300) }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The contract, and the repair re-prompt
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The schema as the model is told it, owned by the module that enforces it.
+ *
+ * ⚠️ **Same file as the validator ON PURPOSE.** A14.4 records what happens otherwise: MudrikNow's
+ * grid described its geometry at the prompt site and drew it somewhere else, which cost ~324 px of
+ * vertical error and made the bottom 45% of the screen unaddressable. A contract stated in one file
+ * and checked in another drifts the same way, silently, and the symptom is a model that looks bad at
+ * the task. `prompt.ts` (S3) renders these lines; it does not restate them.
+ */
+export const CONTRACT_LINES: ReadonlyArray<string> = [
+  "Emit EXACTLY ONE ```json object. It must be one of these three shapes and nothing else:",
+  '  ACT     {"observation": "<one line: what is on this screen>", "action": {"kind": "...", ...},',
+  '           "expect": "<one short sentence: what the screen will look like AFTER this action>",',
+  '           "watch": {"x": .., "y": .., "width": .., "height": ..}}',
+  '  ABSTAIN {"abstain": true, "reason": "<why you cannot act — e.g. the target is not visible>"}',
+  '  DONE    {"claim_done": true, "evidence": "<what on this screen shows the task is finished>"}',
+  "",
+  `action.kind is one of: ${ACTION_KINDS.join(" | ")}. The harness takes the screenshots — never ask for one.`,
+  '  move | click | double_click → "point": {"x": .., "y": ..}   (click also takes "button")',
+  '  type → "text"      key → "keys"      scroll → "direction" + "amount"',
+  "",
+  "`expect` is REQUIRED on every action. It is checked against the next screenshot by a separate",
+  "reader who is shown only that screenshot and your sentence — so write what will be VISIBLE, not",
+  "what you intended. A prediction that cannot be seen cannot be confirmed.",
+  "",
+  `\`watch\` is REQUIRED for ${POINTER_KINDS.join(" / ")} and must CONTAIN the point you are acting on.`,
+  "It is the rectangle the harness compares before and after, so it must be small enough to be quiet",
+  "and large enough to include the change you predict.",
+  "",
+  "Abstaining is a legal, correct answer. If you cannot see the target, say so — a wrong click costs",
+  "more than a skipped turn.",
+]
+
+const MESSAGE: Record<IssueCode, string> = {
+  no_proposal: "the reply is not one of the three legal shapes",
+  ambiguous_shape:
+    "the reply mixes two shapes — emit ONE. A `claim_done` is judged against the screen as it is NOW, so it cannot ride along with an action that has not happened yet",
+  missing_expect: "`expect` is missing: every action must predict what the screen will look like afterwards",
+  missing_observation: "`observation` is missing: describe what you see before deciding what to do",
+  unknown_action_kind: `not an action this harness can perform — use one of: ${ACTION_KINDS.join(" | ")}`,
+  harness_owned_action: "the harness takes the screenshots; propose an action that changes the screen",
+  pointer_missing_point: "this action aims at a point, so `action.point` is required",
+  bad_point: "`action.point` is not a pair of finite numbers",
+  missing_watch: "`watch` is required for a pointer action — it is the region checked for the effect",
+  bad_watch: "`watch` needs finite x/y and a width and height greater than zero",
+  watch_excludes_point:
+    "`watch` does not contain the point being acted on, so it would measure the wrong pixels — put the region AROUND the target",
+  watch_point_on_edge: "the point is exactly on the edge of `watch` — centre the region on the target instead",
+  missing_action_payload: "this action kind needs that field",
+  abstain_missing_reason: "say WHY you are abstaining — the reason is what the next step is planned from",
+  claim_done_missing_evidence: "say what on the screen shows the task is finished",
+}
+
+/** One rendered line per issue: `expect — …` / `watch (…) — …`. */
+export const describeIssue = (issue: StructuralIssue): string => {
+  const where = issue.path === "" ? "" : issue.path
+  const detail = issue.detail === undefined ? "" : ` (${issue.detail})`
+  return `${where}${detail}${where === "" && detail === "" ? "" : ": "}${MESSAGE[issue.code]}`
+}
+
+/**
+ * The ONE repair re-prompt. G3: the model gets a single chance to fix its own reply; after that the
+ * retry costs budget like any other step, because an unbounded repair loop is a budget leak dressed
+ * as robustness.
+ *
+ * Returns `""` when there is nothing to repair, so a caller cannot accidentally send an empty
+ * complaint — `if (text) ask(text)` is the whole call site.
+ *
+ * ⚠️ **It restates the contract, deliberately.** The failure being repaired is usually that the model
+ * did not follow the schema, and answering with only a list of complaints asks it to remember the
+ * thing it just demonstrated it had lost.
+ */
+export function repairPrompt(input: {
+  readonly parseFailure?: string
+  readonly issues?: ReadonlyArray<StructuralIssue>
+}): string {
+  const issues = input.issues ?? []
+  const errors = errorsOf(issues)
+  const warnings = issues.filter((i) => i.severity === "warning")
+  if (input.parseFailure === undefined && errors.length === 0) return ""
+
+  const lines: string[] = ["The harness REJECTED your last reply."]
+  if (input.parseFailure !== undefined) {
+    lines.push(`  - it could not be read as JSON — ${input.parseFailure}`)
+  }
+  for (const issue of errors) lines.push(`  - ${describeIssue(issue)}`)
+  if (errors.length > 0 && warnings.length > 0) lines.push("Also worth fixing while you are here:")
+  for (const issue of warnings) lines.push(`  - ${describeIssue(issue)}`)
+  lines.push("", "Re-emit the WHOLE proposal, corrected.", "", ...CONTRACT_LINES)
+  return lines.join("\n")
+}
