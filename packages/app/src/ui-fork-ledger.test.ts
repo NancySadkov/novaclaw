@@ -123,9 +123,11 @@ export function stripComments(source: string): string {
  * written — the same comment-eaten-as-code false positive two sibling ledgers hit last round, and
  * proof that prose in a swept tree is not inert.
  *
- * `mock.module` is included because a test stubbing `@novaclaw/ui/toast` is real coupling to the v1
- * side: when its subject migrates, the stub must move too, and leaving it behind is cruft the
- * migration should have swept.
+ * `mock.module` is included because a test stubbing a v1 component is real coupling to the v1 side:
+ * when its subject migrates, the stub must move too, and leaving it behind is cruft the migration
+ * should have swept. It has now caught exactly that once — `prompt-input/submit.test.ts` stubbed
+ * `@novaclaw/ui/toast`, a module its subject never imported directly, and the `toast` migration had
+ * to move the stub onto `@/utils/toast` for the unit to keep testing anything.
  */
 const SPECIFIER_PATTERNS: readonly RegExp[] = [
   /^[ \t]*(?:import|export)\s+(?:type\s+)?[^'"`;]*?from\s*["'`]([^"'`]+)["'`]/gm,
@@ -136,26 +138,34 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
 ]
 
 /**
- * **The forked widget names, re-derived 2026-08-07: 8.**
+ * **The forked widget names, re-derived 2026-08-07: 7.**
  *
  * A name is on this list when `ui/src/components/<name>.tsx` and its v2 twin both exist. The twin is
  * `v2/components/<name>-v2.tsx`, except `icon`, which is duplicated under the identical filename —
  * two independent registries (v1 carries ~150 glyphs keyed by name, v2 carries ~20 as
- * `{viewBox, body}` pairs), which is why `icon` is 61 call sites and the expensive half of the
- * migration rather than a rename.
+ * `{viewBox, body}` pairs), which is why `icon` is the expensive half of the migration rather than a
+ * rename.
  *
  * This list may only ever get SHORTER. It was 14, then 12 (`text-shimmer` 2026-07-31), 11 (`switch`,
- * 2026-08-07), and is **8** since `keybind`, `progress-circle` and `diff-changes` were migrated and
- * their v1 twins deleted (2026-08-07).
+ * 2026-08-07), 8 (`keybind`, `progress-circle`, `diff-changes`, 2026-08-07), and is **7** since
+ * `toast` was migrated and its v1 twin deleted (2026-08-07).
  *
  * ⭐ **The shape the rest of this list should copy — a pair is RETIRABLE when nothing in
  * `packages/ui` composes its v1 side.** Then migrating the leaf call sites leaves the v1 file with
  * zero importers and the pair can be deleted rather than merely thinned, which is the only move that
- * shrinks the fork's WIDTH. `switch` (4 call sites), then `keybind` (2), `progress-circle` (1) and
- * `diff-changes` (1) went that way. A widget that `packages/ui` composes internally (`button`,
- * `icon`, `icon-button`, `tooltip`) cannot reach zero until its v1 consumers die, which is why those
- * lines sit in the second block below. `dialog`, `select`, `tabs` and `toast` are the four that are
- * still retirable — nothing in `packages/ui` composes them — but each carries 3–10 call sites.
+ * shrinks the fork's WIDTH. `switch` (4 call sites), then `keybind` (2), `progress-circle` (1),
+ * `diff-changes` (1) and `toast` (3) went that way. A widget that `packages/ui` composes internally
+ * (`button`, `icon`, `icon-button`, `tooltip`) cannot reach zero until its v1 consumers die, which
+ * is why those lines sit in the second block below. `dialog`, `select` and `tabs` are the three that
+ * are still retirable — nothing in `packages/ui` composes them — but each carries 4–9 call sites.
+ *
+ * ⚠️ **`select` is retirable but is NOT a swap, and the next agent should budget for that.** Its
+ * four call sites pass `size`, `variant`, `triggerStyle` and `triggerProps` — all of which reach v1's
+ * trigger because v1 renders the trigger `as={Button}`. `SelectV2` renders its trigger as a bare
+ * `div` with an `appearance` prop and forwards unknown props to the Kobalte ROOT, not the trigger, so
+ * `app/e2e/regression/prompt-thinking-level.spec.ts` — which clicks
+ * `[data-action="prompt-model-variant"]` — is pointing at an attribute that would land one element
+ * up. Retiring `select` means deciding what v2's trigger contract is, not swapping an import.
  */
 export const FORKED_WIDGETS: readonly string[] = [
   "button",
@@ -164,16 +174,26 @@ export const FORKED_WIDGETS: readonly string[] = [
   "icon-button",
   "select",
   "tabs",
-  "toast",
   "tooltip",
 ]
 
 /**
- * **Every file that imports the v1 side of a forked widget, re-derived 2026-08-07: 83 files, 140
- * (file, widget) pairs.** Grouped by package: `app` 70, `ui` 10, `session-ui` 3.
+ * **Every file that imports the v1 side of a forked widget, re-derived 2026-08-07: 81 files, 132
+ * (file, widget) pairs.** Grouped by package: `app` 69, `ui` 9, `session-ui` 3.
  *
- * Per-widget: icon 57 · button 24 · icon-button 19 · tooltip 15 · dialog 9 · tabs 7 · select 4 ·
- * toast 3.
+ * Per-widget: icon 55 · button 24 · icon-button 18 · tooltip 15 · dialog 9 · tabs 7 · select 4.
+ *
+ * ⚠️ **Every figure in the two lines above was re-derived from the tree by a script that does not
+ * import this file, and the previous version was wrong AGAIN.** It read `83 files / 140 pairs`
+ * against pins of 83/137, and `icon 57` against a measured 56. The round before that it read
+ * `88 / 162` against pins of `87 / 159`, carried an `avatar` row for a retired pair, and said
+ * `icon-button 22` for a measured 21. **Twice in a row the pins were the measurement and this index
+ * was decoration.** Re-derive before quoting it; never quote it from prose.
+ *
+ * ⚠️ **`toast` moved BOTH counts and by more than its own call sites** (2026-08-07): three v1 toast
+ * pairs went, and deleting `ui/src/components/toast.tsx` took its own `icon` + `icon-button` pairs
+ * with it — 5 pairs and 2 files for a 3-call-site widget. **Retiring a pair whose v1 file composes
+ * other v1 widgets pays a dividend the call-site count does not show.**
  *
  * ⚠️ **Four lines left in one commit and NONE of them was a migration — the files were DELETED**
  * (2026-08-07): `dialog-settings.tsx` and the three panels only it imported (`settings-general`,
@@ -181,18 +201,12 @@ export const FORKED_WIDGETS: readonly string[] = [
  * Settings dialog had had **zero importers since 2026-06-26** — every `DialogSettings` call site
  * dynamic-`import()`s `./settings-v2` — so 11 of these pairs were fork debt on a surface no user
  * could open. **A pair leaving the ledger is not automatically progress on the migration**; here it
- * is progress on the *tree*, and the distinction matters because the remaining 140 are all live.
+ * is progress on the *tree*, and the distinction matters because the remaining pairs are all live.
  *
  * ⚠️ The file count did NOT move when `keybind`/`progress-circle`/`diff-changes` were migrated: all
  * four of their call sites also import some other v1 widget, so every line survived with one name
  * fewer. **Pairs and files move independently** — a migration that leaves the file count still is
  * doing exactly as much work as one that lowers it.
- *
- * ⚠️ **Every number in the two lines above was wrong before 2026-08-07, and none of them was a
- * regression — the prose simply never moved when the pins did.** It claimed 88 files / 162 pairs
- * against pins of 87 / 159, an `avatar` row for a pair that no longer exists, and `icon-button 22`
- * for a measured 21. The pins are the measurement; treat this paragraph as a convenience index and
- * re-derive before quoting it.
  *
  * **Migrating a file means deleting its line here.** Adding a widget to a file that is already
  * listed is also new debt, so the widget arrays are compared exactly, not just the file names.
@@ -227,7 +241,6 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/components/prompt-input/drag-overlay.tsx": ["icon"],
   "app/src/components/prompt-input/image-attachments.tsx": ["icon", "tooltip"],
   "app/src/components/prompt-input/slash-popover.tsx": ["icon"],
-  "app/src/components/prompt-input/submit.test.ts": ["toast"],
   "app/src/components/prompt-project-selector.tsx": ["icon"],
   "app/src/components/prompt-workspace-selector.tsx": ["icon"],
   "app/src/components/server/server-row.tsx": ["tooltip"],
@@ -270,8 +283,8 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/pages/session/session-side-panel.tsx": ["icon-button", "tabs", "tooltip"],
   "app/src/pages/session/terminal-panel.tsx": ["icon-button", "tabs", "tooltip"],
   "app/src/pages/trash.tsx": ["icon"],
-  "app/src/utils/toast.tsx": ["icon", "toast"],
-  "app/src/wsl/dialog-add-server.tsx": ["button", "toast"],
+  "app/src/utils/toast.tsx": ["icon"],
+  "app/src/wsl/dialog-add-server.tsx": ["button"],
   "session-ui/src/components/file-search.tsx": ["icon"],
   "session-ui/src/components/line-comment.tsx": ["button", "icon"],
   "session-ui/src/components/session-review.tsx": ["button", "icon", "icon-button", "tooltip"],
@@ -286,12 +299,12 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "ui/src/components/popover.tsx": ["icon-button"],
   "ui/src/components/select.tsx": ["button", "icon"],
   "ui/src/components/text-field.tsx": ["icon-button", "tooltip"],
-  "ui/src/components/toast.tsx": ["icon", "icon-button"],
 }
 
 /**
- * `ui/src/components/*.tsx` was 45, then 38 (2026-07-31), 36 (`switch.tsx`, 2026-08-07), and is
- * **33** after `keybind.tsx`, `progress-circle.tsx` and `diff-changes.tsx` went. A bound rather than
+ * `ui/src/components/*.tsx` was 45, then 38 (2026-07-31), 36 (`switch.tsx`, 2026-08-07), 33
+ * (`keybind.tsx`, `progress-circle.tsx`, `diff-changes.tsx`), and is **32** after `toast.tsx` went
+ * (2026-08-07). A bound rather than
  * a name list, because ruling 13 pins the FORK and a v1-only widget forks nothing — see the header.
  * It may fall freely; raising it means adding a v1 component under a ruling that says new work is
  * v2, so raise it only with a reason written next to it.
@@ -300,11 +313,11 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
  * read 38 while the tree held 37 — one component had been deleted without the pin following, so a
  * new v1 component could have been added for free. Lower it in the same commit as any deletion.
  */
-const V1_COMPONENT_CEILING = 33
+const V1_COMPONENT_CEILING = 32
 
 /** Measured totals, pinned so the ledger stays a measurement rather than an aspiration. */
-const V1_CALL_SITE_FILES = 83
-const V1_CALL_SITE_PAIRS = 137
+const V1_CALL_SITE_FILES = 81
+const V1_CALL_SITE_PAIRS = 132
 
 // ---------------------------------------------------------------------------------------------
 // The sweep. Pure functions first so the negative controls can drive them without touching disk.
@@ -576,7 +589,7 @@ describe("the fork's DEPTH can only shrink", () => {
     expect(OBSERVED_PAIRS, "the observed (file, widget) pair count moved — reconcile V1_CALL_SITES").toBe(
       V1_CALL_SITE_PAIRS,
     )
-    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(8)
+    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(7)
   })
 
   test("both sides are genuinely live — this is a fork, not a finished migration", () => {
@@ -811,7 +824,10 @@ describe("the seven deleted v1 components stay deleted", () => {
     // rendered result looks right — it looked right because ONE of them was silently winning.**
     const barrel = readFileSync(join(PACKAGES, "ui", "src", "styles", "index.css"), "utf8")
     const lines = barrel.split("\n")
-    const lastV1 = lines.reduce((last, line, index) => (/@import\s+["']\.\.\/components\/[^"']+\.css["']/.test(line) ? index : last), -1)
+    const lastV1 = lines.reduce(
+      (last, line, index) => (/@import\s+["']\.\.\/components\/[^"']+\.css["']/.test(line) ? index : last),
+      -1,
+    )
     const firstV2 = lines.findIndex((line) => /@import\s+["']\.\.\/v2\/components\/[^"']+\.css["']/.test(line))
     expect(firstV2, "no v2 stylesheet is imported by the barrel — has the migration moved?").toBeGreaterThan(-1)
     expect(

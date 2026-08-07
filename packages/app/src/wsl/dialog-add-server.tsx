@@ -1,7 +1,7 @@
 import { Button } from "@novaclaw/ui/button"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { Spinner } from "@novaclaw/ui/spinner"
-import { showToast } from "@novaclaw/ui/toast"
+import { showToast } from "@/utils/toast"
 import { createEffect, createMemo, For, Match, onCleanup, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"

@@ -108,8 +108,12 @@ beforeAll(async () => {
     },
   }))
 
-  mock.module("@novaclaw/ui/toast", () => ({
-    Toast: { Region: () => null },
+  // The subject imports `@/utils/toast`, so that is what is stubbed. It used to stub the transitive
+  // `@novaclaw/ui/toast` instead, which only worked while the app facade forwarded to the v1
+  // component; that component is gone (ruling 13) and stubbing one layer down also let the facade's
+  // own icon/variant mapping run inside a unit that is about submit, not about toasts.
+  mock.module("@/utils/toast", () => ({
+    ToastRegion: () => null,
     showToast: (options: { title?: string; description?: string }) => {
       toasts.push(options)
       return 0

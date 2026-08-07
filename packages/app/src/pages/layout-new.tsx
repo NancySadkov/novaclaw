@@ -12,7 +12,7 @@ import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { useTabs } from "@/context/tabs"
 import { setNavigate } from "@/utils/notification-click"
-import { setV2Toast, ToastRegion } from "@/utils/toast"
+import { ToastRegion } from "@/utils/toast"
 import {
   collectNewSessionDeepLinks,
   collectOpenProjectDeepLinks,
@@ -91,8 +91,6 @@ export default function NewLayout(props: ParentProps) {
       : [],
   )
 
-  createEffect(() => setV2Toast(true))
-
   const update: TitlebarUpdate = {
     version: () => {
       const state = platform.updater?.state()
@@ -152,7 +150,7 @@ export default function NewLayout(props: ParentProps) {
       {import.meta.env.DEV && <DebugBar inline />}
       {/* No floating HelpButton in the new layout — the Help app tile owns the tour (SP8; the old
           placeholder popover was dev-only lorem-ipsum competing with it). */}
-      <ToastRegion v2 />
+      <ToastRegion />
     </div>
   )
 }
