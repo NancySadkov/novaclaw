@@ -262,7 +262,20 @@ export async function instanceFetch<T>(server: ServerConnection.HttpBase, reques
     ...request.query,
   })
   const headers = instanceHeaders(server, {
-    ...(routed && via === "header" ? { "x-novaclaw-directory": request.directory as string } : {}),
+    // 🔴 **Percent-encoded, because an HTTP header cannot carry a non-ASCII path at all.** Header
+    // values are ISO-8859-1, so `C:\Users\…\Документы` is not merely awkward here — it is
+    // unrepresentable. The SDK (`packages/sdk/js/src/v2/client.ts`) has always encoded; this client
+    // sent the raw path, and the two disagreeing is what let the server's readers disagree too
+    // (`workspace-routing.ts` read it raw while `server/src/location.ts` decoded it, so every SDK
+    // request with a directory was rejected 400 "Directory does not exist" naming a path that exists).
+    //
+    // ⚠️ Encoding is the contract, NOT raw — an earlier note of mine recommended the opposite before
+    // checking the ISO-8859-1 constraint. For an ASCII path encode→decode is the identity, so this
+    // changes nothing today; it fixes non-ASCII paths and removes the ambiguity for a path containing
+    // a literal `%`. See `todo/assorted.md`.
+    ...(routed && via === "header"
+      ? { "x-novaclaw-directory": encodeURIComponent(request.directory as string) }
+      : {}),
     ...request.headers,
   })
 

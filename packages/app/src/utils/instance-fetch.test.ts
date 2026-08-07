@@ -283,8 +283,35 @@ describe("instanceFetch", () => {
       fetch: header.fetch,
     })
     expect(header.seen.url).toBe("http://instance.test:4096/api/session/ses_1/mode")
-    expect((header.seen.init?.headers as Record<string, string>)["x-novaclaw-directory"]).toBe("/tmp/p")
+    // Percent-encoded: header values are ISO-8859-1, so a non-ASCII path cannot travel raw at all.
+    // The SDK has always encoded; this client now matches it. See the round-trip test below.
+    expect((header.seen.init?.headers as Record<string, string>)["x-novaclaw-directory"]).toBe("%2Ftmp%2Fp")
     expect(header.seen.init?.body).toBe(JSON.stringify({ permissionMode: "ask" }))
+  })
+
+  test("🔴 a non-ASCII directory survives the header, which raw text cannot do", async () => {
+    // Ruling 1 for the 2026-08-07 encoding contract. HTTP header values are ISO-8859-1, so a path
+    // containing Cyrillic/CJK/accented characters is not merely awkward raw — it is UNREPRESENTABLE.
+    // This is the case that decides the contract, and it is why "send the raw path" (which an earlier
+    // note of mine recommended, before checking the constraint) is not an option.
+    //
+    // ⚠️ Asserted as a ROUND TRIP rather than against a literal escaping: the point is that the server
+    // can recover the exact path, not that a particular byte sequence was produced.
+    const directory = "/tmp/Документы/proj"
+    const seen = recording()
+    await instanceFetch(server, {
+      method: "POST",
+      route: "api/session/ses_1/mode",
+      directory,
+      directoryVia: "header",
+      body: { permissionMode: "ask" },
+      fetch: seen.fetch,
+    })
+    const sent = (seen.seen.init?.headers as Record<string, string>)["x-novaclaw-directory"]!
+    // Header-safe: every byte is Latin-1 representable, which the raw string is not.
+    expect(sent).toMatch(/^[\x20-\x7e]*$/)
+    // …and the server recovers exactly what the app meant.
+    expect(decodeURIComponent(sent)).toBe(directory)
   })
 
   test("an absent body sends no body at all", async () => {
@@ -424,7 +451,7 @@ describe("every collapsed client still puts the same request on the wire", () =>
     )
     expect(sent.url).toBe("http://instance.test:4096/api/session/ses_1/feature")
     expect(sent.method).toBe("POST")
-    expect(sent.headers["x-novaclaw-directory"]).toBe("/w")
+    expect(sent.headers["x-novaclaw-directory"]).toBe("%2Fw")
     expect(sent.body).toBe(JSON.stringify({ feature: "safeMode", enabled: null }))
   })
 
@@ -465,7 +492,7 @@ describe("every collapsed client still puts the same request on the wire", () =>
       body: { data: [{ id: "p1", text: "hi", delivery: "ui", timeCreated: 1 }] },
     })
     expect(sent.url).toBe("http://instance.test:4096/api/session/ses_1/pending")
-    expect(sent.headers["x-novaclaw-directory"]).toBe("/w")
+    expect(sent.headers["x-novaclaw-directory"]).toBe("%2Fw")
     // The documented swallow: its caller polls every 2s and already catches.
     await wire(
       async () => expect(await fetchPendingPrompts(server, { directory: "/w", sessionID: "ses_1" })).toEqual([]),
