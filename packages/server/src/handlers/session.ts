@@ -25,6 +25,8 @@ import { AbsolutePath } from "@novaclaw/core/schema"
 import { Log } from "@novaclaw/schema/log"
 import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { SessionExecution } from "@novaclaw/core/session/execution"
+import { SessionSchema } from "@novaclaw/core/session/schema"
+import { resolveConfigView } from "./session-config"
 
 const DefaultSessionsLimit = 50
 const DefaultSessionHistoryLimit = 50
@@ -179,6 +181,36 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                       message: `Session not found: ${error.sessionID}`,
                     }),
                 ),
+              ),
+            }
+          }),
+        )
+        // v0.2.0 batch 4.4 — the resolved-config view. See `./session-config.ts` for why the shape is
+        // generated from `SESSION_CONFIG_FIELDS` rather than written out here.
+        .handle(
+          "session.config",
+          Effect.fn(function* (ctx) {
+            // Resolve the target FIRST so a session that does not exist 404s. Without this the walk
+            // would answer "every field is at its default" for an id that names nothing — ruling 2's
+            // *a fault is never described falsely*, and the most misleading possible answer from an
+            // endpoint whose whole job is telling you where a value came from.
+            yield* session.get(ctx.params.sessionID).pipe(
+              Effect.catchTag(
+                "Session.NotFoundError",
+                (error) =>
+                  new SessionNotFoundError({
+                    sessionID: error.sessionID,
+                    message: `Session not found: ${error.sessionID}`,
+                  }),
+              ),
+            )
+            return {
+              data: yield* resolveConfigView(ctx.params.sessionID, (id) =>
+                // The same feeder the runner passes to `resolveSessionConfig`: a missing row is
+                // `undefined`, which the walk reads as "the chain ends here".
+                session
+                  .get(id as SessionSchema.ID)
+                  .pipe(Effect.catchTag("Session.NotFoundError", () => Effect.succeed(undefined))),
               ),
             }
           }),

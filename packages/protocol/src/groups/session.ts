@@ -97,6 +97,87 @@ const SessionActive = Schema.Struct({
   type: Schema.Literal("running"),
 }).annotate({ identifier: "SessionActive" })
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// THE RESOLVED-CONFIG VIEW (v0.2.0 batch 4.4).
+//
+// The kernel's keystone is a parent-chain walk where `undefined` means INHERIT
+// (`core/src/session/config-resolve.ts`, AGENTS.md → *The organizing metaphor*). Until this endpoint
+// existed, the resolved configuration of a running session was UNOBSERVABLE from outside the
+// process: `session.get` returns the raw ROW (i.e. only what this session itself declared, which for
+// an inherited field is nothing) and `session.context` returns messages. So *"the child ran under
+// the inherited prompt"* was not a checkable statement over HTTP.
+//
+// ⭐ **WHY THE SHAPE IS AN OPEN MAP AND NOT A STRUCT OF NAMED FIELDS.** `SESSION_CONFIG_FIELDS`
+// (ruling 8, widened to a full descriptor by B2) is the ONE declaration of the field set, and this
+// package cannot import it — `packages/protocol` depends on `@novaclaw/schema` and `effect`, by
+// design. A hand-written struct here would therefore be a SECOND list of the same fields, which is
+// exactly the defect ruling 8 came from: a field present in one list and absent from another. So the
+// wire is keyed openly and the handler enumerates the descriptor; the equivalence
+// (`fields` keys ⇔ `SESSION_CONFIG_FIELD_KEYS`) is asserted where both sides are visible, in
+// `packages/server/src/handlers/session-config.test.ts`.
+//
+// ⚠️ **WHAT THIS VIEW DELIBERATELY DOES NOT COVER**, stated rather than discovered later (ruling 2 —
+// a limit described falsely is worse than one described):
+//   · `Session.Info.permission` (the saved ruleset). It is on the wire and in the SDK, but it has no
+//     session COLUMN and is not a `SessionConfig` field (ruling 16), so it does not resolve through
+//     this walk at all. Generating from the descriptor excludes it BY CONSTRUCTION.
+//   · The COMPOSED system prompt. `systemPromptOverride` is a config field and is reported; the text
+//     the model actually receives is assembled per turn by `session/runner/system-compose.ts` from
+//     the agent definition, project files, memory recall and the tool list. Computing it here would
+//     be a second composition site — and it carries far more user content than an override the user
+//     typed.
+//   · The RUNTIME permission mode. `permissionMode` here is what the config walk resolves. Auto-mode
+//     self-grants (`chainAutoGrant`) and the unattended-confinement stance narrow it FURTHER at
+//     evaluation time, through the permission service rather than through this walk.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * How ONE resolved `SessionConfig` field got its value.
+ *
+ * `origin` is the answer to *why*, which is the reason this endpoint exists at all — a value without
+ * its origin says what the session runs with but not which ancestor decided it, and debugging
+ * inheritance is the whole use case.
+ */
+const SessionConfigFieldResolution = Schema.Struct({
+  /**
+   * The effective value. ABSENT means the field resolves to nothing — no layer declared it and
+   * `EFFECTIVE_CONFIG_DEFAULTS` carries no value for it (most fields are tri-state: absent = the
+   * runner's own fallback applies).
+   */
+  value: Schema.optional(Schema.Unknown),
+  /**
+   * The merge strategy the descriptor declares for this field. `narrow` is `permissionMode` only —
+   * the root sets it freely and every deeper layer can only make it MORE restrictive — and it is
+   * reported because it is what explains a deeper declaration that did not win.
+   */
+  merge: Schema.Literals(["override", "narrow"]),
+  /**
+   * The chain layer that SUPPLIED the effective value: the deepest layer at which the resolved value
+   * last CHANGED. Absent means no layer moved it — the value came from the global defaults (or
+   * nothing declared it).
+   *
+   * ⚠️ Read it together with `declaredBy`, because "supplied" is not "declared". A layer that
+   * re-declares the value its parent already resolved to does not move it, and under `narrow` a
+   * deeper layer asking for MORE capability does not move it either. Both cases show up as a
+   * `declaredBy` entry deeper than `origin`, which is precisely the situation worth seeing.
+   */
+  origin: Session.ID.pipe(Schema.optional),
+  /** Every chain layer that declared this field, root-first. */
+  declaredBy: Schema.Array(Session.ID),
+}).annotate({ identifier: "SessionConfigFieldResolution" })
+
+export const SessionConfigResolved = Schema.Struct({
+  sessionID: Session.ID,
+  /** The `[root … session]` chain the walk actually followed, root-first. */
+  chain: Schema.Array(Session.ID),
+  /** `EFFECTIVE_CONFIG_DEFAULTS` — what an absent `origin` points at. */
+  defaults: Schema.Record(Schema.String, Schema.Unknown),
+  /** The merged effective config, flat. Every entry equals its `fields[key].value`. */
+  resolved: Schema.Record(Schema.String, Schema.Unknown),
+  /** Per-field provenance, keyed by `SessionConfig` field name (see the block above). */
+  fields: Schema.Record(Schema.String, SessionConfigFieldResolution),
+}).annotate({ identifier: "SessionConfigResolved" })
+
 const SessionHistoryLimit = PositiveInt.check(Schema.isLessThanOrEqualTo(100))
 
 export const SessionHistoryQuery = Schema.Struct({
@@ -216,12 +297,12 @@ export const makeSessionGroup = <
         // location" — this is what makes that true when the payload omits one.
         .middleware(locationMiddleware)
         .annotateMerge(
-        OpenApi.annotations({
-          identifier: "v2.session.create",
-          summary: "Create session",
-          description: "Create a session at the requested location.",
-        }),
-      ),
+          OpenApi.annotations({
+            identifier: "v2.session.create",
+            summary: "Create session",
+            description: "Create a session at the requested location.",
+          }),
+        ),
     )
     .add(
       // Tags component (notes/entities.md T0): replace the chat's full tag set. Full-set PUT keeps
@@ -307,6 +388,24 @@ export const makeSessionGroup = <
             identifier: "v2.session.children",
             summary: "List child sessions",
             description: "Retrieve the sessions forked or spawned from the given parent session.",
+          }),
+        ),
+    )
+    // Placed beside `children` rather than beside `update`: both are reads ABOUT the session tree,
+    // and this one is the only way to observe the tree's effect on a session from outside the process.
+    .add(
+      HttpApiEndpoint.get("session.config", "/api/session/:sessionID/config", {
+        params: { sessionID: Session.ID },
+        success: Schema.Struct({ data: SessionConfigResolved }),
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.config",
+            summary: "Resolve session config",
+            description:
+              "Resolve a session's effective configuration by walking its parent chain root-ward (undefined = inherit), and report which ancestor supplied each field. Covers the SessionConfig fields only: the saved permission ruleset does not resolve through this walk, the reported permissionMode is the config-walk result before auto-mode grants and the unattended stance narrow it further, and systemPromptOverride is the per-session override rather than the composed system prompt.",
           }),
         ),
     )
