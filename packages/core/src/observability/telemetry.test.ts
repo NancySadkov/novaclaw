@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/unstable/http"
-import { ATTRIBUTE_CLASSES, EVENTS, type EventKey } from "@novaclaw/schema/log-events"
+import { ATTRIBUTE_CLASSES, egressSafe, EVENTS, type EventKey } from "@novaclaw/schema/log-events"
 import {
   build,
   countRepeat,
@@ -120,13 +120,23 @@ describe("the egress-safe class set is derived, and pinned", () => {
 
   test("and the pin agrees with the declarations it was derived from", () => {
     const derived = (Object.keys(ATTRIBUTE_CLASSES) as Array<keyof typeof ATTRIBUTE_CLASSES>)
-      .filter((name) => ATTRIBUTE_CLASSES[name].egress)
+      .filter((name) => egressSafe(name))
       .sort()
     expect(egressSafeClasses()).toEqual(derived as ReadonlyArray<EgressSafeClass>)
     // and the content-bearing ones are still content-bearing
-    expect(ATTRIBUTE_CLASSES.path.egress).toBe(false)
-    expect(ATTRIBUTE_CLASSES.text.egress).toBe(false)
-    expect(ATTRIBUTE_CLASSES.fault.egress).toBe(false)
+    expect(egressSafe("path")).toBe(false)
+    expect(egressSafe("text")).toBe(false)
+    expect(egressSafe("fault")).toBe(false)
+    expect(egressSafe("list")).toBe(false)
+    // ⚠️ **`correlate` is the class `todo/logging.md` 1e added, and it is the reason the pin above
+    // still reads `["count","flag","id"]`.** A session id used to be class `id` and therefore
+    // egress-safe; it is now its own class, content-free but never sent. Asserted here rather than
+    // only in the pin, because the pin would also stay green if the class had simply never been
+    // added — this is the assertion that says it exists AND is excluded.
+    expect(egressSafe("correlate")).toBe(false)
+    expect(ATTRIBUTE_CLASSES.correlate.content).toBe("correlated")
+    // …and `egress` is not a second field anybody can set: the answer is computed from `content`.
+    expect("egress" in ATTRIBUTE_CLASSES.id).toBe(false)
   })
 
   test("every crash field's class is one of them — the runtime twin of the compile-time guard", () => {
@@ -306,6 +316,80 @@ describe("a content-bearing event is refused outright", () => {
     expect(passed.ok).toBe(true)
   })
 
+  test("🔴 a session id is refused — the exact envelope this file's prose falsely promised", () => {
+    // **This is a regression test for a measured leak, not a hypothetical.** On 2026-08-07 this
+    // input returned `ok: true` with `attributes: { "session.id": "ses_…" }` in the envelope and
+    // `dropped: []`, while the module doc above says in as many words *"No … session id"*. The
+    // cause was in the type, not here: a session id was class `id`, `id` is egress-safe, and 38
+    // keys carrying one were declared `content: "none"`. `todo/logging.md` 1e made it class
+    // `correlate`, so the refusal happens at gate 4 — one rung EARLIER than the attribute filter.
+    const built = build({
+      report: {
+        plane: "server",
+        kind: "TypeError",
+        stack: STACK,
+        event: "session.drain.exit",
+        attributes: { "session.id": "ses_01JBQ8Z4K7T3", step: 4 },
+      },
+      gate: OPEN,
+      endpoint: ENDPOINT,
+      host: HOST,
+    })
+    expect(built.ok).toBe(false)
+    if (!built.ok) expect(built.refusals).toEqual(["content_bearing_event"])
+    // The absence assertion, and it is over the WHOLE serialized result rather than one field —
+    // a refusal that still carried the id somewhere in `dropped` would be a leak with a label.
+    expect(JSON.stringify(built)).not.toContain("ses_01JBQ8Z4K7T3")
+
+    // ⚠️ **Negative control, because "the id is absent" is exactly the assertion that can never
+    // fire.** The same scan over a builder that IS allowed to carry the id must find it — otherwise
+    // the check above would pass on a build() that returned `null`, on a typo'd id, or on any
+    // future refactor that stopped serializing attributes at all.
+    const leaky = build({
+      report: {
+        plane: "server",
+        kind: "TypeError",
+        stack: STACK,
+        event: SAFE_EVENT,
+        attributes: { "session.targets": 3 },
+      },
+      gate: OPEN,
+      endpoint: ENDPOINT,
+      host: HOST,
+    })
+    expect(leaky.ok).toBe(true)
+    expect(JSON.stringify(leaky)).toContain('"session.targets":3')
+    // …and the id really is the thing being refused: the same event with the correlator removed is
+    // still refused, because the KEY is what carries the class. That is the one-rung-earlier
+    // property, stated as an assertion instead of a comment.
+    const withoutTheId = build({
+      report: { plane: "server", kind: "TypeError", event: "session.drain.exit", attributes: { step: 4 } },
+      gate: OPEN,
+      endpoint: ENDPOINT,
+      host: HOST,
+    })
+    expect(withoutTheId.ok).toBe(false)
+  })
+
+  test("no egress-safe event carries a correlation-classed attribute (the whole live set)", () => {
+    // The property `filterAttributes` would otherwise have to be trusted for. Walked over every
+    // declared event rather than the two fixtures, because 38 keys changed class for this.
+    const carrying = Object.entries(EVENTS)
+      .filter(([key]) => EVENTS[key as EventKey].content === "none")
+      .flatMap(([key, declaration]) =>
+        Object.entries(declaration.attributes)
+          .filter(([, cls]) => cls === "correlate")
+          .map(([name]) => `${key}.${name}`),
+      )
+    expect(carrying).toEqual([])
+    // Non-vacuity: correlation-classed attributes exist in quantity, they are just never on an
+    // egress-safe event. Without this line the assertion above passes on a tree with no such class.
+    const total = Object.values(EVENTS).flatMap((declaration) =>
+      Object.values(declaration.attributes).filter((cls) => cls === "correlate"),
+    )
+    expect(total.length).toBeGreaterThan(50)
+  })
+
   test("a signature FIELD that fails its class is dropped, and a gutted signature is refused", () => {
     // `plane` and `kind` are typed, but a crash site is the one place types are least trustworthy:
     // this is the path a caught `unknown` travels. Every offered field runs the same check an
@@ -436,7 +520,7 @@ describe("only DECLARED, egress-safe, well-shaped attributes survive", () => {
     const contentClassed = Object.entries(EVENTS)
       .flatMap(([key, decl]) =>
         Object.entries(decl.attributes)
-          .filter(([, cls]) => !ATTRIBUTE_CLASSES[cls as keyof typeof ATTRIBUTE_CLASSES].egress)
+          .filter(([, cls]) => !egressSafe(cls as keyof typeof ATTRIBUTE_CLASSES))
           .map(([name]) => [key, name] as const),
       )
       .slice(0, 1)
@@ -568,7 +652,7 @@ function walk(envelope: Envelope, event: EventKey | undefined): ReadonlyArray<st
       violations.push(`attributes.${name}: not declared on ${event ?? "<no event>"}`)
       continue
     }
-    if (!ATTRIBUTE_CLASSES[cls as keyof typeof ATTRIBUTE_CLASSES].egress) {
+    if (!egressSafe(cls as keyof typeof ATTRIBUTE_CLASSES)) {
       violations.push(`attributes.${name}: class "${cls}" never egresses`)
       continue
     }

@@ -802,8 +802,8 @@ const refreshDomains = (domains: readonly ReloadDomain[]) =>
 
     const named = [...new Set(failures.map((failure) => failure.domain))].sort()
     yield* Log.event("config.runtime.reload.failed", {
-      "config.domains": JSON.stringify(named),
-      "config.causes": JSON.stringify(failures.map((failure) => Cause.pretty(failure.cause))),
+      "config.domains": named,
+      "config.causes": failures.map((failure) => Log.fault(failure.cause)),
     })
     return yield* Effect.die(
       new Error(
@@ -892,7 +892,7 @@ export const apply = (patch: Config.Info) =>
       if (policyKey(before) !== policyKey(policy))
         yield* Log.event("config.offline.change", {
           "config.offline.enabled": policy.enabled,
-          "config.offline.hosts": JSON.stringify([...policy.allowedHosts]),
+          "config.offline.hosts": [...policy.allowedHosts],
         })
     }
     if (consumed.has("watcher")) yield* Watcher.reload()
@@ -901,8 +901,8 @@ export const apply = (patch: Config.Info) =>
     const stuck = restartRequired(consumed)
     if (stuck.length > 0)
       yield* Log.event("config.runtime.restart.required", {
-        "config.keys": JSON.stringify(stuck),
-        "config.reasons": JSON.stringify(stuck.map((key) => RESTART_REQUIRED_KEYS.get(key))),
+        "config.keys": stuck,
+        "config.reasons": stuck.map((key) => RESTART_REQUIRED_KEYS.get(key) ?? key),
       })
     yield* refreshDomains(staleDomains(consumed))
     return consumed
@@ -997,10 +997,7 @@ export const REMOVE_REFUSED_KEYS: ReadonlyMap<string, string> = new Map([
       'deletes an entry: send `{"skills": [...]}` without it. Commit 53051cca8 ruled on this and ' +
       "deliberately left the array-shaped keys without delete routes for the same reason.",
   ],
-  [
-    "plugins",
-    "an ARRAY — same as `skills`: re-send the list without the entry through `PATCH /config`.",
-  ],
+  ["plugins", "an ARRAY — same as `skills`: re-send the list without the entry through `PATCH /config`."],
   [
     "models",
     "the FLAT authoring shape, which normalizes into `providers` on write and is never stored under " +
@@ -1204,19 +1201,22 @@ export const remove = (
       if (policyKey(before) !== policyKey(policy))
         yield* Log.event("config.offline.change", {
           "config.offline.enabled": policy.enabled,
-          "config.offline.hosts": JSON.stringify([...policy.allowedHosts]),
+          "config.offline.hosts": [...policy.allowedHosts],
         })
     }
     if (consumed.has("watcher")) yield* Watcher.reload()
     const stuck = restartRequired(consumed)
     if (stuck.length > 0)
       yield* Log.event("config.runtime.restart.required", {
-        "config.keys": JSON.stringify(stuck),
-        "config.reasons": JSON.stringify(stuck.map((key) => RESTART_REQUIRED_KEYS.get(key))),
+        "config.keys": stuck,
+        "config.reasons": stuck.map((key) => RESTART_REQUIRED_KEYS.get(key) ?? key),
       })
     yield* Log.event("config.remove.applied", {
-      "config.paths": JSON.stringify(paths),
-      "config.cleared": JSON.stringify(cleared),
+      // ⚠️ A `MergePatch.Path` is itself a `string[]`, so the old `JSON.stringify(paths)` produced a
+      // NESTED array nobody could grep. `showPath` is the rendering this module already uses in its
+      // refusal messages — one readable element per removed path, and now one source for both.
+      "config.paths": paths.map(MergePatch.showPath),
+      "config.cleared": cleared,
     })
     yield* refreshDomains(staleDomains(consumed))
     return { removed: paths, cleared }

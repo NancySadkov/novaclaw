@@ -162,7 +162,7 @@ const MIGRATIONS: Migration[] = [
           const info = decodeSession(session, { onExcessProperty: "preserve" })
           yield* fs.writeWithDirs(dest, JSON.stringify(session, null, 2))
           if (Option.isNone(info)) continue
-          yield* Log.event("storage.message.migrate", { "storage.session": info.value.id })
+          yield* Log.event("storage.message.migrate", { "session.id": info.value.id })
           for (const msgFile of yield* fs.glob(`storage/session/message/${info.value.id}/*.json`, {
             cwd: full,
             absolute: true,
@@ -177,7 +177,7 @@ const MIGRATIONS: Migration[] = [
             yield* fs.writeWithDirs(next, JSON.stringify(message, null, 2))
             if (Option.isNone(item)) continue
 
-            yield* Log.event("storage.part.migrate", { "storage.message": item.value.id })
+            yield* Log.event("storage.part.migrate", { "session.message": item.value.id })
             for (const partFile of yield* fs.glob(`storage/session/part/${info.value.id}/${item.value.id}/*.json`, {
               cwd: full,
               absolute: true,

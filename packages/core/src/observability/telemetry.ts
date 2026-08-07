@@ -5,6 +5,7 @@ import {
   ATTRIBUTE_CLASSES,
   type AttributeClass,
   type AttributeValue,
+  egressSafe,
   EVENTS,
   type EventKey,
   mayEgress,
@@ -81,6 +82,20 @@ import { InstallationChannel, InstallationVersion } from "../installation/versio
  * No error message. No stack text. No file path. No hostname, username, machine id, session id,
  * project name or working directory. No wall-clock timestamp of the build.
  *
+ * 🔴 **One clause of that sentence was FALSE when it was written, and `todo/logging.md` 1e is what
+ * made it true.** *"no … session id"* was a promise this file could not keep: a session id was class
+ * `id`, `id` was egress-safe, and 38 keys carrying one were declared `content: "none"` — so gate 4
+ * passed them and {@link filterAttributes} kept the field. Exercised 2026-08-07 rather than inferred:
+ * `build` with `event: "session.drain.exit"` and `{"session.id": "ses_…"}` returned `ok: true` with
+ * the id in `envelope.attributes` and `dropped: []`. Per ruling 2 the prose does not get to describe
+ * the subsystem falsely, and the fix belonged in the type rather than in a filter here: a session id
+ * is now class `correlate` (`content: "correlated"`), which makes those events `mayEgress === false`
+ * and refuses them at gate 4 — one rung earlier than the attribute pass.
+ * ⭐ Worth keeping as a lesson: **an absence stated in prose is the one claim nothing tests.** Every
+ * positive field in this file is walked by `telemetry.test.ts`; the sentence listing what is *not*
+ * sent was the only assertion in the module with no machine behind it, and it was the one that was
+ * wrong. `telemetry.test.ts` now drives that exact envelope and demands a refusal.
+ *
  * ⚠️ **That last one is a threat model, not tidiness**, and it is stolen in spirit from Kiro Crew's
  * disclosure (`todo/subsystem-residues.md`, A16.3): a build stamp like `-nightly.20260731t065756`
  * is near-unique and would identify one machine, so {@link releaseLine} strips everything after
@@ -101,19 +116,25 @@ export * as Telemetry from "./telemetry"
 /**
  * **The attribute classes that may leave this machine — DERIVED, never listed.**
  *
- * Computed from `ATTRIBUTE_CLASSES`' own `egress` flags, so it cannot fall out of step with them:
- * re-classifying `path` as egress-safe in `schema/log-events.ts` would widen this type here, in
- * core, with no edit — which is exactly why the test PINS the resulting set. Widening the set is a
- * decision someone makes on purpose in two files, not a side effect of one.
+ * Computed from each class's own declared plane (`ATTRIBUTE_CLASSES[c].content === "none"`), so it
+ * cannot fall out of step with it: re-classifying `path` as content-free in `schema/log-events.ts`
+ * would widen this type here, in core, with no edit — which is exactly why the test PINS the
+ * resulting set. Widening the set is a decision someone makes on purpose in two files, not a side
+ * effect of one.
+ *
+ * ⚠️ **The `correlate` class added by `todo/logging.md` 1e is excluded by this computation and by
+ * nothing else.** It was not added to a list here, and there is no list here to add it to — a
+ * session id is `content: "correlated"`, so `extends "none"` is false and the class is not
+ * expressible in {@link CRASH_FIELDS}. That is the property this derivation exists for.
  */
 export type EgressSafeClass = {
-  [C in AttributeClass]: (typeof ATTRIBUTE_CLASSES)[C]["egress"] extends true ? C : never
+  [C in AttributeClass]: (typeof ATTRIBUTE_CLASSES)[C]["content"] extends "none" ? C : never
 }[AttributeClass]
 
 /** The same set as a runtime value, derived the same way. Sorted, so the test can compare it. */
 export const egressSafeClasses = (): ReadonlyArray<EgressSafeClass> =>
   (Object.keys(ATTRIBUTE_CLASSES) as AttributeClass[])
-    .filter((name): name is EgressSafeClass => ATTRIBUTE_CLASSES[name].egress)
+    .filter((name): name is EgressSafeClass => egressSafe(name))
     .sort()
 
 /**
@@ -491,7 +512,7 @@ export function filterAttributes(
       dropped.push({ name, reason: declared ? "not declared on this event" : "no event declared" })
       continue
     }
-    if (!ATTRIBUTE_CLASSES[cls].egress) {
+    if (!egressSafe(cls)) {
       dropped.push({ name, reason: `class "${cls}" never egresses` })
       continue
     }

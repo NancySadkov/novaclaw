@@ -1,0 +1,342 @@
+[
+  {
+    "name": "packages/core/src/adhoc-tools/guidance.ts :: tool.adhoc.read.failed.tool.cause = String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/config/plugin/external.ts :: plugin.external.load.failed.plugin.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/credential-cipher.ts :: credential.cipher.load.failed.credential.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/database/database.ts :: instance.database.refused.instance.cause = fault.detail",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/event.ts :: instance.listener.notify.failed.instance.cause = String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/filesystem/search.ts :: filesystem.search.init.failed.filesystem.error = String(…)",
+    "count": 2
+  },
+  {
+    "name": "packages/core/src/filesystem/watcher.ts :: filesystem.watcher.init.failed.filesystem.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/filesystem/watcher.ts :: filesystem.watcher.release.failed.filesystem.cause = String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/filesystem/watcher.ts :: filesystem.watcher.resubscribe.failed.filesystem.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/filesystem/watcher.ts :: filesystem.watcher.subscribe.failed.filesystem.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/kb-graph/memory.ts :: kb.memory.open.failed.kb.cause = String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/messenger/gateway.ts :: messenger.operator.notice.failed.messenger.failure = failure",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/messenger/store.ts :: messenger.store.read.failed.messenger.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/models-dev.ts :: llm.catalog.fetch.failed.llm.cause = String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/plugin/host.ts :: plugin.event.delivery.failed.plugin.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/plugin/host.ts :: plugin.event.subscription.stopped.plugin.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/reference.ts :: config.reference.materialize.failed.config.cause = String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/schedule/scheduler.ts :: instance.scheduler.tick.failed.instance.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/execution/local.ts :: session.drain.failed.session.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: session.changes.refresh.failed.session.cause = Cause.pretty(…)",
+    "count": 2
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: session.compaction.manual.failed.session.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: session.introspection.judge.failed.session.cause = String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: session.memory.extract.failed.session.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: session.provider.attempt.retry.session.provider.message = transient.message",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: session.provider.response.broken.session.provider.message = llmFailure.reason.message",
+    "count": 2
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: session.quality.check.errored.session.cause = Cause.pretty(…)",
+    "count": 2
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: session.strict.action.failed.session.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: session.strict.attempt.failed.session.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: session.strict.finalize.failed.session.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: session.strict.resume.failed.session.defect = String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: session.strict.retention.failed.session.defect = String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: session.strict.summary.failed.session.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: session.title.early.failed.session.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: session.title.generate.failed.session.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/spawner.ts :: session.adhoc.copy.failed.session.cause = String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/skill/discovery.ts :: skill.discovery.download.failed.skill.error = error instanceof Error ? error.message : String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/skill/discovery.ts :: skill.discovery.refresh.failed.skill.error = error instanceof Error ? error.message : String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/skill/discovery.ts :: skill.index.fetch.failed.skill.error = error instanceof Error ? error.message : String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/snapshot.ts :: snapshot.capture.failed.snapshot.cause = String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/tool-catalogue-guidance.ts :: tool.catalogue.index.unavailable.tool.cause = String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/config/config.ts :: config.dependency.install.failed.config.cause = String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/config/config.ts :: config.global.load.failed.config.cause = String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/control-plane/workspace.ts :: workspace.adapter.list.failed.workspace.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/control-plane/workspace.ts :: workspace.event.replay.failed.workspace.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/effect/runtime-flags.ts :: instance.flags.parse.failed.instance.cause = resolution.faults.map(…).join(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/format/index.ts :: format.file.spawn.failed.format.cause = errorMessage(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/catalog.ts :: mcp.catalog.list.failed.mcp.error = error instanceof Error ? error.message : String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/external-command-source.ts :: mcp.command.prompts.unavailable.mcp.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/external-command-source.ts :: mcp.prompt.resolve.failed.mcp.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/external-tool-source.ts :: mcp.tool.source.unavailable.mcp.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/index.ts :: mcp.request.failed.mcp.error = error instanceof Error ? error.message : String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/project/bootstrap.ts :: instance.bootstrap.service.failed.instance.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/project/instance-store.ts :: instance.store.dispose.failed.instance.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/global-lifecycle.ts :: instance.global.dispose.failed.instance.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/lifecycle.ts :: instance.dispose.failed.instance.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/middleware/error.ts :: server.request.fail.server.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/middleware/error.ts :: server.request.fail.server.error = String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/middleware/schema-error.ts :: server.schema.rejection.server.reason = reason",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/skill/discovery.ts :: skill.discovery.download.failed.skill.error = err instanceof Error ? err.message : String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/skill/discovery.ts :: skill.discovery.refresh.failed.skill.error = error instanceof Error ? error.message : String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/skill/discovery.ts :: skill.index.fetch.failed.skill.error = err instanceof Error ? err.message : String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/skill/index.ts :: skill.file.load.failed.skill.error = err instanceof Error ? err.message : String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/skill/index.ts :: skill.scan.failed.skill.error = error instanceof Error ? error.message : String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.cleanup.loop.failed.snapshot.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.cleanup.run.failed.snapshot.stderr = result.stderr",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.diff.compute.failed.snapshot.stderr = result.stderr",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.diff.load.fallback.snapshot.stderr = batch.stderr.toString(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.diff.parse.fallback.snapshot.header = header",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.files.list.failed.snapshot.diff.stderr = diff.stderr",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.files.list.failed.snapshot.other.stderr = other.stderr",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.files.stage.failed.snapshot.stderr = result.stderr",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.restore.checkout.failed.snapshot.stderr = checkout.stderr",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.restore.read.failed.snapshot.stderr = result.stderr",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/storage/resource-pressure-context.ts :: resource.headroom.measure.failed.resource.cause = Cause.pretty(…)",
+    "count": 2
+  },
+  {
+    "name": "packages/novaclaw/src/storage/storage.ts :: storage.migration.run.failed.storage.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/tool/external-tool-source.ts :: tool.config.scan.failed.tool.error = String(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/tool/truncate.ts :: tool.truncation.cleanup.failed.tool.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/worktree/index.ts :: worktree.bootstrap.load.failed.worktree.cause = message",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/worktree/index.ts :: worktree.bootstrap.run.failed.worktree.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/worktree/index.ts :: worktree.checkout.failed.worktree.cause = message",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/worktree/index.ts :: worktree.start.command.failed.worktree.cause = result.stderr",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/worktree/index.ts :: worktree.start.task.failed.worktree.cause = Cause.pretty(…)",
+    "count": 1
+  },
+  {
+    "name": "packages/server/src/handlers/session.ts :: session.revert.clear.failed.snapshot.error = error.message",
+    "count": 1
+  },
+  {
+    "name": "packages/server/src/handlers/session.ts :: session.revert.stage.failed.snapshot.error = error.message",
+    "count": 1
+  },
+  {
+    "name": "packages/server/src/middleware/schema-error.ts :: server.schema.rejection.server.reason = reason",
+    "count": 1
+  }
+]

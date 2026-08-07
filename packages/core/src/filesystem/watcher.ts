@@ -300,9 +300,11 @@ export const layer = Layer.effect(
           // loudly, naming which ignore list is actually in force.
           yield* Log.event("filesystem.watcher.resubscribe.stale", {
             directory,
-            "filesystem.ignore.attempted": JSON.stringify(item.ignore),
-            "filesystem.ignore.active":
-              current === undefined ? "nothing — this directory is not being watched" : JSON.stringify(current.ignore),
+            "filesystem.ignore.attempted": item.ignore,
+            // The prose sentinel this replaced ("nothing — this directory is not being watched") was an
+            // untyped encoding of a boolean inside a list field. Two facts, two typed columns.
+            "filesystem.watched": current !== undefined,
+            "filesystem.ignore.active": current?.ignore ?? [],
           })
           continue
         }

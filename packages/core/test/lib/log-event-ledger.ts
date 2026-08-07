@@ -36,7 +36,14 @@ const reusesReservedName = (node: ts.CallExpression): boolean => {
   for (const argument of rest) {
     if (!ts.isObjectLiteralExpression(argument)) return true
     for (const property of argument.properties) {
-      const name = property.name === undefined ? undefined : ts.isIdentifier(property.name) ? property.name.text : ts.isStringLiteralLike(property.name) ? property.name.text : undefined
+      const name =
+        property.name === undefined
+          ? undefined
+          : ts.isIdentifier(property.name)
+            ? property.name.text
+            : ts.isStringLiteralLike(property.name)
+              ? property.name.text
+              : undefined
       if (name !== undefined && RESERVED_NAMES.has(name)) return true
     }
   }
@@ -102,6 +109,68 @@ export const scanLogSource = (file: string, sourceText: string): readonly LogSit
   return sites
 }
 
+// ── the attribute half (todo/logging.md 1h) ─────────────────────────────────────────────────────
+
+/** One `name: <expression>` assignment inside a `Log.event(key, { … })` call. */
+export interface AttributeSite {
+  readonly file: string
+  readonly key: string
+  readonly name: string
+  /** The value expression, with the *contents* of balanced parens collapsed to `(…)`. */
+  readonly shape: string
+  /** The value expression as written, whitespace-collapsed. For the failure message. */
+  readonly expression: string
+}
+
+/**
+ * Collapse the CONTENTS of a call's parentheses, so the ledger keys on the normalization SHAPE
+ * (`String(…)`, `Cause.pretty(…)`) rather than on the local variable somebody happened to name.
+ * A rename must not churn the ledger; a change of shape must.
+ */
+export const valueShape = (expression: string): string => expression.replace(/\((?:[^()]|\([^()]*\))*\)/g, "(…)")
+
+/** Every attribute assignment at every `Log.event` call in one source text. */
+export const scanAttributeSource = (file: string, sourceText: string): readonly AttributeSite[] => {
+  const source = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true)
+  const sites: AttributeSite[] = []
+
+  const propertyName = (property: ts.ObjectLiteralElementLike): string | undefined =>
+    property.name === undefined
+      ? undefined
+      : ts.isIdentifier(property.name)
+        ? property.name.text
+        : ts.isStringLiteralLike(property.name)
+          ? property.name.text
+          : undefined
+
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.expression.getText(source) === "Log" &&
+      node.expression.name.text === "event"
+    ) {
+      const [keyArgument, attributeArgument] = node.arguments
+      if (keyArgument !== undefined && ts.isStringLiteralLike(keyArgument) && attributeArgument !== undefined) {
+        const key = keyArgument.text
+        if (ts.isObjectLiteralExpression(attributeArgument)) {
+          for (const property of attributeArgument.properties) {
+            if (!ts.isPropertyAssignment(property)) continue // shorthand / spread carry no expression
+            const name = propertyName(property)
+            if (name === undefined) continue
+            const expression = property.initializer.getText(source).replace(/\s+/g, " ").trim()
+            sites.push({ file, key, name, expression, shape: valueShape(expression) })
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+
+  visit(source)
+  return sites
+}
+
 const sourceFiles = (directory: string): readonly string[] => {
   const found: string[] = []
   const walk = (current: string): void => {
@@ -149,6 +218,35 @@ export const scanPackageSources = (root: string): readonly LogSite[] => {
         return scanLogSource(relative, fs.readFileSync(file, "utf8"))
       })
     })
+}
+
+/** The same walk as {@link scanPackageSources}, for attribute assignments. */
+export const scanPackageAttributes = (root: string): readonly AttributeSite[] => {
+  const packages = path.join(root, "packages")
+  return fs
+    .readdirSync(packages, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .flatMap((entry) => {
+      const sourceRoot = path.join(packages, entry.name, "src")
+      if (!fs.existsSync(sourceRoot)) return []
+      return sourceFiles(sourceRoot).flatMap((file) => {
+        const text = fs.readFileSync(file, "utf8")
+        if (!text.includes("Log.event(")) return []
+        return scanAttributeSource(path.relative(root, file).replaceAll(path.sep, "/"), text)
+      })
+    })
+}
+
+/** Roll attribute sites up into the ledger's `{name, count}` shape. */
+export const countAttributes = (sites: readonly AttributeSite[]): readonly LedgerEntry[] => {
+  const counts = new Map<string, number>()
+  for (const site of sites) {
+    const name = `${site.file} :: ${site.key}.${site.name} = ${site.shape}`
+    counts.set(name, (counts.get(name) ?? 0) + 1)
+  }
+  return [...counts]
+    .map(([name, count]) => ({ name, count }))
+    .sort((left, right) => left.name.localeCompare(right.name))
 }
 
 export const countSites = (sites: readonly LogSite[], kind: LogSiteKind): readonly LedgerEntry[] => {

@@ -128,7 +128,7 @@ export const layer = Layer.effect(
       pending.delete(input.requestID)
       yield* Log.event("question.request.reply", {
         "question.request": input.requestID,
-        "question.answers": JSON.stringify(input.answers),
+        "question.answers": input.answers.map((answer) => answer.join(", ")),
       })
       yield* events.publish(Event.Replied, {
         sessionID: existing.info.sessionID,

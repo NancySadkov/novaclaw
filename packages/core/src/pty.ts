@@ -198,7 +198,7 @@ export const layer = Layer.effect(
       yield* Log.event("pty.session.create", {
         "pty.id": id,
         "pty.command": command,
-        "pty.arguments": JSON.stringify(args),
+        "pty.arguments": args,
         "pty.directory": cwd,
       })
       const { spawn } = yield* Effect.promise(() => pty())

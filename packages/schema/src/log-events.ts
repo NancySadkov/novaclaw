@@ -127,9 +127,31 @@ export type Subsystem = keyof typeof SUBSYSTEMS
 export type Level = "debug" | "info" | "warn" | "error"
 
 /**
- * **What an attribute value is allowed to be, and whether it may leave this machine.**
+ * **What plane an attribute belongs to — the ONE declaration, from which egress is derived.**
  *
- * `egress: false` does not mean "scrub it later". It means an event carrying this class is
+ * Three values, not two, and the middle one is `todo/logging.md` **1e**:
+ *
+ * - `"none"` — carries nothing about this user. A count, a flag, a token from a closed vocabulary.
+ *   These are the only things the maintenance plane may ever carry.
+ * - `"correlated"` — carries no user *content*, but is a **join key into the data plane**: a session
+ *   id, a workspace id, a prefix hash. Reading one tells you nothing; **collecting** them tells you
+ *   what this person did and when. See {@link CORRELATION_ATTRIBUTES} for the full argument.
+ * - `"user"` — may carry content the user, a model or a foreign process produced. Local log only.
+ *
+ * ⚠️ **`egress` is DERIVED from this and is not a second field.** An earlier shape declared both
+ * `egress: true|false` on the class and `content` on the event, which is two literals for one fact —
+ * the ruling-6 shape this project keeps re-finding. The class declares WHERE the value belongs; the
+ * boolean everything downstream wants is `content === "none"`, computed.
+ */
+export type ContentClass = "none" | "correlated" | "user"
+
+/** Least to most restrictive. An event's class is the MAXIMUM over its attributes'. */
+export const CONTENT_ORDER: Readonly<Record<ContentClass, number>> = { none: 0, correlated: 1, user: 2 }
+
+/**
+ * **What an attribute value is allowed to be, and which plane it belongs to.**
+ *
+ * `content: "user"` does not mean "scrub it later". It means an event carrying this class is
  * content-bearing, is written to the local log only, and can never be part of a crash signature.
  * Classifying at the FIELD is what makes that decision reviewable at authoring time.
  *
@@ -137,41 +159,56 @@ export type Level = "debug" | "info" | "warn" | "error"
  * their project names; it reads like metadata and behaves like content.
  */
 export const ATTRIBUTE_CLASSES = {
-  /** An identifier we minted, or a value from a closed vocabulary: a session id, a backend name. */
-  id: { egress: true, value: "string" },
+  /**
+   * A value from a **closed vocabulary we control**: a backend name, a protocol, an operation, an
+   * error kind, a per-fault reference. ⚠️ *Not* a session id — see `correlate`, and read the note on
+   * {@link CORRELATION_ATTRIBUTES} for why that distinction had to be made in the type.
+   */
+  id: { content: "none", value: "string" },
   /** A number. */
-  count: { egress: true, value: "number" },
+  count: { content: "none", value: "number" },
   /** A boolean. */
-  flag: { egress: true, value: "boolean" },
+  flag: { content: "none", value: "boolean" },
+  /**
+   * **A correlation id — an identifier we minted that names one unit of the user's own work.**
+   * Content-free and never egresses. `todo/logging.md` 1e.
+   */
+  correlate: { content: "correlated", value: "string" },
   /** A filesystem path — carries the user's account and project names. Never egresses. */
-  path: { egress: false, value: "string" },
+  path: { content: "user", value: "string" },
   /** Free text from a person, a model, or a foreign process. Never egresses. */
-  text: { egress: false, value: "string" },
+  text: { content: "user", value: "string" },
   /** Our own error text. Routinely embeds paths, payloads and prompts. Never egresses. */
-  fault: { egress: false, value: "string" },
-} as const
+  fault: { content: "user", value: "string" },
+  /**
+   * **A bounded list of strings, kept as a LIST.** `todo/logging.md` 1h's second seam: ignore
+   * globs, command argv, changed config keys and failure reasons were all crossing the scalar-only
+   * boundary as hand-written `JSON.stringify(…)` at the call site — which preserves the bytes and
+   * discards the type, and puts the encoding decision in 20 places. The call site now passes
+   * `readonly string[]`; {@link encodeList} owns the one encoding, and it is bounded.
+   */
+  list: { content: "user", value: "string[]" },
+} as const satisfies Record<string, { readonly content: ContentClass; readonly value: string }>
 
 export type AttributeClass = keyof typeof ATTRIBUTE_CLASSES
+
+/**
+ * Whether values of this class may leave the machine. **Derived**, so there is nowhere to write the
+ * answer down a second time and no way for the two copies to disagree.
+ */
+export const egressSafe = (cls: AttributeClass): boolean => ATTRIBUTE_CLASSES[cls].content === "none"
 
 /** The TypeScript value each attribute class admits, so a call site is typed by its key. */
 export type AttributeValue = {
   readonly id: string
   readonly count: number
   readonly flag: boolean
+  readonly correlate: string
   readonly path: string
   readonly text: string
   readonly fault: string
+  readonly list: ReadonlyArray<string>
 }
-
-/**
- * Whether an event may EVER carry user content.
- *
- * Declared per key rather than only derived from its attributes, because the derivation alone would
- * let a key silently change class the day somebody adds a `text` field to it — which is exactly the
- * "bolt redaction on afterwards" failure. The test asserts the two agree, so the declaration is an
- * intent that cannot drift from the fact (the same shape as the version single-source pin).
- */
-export type ContentClass = "none" | "user"
 
 export type EventDeclaration = {
   /** The severity this event is always logged at. Not a call-site choice — see fix 1d above. */
@@ -183,7 +220,7 @@ export type EventDeclaration = {
   readonly message: string
   /** Every attribute this event may carry, by name, with its class. */
   readonly attributes: Readonly<Record<string, AttributeClass>>
-  /** May this event ever carry user content? Must agree with `attributes` — checked. */
+  /** Which plane this event belongs to. Must agree with `attributes` — checked. */
   readonly content: ContentClass
   /** The source file this event was measured from. Checked to exist and to carry `message`. */
   readonly file: string
@@ -203,6 +240,196 @@ export type EventDeclaration = {
  * reserved set here makes every conversion prove its fix and stops the next collision being added.
  */
 export const RESERVED_ATTRIBUTES: ReadonlyArray<string> = ["timestamp", "level", "run", "event", "message", "cause"]
+
+// ── correlation ids (todo/logging.md 1e) ────────────────────────────────────────────────────────
+
+/**
+ * **THE CORRELATION VOCABULARY — every attribute that names a unit of work, declared once.**
+ *
+ * `todo/logging.md` 1e: *correlation ids as first-class attributes*. The point of the item is one
+ * sentence — **a log line that mentions a session id inside its `message=` is neither queryable nor
+ * redactable, and an attribute is both.** The declaration model already makes the first half
+ * structurally impossible, because `message` is a constant on the declaration and `Log.event` takes
+ * no message parameter, so there is no expression a value could be interpolated into. What was
+ * missing is the second half, and it has two parts that this table supplies:
+ *
+ *  1. **One name per thing.** A session id was spelled `session.id` at 55 declarations and
+ *     `storage.session` at one — *measured 2026-08-07, not supposed* — which is the "one description
+ *     existing twice" defect in miniature: `grep 'session.id=ses_x'` silently misses the storage
+ *     migration's lines. A correlator now has exactly one name, decided here.
+ *  2. **One class per name.** The class is decided by this table, not per event, so `session.id`
+ *     cannot be `correlate` on one key and `text` on the next.
+ *
+ * ── 🔴 the egress ruling, and it is a REVERSAL ──────────────────────────────────────────────────
+ *
+ * Before this table, a session id was class `id` — **`egress: true`** — and 30 keys carrying one
+ * were declared `content: "none"`. That is not a theoretical hole: `Telemetry.build` was exercised
+ * on 2026-08-07 with `event: "session.drain.exit"` and returned `ok: true` with
+ * `attributes: { "session.id": "ses_…" }` in the envelope, while `observability/telemetry.ts`'s own
+ * disclosure says in as many words *"No hostname, username, machine id, **session id**, project name
+ * or working directory."* One of the two was false, and per ruling 2 a subsystem does not get to
+ * describe itself falsely. **The prose was right and the type was wrong**, so the type moved.
+ *
+ * **The argument, stated rather than assumed.** A session id is not user *content* — it is an opaque
+ * token we minted and it quotes nobody. It is a **join key into the data plane**, and that is a
+ * different thing from content:
+ *
+ *  · One id is inert. A **stream** of ids is a behavioural trace: how many sessions this person ran,
+ *    when, how often they crashed, which ones came back. That is telemetry about a person wearing a
+ *    maintenance-plane label — exactly the fingerprinting `releaseLine()` already strips a build
+ *    stamp to avoid.
+ *  · It is a key that **joins across planes**. The moment an id exists on both sides — a crash report
+ *    here, a shared URL or a pasted log there — the maintenance plane can be joined to the data plane
+ *    that AGENTS.md promises never egresses. A join key does not have to carry content to defeat the
+ *    separation; it only has to be stable.
+ *  · **It costs us nothing.** Correlation exists to close the self-healing loop, and that loop is
+ *    LOCAL: the agent repairing an instance reads the instance's own file, where every class is
+ *    written regardless of plane. Meanwhile the maintenance plane already has its grouping key in the
+ *    `run=` column — per-process, minted at boot, naming no user artefact. So `correlate` gives up no
+ *    capability that anything actually uses.
+ *
+ * ⇒ **A correlation id is `correlate`: content-free, and it never leaves this machine.** The one
+ * exception is argued per entry below, and there are exactly two shapes of it — an id that names a
+ * FAULT rather than a user's work (`ref`), and an id that names a message on our OWN in-process bus.
+ *
+ * ⚠️ **Ordinals are deliberately NOT correlators.** `step`, `attempt`, `round` are `count` and stay
+ * egress-safe: a step number identifies nothing on its own, and it only becomes a correlator in
+ * combination with a `correlate` field, which never egresses. It is listed here anyway so the
+ * decision is written down once instead of being re-made per event.
+ */
+export const CORRELATION_ATTRIBUTES = {
+  // ── the user's own units of work: correlate, never egresses ─────────────────────────────────
+  /** The session — the kernel's one entity, and the thing a user would recognise as "my chat". */
+  "session.id": "correlate",
+  /** A message inside a session. Names one turn of the user's conversation. */
+  "session.message": "correlate",
+  /** One compaction of one session's history. */
+  "session.compaction.id": "correlate",
+  /**
+   * A hash over a session's message prefix. ⚠️ A hash of user content is still a fingerprint OF
+   * user content: two records carrying it prove the same conversation. `snapshot.hash` below was
+   * already classified this way for exactly this reason; these two were not, which is the
+   * inconsistency this table exists to make impossible.
+   */
+  "session.hash.expected": "correlate",
+  "session.hash.actual": "correlate",
+  /** A remote workspace the user created. */
+  "workspace.id": "correlate",
+  /** A terminal session the user opened. */
+  "pty.id": "correlate",
+  /** One question put to the user, and answered by them. */
+  "question.request": "correlate",
+  /** The legacy on-disk project id — derived from the user's own directory. */
+  "storage.project": "correlate",
+
+  // ── the two arguable exceptions, argued ────────────────────────────────────────────────────
+  /**
+   * A per-fault public reference (`err_1234`) minted so a user can quote a failure back to us. It
+   * names a FAULT, not a unit of the user's work; it is born on the maintenance plane and is useless
+   * without the fault it labels. Egress-safe, deliberately: this is the id whose whole job is to
+   * survive the trip.
+   */
+  ref: "id",
+  "session.ref": "id",
+  /**
+   * A message on one of our OWN in-process buses. It is minted per process, dies with it, and names
+   * a frame of our plumbing rather than anything the user made. Egress-safe.
+   */
+  "instance.event.id": "id",
+  "plugin.event.id": "id",
+
+  // ── already local-only, listed so the classification is stated ONCE ────────────────────────
+  /** A Git tree hash. It fingerprints the user's files, so it has always been local-only text. */
+  "snapshot.hash": "text",
+
+  // ── an ordinal, and the reason it is not a correlator ──────────────────────────────────────
+  /** A step number within a session. Identifies nothing on its own. */
+  step: "count",
+} as const satisfies Record<string, AttributeClass>
+
+/**
+ * **The name shapes that MUST be decided in the table above.**
+ *
+ * The table alone is a list somebody has to remember to add to — which is a habit, not a mechanism
+ * (the same gap `todo/logging.md` 1b filed against "check the registry before declaring"). So the
+ * check runs in both directions: a name in the table must be declared with the table's class, **and
+ * a name that READS like a correlator must be in the table.** A future `turn.id`, `trace.id` or
+ * `agent.session` cannot be declared as an egress-safe `id` without someone opening this file.
+ *
+ * Measured against the live set: 13 of 218 attribute names match. Wide enough to bite, narrow enough
+ * that it is not a rename tax on ordinary fields.
+ */
+export const CORRELATOR_SEGMENTS: ReadonlyArray<string> = [
+  "id",
+  "ref",
+  "request",
+  "session",
+  "hash",
+  "trace",
+  "span",
+  "correlation",
+  "turn",
+  "project",
+]
+
+/** Does this attribute name READ as a correlator, and therefore have to be decided deliberately? */
+export const isCorrelatorShaped = (name: string): boolean => {
+  const segments = name.split(".")
+  // The last segment names the THING (`workspace.id`), and `hash` anywhere is a fingerprint
+  // (`session.hash.expected` ends in `expected` and is still a hash).
+  return CORRELATOR_SEGMENTS.includes(segments[segments.length - 1] ?? "") || segments.includes("hash")
+}
+
+/** Why this `name: cls` pair is not an acceptable correlation declaration, or `undefined`. */
+export function correlationFault(name: string, cls: AttributeClass): string | undefined {
+  const declared = (CORRELATION_ATTRIBUTES as Readonly<Record<string, AttributeClass>>)[name]
+  if (declared !== undefined)
+    return declared === cls
+      ? undefined
+      : `"${name}" is class "${cls}" here but CORRELATION_ATTRIBUTES says "${declared}". A correlation id has ONE class, decided there.`
+  if (isCorrelatorShaped(name))
+    return `"${name}" reads as a correlation id but is not in CORRELATION_ATTRIBUTES. Add it with its class and the reason it may or may not egress — never leave it to default.`
+  return undefined
+}
+
+// ── bounded list encoding (todo/logging.md 1h, second seam) ─────────────────────────────────────
+
+/** At most this many items survive; the rest become one `…+N more` element. */
+export const LIST_MAX_ITEMS = 20
+/** Each item is truncated to this many characters. */
+export const LIST_MAX_ITEM_CHARS = 200
+
+/**
+ * **The one encoding for a `list` attribute**, so the call site passes a `readonly string[]` and
+ * never decides how a list becomes a log column. Bounded on both axes, because an ignore list, an
+ * argv or a set of failure reasons has no natural ceiling and a log line does.
+ *
+ * JSON, because the surrounding line is logfmt and a JSON array is the one encoding that survives
+ * `cut -d= -f2` and re-parses without a bespoke reader.
+ */
+export const encodeList = (values: ReadonlyArray<string>): string => {
+  const shown = values
+    .slice(0, LIST_MAX_ITEMS)
+    .map((value) => (value.length > LIST_MAX_ITEM_CHARS ? value.slice(0, LIST_MAX_ITEM_CHARS) + "…" : value))
+  const rest = values.length - shown.length
+  return JSON.stringify(rest > 0 ? [...shown, `…+${rest} more`] : shown)
+}
+
+// ── the message is a constant, and that is what keeps ids OUT of it ─────────────────────────────
+
+/**
+ * Why this declared `message` is not a constant sentence, or `undefined` when it is.
+ *
+ * The whole of 1e rests on values living in attributes rather than in prose, and the mechanism is
+ * that `message` is declared here and `Log.event` has no message parameter. This is the guard for
+ * the one way that could still be defeated: writing the interpolation INTO the declaration.
+ */
+export function messageFault(message: string): string | undefined {
+  const shape = /\$\{|%[sdifjo]\b|\{\}|\{[0-9]\}/.exec(message)
+  return shape === null
+    ? undefined
+    : `message contains the interpolation marker ${JSON.stringify(shape[0])}. A declared message is a CONSTANT — the value belongs in an attribute, which is the only form a query or a redaction pass can see.`
+}
 
 /**
  * ── THE KEY SET ─────────────────────────────────────────────────────────────────────────────────
@@ -256,7 +483,7 @@ export const EVENTS = {
   "config.offline.change": {
     level: "info",
     message: "offline policy changed by a config write",
-    attributes: { "config.offline.enabled": "flag", "config.offline.hosts": "text" },
+    attributes: { "config.offline.enabled": "flag", "config.offline.hosts": "list" },
     content: "user",
     file: "packages/core/src/config-store-write.ts",
   },
@@ -264,7 +491,7 @@ export const EVENTS = {
   "config.patch.key.unknown": {
     level: "warn",
     message: "config PATCH refused, unknown top-level key",
-    attributes: { "config.keys": "text", "config.hidden": "text" },
+    attributes: { "config.keys": "list", "config.hidden": "count" },
     content: "user",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/groups/config.ts",
   },
@@ -309,7 +536,7 @@ export const EVENTS = {
   "config.remove.applied": {
     level: "info",
     message: "config paths were removed",
-    attributes: { "config.paths": "text", "config.cleared": "text" },
+    attributes: { "config.paths": "list", "config.cleared": "list" },
     content: "user",
     file: "packages/core/src/config-store-write.ts",
   },
@@ -317,7 +544,7 @@ export const EVENTS = {
   "config.runtime.reload.failed": {
     level: "error",
     message: "a config write committed but the runtime could not re-materialise",
-    attributes: { "config.domains": "text", "config.causes": "fault" },
+    attributes: { "config.domains": "list", "config.causes": "list" },
     content: "user",
     file: "packages/core/src/config-store-write.ts",
   },
@@ -325,7 +552,7 @@ export const EVENTS = {
   "config.runtime.restart.required": {
     level: "warn",
     message: "a config write is stored but NOT LIVE until this instance restarts",
-    attributes: { "config.keys": "text", "config.reasons": "text" },
+    attributes: { "config.keys": "list", "config.reasons": "list" },
     content: "user",
     file: "packages/core/src/config-store-write.ts",
   },
@@ -429,8 +656,10 @@ export const EVENTS = {
     message: "watcher: re-subscribe failed — the PREVIOUS ignore list is still in force",
     attributes: {
       directory: "path",
-      "filesystem.ignore.attempted": "text",
-      "filesystem.ignore.active": "text",
+      "filesystem.ignore.attempted": "list",
+      /** Whether the directory is watched at all. Was prose inside the list field below. */
+      "filesystem.watched": "flag",
+      "filesystem.ignore.active": "list",
     },
     content: "user",
     file: "packages/core/src/filesystem/watcher.ts",
@@ -465,7 +694,7 @@ export const EVENTS = {
   "format.command.run": {
     level: "info",
     message: "running",
-    attributes: { "format.file": "path", "format.command": "text" },
+    attributes: { "format.file": "path", "format.command": "list" },
     content: "user",
     file: "packages/novaclaw/src/format/index.ts",
   },
@@ -473,7 +702,7 @@ export const EVENTS = {
   "format.file.format.failed": {
     level: "error",
     message: "failed",
-    attributes: { "format.file": "path", "format.command": "text", "format.environment": "text" },
+    attributes: { "format.file": "path", "format.command": "list", "format.environment": "list" },
     content: "user",
     file: "packages/novaclaw/src/format/index.ts",
   },
@@ -483,8 +712,8 @@ export const EVENTS = {
     message: "failed to format file",
     attributes: {
       "format.file": "path",
-      "format.command": "text",
-      "format.environment": "text",
+      "format.command": "list",
+      "format.environment": "list",
       "format.cause": "fault",
     },
     content: "user",
@@ -906,7 +1135,7 @@ export const EVENTS = {
   "offline.policy.activate": {
     level: "info",
     message: "offline mode ACTIVE — HTTP restricted to loopback + provider hosts",
-    attributes: { "offline.policy.hosts": "text" },
+    attributes: { "offline.policy.hosts": "list" },
     content: "user",
     file: "packages/core/src/offline.ts",
   },
@@ -1008,7 +1237,7 @@ export const EVENTS = {
   "pty.client.attach": {
     level: "info",
     message: "client attached to session",
-    attributes: { "pty.id": "id", "pty.directory": "path" },
+    attributes: { "pty.id": "correlate", "pty.directory": "path" },
     content: "user",
     file: "packages/core/src/pty.ts",
   },
@@ -1016,7 +1245,7 @@ export const EVENTS = {
   "pty.session.create": {
     level: "info",
     message: "creating session",
-    attributes: { "pty.id": "id", "pty.command": "text", "pty.arguments": "text", "pty.directory": "path" },
+    attributes: { "pty.id": "correlate", "pty.command": "text", "pty.arguments": "list", "pty.directory": "path" },
     content: "user",
     file: "packages/core/src/pty.ts",
   },
@@ -1024,16 +1253,16 @@ export const EVENTS = {
   "pty.session.exit": {
     level: "info",
     message: "session exited",
-    attributes: { "pty.id": "id", "pty.exit_code": "count" },
-    content: "none",
+    attributes: { "pty.id": "correlate", "pty.exit_code": "count" },
+    content: "correlated",
     file: "packages/core/src/pty.ts",
   },
   /** A retained terminal session is being removed. */
   "pty.session.remove": {
     level: "info",
     message: "removing session",
-    attributes: { "pty.id": "id" },
-    content: "none",
+    attributes: { "pty.id": "correlate" },
+    content: "correlated",
     file: "packages/core/src/pty.ts",
   },
 
@@ -1042,31 +1271,31 @@ export const EVENTS = {
   "question.request.ask": {
     level: "info",
     message: "asking",
-    attributes: { "question.request": "id", "question.count": "count" },
-    content: "none",
+    attributes: { "question.request": "correlate", "question.count": "count" },
+    content: "correlated",
     file: "packages/novaclaw/src/question/index.ts",
   },
   /** The user rejected a pending question request. */
   "question.request.reject": {
     level: "info",
     message: "rejected",
-    attributes: { "question.request": "id" },
-    content: "none",
+    attributes: { "question.request": "correlate" },
+    content: "correlated",
     file: "packages/novaclaw/src/question/index.ts",
   },
   /** A rejection named no pending question request. */
   "question.request.reject.unknown": {
     level: "warn",
     message: "reject for unknown request",
-    attributes: { "question.request": "id" },
-    content: "none",
+    attributes: { "question.request": "correlate" },
+    content: "correlated",
     file: "packages/novaclaw/src/question/index.ts",
   },
   /** The user answered a pending question request. */
   "question.request.reply": {
     level: "info",
     message: "replied",
-    attributes: { "question.request": "id", "question.answers": "text" },
+    attributes: { "question.request": "correlate", "question.answers": "list" },
     content: "user",
     file: "packages/novaclaw/src/question/index.ts",
   },
@@ -1074,8 +1303,8 @@ export const EVENTS = {
   "question.request.reply.unknown": {
     level: "warn",
     message: "reply for unknown request",
-    attributes: { "question.request": "id" },
-    content: "none",
+    attributes: { "question.request": "correlate" },
+    content: "correlated",
     file: "packages/novaclaw/src/question/index.ts",
   },
 
@@ -1178,7 +1407,7 @@ export const EVENTS = {
   "session.adhoc.copy.failed": {
     level: "warn",
     message: "adhoc tool copy-on-spawn failed",
-    attributes: { "session.id": "id", "session.cause": "fault" },
+    attributes: { "session.id": "correlate", "session.cause": "fault" },
     content: "user",
     file: "packages/core/src/session/spawner.ts",
   },
@@ -1228,7 +1457,7 @@ export const EVENTS = {
   "session.folder.substituted": {
     level: "warn",
     message: "session working folder is gone; running in a scratch folder",
-    attributes: { "session.id": "id", "session.folder.missing": "path", "session.folder.scratch": "path" },
+    attributes: { "session.id": "correlate", "session.folder.missing": "path", "session.folder.scratch": "path" },
     content: "user",
     file: "packages/novaclaw/src/session-worker/execution.ts",
   },
@@ -1236,22 +1465,22 @@ export const EVENTS = {
   "session.changes.refresh.failed": {
     level: "warn",
     message: "changes-summary refresh failed",
-    attributes: { "session.id": "id", "session.cause": "fault" },
+    attributes: { "session.id": "correlate", "session.cause": "fault" },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.compaction.manual.failed": {
     level: "error",
     message: "manual compaction failed",
-    attributes: { "session.id": "id", "session.cause": "fault" },
+    attributes: { "session.id": "correlate", "session.cause": "fault" },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.compaction.manual.settled": {
     level: "info",
     message: "manual compaction settled",
-    attributes: { "session.id": "id", compacted: "flag" },
-    content: "none",
+    attributes: { "session.id": "correlate", compacted: "flag" },
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   /** A cheap-tier prune was planned. `session.commit` says whether it will be applied. */
@@ -1272,25 +1501,25 @@ export const EVENTS = {
     level: "warn",
     message: "stale session compaction rejected",
     attributes: {
-      "session.id": "id",
-      "session.compaction.id": "id",
+      "session.id": "correlate",
+      "session.compaction.id": "correlate",
       "session.prefix.seq": "count",
-      "session.hash.expected": "id",
-      "session.hash.actual": "id",
+      "session.hash.expected": "correlate",
+      "session.hash.actual": "correlate",
     },
-    content: "none",
+    content: "correlated",
     file: "packages/core/src/session/history.ts",
   },
   "session.context.pack.evicted": {
     level: "warn",
     message: "context pack evicted history from the outgoing request",
     attributes: {
-      "session.id": "id",
+      "session.id": "correlate",
       "session.dropped": "count",
       "session.kept.tokens": "count",
       "session.context.size": "count",
     },
-    content: "none",
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   /**
@@ -1308,7 +1537,7 @@ export const EVENTS = {
     level: "debug",
     message: "outgoing request footprint",
     attributes: {
-      "session.id": "id",
+      "session.id": "correlate",
       "request.bytes.total": "count",
       "request.bytes.system": "count",
       "request.bytes.messages": "count",
@@ -1320,40 +1549,40 @@ export const EVENTS = {
       "request.tokens.estimated": "count",
       "request.tools.largest.bytes": "count",
     },
-    content: "none",
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.context.pressure.high": {
     level: "warn",
     message: "ctx_pressure: real prompt near the context window",
     attributes: {
-      "session.id": "id",
+      "session.id": "correlate",
       "session.prompt.tokens": "count",
       "session.estimated.tokens": "count",
       "session.context.size": "count",
     },
-    content: "none",
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.control.operator": {
     level: "info",
     message: "session under operator control — Nova is not responding",
-    attributes: { "session.id": "id" },
-    content: "none",
+    attributes: { "session.id": "correlate" },
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.doom.runaway.detected": {
     level: "info",
     message: "doom-loop runaway self-check",
-    attributes: { "session.id": "id", "session.tool.calls": "count" },
-    content: "none",
+    attributes: { "session.id": "correlate", "session.tool.calls": "count" },
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.doom.streak.detected": {
     level: "info",
     message: "doom-loop failure streak",
     attributes: {
-      "session.id": "id",
+      "session.id": "correlate",
       "session.tool": "id",
       "session.target": "text",
       count: "count",
@@ -1364,64 +1593,64 @@ export const EVENTS = {
   "session.drain.exit": {
     level: "info",
     message: "exit(result) recorded — stopping the drain",
-    attributes: { "session.id": "id", step: "count" },
-    content: "none",
+    attributes: { "session.id": "correlate", step: "count" },
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   /** A session drain ended in failure rather than interruption. The session settles back to idle. */
   "session.drain.failed": {
     level: "error",
     message: "failed to drain session",
-    attributes: { "session.id": "id", "session.cause": "fault" },
+    attributes: { "session.id": "correlate", "session.cause": "fault" },
     content: "user",
     file: "packages/core/src/session/execution/local.ts",
   },
   "session.drive.cap.reached": {
     level: "warn",
     message: "self-drive cap reached",
-    attributes: { "session.id": "id", rounds: "count" },
-    content: "none",
+    attributes: { "session.id": "correlate", rounds: "count" },
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.drive.continue": {
     level: "info",
     message: "self-drive continuation",
-    attributes: { "session.id": "id", round: "count" },
-    content: "none",
+    attributes: { "session.id": "correlate", round: "count" },
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.finish.recover": {
     level: "info",
     message: "finish recovery: provider truncated at its output-token limit",
-    attributes: { "session.id": "id", step: "count", recoveries: "count" },
-    content: "none",
+    attributes: { "session.id": "correlate", step: "count", recoveries: "count" },
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.finish.recover.paused": {
     level: "warn",
     message: "finish recovery: truncated twice — pausing the drain",
-    attributes: { "session.id": "id", step: "count" },
-    content: "none",
+    attributes: { "session.id": "correlate", step: "count" },
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.finish.reground": {
     level: "info",
     message: "finish re-grounding nudge",
-    attributes: { "session.id": "id" },
-    content: "none",
+    attributes: { "session.id": "correlate" },
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.introspection.interject": {
     level: "info",
     message: "introspection interjecting",
-    attributes: { "session.id": "id" },
-    content: "none",
+    attributes: { "session.id": "correlate" },
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.introspection.judge.failed": {
     level: "warn",
     message: "introspection judge failed",
-    attributes: { "session.id": "id", "session.cause": "fault" },
+    attributes: { "session.id": "correlate", "session.cause": "fault" },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
@@ -1444,15 +1673,15 @@ export const EVENTS = {
   "session.memory.extract.empty": {
     level: "warn",
     message: "memory extraction: model returned an empty completion",
-    attributes: { "session.id": "id" },
-    content: "none",
+    attributes: { "session.id": "correlate" },
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.memory.extract.retry": {
     level: "debug",
     message: "memory extraction: empty completion on a `length` finish — re-asking with a larger budget",
-    attributes: { "session.id": "id", "extract.cap": "count" },
-    content: "none",
+    attributes: { "session.id": "correlate", "extract.cap": "count" },
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   // Ruling 2 — an empty extraction that was a BUDGET reading must be distinguishable from an honest
@@ -1461,37 +1690,37 @@ export const EVENTS = {
   "session.memory.extract.giveup": {
     level: "warn",
     message: "memory extraction: gave up after the budget ladder",
-    attributes: { "session.id": "id", "extract.cause": "id", "extract.cap": "count" },
-    content: "none",
+    attributes: { "session.id": "correlate", "extract.cause": "id", "extract.cap": "count" },
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.memory.extract.failed": {
     level: "warn",
     message: "memory extraction failed",
-    attributes: { "session.id": "id", "session.cause": "fault" },
+    attributes: { "session.id": "correlate", "session.cause": "fault" },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.memory.invalidate.stale": {
     level: "info",
     message: "invalidated recalled file memories after a confirmed missing-path read",
-    attributes: { "session.id": "id", "session.memory.invalidated": "count" },
-    content: "none",
+    attributes: { "session.id": "correlate", "session.memory.invalidated": "count" },
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   /** A stored session message could not be decoded for an API response. */
   "session.message.decode.failed": {
     level: "error",
     message: "failed to decode session message",
-    attributes: { "session.id": "id", "session.message": "id", "session.ref": "id" },
-    content: "none",
+    attributes: { "session.id": "correlate", "session.message": "correlate", "session.ref": "id" },
+    content: "correlated",
     file: "packages/server/src/handlers/session.ts",
   },
   "session.provider.attempt.retry": {
     level: "warn",
     message: "provider attempt failed — retrying",
     attributes: {
-      "session.id": "id",
+      "session.id": "correlate",
       attempt: "count",
       "session.attempts.max": "count",
       "session.provider.reason": "id",
@@ -1504,7 +1733,7 @@ export const EVENTS = {
     level: "warn",
     message: "provider response ended before its final frame",
     attributes: {
-      "session.id": "id",
+      "session.id": "correlate",
       "session.provider.reason": "id",
       "session.provider.message": "fault",
     },
@@ -1516,28 +1745,28 @@ export const EVENTS = {
     message: "provider returned an empty response",
     // No provider text to carry — an empty response has none, which is the whole event. So `none`,
     // unlike its `.broken` neighbour above, which logs the provider's own fault message.
-    attributes: { "session.id": "id" },
-    content: "none",
+    attributes: { "session.id": "correlate" },
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.quality.check.errored": {
     level: "warn",
     message: "quality check errored",
-    attributes: { "session.id": "id", "session.cause": "fault" },
+    attributes: { "session.id": "correlate", "session.cause": "fault" },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.quality.check.failed": {
     level: "info",
     message: "quality check FAILED — steering",
-    attributes: { "session.id": "id", "session.quality.label": "text" },
+    attributes: { "session.id": "correlate", "session.quality.label": "text" },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.quality.check.passed": {
     level: "debug",
     message: "quality check passed",
-    attributes: { "session.id": "id", "session.quality.label": "text" },
+    attributes: { "session.id": "correlate", "session.quality.label": "text" },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
@@ -1545,7 +1774,7 @@ export const EVENTS = {
   "session.quality.check.refused": {
     level: "info",
     message: "quality check not run — the session's permission posture refused it",
-    attributes: { "session.id": "id", "session.quality.label": "text" },
+    attributes: { "session.id": "correlate", "session.quality.label": "text" },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
@@ -1554,7 +1783,7 @@ export const EVENTS = {
     level: "error",
     message: "failed to clear session revert",
     attributes: {
-      "session.id": "id",
+      "session.id": "correlate",
       "session.ref": "id",
       "snapshot.operation": "id",
       "snapshot.error": "fault",
@@ -1567,7 +1796,7 @@ export const EVENTS = {
     level: "error",
     message: "failed to stage session revert",
     attributes: {
-      "session.id": "id",
+      "session.id": "correlate",
       "session.ref": "id",
       "snapshot.operation": "id",
       "snapshot.error": "fault",
@@ -1578,77 +1807,77 @@ export const EVENTS = {
   "session.steer.stream.interrupted": {
     level: "info",
     message: "steer arrived mid-generation — cutting the stream",
-    attributes: { "session.id": "id" },
-    content: "none",
+    attributes: { "session.id": "correlate" },
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.strict.action.failed": {
     level: "warn",
     message: "strict action part failed",
-    attributes: { "session.id": "id", "session.cause": "fault" },
+    attributes: { "session.id": "correlate", "session.cause": "fault" },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.strict.attempt.failed": {
     level: "error",
     message: "strict attempt failed",
-    attributes: { "session.id": "id", attempt: "count", "session.cause": "fault" },
+    attributes: { "session.id": "correlate", attempt: "count", "session.cause": "fault" },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.strict.finalize.failed": {
     level: "error",
     message: "strict finalize failed",
-    attributes: { "session.id": "id", "session.cause": "fault" },
+    attributes: { "session.id": "correlate", "session.cause": "fault" },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.strict.resume.failed": {
     level: "warn",
     message: "strict resume state unreadable",
-    attributes: { "session.id": "id", "session.defect": "fault" },
+    attributes: { "session.id": "correlate", "session.defect": "fault" },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.strict.retention.failed": {
     level: "warn",
     message: "strict retention purge failed",
-    attributes: { "session.id": "id", "session.defect": "fault" },
+    attributes: { "session.id": "correlate", "session.defect": "fault" },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.strict.summary.failed": {
     level: "warn",
     message: "strict summary failed",
-    attributes: { "session.id": "id", "session.cause": "fault" },
+    attributes: { "session.id": "correlate", "session.cause": "fault" },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.title.early.failed": {
     level: "warn",
     message: "early auto-title failed",
-    attributes: { "session.id": "id", "session.cause": "fault" },
+    attributes: { "session.id": "correlate", "session.cause": "fault" },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.title.generate.empty": {
     level: "warn",
     message: "auto-title: model returned an empty completion",
-    attributes: { "session.id": "id" },
-    content: "none",
+    attributes: { "session.id": "correlate" },
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.title.generate.failed": {
     level: "warn",
     message: "auto-title failed",
-    attributes: { "session.id": "id", "session.cause": "fault" },
+    attributes: { "session.id": "correlate", "session.cause": "fault" },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.tool.textual.recovered": {
     level: "info",
     message: "textual tool-call recovery",
-    attributes: { "session.id": "id", "session.tool.tell": "id", "session.tool.detail": "text" },
+    attributes: { "session.id": "correlate", "session.tool.tell": "id", "session.tool.detail": "text" },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
@@ -1656,23 +1885,23 @@ export const EVENTS = {
     level: "warn",
     message:
       "The model produced two turns in a row with no reply and no tool call. This usually means the model server is dropping tool calls emitted on the reasoning channel — enable a reasoning parser (e.g. vLLM `--reasoning-parser`) or disable thinking for tool turns.",
-    attributes: { "session.id": "id" },
-    content: "none",
+    attributes: { "session.id": "correlate" },
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.turn.empty.recovered": {
     level: "info",
     message: "empty-turn recovery",
-    attributes: { "session.id": "id" },
-    content: "none",
+    attributes: { "session.id": "correlate" },
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   /** A wake arrived with no executor attached; queued input will not run until one is. */
   "session.wake.dropped": {
     level: "warn",
     message: "session wake dropped, no executor attached",
-    attributes: { "session.id": "id" },
-    content: "none",
+    attributes: { "session.id": "correlate" },
+    content: "correlated",
     file: "packages/core/src/session/run-coordinator.ts",
   },
 
@@ -1976,8 +2205,8 @@ export const EVENTS = {
   "storage.message.migrate": {
     level: "info",
     message: "migrating messages for session",
-    attributes: { "storage.session": "id" },
-    content: "none",
+    attributes: { "session.id": "correlate" },
+    content: "correlated",
     file: "packages/novaclaw/src/storage/storage.ts",
   },
   /** One numbered migration is starting. */
@@ -2008,8 +2237,8 @@ export const EVENTS = {
   "storage.part.migrate": {
     level: "info",
     message: "migrating parts for message",
-    attributes: { "storage.message": "id" },
-    content: "none",
+    attributes: { "session.message": "correlate" },
+    content: "correlated",
     file: "packages/novaclaw/src/storage/storage.ts",
   },
   /** One legacy project directory is being inspected and migrated. */
@@ -2032,15 +2261,15 @@ export const EVENTS = {
   "storage.session.migrate": {
     level: "info",
     message: "migrating sessions for project",
-    attributes: { "storage.project": "id" },
-    content: "none",
+    attributes: { "storage.project": "correlate" },
+    content: "correlated",
     file: "packages/novaclaw/src/storage/storage.ts",
   },
   /** The session adhoc-recipe store could not be read; the prompt lists only configured recipes. */
   "tool.adhoc.read.failed": {
     level: "warn",
     message: "adhoc session recipes unreadable",
-    attributes: { "session.id": "id", "tool.cause": "fault" },
+    attributes: { "session.id": "correlate", "tool.cause": "fault" },
     content: "user",
     file: "packages/core/src/adhoc-tools/guidance.ts",
   },
@@ -2140,10 +2369,17 @@ export const EVENTS = {
     file: "packages/novaclaw/src/control-plane/workspace.ts",
   },
   /** A workspace was removed from the store after its backing adapter became unavailable. */
+  /**
+   * ⚠️ **The cause is carried, and that is `todo/logging.md` 1h's third bullet.** The 1b migration
+   * deliberately preserved the old call's information loss — it named the missing adapter and threw
+   * the caught error away — so the line said *which* adapter was unavailable and never *why*. Naming
+   * a missing thing is not a repairable fault (ruling 2): an operator asked to fix an adapter that
+   * "is not available" has nothing to act on. The finished vocabulary carries both.
+   */
   "workspace.adapter.remove.failed": {
     level: "error",
     message: "adapter not available when removing workspace",
-    attributes: { "workspace.adapter": "text" },
+    attributes: { "workspace.adapter": "text", "workspace.cause": "fault" },
     content: "user",
     file: "packages/novaclaw/src/control-plane/workspace.ts",
   },
@@ -2151,7 +2387,7 @@ export const EVENTS = {
   "workspace.event.emit.failed": {
     level: "warn",
     message: "failed to emit global event",
-    attributes: { "workspace.id": "id", "workspace.cause": "fault" },
+    attributes: { "workspace.id": "correlate", "workspace.cause": "fault" },
     content: "user",
     file: "packages/novaclaw/src/control-plane/workspace.ts",
   },
@@ -2159,7 +2395,7 @@ export const EVENTS = {
   "workspace.event.replay.failed": {
     level: "warn",
     message: "failed to replay global event",
-    attributes: { "workspace.id": "id", "workspace.cause": "fault" },
+    attributes: { "workspace.id": "correlate", "workspace.cause": "fault" },
     content: "user",
     file: "packages/novaclaw/src/control-plane/workspace.ts",
   },
@@ -2167,7 +2403,7 @@ export const EVENTS = {
   "workspace.listener.run.failed": {
     level: "warn",
     message: "workspace listener failed",
-    attributes: { "workspace.id": "id", "workspace.cause": "fault" },
+    attributes: { "workspace.id": "correlate", "workspace.cause": "fault" },
     content: "user",
     file: "packages/novaclaw/src/control-plane/workspace.ts",
   },
@@ -2175,16 +2411,16 @@ export const EVENTS = {
   "workspace.session.steal": {
     level: "info",
     message: "sync session stolen",
-    attributes: { "session.id": "id", "workspace.id": "id" },
-    content: "none",
+    attributes: { "session.id": "correlate", "workspace.id": "correlate" },
+    content: "correlated",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/sync.ts",
   },
   /** The fenced workspace reached the named sync state. */
   "workspace.sync.complete": {
     level: "info",
     message: "workspace state fully synced",
-    attributes: { "workspace.id": "id", "workspace.state": "id" },
-    content: "none",
+    attributes: { "workspace.id": "correlate", "workspace.state": "id" },
+    content: "correlated",
     file: "packages/novaclaw/src/server/shared/fence.ts",
   },
   /** The control plane could not establish the remote workspace's global event stream. */
@@ -2200,12 +2436,12 @@ export const EVENTS = {
     level: "info",
     message: "sync replay complete",
     attributes: {
-      "session.id": "id",
+      "session.id": "correlate",
       "workspace.events": "count",
       "workspace.sequence.first": "count",
       "workspace.sequence.last": "count",
     },
-    content: "none",
+    content: "correlated",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/sync.ts",
   },
   /** A peer requested replay of a non-empty sync-event history. */
@@ -2213,7 +2449,7 @@ export const EVENTS = {
     level: "info",
     message: "sync replay requested",
     attributes: {
-      "session.id": "id",
+      "session.id": "correlate",
       "workspace.events": "count",
       "workspace.sequence.first": "count",
       "workspace.sequence.last": "count",
@@ -2226,15 +2462,15 @@ export const EVENTS = {
   "workspace.sync.wait": {
     level: "info",
     message: "waiting for workspace state",
-    attributes: { "workspace.id": "id", "workspace.state": "id" },
-    content: "none",
+    attributes: { "workspace.id": "correlate", "workspace.state": "id" },
+    content: "correlated",
     file: "packages/novaclaw/src/server/shared/fence.ts",
   },
   /** A successful remote workspace response did not decode as the expected representation. */
   "workspace.target.decode.failed": {
     level: "warn",
     message: "workspace target response decode failed",
-    attributes: { "workspace.id": "id", "workspace.cause": "fault" },
+    attributes: { "workspace.id": "correlate", "workspace.cause": "fault" },
     content: "user",
     file: "packages/novaclaw/src/control-plane/workspace.ts",
   },
@@ -2242,7 +2478,7 @@ export const EVENTS = {
   "workspace.target.request.failed": {
     level: "warn",
     message: "workspace target request failed",
-    attributes: { "workspace.id": "id", "workspace.cause": "fault" },
+    attributes: { "workspace.id": "correlate", "workspace.cause": "fault" },
     content: "user",
     file: "packages/novaclaw/src/control-plane/workspace.ts",
   },
@@ -2250,7 +2486,7 @@ export const EVENTS = {
   "workspace.target.response.rejected": {
     level: "warn",
     message: "workspace target request failed",
-    attributes: { "workspace.id": "id", "workspace.http.status": "count", "workspace.body": "text" },
+    attributes: { "workspace.id": "correlate", "workspace.http.status": "count", "workspace.body": "text" },
     content: "user",
     file: "packages/novaclaw/src/control-plane/workspace.ts",
   },
@@ -2258,7 +2494,7 @@ export const EVENTS = {
   "workspace.target.resolve.failed": {
     level: "warn",
     message: "workspace target failed",
-    attributes: { "workspace.id": "id", "workspace.cause": "fault" },
+    attributes: { "workspace.id": "correlate", "workspace.cause": "fault" },
     content: "user",
     file: "packages/novaclaw/src/control-plane/workspace.ts",
   },
@@ -2266,7 +2502,7 @@ export const EVENTS = {
   "workspace.warp.sync.failed": {
     level: "warn",
     message: "session warp final source sync failed",
-    attributes: { "workspace.id": "id", "session.id": "id", "workspace.cause": "fault" },
+    attributes: { "workspace.id": "correlate", "session.id": "correlate", "workspace.cause": "fault" },
     content: "user",
     file: "packages/novaclaw/src/control-plane/workspace.ts",
   },
@@ -2323,18 +2559,31 @@ export function subsystemOf(key: string): Subsystem | undefined {
 }
 
 /**
- * The content class an event's ATTRIBUTES actually imply: content-free only when every field may
- * egress. Compared against the declared `content` by the test, so intent and fact cannot diverge.
+ * The content class an event's ATTRIBUTES actually imply: the **maximum** over its fields' classes.
+ * Compared against the declared `content` by the test, so intent and fact cannot diverge.
+ *
+ * ⚠️ Three-valued since 1e. `"correlated"` is a real rung between `"none"` and `"user"`: an event
+ * that carries a session id carries no content, and must still never egress. Collapsing it into
+ * `"user"` would be a lie in the other direction — it would tell Settings → Developer that a drain
+ * exit quotes the user, which it does not.
  */
 export function derivedContent(declaration: EventDeclaration): ContentClass {
-  const classes = Object.values(declaration.attributes)
-  return classes.every((name) => ATTRIBUTE_CLASSES[name].egress) ? "none" : "user"
+  let worst: ContentClass = "none"
+  for (const name of Object.values(declaration.attributes)) {
+    const content = ATTRIBUTE_CLASSES[name].content
+    if (CONTENT_ORDER[content] > CONTENT_ORDER[worst]) worst = content
+  }
+  return worst
 }
 
 /**
  * Whether this event may leave the machine at all — the precondition for `todo/logging.md` 1f's
- * filter and for anything the maintenance plane carries. Nothing consumes it yet, by design: the
- * point of 1a is that the answer EXISTS in the type before a later slice needs it.
+ * filter and for anything the maintenance plane carries. `observability/telemetry.ts` gate 4 is its
+ * consumer.
+ *
+ * ⚠️ `"correlated"` is a refusal, exactly like `"user"`. See {@link CORRELATION_ATTRIBUTES} for the
+ * argument; the short version is that a stable join key defeats the two-plane separation without
+ * ever carrying content, and the maintenance plane already groups by `run=`.
  */
 export const mayEgress = (key: EventKey): boolean => EVENTS[key].content === "none"
 

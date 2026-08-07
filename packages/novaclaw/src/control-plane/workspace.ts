@@ -27,7 +27,6 @@ import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { Location } from "@novaclaw/core/location"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionID } from "@/session/schema"
-import { errorFormat } from "@/util/error"
 import { waitEvent } from "./util"
 import { WorkspaceRef } from "@/effect/instance-ref"
 import { Vcs } from "@/project/vcs"
@@ -293,7 +292,7 @@ export const layer = Layer.effect(
           Effect.catch((error) =>
             Log.event("workspace.target.request.failed", {
               "workspace.id": workspace.id,
-              "workspace.cause": errorFormat(error),
+              "workspace.cause": Log.fault(error),
             }).pipe(Effect.as(undefined)),
           ),
         )
@@ -314,7 +313,7 @@ export const layer = Layer.effect(
           Effect.catch((error) =>
             Log.event("workspace.target.decode.failed", {
               "workspace.id": workspace.id,
-              "workspace.cause": errorFormat(error),
+              "workspace.cause": Log.fault(error),
             }).pipe(Effect.as(input.fallback)),
           ),
         )
@@ -396,7 +395,7 @@ export const layer = Layer.effect(
               setStatus(space.id, "error")
               yield* Log.event("workspace.sync.connect.failed", {
                 "workspace.name": space.name,
-                "workspace.cause": errorFormat(err),
+                "workspace.cause": Log.fault(err),
               })
               return null
             }),
@@ -438,7 +437,7 @@ export const layer = Layer.effect(
               } catch (error) {
                 yield* Log.event("workspace.event.emit.failed", {
                   "workspace.id": space.id,
-                  "workspace.cause": errorFormat(error),
+                  "workspace.cause": Log.fault(error),
                 })
               }
             }),
@@ -463,7 +462,7 @@ export const layer = Layer.effect(
             setStatus(space.id, "error")
             yield* Log.event("workspace.target.resolve.failed", {
               "workspace.id": space.id,
-              "workspace.cause": errorFormat(error),
+              "workspace.cause": Log.fault(error),
             })
             return null
           }),
@@ -492,7 +491,7 @@ export const layer = Layer.effect(
               setStatus(space.id, "error")
               yield* Log.event("workspace.listener.run.failed", {
                 "workspace.id": space.id,
-                "workspace.cause": errorFormat(error),
+                "workspace.cause": Log.fault(error),
               })
             }),
           ),
@@ -592,7 +591,7 @@ export const layer = Layer.effect(
                   Log.event("workspace.warp.sync.failed", {
                     "workspace.id": previous.id,
                     "session.id": input.sessionID,
-                    "workspace.cause": errorFormat(error),
+                    "workspace.cause": Log.fault(error),
                   }),
                 ),
               )
@@ -830,7 +829,14 @@ export const layer = Layer.effect(
         Effect.gen(function* () {
           yield* WorkspaceAdapterRuntime.remove(info)
         }),
-        () => Log.event("workspace.adapter.remove.failed", { "workspace.adapter": row.type }),
+        // ⚠️ The cause was DISCARDED here until `todo/logging.md` 1h. The 1b migration preserved the
+        // old call's information loss faithfully, so the line named which adapter was unavailable
+        // and never why — and "the adapter is not available" is not a fault anyone can act on.
+        (cause) =>
+          Log.event("workspace.adapter.remove.failed", {
+            "workspace.adapter": row.type,
+            "workspace.cause": Log.fault(cause),
+          }),
       )
 
       yield* db.delete(WorkspaceTable).where(eq(WorkspaceTable.id, id)).run().pipe(Effect.orDie)

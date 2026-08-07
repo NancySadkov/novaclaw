@@ -4,7 +4,14 @@ import path from "node:path"
 import { Effect, Logger, References } from "effect"
 import {
   ATTRIBUTE_CLASSES,
+  CORRELATION_ATTRIBUTES,
+  correlationFault,
   derivedContent,
+  egressSafe,
+  encodeList,
+  isCorrelatorShaped,
+  LIST_MAX_ITEMS,
+  messageFault,
   EVENTS,
   type EventDeclaration,
   type EventKey,
@@ -53,6 +60,18 @@ import { Logging } from "@novaclaw/core/observability/logging"
 const ROOT = path.resolve(import.meta.dir, "..", "..", "..")
 
 const declarations = Object.entries(EVENTS) as ReadonlyArray<readonly [EventKey, EventDeclaration]>
+
+/**
+ * A synthetic declaration whose `file`/`message` anchor at a real site, so a control can vary the
+ * ONE field it is about without also tripping the anchor check.
+ */
+const ANCHOR: EventDeclaration = {
+  level: "info",
+  message: "watcher backend",
+  attributes: {},
+  content: "none",
+  file: "packages/core/src/filesystem/watcher.ts",
+}
 
 /** The declaration source, read as TEXT — the only way to see a duplicate literal key. */
 const SOURCE_PATH = path.join(ROOT, "packages/schema/src/log-events.ts")
@@ -203,6 +222,21 @@ describe("redaction is in the record, and it cannot drift from the attributes", 
     // yet — the point of 1a is that the answer exists in the type BEFORE a later slice needs it.
     expect(mayEgress("mcp.connection.close")).toBe(true)
     expect(mayEgress("mcp.server.output")).toBe(false)
+    // 🔴 **1e moved these, and the move is the item.** Every key below carries a session, workspace
+    // or PTY id and was declared `content: "none"` — so `Telemetry.build` accepted it and put the id
+    // in the envelope, against that module's own written promise not to send a session id. A
+    // correlation id is now class `correlate` (`content: "correlated"`), which is a refusal exactly
+    // like `"user"`. See `CORRELATION_ATTRIBUTES` for why a join key defeats the two-plane split
+    // without ever carrying content.
+    expect(mayEgress("session.drain.exit")).toBe(false)
+    expect(mayEgress("session.message.decode.failed")).toBe(false)
+    expect(mayEgress("workspace.sync.replay.ok")).toBe(false)
+    expect(mayEgress("pty.session.exit")).toBe(false)
+    expect(mayEgress("question.request.ask")).toBe(false)
+    // …while an event with no correlator still egresses. Without this the block above would also
+    // pass on a tree where `mayEgress` had simply been made to return false for everything.
+    expect(mayEgress("session.compaction.prune.planned")).toBe(true)
+    expect(mayEgress("skill.registry.init")).toBe(true)
     expect(mayEgress("kb.memory.open.failed")).toBe(false)
     expect(mayEgress("credential.cipher.load.failed")).toBe(false)
     expect(mayEgress("config.file.load")).toBe(false)
@@ -217,10 +251,139 @@ describe("redaction is in the record, and it cannot drift from the attributes", 
       .filter(([key]) => mayEgress(key))
       .flatMap(([key, declaration]) =>
         Object.entries(declaration.attributes)
-          .filter(([, name]) => !ATTRIBUTE_CLASSES[name].egress)
+          .filter(([, name]) => !egressSafe(name))
           .map(([field]) => `${key}.${field}`),
       )
     expect(leaks).toEqual([])
+  })
+})
+
+describe("correlation ids are first-class, and their class is decided in ONE place", () => {
+  /** Offenders: `key → attribute` pairs whose correlation class was decided at the wrong place. */
+  const misclassified = (entries: ReadonlyArray<readonly [string, EventDeclaration]>) =>
+    entries.flatMap(([key, declaration]) =>
+      Object.entries(declaration.attributes).flatMap(([name, cls]) => {
+        const fault = correlationFault(name, cls)
+        return fault === undefined ? [] : [`${key}: ${fault}`]
+      }),
+    )
+
+  test("no declared attribute disagrees with the correlation vocabulary", () => {
+    expect(misclassified(declarations)).toEqual([])
+  })
+
+  test("the vocabulary is REACHED — every listed name is actually declared somewhere", () => {
+    // Without this the table could fill with aspirational entries, which is the same failure the
+    // anchor check prevents for keys: a vocabulary nobody emits is a vocabulary nobody obeys.
+    const declared = new Set(declarations.flatMap(([, d]) => Object.keys(d.attributes)))
+    expect(Object.keys(CORRELATION_ATTRIBUTES).filter((name) => !declared.has(name))).toEqual([])
+    expect(Object.keys(CORRELATION_ATTRIBUTES).length).toBeGreaterThanOrEqual(10)
+  })
+
+  test("a session id is the SAME name everywhere — the rename it forced was a real duplicate", () => {
+    // 🔴 Measured 2026-08-07: a session id was `session.id` at 55 declarations and `storage.session`
+    // at one, so `grep 'session.id=ses_x'` silently missed the storage migration's lines. The
+    // vocabulary is what makes a second spelling impossible; this is the assertion that says the
+    // first one was actually removed rather than merely discouraged.
+    const names = new Set(declarations.flatMap(([, d]) => Object.keys(d.attributes)))
+    expect(names.has("session.id")).toBe(true)
+    expect(names.has("storage.session")).toBe(false)
+    expect(names.has("storage.message")).toBe(false)
+  })
+
+  test("🔴 a session id does NOT egress, and every event carrying one is refused", () => {
+    // The whole of 1e's ruling, as one assertion over the live set. Before it, 38 keys carrying a
+    // correlator were declared content-free and `Telemetry.build` put the id in the envelope.
+    const correlators = new Set(
+      Object.entries(CORRELATION_ATTRIBUTES)
+        .filter(([, cls]) => cls === "correlate")
+        .map(([name]) => name),
+    )
+    const carrying = declarations.filter(([, d]) => Object.keys(d.attributes).some((name) => correlators.has(name)))
+    // Non-vacuity: such keys exist, and there are a lot of them.
+    expect(carrying.length).toBeGreaterThan(50)
+    expect(carrying.filter(([key]) => mayEgress(key)).map(([key]) => key)).toEqual([])
+    expect(egressSafe("correlate")).toBe(false)
+    expect(ATTRIBUTE_CLASSES.correlate.content).toBe("correlated")
+  })
+
+  test("`correlated` is a REAL third rung, not a synonym for `user`", () => {
+    // The three-valued class earns its keep only if events actually land on the middle rung. If
+    // every correlated event also carried a `text` field, collapsing the class would cost nothing
+    // and this check would be the only thing hiding that.
+    const counts = { none: 0, correlated: 0, user: 0 }
+    for (const [, declaration] of declarations) counts[declaration.content] += 1
+    expect(counts.correlated).toBeGreaterThan(20)
+    expect(counts.none).toBeGreaterThan(20)
+    expect(counts.user).toBeGreaterThan(20)
+    // …and the derivation really is a maximum: one `text` field beats twenty correlators.
+    expect(derivedContent({ ...ANCHOR, attributes: { "session.id": "correlate" } })).toBe("correlated")
+    expect(derivedContent({ ...ANCHOR, attributes: { "session.id": "correlate", detail: "text" } })).toBe("user")
+    expect(derivedContent({ ...ANCHOR, attributes: { count: "count" } })).toBe("none")
+    expect(derivedContent({ ...ANCHOR, attributes: {} })).toBe("none")
+  })
+
+  test("the correlation check bites in BOTH directions (negative control)", () => {
+    // Direction 1 — a listed name declared with the wrong class. This is the state the tree was in
+    // before 1e: `session.id` as an egress-safe `id`.
+    expect(misclassified([["session.drain.exit", { ...ANCHOR, attributes: { "session.id": "id" } }]])).toEqual([
+      'session.drain.exit: "session.id" is class "id" here but CORRELATION_ATTRIBUTES says "correlate". ' +
+        "A correlation id has ONE class, decided there.",
+    ])
+    // Direction 2 — a name that READS as a correlator and was never decided. This is the one that
+    // makes the table a mechanism rather than a habit: a future `turn.id` cannot default to `id`.
+    expect(misclassified([["session.drain.exit", { ...ANCHOR, attributes: { "turn.id": "id" } }]])).toHaveLength(1)
+    expect(misclassified([["session.drain.exit", { ...ANCHOR, attributes: { "agent.session": "id" } }]])).toHaveLength(
+      1,
+    )
+    expect(misclassified([["session.drain.exit", { ...ANCHOR, attributes: { "kb.hash.short": "id" } }]])).toHaveLength(
+      1,
+    )
+    // …and an ordinary field is not swept up. A rename tax on every attribute would get this
+    // deleted within a week.
+    expect(misclassified([["session.drain.exit", { ...ANCHOR, attributes: { "session.cause": "fault" } }]])).toEqual([])
+    expect(misclassified([["session.drain.exit", { ...ANCHOR, attributes: { "mcp.level": "id" } }]])).toEqual([])
+    // The shape predicate itself, driven directly.
+    expect(isCorrelatorShaped("workspace.id")).toBe(true)
+    expect(isCorrelatorShaped("session.hash.expected")).toBe(true)
+    expect(isCorrelatorShaped("question.request")).toBe(true)
+    expect(isCorrelatorShaped("session.tool.calls")).toBe(false)
+    expect(isCorrelatorShaped("mcp.level")).toBe(false)
+  })
+
+  test("an ordinal is deliberately NOT a correlator, and it is written down", () => {
+    // `step` correlates only in combination with a `correlate` field, which never egresses — so it
+    // stays egress-safe. Pinned here so the decision is a decision rather than an oversight.
+    expect(CORRELATION_ATTRIBUTES.step).toBe("count")
+    expect(egressSafe("count")).toBe(true)
+    // …and the two exceptions, each argued at its entry in the vocabulary.
+    expect(CORRELATION_ATTRIBUTES.ref).toBe("id")
+    expect(CORRELATION_ATTRIBUTES["instance.event.id"]).toBe("id")
+  })
+})
+
+describe("a declared message is a CONSTANT — which is what keeps ids out of it", () => {
+  test("no declared message interpolates a value", () => {
+    // 1e's headline in one line: *a log line that mentions a session id in its message is
+    // unqueryable and unredactable.* `Log.event` has no message parameter, so the only way left to
+    // put a value in the prose is to write the interpolation into the declaration itself.
+    expect(
+      declarations.flatMap(([key, d]) => {
+        const fault = messageFault(d.message)
+        return fault === undefined ? [] : [`${key}: ${fault}`]
+      }),
+    ).toEqual([])
+  })
+
+  test("the message check bites (negative control)", () => {
+    // The exact shape the seed set had 17 of before 1b: a value interpolated into the sentence.
+    expect(messageFault("discord: caught up ${count} missed messages in ${channel}")).toContain("${")
+    expect(messageFault("session %s failed")).toContain("%s")
+    expect(messageFault("removed {} paths")).toContain("{}")
+    expect(messageFault("watcher backend")).toBeUndefined()
+    expect(messageFault("config paths were removed")).toBeUndefined()
+    // …and a `$` that is not an interpolation is not a false positive.
+    expect(messageFault("the $PATH variable is unset")).toBeUndefined()
   })
 })
 
@@ -379,8 +542,8 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     const format = lines(
       Log.event("format.file.format.failed", {
         "format.file": "a.ts",
-        "format.command": '["prettier","a.ts"]',
-        "format.environment": '{"PRIVATE_TOKEN":"secret"}',
+        "format.command": ["prettier", "a.ts"],
+        "format.environment": ["PRIVATE_TOKEN=secret"],
       }),
     )[0]
     expect(server).toContain("message=failed")
@@ -495,7 +658,6 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(line).toContain('snapshot.error="private snapshot path failed"')
     expect(columns(line ?? "").filter((name) => name === "cause")).toEqual([])
     expect(mayEgress("session.revert.stage.failed")).toBe(false)
-    expect(mayEgress("session.message.decode.failed")).toBe(true)
   })
 
   test("workspace transport and HTTP rejection share their English without sharing an identity", () => {
@@ -537,7 +699,6 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(line).toContain("workspace.sequence.first=2")
     expect(line).toContain("workspace.sequence.last=5")
     expect(mayEgress("workspace.sync.replay.start")).toBe(false)
-    expect(mayEgress("workspace.sync.replay.ok")).toBe(true)
   })
 
   test("remote config URLs are structured but remain on the data plane", () => {
@@ -551,14 +712,14 @@ describe("a keyed record lands in the SAME line as every other log record", () =
   test("config-write partial outcomes preserve arrays without exposing their content", () => {
     const [reload] = lines(
       Log.event("config.runtime.reload.failed", {
-        "config.domains": '["agents","catalog"]',
-        "config.causes": '["private materialisation fault"]',
+        "config.domains": ["agents", "catalog"],
+        "config.causes": ["private materialisation fault"],
       }),
     )
     const [restart] = lines(
       Log.event("config.runtime.restart.required", {
-        "config.keys": '["plugins"]',
-        "config.reasons": '["module cache cannot reload a private package"]',
+        "config.keys": ["plugins"],
+        "config.reasons": ["module cache cannot reload a private package"],
       }),
     )
     expect(reload).toContain("event=config.runtime.reload.failed")
@@ -575,8 +736,9 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     const [line] = lines(
       Log.event("filesystem.watcher.resubscribe.stale", {
         directory: "/private/project",
-        "filesystem.ignore.attempted": '["new/**"]',
-        "filesystem.ignore.active": '["old/**"]',
+        "filesystem.ignore.attempted": ["new/**"],
+        "filesystem.watched": true,
+        "filesystem.ignore.active": ["old/**"],
       }),
     )
     expect(line).toContain("event=filesystem.watcher.resubscribe.stale")
@@ -602,7 +764,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
   test("offline-policy events preserve host context without putting it on the maintenance plane", () => {
     const [active] = lines(
       Log.event("offline.policy.activate", {
-        "offline.policy.hosts": '["private-model.example"]',
+        "offline.policy.hosts": ["private-model.example"],
       }),
     )
     const [blocked] = lines(
@@ -633,7 +795,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
       Log.event("pty.session.create", {
         "pty.id": "pty_1",
         "pty.command": "/private/bin/my shell",
-        "pty.arguments": '["--login","project name"]',
+        "pty.arguments": ["--login", "project name"],
         "pty.directory": "/private/project",
       }),
     )
@@ -645,7 +807,37 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(created).toContain("pty.directory=/private/project")
     expect(exited).toContain("pty.exit_code=3")
     expect(mayEgress("pty.session.create")).toBe(false)
-    expect(mayEgress("pty.session.exit")).toBe(true)
+    // 1e: `pty.session.exit` carries only `pty.id` and an exit code, and used to egress. A terminal
+    // id names a terminal the USER opened.
+    expect(mayEgress("pty.session.exit")).toBe(false)
+  })
+
+  test("a `list` attribute is passed as an ARRAY and lands as the same bytes as before", () => {
+    // 1h's second seam, exercised. The wire form is UNCHANGED — that is the point: the call site
+    // stopped choosing the encoding, and the line a `zgrep` sees did not move. If this ever
+    // disagrees with the pty assertion above, one of them is describing the format falsely.
+    const [line] = lines(Log.event("offline.policy.activate", { "offline.policy.hosts": ["a.example", "b.example"] }))
+    expect(line).toContain('offline.policy.hosts="[\\"a.example\\",\\"b.example\\"]"')
+    expect(encodeList(["a.example", "b.example"])).toBe('["a.example","b.example"]')
+    // An empty list is an empty list, not a missing column and not the word "nothing".
+    expect(encodeList([])).toBe("[]")
+  })
+
+  test("the list encoding is BOUNDED, which is the property no call site was providing", () => {
+    // 20 hand-written `JSON.stringify(…)` call sites each silently owned a truncation policy that
+    // did not exist: an ignore list, an argv or a set of failure reasons has no natural ceiling and
+    // a log line does. One encoder, one ceiling, and the elision says so rather than just stopping.
+    const many = Array.from({ length: LIST_MAX_ITEMS + 5 }, (_, index) => `item-${index}`)
+    const encoded = JSON.parse(encodeList(many)) as string[]
+    expect(encoded).toHaveLength(LIST_MAX_ITEMS + 1)
+    expect(encoded.at(-1)).toBe("…+5 more")
+    expect(encoded[0]).toBe("item-0")
+    // …and one enormous item cannot blow the line either.
+    const long = JSON.parse(encodeList(["x".repeat(5_000)])) as string[]
+    expect(long[0]!.length).toBeLessThan(250)
+    expect(long[0]!.endsWith("…")).toBe(true)
+    // Non-vacuity: an ordinary list is untouched by both bounds.
+    expect(JSON.parse(encodeList(["a", "b"]))).toEqual(["a", "b"])
   })
 
   test("an UN-keyed record is untouched — the 36 remaining call sites are not affected", () => {

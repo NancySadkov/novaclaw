@@ -392,7 +392,7 @@ const makeService = (source: PolicySource) =>
     const policy = installPolicy(source)
     if (policy.enabled)
       yield* Log.event("offline.policy.activate", {
-        "offline.policy.hosts": JSON.stringify([...policy.allowedHosts]),
+        "offline.policy.hosts": [...policy.allowedHosts],
       })
     return Service.of({
       // A getter over the live ref, NOT the policy captured above: every method below reads the

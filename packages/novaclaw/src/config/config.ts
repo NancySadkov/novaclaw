@@ -39,7 +39,6 @@ import { ConfigPlugin } from "./plugin"
 import { ConfigVariable } from "./variable"
 import { Npm } from "@novaclaw/core/npm"
 import { withTransientReadRetry } from "@/util/effect-http-client"
-import { errorFormat } from "@/util/error"
 import { Log } from "@novaclaw/schema/log"
 
 // The `.well-known/novaclaw` payload shape: an inline `config` and/or a pointer to a `remote_config`.
@@ -552,7 +551,7 @@ export const layer = Layer.effect(
             const rules = ConfigPermission.ruleset(JSON.parse(Flag.NOVACLAW_PERMISSION))
             if (rules?.length) result.permissions = [...(result.permissions ?? []), ...rules]
           } catch (err) {
-            yield* Log.event("config.permission.parse.failed", { "config.cause": errorFormat(err) })
+            yield* Log.event("config.permission.parse.failed", { "config.cause": Log.fault(err) })
           }
         }
 
@@ -560,7 +559,7 @@ export const layer = Layer.effect(
           try {
             result.username = os.userInfo().username || "user"
           } catch (err) {
-            yield* Log.event("config.username.read.failed", { "config.cause": errorFormat(err) })
+            yield* Log.event("config.username.read.failed", { "config.cause": Log.fault(err) })
             result.username = "user"
           }
         }

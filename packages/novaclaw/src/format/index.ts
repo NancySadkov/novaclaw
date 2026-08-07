@@ -28,6 +28,17 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/Format") {}
 
+/**
+ * A formatter's environment map as the `list` attribute class wants it — one `NAME=value` per entry.
+ *
+ * `todo/logging.md` 1h: this used to be `JSON.stringify(item.environment)` at two call sites, which
+ * preserved the bytes and discarded the type. The values are unchanged and still local-only (the
+ * class is `list`, `content: "user"`) — `config/formatter.ts` marks this map secret for the same
+ * reason `mcp.servers.<n>.environment` is marked.
+ */
+const environmentList = (environment: Record<string, string> | undefined): ReadonlyArray<string> =>
+  Object.entries(environment ?? {}).map(([name, value]) => `${name}=${value}`)
+
 export const use = serviceUse(Service)
 
 export const layer = Layer.effect(
@@ -88,7 +99,7 @@ export const layer = Layer.effect(
             for (const { item, cmd } of formatters) {
               yield* Log.event("format.command.run", {
                 "format.file": filepath,
-                "format.command": JSON.stringify(cmd),
+                "format.command": cmd,
               })
               const replaced = cmd.map((x) => x.replace("$FILE", filepath))
               const dir = yield* InstanceState.directory
@@ -107,8 +118,8 @@ export const layer = Layer.effect(
                   Effect.catch((error) =>
                     Log.event("format.file.spawn.failed", {
                       "format.file": filepath,
-                      "format.command": JSON.stringify(cmd),
-                      "format.environment": JSON.stringify(item.environment),
+                      "format.command": cmd,
+                      "format.environment": environmentList(item.environment),
                       "format.cause": errorMessage(error.cause ?? error),
                     }).pipe(Effect.as(undefined)),
                   ),
@@ -116,8 +127,8 @@ export const layer = Layer.effect(
               if (result && result.exitCode !== 0) {
                 yield* Log.event("format.file.format.failed", {
                   "format.file": filepath,
-                  "format.command": JSON.stringify(cmd),
-                  "format.environment": JSON.stringify(item.environment),
+                  "format.command": cmd,
+                  "format.environment": environmentList(item.environment),
                 })
               }
             }

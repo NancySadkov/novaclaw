@@ -1,4 +1,5 @@
 // Inlined from the removed TUI package (util/error). TUI retired; HTML-UI-only.
+import { Log } from "@novaclaw/schema/log"
 import { isRecord } from "./record"
 
 type ConfigIssue = { message: string; path: string[] }
@@ -92,33 +93,20 @@ function field(input: Record<string, unknown>, key: string) {
   return typeof input[key] === "string" ? input[key] : undefined
 }
 
-export function errorFormat(error: unknown): string {
-  if (error instanceof Error) {
-    return error.stack ?? `${error.name}: ${error.message}`
-  }
-
-  if (typeof error === "object" && error !== null) {
-    try {
-      const json = JSON.stringify(error, null, 2)
-      // Plain objects whose own properties are all non-enumerable (or empty)
-      // serialize to "{}", which prints as a useless bare `{}` on stderr.
-      // Fall back to a custom toString first, then to ctor name + own prop names.
-      if (json === "{}") {
-        const str = String(error)
-        if (str && str !== "[object Object]") return str
-        const ctor = error.constructor?.name
-        const prefix = ctor && ctor !== "Object" ? ctor : "Error"
-        const names = Object.getOwnPropertyNames(error)
-        return names.length === 0 ? `${prefix} (no message)` : `${prefix} { ${names.join(", ")} }`
-      }
-      return json
-    } catch {
-      return "Unexpected error (unserializable)"
-    }
-  }
-
-  return String(error)
-}
+/**
+ * **An ALIAS of `Log.fault`, not a second implementation** — `todo/logging.md` 1h, first seam.
+ *
+ * This function and the log's `fault` attribute class had independently grown the same
+ * `Error`/object/`{}`/`toString` ladder, in two files, for one question: *what does a caught error
+ * look like as a string?* Two copies of one description is the defect class this project keeps
+ * finding, and the copies had already drifted — `Log.fault` handles an Effect `Cause` (the shape 39
+ * of the log's 100 fault sites pass) and this one did not.
+ *
+ * The implementation moved to `@novaclaw/schema/log` because that is where the *class* that consumes
+ * it is declared; the name stays here because the CLI's stderr renderer is a legitimate second
+ * CALLER. Aliasing rather than re-exporting the body means they cannot disagree.
+ */
+export const errorFormat: (error: unknown) => string = Log.fault
 
 export function errorMessage(error: unknown): string {
   if (error instanceof Error) {

@@ -120,7 +120,10 @@ export const rejectUnknownConfigKeys = (request: HttpServerRequest.HttpServerReq
     const plural = unknown.length === 1 ? "it" : "them"
     // Capped for the same reason `middleware/schema-error.ts` caps its reason: a 4xx must never
     // mirror an unbounded request back into the response body and the log file.
-    yield* Log.event("config.patch.key.unknown", { "config.keys": String(named), "config.hidden": String(hidden) })
+    // ⚠️ `String(named)` and `String(hidden)` were an array and a NUMBER flattened into two `text`
+    // columns (`todo/logging.md` 1h): the count could not be compared and the key list could not be
+    // read back. A list is a list and a count is a count.
+    yield* Log.event("config.patch.key.unknown", { "config.keys": named, "config.hidden": hidden })
     yield* Effect.fail(
       new InvalidRequestError({
         kind: UNKNOWN_CONFIG_KEY_KIND,
