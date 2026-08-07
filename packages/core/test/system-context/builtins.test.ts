@@ -12,7 +12,8 @@ import { Shell } from "@novaclaw/core/shell"
 import { SystemContextBuiltIns } from "@novaclaw/core/system-context/builtins"
 import { SystemContextRegistry } from "@novaclaw/core/system-context/registry"
 import { ResourcePressureContext } from "@novaclaw/core/resource-pressure-context"
-import { makeGlobalNode } from "@novaclaw/core/effect/app-node"
+import { McpHealthContext } from "@novaclaw/core/mcp-health-context"
+import { makeGlobalNode, makeLocationNode } from "@novaclaw/core/effect/app-node"
 import { location } from "../fixture/location"
 import { testEffect } from "../lib/effect"
 
@@ -75,6 +76,19 @@ const itWithResourcePressure = testEffect(
     [ResourcePressureContext.node, resourcePressureNode],
   ]),
 )
+let mcpLines: ReadonlyArray<string> = []
+const mcpHealthNode = makeLocationNode({
+  service: McpHealthContext.Service,
+  layer: Layer.succeed(McpHealthContext.Service, McpHealthContext.Service.of({ lines: () => Effect.sync(() => mcpLines) })),
+  deps: [],
+})
+const itWithMcpHealth = testEffect(
+  AppNodeBuilder.build(builtInsNode, [
+    [Location.node, locationLayer],
+    [Global.node, Global.layerWith({ config: "/global" })],
+    [McpHealthContext.node, mcpHealthNode],
+  ]),
+)
 
 describe("SystemContextBuiltIns", () => {
   it.effect("loads location-scoped environment and host-local date context", () =>
@@ -115,6 +129,59 @@ describe("SystemContextBuiltIns", () => {
       expect(refreshed.text).toContain("The environment you are running in is now:")
       expect(refreshed.text).toContain("  Memory headroom is low. Use resource_status for live detail.")
       expect(refreshed.text).not.toContain("Resource pressure: ok")
+    }),
+  )
+
+  // 🔴 The exception-only contract of `McpHealthContext`, at the SPLICE point rather than only at the
+  // derivation (`novaclaw/test/mcp/health-context.test.ts` covers the sentences). The first case is
+  // what keeps this seam free: a healthy MCP set must leave the `<env>` block byte-identical to one
+  // built with the seam deleted — which is exactly what the "loads location-scoped environment" case
+  // above asserts, since it runs against the core default layer.
+  itWithMcpHealth.effect("a healthy MCP set adds nothing at all to <env>", () =>
+    Effect.gen(function* () {
+      mcpLines = []
+      yield* TestClock.setTime(timestamp)
+      const context = yield* SystemContextRegistry.Service
+      const initialized = yield* SystemContext.initialize(yield* context.load())
+
+      expect(initialized.baseline).toBe(
+        [
+          "Here is some useful information about the environment you are running in:",
+          "<env>",
+          `  Working directory: ${directory}`,
+          `  Workspace root folder: ${projectDirectory}`,
+          "  Is directory a git repo: yes",
+          `  Platform: ${process.platform}`,
+          `  Shell: ${Shell.agentDefault()}`,
+          ...(Shell.shellFallbackNote() ? [`  ${Shell.shellFallbackNote()}`] : []),
+          "</env>",
+          "",
+          `Today's date: ${localDate(timestamp)}`,
+        ].join("\n"),
+      )
+    }),
+  )
+
+  itWithMcpHealth.effect("an unusable MCP server names itself inside <env>, and clears when it recovers", () =>
+    Effect.gen(function* () {
+      mcpLines = []
+      const context = yield* SystemContextRegistry.Service
+      const initialized = yield* SystemContext.initialize(yield* context.load())
+      expect(initialized.baseline).not.toContain("searxng")
+
+      mcpLines = ['MCP server "searxng" is configured but unavailable this session: spawn npx ENOENT.']
+      const broken = yield* SystemContext.reconcile(yield* context.load(), initialized.snapshot)
+      expect(broken).toMatchObject({ _tag: "Updated" })
+      if (broken._tag !== "Updated") return
+      // Indented like every other `<env>` line — an un-indented line would read as a new section.
+      expect(broken.text).toContain('  MCP server "searxng" is configured but unavailable this session: spawn npx ENOENT.')
+
+      // Recovery must be reported too: a stale "unavailable" is a fault described falsely (ruling 2).
+      mcpLines = []
+      const recovered = yield* SystemContext.reconcile(yield* context.load(), broken.snapshot)
+      expect(recovered).toMatchObject({ _tag: "Updated" })
+      if (recovered._tag !== "Updated") return
+      expect(recovered.text).not.toContain("searxng")
     }),
   )
 

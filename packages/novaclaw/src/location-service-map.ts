@@ -9,6 +9,8 @@ import { AggregateExternalToolSource } from "@/tool/external-tool-source"
 import { McpExternalCommandSource } from "@/mcp/external-command-source"
 import { ResourcePressureContext } from "@novaclaw/core/resource-pressure-context"
 import { StorageResourcePressureContext } from "@/storage/resource-pressure-context"
+import { McpHealthContext } from "@novaclaw/core/mcp-health-context"
+import { McpHealthReport } from "@/mcp/health-context"
 import { LocalModelManager } from "@novaclaw/core/local-model-manager"
 import { LocalModelRuntime } from "@/local-model/runtime"
 
@@ -29,6 +31,13 @@ export const replacements: LayerNode.Replacements = [
   [ExternalToolSource.node, AggregateExternalToolSource.node],
   [ExternalCommandSource.node, McpExternalCommandSource.node],
   [ResourcePressureContext.node, StorageResourcePressureContext.node],
+  // ⚠️ WITHOUT THIS ROW THE SEAM SHIPS INERT. Core's default `McpHealthContext` answers `[]` for
+  // every server set, so a missing replacement looks exactly like a healthy instance: the `<env>`
+  // block is byte-identical, every core test still passes, and a broken MCP server goes back to
+  // being invisible to the model — the defect the seam exists to remove. Pinned by
+  // `test/location-service-map-replacements.test.ts`, because "a guard's SITE is invisible to
+  // behaviour" is how this project has shipped an inert gate before.
+  [McpHealthContext.node, McpHealthReport.node],
   [LocalModelManager.node, LocalModelRuntime.node],
 ]
 

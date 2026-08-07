@@ -11,6 +11,7 @@ import { Global } from "../global"
 import { SettingsConfigStore } from "../settings-config-store"
 import { Shell } from "../shell"
 import { ResourcePressureContext } from "../resource-pressure-context"
+import { McpHealthContext } from "../mcp-health-context"
 
 /**
  * Is the resolved workspace root worth telling the model about?
@@ -32,6 +33,7 @@ const builtIns = Layer.effectDiscard(
     const registry = yield* SystemContextRegistry.Service
     const settingsStore = yield* SettingsConfigStore.Service
     const resourcePressure = yield* ResourcePressureContext.Service
+    const mcpHealth = yield* McpHealthContext.Service
     // P2P: tell the model about configured peer instances — full free-form HTTP access with the
     // token from env (the bash tool injects NOVACLAW_INSTANCE_<NAME>_URL/_TOKEN; tokens are never
     // printed into the prompt itself).
@@ -40,8 +42,8 @@ const builtIns = Layer.effectDiscard(
       const key = peer.name.toUpperCase().replace(/[^A-Z0-9]+/g, "_")
       return `  Peer instance "${peer.name}": ${peer.url} — same HTTP API as this instance (sessions, registry, config). Drive it from bash, e.g. curl -u "novaclaw:$NOVACLAW_INSTANCE_${key}_TOKEN" $NOVACLAW_INSTANCE_${key}_URL/api/session (the env vars are preset).`
     })
-    const environment = resourcePressure.lines().pipe(
-      Effect.map((resourceLines) =>
+    const environment = Effect.all([resourcePressure.lines(), mcpHealth.lines()]).pipe(
+      Effect.map(([resourceLines, mcpLines]) =>
         [
           "<env>",
           `  Working directory: ${location.directory}`,
@@ -63,6 +65,12 @@ const builtIns = Layer.effectDiscard(
           // a silent cmd.exe and 100/100 under bash.
           ...(Shell.shellFallbackNote() ? [`  ${Shell.shellFallbackNote()}`] : []),
           ...resourceLines.map((line) => `  ${line}`),
+          // Only when a CONFIGURED MCP server is not usable. Empty for a healthy set, so the block is
+          // byte-identical to one built without this seam — see `mcp-health-context.ts` for the whole
+          // decision, and the "loads location-scoped environment" case in
+          // `test/system-context/builtins.test.ts` for the check that keeps it that way. A server the
+          // user switched OFF is deliberately absent from this list: that is a preference, not a fault.
+          ...mcpLines.map((line) => `  ${line}`),
           ...peerLines,
           "</env>",
         ].join("\n"),
@@ -72,9 +80,11 @@ const builtIns = Layer.effectDiscard(
       SystemContext.make({
         key: SystemContext.Key.make("core/environment"),
         codec: Schema.toCodecJson(Schema.String),
-        // Resource headroom is live per turn. Keeping this as an Effect instead of freezing the
-        // string at location boot lets SystemContext.reconcile tell the model when the machine moves
-        // across a pressure line without restarting the instance.
+        // Resource headroom and MCP server health are both live per turn. Keeping this as an Effect
+        // instead of freezing the string at location boot lets SystemContext.reconcile tell the model
+        // when the machine moves across a pressure line — or when a configured MCP server drops or
+        // comes back — without restarting the instance, and pays for it in a TAIL update rather than
+        // a prompt-prefix re-render.
         load: environment,
         baseline: (environment) =>
           ["Here is some useful information about the environment you are running in:", environment].join("\n"),
@@ -110,5 +120,6 @@ export const node = makeLocationNode({
     Global.node,
     SettingsConfigStore.node,
     ResourcePressureContext.node,
+    McpHealthContext.node,
   ],
 })
