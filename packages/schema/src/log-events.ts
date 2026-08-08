@@ -2109,11 +2109,40 @@ export const EVENTS = {
     content: "none",
     file: "packages/novaclaw/src/snapshot/index.ts",
   },
-  /** Snapshot-object garbage collection failed without disabling later attempts. */
+  /**
+   * Snapshot-object garbage collection failed without disabling later attempts.
+   *
+   * ⚠️ **`snapshot.stderr` is `text`, and that is a RULING, not a downgrade** (`todo/logging.md` 1h,
+   * 2026-08-08). It holds git's own words and nothing else. It was `fault` only because the `git`
+   * helper used to write a caught spawn failure into the same field — so the column named git as the
+   * author of our exception, which is ruling 2 broken. The helper now names itself under
+   * {@link EVENTS "snapshot.git.spawn.failed"} and leaves this empty, which is why the class could
+   * move. `text` and `fault` are both `content: "user"` and both speak for others, so nothing about
+   * egress or untrusted framing changes; what changes is that the column's NAME is now true.
+   */
   "snapshot.cleanup.run.failed": {
     level: "warn",
     message: "cleanup failed",
-    attributes: { "snapshot.exit": "count", "snapshot.stderr": "fault" },
+    attributes: { "snapshot.exit": "count", "snapshot.stderr": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /**
+   * 🔴 **git itself could not be started — no process ran, so no exit code and no stderr exist.**
+   *
+   * The subsystem that is unavailable names itself here (ruling 2), once, at the point the spawn
+   * failure is caught and normalized by `Log.fault`. Every `snapshot.*` line that follows reports the
+   * OPERATION's outcome with an empty `snapshot.stderr` and a sentinel `snapshot.exit=1`; this line
+   * is what tells a reader those two columns describe a child that never existed.
+   *
+   * It also covers the ~10 `git()` calls that log nothing on failure (`init`, the `config` writes,
+   * `drop`, `excludes`, `seed`, `show`) — a missing git binary used to make the whole snapshot store
+   * silently no-op.
+   */
+  "snapshot.git.spawn.failed": {
+    level: "error",
+    message: "git could not be started",
+    attributes: { "snapshot.cause": "fault" },
     content: "user",
     file: "packages/novaclaw/src/snapshot/index.ts",
   },
@@ -2121,7 +2150,7 @@ export const EVENTS = {
   "snapshot.diff.compute.failed": {
     level: "warn",
     message: "failed to get diff",
-    attributes: { "snapshot.hash": "text", "snapshot.exit": "count", "snapshot.stderr": "fault" },
+    attributes: { "snapshot.hash": "text", "snapshot.exit": "count", "snapshot.stderr": "text" },
     content: "user",
     file: "packages/novaclaw/src/snapshot/index.ts",
   },
@@ -2139,11 +2168,35 @@ export const EVENTS = {
     content: "none",
     file: "packages/novaclaw/src/snapshot/index.ts",
   },
-  /** Batched object loading failed and the diff falls back to individual git-show calls. */
+  /**
+   * Batched object loading RAN and exited non-zero; the diff falls back to individual git-show calls.
+   *
+   * ⚠️ This site was on the fault ledger and never needed to be: it reads a raw `appProcess.run`
+   * result on a branch guarded by `batch.exitCode !== 0`, so a child provably ran and
+   * `snapshot.stderr` provably holds that child's words. It was classed `fault` by association with
+   * its seven siblings, which is the hazard a class table has — see `snapshot.cleanup.run.failed`.
+   */
   "snapshot.diff.load.fallback": {
     level: "info",
     message: "git cat-file --batch failed during snapshot diff, falling back to per-file git show",
-    attributes: { "snapshot.refs": "count", "snapshot.stderr": "fault" },
+    attributes: { "snapshot.refs": "count", "snapshot.stderr": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /**
+   * 🔴 **Batched object loading could not be SPAWNED** — the other half of the fallback above, and it
+   * used to be silent.
+   *
+   * The `load` helper's catch arm discarded the error and answered `undefined`, so a `cat-file
+   * --batch` that never started degraded to the per-file path with nothing written anywhere. The
+   * fallback is correct; being silent about why is the ruling-2 shape. Distinct from
+   * `snapshot.diff.load.fallback` because there is no child and therefore no stderr — this carries
+   * our own caught fault, which is why it is the `fault` class and its sibling is `text`.
+   */
+  "snapshot.diff.load.failed": {
+    level: "warn",
+    message: "snapshot diff batch load failed, falling back to per-file git show",
+    attributes: { "snapshot.cause": "fault" },
     content: "user",
     file: "packages/novaclaw/src/snapshot/index.ts",
   },
@@ -2177,9 +2230,9 @@ export const EVENTS = {
     message: "failed to list snapshot files",
     attributes: {
       "snapshot.diff.exit": "count",
-      "snapshot.diff.stderr": "fault",
+      "snapshot.diff.stderr": "text",
       "snapshot.other.exit": "count",
-      "snapshot.other.stderr": "fault",
+      "snapshot.other.stderr": "text",
     },
     content: "user",
     file: "packages/novaclaw/src/snapshot/index.ts",
@@ -2188,7 +2241,7 @@ export const EVENTS = {
   "snapshot.files.stage.failed": {
     level: "warn",
     message: "failed to add snapshot files",
-    attributes: { "snapshot.exit": "count", "snapshot.stderr": "fault" },
+    attributes: { "snapshot.exit": "count", "snapshot.stderr": "text" },
     content: "user",
     file: "packages/novaclaw/src/snapshot/index.ts",
   },
@@ -2212,7 +2265,7 @@ export const EVENTS = {
   "snapshot.restore.checkout.failed": {
     level: "error",
     message: "failed to restore snapshot",
-    attributes: { "snapshot.hash": "text", "snapshot.exit": "count", "snapshot.stderr": "fault" },
+    attributes: { "snapshot.hash": "text", "snapshot.exit": "count", "snapshot.stderr": "text" },
     content: "user",
     file: "packages/novaclaw/src/snapshot/index.ts",
   },
@@ -2220,7 +2273,7 @@ export const EVENTS = {
   "snapshot.restore.read.failed": {
     level: "error",
     message: "failed to restore snapshot",
-    attributes: { "snapshot.hash": "text", "snapshot.exit": "count", "snapshot.stderr": "fault" },
+    attributes: { "snapshot.hash": "text", "snapshot.exit": "count", "snapshot.stderr": "text" },
     content: "user",
     file: "packages/novaclaw/src/snapshot/index.ts",
   },
@@ -2439,11 +2492,35 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/worktree/index.ts",
   },
-  /** A new worktree could not populate its checkout. */
+  /**
+   * A new worktree could not populate its checkout.
+   *
+   * ⚠️ **`worktree.cause` is `text` HERE and `fault` on its siblings, and the split is deliberate**
+   * (`todo/logging.md` 1h, 2026-08-08). This one carries `git reset --hard`'s own stderr/stdout — a
+   * foreign process's words, so `Log.fault` on it would be the identity and the class was simply
+   * wrong. It could not move until the `git` helper stopped writing OUR caught spawn failure into
+   * the same field; that now goes to {@link EVENTS "worktree.git.spawn.failed"}. A class is a claim
+   * about who authored the value, and one name may honestly carry two authors on two events.
+   */
   "worktree.checkout.failed": {
     level: "error",
     message: "worktree checkout failed",
-    attributes: { "worktree.directory": "path", "worktree.cause": "fault" },
+    attributes: { "worktree.directory": "path", "worktree.cause": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/worktree/index.ts",
+  },
+  /**
+   * 🔴 **git itself could not be started — no process ran, so no exit code and no stderr exist.**
+   *
+   * Ruling 2's *the unavailable subsystem names itself*, at the point the spawn failure is caught.
+   * The `git` helper's `code: 1` is a sentinel and its `stderr` is empty; this line is what says why.
+   * The caller-facing `CreateFailedError`/`ListFailedError`/… still carry the fault text, because a
+   * person reading a dialog has no second line to read (`reason()` in `worktree/index.ts`).
+   */
+  "worktree.git.spawn.failed": {
+    level: "error",
+    message: "git could not be started",
+    attributes: { "worktree.cause": "fault" },
     content: "user",
     file: "packages/novaclaw/src/worktree/index.ts",
   },
@@ -2455,11 +2532,27 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/worktree/index.ts",
   },
-  /** An explicitly configured worktree start command exited non-zero. */
+  /**
+   * An explicitly configured worktree start command RAN and exited non-zero.
+   *
+   * ⚠️ `worktree.cause` is the shell's own stderr — same ruling as `worktree.checkout.failed`. This
+   * column has been wrong in both directions: first empty (the catch discarded the error), then
+   * carrying our `Log.fault` under a name that promises the child's words. It now carries only what
+   * the shell said, and a shell that never started is
+   * {@link EVENTS "worktree.start.spawn.failed"}.
+   */
   "worktree.start.command.failed": {
     level: "error",
     message: "worktree start command failed",
-    attributes: { "worktree.start.kind": "id", "worktree.directory": "path", "worktree.cause": "fault" },
+    attributes: { "worktree.start.kind": "id", "worktree.directory": "path", "worktree.cause": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/worktree/index.ts",
+  },
+  /** 🔴 The start command's shell could not be started, so the command never ran at all. */
+  "worktree.start.spawn.failed": {
+    level: "error",
+    message: "worktree start command could not be started",
+    attributes: { "worktree.cause": "fault" },
     content: "user",
     file: "packages/novaclaw/src/worktree/index.ts",
   },

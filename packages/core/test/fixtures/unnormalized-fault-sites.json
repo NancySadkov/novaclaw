@@ -168,38 +168,6 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.cleanup.run.failed.snapshot.stderr = result.stderr",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.diff.compute.failed.snapshot.stderr = result.stderr",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.diff.load.fallback.snapshot.stderr = batch.stderr.toString(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.files.list.failed.snapshot.diff.stderr = diff.stderr",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.files.list.failed.snapshot.other.stderr = other.stderr",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.files.stage.failed.snapshot.stderr = result.stderr",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.restore.checkout.failed.snapshot.stderr = checkout.stderr",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/snapshot/index.ts :: snapshot.restore.read.failed.snapshot.stderr = result.stderr",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/storage/resource-pressure-context.ts :: resource.headroom.measure.failed.resource.cause = Cause.pretty(…)",
     "count": 2
   },
@@ -213,14 +181,6 @@
   },
   {
     "name": "packages/novaclaw/src/tool/truncate.ts :: tool.truncation.cleanup.failed.tool.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/worktree/index.ts :: worktree.checkout.failed.worktree.cause = message",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/worktree/index.ts :: worktree.start.command.failed.worktree.cause = result.stderr",
     "count": 1
   },
   {

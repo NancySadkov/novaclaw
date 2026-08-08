@@ -92,19 +92,34 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
               stderr: result.stderr.toString("utf8"),
             } satisfies GitResult
           },
-          // ⚠️ **This one line feeds eight `snapshot.*.stderr` log columns**, so the normalization it
-          // chose was the normalization all of them got — and `err instanceof Error ? err.message :
-          // String(err)` is one of the 21 drifted shapes `Log.fault` exists to replace: it throws
-          // away the stack, which for a spawn that never produced a process is the ONLY thing that
-          // says why. `Log.fault` is the one normalization (`todo/logging.md` 1h).
+          // 🔴 **Ruling 2 — the unavailable subsystem names ITSELF, and it is not this git command.**
+          // Until 2026-08-08 this arm wrote `Log.fault(err)` into `stderr`, and that one line fed
+          // eight `snapshot.*.stderr` log columns. `stderr` names *the child's own words*; a spawn
+          // that never produced a process has no stderr, so those columns claimed git had complained
+          // when no git existed to complain. That is a fault described falsely, and it is why the
+          // columns had to be classed `fault` — the class was covering for the lie.
+          //
+          // So the catch logs its OWN event at the point the error is caught, normalized once by
+          // `Log.fault`, and hands back an EMPTY `stderr`. Downstream lines then say what is true —
+          // the operation failed and the child said nothing — with the reason on the line above them
+          // under its own greppable key, which is more mineable than a string buried in a column
+          // shared with git's output. It also covers the ~10 `git()` calls that log nothing at all on
+          // failure (`init`, the `config` writes, `drop`, `excludes`, `seed`, `show`): a missing git
+          // binary used to make the whole snapshot store silently no-op.
+          //
+          // ⚠️ `code: 1` is a SENTINEL, not an observed exit status. It is kept because `ignore()`
+          // reads git's 0/1 convention from `check-ignore` and both values land on the same empty
+          // result; the `snapshot.git.spawn.failed` line is what tells a reader no process ran.
           // ⚠️ A defect is deliberately not caught here (`Effect.catch` does not see one — measured,
           // effect@4.0.0-beta.83): a broken spawner must not read as `git exited 1`.
           Effect.catch((err) =>
-            Effect.succeed({
-              code: ChildProcessSpawner.ExitCode(1),
-              text: "",
-              stderr: Log.fault(err),
-            }),
+            Log.event("snapshot.git.spawn.failed", { "snapshot.cause": Log.fault(err) }).pipe(
+              Effect.as({
+                code: ChildProcessSpawner.ExitCode(1),
+                text: "",
+                stderr: "",
+              } satisfies GitResult),
+            ),
           ),
         )
 
@@ -695,8 +710,18 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
                   return map
                 },
                 Effect.scoped,
-                Effect.catch(() =>
-                  Effect.succeed<Map<string, { before: string; after: string }> | undefined>(undefined),
+                // 🔴 The same ruling-2 shape one level up: this arm used to discard the error and
+                // answer `undefined`, so a `cat-file --batch` that could not be SPAWNED degraded to
+                // the per-file `show()` path with nothing written anywhere. The fallback is correct;
+                // being silent about why is not. (`snapshot.diff.load.fallback` beside it reports the
+                // other case — a batch that ran and exited non-zero — and carries the child's real
+                // stderr, which is why that one is `text` and this one is `fault`.)
+                Effect.catch((error) =>
+                  Log.event("snapshot.diff.load.failed", { "snapshot.cause": Log.fault(error) }).pipe(
+                    Effect.flatMap(() =>
+                      Effect.succeed<Map<string, { before: string; after: string }> | undefined>(undefined),
+                    ),
+                  ),
                 ),
               )
 

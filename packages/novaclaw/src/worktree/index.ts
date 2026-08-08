@@ -162,7 +162,23 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/Worktree") {}
 
-type GitResult = { code: number; text: string; stderr: string }
+/**
+ * **`stderr` is the CHILD's words; `fault` is OURS — and they are two fields on purpose.**
+ *
+ * Until 2026-08-08 a caught spawn failure was written into `stderr` (`e instanceof Error ?
+ * e.message : String(e)`, one of the 21 drifted shapes `Log.fault` replaces), so
+ * `worktree.checkout.failed` reported our own exception as git's output. A spawn that never produced
+ * a process has no stderr: ruling 2, *a fault is never described falsely*. The catch now names
+ * itself under `worktree.git.spawn.failed` and leaves `stderr` empty.
+ *
+ * ⚠️ It still has to reach the CALLER, because worktree's `stderr` is not log-only — it is the text
+ * of `CreateFailedError`/`ListFailedError`/`RemoveFailedError`/`ResetFailedError`, which a person
+ * reads in the UI. Blanking it without this field would have replaced *"spawn git ENOENT"* with
+ * *"Failed to create git worktree"*, which is the other half of the same ruling. See {@link reason}.
+ *
+ * `fault` is `""` whenever a child actually ran.
+ */
+type GitResult = { code: number; text: string; stderr: string; fault: string }
 
 export const layer: Layer.Layer<
   Service,
@@ -188,16 +204,42 @@ export const layer: Layer.Layer<
           code: result.exitCode,
           text: result.stdout.toString("utf8"),
           stderr: result.stderr.toString("utf8"),
+          fault: "",
         } satisfies GitResult
       },
-      Effect.catch((e) =>
-        Effect.succeed({
-          code: 1,
-          text: "",
-          stderr: e instanceof Error ? e.message : String(e),
-        } satisfies GitResult),
+      // 🔴 **Ruling 2.** `code: 1` is a sentinel, not an observed exit status, and the reason no
+      // longer masquerades as git's stderr — it is named here, once, by the subsystem that is
+      // actually unavailable. `Log.fault` is evaluated twice on this cold path deliberately: the
+      // literal call at the attribute site is what `log-attributes.test.ts` reads to prove the one
+      // normalization is in force, and a local would be invisible to it.
+      // ⚠️ `Effect.catch` does not see a defect (measured, effect@4.0.0-beta.83) — deliberately: a
+      // broken spawner must keep travelling to the `catchCause` arms rather than read as `git exited 1`.
+      Effect.catch((error) =>
+        Log.event("worktree.git.spawn.failed", { "worktree.cause": Log.fault(error) }).pipe(
+          Effect.as({ code: 1, text: "", stderr: "", fault: Log.fault(error) } satisfies GitResult),
+        ),
       ),
     )
+
+    /**
+     * **What the CHILD said** — its own stderr, else its own stdout. Never our caught spawn failure.
+     *
+     * This is the value a log column named for a foreign process may hold, which is what lets
+     * `worktree.checkout.failed` and `worktree.start.command.failed` be classed `text` rather than
+     * `fault`. On a spawn failure it is `""`, and the `…spawn.failed` line above it says why.
+     */
+    const childOutput = (result: GitResult) => result.stderr || result.text
+
+    /**
+     * **Why a git invocation produced nothing usable, for a PERSON** — the child's words, then our
+     * caught spawn failure, then a constant.
+     *
+     * Two readers, two renderings, and the split is the point (the same one `boot` already makes for
+     * its bus payload): a user-facing error has no second line to carry the spawn failure, so it
+     * takes `fault` here; a log line does, so it takes {@link childOutput} and the fault arrives
+     * under its own key.
+     */
+    const reason = (result: GitResult, fallback: string) => childOutput(result) || result.fault || fallback
 
     const MAX_NAME_ATTEMPTS = 26
     const candidate = Effect.fn("Worktree.candidate")(function* (input: {
@@ -248,9 +290,7 @@ export const layer: Layer.Layer<
         { cwd: ctx.worktree },
       )
       if (created.code !== 0) {
-        return yield* new CreateFailedError({
-          message: created.stderr || created.text || "Failed to create git worktree",
-        })
+        return yield* new CreateFailedError({ message: reason(created, "Failed to create git worktree") })
       }
     })
 
@@ -261,10 +301,14 @@ export const layer: Layer.Layer<
 
       const populated = yield* git(["reset", "--hard"], { cwd: info.directory })
       if (populated.code !== 0) {
-        const message = populated.stderr || populated.text || "Failed to populate worktree"
+        // The UI gets the whole reason including a caught spawn failure; the log column gets only
+        // git's own words, because it is declared `text` and `worktree.git.spawn.failed` has already
+        // named the other case on its own line. Same split as the `errorMessage`/`Log.fault` pair
+        // below — two readers, two renderings.
+        const message = reason(populated, "Failed to populate worktree")
         yield* Log.event("worktree.checkout.failed", {
           "worktree.directory": info.directory,
-          "worktree.cause": message,
+          "worktree.cause": childOutput(populated),
         })
         GlobalBus.emit("event", {
           directory: info.directory,
@@ -399,7 +443,7 @@ export const layer: Layer.Layer<
 
       const result = yield* git(["worktree", "list", "--porcelain"], { cwd: ctx.worktree })
       if (result.code !== 0) {
-        return yield* new ListFailedError({ message: result.stderr || result.text || "Failed to read git worktrees" })
+        return yield* new ListFailedError({ message: reason(result, "Failed to read git worktrees") })
       }
 
       const entries = parseWorktreeList(result.text)
@@ -465,7 +509,7 @@ export const layer: Layer.Layer<
 
       const list = yield* git(["worktree", "list", "--porcelain"], { cwd: ctx.worktree })
       if (list.code !== 0) {
-        return yield* new RemoveFailedError({ message: list.stderr || list.text || "Failed to read git worktrees" })
+        return yield* new RemoveFailedError({ message: reason(list, "Failed to read git worktrees") })
       }
 
       const entries = parseWorktreeList(list.text)
@@ -493,7 +537,10 @@ export const layer: Layer.Layer<
       // A refusal on the SAFE path is not a failure to report as one — it is the guard doing its job,
       // and the caller needs to be told it can retry with `force`. Git says "contains modified or
       // untracked files, use --force to delete it"; that text is git's, so match on the stable part.
-      if (removed.code !== 0 && input.force !== true && /use --force|not empty|contains modified/i.test(removed.stderr || removed.text || "")) {
+      // ⚠️ `childOutput`, deliberately NOT `reason`: this matches on git's own wording, so our caught
+      // spawn failure must never be able to satisfy it. A worktree we could not even ask about is not
+      // a worktree we know to be dirty.
+      if (removed.code !== 0 && input.force !== true && /use --force|not empty|contains modified/i.test(childOutput(removed))) {
         return yield* new DirtyWorktreeError({
           // ⚠️ The CALLER's path, not git's `entry.path`. git reports worktrees with forward slashes
           // on Windows, so `entry.path` differs from the string the client passed in — and this field
@@ -510,15 +557,13 @@ export const layer: Layer.Layer<
         const next = yield* git(["worktree", "list", "--porcelain"], { cwd: ctx.worktree })
         if (next.code !== 0) {
           return yield* new RemoveFailedError({
-            message: removed.stderr || removed.text || next.stderr || next.text || "Failed to remove git worktree",
+            message: reason(removed, reason(next, "Failed to remove git worktree")),
           })
         }
 
         const stale = yield* locateWorktree(parseWorktreeList(next.text), directory)
         if (stale?.path) {
-          return yield* new RemoveFailedError({
-            message: removed.stderr || removed.text || "Failed to remove git worktree",
-          })
+          return yield* new RemoveFailedError({ message: reason(removed, "Failed to remove git worktree") })
         }
       }
 
@@ -528,9 +573,7 @@ export const layer: Layer.Layer<
       if (branch) {
         const deleted = yield* git(["branch", "-D", branch], { cwd: ctx.worktree })
         if (deleted.code !== 0) {
-          return yield* new RemoveFailedError({
-            message: deleted.stderr || deleted.text || "Failed to delete worktree branch",
-          })
+          return yield* new RemoveFailedError({ message: reason(deleted, "Failed to delete worktree branch") })
         }
       }
 
@@ -555,15 +598,27 @@ export const layer: Layer.Layer<
         )
         return { code: result.exitCode, stderr: result.stderr.toString("utf8") }
       },
-      // 🔴 **Ruling 2 — a fault is never described falsely.** This arm used to discard the error and
-      // answer `stderr: ""`, so `worktree.start.command.failed` below logged an EMPTY cause: the line
-      // said the start command failed and named no reason, for a failure we were holding in our hand.
-      // A spawn that never produced a process has no stderr; the honest value in that column is the
-      // fault itself, normalized once by `Log.fault`.
+      // 🔴 **Ruling 2 — a fault is never described falsely, and this arm has now been wrong twice in
+      // opposite directions.** It first discarded the error and answered `stderr: ""`, so
+      // `worktree.start.command.failed` said the start command failed and named no reason at all.
+      // The fix put `Log.fault(cause)` in `stderr` — which named the reason and filed it under a
+      // false author: a spawn that never produced a process has no stderr, so the line claimed the
+      // user's start command had complained when no shell was ever started.
+      //
+      // Both halves are the same defect. The reason belongs to the subsystem that failed, so the
+      // catch names ITSELF under `worktree.start.spawn.failed` and `stderr` goes back to meaning
+      // *what the shell said*, which is what makes the column below `text` rather than `fault`.
       // ⚠️ `Effect.catch` does not see defects (measured, effect@4.0.0-beta.83) — deliberately: a
       // defect here must keep travelling to the `catchCause` arms in `createFromInfo`/`reset`, which
       // name it rather than folding it into an exit code.
-      Effect.catch((cause) => Effect.succeed({ code: 1, stderr: Log.fault(cause) })),
+      Effect.catch((cause) =>
+        // ⚠️ No `worktree.directory` here even though it would be useful: the pipes handed to
+        // `Effect.fnUntraced` are applied OUTSIDE the generator, so the arguments are not in scope.
+        // `worktree.start.command.failed` carries the directory on the line that follows this one.
+        Log.event("worktree.start.spawn.failed", { "worktree.cause": Log.fault(cause) }).pipe(
+          Effect.as({ code: 1, stderr: "" }),
+        ),
+      ),
     )
 
     const runStartScript = Effect.fnUntraced(function* (directory: string, cmd: string, kind: string) {
@@ -626,7 +681,7 @@ export const layer: Layer.Layer<
 
       const list = yield* git(["worktree", "list", "--porcelain"], { cwd: ctx.worktree })
       if (list.code !== 0) {
-        return yield* new ResetFailedError({ message: list.stderr || list.text || "Failed to read git worktrees" })
+        return yield* new ResetFailedError({ message: reason(list, "Failed to read git worktrees") })
       }
 
       const entry = yield* locateWorktree(parseWorktreeList(list.text), directory)
@@ -648,44 +703,42 @@ export const layer: Layer.Layer<
         yield* gitExpect(
           ["fetch", remote, branch],
           { cwd: ctx.worktree },
-          (r) => new ResetFailedError({ message: r.stderr || r.text || `Failed to fetch ${base.ref}` }),
+          (r) => new ResetFailedError({ message: reason(r, `Failed to fetch ${base.ref}`) }),
         )
       }
 
       yield* gitExpect(
         ["reset", "--hard", base.ref],
         { cwd: worktreePath },
-        (r) => new ResetFailedError({ message: r.stderr || r.text || "Failed to reset worktree to target" }),
+        (r) => new ResetFailedError({ message: reason(r, "Failed to reset worktree to target") }),
       )
 
       const cleanResult = yield* sweep(worktreePath)
       if (cleanResult.code !== 0) {
-        return yield* new ResetFailedError({
-          message: cleanResult.stderr || cleanResult.text || "Failed to clean worktree",
-        })
+        return yield* new ResetFailedError({ message: reason(cleanResult, "Failed to clean worktree") })
       }
 
       yield* gitExpect(
         ["submodule", "update", "--init", "--recursive", "--force"],
         { cwd: worktreePath },
-        (r) => new ResetFailedError({ message: r.stderr || r.text || "Failed to update submodules" }),
+        (r) => new ResetFailedError({ message: reason(r, "Failed to update submodules") }),
       )
 
       yield* gitExpect(
         ["submodule", "foreach", "--recursive", "git", "reset", "--hard"],
         { cwd: worktreePath },
-        (r) => new ResetFailedError({ message: r.stderr || r.text || "Failed to reset submodules" }),
+        (r) => new ResetFailedError({ message: reason(r, "Failed to reset submodules") }),
       )
 
       yield* gitExpect(
         ["submodule", "foreach", "--recursive", "git", "clean", "-fdx"],
         { cwd: worktreePath },
-        (r) => new ResetFailedError({ message: r.stderr || r.text || "Failed to clean submodules" }),
+        (r) => new ResetFailedError({ message: reason(r, "Failed to clean submodules") }),
       )
 
       const status = yield* git(["-c", "core.fsmonitor=false", "status", "--porcelain=v1"], { cwd: worktreePath })
       if (status.code !== 0) {
-        return yield* new ResetFailedError({ message: status.stderr || status.text || "Failed to read git status" })
+        return yield* new ResetFailedError({ message: reason(status, "Failed to read git status") })
       }
 
       if (status.text.trim()) {

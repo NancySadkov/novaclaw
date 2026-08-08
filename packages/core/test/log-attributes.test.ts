@@ -57,7 +57,8 @@ const FAULT_SITES = SITES.filter((site) => classOf(site) === "fault")
  *
  * Seeded at **90** on 2026-08-07, parser-measured against app HEAD `34e45a066`; **73** after the
  * `packages/core/src/session/` pass on the same day; **61** after the snapshot/worktree/watcher pass
- * on 2026-08-08 (8 conversions and 4 re-classifications — see below). Modelled on
+ * on 2026-08-08 (8 conversions and 4 re-classifications — see below); **51** after the `stderr`
+ * ruling later the same day (10 re-classifications — see below). Modelled on
  * `log-event-migration-ledger.test.ts` (which ran 233 → 0) and on
  * `config-routing-ledger.test.ts` before it: a two-directional ratchet, so an unlisted site fails as
  * new and a listed site that no longer needs listing fails as stale. **The list can only shrink.**
@@ -85,11 +86,28 @@ const FAULT_SITES = SITES.filter((site) => classOf(site) === "fault")
  * between the two exits is a judgement about what the line should SAY, and an entry that says one
  * exit is impossible stops the next reader from making it.
  *
- * 🔧 **OPENED — eight `snapshot.*.stderr` sites are blocked on a question nobody has answered:**
- * may a caught spawn failure live in a field called `stderr`? `snapshot/index.ts`'s `git` helper
- * puts one there, which is the only reason those columns are `fault` rather than `text`. Answer it
- * and they leave the ledger; leave it and they can never be converted, because `Log.fault` on
- * git's own stderr string is the identity.
+ * ✅ **ANSWERED 2026-08-08 — NO: a caught spawn failure may not live in a field called `stderr`,
+ * and answering it took 10 entries off the ledger (61 → 51).**
+ * `stderr` names *the child's own words*. A spawn that never produced a process has no stderr, so
+ * writing our caught exception there says git complained when no git existed to complain — ruling 2,
+ * and the same defect class as `worktree.runStartCommand`'s empty `stderr`. Those two are one
+ * mistake pointing in opposite directions: one dropped the reason, the other filed it under a false
+ * author.
+ * **The exit was neither of the two the entry above imagined.** Not `Log.fault` at the log site
+ * (the identity, correctly refused), and not "never convertible": the column held TWO things, so the
+ * fix is to SPLIT them. Each `Effect.catch` arm now emits its own event —
+ * `snapshot.git.spawn.failed`, `worktree.git.spawn.failed`, `worktree.start.spawn.failed` — carrying
+ * `Log.fault(err)` at the point of the catch, and returns an empty `stderr`. The subsystem that is
+ * unavailable names itself, which is ruling 2 read forwards instead of as a prohibition.
+ * With the lie gone, every `snapshot.*.stderr` column and the two `worktree.cause` columns provably
+ * hold only a foreign process's output, so they are `text` and leave this ledger honestly.
+ * ⭐ **`snapshot.diff.load.fallback` was never blocked at all** — it reads a raw `appProcess.run`
+ * result on a branch guarded by `exitCode !== 0`, so a child provably ran. It was listed by
+ * ASSOCIATION with its seven siblings. A shared blocker is a cluster, and a cluster is where a wrong
+ * label hides; check each member against the code, not against the group.
+ * ⚠️ The class change has **no downstream effect**: `text` and `fault` are both `content: "user"`
+ * and both `SPEAKS_FOR_OTHERS`, so egress, the crash-field set and the `log` tool's untrusted frame
+ * are all byte-identical. What changed is that the column's NAME is now true.
  *
  * ⚠️ **When it reaches zero, DELETE the fixture — do not empty it.** An empty JSON array still reads
  * as *add your entry here*; the next author under time pressure appends one line and the invariant
