@@ -330,6 +330,22 @@ export const layer = Layer.effectDiscard(
         .run()
         .pipe(Effect.orDie, Effect.andThen(run(db, event))),
     )
+    yield* events.project(SessionEvent.DeviceSwitched, (event) =>
+      db
+        .update(SessionTable)
+        .set({ device: event.data.device, time_updated: DateTime.toEpochMillis(event.data.timestamp) })
+        .where(eq(SessionTable.id, event.data.sessionID))
+        .run()
+        .pipe(Effect.orDie, Effect.andThen(run(db, event))),
+    )
+    yield* events.project(SessionEvent.PrioritySwitched, (event) =>
+      db
+        .update(SessionTable)
+        .set({ priority: event.data.priority, time_updated: DateTime.toEpochMillis(event.data.timestamp) })
+        .where(eq(SessionTable.id, event.data.sessionID))
+        .run()
+        .pipe(Effect.orDie, Effect.andThen(run(db, event))),
+    )
     // A per-session harness-feature toggle (introspection · quality · affective · thinkingBudget).
     yield* events.project(SessionEvent.FeatureSwitched, (event) => {
       const stamp = { time_updated: DateTime.toEpochMillis(event.data.timestamp) }

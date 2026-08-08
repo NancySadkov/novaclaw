@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { eq } from "drizzle-orm"
 import { Effect, Layer, Schema } from "effect"
+import os from "node:os"
+import path from "node:path"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Database } from "@novaclaw/core/database/database"
@@ -9,11 +11,12 @@ import { PermissionV2 } from "@novaclaw/core/permission"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionComponentRegistry } from "@novaclaw/core/session/component-registry"
 import { SessionComponentTier } from "@novaclaw/core/session/component-tier"
-import { SessionComponentTable, SessionTable } from "@novaclaw/core/session/sql"
+import { SessionComponentTable, SessionContextEpochTable, SessionTable } from "@novaclaw/core/session/sql"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionTool } from "@novaclaw/core/tool/session"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
+import { SystemContext } from "@novaclaw/core/system-context"
 import { executeTool, toolIdentity } from "./lib/tool"
 
 const outputStore = Layer.mock(ToolOutputStore.Service, {
@@ -208,6 +211,111 @@ describe("session tool", () => {
           expect(textOf(read)).toContain('"label":"ready"')
           const listed = yield* call(registry, sessionID, { op: "list", kind: "tool/fixture/marker" })
           expect(textOf(listed)).toContain('"label":"ready"')
+        }),
+      ),
+    )
+  })
+
+  test("writes and clears device and priority through their canonical sparse columns", () => {
+    const asserted: Asserted[] = []
+    return Effect.runPromise(
+      withTool(asserted, ({ registry, db, sessionID }) =>
+        Effect.gen(function* () {
+          yield* call(registry, sessionID, { op: "set", kind: "device", value: "spark" })
+          yield* call(registry, sessionID, { op: "set", kind: "priority", value: 3 })
+          expect(asserted).toEqual([])
+          expect(
+            yield* db
+              .select({ device: SessionTable.device, priority: SessionTable.priority })
+              .from(SessionTable)
+              .where(eq(SessionTable.id, sessionID))
+              .get()
+              .pipe(Effect.orDie),
+          ).toEqual({ device: "spark", priority: 3 })
+
+          const invalid = yield* call(registry, sessionID, { op: "set", kind: "priority", value: 0 })
+          expect(invalid.type).toBe("error")
+          expect(textOf(invalid)).toContain("priority")
+
+          yield* call(registry, sessionID, { op: "remove", kind: "device" })
+          yield* call(registry, sessionID, { op: "remove", kind: "priority" })
+          expect(
+            yield* db
+              .select({ device: SessionTable.device, priority: SessionTable.priority })
+              .from(SessionTable)
+              .where(eq(SessionTable.id, sessionID))
+              .get()
+              .pipe(Effect.orDie),
+          ).toEqual({ device: null, priority: null })
+        }),
+      ),
+    )
+  })
+
+  test("moves the working folder through Moved and refuses to erase required location state", () => {
+    const asserted: Asserted[] = []
+    return Effect.runPromise(
+      withTool(asserted, ({ registry, db, sessionID }) =>
+        Effect.gen(function* () {
+          const destination = path.join(process.cwd(), "src")
+          const removed = yield* call(registry, sessionID, { op: "remove", kind: "working_folder" })
+          expect(removed.type).toBe("error")
+          expect(textOf(removed)).toContain("cannot be removed")
+          expect(asserted).toEqual([])
+
+          const outside = yield* call(registry, sessionID, {
+            op: "set",
+            kind: "working_folder",
+            value: os.tmpdir(),
+          })
+          expect(outside.type).toBe("error")
+          expect(textOf(outside)).toContain("must stay in project")
+          expect(asserted).toEqual([])
+
+          yield* db
+            .insert(SessionContextEpochTable)
+            .values({
+              session_id: sessionID,
+              baseline: "old folder",
+              snapshot: {} satisfies SystemContext.Snapshot,
+              baseline_seq: 0,
+            })
+            .run()
+            .pipe(Effect.orDie)
+
+          const moved = yield* call(registry, sessionID, {
+            op: "set",
+            kind: "working_folder",
+            value: destination,
+          })
+          expect(moved.type).toBe("text")
+          expect(asserted).toEqual([
+            { action: "session", resources: ["working_folder"], save: ["working_folder"] },
+          ])
+          const row = yield* db
+            .select({ directory: SessionTable.directory, subpath: SessionTable.path })
+            .from(SessionTable)
+            .where(eq(SessionTable.id, sessionID))
+            .get()
+            .pipe(Effect.orDie)
+          expect(row?.directory).toBe(destination)
+          expect(row?.subpath?.replaceAll("\\", "/")).toBe("packages/core/src")
+          expect(
+            yield* db
+              .select()
+              .from(SessionContextEpochTable)
+              .where(eq(SessionContextEpochTable.session_id, sessionID))
+              .get()
+              .pipe(Effect.orDie),
+          ).toBeUndefined()
+          expect(
+            yield* db
+              .select()
+              .from(SessionComponentTable)
+              .where(eq(SessionComponentTable.session_id, sessionID))
+              .all()
+              .pipe(Effect.orDie),
+          ).toEqual([])
         }),
       ),
     )

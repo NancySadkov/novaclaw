@@ -5,6 +5,9 @@ import { Context, DateTime, Effect, Layer, Schema } from "effect"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { EventV2 } from "../event"
+import { ProjectV2 } from "../project"
+import { AbsolutePath, RelativePath } from "../schema"
+import path from "node:path"
 import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
@@ -53,9 +56,10 @@ export interface AttemptFence {
 
 /** Adapter for a component whose canonical bytes already live in a kernel-owned store. */
 export interface Projection<A> {
+  readonly validate?: (sessionID: SessionSchema.ID, value: A) => Effect.Effect<void, unknown>
   readonly get: (sessionID: SessionSchema.ID) => Effect.Effect<A | undefined, unknown>
   readonly put: (sessionID: SessionSchema.ID, value: A) => Effect.Effect<void, unknown>
-  readonly remove: (sessionID: SessionSchema.ID) => Effect.Effect<boolean, unknown>
+  readonly remove?: (sessionID: SessionSchema.ID) => Effect.Effect<boolean, unknown>
 }
 
 export interface Definition<A = any> {
@@ -66,6 +70,7 @@ export interface Definition<A = any> {
   readonly lifetime: Lifetime
   readonly version: number
   readonly codec: Schema.Codec<A, Schema.Json>
+  readonly removable?: boolean
   readonly projection?: Projection<A>
   /** Decode an older stored version into the current typed value. Absence makes drift explicit. */
   readonly migrate?: (input: { readonly version: number; readonly value: Schema.Json }) => Effect.Effect<A>
@@ -79,6 +84,7 @@ export interface DefinitionInfo {
   readonly cardinality: Cardinality
   readonly lifetime: Lifetime
   readonly version: number
+  readonly removable: boolean
   readonly schema: unknown
 }
 
@@ -141,7 +147,11 @@ export interface ReadInput {
 export interface Interface {
   readonly registerTool: <A>(definition: Definition<A>) => Effect.Effect<void, RegistryError>
   readonly definitions: () => ReadonlyArray<DefinitionInfo>
-  readonly validate: (kind: string, value: unknown) => Effect.Effect<Schema.Json, ComponentError>
+  readonly validate: (input: {
+    sessionID: SessionSchema.ID
+    kind: string
+    value: unknown
+  }) => Effect.Effect<Schema.Json, ComponentError>
   readonly get: (input: ReadInput) => Effect.Effect<Entry | undefined, ComponentError>
   readonly list: (input: Omit<ReadInput, "id">) => Effect.Effect<ReadonlyArray<Entry>, ComponentError>
   readonly put: (input: PutInput) => Effect.Effect<Entry, ComponentError>
@@ -174,6 +184,7 @@ const infoOf = (definition: AnyDefinition): DefinitionInfo => ({
   cardinality: definition.cardinality,
   lifetime: definition.lifetime,
   version: definition.version,
+  removable: definition.removable !== false,
   schema: Schema.toJsonSchemaDocument(definition.codec),
 })
 
@@ -279,9 +290,18 @@ export const make = (kernelDefinitions: ReadonlyArray<AnyDefinition> = []) =>
           Effect.mapError((cause) => new InvalidValueError({ kind: definition.kind, message: String(cause) })),
         )
 
-      const validate = Effect.fn("SessionComponent.validate")(function* (kind: string, value: unknown) {
-        const definition = yield* definitionOf(kind)
-        return yield* encodeInput(definition, yield* decodeInput(definition, value))
+      const validate = Effect.fn("SessionComponent.validate")(function* (input: {
+        sessionID: SessionSchema.ID
+        kind: string
+        value: unknown
+      }) {
+        const definition = yield* definitionOf(input.kind)
+        const decoded = yield* decodeInput(definition, input.value)
+        if (definition.projection?.validate)
+          yield* definition.projection.validate(input.sessionID, decoded).pipe(
+            Effect.mapError((cause) => projectionFailure(definition, "Validating", cause)),
+          )
+        return yield* encodeInput(definition, decoded)
       })
 
       const projectedEntry = Effect.fn("SessionComponent.projectedEntry")(function* (
@@ -479,10 +499,15 @@ export const make = (kernelDefinitions: ReadonlyArray<AnyDefinition> = []) =>
       const remove = Effect.fn("SessionComponent.remove")(function* (input: Omit<ReadInput, "attempt" | "now">) {
         const definition = yield* definitionOf(input.kind)
         const componentID = yield* storedID(definition, input.id)
-        if (definition.projection)
+        if (definition.removable === false)
+          return yield* new RegistryError({ message: `${definition.kind} cannot be removed` })
+        if (definition.projection) {
+          if (!definition.projection.remove)
+            return yield* new RegistryError({ message: `${definition.kind} has no removal adapter` })
           return yield* definition.projection.remove(input.sessionID).pipe(
             Effect.mapError((cause) => projectionFailure(definition, "Removing", cause)),
           )
+        }
         const removed = yield* db
           .delete(SessionComponentTable)
           .where(
@@ -525,9 +550,15 @@ export const defaultLayer = layer.pipe(Layer.provide(Database.defaultLayer))
 const compiledDefinitions = Effect.gen(function* () {
   const { db } = yield* Database.Service
   const events = yield* EventV2.Service
+  const projects = yield* ProjectV2.Service
   const current = (sessionID: SessionSchema.ID) =>
     db
-      .select({ override: SessionTable.system_prompt_override })
+      .select({
+        override: SessionTable.system_prompt_override,
+        device: SessionTable.device,
+        priority: SessionTable.priority,
+        directory: SessionTable.directory,
+      })
       .from(SessionTable)
       .where(eq(SessionTable.id, sessionID))
       .get()
@@ -538,6 +569,33 @@ const compiledDefinitions = Effect.gen(function* () {
       messageID: SessionMessage.ID.create(),
       timestamp: DateTime.nowUnsafe(),
       override,
+    })
+  const publishDevice = (sessionID: SessionSchema.ID, device: string | null) =>
+    events.publish(SessionEvent.DeviceSwitched, {
+      sessionID,
+      messageID: SessionMessage.ID.create(),
+      timestamp: DateTime.nowUnsafe(),
+      device,
+    })
+  const publishPriority = (sessionID: SessionSchema.ID, priority: number | null) =>
+    events.publish(SessionEvent.PrioritySwitched, {
+      sessionID,
+      messageID: SessionMessage.ID.create(),
+      timestamp: DateTime.nowUnsafe(),
+      priority,
+    })
+  const resolveWorkingFolder = (sessionID: SessionSchema.ID, value: string) =>
+    Effect.gen(function* () {
+      const row = yield* current(sessionID)
+      if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+      const directory = AbsolutePath.make(value)
+      const source = yield* projects.resolve(AbsolutePath.make(row.directory))
+      const destination = yield* projects.resolve(directory)
+      if (source.id !== destination.id)
+        return yield* Effect.fail(
+          new Error(`Working folder must stay in project ${source.id}; destination belongs to ${destination.id}`),
+        )
+      return { row, directory, destination }
     })
 
   return [
@@ -568,8 +626,91 @@ const compiledDefinitions = Effect.gen(function* () {
           }),
       },
     }),
+    kernelDefinition({
+      kind: "device",
+      description:
+        "The scheduling device id for this session. It groups capacity; it does not choose which model answers. Remove to inherit.",
+      cardinality: "singleton",
+      lifetime: "entity",
+      version: 1,
+      codec: Schema.NonEmptyString,
+      projection: {
+        get: (sessionID) => current(sessionID).pipe(Effect.map((row) => row?.device ?? undefined)),
+        put: (sessionID, value) =>
+          Effect.gen(function* () {
+            const row = yield* current(sessionID)
+            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            if (row.device !== value) yield* publishDevice(sessionID, value)
+            return undefined
+          }),
+        remove: (sessionID) =>
+          Effect.gen(function* () {
+            const row = yield* current(sessionID)
+            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            if (row.device === null) return false
+            yield* publishDevice(sessionID, null)
+            return true
+          }),
+      },
+    }),
+    kernelDefinition({
+      kind: "priority",
+      description:
+        "A positive EEVDF scheduling weight for this session. Higher values receive more device share. Remove to inherit.",
+      cardinality: "singleton",
+      lifetime: "entity",
+      version: 1,
+      codec: Schema.Finite.check(Schema.isGreaterThan(0)),
+      projection: {
+        get: (sessionID) => current(sessionID).pipe(Effect.map((row) => row?.priority ?? undefined)),
+        put: (sessionID, value) =>
+          Effect.gen(function* () {
+            const row = yield* current(sessionID)
+            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            if (row.priority !== value) yield* publishPriority(sessionID, value)
+            return undefined
+          }),
+        remove: (sessionID) =>
+          Effect.gen(function* () {
+            const row = yield* current(sessionID)
+            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            if (row.priority === null) return false
+            yield* publishPriority(sessionID, null)
+            return true
+          }),
+      },
+    }),
+    kernelDefinition({
+      kind: "working_folder",
+      description:
+        "The absolute working folder for this session. Moving re-derives project identity and the next turn's permission scope. It cannot be removed.",
+      cardinality: "singleton",
+      lifetime: "entity",
+      version: 1,
+      codec: AbsolutePath,
+      removable: false,
+      projection: {
+        get: (sessionID) => current(sessionID).pipe(Effect.map((row) => row?.directory)),
+        validate: (sessionID, value) => resolveWorkingFolder(sessionID, value).pipe(Effect.asVoid),
+        put: (sessionID, value) =>
+          Effect.gen(function* () {
+            const { row, directory, destination } = yield* resolveWorkingFolder(sessionID, value)
+            if (row.directory === directory) return
+            yield* events.publish(SessionEvent.Moved, {
+              sessionID,
+              location: { directory },
+              subdirectory: RelativePath.make(path.relative(destination.directory, directory).replaceAll("\\", "/")),
+              timestamp: DateTime.nowUnsafe(),
+            })
+          }),
+      },
+    }),
   ]
 })
 
 export const kernelLayer = Layer.effect(Service, compiledDefinitions.pipe(Effect.flatMap(make)))
-export const node = makeGlobalNode({ service: Service, layer: kernelLayer, deps: [Database.node, EventV2.node] })
+export const node = makeGlobalNode({
+  service: Service,
+  layer: kernelLayer,
+  deps: [Database.node, EventV2.node, ProjectV2.node],
+})

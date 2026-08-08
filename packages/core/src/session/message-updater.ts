@@ -149,6 +149,9 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
       "session.next.type.switched": () => Effect.void,
       // The per-session prompt-override layer is likewise a control signal.
       "session.next.prompt-override.switched": () => Effect.void,
+      // Scheduling affinity and weight are control signals projected onto the session row.
+      "session.next.device.switched": () => Effect.void,
+      "session.next.priority.switched": () => Effect.void,
       "session.next.prompted": (event) => {
         return adapter.appendMessage(
           SessionMessage.User.make({

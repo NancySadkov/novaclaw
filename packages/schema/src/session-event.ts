@@ -175,6 +175,28 @@ export const PromptOverrideSwitched = Event.define({
 })
 export type PromptOverrideSwitched = typeof PromptOverrideSwitched.Type
 
+export const DeviceSwitched = Event.define({
+  type: "session.next.device.switched",
+  ...options,
+  schema: {
+    ...Base,
+    messageID: SessionMessage.ID,
+    device: Schema.NullOr(Schema.String),
+  },
+})
+export type DeviceSwitched = typeof DeviceSwitched.Type
+
+export const PrioritySwitched = Event.define({
+  type: "session.next.priority.switched",
+  ...options,
+  schema: {
+    ...Base,
+    messageID: SessionMessage.ID,
+    priority: Schema.NullOr(Schema.Finite),
+  },
+})
+export type PrioritySwitched = typeof PrioritySwitched.Type
+
 export const Moved = Event.define({
   type: "session.next.moved",
   ...options,
@@ -654,6 +676,8 @@ export const DurableDefinitions = Event.inventory(
   FeatureSwitched,
   TypeSwitched,
   PromptOverrideSwitched,
+  DeviceSwitched,
+  PrioritySwitched,
   Moved,
   Prompted,
   PromptAdmitted,
@@ -698,6 +722,8 @@ export const Definitions = Event.inventory(
   FeatureSwitched,
   TypeSwitched,
   PromptOverrideSwitched,
+  DeviceSwitched,
+  PrioritySwitched,
   Moved,
   Prompted,
   PromptAdmitted,

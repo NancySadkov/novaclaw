@@ -10,10 +10,11 @@ import { WorkspaceEvent } from "../src/workspace-event"
 describe("public event manifest", () => {
   test("owns the complete public event surface", () => {
     // 2026-08-02: six durable recovery events joined the manifest: three provider-attempt lifecycle
-    // events and three storage-linear stream checkpoints. Keep the exact counts pinned so adding a
-    // public wire event always requires an explicit contract review here.
-    expect(EventManifest.ServerDefinitions.length).toBe(71)
-    expect(EventManifest.Definitions.length).toBe(92)
+    // events and three storage-linear stream checkpoints. 2026-08-08: device and priority switches
+    // joined as durable session-component projections. Keep the exact counts pinned so adding a public
+    // wire event always requires an explicit contract review here.
+    expect(EventManifest.ServerDefinitions.length).toBe(73)
+    expect(EventManifest.Definitions.length).toBe(94)
     // V1-nuke slice D: the record lifecycle events are native (Session.Info payloads, durable
     // v2); session.diff + command.executed died with the V1 wire schemas (no publishers).
     expect(SessionRecordEvent.Definitions).toEqual([
@@ -22,8 +23,8 @@ describe("public event manifest", () => {
       SessionRecordEvent.Deleted,
       SessionRecordEvent.Error,
     ])
-    expect(EventManifest.Latest.size).toBe(92)
-    expect(EventManifest.Durable.size).toBe(44)
+    expect(EventManifest.Latest.size).toBe(94)
+    expect(EventManifest.Durable.size).toBe(46)
     // A retired durable type must stay retired: rows keyed `session.next.retried.1` still exist in
     // shipped databases and are skipped (never decoded) because both read paths filter to this manifest.
     expect(EventManifest.Durable.has("session.next.retried.1")).toBe(false)

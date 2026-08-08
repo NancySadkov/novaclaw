@@ -116,6 +116,7 @@ export const layer = Layer.effectDiscard(
                             .map(
                               (definition) =>
                                 `${definition.kind} [${definition.cardinality}, ${definition.lifetime}, ${SessionComponentTier.tierOf(definition.kind)}] — ${definition.description}\n` +
+                                (definition.removable ? "" : "remove: unavailable (this component is required)\n") +
                                 JSON.stringify(definition.schema),
                             )
                             .join("\n\n"),
@@ -148,7 +149,17 @@ export const layer = Layer.effectDiscard(
                   }
                 }
 
-                const validated = input.op === "set" ? yield* components.validate(input.kind, input.value) : undefined
+                const definition = components.definitions().find((item) => item.kind === input.kind)
+                if (input.op === "remove" && definition?.removable === false)
+                  return yield* failure(`${input.kind} cannot be removed; set a different value instead.`)
+                const validated =
+                  input.op === "set"
+                    ? yield* components.validate({
+                        sessionID: context.sessionID,
+                        kind: input.kind,
+                        value: input.value,
+                      })
+                    : undefined
                 const previous = yield* components.get({
                   sessionID: context.sessionID,
                   kind: input.kind,

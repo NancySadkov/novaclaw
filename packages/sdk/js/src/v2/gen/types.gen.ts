@@ -21,6 +21,8 @@ export type Event =
   | EventSessionNextFeatureSwitched
   | EventSessionNextTypeSwitched
   | EventSessionNextPromptOverrideSwitched
+  | EventSessionNextDeviceSwitched
+  | EventSessionNextPrioritySwitched
   | EventSessionNextMoved
   | EventSessionNextPrompted
   | EventSessionNextPromptAdmitted
@@ -408,6 +410,26 @@ export type GlobalEvent = {
           sessionID: string
           messageID: string
           override: string | null
+        }
+      }
+    | {
+        id: string
+        type: "session.next.device.switched"
+        properties: {
+          timestamp: number
+          sessionID: string
+          messageID: string
+          device: string | null
+        }
+      }
+    | {
+        id: string
+        type: "session.next.priority.switched"
+        properties: {
+          timestamp: number
+          sessionID: string
+          messageID: string
+          priority: number | null
         }
       }
     | {
@@ -1186,6 +1208,8 @@ export type GlobalEvent = {
     | SyncEventSessionNextFeatureSwitched
     | SyncEventSessionNextTypeSwitched
     | SyncEventSessionNextPromptOverrideSwitched
+    | SyncEventSessionNextDeviceSwitched
+    | SyncEventSessionNextPrioritySwitched
     | SyncEventSessionNextMoved
     | SyncEventSessionNextPrompted
     | SyncEventSessionNextPromptAdmitted
@@ -1646,6 +1670,8 @@ export type SessionDurableEvent =
   | SessionNextFeatureSwitched
   | SessionNextTypeSwitched
   | SessionNextPromptOverrideSwitched
+  | SessionNextDeviceSwitched
+  | SessionNextPrioritySwitched
   | SessionNextMoved
   | SessionNextPrompted
   | SessionNextPromptAdmitted
@@ -1802,6 +1828,8 @@ export type V2Event =
   | SessionNextFeatureSwitched
   | SessionNextTypeSwitched
   | SessionNextPromptOverrideSwitched
+  | SessionNextDeviceSwitched
+  | SessionNextPrioritySwitched
   | SessionNextMoved
   | SessionNextPrompted
   | SessionNextPromptAdmitted
@@ -2689,6 +2717,40 @@ export type SyncEventSessionNextPromptOverrideSwitched = {
       sessionID: string
       messageID: string
       override: string | null
+    }
+  }
+}
+
+export type SyncEventSessionNextDeviceSwitched = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.device.switched.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      messageID: string
+      device: string | null
+    }
+  }
+}
+
+export type SyncEventSessionNextPrioritySwitched = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.priority.switched.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      messageID: string
+      priority: number | null
     }
   }
 }
@@ -4244,6 +4306,46 @@ export type SessionNextPromptOverrideSwitched = {
     sessionID: string
     messageID: string
     override: string | null
+  }
+}
+
+export type SessionNextDeviceSwitched = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.device.switched"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    device: string | null
+  }
+}
+
+export type SessionNextPrioritySwitched = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.priority.switched"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    priority: number | null
   }
 }
 
@@ -6433,6 +6535,28 @@ export type EventSessionNextPromptOverrideSwitched = {
     sessionID: string
     messageID: string
     override: string | null
+  }
+}
+
+export type EventSessionNextDeviceSwitched = {
+  id: string
+  type: "session.next.device.switched"
+  properties: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    device: string | null
+  }
+}
+
+export type EventSessionNextPrioritySwitched = {
+  id: string
+  type: "session.next.priority.switched"
+  properties: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    priority: number | null
   }
 }
 
