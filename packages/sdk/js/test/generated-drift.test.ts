@@ -166,7 +166,7 @@ describe("the SDK's generated artifacts", () => {
   test(
     "openapi.json is what packages/protocol generates today",
     async () => {
-      const child = Bun.spawn(["bun", "run", "dev", "generate"], {
+      const child = Bun.spawn([process.execPath, "run", "dev", "generate"], {
         cwd: path.join(root, "packages/novaclaw"),
         stdout: "pipe",
         stderr: "pipe",

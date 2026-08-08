@@ -20,7 +20,7 @@ for (const index of Array.from({ length: warmups + runs }, (_, index) => index))
   const start = performance.now()
   console.log(`bench:test ${label}`)
 
-  const proc = Bun.spawn(["bun", "test", "--timeout", "30000"], {
+  const proc = Bun.spawn([process.execPath, "test", "--timeout", "30000"], {
     cwd: import.meta.dir + "/..",
     stdout: "inherit",
     stderr: "inherit",

@@ -1,5 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Effect, Layer, Queue } from "effect"
+import { existsSync, unlinkSync } from "node:fs"
+import path from "node:path"
 import { Flag } from "@novaclaw/core/flag/flag"
 import { GlobalBus, type GlobalEvent } from "@/bus/global"
 import { Worktree } from "@/worktree"
@@ -37,6 +39,7 @@ const worktreeTest = it.instance
 type TestServer = ReturnType<typeof Server.Default>["app"]
 type CreatedWorktree = { directory: string }
 type ScopedWorktree = { directory: string; body: CreatedWorktree; ready: Effect.Effect<void, Error> }
+type CreatedWorktreeWithReady = CreatedWorktree & { ready: Effect.Effect<void, Error> }
 
 function serverScoped() {
   return Effect.sync(() => Server.Default().app)
@@ -57,6 +60,16 @@ function withRequestTimeout(effect: Effect.Effect<Response>, label: string, ms =
 
 function json<T>(response: Response) {
   return Effect.promise(() => response.json() as Promise<T>)
+}
+
+function waitForFile(file: string, ms = 5_000) {
+  return Effect.promise(async () => {
+    const deadline = Date.now() + ms
+    while (!existsSync(file)) {
+      if (Date.now() >= deadline) throw new Error(`timed out waiting for file: ${file}`)
+      await Bun.sleep(25)
+    }
+  })
 }
 
 function readyWatcher() {
@@ -134,7 +147,8 @@ function createWorktreeScoped(input: {
       }
       expect(response.status).toBe(200)
       const body = yield* json<CreatedWorktree>(response)
-      return { directory: body.directory, body, ready: waitReady(body.directory) } satisfies ScopedWorktree
+      const ready = yield* Effect.cached(waitReady(body.directory))
+      return { directory: body.directory, body, ready } satisfies ScopedWorktree
     }),
     (created) =>
       removeCreatedWorktree({
@@ -143,7 +157,11 @@ function createWorktreeScoped(input: {
         worktreeDirectory: created.directory,
         ready: created.ready,
       }).pipe(Effect.orDie),
-  ).pipe(Effect.map((created) => created.body))
+  ).pipe(
+    Effect.map(
+      (created) => ({ ...created.body, ready: created.ready }) satisfies CreatedWorktreeWithReady,
+    ),
+  )
 }
 
 // `setProjectStartCommand` lived here until 2026-08-07. It read `/project/current` and PATCHed
@@ -163,7 +181,11 @@ describe("worktree endpoint reproduction", () => {
       Effect.gen(function* () {
         const test = yield* TestInstance
         const server = yield* serverScoped()
-        const started = Date.now()
+        const marker = ".novaclaw-started"
+        const startCommand =
+          process.platform === "win32"
+            ? `echo started>${marker} && ping 127.0.0.1 -n 3 >nul`
+            : `touch ${marker} && sleep 2`
 
         const response = yield* createWorktreeScoped({
           server,
@@ -176,14 +198,23 @@ describe("worktree endpoint reproduction", () => {
             // This used to post `{}` — no start command at all — so it asserted that a create with
             // nothing to wait for does not wait. The scenario moved here on 2026-08-07: `startCommand`
             // on `CreateInput` is the only way a start command reaches a worktree now.
-            body: JSON.stringify({ startCommand: 'bun -e "setTimeout(() => {}, 2000)"' }),
+            body: JSON.stringify({
+              startCommand,
+            }),
           },
           timeoutLabel: "direct worktree create",
         })
 
-        expect(response).toMatchObject({ directory: expect.any(String) })
-        // Returns while the 2 s command is still running — the whole point of the endpoint.
-        expect(Date.now() - started).toBeLessThan(1_500)
+        expect(typeof response.directory).toBe("string")
+        const finished = path.join(response.directory, marker)
+        // The response arrives before the slow command even starts. Unlike an elapsed-time ceiling,
+        // this remains about endpoint semantics when the full test gate saturates the machine. Then
+        // prove the detached boot really reaches the command before allowing scoped cleanup to run.
+        expect(existsSync(finished)).toBe(false)
+        yield* response.ready
+        yield* waitForFile(finished)
+        unlinkSync(finished)
+        yield* Effect.promise(() => Bun.sleep(2_100))
       }),
     { git: true },
   )

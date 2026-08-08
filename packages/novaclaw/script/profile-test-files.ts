@@ -11,7 +11,7 @@ const files = Array.fromAsync(new Bun.Glob(pattern).scan({ cwd: import.meta.dir 
 const results = []
 for (const file of await files) {
   const start = performance.now()
-  const proc = Bun.spawn(["bun", "test", "--timeout", timeout, file], {
+  const proc = Bun.spawn([process.execPath, "test", "--timeout", timeout, file], {
     cwd: import.meta.dir + "/..",
     stdout: "pipe",
     stderr: "pipe",
