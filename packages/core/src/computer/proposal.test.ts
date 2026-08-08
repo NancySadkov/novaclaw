@@ -654,3 +654,77 @@ describe('🔴 `{"x": N, N}` — the omitted `"y":` key, recovered; everything e
     expect(JSON.parse(repaired.text)).toEqual({ x: -1.5, y: 884.25 })
   })
 })
+
+// ------------------------------------------------------------------------------------------------
+// `watch` nested inside `action` — measured on the checkpoint-9 frame, 2026-08-08
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * 🔴 **This is a measured shape, not an imagined one.** Fifty planner replies were collected on the
+ * acceptance battery's checkpoint-9 frame through the shipped `ComputerPrompt.planner`; **27 put
+ * `watch` INSIDE `action`**, beside `point` — which is the more natural place, since `watch` is a
+ * property of the action — and the decoder dropped it, so `structuralIssues` reported
+ * `missing_watch` on **25 of 50** and the step spent its one G3 repair on shape rather than on
+ * anything about the screen. Run C's log carries the same note live.
+ *
+ * The lift is the exact inverse of the flat-form hoist this file already documents, and it is
+ * bounded the same way: it fills only what the proposal left empty.
+ */
+describe("🔴 `watch` nested inside `action` is LIFTED — 27 of 50 measured replies put it there", () => {
+  const nested = (extra: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      observation: "the in-game map",
+      action: { kind: "click", point: { x: 860, y: 920 }, watch: { x: 840, y: 900, width: 80, height: 40 } },
+      expect: "the turn ends",
+      ...extra,
+    })
+
+  test("it decodes with NO structural error, where it used to report missing_watch", () => {
+    const parsed = CP.parseProposal(nested())
+    if (!parsed.ok) throw new Error(parsed.issue)
+    expect(parsed.draft.watch).toEqual({ x: 840, y: 900, width: 80, height: 40 })
+    expect(errorCodes(parsed.draft)).toEqual([])
+  })
+
+  test("`region` nested on the action is the same alias it is at the top level", () => {
+    const parsed = CP.parseProposal(
+      JSON.stringify({
+        observation: "the in-game map",
+        action: { kind: "click", point: { x: 860, y: 920 }, region: "840,900,80,40" },
+        expect: "the turn ends",
+      }),
+    )
+    if (!parsed.ok) throw new Error(parsed.issue)
+    expect(parsed.draft.watch).toEqual({ x: 840, y: 900, width: 80, height: 40 })
+  })
+
+  test("⚠️ an explicit TOP-LEVEL watch always wins — the lift fills, it never overwrites", () => {
+    const parsed = CP.parseProposal(nested({ watch: { x: 0, y: 0, width: 1000, height: 1000 } }))
+    if (!parsed.ok) throw new Error(parsed.issue)
+    expect(parsed.draft.watch).toEqual({ x: 0, y: 0, width: 1000, height: 1000 })
+  })
+
+  test("🔴 the lifted watch is still CONTAINMENT-CHECKED — it is not a way around G3", () => {
+    const parsed = CP.parseProposal(
+      JSON.stringify({
+        observation: "the in-game map",
+        action: { kind: "click", point: { x: 860, y: 920 }, watch: { x: 0, y: 0, width: 10, height: 10 } },
+        expect: "the turn ends",
+      }),
+    )
+    if (!parsed.ok) throw new Error(parsed.issue)
+    expect(errorCodes(parsed.draft)).toContain("watch_excludes_point")
+  })
+
+  test("a proposal with no watch anywhere is still refused", () => {
+    const parsed = CP.parseProposal(
+      JSON.stringify({
+        observation: "the in-game map",
+        action: { kind: "click", point: { x: 860, y: 920 } },
+        expect: "the turn ends",
+      }),
+    )
+    if (!parsed.ok) throw new Error(parsed.issue)
+    expect(errorCodes(parsed.draft)).toContain("missing_watch")
+  })
+})

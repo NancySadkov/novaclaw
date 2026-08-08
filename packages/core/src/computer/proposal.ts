@@ -262,6 +262,18 @@ export function coerceProposalShape(value: unknown): unknown {
     const flatOnRoot = out.x != null && out.y != null ? { x: out.x, y: out.y } : undefined
     const point = action.point ?? flatOnAction ?? flatOnRoot
     if (point !== undefined && point !== null) action.point = coercePoint(point)
+    // 🔴 The INVERSE of the hoist above, and it is measured rather than imagined. On the
+    // checkpoint-9 frame, **27 of 50** planner replies put `watch` INSIDE `action` beside `point`
+    // — which reads as the more natural place, since `watch` is a property of the action — and the
+    // decoder then dropped it, so `structuralIssues` reported `missing_watch` on **25 of 50** and
+    // the step spent its ONE repair on shape. Run C shows the same note live. Lifting it is the
+    // same tolerance the flat form already gets, in the other direction.
+    // ⚠️ Only when the proposal has none of its own: an explicit top-level `watch` always wins, so
+    // this can never overwrite what the model actually put where the schema asks for it.
+    if (out.watch == null && out.region == null) {
+      const nested = action.watch ?? action.region
+      if (nested !== undefined && nested !== null) out.watch = nested
+    }
     out.action = action
   }
 
