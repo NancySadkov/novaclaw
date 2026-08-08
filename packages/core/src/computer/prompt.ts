@@ -1,5 +1,7 @@
 export * as ComputerPrompt from "./prompt"
 
+import { Schema } from "effect"
+
 import { JhExtract } from "../jh/extract"
 import { ComputerLedger } from "./ledger"
 import { ComputerProposal } from "./proposal"
@@ -14,6 +16,13 @@ import { ComputerProposal } from "./proposal"
  * |---|---|---|
  * | {@link planner} | the goal, the append-only ledger, the newest frame | one proposal |
  * | {@link adjudicator} | one prediction sentence, one closed question, one frame | `observed` / `predicted` / `checkpoint` |
+ *
+ * ⚠️ **{@link grounder} is a THIRD builder and is deliberately not one of those two.** Nothing in
+ * the loop calls it; it is the measured second stage of the split call (§7c's one untried lever,
+ * priced 2026-08-08 at **25/25 against the shipped path's 7/25** on the acceptance battery's last
+ * unreached checkpoint), landed the way `coordinates.ts` and `actions.ts` were — pure, unregistered,
+ * ahead of the wiring — because what it carries is a *prompt string*, and a string nobody measured
+ * is indistinguishable from one somebody did. **"exactly two model calls per step" is still true.**
  *
  * 🔴 **G5 — the adjudicator is BLIND, and that separation is the whole of rung 2.** A model shown
  * *"I clicked New Game"* and asked *"is the New Game screen showing?"* will ratify itself; a model
@@ -266,6 +275,156 @@ export function adjudicator(input: {
 
   const user = parts.join("\n")
   return input.image === undefined ? { system, user } : { system, user, image: input.image }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The grounder — the SPLIT call's second stage
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * 🔴 **The third builder, and it is NOT wired into the loop.** It lands the way `coordinates.ts` and
+ * `actions.ts` did — pure, unregistered, carrying a measured fact whose failure would be silent —
+ * because the fact it carries is a *string*, and a string nobody measured reads exactly like a
+ * string somebody did.
+ *
+ * **What it is for.** §7c refused both obvious grounding levers on this substrate by measurement
+ * (region crops −78 points; set-of-mark ±0 and it needs a UI detector we do not have) and named one
+ * untried alternative: **split the call** — the planner chooses *what*, and a bare grounding call
+ * with **no ledger** supplies *where*. Measured 2026-08-08 on the acceptance battery's last
+ * unreached checkpoint, one frozen frame (the oracle replay's `in-game-map`), mechanical ground
+ * truth from a gold-row profile over Master of Magic's unit panel (DONE's plate y 728..754, WAIT's
+ * 758..784, **30.0 px pitch**), N=25 per cell because `temperature: 0` is not deterministic on this
+ * deployment:
+ *
+ * | arm | DONE hit | median dy |
+ * |---|---|---|
+ * | the SHIPPED planner + the run's own ledger — i.e. what the loop does today | **7/25 (28%)** | +20.5 px |
+ * | this builder, asked for the label alone | **25/25 (100%)** | **−0.3 px** |
+ * | the same chain with the planner's own free-form phrase | 19/25 · 14/25 | +7.7 px |
+ * | **the same phrase carrying a POSITIONAL clause** | **2/25** | +15.7 px |
+ * | *negative control* — the same call asking for `WAIT`, one row down | **25/25 on WAIT**, dy +31.7 | — |
+ *
+ * ⭐ **The negative control is what makes the 25/25 mean anything.** A grounder that always answers
+ * the middle of the panel would also score 25/25 on DONE; this one moves **31.7 px** — the measured
+ * pitch — when asked for the row below, so it is resolving rows and not emitting a constant.
+ *
+ * 🔴 **`label` must be a LABEL — the control's visible text and nothing else.** That is the one
+ * finding that is easy to undo by being helpful: the same bare call, same frame, same target, with
+ * *"the DONE button located at the bottom right of the screen, below the unit portraits and to the
+ * left of the PATROL button"* scores **2/25**, landing 16 px low — a positional clause drags the
+ * point toward the described region's own edge. So the caller's job is to hand over four letters,
+ * not a description, and {@link grounderLabelIssue} is the mechanical form of that.
+ *
+ * ⚠️ **Not a blanket claim about this panel.** The same call asking for `PATROL` — same row, one
+ * column right — scored **4/25**, landing ~5 px above a 27 px plate every time. Two of the panel's
+ * three tested controls are perfect and the third is not, so "the grounder is 100% here" is false;
+ * what is true is that it is 100% on the two controls checkpoint 9 needs.
+ *
+ * ⚠️ **The cost, measured on the wire**: 1,137 prompt tokens and **412–419 ms**. Against the
+ * planner's own 2,051 tokens / 2,459 ms, a split step is **+1,001 prompt tokens and ~400 ms LOWER
+ * wall clock**, because stage 1 without the coordinate contract is itself shorter.
+ */
+const GROUNDER_SYSTEM = [
+  "You locate elements in screenshots. Reply with exactly one JSON object and nothing else:",
+  '  {"x": <int>, "y": <int>}',
+  "x and y are the centre of the element in NORMALIZED coordinates from 0 to 1000, where x=0 is the " +
+    "left edge of the image, x=1000 the right edge, y=0 the top edge and y=1000 the bottom edge.",
+].join("\n")
+
+/**
+ * Words that turn a label into a description. Not a filter — the label is the model's own text and
+ * silently editing it would make the prompt disagree with the ledger — but a **detectable
+ * condition**, so a caller can refuse or re-ask instead of grounding a phrase measured at 2/25.
+ */
+const POSITIONAL_WORDS = [
+  "above",
+  "below",
+  "beneath",
+  "beside",
+  "bottom",
+  "corner",
+  "left",
+  "lower",
+  "next to",
+  "right",
+  "top",
+  "under",
+  "upper",
+]
+
+/**
+ * `undefined` when `label` is usable, otherwise the reason it is not.
+ *
+ * ⚠️ **This is a WARNING channel, deliberately, not a validator that rewrites.** The measured harm
+ * is real (25/25 → 2/25) but a label containing the word "right" is not automatically a
+ * description — a control can be *labelled* "Right". The caller decides; this only makes the
+ * condition visible, which is the same posture `structuralIssues` takes toward a warning.
+ */
+export const grounderLabelIssue = (label: string): string | undefined => {
+  const trimmed = label.trim()
+  if (trimmed === "") return "the label is empty"
+  const lower = trimmed.toLowerCase()
+  const found = POSITIONAL_WORDS.filter((word) => new RegExp(`(^|[^a-z])${word}([^a-z]|$)`).test(lower))
+  if (found.length > 0) {
+    return `the label reads as a description rather than a label (contains ${found.join(", ")}); a positional clause measured 2/25 where the bare label measured 25/25`
+  }
+  return undefined
+}
+
+/**
+ * The grounding call: a control's label, a picture, and **no goal, no ledger, no prediction** — the
+ * absence is the whole point, and it is unrepresentable rather than merely discouraged, exactly as
+ * G5 makes the adjudicator's blindness unrepresentable.
+ *
+ * §7c's arm sweep is the evidence: the shipped planner prompt with **one** real ledger line took
+ * grounding on the main menu from 100% to 10%, and neutral lines carrying no prose scored 10/10 —
+ * so it is the ledger's *content* that pulls the model off the pixels. A builder with a `ledger`
+ * parameter is one edit away from putting it back.
+ */
+export function grounder(input: { readonly label: string; readonly image?: Image }): Prompt {
+  const system = GROUNDER_SYSTEM
+  const user = [
+    "This is a screenshot of a computer screen.",
+    "",
+    `Point to the control labelled '${input.label.trim()}'.`,
+  ].join("\n")
+  return input.image === undefined ? { system, user } : { system, user, image: input.image }
+}
+
+export type GroundingResult =
+  | { readonly ok: true; readonly point: ComputerProposal.PointDraft; readonly repaired: boolean }
+  | { readonly ok: false; readonly issue: string }
+
+/**
+ * The grounder's reply → a point in the model's own normalized space. **`coordinates.ts` converts to
+ * pixels; this does not**, because the space is a declared property of the model and inferring it is
+ * what `sniffSpace` exists to warn against.
+ *
+ * ⚠️ **The positional-`y` repair is reused, not re-derived.** This floor model omits the `"y":` KEY
+ * in a large share of replies (`{"x": 863, 938}`), which is `ComputerProposal.repairPositionalY`'s
+ * entire reason for existing; a second recovery here would be a second opinion about one model's
+ * habits, and the weaker one.
+ */
+export function parseGrounding(text: string): GroundingResult {
+  let extracted = JhExtract.extractJsonObject(text)
+  let repaired = false
+  if (!extracted.ok && extracted.failure.reason === "invalid_json") {
+    const fixed = ComputerProposal.repairPositionalY(text)
+    if (fixed.repairs > 0) {
+      const retry = JhExtract.extractJsonObject(fixed.text)
+      if (retry.ok) {
+        extracted = retry
+        repaired = true
+      }
+    }
+  }
+  if (!extracted.ok) return { ok: false, issue: `${extracted.failure.reason}: ${extracted.failure.detail}` }
+  try {
+    return { ok: true, point: Schema.decodeUnknownSync(ComputerProposal.PointDraft)(extracted.value), repaired }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { ok: false, issue: msg.replace(/\s+/g, " ").trim().slice(0, 300) }
+  }
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -322,3 +322,125 @@ describe("the adjudication reply is read with the same tolerance as a proposal",
     expect(parsed.issue.length).toBeGreaterThan(0)
   })
 })
+
+// ------------------------------------------------------------------------------------------------
+// The grounder — the split call's second stage (measured 2026-08-08, not wired into the loop)
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * 🔴 **These pin a MEASUREMENT that lives in a string.** The split call scored 25/25 against the
+ * shipped planner path's 7/25 on the acceptance battery's last unreached checkpoint — and the same
+ * bare call, same frame, same target, scored **2/25** when the target phrase carried a positional
+ * clause. So the two things worth guarding are the ABSENCE of the ledger from this prompt (§7c
+ * measured one real ledger line taking grounding from 100% to 10%) and the label staying a label.
+ */
+describe("🔴 the grounding prompt is BLIND — no goal, no ledger, no prediction", () => {
+  const grounding = CP.grounder({ label: "DONE", image: img("now") })
+  const planning = CP.planner({ goal: GOAL, ledger: ledgerOf(3), image: img("now") })
+
+  test("the goal appears nowhere, and the control finds it where it belongs", () => {
+    expect(whole(grounding)).not.toContain(GOAL)
+    expect(whole(grounding)).not.toContain("SENTINEL_GOAL")
+    expect(whole(planning)).toContain(GOAL)
+  })
+
+  test("no ledger line reaches it — the lever this builder EXISTS for", () => {
+    expect(whole(grounding)).not.toContain(ComputerLedger.HEADER)
+    expect(whole(grounding)).not.toContain("click(464,684)")
+    // Controls: both ARE findable in the planner prompt built from the same ledger.
+    // ⚠️ `SENTINEL_OBSERVATION` is deliberately NOT one of them, and the first draft of this test
+    // used it and went red: `ComputerLedger.render` re-shows the MECHANICAL columns only, so the
+    // observation prose never reaches the planner either. The control failed, not the guard.
+    expect(whole(planning)).toContain("click(464,684)")
+    expect(whole(planning)).toContain(ComputerLedger.HEADER)
+  })
+
+  test("there is no parameter through which a ledger or a goal could be passed", () => {
+    // A compile-time property, asserted at runtime over the rendered string: the ONLY caller-varying
+    // text in the prompt is the label, so anything else that shows up came from this file.
+    const a = whole(CP.grounder({ label: "DONE" }))
+    const b = whole(CP.grounder({ label: "NEXT TURN" }))
+    expect(a.replace("DONE", "§")).toBe(b.replace("NEXT TURN", "§"))
+  })
+})
+
+describe("🔴 the rendered question is the one that was MEASURED", () => {
+  test("the user block is exactly the measured two lines", () => {
+    expect(CP.grounder({ label: "DONE" }).user).toBe(
+      "This is a screenshot of a computer screen.\n\nPoint to the control labelled 'DONE'.",
+    )
+  })
+
+  test("the answer space is stated as normalized 0–1000, which is Holo's declared space", () => {
+    const system = CP.grounder({ label: "DONE" }).system
+    expect(system).toContain("NORMALIZED coordinates from 0 to 1000")
+    expect(system).toContain('{"x": <int>, "y": <int>}')
+  })
+
+  test("G11 — at most one image, same as every other builder here", () => {
+    expect(CP.grounder({ label: "DONE" }).image).toBeUndefined()
+    expect(CP.grounder({ label: "DONE", image: img("now") }).image).toEqual(img("now"))
+  })
+})
+
+describe("🔴 a positional clause is DETECTED, because it measured 2/25 where the label measured 25/25", () => {
+  test("a bare label is clean", () => {
+    for (const label of ["DONE", "NEXT TURN", "OK", "Quit To DOS"]) {
+      expect(CP.grounderLabelIssue(label)).toBeUndefined()
+    }
+  })
+
+  test("the exact phrase that scored 2/25 is flagged", () => {
+    const issue = CP.grounderLabelIssue(
+      "the DONE button located at the bottom right of the screen, below the unit portraits and to the left of the PATROL button",
+    )
+    expect(issue).toBeDefined()
+    expect(issue).toContain("2/25")
+  })
+
+  test("empty is its own reason, not a positional one", () => {
+    expect(CP.grounderLabelIssue("   ")).toBe("the label is empty")
+  })
+
+  test("⚠️ it WARNS, it does not rewrite — the rendered label is what the caller passed", () => {
+    const label = "the DONE button at the bottom right"
+    expect(CP.grounderLabelIssue(label)).toBeDefined()
+    expect(CP.grounder({ label }).user).toContain(label)
+  })
+
+  test("a word merely CONTAINING a position word is not a match", () => {
+    for (const label of ["Copyright", "Toppings", "Underline Text", "Belowski"]) {
+      expect(CP.grounderLabelIssue(label)).toBeUndefined()
+    }
+  })
+})
+
+describe("the grounding reply is read with the same tolerance as a proposal", () => {
+  test("the plain shape", () => {
+    const parsed = CP.parseGrounding('{"x": 864, "y": 928}')
+    if (!parsed.ok) throw new Error(parsed.issue)
+    expect(parsed.point).toEqual({ x: 864, y: 928 })
+    expect(parsed.repaired).toBe(false)
+  })
+
+  test("🔴 the floor model's missing-`\"y\"` shape is REPAIRED, not rejected", () => {
+    // Measured on this batch's own replies: the planner emits `{"x": 863, 938}` often enough that
+    // treating it as unreadable is a decode failure wearing a grounding failure's clothes.
+    const parsed = CP.parseGrounding('{"x": 863, 938}')
+    if (!parsed.ok) throw new Error(parsed.issue)
+    expect(parsed.point).toEqual({ x: 863, y: 938 })
+    expect(parsed.repaired).toBe(true)
+  })
+
+  test("prose around a fenced block", () => {
+    const parsed = CP.parseGrounding('Here it is:\n```json\n{"x": 864, "y": 924}\n```\n')
+    if (!parsed.ok) throw new Error(parsed.issue)
+    expect(parsed.point).toEqual({ x: 864, y: 924 })
+  })
+
+  test("🔴 an unreadable reply is an ISSUE, never a point — a defaulted (0,0) would click a corner", () => {
+    for (const text of ["", "I cannot see it", '{"x": 864}', '{"mark": 3}']) {
+      expect(CP.parseGrounding(text).ok).toBe(false)
+    }
+  })
+})
