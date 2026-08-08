@@ -4,7 +4,7 @@ import { createSortable } from "@thisbeyond/solid-dnd"
 import { FileIcon } from "@novaclaw/ui/file-icon"
 import { IconButton } from "@novaclaw/ui/icon-button"
 import { TooltipKeybind } from "@novaclaw/ui/tooltip"
-import { Tabs } from "@novaclaw/ui/tabs"
+import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { getFilename } from "@novaclaw/core/util/path"
 import { useFile } from "@/context/file"
 import { useLanguage } from "@/context/language"
@@ -41,7 +41,7 @@ export function SortableTab(props: { tab: string; onTabClose: (tab: string) => v
   return (
     <div use:sortable class="h-full flex items-center" classList={{ "opacity-0": sortable.isActiveDraggable }}>
       <div class="relative">
-        <Tabs.Trigger
+        <TabsV2.Trigger
           value={props.tab}
           closeButton={
             <TooltipKeybind
@@ -59,11 +59,10 @@ export function SortableTab(props: { tab: string; onTabClose: (tab: string) => v
               />
             </TooltipKeybind>
           }
-          hideCloseButton
           onMiddleClick={() => props.onTabClose(props.tab)}
         >
           <Show when={content()}>{(value) => value()}</Show>
-        </Tabs.Trigger>
+        </TabsV2.Trigger>
       </div>
     </div>
   )

@@ -24,7 +24,6 @@ import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange
 import { createStore } from "solid-js/store"
 import { ResizeHandle } from "@novaclaw/ui/resize-handle"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
-import { Tabs } from "@novaclaw/ui/tabs"
 import { createAutoScroll } from "@novaclaw/ui/hooks"
 import { previewSelectedLines } from "@novaclaw/session-ui/pierre/selection-bridge"
 import { Button } from "@novaclaw/ui/button"

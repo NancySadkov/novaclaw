@@ -18,6 +18,7 @@
 @import "./components/titlebar.css" layer(components);
 @import "./components/titlebar-tab-nav.css" layer(components);
 @import "./components/settings-v2/settings-v2.css" layer(components);
+@import "./pages/session/file-tabs.css" layer(components);
 
 @font-face {
   font-family: "JetBrainsMono Nerd Font Mono";

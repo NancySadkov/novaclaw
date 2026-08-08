@@ -152,18 +152,23 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  * `{viewBox, body}` pairs), which is why `icon` is the expensive half of the migration rather than a
  * rename.
  *
- * This list may only ever get SHORTER. Retired so far, newest first: `dialog`, `select` (both
- * 2026-08-08), `toast`, `keybind`, `progress-circle`, `diff-changes`, `switch` (all 2026-08-07),
- * `text-shimmer` (2026-07-31), and the six v1-only components deleted alongside it.
+ * This list may only ever get SHORTER. Retired so far, newest first: `tabs`, `dialog`, `select`
+ * (all 2026-08-08), `toast`, `keybind`, `progress-circle`, `diff-changes`, `switch` (all
+ * 2026-08-07), `text-shimmer` (2026-07-31), and the six v1-only components deleted alongside it.
  *
  * ⭐ **The shape the rest of this list should copy — a pair is RETIRABLE when nothing in
  * `packages/ui` composes its v1 side.** Then migrating the leaf call sites leaves the v1 file with
  * zero importers and the pair can be deleted rather than merely thinned, which is the only move that
  * shrinks the fork's WIDTH. `switch` (4 call sites), then `keybind` (2), `progress-circle` (1),
- * `diff-changes` (1) and `toast` (3) went that way. A widget that `packages/ui` composes internally
- * (`button`, `icon`, `icon-button`, `tooltip`) cannot reach zero until its v1 consumers die, which
- * is why those lines sit in the second block below. `dialog` went the same way on 2026-08-08;
- * `tabs` is the one that is still retirable — nothing in `packages/ui` composes it.
+ * `diff-changes` (1), `toast` (3), `dialog` (9) and `tabs` (7) went that way.
+ *
+ * ⛔ **`tabs` was the LAST of them, and the four names left cannot follow.** Every remaining pair is
+ * composed by another v1 component — see the second block of `V1_CALL_SITES`: v1 `button`,
+ * `collapsible` and `icon-button` import v1 `icon`; `image-preview`, `list`, `popover` and
+ * `text-field` import v1 `icon-button`; `text-field` imports v1 `tooltip`. So none of them can
+ * reach zero importers until the v1 components that compose them are themselves deleted, and this
+ * ledger's WIDTH pin cannot fall again by migrating call sites alone. From here the migration only
+ * shrinks DEPTH — or it deletes a v1 component outright, which is the move that unblocks WIDTH.
  *
  * ⭐ **`select` was retired 2026-08-08, and the budget warning that stood here was RIGHT: it was a
  * contract decision, not an import swap.** The warning read that v1's four call sites pass `size`,
@@ -219,8 +224,40 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  *     followed by the close button, so they now coexist. `data-no-header` and `transition` had no
  *     port: the first was styled by nothing at all, and the second was a `prefers-reduced-motion`-less
  *     animation on one call site out of nine (visual.md §6 law 3 makes that guard mandatory).
+ *
+ * ⭐ **`tabs` was retired 2026-08-08 — and its coupling was a PORTAL, which no cascade check finds.**
+ * Seven v1 call sites, one of which (`pages/session.tsx`) imported `Tabs` and never rendered it: a
+ * dead import that typechecked, cost a ledger pair, and was invisible to every reference form this
+ * sweep understands, because the sweep reads imports and not usage (the header says so — this is
+ * that limitation showing up as a real line).
+ *
+ * Two elements in `ui/src/components/tabs.css` were never the Tabs component's own markup, and both
+ * moved to `app/src/pages/session/file-tabs.css` rather than dying with the sheet:
+ *
+ *   - **`[data-component="tabs-drag-preview"]`** — a plain `<div>` authored in
+ *     `pages/session/session-side-panel.tsx` and rendered by solid-dnd's `DragOverlay`, which is
+ *     `<Portal mount={document.body}>`. It is therefore NOT a descendant of `[data-component="tabs"]`,
+ *     so every `var(--tabs-bar-height, 48px)` in those rules had always resolved to its fallback.
+ *     The ported rules inline the literals; the preview renders identically.
+ *   - 🔴 **The `.tab-fileicon-color` / `.tab-fileicon-mono` swap, and this one was a live defect.**
+ *     `FileVisual` renders BOTH icons absolutely stacked and lets CSS choose; the choosing rules were
+ *     scoped to `#review-panel … [data-slot="tabs-trigger"]`, which a body portal can never match.
+ *     So inside the drag preview both icons painted and the winner was DOM order — the mono icon, on
+ *     top of the colour one the design asks for while a tab is picked up. **The same shape as
+ *     `diff-changes`: it looked right because something was silently on top.** The base state now
+ *     lives on the markup's own classes, so a two-layer stack cannot render as two layers again.
+ *
+ * Nothing was shimmed (ruling 13). `hideCloseButton` rendered `data-hidden`, which **nothing in the
+ * tree styles**; `classes={{ button }}`'s two call sites asked for `outline: none`,
+ * `box-shadow: none` and `width: 100%`, all of which v2's own trigger rules already declare; and
+ * `status-popover-body.tsx` passed `data-component="tabs"`, `data-slot="tablist"`,
+ * `data-slot="tab"` and `data-active`, every one of them dead — v1's own attributes came after
+ * `{...rest}` in the JSX and always won, and no selector matched them anyway. `variant="alt"` is not
+ * ported either: `pages/terminal.tsx` had already dropped it when the same terminal tab strip
+ * migrated, on the grounds that porting a v1 sheet settles a brand question by copying the v1 app
+ * (AGENTS.md — the running app is not a visual reference).
  */
-export const FORKED_WIDGETS: readonly string[] = ["button", "icon", "icon-button", "tabs", "tooltip"]
+export const FORKED_WIDGETS: readonly string[] = ["button", "icon", "icon-button", "tooltip"]
 
 /**
  * **Every file that imports the v1 side of a forked widget, pinned by name.**
@@ -286,8 +323,8 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/components/session/session-context-tab.tsx": ["icon"],
   "app/src/components/session/session-header.tsx": ["tooltip"],
   "app/src/components/session/session-new-view.tsx": ["icon"],
-  "app/src/components/session/session-sortable-tab.tsx": ["icon-button", "tabs", "tooltip"],
-  "app/src/components/session/session-sortable-terminal-tab.tsx": ["icon", "icon-button", "tabs"],
+  "app/src/components/session/session-sortable-tab.tsx": ["icon-button", "tooltip"],
+  "app/src/components/session/session-sortable-terminal-tab.tsx": ["icon", "icon-button"],
   "app/src/components/settings-keybinds.tsx": ["button", "icon", "icon-button"],
   "app/src/components/settings-v2/dialog-expertise.tsx": ["icon"],
   "app/src/components/settings-v2/dialog-model-tier.tsx": ["icon"],
@@ -295,7 +332,7 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/components/settings-v2/dialog-settings-v2.tsx": ["icon"],
   "app/src/components/settings-v2/models.tsx": ["icon"],
   "app/src/components/settings-v2/storage.tsx": ["icon"],
-  "app/src/components/status-popover-body.tsx": ["button", "icon", "tabs"],
+  "app/src/components/status-popover-body.tsx": ["button", "icon"],
   "app/src/components/status-popover.tsx": ["button", "icon"],
   "app/src/pages/calendar.tsx": ["icon"],
   "app/src/pages/debug.tsx": ["icon"],
@@ -311,15 +348,15 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/pages/notes.tsx": ["icon"],
   "app/src/pages/recipes.tsx": ["icon"],
   "app/src/pages/registry.tsx": ["icon"],
-  "app/src/pages/session.tsx": ["button", "tabs"],
+  "app/src/pages/session.tsx": ["button"],
   "app/src/pages/session/composer/session-permission-dock.tsx": ["button", "icon"],
   "app/src/pages/session/composer/session-question-dock.tsx": ["button", "icon"],
   "app/src/pages/session/composer/session-responder-dock.tsx": ["button"],
   "app/src/pages/session/composer/session-revert-dock.tsx": ["button", "icon-button"],
   "app/src/pages/session/composer/session-todo-dock.tsx": ["icon-button"],
-  "app/src/pages/session/file-tabs.tsx": ["icon-button", "tabs"],
-  "app/src/pages/session/session-side-panel.tsx": ["icon-button", "tabs", "tooltip"],
-  "app/src/pages/session/terminal-panel.tsx": ["icon-button", "tabs", "tooltip"],
+  "app/src/pages/session/file-tabs.tsx": ["icon-button"],
+  "app/src/pages/session/session-side-panel.tsx": ["icon-button", "tooltip"],
+  "app/src/pages/session/terminal-panel.tsx": ["icon-button", "tooltip"],
   "app/src/pages/trash.tsx": ["icon"],
   "app/src/utils/toast.tsx": ["icon"],
   "app/src/wsl/dialog-add-server.tsx": ["button"],
@@ -349,11 +386,11 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
  * read 38 while the tree held 37 — one component had been deleted without the pin following, so a
  * new v1 component could have been added for free. Lower it in the same commit as any deletion.
  */
-const V1_COMPONENT_CEILING = 30
+const V1_COMPONENT_CEILING = 29
 
 /** Measured totals, pinned so the ledger stays a measurement rather than an aspiration. */
 const V1_CALL_SITE_FILES = 73
-const V1_CALL_SITE_PAIRS = 113
+const V1_CALL_SITE_PAIRS = 106
 
 // ---------------------------------------------------------------------------------------------
 // The sweep. Pure functions first so the negative controls can drive them without touching disk.
@@ -631,7 +668,7 @@ describe("the fork's DEPTH can only shrink", () => {
     expect(OBSERVED_PAIRS, "the observed (file, widget) pair count moved — reconcile V1_CALL_SITES").toBe(
       V1_CALL_SITE_PAIRS,
     )
-    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(5)
+    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(4)
   })
 
   test("both sides are genuinely live — this is a fork, not a finished migration", () => {

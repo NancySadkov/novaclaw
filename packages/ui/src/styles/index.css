@@ -28,7 +28,6 @@
 @import "../components/spinner.css" layer(components);
 @import "../components/scroll-view.css" layer(components);
 @import "../components/sticky-accordion-header.css" layer(components);
-@import "../components/tabs.css" layer(components);
 @import "../components/tag.css" layer(components);
 @import "../components/text-reveal.css" layer(components);
 @import "../components/text-strikethrough.css" layer(components);

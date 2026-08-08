@@ -1,7 +1,7 @@
 import { For, Show, createEffect, createMemo, on, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { Tabs } from "@novaclaw/ui/tabs"
+import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { ResizeHandle } from "@novaclaw/ui/resize-handle"
 import { IconButton } from "@novaclaw/ui/icon-button"
 import { TooltipKeybind } from "@novaclaw/ui/tooltip"
@@ -270,13 +270,12 @@ export function TerminalPanel() {
             <DragDropSensors />
             <ConstrainDragYAxis />
             <div class="flex flex-col h-full">
-              <Tabs
-                variant="alt"
-                value={terminal.active()}
-                onChange={(id) => terminal.open(id)}
-                class="!h-auto !flex-none"
-              >
-                <Tabs.List class="h-10 border-b border-border-weaker-base">
+              {/* v2 design system. ⚠️ v1's `variant="alt"` is deliberately NOT ported: this is the
+                  same tab strip as `pages/terminal.tsx`, which already took v2's default when it
+                  migrated — porting the alt sheet across would settle a brand question by copying
+                  the v1 app, which AGENTS.md forbids. */}
+              <TabsV2 value={terminal.active()} onChange={(id) => terminal.open(id)} class="!h-auto !flex-none">
+                <TabsV2.List class="h-10 border-b border-border-weaker-base">
                   <SortableProvider ids={ids()}>
                     <For each={all()}>{(pty) => <SortableTerminalTab terminal={pty} onClose={close} />}</For>
                   </SortableProvider>
@@ -295,8 +294,8 @@ export function TerminalPanel() {
                       />
                     </TooltipKeybind>
                   </div>
-                </Tabs.List>
-              </Tabs>
+                </TabsV2.List>
+              </TabsV2>
               <div class="flex-1 min-h-0 relative">
                 <Show when={opened() && terminal.active()} keyed>
                   {(id) => {

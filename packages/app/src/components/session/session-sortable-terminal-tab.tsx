@@ -3,7 +3,7 @@ import { Show, createEffect, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSortable } from "@thisbeyond/solid-dnd"
 import { IconButton } from "@novaclaw/ui/icon-button"
-import { Tabs } from "@novaclaw/ui/tabs"
+import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { DropdownMenu } from "@novaclaw/ui/dropdown-menu"
 import { Icon } from "@novaclaw/ui/icon"
 import { isDefaultTitle as isDefaultTerminalTitle } from "@/context/terminal-title"
@@ -122,15 +122,16 @@ export function SortableTerminalTab(props: { terminal: LocalPTY; onClose?: () =>
       }}
     >
       <div class="relative h-full">
-        <Tabs.Trigger
+        {/* v1's `classes={{ button }}` has no v2 equivalent and needs none (ruling 13 — no shim):
+            every rule it asked for is already v2's own. `[data-slot="tabs-v2-trigger"]` declares
+            `outline: none` and its `:is(:focus, :focus-visible)` rule declares
+            `outline: none; box-shadow: none`, and the default variant draws no border or ring. */}
+        <TabsV2.Trigger
           value={props.terminal.id}
           onClick={focus}
           onMouseDown={(e) => e.preventDefault()}
           onContextMenu={menu}
           class="!shadow-none"
-          classes={{
-            button: "border-0 outline-none focus:outline-none focus-visible:outline-none !shadow-none !ring-0",
-          }}
           closeButton={
             <IconButton
               icon="close"
@@ -146,7 +147,7 @@ export function SortableTerminalTab(props: { terminal: LocalPTY; onClose?: () =>
           <span onDblClick={edit} classList={{ invisible: store.editing }}>
             {label()}
           </span>
-        </Tabs.Trigger>
+        </TabsV2.Trigger>
         <Show when={store.editing}>
           <div class="absolute inset-0 flex items-center px-3 bg-muted z-10 pointer-events-auto">
             <input
