@@ -98,6 +98,14 @@ export const SUBSYSTEMS = {
   kb: "Knowledge",
   location: "Workspace locations",
   llm: "Model protocols",
+  /**
+   * **The log tier reporting on itself.** Added 2026-08-08 with `log.file.usage`, and the reason it
+   * is its own subsystem rather than a member of `instance` is the one job subsystems have: an
+   * operator who wants to know how fast their log grows should not have to raise the level of the
+   * instance lifecycle to find out, and an operator silencing instance chatter should not lose the
+   * only line that says whether the retention budget fits them.
+   */
+  log: "The log tier itself",
   messenger: "Messenger",
   mcp: "MCP servers",
   offline: "Offline mode",
@@ -911,6 +919,73 @@ export const EVENTS = {
     attributes: { "llm.cause": "fault" },
     content: "user",
     file: "packages/core/src/models-dev.ts",
+  },
+
+  // ── log ───────────────────────────────────────────────────────────────────────────────────────
+  /**
+   * **How big this instance's log directory is and how fast it is growing — the measurement the
+   * Phase-2 defaults table was filed without.**
+   *
+   * `todo/logging.md` handed this key to Phase 3 with an unusually blunt confession attached:
+   * *"Every one of these is a guess dressed in a measurement… Until it exists the Phase-2 defaults
+   * table is still a guess — do not cite 8 MB / 256 MB / 30 d as measured."* One line per instance
+   * boot, from `core/src/observability/logging.ts`, so **every install measures itself** instead of
+   * inheriting one developer's 27 days on one machine at INFO — a number that then moved 2× within
+   * nine days of being taken.
+   *
+   * ⭐ **Every attribute is `count`, so the whole event is `content: "none"` and rides the
+   * maintenance plane.** That is not an accident of the fields, it is the point: *"is 256 MB right"*
+   * is a fleet question, and this is the one log line that can answer it without carrying a byte of
+   * anyone's work. It is also why the level is `info` and not `debug` — a datapoint nobody collects
+   * by default is a datapoint that does not exist.
+   *
+   * ⚠️ **The SIZE and the RATE are two keys, and that is the whole design decision.** Size is always
+   * knowable; a rate is not — a brand-new instance, or one whose segment rotated a minute ago, has
+   * no span to divide by. Every declared attribute is required, so folding them into one key would
+   * force a sentinel (`0`? `-1`?) into a column that reads as a measurement, and *"the rate is
+   * 0 B/h"* is a false description of *"nobody knows yet"* (ruling 2). **The absence of a
+   * `log.file.rate` line beside a `log.file.usage` line IS the answer "too early to say."** Same
+   * shape as 1c's four `client.log.*` keys rather than one with the level as an attribute.
+   */
+  "log.file.usage": {
+    level: "info",
+    message: "log directory usage",
+    attributes: {
+      "log.bytes": "count",
+      "log.active.bytes": "count",
+      "log.segments": "count",
+    },
+    content: "none",
+    file: "packages/core/src/observability/logging.ts",
+  },
+  /**
+   * **The measured write rate, and it only ships when there is one.**
+   *
+   * Emitted beside `log.file.usage` at boot, and only when the active segment has accumulated for
+   * longer than `LogRead.MIN_RATE_SPAN_MS`. `log.span.hours` is the denominator and
+   * `log.active.bytes` the numerator, both on the line, so a reader can check the division rather
+   * than trust it — and can discount a rate taken over an hour differently from one taken over a
+   * month.
+   *
+   * ⚠️ Measured over the ACTIVE segment alone. A rotated segment's stamp is its SEAL time, so the
+   * lines inside it are older than their own filename; using it as a history start understates the
+   * span and therefore OVERSTATES the rate, and getting the true start means gunzipping the oldest
+   * segment on the boot path. See `observability/log-read.ts`'s `usage`.
+   *
+   * ⚠️ RAW bytes, before gzip. Rotated history compresses ~16× on this corpus (§0.5), so anything
+   * turning this into *"days until the budget fills"* applies that ratio itself; storing the derived
+   * answer here would be two places computing one number (ruling 6).
+   */
+  "log.file.rate": {
+    level: "info",
+    message: "log write rate",
+    attributes: {
+      "log.bytes.per.hour": "count",
+      "log.active.bytes": "count",
+      "log.span.hours": "count",
+    },
+    content: "none",
+    file: "packages/core/src/observability/logging.ts",
   },
 
   // ── messenger ─────────────────────────────────────────────────────────────────────────────────

@@ -607,3 +607,15 @@ function defaultAppend(fd: number, chunk: Buffer): void {
 
 /** Open a writer. **Never throws** — inspect {@link Writer.available} instead. */
 export const open = (options: Options): Writer => new Writer(options)
+
+/**
+ * How many writers are open right now.
+ *
+ * Exported as an OBSERVABLE, for the same reason {@link Writer.truncations} is: two writers on one
+ * path is a real defect shape (two descriptors, two exit hooks, two rotation owners — the residual
+ * this module's header names as its worst shared-directory case) and it is completely invisible from
+ * the outside, because both of them append happily. `test/log-usage-boot.test.ts` reads this to prove
+ * that the boot-time usage line — which needs the logger layer provided to it a second time — does
+ * not build a second writer, and its negative control makes that number 2 on purpose.
+ */
+export const openWriters = (): number => live.size

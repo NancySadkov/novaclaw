@@ -103,6 +103,100 @@ export function readSegment(file: string, budget: number): string {
   }
 }
 
+// ── how fast the log actually grows (todo/logging.md Phase 2 → Phase 3) ─────────────────────────
+
+/**
+ * **The measurement the defaults table was missing.**
+ *
+ * `log-file.ts`'s `SEGMENT_BYTES` / `TOTAL_BYTES` / `MAX_AGE_MS` (8 MB · 256 MB · 30 d) are filed
+ * in `todo/logging.md` with an explicit confession: *"Every one of these is a guess dressed in a
+ * measurement… Phase 2 must emit bytes-written-per-hour as an event and re-derive them."* The
+ * measurement it names is **27 days of one developer's usage on one machine at INFO** — and it moved
+ * 2× (69.5 → 134 KB/day) within nine days of being taken, which is the whole argument for making the
+ * instance measure itself instead of inheriting a number.
+ *
+ * ⚠️ **The rate is measured over the ACTIVE segment only, and that is deliberate rather than lazy.**
+ * A rotated segment's stamp is when it was SEALED, so lines inside it are older than their own
+ * filename — using it as a history start understates the span and therefore OVERSTATES the rate,
+ * and the only way to get the true start is to gunzip the oldest segment at boot. The active
+ * segment needs neither: it is plain text, its first line carries a `timestamp=`, and reading 8 KB
+ * off the front of one file is the cheapest honest answer available. {@link Usage.spanHours} ships
+ * beside the rate for exactly that reason — **a rate over four minutes is not a rate**, and a reader
+ * that cannot see the span cannot know that.
+ *
+ * ⚠️ **`bytesPerHour` is the RAW rate, before gzip.** Retained history is compressed at ~16× on this
+ * corpus (§0.5), so anyone converting this into "days until the budget fills" must apply that
+ * themselves — and must apply the ratio they measured, not this one. The derivation is deliberately
+ * NOT stored here: two places computing one number is the ruling-6 shape.
+ */
+export interface Usage {
+  /** Bytes the whole log directory occupies right now — active segment plus every rotated one. */
+  readonly bytes: number
+  /** The active segment's own size. */
+  readonly activeBytes: number
+  /** Rotated segments present (`.log.gz`, and any `.log` whose compression never finished). */
+  readonly segments: number
+  /** How long the ACTIVE segment has been accumulating, from its first line's `timestamp=`. */
+  readonly spanHours?: number
+  /** Measured write rate, raw bytes per hour. Absent when the span is too short to mean anything. */
+  readonly bytesPerHour?: number
+}
+
+/**
+ * A span shorter than this makes a rate meaningless — a freshly rotated segment would otherwise
+ * report megabytes per hour off ten seconds of boot chatter. Absent is a better answer than a lie.
+ */
+export const MIN_RATE_SPAN_MS = 10 * 60 * 1000
+
+/** The first line's instant in a plain-text segment, without reading the whole file. */
+export function firstLineTime(file: string): number | undefined {
+  try {
+    const size = fs.statSync(file).size
+    if (size === 0) return undefined
+    const handle = fs.openSync(file, "r")
+    try {
+      const want = Math.min(size, 8192)
+      const buffer = Buffer.allocUnsafe(want)
+      fs.readSync(handle, buffer, 0, want, 0)
+      const text = buffer.toString("utf8")
+      const newline = text.indexOf("\n")
+      // A file whose first line is longer than the window is damage, not data — say nothing rather
+      // than parse half a line into a confident timestamp.
+      if (newline === -1 && size > want) return undefined
+      return parse((newline === -1 ? text : text.slice(0, newline)).trimEnd()).time
+    } finally {
+      fs.closeSync(handle)
+    }
+  } catch {
+    return undefined
+  }
+}
+
+/** Measure the log directory. Never throws — an unreadable directory reports zeroes. */
+export function usage(directory: string, name: string, nowMs: number = Date.now()): Usage {
+  const active = path.join(directory, `${name}.log`)
+  let activeBytes = 0
+  try {
+    activeBytes = fs.statSync(active).size
+  } catch {
+    activeBytes = 0
+  }
+  const rotated = LogFile.segmentsIn(directory, name)
+  const bytes = rotated.reduce((sum, segment) => sum + segment.bytes, 0) + activeBytes
+  const since = firstLineTime(active)
+  const spanMs = since === undefined ? undefined : nowMs - since
+  const usable = spanMs !== undefined && spanMs >= MIN_RATE_SPAN_MS
+  return {
+    bytes,
+    activeBytes,
+    segments: rotated.length,
+    ...(spanMs === undefined || spanMs < 0 ? {} : { spanHours: round(spanMs / 3_600_000) }),
+    ...(usable ? { bytesPerHour: Math.round(activeBytes / (spanMs / 3_600_000)) } : {}),
+  }
+}
+
+const round = (value: number) => Math.round(value * 100) / 100
+
 // ── one line ────────────────────────────────────────────────────────────────────────────────────
 
 /** One parsed logfmt record. `columns` keeps ORDER and DUPLICATES — see {@link parse}. */

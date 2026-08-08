@@ -83,7 +83,21 @@ export const layer = Layer.unwrap(
           }),
         )
       : Layer.empty
-    return Layer.merge(logs, tracing)
+    // ⭐ **The one line per boot that turns the writer's defaults from a guess into a measurement**
+    // (`todo/logging.md` Phase 2 → Phase 3). It is `Layer.provide(logs)`-ed rather than merged
+    // beside them because an `Effect.log*` run during layer CONSTRUCTION goes to whatever logger was
+    // ambient — i.e. not ours, i.e. not into `novaclaw.log`, which is the one place this line is for.
+    //
+    // ⚠️ **`logs` therefore appears twice, and the thing that must be true is that it BUILDS once.**
+    // Two builds would mean two `LogFile.Writer`s on one path — two descriptors, two exit hooks, two
+    // rotation owners — which is the residual `log-file.ts` names as its worst shared-directory case
+    // and would be a defect introduced *by* the line that measures the file. Effect's memo map makes
+    // a layer VALUE build once per build; `logs` is one `const`, referenced twice. That is an
+    // inference about a library, and `test/log-usage-boot.test.ts` measures it instead: it counts the
+    // writers actually opened across a real build of this layer, and its negative control passes the
+    // same effect a SECOND, structurally identical logger layer and watches the count go to 2.
+    const usage = Layer.effectDiscard(Logging.reportUsage()).pipe(Layer.provide(logs))
+    return Layer.merge(Layer.merge(logs, tracing), usage)
   }),
 )
 
