@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
 import { ComputerProposal as CP } from "./proposal"
-import { ComputerCoordinates } from "./coordinates"
 
 /**
  * S1 — the planner's wire schema.
@@ -8,7 +7,7 @@ import { ComputerCoordinates } from "./coordinates"
  * ⚠️ **The fixtures are the floor model's REAL failure shapes, not tidy counter-examples.** Four of
  * them are named in the design because each was actually observed somewhere in this program: `null`
  * where a field is absent (qwen, 2026-07-09), a missing `expect`, prose wrapped around the JSON, and
- * a `watch` box that excludes the very point it is supposed to be watching. A schema test written
+ * planner-authored coordinates that would bypass the split grounder. A schema test written
  * against shapes I invented agrees with my mental model by construction — the same lesson
  * `verify.ts` learned from `xdotool --display`.
  *
@@ -18,9 +17,8 @@ import { ComputerCoordinates } from "./coordinates"
 
 const act = (over: Partial<CP.ProposalDraft> = {}): CP.ProposalDraft => ({
   observation: "The Master of Magic main menu, with New Game highlighted.",
-  action: { kind: "click", button: "left", point: { x: 464, y: 684 } },
+  action: { kind: "click", button: "left", target: "New Game" },
   expect: "The Game Options dialog is showing.",
-  watch: { x: 440, y: 660, width: 60, height: 50 },
   ...over,
 })
 
@@ -36,15 +34,14 @@ describe("the decode is tolerant, because the reply comes from the floor model",
     const parsed = CP.parseProposal(
       JSON.stringify({
         observation: "main menu",
-        action: { kind: "click", point: { x: 464, y: 684 } },
+        action: { kind: "click", target: "New Game" },
         expect: "the options dialog appears",
-        watch: { x: 400, y: 640, width: 200, height: 100 },
       }),
     )
     expect(parsed.ok).toBe(true)
     if (!parsed.ok) return
     expect(parsed.draft.action?.kind).toBe("click")
-    expect(parsed.draft.action?.point).toEqual({ x: 464, y: 684 })
+    expect(parsed.draft.action?.target).toBe("New Game")
     expect(errorCodes(parsed.draft)).toEqual([])
   })
 
@@ -97,13 +94,14 @@ describe("the decode is tolerant, because the reply comes from the floor model",
     expect(errorCodes(parsed.draft)).toEqual([])
   })
 
-  test("🔴 the FLAT shape our own `computer` tool teaches — a string action with x/y beside it", () => {
+  test("the old flat tool shape still decodes, but cannot bypass the split grounder", () => {
     // tool/computer.ts's Input is flat: {action:"click", x, y, button, …}. A model that has seen the
     // tool has been taught that shape by us; rejecting it would be rejecting our own documentation.
     const parsed = CP.parseProposal(
       JSON.stringify({
         observation: "main menu",
         action: "click",
+        target: "New Game",
         x: 464,
         y: 684,
         button: "left",
@@ -113,13 +111,23 @@ describe("the decode is tolerant, because the reply comes from the floor model",
     )
     expect(parsed.ok).toBe(true)
     if (!parsed.ok) return
-    expect(parsed.draft.action).toEqual({ kind: "click", button: "left", point: { x: 464, y: 684 } })
+    expect(parsed.draft.action).toEqual({
+      kind: "click",
+      target: "New Game",
+      button: "left",
+      point: { x: 464, y: 684 },
+    })
     expect(parsed.draft.watch).toEqual({ x: 400, y: 640, width: 200, height: 100 })
-    expect(errorCodes(parsed.draft)).toEqual([])
+    expect(errorCodes(parsed.draft)).toEqual(["planner_grounding_fields"])
   })
 
-  test("`watch` as the tool's own \"x,y,width,height\" string, and as an array", () => {
-    for (const watch of ["10,20,30,40", [10, 20, 30, 40], { x: 10, y: 20, w: 30, h: 40 }, { x: "10", y: "20", width: "30", height: "40" }]) {
+  test('`watch` as the tool\'s own "x,y,width,height" string, and as an array', () => {
+    for (const watch of [
+      "10,20,30,40",
+      [10, 20, 30, 40],
+      { x: 10, y: 20, w: 30, h: 40 },
+      { x: "10", y: "20", width: "30", height: "40" },
+    ]) {
       const parsed = CP.parseProposal(
         JSON.stringify({ action: { kind: "click", point: { x: 15, y: 25 } }, expect: "it opens", watch }),
       )
@@ -129,13 +137,17 @@ describe("the decode is tolerant, because the reply comes from the floor model",
   })
 
   test("a point emitted as a two-element array", () => {
-    const parsed = CP.parseProposal('{"action":{"kind":"move","point":[464,684]},"expect":"the cursor is over New Game"}')
+    const parsed = CP.parseProposal(
+      '{"action":{"kind":"move","point":[464,684]},"expect":"the cursor is over New Game"}',
+    )
     expect(parsed.ok).toBe(true)
     if (parsed.ok) expect(parsed.draft.action?.point).toEqual({ x: 464, y: 684 })
   })
 
   test("numbers written as strings are adopted; non-numeric strings are left to fail loudly", () => {
-    const good = CP.parseProposal('{"action":{"kind":"scroll","direction":"down","amount":"3"},"expect":"the list scrolls"}')
+    const good = CP.parseProposal(
+      '{"action":{"kind":"scroll","direction":"down","amount":"3"},"expect":"the list scrolls"}',
+    )
     expect(good.ok).toBe(true)
     if (good.ok) expect(good.draft.action?.amount).toBe(3)
 
@@ -197,7 +209,9 @@ describe("the decode is tolerant, because the reply comes from the floor model",
   test("🔴 a HALF-built rectangle is a decode failure, never a silently completed one", () => {
     // The property tool/computer.ts bought with its "x,y,width,height" string, kept here: three of
     // four fields cannot be defaulted into a region, because a wrong region reads as evidence.
-    const parsed = CP.parseProposal('{"action":{"kind":"click","point":{"x":1,"y":2}},"expect":"x","watch":{"x":1,"y":2,"width":3}}')
+    const parsed = CP.parseProposal(
+      '{"action":{"kind":"click","point":{"x":1,"y":2}},"expect":"x","watch":{"x":1,"y":2,"width":3}}',
+    )
     expect(parsed.ok).toBe(false)
   })
 })
@@ -293,23 +307,24 @@ describe("the action vocabulary is closed, and the harness keeps its own half", 
   })
 
   test("an absent kind says `(absent)` rather than an empty string", () => {
-    expect(CP.structuralIssues(act({ action: {} })).find((i) => i.code === "unknown_action_kind")?.detail).toBe("(absent)")
+    expect(CP.structuralIssues(act({ action: {} })).find((i) => i.code === "unknown_action_kind")?.detail).toBe(
+      "(absent)",
+    )
   })
 
   test("every kind in the vocabulary is accepted", () => {
     const payload: Record<string, CP.ActionDraft> = {
-      move: { kind: "move", point: { x: 10, y: 10 } },
-      click: { kind: "click", point: { x: 10, y: 10 } },
-      double_click: { kind: "double_click", point: { x: 10, y: 10 } },
+      move: { kind: "move", target: "File" },
+      click: { kind: "click", target: "New Game" },
+      double_click: { kind: "double_click", target: "Document" },
       type: { kind: "type", text: "magic" },
       key: { kind: "key", keys: "Return" },
       scroll: { kind: "scroll", direction: "down", amount: 3 },
     }
     for (const kind of CP.ACTION_KINDS) {
-      const watch = CP.isPointerKind(kind) ? { x: 0, y: 0, width: 100, height: 100 } : null
       const action = payload[kind]
       expect(action).toBeDefined()
-      expect(errorCodes(act({ action, watch }))).toEqual([])
+      expect(errorCodes(act({ action }))).toEqual([])
     }
   })
 
@@ -325,106 +340,35 @@ describe("the action vocabulary is closed, and the harness keeps its own half", 
     expect(errorCodes(act({ action: { kind: "type", text: "magic" }, watch: null }))).toEqual([])
   })
 
-  test("a non-pointer action needs no watch region", () => {
+  test("a non-pointer action needs no grounding target", () => {
     expect(errorCodes(act({ action: { kind: "key", keys: "Return" }, watch: null }))).toEqual([])
-  })
-
-  test("a non-finite point is caught before anything tries to convert it", () => {
-    expect(errorCodes(act({ action: { kind: "click", point: { x: Number.NaN, y: 10 } } }))).toContain("bad_point")
-    expect(errorCodes(act({ action: { kind: "click", point: { x: 464, y: 684 } } }))).not.toContain("bad_point")
   })
 })
 
 // ------------------------------------------------------------------------------------------------
-// watch-contains-point (G3)
+// split-grounding boundary
 // ------------------------------------------------------------------------------------------------
 
-describe("🔴 G3 — `watch` must contain the point being acted on", () => {
-  test("the real failure shape: a box that excludes its own acted point", () => {
-    const issues = CP.structuralIssues(act({ watch: { x: 0, y: 0, width: 100, height: 100 } }))
-    const issue = issues.find((i) => i.code === "watch_excludes_point")
-    expect(issue).toBeDefined()
-    expect(issue?.detail).toBe("(464,684) is outside 0,0,100,100")
-    // The negative control: move the box over the point and the same call is silent.
-    expect(errorCodes(act({ watch: { x: 440, y: 660, width: 60, height: 50 } }))).toEqual([])
+describe("🔴 pointer grounding belongs to the blind second stage", () => {
+  test("a visible label is required", () => {
+    expect(errorCodes(act({ action: { kind: "click" } }))).toEqual(["pointer_missing_target"])
+    expect(errorCodes(act({ action: { kind: "click", target: "New Game" } }))).toEqual([])
   })
 
-  test("a pointer action with no watch at all", () => {
-    expect(errorCodes(act({ watch: null }))).toEqual(["missing_watch"])
-    expect(CP.structuralIssues(act({ watch: null })).find((i) => i.code === "missing_watch")?.detail).toContain(
-      "(464,684)",
-    )
+  test("planner coordinates and watches are decoded only so the repair can reject them by name", () => {
+    const point = act({ action: { kind: "click", target: "New Game", point: { x: 464, y: 684 } } })
+    expect(errorCodes(point)).toEqual(["planner_grounding_fields"])
+    const watch = act({ watch: { x: 440, y: 660, width: 60, height: 50 } })
+    expect(errorCodes(watch)).toEqual(["planner_grounding_fields"])
+    expect(CP.describeIssue(CP.structuralIssues(point)[0]!)).toContain("separate blind grounder")
   })
 
-  test("🔴 a pointer action with no POINT is the vacuity this guard would otherwise have", () => {
-    // Without this, `watch_excludes_point` has nothing to test, passes, and reports nothing — a green
-    // guard that could never go red. So the missing point is itself the error.
-    const issues = CP.structuralIssues(act({ action: { kind: "click" } }))
-    expect(issues.map((i) => i.code)).toContain("pointer_missing_point")
-    expect(issues.map((i) => i.code)).not.toContain("watch_excludes_point")
-  })
-
-  test("a point with no watch AND no point reports both, so one repair fixes both", () => {
-    expect(errorCodes(act({ action: { kind: "click" }, watch: null }))).toEqual([
-      "pointer_missing_point",
-      "missing_watch",
-    ])
-  })
-
-  test("a degenerate watch is rejected before containment is even asked", () => {
-    for (const watch of [
-      { x: 0, y: 0, width: 0, height: 10 },
-      { x: 0, y: 0, width: 10, height: -5 },
-      { x: Number.NaN, y: 0, width: 10, height: 10 },
-    ]) {
-      const issues = CP.structuralIssues(act({ watch }))
-      expect(issues.map((i) => i.code)).toContain("bad_watch")
-      expect(issues.map((i) => i.code)).not.toContain("watch_excludes_point")
+  test("all pointer kinds use the label contract; non-pointer actions do not", () => {
+    for (const kind of CP.POINTER_KINDS) {
+      expect(errorCodes(act({ action: { kind, target: "Visible Label" } }))).toEqual([])
+      expect(errorCodes(act({ action: { kind } }))).toContain("pointer_missing_target")
     }
-  })
-
-  test("containment is CLOSED, and the far edge is a warning rather than a rejection", () => {
-    const watch = { x: 100, y: 100, width: 50, height: 50 }
-    expect(CP.watchContains(watch, { x: 100, y: 100 })).toBe(true)
-    expect(CP.watchContains(watch, { x: 150, y: 150 })).toBe(true)
-    expect(CP.watchContains(watch, { x: 151, y: 150 })).toBe(false)
-    expect(CP.watchContains(watch, { x: 99, y: 120 })).toBe(false)
-
-    const edge = CP.structuralIssues(act({ action: { kind: "click", point: { x: 150, y: 150 } }, watch }))
-    expect(CP.errorsOf(edge)).toEqual([])
-    expect(edge.map((i) => i.code)).toContain("watch_point_on_edge")
-    // …and one pixel in from the edge is silent.
-    expect(CP.structuralIssues(act({ action: { kind: "click", point: { x: 149, y: 149 } }, watch }))).toEqual([])
-  })
-
-  test("🔴 checking containment in MODEL units is sound, because the conversion is monotone", () => {
-    // This is the justification for S1 being pure at all: `px = round(norm / 1000 × dimension)` is
-    // monotone non-decreasing per axis, so a point inside the box in the model's own units is still
-    // inside it after conversion. If that ever stops holding, this guard starts rejecting correct
-    // proposals — or worse, accepting ones whose region will not contain the acted pixel.
-    const viewport = { width: 1280, height: 800 }
-    const watch = { x: 440, y: 660, width: 60, height: 50 }
-    const px = (p: { x: number; y: number }) => {
-      const r = ComputerCoordinates.toPixels(p, "normalized-1000", viewport)
-      expect(r.ok).toBe(true)
-      return r.ok ? r.point : { x: -1, y: -1 }
-    }
-    const box = { min: px({ x: watch.x, y: watch.y }), max: px({ x: watch.x + watch.width, y: watch.y + watch.height }) }
-    let inside = 0
-    for (let x = 430; x <= 510; x += 1) {
-      for (let y = 650; y <= 720; y += 5) {
-        const point = { x, y }
-        if (!CP.watchContains(watch, point)) continue
-        inside++
-        const p = px(point)
-        expect(p.x).toBeGreaterThanOrEqual(box.min.x)
-        expect(p.x).toBeLessThanOrEqual(box.max.x)
-        expect(p.y).toBeGreaterThanOrEqual(box.min.y)
-        expect(p.y).toBeLessThanOrEqual(box.max.y)
-      }
-    }
-    // Non-vacuity: the sweep must actually have entered the box.
-    expect(inside).toBeGreaterThan(500)
+    expect(errorCodes(act({ action: { kind: "key", keys: "Return" } }))).toEqual([])
   })
 })
 
@@ -451,8 +395,8 @@ describe("the repair re-prompt (G3 — one shot, then it costs budget)", () => {
     const text = CP.repairPrompt({ issues: CP.structuralIssues(draft) })
     expect(text).toContain("REJECTED")
     expect(text).toContain("every action must predict")
-    expect(text).toContain("does not contain the point")
-    expect(text).toContain("(464,684) is outside 0,0,10,10")
+    expect(text).toContain("separate blind grounder")
+    expect(text).toContain("do not emit coordinates or a watch region")
     expect(text).toContain("describe what you see")
   })
 
@@ -480,11 +424,8 @@ describe("the repair re-prompt (G3 — one shot, then it costs budget)", () => {
       act({ expect: null, observation: null }),
       act({ action: { kind: "screenshot" } }),
       act({ action: { kind: "drag" } }),
-      act({ action: { kind: "click" }, watch: null }),
-      act({ action: { kind: "click", point: { x: Number.NaN, y: 1 } } }),
-      act({ watch: { x: 0, y: 0, width: 0, height: 1 } }),
-      act({ watch: { x: 0, y: 0, width: 10, height: 10 } }),
-      act({ action: { kind: "click", point: { x: 500, y: 710 } } }),
+      act({ action: { kind: "click" } }),
+      act({ action: { kind: "click", target: "New Game", point: { x: 500, y: 710 } } }),
       act({ action: { kind: "scroll" }, watch: null }),
       { abstain: true },
       { claim_done: true },
@@ -502,19 +443,15 @@ describe("the repair re-prompt (G3 — one shot, then it costs budget)", () => {
       [
         "abstain_missing_reason",
         "ambiguous_shape",
-        "bad_point",
-        "bad_watch",
         "claim_done_missing_evidence",
         "harness_owned_action",
         "missing_action_payload",
         "missing_expect",
         "missing_observation",
-        "missing_watch",
         "no_proposal",
-        "pointer_missing_point",
+        "planner_grounding_fields",
+        "pointer_missing_target",
         "unknown_action_kind",
-        "watch_excludes_point",
-        "watch_point_on_edge",
       ].sort(),
     )
   })
@@ -545,7 +482,7 @@ describe('🔴 `{"x": N, N}` — the omitted `"y":` key, recovered; everything e
     // Not just the point: the reply the loop lost carried the prediction and the watch region too.
     expect(parsed.draft.expect).toBe("The Game Options dialog is showing.")
     expect(parsed.draft.watch).toEqual({ x: 550, y: 850, width: 150, height: 100 })
-    expect(CP.errorsOf(CP.structuralIssues(parsed.draft))).toEqual([])
+    expect(errorCodes(parsed.draft)).toEqual(["pointer_missing_target", "planner_grounding_fields"])
   })
 
   test("the recovery is NAMED in the result, never silent", () => {
@@ -600,7 +537,8 @@ describe('🔴 `{"x": N, N}` — the omitted `"y":` key, recovered; everything e
     test("🔴 a TRUNCATED reply stays refused — inventing a brace would be inventing an action", () => {
       // 40 of the 40 replies the fixed parser still rejects are this: `finish_reason: length`. A
       // truncated reply is a BUDGET reading, never a capability one, and never an action.
-      const truncated = '{"observation": "the menu", "action": {"kind": "click", "point": {"x": 623, 884}}, "expect": "the dial'
+      const truncated =
+        '{"observation": "the menu", "action": {"kind": "click", "point": {"x": 623, 884}}, "expect": "the dial'
       const parsed = refuses(truncated)
       if (parsed.ok) return
       expect(parsed.issue).toContain("unbalanced")
@@ -636,7 +574,9 @@ describe('🔴 `{"x": N, N}` — the omitted `"y":` key, recovered; everything e
   test("a positional ARRAY was already accepted and is a different thing", () => {
     // `[a, b]` is valid JSON that MEANS an ordered pair; reading it in the declared order is a
     // convention, not a recovery. It decodes with no repair recorded.
-    const parsed = CP.parseProposal('{"action":{"kind":"click","point":[623,884]},"expect":"e","watch":"600,860,60,50"}')
+    const parsed = CP.parseProposal(
+      '{"action":{"kind":"click","point":[623,884]},"expect":"e","watch":"600,860,60,50"}',
+    )
     expect(parsed.ok && parsed.draft.action?.point).toEqual({ x: 623, y: 884 })
     expect(parsed.ok && parsed.repairs).toBeUndefined()
   })
@@ -670,27 +610,32 @@ describe('🔴 `{"x": N, N}` — the omitted `"y":` key, recovered; everything e
  * The lift is the exact inverse of the flat-form hoist this file already documents, and it is
  * bounded the same way: it fills only what the proposal left empty.
  */
-describe("🔴 `watch` nested inside `action` is LIFTED — 27 of 50 measured replies put it there", () => {
+describe("legacy planner grounding fields are decoded for an actionable split-contract repair", () => {
   const nested = (extra: Record<string, unknown> = {}) =>
     JSON.stringify({
       observation: "the in-game map",
-      action: { kind: "click", point: { x: 860, y: 920 }, watch: { x: 840, y: 900, width: 80, height: 40 } },
+      action: {
+        kind: "click",
+        target: "DONE",
+        point: { x: 860, y: 920 },
+        watch: { x: 840, y: 900, width: 80, height: 40 },
+      },
       expect: "the turn ends",
       ...extra,
     })
 
-  test("it decodes with NO structural error, where it used to report missing_watch", () => {
+  test("the measured nested shape is lifted, then rejected rather than silently using planner coordinates", () => {
     const parsed = CP.parseProposal(nested())
     if (!parsed.ok) throw new Error(parsed.issue)
     expect(parsed.draft.watch).toEqual({ x: 840, y: 900, width: 80, height: 40 })
-    expect(errorCodes(parsed.draft)).toEqual([])
+    expect(errorCodes(parsed.draft)).toEqual(["planner_grounding_fields"])
   })
 
   test("`region` nested on the action is the same alias it is at the top level", () => {
     const parsed = CP.parseProposal(
       JSON.stringify({
         observation: "the in-game map",
-        action: { kind: "click", point: { x: 860, y: 920 }, region: "840,900,80,40" },
+        action: { kind: "click", target: "DONE", point: { x: 860, y: 920 }, region: "840,900,80,40" },
         expect: "the turn ends",
       }),
     )
@@ -704,27 +649,32 @@ describe("🔴 `watch` nested inside `action` is LIFTED — 27 of 50 measured re
     expect(parsed.draft.watch).toEqual({ x: 0, y: 0, width: 1000, height: 1000 })
   })
 
-  test("🔴 the lifted watch is still CONTAINMENT-CHECKED — it is not a way around G3", () => {
+  test("a lifted watch is still rejected as a planner-owned grounding field", () => {
     const parsed = CP.parseProposal(
       JSON.stringify({
         observation: "the in-game map",
-        action: { kind: "click", point: { x: 860, y: 920 }, watch: { x: 0, y: 0, width: 10, height: 10 } },
+        action: {
+          kind: "click",
+          target: "DONE",
+          point: { x: 860, y: 920 },
+          watch: { x: 0, y: 0, width: 10, height: 10 },
+        },
         expect: "the turn ends",
       }),
     )
     if (!parsed.ok) throw new Error(parsed.issue)
-    expect(errorCodes(parsed.draft)).toContain("watch_excludes_point")
+    expect(errorCodes(parsed.draft)).toContain("planner_grounding_fields")
   })
 
-  test("a proposal with no watch anywhere is still refused", () => {
+  test("a pointer proposal with a bare visible label is accepted", () => {
     const parsed = CP.parseProposal(
       JSON.stringify({
         observation: "the in-game map",
-        action: { kind: "click", point: { x: 860, y: 920 } },
+        action: { kind: "click", target: "DONE" },
         expect: "the turn ends",
       }),
     )
     if (!parsed.ok) throw new Error(parsed.issue)
-    expect(errorCodes(parsed.draft)).toContain("missing_watch")
+    expect(errorCodes(parsed.draft)).toEqual([])
   })
 })

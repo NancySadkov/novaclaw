@@ -104,7 +104,9 @@ export const IMAGE_PROMPT_TOKENS = 1052
 export const estimateTextTokens = (text: string): number => Math.ceil(text.length / 4)
 
 export const estimateTokens = (prompt: Prompt): number =>
-  estimateTextTokens(prompt.system) + estimateTextTokens(prompt.user) + (prompt.image === undefined ? 0 : IMAGE_PROMPT_TOKENS)
+  estimateTextTokens(prompt.system) +
+  estimateTextTokens(prompt.user) +
+  (prompt.image === undefined ? 0 : IMAGE_PROMPT_TOKENS)
 
 // ---------------------------------------------------------------------------------------------
 // The planner
@@ -282,10 +284,9 @@ export function adjudicator(input: {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * 🔴 **The third builder, and it is NOT wired into the loop.** It lands the way `coordinates.ts` and
- * `actions.ts` did — pure, unregistered, carrying a measured fact whose failure would be silent —
- * because the fact it carries is a *string*, and a string nobody measured reads exactly like a
- * string somebody did.
+ * 🔴 **The third builder, wired as the pointer step's mandatory second stage.** It originally landed
+ * pure and unregistered so its measured prompt string could be pinned before the contract changed;
+ * the loop now calls it only after the planner emits a compliant visible label.
  *
  * **What it is for.** §7c refused both obvious grounding levers on this substrate by measurement
  * (region crops −78 points; set-of-mark ±0 and it needs a UI detector we do not have) and named one

@@ -44,9 +44,8 @@ const RUN_ID = "run7"
 const clickAt = (x: number, y: number): string =>
   JSON.stringify({
     observation: "the main menu",
-    action: { kind: "click", button: "left", point: { x, y } },
+    action: { kind: "click", button: "left", target: `target-${x}-${y}` },
     expect: "The Game Options dialog is showing.",
-    watch: { x: x - 20, y: y - 20, width: 60, height: 50 },
   })
 
 // ------------------------------------------------------------------------------------------------
@@ -98,8 +97,7 @@ const substrate = (options: SubstrateOptions = {}): Substrate => {
   let executed = 0
   let lastFile: DRV.CaptureFile | undefined
 
-  const digestFor = (label: string): string =>
-    label.startsWith("watch") ? `watch-${watch}` : `frame-${frame}`
+  const digestFor = (label: string): string => (label.startsWith("watch") ? `watch-${watch}` : `frame-${frame}`)
 
   const capture = (request: DRV.CaptureRequest): Effect.Effect<DRV.CaptureOutcome> =>
     Effect.sync(() => {
@@ -179,6 +177,8 @@ const substrate = (options: SubstrateOptions = {}): Substrate => {
 interface ModelOptions {
   /** Planner replies, consumed in order; the last one repeats. */
   readonly planner?: ReadonlyArray<string>
+  /** Grounder replies, consumed in order. Omit to decode the fixture's target-x-y label. */
+  readonly grounder?: ReadonlyArray<string>
   /** Adjudicator replies, consumed in order; the last one repeats. Objects are JSON-encoded. */
   readonly adjudicator?: ReadonlyArray<Record<string, unknown> | DRV.AskOutcome>
   /** `usage.prompt_tokens` per call. `undefined` = the wire reported nothing. */
@@ -195,7 +195,7 @@ const model = (options: ModelOptions = {}): Model => {
   const counts = new Map<DRV.AskKind, number>()
   const planner = options.planner ?? [clickAt(464, 684)]
   const adjudicator = options.adjudicator ?? [{ observed: "a screen", checkpoint: "no" }]
-  const pick = <T,>(list: ReadonlyArray<T>, n: number): T => list[Math.min(n - 1, list.length - 1)]
+  const pick = <T>(list: ReadonlyArray<T>, n: number): T => list[Math.min(n - 1, list.length - 1)]
 
   return {
     prompts,
@@ -207,6 +207,16 @@ const model = (options: ModelOptions = {}): Model => {
         const tokens = options.promptTokens?.(request.kind, n)
         if (request.kind === "planner") {
           return { ok: true, text: pick(planner, n), ...(tokens === undefined ? {} : { promptTokens: tokens }) }
+        }
+        if (request.kind === "grounder") {
+          const match = request.prompt.user.match(/target-(\d+)-(\d+)/)
+          const text =
+            options.grounder === undefined
+              ? match === null
+                ? "{}"
+                : JSON.stringify({ x: Number(match[1]), y: Number(match[2]) })
+              : pick(options.grounder, n)
+          return { ok: true, text, ...(tokens === undefined ? {} : { promptTokens: tokens }) }
         }
         const reply = pick(adjudicator, n)
         if (typeof reply === "object" && reply !== null && "ok" in reply) return reply as DRV.AskOutcome
@@ -255,6 +265,18 @@ const CALIBRATED: ReadonlyArray<Record<string, unknown>> = [{ observed: "the sta
 
 const verdictKinds = (report: DRV.RunReport) => report.verdicts.map((v) => v.kind)
 const ledgerVerdicts = (report: DRV.RunReport) => report.ledger.map((entry) => entry.verdict)
+
+test("an unreadable blind-grounder reply never reaches the screen", async () => {
+  const screen = substrate()
+  const { report } = await drive({
+    screen,
+    spec: spec({ budget: { maxSteps: 1, maxPromptTokens: 500_000 } }),
+    llm: model({ grounder: ["not a point"], adjudicator: CALIBRATED }),
+  })
+  expect(screen.acts).toHaveLength(0)
+  expect(report.usage.filter((sample) => sample.call === "grounder")).toHaveLength(2)
+  expect(ledgerVerdicts(report)).toContain("grounding unreadable")
+})
 
 // ================================================================================================
 // G2 — the capture freshness assertion
@@ -363,7 +385,10 @@ describe("G2 — a capture is accepted only on exit 0 + a file that exists and i
 
   test("🔴 a FAILED capture that leaves the stale frame is capture-failed, never no-visible-effect", async () => {
     const { report } = await drive({
-      screen: substrate({ moves: () => false, fault: (label) => (label === "watch-after" ? { kind: "exit", stderr: "giblib error" } : undefined) }),
+      screen: substrate({
+        moves: () => false,
+        fault: (label) => (label === "watch-after" ? { kind: "exit", stderr: "giblib error" } : undefined),
+      }),
       llm: model({ adjudicator: CALIBRATED }),
     })
     expect(report.outcome).toMatchObject({ kind: "blocked", reason: "capture-failed" })
@@ -377,7 +402,10 @@ describe("G2 — a capture is accepted only on exit 0 + a file that exists and i
 
   test("🔴 exit 0 with an OLD file is stale, not fresh", async () => {
     const { report } = await drive({
-      screen: substrate({ moves: () => false, fault: (label) => (label === "watch-after" ? { kind: "stale" } : undefined) }),
+      screen: substrate({
+        moves: () => false,
+        fault: (label) => (label === "watch-after" ? { kind: "stale" } : undefined),
+      }),
       llm: model({ adjudicator: CALIBRATED }),
     })
     expect(report.outcome).toMatchObject({ kind: "blocked", reason: "capture-failed" })
@@ -495,8 +523,8 @@ describe("the act command is a whole four-capture protocol", () => {
     for (const request of watch) {
       expect(request.scope).toBe("watch")
       expect(request.region).toBeDefined()
-      // `watch: {x: 444, y: 664, w: 60, h: 50}` in normalized-1000 on 1280x800, both corners converted.
-      expect(request.region).toEqual({ x: 568, y: 531, width: 77, height: 40 })
+      // Harness-derived 64/1000 watch around the grounded point on a 1280×800 viewport.
+      expect(request.region).toEqual({ x: 553, y: 522, width: 82, height: 51 })
     }
     for (const request of frames) {
       expect(request.scope).toBe("frame")
@@ -579,7 +607,12 @@ describe("G14 — the adjudicator calibration probe", () => {
     const screen = substrate()
     const { report } = await drive({
       screen,
-      llm: model({ adjudicator: [{ observed: "the menu", checkpoint: "no" }, { observed: "the spell dialog", checkpoint: "yes" }] }),
+      llm: model({
+        adjudicator: [
+          { observed: "the menu", checkpoint: "no" },
+          { observed: "the spell dialog", checkpoint: "yes" },
+        ],
+      }),
     })
     expect(report.outcome.kind).toBe("done")
     expect(screen.acts.length).toBe(1)
@@ -640,17 +673,23 @@ describe("the RunReport carries the MEASURED prompt-token series", () => {
   })
 
   test("a run with no wire numbers at all is entirely estimated, and fromWire is false", async () => {
-    const { report } = await drive({ spec: spec({ budget: { maxSteps: 1, maxPromptTokens: 500_000 } }), llm: model({ adjudicator: CALIBRATED }) })
+    const { report } = await drive({
+      spec: spec({ budget: { maxSteps: 1, maxPromptTokens: 500_000 } }),
+      llm: model({ adjudicator: CALIBRATED }),
+    })
     expect(report.promptTokens.fromWire).toBe(false)
     expect(report.promptTokens.reported).toBe(0)
     expect(report.promptTokens.estimated).toBe(report.promptTokens.counted)
   })
 
   test("every sample names the step and the phase that consumes it", async () => {
-    const { report } = await drive({ spec: spec({ budget: { maxSteps: 1, maxPromptTokens: 500_000 } }), llm: model({ adjudicator: CALIBRATED }) })
-    expect(report.usage.map((u) => u.purpose)).toEqual(["calibrate-adjudicate", "propose", "adjudicate-step"])
-    expect(report.usage.map((u) => u.call)).toEqual(["adjudicator", "planner", "adjudicator"])
-    expect(report.usage.map((u) => u.step)).toEqual([0, 1, 1])
+    const { report } = await drive({
+      spec: spec({ budget: { maxSteps: 1, maxPromptTokens: 500_000 } }),
+      llm: model({ adjudicator: CALIBRATED }),
+    })
+    expect(report.usage.map((u) => u.purpose)).toEqual(["calibrate-adjudicate", "propose", "ground", "adjudicate-step"])
+    expect(report.usage.map((u) => u.call)).toEqual(["adjudicator", "planner", "grounder", "adjudicator"])
+    expect(report.usage.map((u) => u.step)).toEqual([0, 1, 1, 1])
     expect(report.usage.every((u) => u.withImage)).toBe(true)
   })
 
@@ -690,9 +729,7 @@ describe("the RunReport", () => {
     expect(verdictKinds(report)).toEqual(["attributed", "attributed"])
     expect(report.verdicts[0]?.step).toBe(1)
     expect(report.checkpointsSatisfied).toBe(1)
-    expect(report.checkpoints).toEqual([
-      { id: "cp9", question: CP9.question, satisfied: true, satisfiedAtStep: 2 },
-    ])
+    expect(report.checkpoints).toEqual([{ id: "cp9", question: CP9.question, satisfied: true, satisfiedAtStep: 2 }])
     expect(report.captureFailures).toBe(0)
     expect(report.acted).toBe(2)
   })
@@ -758,7 +795,10 @@ describe("the RunReport", () => {
   })
 
   test("every capture is recorded with its path, its scope and its verdict", async () => {
-    const { report } = await drive({ spec: spec({ budget: { maxSteps: 1, maxPromptTokens: 500_000 } }), llm: model({ adjudicator: CALIBRATED }) })
+    const { report } = await drive({
+      spec: spec({ budget: { maxSteps: 1, maxPromptTokens: 500_000 } }),
+      llm: model({ adjudicator: CALIBRATED }),
+    })
     expect(report.captures.map((c) => c.label)).toEqual([
       "calibrate",
       "observe",

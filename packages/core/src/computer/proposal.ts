@@ -12,7 +12,7 @@ import { JhExtract } from "../jh/extract"
  *
  * | shape | fields | meaning |
  * |---|---|---|
- * | act | `{observation, action, expect, watch?}` | do one thing, and say what the screen should look like afterwards |
+ * | act | `{observation, action, expect}` | do one thing, and say what the screen should look like afterwards |
  * | abstain | `{abstain, reason}` | *"I cannot see the target"* — A14.3, first-class |
  * | claim done | `{claim_done, evidence}` | a PROPOSAL, never a transition (G1) |
  *
@@ -25,10 +25,10 @@ import { JhExtract } from "../jh/extract"
  * `inconclusive (animated)` and the loop was blind. It is caught here, mechanically, because
  * `holo3.1` ignores negative instructions (`todo.md`) and a sentence in a prompt is not a constraint.
  *
- * 🔴 **`watch` is required for pointer actions AND must contain the acted point (G3).** The region is
- * where rung 1 looks for evidence; a watch box aimed somewhere else — an animating clock, a progress
- * bar, the whole screen — measures the wrong pixels and reports a verdict about them. That is worse
- * than no region at all, because it looks like evidence.
+ * 🔴 **Pointer actions name the control's visible LABEL and never propose coordinates.** The split
+ * grounding call owns the point; the harness derives the watch region around that grounded point.
+ * This is the measured 25/25 path. Keeping planner coordinates as an accepted alternative would
+ * silently retain the shipped 7/25 path beside it.
  *
  * **The decode is TOLERANT and the validation is SEPARATE, which is `jh/step.ts`'s pattern and it is
  * here for `jh/step.ts`'s reason.** The engine needs the parsed draft in order to build the repair
@@ -71,8 +71,7 @@ export type PointerKind = (typeof POINTER_KINDS)[number]
 /** Kinds the harness owns. Proposing one is a structural error, not an unknown kind. */
 export const HARNESS_OWNED_KINDS = ["screenshot", "cursor"] as const
 
-export const isActionKind = (kind: string): kind is ActionKind =>
-  (ACTION_KINDS as ReadonlyArray<string>).includes(kind)
+export const isActionKind = (kind: string): kind is ActionKind => (ACTION_KINDS as ReadonlyArray<string>).includes(kind)
 
 export const isPointerKind = (kind: string): kind is PointerKind =>
   (POINTER_KINDS as ReadonlyArray<string>).includes(kind)
@@ -124,6 +123,9 @@ export interface ActionDraft {
   /** Optional in the CODEC on purpose — an absent or unknown kind is reported structurally, so the
    *  repair prompt can name what was actually written instead of a schema error. */
   readonly kind?: string | null
+  /** Pointer actions: the control's visible label, with no positional description. */
+  readonly target?: string | null
+  /** Decode-only legacy fields. Structural validation rejects them so the repair can name the drift. */
   readonly point?: PointDraft | null
   readonly button?: string | null
   readonly text?: string | null
@@ -133,6 +135,7 @@ export interface ActionDraft {
 }
 export const ActionDraft = Schema.Struct({
   kind: Schema.optional(Schema.NullOr(Schema.String)),
+  target: Schema.optional(Schema.NullOr(Schema.String)),
   point: Schema.optional(Schema.NullOr(PointDraft)),
   button: Schema.optional(Schema.NullOr(Schema.String)),
   text: Schema.optional(Schema.NullOr(Schema.String)),
@@ -170,8 +173,7 @@ export const ProposalDraft = Schema.Struct({
 // Shape tolerance
 // ---------------------------------------------------------------------------------------------
 
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v)
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v)
 
 /** A number, or a string that is entirely one finite numeral. Anything else passes through. */
 const numeric = (v: unknown): unknown => {
@@ -253,7 +255,7 @@ export function coerceProposalShape(value: unknown): unknown {
     // the model flattened it once already.
     if (action.kind == null && typeof action.action === "string") action.kind = action.action
     if (action.kind == null && typeof action.type === "string") action.kind = action.type
-    for (const key of ["button", "text", "keys", "direction", "amount"]) {
+    for (const key of ["target", "button", "text", "keys", "direction", "amount"]) {
       if (action[key] == null && out[key] != null) action[key] = out[key]
     }
     if (action.amount !== undefined) action.amount = numeric(action.amount)
@@ -316,14 +318,10 @@ export type IssueCode =
   | "unknown_action_kind"
   /** `screenshot` / `cursor` — the harness owns capture. */
   | "harness_owned_action"
-  /** A pointer action with no point: there is nothing for `watch` to contain. */
-  | "pointer_missing_point"
-  | "bad_point"
-  | "missing_watch"
-  | "bad_watch"
-  | "watch_excludes_point"
-  /** The point is exactly on the region's far edge (warning — see `watchContains`). */
-  | "watch_point_on_edge"
+  /** A pointer action with no visible label for the split grounder. */
+  | "pointer_missing_target"
+  /** Planner-authored coordinates/watch would bypass the measured split path. */
+  | "planner_grounding_fields"
   /** The kind's payload field is absent, so no action can be built at all. */
   | "missing_action_payload"
   | "abstain_missing_reason"
@@ -336,31 +334,6 @@ export interface StructuralIssue {
   readonly path: string
   readonly detail?: string
 }
-
-/**
- * Is the acted point inside the watch rectangle?
- *
- * **Both are in the model's own units, and checking there rather than in pixels is deliberate.** The
- * conversion to pixels is affine and per-axis (`px = norm / 1000 × dimension`) followed by rounding,
- * and both of those are monotone non-decreasing — so `wx ≤ x ≤ wx + ww` in model units implies the
- * same ordering after conversion. Containment therefore survives the conversion, and checking it here
- * means the check runs before a viewport is even known, which is what makes S1 pure.
- *
- * ⚠️ **CLOSED interval, and the far edge is a WARNING rather than a rejection.** `scrot -a x,y,w,h`
- * captures columns `x … x+w-1`, so a point landing exactly on `x+w` is one pixel outside the pixels
- * that will actually be compared. A strict half-open test here would REJECT such a proposal and spend
- * repair budget on a model that was essentially right, and rounding can move that boundary by a pixel
- * in either direction anyway — so the honest answer is to accept it and say so. Pixel-space
- * resolution belongs to the Guard, which has the viewport.
- */
-export const watchContains = (watch: RegionDraft, point: PointDraft): boolean =>
-  point.x >= watch.x &&
-  point.x <= watch.x + watch.width &&
-  point.y >= watch.y &&
-  point.y <= watch.y + watch.height
-
-const onEdge = (watch: RegionDraft, point: PointDraft): boolean =>
-  point.x === watch.x + watch.width || point.y === watch.y + watch.height
 
 const blank = (v: string | null | undefined): boolean => v == null || v.trim() === ""
 
@@ -447,55 +420,17 @@ export function structuralIssues(draft: ProposalDraft): ReadonlyArray<Structural
     }
   }
 
-  const point = action.point ?? undefined
-  if (point && (!Number.isFinite(point.x) || !Number.isFinite(point.y))) {
-    issues.push({ severity: "error", code: "bad_point", path: "action.point", detail: `${point.x},${point.y}` })
-  }
-
-  const watch = draft.watch ?? undefined
-  if (watch) {
-    const bad = ([["x", watch.x], ["y", watch.y], ["width", watch.width], ["height", watch.height]] as const).find(
-      ([name, value]) => !Number.isFinite(value) || ((name === "width" || name === "height") && value <= 0),
-    )
-    if (bad) {
-      issues.push({ severity: "error", code: "bad_watch", path: `watch.${bad[0]}`, detail: String(bad[1]) })
-    }
-  }
-
   if (!isPointerKind(kind)) return issues
 
-  // 🔴 A pointer action with no point makes `watch_excludes_point` VACUOUS — there would be nothing
-  // to test, so the guard would pass and report nothing. That is the failure mode the whole design
-  // is written against, so the missing point is the error, not the missing containment.
-  if (!point) {
-    issues.push({ severity: "error", code: "pointer_missing_point", path: "action.point", detail: kind })
-    if (!watch) issues.push({ severity: "error", code: "missing_watch", path: "watch", detail: kind })
-    return issues
+  if (blank(action.target)) {
+    issues.push({ severity: "error", code: "pointer_missing_target", path: "action.target", detail: kind })
   }
-  if (!watch) {
+  if (action.point != null || draft.watch != null) {
     issues.push({
       severity: "error",
-      code: "missing_watch",
-      path: "watch",
-      detail: `${kind} at (${point.x},${point.y}) — a pointer action needs a region to measure`,
-    })
-    return issues
-  }
-  if (issues.some((i) => i.code === "bad_watch" || i.code === "bad_point")) return issues
-
-  if (!watchContains(watch, point)) {
-    issues.push({
-      severity: "error",
-      code: "watch_excludes_point",
-      path: "watch",
-      detail: `(${point.x},${point.y}) is outside ${watch.x},${watch.y},${watch.width},${watch.height}`,
-    })
-  } else if (onEdge(watch, point)) {
-    issues.push({
-      severity: "warning",
-      code: "watch_point_on_edge",
-      path: "watch",
-      detail: `(${point.x},${point.y}) sits on the far edge of ${watch.x},${watch.y},${watch.width},${watch.height}`,
+      code: "planner_grounding_fields",
+      path: action.point != null ? "action.point" : "watch",
+      detail: "the blind grounder owns the point and the harness owns its watch region",
     })
   }
 
@@ -649,22 +584,21 @@ export function parseProposal(text: string): ParseResult {
 export const CONTRACT_LINES: ReadonlyArray<string> = [
   "Emit EXACTLY ONE ```json object. It must be one of these three shapes and nothing else:",
   '  ACT     {"observation": "<one line: what is on this screen>", "action": {"kind": "...", ...},',
-  '           "expect": "<one short sentence: what the screen will look like AFTER this action>",',
-  '           "watch": {"x": .., "y": .., "width": .., "height": ..}}',
+  '           "expect": "<one short sentence: what the screen will look like AFTER this action>"}',
   '  ABSTAIN {"abstain": true, "reason": "<why you cannot act — e.g. the target is not visible>"}',
   '  DONE    {"claim_done": true, "evidence": "<what on this screen shows the task is finished>"}',
   "",
   `action.kind is one of: ${ACTION_KINDS.join(" | ")}. The harness takes the screenshots — never ask for one.`,
-  '  move | click | double_click → "point": {"x": .., "y": ..}   (click also takes "button")',
+  '  move | click | double_click → "target": "<the control\'s visible LABEL, nothing else>"',
+  '                                  (click also takes "button")',
   '  type → "text"      key → "keys"      scroll → "direction" + "amount"',
   "",
   "`expect` is REQUIRED on every action. It is checked against the next screenshot by a separate",
   "reader who is shown only that screenshot and your sentence — so write what will be VISIBLE, not",
   "what you intended. A prediction that cannot be seen cannot be confirmed.",
   "",
-  `\`watch\` is REQUIRED for ${POINTER_KINDS.join(" / ")} and must CONTAIN the point you are acting on.`,
-  "It is the rectangle the harness compares before and after, so it must be small enough to be quiet",
-  "and large enough to include the change you predict.",
+  `For ${POINTER_KINDS.join(" / ")}, never emit a point, coordinates, or watch region. The harness`,
+  "grounds the visible label in a separate blind call and derives the watched pixels itself.",
   "",
   "Abstaining is a legal, correct answer. If you cannot see the target, say so — a wrong click costs",
   "more than a skipped turn.",
@@ -678,13 +612,9 @@ const MESSAGE: Record<IssueCode, string> = {
   missing_observation: "`observation` is missing: describe what you see before deciding what to do",
   unknown_action_kind: `not an action this harness can perform — use one of: ${ACTION_KINDS.join(" | ")}`,
   harness_owned_action: "the harness takes the screenshots; propose an action that changes the screen",
-  pointer_missing_point: "this action aims at a point, so `action.point` is required",
-  bad_point: "`action.point` is not a pair of finite numbers",
-  missing_watch: "`watch` is required for a pointer action — it is the region checked for the effect",
-  bad_watch: "`watch` needs finite x/y and a width and height greater than zero",
-  watch_excludes_point:
-    "`watch` does not contain the point being acted on, so it would measure the wrong pixels — put the region AROUND the target",
-  watch_point_on_edge: "the point is exactly on the edge of `watch` — centre the region on the target instead",
+  pointer_missing_target: "this pointer action needs `action.target`: the control's visible label and nothing else",
+  planner_grounding_fields:
+    "do not emit coordinates or a watch region — the harness uses a separate blind grounder and derives the watched pixels",
   missing_action_payload: "this action kind needs that field",
   abstain_missing_reason: "say WHY you are abstaining — the reason is what the next step is planned from",
   claim_done_missing_evidence: "say what on the screen shows the task is finished",

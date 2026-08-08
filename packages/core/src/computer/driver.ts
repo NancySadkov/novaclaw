@@ -128,7 +128,7 @@ export interface ActRequest {
 
 export type ActOutcome = { readonly ok: true } | { readonly ok: false; readonly reason: string }
 
-export type AskKind = "planner" | "adjudicator"
+export type AskKind = "planner" | "grounder" | "adjudicator"
 
 export interface AskRequest {
   readonly kind: AskKind
@@ -211,7 +211,8 @@ export const FRESHNESS_TOLERANCE_MS = 2_000
 /**
  * The driver's own runaway stop, in commands per budgeted step.
  *
- * A clean step is 4 commands (observe · ask-planner · act · ask-adjudicator); a repaired one is 5–6.
+ * A clean pointer step is 5 commands (observe · planner · grounder · act · adjudicator); a repaired
+ * one is 6–8. Non-pointer actions skip the grounder.
  * 12 is generous and still bounded — the thinking-budget RUNAWAY lesson is that every phase needs a
  * MECHANICAL hard stop that does not depend on the thing it is bounding being correct. If it trips,
  * the run is `Void(protocol)` (*do not score this*), never `Blocked` — a driver that cannot drive the
@@ -469,12 +470,15 @@ export function run(spec: ComputerLoop.TaskSpec, deps: Deps): Effect.Effect<RunR
 
         // Condition 2 — the fault itself.
         if (outcome.exitCode !== 0) {
-          const stderr = outcome.stderr === undefined || outcome.stderr.trim() === "" ? "" : `: ${outcome.stderr.trim()}`
+          const stderr =
+            outcome.stderr === undefined || outcome.stderr.trim() === "" ? "" : `: ${outcome.stderr.trim()}`
           return reject(`the capture command exited ${outcome.exitCode}${stderr}`, outcome)
         }
         // Condition 3 — a file, with bytes in it.
-        if (outcome.file === undefined) return reject(`the capture command exited 0 but wrote no file at ${path}`, outcome)
-        if (!(outcome.file.size > 0)) return reject(`the capture at ${path} is empty (${outcome.file.size} bytes)`, outcome)
+        if (outcome.file === undefined)
+          return reject(`the capture command exited 0 but wrote no file at ${path}`, outcome)
+        if (!(outcome.file.size > 0))
+          return reject(`the capture at ${path} is empty (${outcome.file.size} bytes)`, outcome)
         // Condition 4 — and it is this run's, not a leftover.
         if (outcome.file.mtimeMs < startedAt - tolerance) {
           return reject(
@@ -589,8 +593,10 @@ export function run(spec: ComputerLoop.TaskSpec, deps: Deps): Effect.Effect<RunR
             }
           }
           case "ask-planner":
+          case "ask-grounder":
           case "ask-adjudicator": {
-            const kind: AskKind = command.kind === "ask-planner" ? "planner" : "adjudicator"
+            const kind: AskKind =
+              command.kind === "ask-planner" ? "planner" : command.kind === "ask-grounder" ? "grounder" : "adjudicator"
             // G14 — the calibration probe rides the SAME channel every later verdict uses. A probe
             // routed elsewhere would calibrate a channel the run does not use.
             if (state.phase === "calibrate-adjudicate") calibrationAsked = true
@@ -607,7 +613,11 @@ export function run(spec: ComputerLoop.TaskSpec, deps: Deps): Effect.Effect<RunR
             const text = answer.ok ? answer.text : ""
             const promptTokens = answer.ok ? answer.promptTokens : undefined
             const tokens = promptTokens === undefined ? {} : { promptTokens }
-            return kind === "planner" ? { kind: "planner-replied", text, ...tokens } : { kind: "adjudicated", text, ...tokens }
+            return kind === "planner"
+              ? { kind: "planner-replied", text, ...tokens }
+              : kind === "grounder"
+                ? { kind: "grounder-replied", text, ...tokens }
+                : { kind: "adjudicated", text, ...tokens }
           }
           case "act":
             return yield* performAct(command, state)
@@ -640,7 +650,10 @@ export function run(spec: ComputerLoop.TaskSpec, deps: Deps): Effect.Effect<RunR
         const attribution = transition.state.pending?.attribution
         if (attribution !== undefined) {
           verdicts.push({ step: before.step, kind: attribution.kind, detail: describeAttribution(attribution) })
-        } else if (transition.state.outcome?.kind === "blocked" && transition.state.outcome.reason === "capture-failed") {
+        } else if (
+          transition.state.outcome?.kind === "blocked" &&
+          transition.state.outcome.reason === "capture-failed"
+        ) {
           verdicts.push({ step: before.step, kind: "capture-failed", detail: transition.state.outcome.detail })
         }
       }

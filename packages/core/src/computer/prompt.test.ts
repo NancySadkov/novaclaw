@@ -324,7 +324,7 @@ describe("the adjudication reply is read with the same tolerance as a proposal",
 })
 
 // ------------------------------------------------------------------------------------------------
-// The grounder — the split call's second stage (measured 2026-08-08, not wired into the loop)
+// The grounder — the split call's second stage (measured, then wired 2026-08-08)
 // ------------------------------------------------------------------------------------------------
 
 /**
@@ -423,7 +423,7 @@ describe("the grounding reply is read with the same tolerance as a proposal", ()
     expect(parsed.repaired).toBe(false)
   })
 
-  test("🔴 the floor model's missing-`\"y\"` shape is REPAIRED, not rejected", () => {
+  test('🔴 the floor model\'s missing-`"y"` shape is REPAIRED, not rejected', () => {
     // Measured on this batch's own replies: the planner emits `{"x": 863, 938}` often enough that
     // treating it as unreadable is a decode failure wearing a grounding failure's clothes.
     const parsed = CP.parseGrounding('{"x": 863, 938}')

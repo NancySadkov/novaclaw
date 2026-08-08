@@ -266,6 +266,7 @@ export type CapturePurpose = "calibrate" | "observe"
 export type Command =
   | { readonly kind: "capture"; readonly scope: "frame"; readonly purpose: CapturePurpose }
   | { readonly kind: "ask-planner"; readonly prompt: ComputerPrompt.Prompt }
+  | { readonly kind: "ask-grounder"; readonly prompt: ComputerPrompt.Prompt }
   | { readonly kind: "ask-adjudicator"; readonly prompt: ComputerPrompt.Prompt }
   | {
       readonly kind: "act"
@@ -286,6 +287,7 @@ export type Event =
       readonly image?: ComputerPrompt.Image
     }
   | { readonly kind: "planner-replied"; readonly text: string; readonly promptTokens?: number }
+  | { readonly kind: "grounder-replied"; readonly text: string; readonly promptTokens?: number }
   | { readonly kind: "adjudicated"; readonly text: string; readonly promptTokens?: number }
   | { readonly kind: "acted"; readonly evidence: ComputerEvidence.Input; readonly image?: ComputerPrompt.Image }
   | { readonly kind: "act-failed"; readonly reason: string }
@@ -300,6 +302,7 @@ export type Phase =
   | "calibrate-adjudicate"
   | "observe"
   | "propose"
+  | "ground"
   | "act"
   | "adjudicate-step"
   | "lookahead-checkpoint"
@@ -335,6 +338,8 @@ export interface State {
   /** The newest frame, and ONLY the newest frame (G11). */
   readonly image?: ComputerPrompt.Image
   readonly pending?: Pending
+  /** The planner's accepted pointer proposal while the blind grounder supplies only its point. */
+  readonly groundingDraft?: ComputerProposal.ProposalDraft
   readonly repairs: number
   readonly consecutiveAbstains: number
   readonly consecutiveNoEffect: number
@@ -468,7 +473,11 @@ const record = (
 })
 
 /** Emit a model call, spending the token counter first (G7 — the harness decrements, not the model). */
-const ask = (state: State, prompt: ComputerPrompt.Prompt, kind: "ask-planner" | "ask-adjudicator"): Transition => {
+const ask = (
+  state: State,
+  prompt: ComputerPrompt.Prompt,
+  kind: "ask-planner" | "ask-grounder" | "ask-adjudicator",
+): Transition => {
   if (state.promptTokens >= state.spec.budget.maxPromptTokens) {
     return blocked(
       state,
@@ -477,7 +486,7 @@ const ask = (state: State, prompt: ComputerPrompt.Prompt, kind: "ask-planner" | 
     )
   }
   const estimate = ComputerPrompt.estimateTokens(prompt)
-  const command: Command = kind === "ask-planner" ? { kind: "ask-planner", prompt } : { kind: "ask-adjudicator", prompt }
+  const command: Command = { kind, prompt }
   return { state: { ...state, lastPromptEstimate: estimate }, command }
 }
 
@@ -584,7 +593,7 @@ const beginStep = (state: State): Transition => {
     )
   }
   return {
-    state: { ...state, phase: "observe", step, repairs: 0, pending: undefined },
+    state: { ...state, phase: "observe", step, repairs: 0, pending: undefined, groundingDraft: undefined },
     command: { kind: "capture", scope: "frame", purpose: "observe" },
   }
 }
@@ -623,41 +632,26 @@ const toPixelPoint = (
   const converted = ComputerCoordinates.toPixels(point, spec.space, spec.viewport)
   // Errors are SURFACED, never clamped — a clamped point is a silent misclick (coordinates.ts).
   if (!converted.ok) return { ok: false, reason: describeConversion(converted.error, what) }
-  const offset = spec.pointerOffset
-  return {
-    ok: true,
-    point: offset === undefined ? converted.point : { x: converted.point.x + offset.x, y: converted.point.y + offset.y },
-  }
+  return { ok: true, point: converted.point }
 }
 
 /**
- * The watch rectangle into pixels, by converting BOTH CORNERS.
- *
- * ⚠️ Converting the origin and then scaling width/height separately would round twice and can lose
- * the acted point out of the bottom-right of its own box. Converting corners keeps containment,
- * because `toPixels` is monotone non-decreasing per axis — the same property `watchContains` relies on
- * to do its check in the model's units at all.
+ * The verifier's local watch, derived from the grounded point rather than guessed by the planner.
+ * 64/1000 of each axis reproduces the scale used in the acceptance runs while remaining
+ * resolution-independent. At an edge the box shifts inward, so it contains the point without asking
+ * `scrot` for pixels outside the viewport.
  */
-const toPixelRegion = (
-  region: ComputerProposal.RegionDraft,
-  spec: TaskSpec,
-): { readonly ok: true; readonly region: ComputerActions.Region } | Refusal => {
-  const topLeft = ComputerCoordinates.toPixels({ x: region.x, y: region.y }, spec.space, spec.viewport)
-  if (!topLeft.ok) return { ok: false, reason: describeConversion(topLeft.error, "watch origin") }
-  const bottomRight = ComputerCoordinates.toPixels(
-    { x: region.x + region.width, y: region.y + region.height },
-    spec.space,
-    spec.viewport,
-  )
-  if (!bottomRight.ok) return { ok: false, reason: describeConversion(bottomRight.error, "watch far corner") }
+export const watchAround = (
+  point: ComputerCoordinates.Point,
+  viewport: ComputerCoordinates.Viewport,
+): ComputerActions.Region => {
+  const width = Math.max(1, Math.min(viewport.width, Math.round(viewport.width * 0.064)))
+  const height = Math.max(1, Math.min(viewport.height, Math.round(viewport.height * 0.064)))
   return {
-    ok: true,
-    region: {
-      x: topLeft.point.x,
-      y: topLeft.point.y,
-      width: Math.max(1, bottomRight.point.x - topLeft.point.x),
-      height: Math.max(1, bottomRight.point.y - topLeft.point.y),
-    },
+    x: Math.max(0, Math.min(viewport.width - width, Math.round(point.x - width / 2))),
+    y: Math.max(0, Math.min(viewport.height - height, Math.round(point.y - height / 2))),
+    width,
+    height,
   }
 }
 
@@ -671,17 +665,27 @@ const BUTTONS: ReadonlyArray<ComputerActions.Button> = ["left", "middle", "right
  * this is where it asks. A `build` refusal — a bad keysym, a scroll of 40, a non-integral pixel, an
  * empty `type` — comes back as a Guard refusal and re-prompts the planner rather than executing.
  */
-const buildAction = (draft: ComputerProposal.ProposalDraft, spec: TaskSpec): BuiltAction | Refusal => {
+const buildAction = (
+  draft: ComputerProposal.ProposalDraft,
+  spec: TaskSpec,
+  grounded?: ComputerProposal.PointDraft,
+): BuiltAction | Refusal => {
   const source = draft.action
   if (source == null) return { ok: false, reason: "no action" }
   const kind = typeof source.kind === "string" ? source.kind.trim() : ""
   if (!ComputerProposal.isActionKind(kind)) return { ok: false, reason: `not an action kind: ${kind || "(absent)"}` }
+  if (ComputerProposal.isPointerKind(kind) && grounded === undefined)
+    return { ok: false, reason: `${kind} needs a point from the blind grounder` }
 
   let point: ComputerCoordinates.Point | undefined
-  if (source.point != null) {
-    const converted = toPixelPoint(source.point, spec, "action.point")
+  let watchPoint: ComputerCoordinates.Point | undefined
+  if (grounded !== undefined) {
+    const converted = toPixelPoint(grounded, spec, "grounded point")
     if (!converted.ok) return converted
-    point = converted.point
+    watchPoint = converted.point
+    const offset = spec.pointerOffset
+    point =
+      offset === undefined ? converted.point : { x: converted.point.x + offset.x, y: converted.point.y + offset.y }
   }
 
   let action: ComputerActions.Action
@@ -722,10 +726,9 @@ const buildAction = (draft: ComputerProposal.ProposalDraft, spec: TaskSpec): Bui
   const built = ComputerActions.build(action, spec.actionOptions)
   if (!built.ok) return { ok: false, reason: built.reason }
 
-  if (draft.watch == null) return { ok: true, action, built }
-  const watch = toPixelRegion(draft.watch, spec)
-  if (!watch.ok) return watch
-  return { ok: true, action, built, watch: watch.region }
+  return watchPoint === undefined
+    ? { ok: true, action, built }
+    : { ok: true, action, built, watch: watchAround(watchPoint, spec.viewport) }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -812,10 +815,54 @@ const reprompt = (
     return settle(spent)
   }
   return ask(
-    { ...state, repairs: state.repairs + 1 },
+    { ...state, phase: "propose", repairs: state.repairs + 1, groundingDraft: undefined },
     ComputerPrompt.planner({ goal: state.spec.goal, ledger: state.ledger, image: state.image, note }),
     "ask-planner",
   )
+}
+
+/** Validate/build one accepted proposal, then apply the repeat interlock and schedule its action. */
+const scheduleAction = (
+  state: State,
+  draft: ComputerProposal.ProposalDraft,
+  described: Pending,
+  grounded?: ComputerProposal.PointDraft,
+): Transition => {
+  const build = buildAction(draft, state.spec, grounded)
+  if (!build.ok) {
+    return reprompt(
+      state,
+      `The harness REFUSED to execute your action: ${build.reason}\n\nRe-emit the WHOLE proposal, corrected.`,
+      `refused: ${build.reason}`,
+      described,
+    )
+  }
+  const signature = JSON.stringify(build.built.argv)
+  if (state.lastNoEffect !== undefined && state.lastNoEffect === signature) {
+    const note =
+      state.repeatEpisode === 0
+        ? REPEAT_REFUSAL_NOTE
+        : repeatEscalationNote({ action: described.summary, steps: state.repeatEpisode + 1 })
+    return reprompt(state, note, "refused: repeat", described, { action: described.summary })
+  }
+  const acting: State = {
+    ...state,
+    phase: "act",
+    consecutiveAbstains: 0,
+    repeatEpisode: 0,
+    groundingDraft: undefined,
+    pending: { ...described, signature, kind: build.action.kind },
+  }
+  return {
+    state: acting,
+    command: {
+      kind: "act",
+      action: build.action,
+      argv: build.built.argv,
+      env: build.built.env,
+      ...(build.watch === undefined ? {} : { watch: build.watch }),
+    },
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -856,7 +903,13 @@ const settleMeasured = (state: State, measured: Measured, advance: number, uncon
 
 export function next(state: State, event: Event): Transition {
   if (state.phase === "terminal") {
-    return { state, command: { kind: "finish", outcome: state.outcome ?? { kind: "void", reason: "protocol", detail: "already terminal" } } }
+    return {
+      state,
+      command: {
+        kind: "finish",
+        outcome: state.outcome ?? { kind: "void", reason: "protocol", detail: "already terminal" },
+      },
+    }
   }
 
   switch (state.phase) {
@@ -884,7 +937,8 @@ export function next(state: State, event: Event): Transition {
     // ── Calibrate (G14) ───────────────────────────────────────────────────────────────────────
     case "calibrate-capture": {
       if (event.kind !== "captured") return unexpected(state, event)
-      if (!event.capture.ok) return blocked(state, "capture-failed", `the start frame was not captured: ${event.capture.reason}`)
+      if (!event.capture.ok)
+        return blocked(state, "capture-failed", `the start frame was not captured: ${event.capture.reason}`)
       const withImage: State = { ...state, phase: "calibrate-adjudicate", image: event.image }
       return ask(
         withImage,
@@ -920,7 +974,8 @@ export function next(state: State, event: Event): Transition {
     // ── Observe ───────────────────────────────────────────────────────────────────────────────
     case "observe": {
       if (event.kind !== "captured") return unexpected(state, event)
-      if (!event.capture.ok) return blocked(state, "capture-failed", `the observe frame was not captured: ${event.capture.reason}`)
+      if (!event.capture.ok)
+        return blocked(state, "capture-failed", `the observe frame was not captured: ${event.capture.reason}`)
       const observed: State = { ...state, phase: "propose", image: event.image }
       return ask(
         observed,
@@ -996,45 +1051,42 @@ export function next(state: State, event: Event): Transition {
         expect: draft.expect ?? ComputerLedger.ABSENT,
         signature: "",
       }
-      const build = buildAction(draft, spent.spec)
-      if (!build.ok) {
+      const actionKind = draft.action?.kind?.trim() ?? ""
+      if (ComputerProposal.isPointerKind(actionKind)) {
+        const target = draft.action?.target?.trim() ?? ""
+        const issue = ComputerPrompt.grounderLabelIssue(target)
+        if (issue !== undefined) {
+          return reprompt(
+            spent,
+            `The harness REFUSED the grounding label ${JSON.stringify(target)}: ${issue}. ` +
+              "Use the control's visible label and nothing else.\n\nRe-emit the WHOLE proposal, corrected.",
+            "refused: bad grounding label",
+            described,
+          )
+        }
+        const grounding: State = { ...spent, phase: "ground", pending: described, groundingDraft: draft }
+        return ask(grounding, ComputerPrompt.grounder({ label: target, image: spent.image }), "ask-grounder")
+      }
+      return scheduleAction(spent, draft, described)
+    }
+
+    // ── Blind grounding: the point comes from a goal/ledger-free second call. ──────────────────
+    case "ground": {
+      if (event.kind !== "grounder-replied") return unexpected(state, event)
+      const spent = spend(state, event.promptTokens)
+      const grounded = ComputerPrompt.parseGrounding(event.text)
+      if (!grounded.ok) {
         return reprompt(
           spent,
-          `The harness REFUSED to execute your action: ${build.reason}\n\nRe-emit the WHOLE proposal, corrected.`,
-          `refused: ${build.reason}`,
-          described,
+          `The blind grounder could not locate that label (${grounded.issue}). Choose a different visible ` +
+            "label or abstain.\n\nRe-emit the WHOLE proposal, corrected.",
+          "grounding unreadable",
+          state.pending,
         )
       }
-      const signature = JSON.stringify(build.built.argv)
-
-      // G6 — the repeat interlock. `NO_EFFECT_ADVICE` is a sentence; this is the constraint.
-      if (spent.lastNoEffect !== undefined && spent.lastNoEffect === signature) {
-        // 🔴 The ESCALATION, not a retry. The first stuck step gets the plain refusal; a second one
-        // gets a different question (see {@link REPEAT_ESCALATIONS}) and then the run stops.
-        const note =
-          spent.repeatEpisode === 0
-            ? REPEAT_REFUSAL_NOTE
-            : repeatEscalationNote({ action: described.summary, steps: spent.repeatEpisode + 1 })
-        return reprompt(spent, note, "refused: repeat", described, { action: described.summary })
-      }
-
-      const acting: State = {
-        ...spent,
-        phase: "act",
-        consecutiveAbstains: 0,
-        repeatEpisode: 0,
-        pending: { ...described, signature, kind: build.action.kind },
-      }
-      return {
-        state: acting,
-        command: {
-          kind: "act",
-          action: build.action,
-          argv: build.built.argv,
-          env: build.built.env,
-          ...(build.watch === undefined ? {} : { watch: build.watch }),
-        },
-      }
+      if (state.groundingDraft === undefined || state.pending === undefined)
+        return voided(spent, "protocol", "the grounder replied without a pending planner proposal")
+      return scheduleAction(spent, state.groundingDraft, state.pending, grounded.point)
     }
 
     // ── Act → Verify ──────────────────────────────────────────────────────────────────────────
@@ -1154,7 +1206,11 @@ export function next(state: State, event: Event): Transition {
       const lookahead = spent.spec.checkpoints[spent.checkpointIndex + 1]
       if (CHECKPOINT_LOOKAHEAD > 0 && lookahead !== undefined) {
         const probing: State = { ...spent, phase: "lookahead-checkpoint", confirming: measured }
-        return ask(probing, ComputerPrompt.adjudicator({ checkpoint: lookahead, image: spent.image }), "ask-adjudicator")
+        return ask(
+          probing,
+          ComputerPrompt.adjudicator({ checkpoint: lookahead, image: spent.image }),
+          "ask-adjudicator",
+        )
       }
       return settleMeasured(spent, measured, 0)
     }
@@ -1176,7 +1232,10 @@ export function next(state: State, event: Event): Transition {
       const confirming: State = { ...spent, phase: "confirm-checkpoint", confirming: measured, awarding: 2 }
       return ask(
         confirming,
-        ComputerPrompt.adjudicator({ checkpoint: spent.spec.checkpoints[spent.checkpointIndex + 1], image: spent.image }),
+        ComputerPrompt.adjudicator({
+          checkpoint: spent.spec.checkpoints[spent.checkpointIndex + 1],
+          image: spent.image,
+        }),
         "ask-adjudicator",
       )
     }

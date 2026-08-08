@@ -70,7 +70,11 @@ describe("the directory-sweeping guards cover every module, including the new on
   ]
 
   test("the swept set is exactly the known modules", () => {
-    expect(modules().map((m) => m.file).sort()).toEqual(EXPECTED)
+    expect(
+      modules()
+        .map((m) => m.file)
+        .sort(),
+    ).toEqual(EXPECTED)
   })
 
   test("S5's driver is in the swept set — one-exec-gate covers it for free, and now provably", () => {
@@ -142,12 +146,16 @@ describe("G8 — `sniffSpace` never reaches the click path", () => {
 })
 
 describe("G8 — a `toPixels` error is SURFACED, never clamped", () => {
-  const CLAMPED = /Math\.(min|max)\([^\n]*\b(toPixels|converted|toPixelPoint)\b|\b(toPixels|converted|toPixelPoint)\b[^\n]*Math\.(min|max)\(/
+  const CLAMPED =
+    /Math\.(min|max)\([^\n]*\b(toPixels|converted|toPixelPoint)\b|\b(toPixels|converted|toPixelPoint)\b[^\n]*Math\.(min|max)\(/
 
   test("🔴 no module clamps a converted coordinate", () => {
     const offenders = modules()
       .filter((module) => CLAMPED.test(code(module.text)))
-      .map((module) => `${COMPUTER_DIR}/${module.file} clamps a conversion. Out of range is an ERROR — a clamped point is a silent misclick.`)
+      .map(
+        (module) =>
+          `${COMPUTER_DIR}/${module.file} clamps a conversion. Out of range is an ERROR — a clamped point is a silent misclick.`,
+      )
     expect(offenders).toEqual([])
   })
 
@@ -190,10 +198,14 @@ describe("G8 — a `toPixels` error is SURFACED, never clamped", () => {
         // 1200 is a perfectly legal PIXEL x on a 1280-wide screen and out of range as
         // `normalized-1000` — i.e. exactly the "the model's space is declared wrong" case, which is
         // the one `alsoValidAs` exists to name.
-        action: { kind: "click", button: "left", point: { x: 1200, y: 500 } },
+        action: { kind: "click", button: "left", target: "Button" },
         expect: "the dialog opens",
-        watch: { x: 1180, y: 480, width: 40, height: 40 },
       }),
+    })
+    expect(transition.command.kind).toBe("ask-grounder")
+    transition = ComputerLoop.next(transition.state, {
+      kind: "grounder-replied",
+      text: JSON.stringify({ x: 1200, y: 500 }),
     })
     expect(transition.command.kind).toBe("ask-planner")
     const prompt = (transition.command as { prompt: { user: string } }).prompt

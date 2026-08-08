@@ -45,20 +45,19 @@ const captured = (tag: string): LOOP.Event => ({
 
 const captureFailed = (reason: string): LOOP.Event => ({ kind: "captured", capture: CE.captureFailed(reason) })
 
-/** A well-formed act proposal. `point` varies so successive steps have different signatures. */
+/** A well-formed stage-1 proposal. The fixture label encodes the ground-truth point for its blind stage 2. */
 const propose = (over: Record<string, unknown> = {}): LOOP.Event => ({
   kind: "planner-replied",
   text: JSON.stringify({
     observation: "the main menu",
-    action: { kind: "click", button: "left", point: { x: 464, y: 684 } },
+    action: { kind: "click", button: "left", target: "target-464-684" },
     expect: "The Game Options dialog is showing.",
-    watch: { x: 440, y: 660, width: 60, height: 50 },
     ...over,
   }),
 })
 
 const proposeAt = (x: number, y: number): LOOP.Event =>
-  propose({ action: { kind: "click", button: "left", point: { x, y } }, watch: { x: x - 20, y: y - 20, width: 40, height: 40 } })
+  propose({ action: { kind: "click", button: "left", target: `target-${x}-${y}` } })
 
 const adjudged = (reply: Record<string, unknown>, promptTokens?: number): LOOP.Event => ({
   kind: "adjudicated",
@@ -93,11 +92,21 @@ interface Run {
 const drive = (task: LOOP.TaskSpec, events: ReadonlyArray<LOOP.Event>): Run => {
   let transition = LOOP.start(task)
   const commands: LOOP.Command[] = [transition.command]
+  const answerGrounder = () => {
+    while (transition.command.kind === "ask-grounder") {
+      const match = transition.command.prompt.user.match(/target-(\d+)-(\d+)/)
+      const text = match === null ? "{}" : JSON.stringify({ x: Number(match[1]), y: Number(match[2]) })
+      transition = LOOP.next(transition.state, { kind: "grounder-replied", text })
+      commands.push(transition.command)
+    }
+  }
   for (const event of events) {
     if (transition.command.kind === "finish") break
     transition = LOOP.next(transition.state, event)
     commands.push(transition.command)
+    answerGrounder()
   }
+  answerGrounder()
   return { commands, state: transition.state, last: transition.command, outcome: transition.state.outcome }
 }
 
@@ -105,7 +114,7 @@ const drive = (task: LOOP.TaskSpec, events: ReadonlyArray<LOOP.Event>): Run => {
 const CALIBRATE: ReadonlyArray<LOOP.Event> = [captured("start"), adjudged({ checkpoint: "no" })]
 
 /**
- * One whole step: observe → propose → act → adjudicate, plus the CONFIRMATION when the step claims
+ * One whole step: observe → propose → ground → act → adjudicate, plus the CONFIRMATION when the step claims
  * a checkpoint.
  *
  * ⚠️ The confirmation event is appended automatically from the step's own `checkpoint` answer rather
@@ -170,20 +179,23 @@ describe("a clean 3-step run reaches Done — and only through the harness's own
     expect(run.outcome?.kind === "done" && run.outcome.detail).toContain("harness-captured frame")
   })
 
-  test("the command sequence is calibrate → (observe · plan · act · adjudicate) × 3 → confirm → finish", () => {
+  test("the command sequence is calibrate → (observe · plan · ground · act · adjudicate) × 3 → confirm → finish", () => {
     expect(commandKinds(run)).toEqual([
       "capture",
       "ask-adjudicator",
       "capture",
       "ask-planner",
+      "ask-grounder",
       "act",
       "ask-adjudicator",
       "capture",
       "ask-planner",
+      "ask-grounder",
       "act",
       "ask-adjudicator",
       "capture",
       "ask-planner",
+      "ask-grounder",
       "act",
       "ask-adjudicator",
       // The CONFIRMING re-ask, and it appears exactly once in a three-step run because only step 3
@@ -208,13 +220,56 @@ describe("a clean 3-step run reaches Done — and only through the harness's own
   test("the act command carries exactly what `ComputerActions.build` produced", () => {
     const act = run.commands.find((c) => c.kind === "act")
     if (act?.kind !== "act") throw new Error("expected an act command")
-    const built = ComputerActions.build({ kind: "click", button: "left", point: { x: 594, y: 547 } }, spec().actionOptions)
+    const built = ComputerActions.build(
+      { kind: "click", button: "left", point: { x: 594, y: 547 } },
+      spec().actionOptions,
+    )
     if (!built.ok) throw new Error("fixture does not build")
     expect(act.argv).toEqual(built.argv)
     expect(act.env).toEqual({ DISPLAY: ":99" })
     // 464/1000 × 1280 = 594, 684/1000 × 800 = 547 — the P1 coordinate math, not a re-derivation.
     expect(act.action).toEqual({ kind: "click", button: "left", point: { x: 594, y: 547 } })
-    expect(act.watch).toEqual({ x: 568, y: 531, width: 52, height: 32 })
+    expect(act.watch).toEqual({ x: 553, y: 522, width: 82, height: 51 })
+  })
+})
+
+describe("the measured split grounding contract is the only pointer path", () => {
+  test("the wired grounder sees one label and image, never the goal, ledger, or prediction", () => {
+    const run = drive(spec(), [...CALIBRATE, captured("s1"), proposeAt(464, 684)])
+    const command = run.commands.find((item) => item.kind === "ask-grounder")
+    if (command?.kind !== "ask-grounder") throw new Error("expected the blind grounding call")
+    const rendered = `${command.prompt.system}\n${command.prompt.user}`
+    expect(rendered).toContain("target-464-684")
+    expect(command.prompt.image).toEqual(image("s1"))
+    expect(rendered).not.toContain(spec().goal)
+    expect(rendered).not.toContain("STEP LOG")
+    expect(rendered).not.toContain("Game Options dialog")
+  })
+
+  test("a positional description is stopped before the grounder sees it", () => {
+    const run = drive(spec(), [
+      ...CALIBRATE,
+      captured("s1"),
+      propose({ action: { kind: "click", button: "left", target: "button at the bottom right" } }),
+    ])
+    expect(commandKinds(run)).not.toContain("ask-grounder")
+    expect(run.last.kind).toBe("ask-planner")
+    if (run.last.kind === "ask-planner") expect(run.last.prompt.user).toContain("visible label and nothing else")
+  })
+
+  test("the derived watch contains edge points without clipping outside the viewport", () => {
+    expect(LOOP.watchAround({ x: 0, y: 0 }, { width: 1280, height: 800 })).toEqual({
+      x: 0,
+      y: 0,
+      width: 82,
+      height: 51,
+    })
+    expect(LOOP.watchAround({ x: 1279, y: 799 }, { width: 1280, height: 800 })).toEqual({
+      x: 1198,
+      y: 749,
+      width: 82,
+      height: 51,
+    })
   })
 })
 
@@ -845,10 +900,7 @@ describe("🔴 G2 — a stale capture is `capture-failed`, NEVER `no-visible-eff
 
   test("a failed FRAME capture is advisory and the step still produces a verdict", () => {
     const degraded: CE.Input = { ...quiet(), frameAfter: CE.captureFailed("scrot exited 1") }
-    const run = drive(spec(), [
-      ...CALIBRATE,
-      ...step(proposeAt(464, 684), degraded, { checkpoint: "no" }, "s1"),
-    ])
+    const run = drive(spec(), [...CALIBRATE, ...step(proposeAt(464, 684), degraded, { checkpoint: "no" }, "s1")])
     expect(run.outcome).toBeUndefined()
     expect(run.state.ledger[0]?.verdict).toContain("no-visible-effect")
   })
@@ -951,27 +1003,26 @@ describe("🔴 a repeat refusal escalates ONCE, with different CONTENT, then nam
     expect(escalated).not.toContain("byte-identical")
     // It states the harness's own measurement, names what is banned, and counts the steps.
     expect(escalated).toContain("2 consecutive steps")
-    expect(escalated).toContain("click(464,684)")
+    expect(escalated).toContain('click "target-464-684"')
     expect(escalated).toContain("the command ran, and the screen did not move")
     // …and it narrows a free proposal to a closed choice with `abstain` in it.
     expect(escalated).toContain("Answer with exactly ONE")
     expect(escalated).toContain('{"abstain": true')
   })
 
-  test("§3 — the escalated note suggests NO coordinate the model did not itself emit", () => {
+  test("§3 — the escalated note carries the planner's label and suggests no coordinate", () => {
     // Asserted on the BUILDER, not on the rendered prompt: the prompt also carries the step log,
     // whose step numbers and `0/1` checkpoint column would make this test about the ledger instead.
-    const note = LOOP.repeatEscalationNote({ action: "click(464,684)", steps: 2 })
+    const note = LOOP.repeatEscalationNote({ action: 'click "DONE"', steps: 2 })
     const numbers = note.match(/\d+/g) ?? []
-    // 464 and 684 are the planner's own; 1 and 2 are the option list and the step count.
-    expect(new Set(numbers)).toEqual(new Set(["464", "684", "1", "2"]))
-    expect(prompts[4]).toContain(note)
+    expect(new Set(numbers)).toEqual(new Set(["1", "2"]))
+    expect(note).toContain('click "DONE"')
   })
 
   test("declining the escalation ends the run naming the CAUSE, not `no-progress`", () => {
     expect(stuck.outcome).toMatchObject({ kind: "blocked", reason: "stuck-on-refused-action" })
     if (stuck.outcome?.kind !== "blocked") return
-    expect(stuck.outcome.detail).toContain("click(464,684)")
+    expect(stuck.outcome.detail).toContain('click "target-464-684"')
     expect(stuck.outcome.detail).toContain("2 consecutive steps")
     // The refused step is still RECORDED before the run ends — the report must show what happened.
     expect(stuck.state.ledger.map((e) => e.verdict)).toEqual([
@@ -997,14 +1048,15 @@ describe("🔴 a repeat refusal escalates ONCE, with different CONTENT, then nam
   test("🔴 the negative control: ABSTAIN on the escalated repair is ACCEPTED, not blocked", () => {
     const abstained = drive(spec(), [
       ...stuckEpisode.slice(0, stuckEpisode.length - 1),
-      propose({ abstain: true, reason: "the only control I can see has been measured as dead", action: null, expect: null }),
+      propose({
+        abstain: true,
+        reason: "the only control I can see has been measured as dead",
+        action: null,
+        expect: null,
+      }),
     ])
     expect(abstained.outcome).toBeUndefined()
-    expect(abstained.state.ledger.map((e) => e.verdict)).toEqual([
-      "no-visible-effect",
-      "refused: repeat",
-      "abstained",
-    ])
+    expect(abstained.state.ledger.map((e) => e.verdict)).toEqual(["no-visible-effect", "refused: repeat", "abstained"])
   })
 
   /**
@@ -1017,7 +1069,12 @@ describe("🔴 a repeat refusal escalates ONCE, with different CONTENT, then nam
     const relapse = drive(spec({ budget: { maxSteps: 12, maxPromptTokens: 500_000 }, noProgressLimit: 9 }), [
       ...stuckEpisode.slice(0, stuckEpisode.length - 1),
       // The escalation's own preferred answer, taken.
-      propose({ abstain: true, reason: "the only control I can see has been measured as dead", action: null, expect: null }),
+      propose({
+        abstain: true,
+        reason: "the only control I can see has been measured as dead",
+        action: null,
+        expect: null,
+      }),
       // …and then the planner relapses to the banned action two steps later.
       captured("s4"),
       proposeAt(464, 684),
@@ -1065,7 +1122,11 @@ describe("🔴 the Guard calls `ComputerActions.build`, which is where value-lev
    * executed against the substrate and fail at run time under a green suite: exactly the shape of
    * `xdotool --display`, a flag that does not exist, under 23 green tests.
    */
-  const cases: ReadonlyArray<{ readonly name: string; readonly action: Record<string, unknown>; readonly says: string }> = [
+  const cases: ReadonlyArray<{
+    readonly name: string
+    readonly action: Record<string, unknown>
+    readonly says: string
+  }> = [
     { name: "a keysym spec `build` rejects", action: { kind: "key", keys: "ctrl s" }, says: "keysym" },
     { name: "a scroll beyond MAX_SCROLL", action: { kind: "scroll", direction: "down", amount: 40 }, says: "exceeds" },
     { name: "an empty `type` string", action: { kind: "type", text: "" }, says: "nothing to type" },
@@ -1100,7 +1161,10 @@ describe("🔴 the Guard calls `ComputerActions.build`, which is where value-lev
       const run = drive(spec(), [
         ...CALIBRATE,
         captured("s1"),
-        { kind: "planner-replied", text: JSON.stringify({ observation: "a screen", action, expect: "something changes" }) },
+        {
+          kind: "planner-replied",
+          text: JSON.stringify({ observation: "a screen", action, expect: "something changes" }),
+        },
       ])
       expect(run.last.kind).toBe("act")
       if (run.last.kind !== "act") continue
@@ -1132,14 +1196,7 @@ describe("🔴 the Guard calls `ComputerActions.build`, which is where value-lev
 
 describe("a coordinate outside the declared space is a refusal, never a clamp", () => {
   test("x = 1200 in `normalized-1000` is refused, and the message names the space it would fit", () => {
-    const run = drive(spec(), [
-      ...CALIBRATE,
-      captured("s1"),
-      propose({
-        action: { kind: "click", button: "left", point: { x: 1200, y: 684 } },
-        watch: { x: 1180, y: 660, width: 40, height: 50 },
-      }),
-    ])
+    const run = drive(spec(), [...CALIBRATE, captured("s1"), proposeAt(1200, 684)])
     expect(commandKinds(run)).not.toContain("act")
     if (run.last.kind !== "ask-planner") throw new Error("expected a re-prompt")
     expect(run.last.prompt.user).toContain("outside the declared")
@@ -1147,15 +1204,11 @@ describe("a coordinate outside the declared space is a refusal, never a clamp", 
   })
 
   test("the pointer offset is applied AFTER conversion, and never to the watch region", () => {
-    const run = drive(spec({ pointerOffset: { x: -18, y: -8 } }), [
-      ...CALIBRATE,
-      captured("s1"),
-      proposeAt(464, 684),
-    ])
+    const run = drive(spec({ pointerOffset: { x: -18, y: -8 } }), [...CALIBRATE, captured("s1"), proposeAt(464, 684)])
     if (run.last.kind !== "act") throw new Error("expected an act command")
     expect(run.last.action).toEqual({ kind: "click", button: "left", point: { x: 594 - 18, y: 547 - 8 } })
     // The change still appears where the model aimed, so the box is unmoved.
-    expect(run.last.watch).toEqual({ x: 568, y: 531, width: 52, height: 32 })
+    expect(run.last.watch).toEqual({ x: 553, y: 522, width: 82, height: 51 })
   })
 })
 

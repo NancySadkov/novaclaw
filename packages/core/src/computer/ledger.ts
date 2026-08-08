@@ -155,19 +155,20 @@ export const clip = (text: string | null | undefined, limit: number): string => 
  * ⚠️ **Deliberately NOT the argv.** `["xdotool","mousemove","594","547"]` plus
  * `["xdotool","click","1"]` is ~40 characters of tool syntax for one click, and it describes the
  * harness's plumbing rather than the model's decision. The planner needs to recognise *what it
- * already tried*, and it tried "click (464,684)".
+ * already tried*, and under the split contract it tried `click "DONE"`, not a coordinate the
+ * harness's grounder supplied later.
  */
 export const summarizeAction = (action: ComputerProposal.ActionDraft | null | undefined): string => {
   if (action == null) return ABSENT
   const kind = typeof action.kind === "string" ? action.kind.trim() : ""
   if (kind === "") return ABSENT
-  const point = action.point == null ? "" : `(${action.point.x},${action.point.y})`
+  const target = action.target == null ? "" : ` "${action.target}"`
   switch (kind) {
     case "move":
     case "double_click":
-      return `${kind}${point}`
+      return `${kind}${target}`
     case "click":
-      return `${action.button == null || action.button === "left" ? "click" : `${action.button}-click`}${point}`
+      return `${action.button == null || action.button === "left" ? "click" : `${action.button}-click`}${target}`
     case "type":
       return `type "${action.text ?? ""}"`
     case "key":
@@ -175,7 +176,7 @@ export const summarizeAction = (action: ComputerProposal.ActionDraft | null | un
     case "scroll":
       return `scroll ${action.direction ?? ""}×${action.amount ?? ""}`
     default:
-      return `${kind}${point}`
+      return `${kind}${target}`
   }
 }
 
