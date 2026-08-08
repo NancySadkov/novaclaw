@@ -247,6 +247,17 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
      */
     modelResolveHook: undefined as Effect.Effect<void> | undefined,
     /**
+     * When set, model resolution FAILS with this instead of returning a model.
+     *
+     * ⚠️ Added because nothing could express it and a real claim needed it: the four pre-turn
+     * assembly steps (config walk, agent select, context epoch, model resolve) surface their failure
+     * as a Synthetic notice in the CHAT, and of the four this is the only one a test can make fail
+     * on purpose — `agents.select` cannot fail at all, the config walk needs a corrupted parent
+     * chain, and the context epoch's reachable failure lands on the untapped `initialize` probe
+     * rather than the tapped `prepare`. See `session-runner-pre-turn-notice.test.ts`.
+     */
+    modelResolveFailure: undefined as SessionRunnerModel.Error | undefined,
+    /**
      * When set, an INTERACTIVE provider stream signals `streamStarted` and then blocks on this latch
      * before emitting anything. That window — turn in flight, nothing emitted yet — is where steering
      * and queued input have to be observed.
@@ -455,6 +466,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     Effect.gen(function* () {
       const hook = controls.modelResolveHook
       if (hook) yield* hook
+      if (controls.modelResolveFailure) return yield* Effect.fail(controls.modelResolveFailure)
       // Keyed on the SESSION's model id, so a `ModelSwitched` event actually changes what resolves.
       if (session.model?.id === "replacement") return replacementModel
       return controls.currentModel ?? model

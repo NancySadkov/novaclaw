@@ -566,6 +566,85 @@ export const layer = Layer.effect(
         { concurrency: "unbounded" },
       ).pipe(Effect.map(SystemContext.combine))
 
+    /**
+     * The pre-turn assembly, shared by `runTurnAttempt` and `runManualCompaction`.
+     *
+     * ⚖️ **Why this is one function and not a copied prefix.** Both callers must answer the same six
+     * questions in the same order before anything else can happen — is this session OURS · what does
+     * the config-inheritance walk decide · which agent · which context epoch · which model · which
+     * history — and the manual-compaction copy had already drifted: it resolved its model from a
+     * session overlay carrying `model` but not `device`. That difference is inert (`resolve` reads
+     * only `session.model`; `device` is cashed by `SessionRunnerModel.device`, which compaction never
+     * calls), which is exactly why it survived — a divergence nothing can observe is a divergence
+     * nobody fixes, until the day something observes it.
+     *
+     * The two callers differ in three things, and each is a PARAMETER rather than a fork:
+     *
+     *  - **whose session it is.** Returning `undefined` lets the drain `Effect.interrupt` and the
+     *    compaction cycle plainly `return`, instead of this function guessing which one is wanted.
+     *  - **whether a failure is spoken.** `onFailure` taps the four fallible steps. The drain surfaces
+     *    a calm Synthetic notice (these run before any assistant row exists, so `step.failed` cannot
+     *    carry them and the turn would fail silently); the compaction cycle has its own outer notice
+     *    and passes nothing.
+     *  - **input promotion.** It sits BETWEEN `initialize` and the `prepare` fallback deliberately —
+     *    the epoch update must publish AFTER any user message promoted into this turn. A caller with
+     *    no promotion pays nothing and gets `promoted: 0`.
+     */
+    const prepareTurn = Effect.fn("SessionRunner.prepareTurn")(function* (
+      sessionID: SessionSchema.ID,
+      options: {
+        readonly promotion?: SessionInput.Delivery | undefined
+        readonly onFailure?: ((error: unknown) => Effect.Effect<void>) | undefined
+      } = {},
+    ) {
+      const onFailure = options.onFailure
+      const tap = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        onFailure === undefined ? effect : effect.pipe(Effect.tapError(onFailure))
+      const session = yield* getSession(sessionID)
+      // Not ours. The caller decides what that means — see the header.
+      if (session.location.directory !== location.directory || session.location.workspaceID !== location.workspaceID)
+        return undefined
+      // Agent-OS Phase 1 (architecture.md): resolve model + agent through the config-inheritance
+      // walk, so a child session inherits its parent's unless overridden. Behavior-preserving at the
+      // root (the chain is just [session] -> config.* === session.*). config.* carry the real branded
+      // values (they flow from session.* through the walk; only the static type is widened -> cast).
+      const config = yield* tap(
+        resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, session.id, (id) => store.get(id as SessionSchema.ID)),
+      )
+      const agent = yield* tap(agents.select(config.agent as typeof session.agent))
+      const initialized = yield* SessionContextEpoch.initialize(db, loadSystemContext(agent, session.id), session.id)
+      let promoted = 0
+      if (options.promotion) {
+        const cutoff = yield* EventV2.latestSequence(db, session.id)
+        if (options.promotion === "steer") promoted = yield* SessionInput.promoteSteers(db, events, session.id, cutoff)
+        if (options.promotion === "queue") {
+          promoted += Number(yield* SessionInput.promoteNextQueued(db, events, session.id))
+          promoted += yield* SessionInput.promoteSteers(db, events, session.id, cutoff)
+        }
+      }
+      const system =
+        initialized ??
+        (yield* tap(
+          SessionContextEpoch.prepare(db, events, loadSystemContext(agent, session.id), session.id, (update) =>
+            SessionExecutionAttempt.contextUpdatedCurrent({ ...update.data, snapshot: update.snapshot }, () =>
+              SessionContextEpoch.publishUpdate(db, events, update.data, update.snapshot),
+            ),
+          ),
+        ))
+      // The RESOLVED config overlaid on the row, so every `models.*` read downstream sees what the
+      // chain decided rather than what this row happens to declare. `device` joins `model` here for
+      // exactly the reason `model` is here: a sub-agent that declared neither must inherit both, and
+      // `SessionRunnerModel.device` is where the declaration is cashed into a scheduler key.
+      const modelSession = {
+        ...session,
+        model: config.model as typeof session.model,
+        device: config.device,
+      }
+      const model = yield* tap(models.resolve(modelSession))
+      const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
+      return { session, config, agent, system, modelSession, model, entries, promoted }
+    })
+
     const runTurnAttempt = Effect.fn("SessionRunner.runTurn")(function* (
       sessionID: SessionSchema.ID,
       // ⚠️ PASSED IN, not read here (B7 tier-1). It could not be read here even if we wanted to: the
@@ -577,13 +656,6 @@ export const layer = Layer.effect(
       step: number,
       recoverOverflow?: Harness["compaction"]["compactAfterOverflow"],
     ) {
-      const session = yield* getSession(sessionID)
-      if (session.location.directory !== location.directory || session.location.workspaceID !== location.workspaceID)
-        return yield* Effect.interrupt
-      // Agent-OS Phase 1 (architecture.md): resolve model + agent through the config-inheritance
-      // walk, so a child session inherits its parent's unless overridden. Behavior-preserving at the
-      // root (the chain is just [session] -> config.* === session.*). config.* carry the real branded
-      // values (they flow from session.* through the walk; only the static type is widened -> cast).
       // Surface ANY pre-turn setup failure (config / agent / context-prep / model) IN THE CHAT, not just
       // the server log — these run before any assistant row exists, so `step.failed` (which carries its
       // error on an assistant message) can't convey them; the turn would otherwise fail silently. Emit a
@@ -604,49 +676,22 @@ export const layer = Layer.effect(
             ? `⚠️ This turn couldn't run — the selected model \`${modelRef}\` is unavailable. Pick an available model in Settings, or check that its backend is running.`
             : `⚠️ This turn couldn't run — ${error instanceof Error && error.message ? error.message : "an unexpected error occurred"}.`
           yield* events.publish(SessionEvent.Synthetic, {
-            sessionID: session.id,
+            // `sessionID`, not `session.id`: this notice must be publishable BEFORE the assembly has
+            // produced a session — the first fallible step it taps is the config walk.
+            sessionID,
             messageID: SessionMessage.ID.create(),
             timestamp: yield* DateTime.now,
             text,
           })
         }).pipe(Effect.ignore)
-      const config = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, session.id, (id) =>
-        store.get(id as SessionSchema.ID),
-      ).pipe(Effect.tapError(surfacePreTurnFailure))
-      const agent = yield* agents
-        .select(config.agent as typeof session.agent)
-        .pipe(Effect.tapError(surfacePreTurnFailure))
-      const initialized = yield* SessionContextEpoch.initialize(db, loadSystemContext(agent, session.id), session.id)
+      const prepared = yield* prepareTurn(sessionID, { promotion, onFailure: surfacePreTurnFailure })
+      // The session moved to another location while this drain was queued — not ours to run.
+      if (prepared === undefined) return yield* Effect.interrupt
+      const { session, config, agent, system, modelSession, model, entries } = prepared
       const toolFibers = yield* FiberSet.make<void, ToolOutputStore.Error>()
       let needsContinuation = false
-      let currentStep = step
-      if (promotion) {
-        const cutoff = yield* EventV2.latestSequence(db, session.id)
-        let promoted = 0
-        if (promotion === "steer") promoted = yield* SessionInput.promoteSteers(db, events, session.id, cutoff)
-        if (promotion === "queue") {
-          promoted += Number(yield* SessionInput.promoteNextQueued(db, events, session.id))
-          promoted += yield* SessionInput.promoteSteers(db, events, session.id, cutoff)
-        }
-        if (promoted > 0) currentStep = 1
-      }
-      const system =
-        initialized ??
-        (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent, session.id), session.id, (update) =>
-          SessionExecutionAttempt.contextUpdatedCurrent({ ...update.data, snapshot: update.snapshot }, () =>
-            SessionContextEpoch.publishUpdate(db, events, update.data, update.snapshot),
-          ),
-        ).pipe(Effect.tapError(surfacePreTurnFailure)))
-      // The RESOLVED config overlaid on the row, so every `models.*` read below sees what the chain
-      // decided rather than what this row happens to declare. `device` joins `model` here for
-      // exactly the reason `model` is here: a sub-agent that declared neither must inherit both, and
-      // `SessionRunnerModel.device` is where the declaration is cashed into a scheduler key.
-      const modelSession = {
-        ...session,
-        model: config.model as typeof session.model,
-        device: config.device,
-      }
-      const model = yield* models.resolve(modelSession).pipe(Effect.tapError(surfacePreTurnFailure))
+      // A promoted user message restarts the step allowance: what the agent is answering changed.
+      let currentStep = prepared.promoted > 0 ? 1 : step
       const maxProviderAttempts = ProviderRetry.maxAttempts(yield* models.retryAttempts(modelSession))
       // Catalog identity, not the provider wire id: a model may deliberately route API requests
       // under `api.id` while users and live config know it by a different stable catalog id.
@@ -659,7 +704,6 @@ export const layer = Layer.effect(
       // behaviour correction, wrapped as a distinct labelled section. Read best-effort off the
       // resolved catalog model exactly like the tier above; undefined ⇒ inert (see system-compose.ts).
       const modelPrePrompt = SystemCompose.modelPrePromptSection(yield* models.prePrompt(modelSession))
-      const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       const context = entries.map((entry) => entry.message)
       const discoveredTools = ToolDiscovery.discovered(context)
       const todoReminderConfig = TodoReminder.resolve(harness.context?.todo_reminder)
@@ -1457,12 +1501,12 @@ export const layer = Layer.effect(
       )
     })
 
-    // F1a SLICE 7 — the manual-compaction cycle (consume-side of SessionCompactionRequest).
-    // Runs the SAME pre-turn assembly as runTurnAttempt (config walk → agent → context epoch →
-    // model → history) but hands the entries straight to the compactor and drains NO turn — it
-    // lives in the runner because only the runner holds the shared LLMClient (the OFF-C offline
-    // chokepoint) and the model resolution. Failures surface as a calm Synthetic notice (the
-    // "never breaks" rule: an invisible no-op compact is a broken button) and never fail the drain.
+    // F1a SLICE 7 - the manual-compaction cycle (consume-side of SessionCompactionRequest). Runs
+    // `prepareTurn` - literally the same assembly as the drain, no longer a copy of it - but hands
+    // the entries straight to the compactor and drains NO turn. It lives in the runner because only
+    // the runner holds the shared LLMClient (the OFF-C offline chokepoint) and the model resolution.
+    // Failures surface as a calm Synthetic notice (the "never breaks" rule: an invisible no-op
+    // compact is a broken button) and never fail the drain.
     const runManualCompaction = Effect.fn("SessionRunner.manualCompaction")(function* (
       sessionID: SessionSchema.ID,
       // Passed in for the same two reasons `runTurnAttempt` takes its harness: the session-config
@@ -1470,22 +1514,10 @@ export const layer = Layer.effect(
       // they are NOW, not as they were when the location booted.
       compaction: Harness["compaction"],
     ) {
-      const session = yield* getSession(sessionID)
-      if (session.location.directory !== location.directory || session.location.workspaceID !== location.workspaceID)
-        return
-      const config = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, session.id, (id) =>
-        store.get(id as SessionSchema.ID),
-      )
-      const agent = yield* agents.select(config.agent as typeof session.agent)
-      const system =
-        (yield* SessionContextEpoch.initialize(db, loadSystemContext(agent, session.id), session.id)) ??
-        (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent, session.id), session.id, (update) =>
-          SessionExecutionAttempt.contextUpdatedCurrent({ ...update.data, snapshot: update.snapshot }, () =>
-            SessionContextEpoch.publishUpdate(db, events, update.data, update.snapshot),
-          ),
-        ))
-      const model = yield* models.resolve({ ...session, model: config.model as typeof session.model })
-      const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
+      const prepared = yield* prepareTurn(sessionID)
+      // Not ours: another location owns this session and will run its own compaction.
+      if (prepared === undefined) return
+      const { session, model, entries } = prepared
       // The compactor reads only `generation?.maxTokens` (else the model's own output limit)
       // from the request — a minimal envelope is enough.
       const request = LLM.request({ model, messages: [], tools: [] })
