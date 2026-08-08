@@ -37,10 +37,20 @@ export interface DriveState {
   readonly startedAt: number
 }
 
+export interface GoalContext {
+  readonly goal?: string
+  readonly steps: ReadonlyArray<{
+    readonly text: string
+    readonly status: string
+    readonly verdict: { readonly check: string; readonly evidence: string } | null
+  }>
+}
+
 export const initialState = (nowMs: number): DriveState => ({ rounds: 0, startedAt: nowMs })
 
 export type DriveDecision =
   | { readonly kind: "continue"; readonly message: string }
+  | { readonly kind: "complete"; readonly result: string }
   | { readonly kind: "cap"; readonly notice: string }
   | { readonly kind: "stop" }
 
@@ -60,13 +70,20 @@ const AUTO_CONTINUE =
 // "No goal was assigned to this unattended session"). Point it at the real thing, and say plainly
 // that an already-answered question is finished — self-driving exists to keep long work moving, not
 // to manufacture work after the answer is in.
-const GOAL_CONTINUE =
-  "You are an unattended goal-oriented session — no user is present and none will reply. " +
-  "Your goal is the request that opened this session (its first message). Check your progress " +
-  "against that request, then take the next concrete action toward it. If the request was a " +
-  "question and you have already answered it, you are done. When the goal is reached (or you can " +
-  "prove it is unreachable), call the `exit` tool with a short result summary — for a question, " +
-  "that summary is simply your answer. Calling `exit` is how this session ends."
+const goalContinue = (context: GoalContext | undefined) => {
+  const goal = context?.goal?.trim()
+  const next = context?.steps.find((step) => step.status !== "completed" || step.verdict === null)
+  return (
+    "You are an unattended goal-oriented session — no user is present and none will reply. " +
+    (goal ? `Your durable goal is: ${goal}\n` : "Declare the durable `goal` component from the opening request.\n") +
+    (next
+      ? `Take the next unfinished plan step now: ${next.text}\n`
+      : "Create a short ordered `plan` component set, then take its first concrete step.\n") +
+    "Keep the goal and plan current through the `session` tool. A step is not verified merely because " +
+    "you mark it completed; the kernel records a verdict only after its check runs. If the goal is " +
+    "unreachable, call the `exit` tool with the evidence."
+  )
+}
 
 const capNotice = (reason: string) =>
   `⏸️ Autonomous run paused ${reason} without calling exit. ` +
@@ -77,14 +94,29 @@ const capNotice = (reason: string) =>
  * drain alive; `cap` → surface `notice` and let the drain end; `stop` → not a driven session
  * or it exited. The caller increments `state.rounds` on each `continue` it acts on.
  */
-export const decide = (session: DriveSession | undefined, state: DriveState, nowMs: number): DriveDecision => {
+export const decide = (
+  session: DriveSession | undefined,
+  state: DriveState,
+  nowMs: number,
+  context?: GoalContext,
+): DriveDecision => {
   const type = driveType(session)
   if (type === undefined) return { kind: "stop" }
   // exit(result) called — the terminal test (exit records "" for a bare exit, so `!== undefined`).
   if (session !== undefined && session.result !== undefined) return { kind: "stop" }
+  if (
+    type === "goal-oriented" &&
+    context?.goal !== undefined &&
+    context.steps.length > 0 &&
+    context.steps.every((step) => step.status === "completed" && step.verdict !== null)
+  )
+    return {
+      kind: "complete",
+      result: `Goal verified: ${context.goal} (${context.steps.length} mechanically checked plan steps).`,
+    }
   if (state.rounds >= MAX_DRIVE_ROUNDS)
     return { kind: "cap", notice: capNotice(`after ${state.rounds} self-prompted rounds`) }
   if (nowMs - state.startedAt >= MAX_DRIVE_WALL_MS)
     return { kind: "cap", notice: capNotice(`after ${Math.round((nowMs - state.startedAt) / 60_000)} minutes`) }
-  return { kind: "continue", message: type === "auto-prompting" ? AUTO_CONTINUE : GOAL_CONTINUE }
+  return { kind: "continue", message: type === "auto-prompting" ? AUTO_CONTINUE : goalContinue(context) }
 }

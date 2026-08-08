@@ -1,13 +1,14 @@
 export * as SessionTodo from "./todo"
 
-import { asc, eq } from "drizzle-orm"
-import { Context, Effect, Layer } from "effect"
+import { and, asc, eq } from "drizzle-orm"
+import { Context, Effect, Layer, Schema } from "effect"
 import { SessionTodo } from "@novaclaw/schema/session-todo"
 import { Database } from "../database/database"
 import { makeLocationNode } from "../effect/app-node"
 import { EventV2 } from "../event"
 import { SessionSchema } from "./schema"
-import { TodoTable } from "./sql"
+import { SessionComponentTable, TodoTable } from "./sql"
+import { SessionComponentRegistry } from "./component-registry"
 
 export const Info = SessionTodo.Info
 export type Info = typeof Info.Type
@@ -33,16 +34,35 @@ export const readTodos = (
   db: Database.Interface["db"],
   sessionID: SessionSchema.ID,
 ): Effect.Effect<ReadonlyArray<Info>> =>
-  db
-    .select()
-    .from(TodoTable)
-    .where(eq(TodoTable.session_id, sessionID))
-    .orderBy(asc(TodoTable.position))
-    .all()
-    .pipe(
-      Effect.orDie,
-      Effect.map((rows) => rows.map((row) => ({ content: row.content, status: row.status, priority: row.priority }))),
-    )
+  Effect.gen(function* () {
+    const rows = yield* db
+      .select({ value: SessionComponentTable.value })
+      .from(SessionComponentTable)
+      .where(and(eq(SessionComponentTable.session_id, sessionID), eq(SessionComponentTable.kind, "plan")))
+      .orderBy(asc(SessionComponentTable.component_id))
+      .all()
+      .pipe(Effect.orDie)
+    if (rows.length > 0)
+      return rows.map(({ value }) => {
+        const step = Schema.decodeUnknownSync(SessionComponentRegistry.PlanStep)(value)
+        return { content: step.text, status: step.status, priority: step.priority ?? "medium" }
+      })
+
+    // Existing databases may still carry the pre-component checklist. It is read-only from here:
+    // the next update below writes the canonical plan rows and deletes these legacy rows.
+    return yield* db
+      .select()
+      .from(TodoTable)
+      .where(eq(TodoTable.session_id, sessionID))
+      .orderBy(asc(TodoTable.position))
+      .all()
+      .pipe(
+        Effect.orDie,
+        Effect.map((legacy) =>
+          legacy.map((row) => ({ content: row.content, status: row.status, priority: row.priority })),
+        ),
+      )
+  })
 
 export const layer = Layer.effect(
   Service,
@@ -57,17 +77,30 @@ export const layer = Layer.effect(
       yield* db
         .transaction((tx) =>
           Effect.gen(function* () {
+            yield* tx
+              .delete(SessionComponentTable)
+              .where(and(eq(SessionComponentTable.session_id, input.sessionID), eq(SessionComponentTable.kind, "plan")))
+              .run()
             yield* tx.delete(TodoTable).where(eq(TodoTable.session_id, input.sessionID)).run()
             if (input.todos.length === 0) return
             yield* tx
-              .insert(TodoTable)
+              .insert(SessionComponentTable)
               .values(
                 input.todos.map((todo, position) => ({
                   session_id: input.sessionID,
-                  content: todo.content,
-                  status: todo.status,
-                  priority: todo.priority,
-                  position,
+                  kind: "plan",
+                  component_id: SessionComponentRegistry.planComponentID(position),
+                  schema_version: 1,
+                  lifetime: "entity" as const,
+                  value: {
+                    position,
+                    text: todo.content,
+                    status: todo.status,
+                    priority: todo.priority,
+                    verdict: null,
+                  },
+                  time_created: Date.now(),
+                  time_updated: Date.now(),
                 })),
               )
               .run()

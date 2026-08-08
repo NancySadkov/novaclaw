@@ -86,7 +86,7 @@ const fitLine = (value: string, render: (candidate: string) => string, maxTokens
   return Token.estimate(render(result)) <= maxTokens ? result : undefined
 }
 
-/** Build a provider-only reminder. Active work wins the budget, the full checklist stays in SQLite,
+/** Build a provider-only reminder. Active work wins the budget, the full plan stays in SQLite,
  * and an omission marker makes projection loss explicit instead of silently pretending the list fit. */
 export const render = (todos: readonly SessionTodo.Info[], maxTokens: number): string | undefined => {
   if (todos.length === 0) return undefined

@@ -167,6 +167,7 @@ export const layer = Layer.effectDiscard(
                     ? yield* components.validate({
                         sessionID: context.sessionID,
                         kind: input.kind,
+                        ...(input.id === undefined ? {} : { id: input.id }),
                         value: input.value,
                       })
                     : undefined

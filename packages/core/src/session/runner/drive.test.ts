@@ -61,4 +61,32 @@ describe("SessionDrive.decide", () => {
     expect(goal.message).toContain("goal")
     expect(auto.message).not.toBe(goal.message)
   })
+
+  test("goal drive names the durable goal and first unfinished plan step", () => {
+    const decision = SessionDrive.decide({ type: "goal-oriented" }, SessionDrive.initialState(t0), t0, {
+      goal: "Ship C8",
+      steps: [
+        { text: "already checked", status: "completed", verdict: { check: "test", evidence: "exit 0" } },
+        { text: "wire self-drive", status: "pending", verdict: null },
+      ],
+    })
+    expect(decision).toMatchObject({ kind: "continue" })
+    if (decision.kind !== "continue") throw new Error("expected continue")
+    expect(decision.message).toContain("Ship C8")
+    expect(decision.message).toContain("wire self-drive")
+    expect(decision.message).not.toContain("already checked")
+  })
+
+  test("a goal terminates only when every plan step carries a mechanical verdict", () => {
+    const base = { goal: "Ship C8", steps: [{ text: "test", status: "completed", verdict: null }] }
+    expect(SessionDrive.decide({ type: "goal-oriented" }, SessionDrive.initialState(t0), t0, base).kind).toBe(
+      "continue",
+    )
+    expect(
+      SessionDrive.decide({ type: "goal-oriented" }, SessionDrive.initialState(t0), t0, {
+        ...base,
+        steps: [{ text: "test", status: "completed", verdict: { check: "bun test", evidence: "exit 0" } }],
+      }),
+    ).toEqual({ kind: "complete", result: "Goal verified: Ship C8 (1 mechanically checked plan steps)." })
+  })
 })

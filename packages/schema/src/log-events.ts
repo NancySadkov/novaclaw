@@ -1694,6 +1694,20 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  "session.drive.goal.unavailable": {
+    level: "warn",
+    message: "durable self-drive goal unavailable",
+    attributes: { "session.id": "correlate", "session.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
+  "session.drive.plan.unavailable": {
+    level: "warn",
+    message: "durable self-drive plan unavailable",
+    attributes: { "session.id": "correlate", "session.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.finish.recover": {
     level: "info",
     message: "finish recovery: provider truncated at its output-token limit",

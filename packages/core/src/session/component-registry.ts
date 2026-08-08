@@ -69,6 +69,29 @@ export const Observation = Schema.Struct({
 }).annotate({ identifier: "SessionComponent.Observation" })
 export type Observation = typeof Observation.Type
 
+export const Goal = Schema.Struct({
+  text: Schema.NonEmptyString,
+}).annotate({ identifier: "SessionComponent.Goal" })
+export type Goal = typeof Goal.Type
+
+export const PlanVerdict = Schema.Struct({
+  check: Schema.NonEmptyString,
+  passedAt: NonNegativeInt,
+  evidence: Schema.NonEmptyString,
+}).annotate({ identifier: "SessionComponent.PlanVerdict" })
+export type PlanVerdict = typeof PlanVerdict.Type
+
+export const PlanStep = Schema.Struct({
+  position: NonNegativeInt,
+  text: Schema.NonEmptyString,
+  status: Schema.NonEmptyString,
+  priority: Schema.optional(Schema.NonEmptyString),
+  verdict: Schema.NullOr(PlanVerdict),
+}).annotate({ identifier: "SessionComponent.PlanStep" })
+export type PlanStep = typeof PlanStep.Type
+
+export const planComponentID = (position: number) => `step-${String(position).padStart(8, "0")}`
+
 /** Adapter for a component whose canonical bytes already live in a kernel-owned store. */
 export interface Projection<A> {
   readonly validate?: (sessionID: SessionSchema.ID, value: A) => Effect.Effect<void, unknown>
@@ -87,6 +110,12 @@ export interface Definition<A = any> {
   readonly codec: Schema.Codec<A, Schema.Json>
   readonly removable?: boolean
   readonly projection?: Projection<A>
+  /** System-owned fields (for example a mechanical verification verdict) may reject ordinary writes. */
+  readonly validateWrite?: (input: {
+    readonly id?: string
+    readonly value: A
+    readonly system: boolean
+  }) => Effect.Effect<void, unknown>
   /** Decode an older stored version into the current typed value. Absence makes drift explicit. */
   readonly migrate?: (input: { readonly version: number; readonly value: Schema.Json }) => Effect.Effect<A>
 }
@@ -149,6 +178,8 @@ export interface PutInput {
   readonly value: unknown
   readonly attempt?: AttemptFence
   readonly expiresAt?: number
+  /** Kernel-only authority. This is deliberately absent from the session tool's wire schema. */
+  readonly system?: true
 }
 
 export interface ReadInput {
@@ -165,6 +196,7 @@ export interface Interface {
   readonly validate: (input: {
     sessionID: SessionSchema.ID
     kind: string
+    id?: string
     value: unknown
   }) => Effect.Effect<Schema.Json, ComponentError>
   readonly get: (input: ReadInput) => Effect.Effect<Entry | undefined, ComponentError>
@@ -192,6 +224,32 @@ export const ObservationDefinition = kernelDefinition({
   lifetime: "attempt",
   version: 1,
   codec: Observation,
+})
+
+export const GoalDefinition = kernelDefinition({
+  kind: "goal",
+  description: "The session's durable objective. It survives transcript compaction and steers goal-oriented work.",
+  cardinality: "singleton",
+  lifetime: "entity",
+  version: 1,
+  codec: Goal,
+})
+
+export const PlanDefinition = kernelDefinition({
+  kind: "plan",
+  description:
+    "One ordered step in the session's shallow execution plan. A non-null verdict is written only by the kernel after running its named check.",
+  cardinality: "set",
+  lifetime: "entity",
+  version: 1,
+  codec: PlanStep,
+  validateWrite: ({ id, value, system }) => {
+    if (id !== planComponentID(value.position))
+      return Effect.fail(new Error(`Plan step ${value.position} must use id ${planComponentID(value.position)}`))
+    return value.verdict === null || system
+      ? Effect.void
+      : Effect.fail(new Error("Plan verdicts are kernel-owned; run the check instead of declaring it passed"))
+  },
 })
 
 export const toolDefinition = <A>(
@@ -318,10 +376,15 @@ export const make = (kernelDefinitions: ReadonlyArray<AnyDefinition> = []) =>
     const validate = Effect.fn("SessionComponent.validate")(function* (input: {
       sessionID: SessionSchema.ID
       kind: string
+      id?: string
       value: unknown
     }) {
       const definition = yield* definitionOf(input.kind)
       const decoded = yield* decodeInput(definition, input.value)
+      if (definition.validateWrite)
+        yield* definition
+          .validateWrite({ id: input.id, value: decoded, system: false })
+          .pipe(Effect.mapError((cause) => projectionFailure(definition, "Validating", cause)))
       if (definition.projection?.validate)
         yield* definition.projection
           .validate(input.sessionID, decoded)
@@ -475,6 +538,10 @@ export const make = (kernelDefinitions: ReadonlyArray<AnyDefinition> = []) =>
       const componentID = yield* storedID(definition, input.id)
       yield* assertLifetime(definition, input)
       const decoded = yield* decodeInput(definition, input.value)
+      if (definition.validateWrite)
+        yield* definition
+          .validateWrite({ id: input.id, value: decoded, system: input.system === true })
+          .pipe(Effect.mapError((cause) => projectionFailure(definition, "Writing", cause)))
       const value = yield* encodeInput(definition, decoded)
       if (definition.projection) {
         yield* definition.projection
@@ -740,6 +807,8 @@ const compiledDefinitions = Effect.gen(function* () {
           }),
       },
     }),
+    GoalDefinition,
+    PlanDefinition,
     ObservationDefinition,
     kernelDefinition({
       kind: "working_folder",

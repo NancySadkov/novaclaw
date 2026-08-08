@@ -212,6 +212,52 @@ describe("SessionComponentRegistry", () => {
       }),
     ))
 
+  test("keeps goal durable and makes plan verification kernel-owned", () =>
+    withRegistry([SessionComponentRegistry.GoalDefinition, SessionComponentRegistry.PlanDefinition], ({ sessionID }) =>
+      Effect.gen(function* () {
+        const registry = yield* SessionComponentRegistry.Service
+        yield* registry.put({ sessionID, kind: "goal", value: { text: "Ship the verified milestone" } })
+        expect(yield* registry.get({ sessionID, kind: "goal" })).toMatchObject({
+          value: { text: "Ship the verified milestone" },
+          lifetime: "entity",
+        })
+
+        const draft = { position: 0, text: "Run the focused tests", status: "in_progress" as const, verdict: null }
+        yield* registry.put({ sessionID, kind: "plan", id: "step-00000000", value: draft })
+        const forged = yield* registry
+          .put({
+            sessionID,
+            kind: "plan",
+            id: "step-00000000",
+            value: {
+              ...draft,
+              status: "completed",
+              verdict: { check: "bun test", passedAt: 123, evidence: "trust me" },
+            },
+          })
+          .pipe(Effect.flip)
+        expect(forged).toBeInstanceOf(SessionComponentRegistry.RegistryError)
+
+        yield* registry.put({
+          sessionID,
+          kind: "plan",
+          id: "step-00000000",
+          system: true,
+          value: {
+            ...draft,
+            status: "completed",
+            verdict: { check: "bun test", passedAt: 123, evidence: "exit 0" },
+          },
+        })
+        expect(yield* registry.list({ sessionID, kind: "plan" })).toMatchObject([
+          {
+            id: "step-00000000",
+            value: { status: "completed", verdict: { check: "bun test", passedAt: 123, evidence: "exit 0" } },
+          },
+        ])
+      }),
+    ))
+
   test("names undecodable and unmigrated stored versions instead of rendering them empty", () =>
     withRegistry([Goal], ({ sessionID }) =>
       Effect.gen(function* () {

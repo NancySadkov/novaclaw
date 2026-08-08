@@ -45,6 +45,8 @@ import { SessionPatch } from "../patch"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
 import { SessionTodo } from "../todo"
+import { SessionPlan } from "../plan"
+import { SessionComponentRegistry } from "../component-registry"
 import { Log } from "@novaclaw/schema/log"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 
@@ -219,6 +221,7 @@ export const layer = Layer.effect(
     const compactionRequests = yield* SessionCompactionRequest.Service
     const memory = yield* MemoryClient.Service
     const maintenance = yield* SessionMaintenance.Service
+    const components = yield* SessionComponentRegistry.Service
     const db = (yield* Database.Service).db
     /**
      * B7 tier-1 / ruling 3 — the harness configuration, derived ONCE PER TURN and never at layer
@@ -363,8 +366,8 @@ export const layer = Layer.effect(
       if (moods.size >= MAX_MOODS && !moods.has(sessionID)) moods.clear()
       moods.set(sessionID, mood)
     }
-    // A9.5: delivery state for provider-only checklist reminders. The checklist itself is durable
-    // in TodoTable; this bounded map only prevents repeated projection within one message bucket.
+    // A9.5: delivery state for provider-only checklist reminders. The checklist itself is the durable
+    // `plan` component set; this bounded map only prevents repeated projection within one message bucket.
     // A process restart may repeat one reminder, which is safer than silently skipping a horizon.
     const todoReminderStates = new Map<string, TodoReminder.ReminderState>()
     const MAX_TODO_REMINDER_STATES = 500
@@ -1888,10 +1891,13 @@ export const layer = Layer.effect(
             aborted: () => stopRequested || (winnerIdx !== undefined && winnerIdx !== i),
             onAction: single ? publishAction : recordAction(i),
             checkpoint: single
-              ? (state) =>
-                  JhStore.save(db, { id: savedKey, goal, status: "running", state, now: Date.now() }).pipe(
-                    Effect.ignore,
-                  )
+              ? (state) => {
+                  const now = Date.now()
+                  return Effect.gen(function* () {
+                    yield* JhStore.save(db, { id: savedKey, goal, status: "running", state, now })
+                    yield* SessionPlan.projectJh(db, { sessionID, goal, state, now })
+                  }).pipe(Effect.ignore)
+                }
               : undefined, // racers don't persist; the winner's final state is saved below
           }).pipe(
             Effect.tap((r) =>
@@ -2059,6 +2065,12 @@ export const layer = Layer.effect(
             state: report.state,
             now: Date.now(),
           }).pipe(Effect.ignore)
+          yield* SessionPlan.projectJh(db, {
+            sessionID,
+            goal,
+            state: report.state,
+            now: Date.now(),
+          })
           // The terminal claim, conditioned on what the engine ACTUALLY held. This text used to
           // assert "the best verified state was kept" on every stopped run — false in every real
           // Strict session, because the engine only snapshots a best on a GRADED improvement and
@@ -2544,7 +2556,36 @@ export const layer = Layer.effect(
           // spawned children and forks don't silently self-drive; Stop interrupts this very
           // fiber, so it remains the unconditional kill switch. See runner/drive.ts.
           const latest = yield* store.get(input.sessionID).pipe(Effect.orElseSucceed(() => undefined))
-          const decision = SessionDrive.decide(latest, driveState, DateTime.toEpochMillis(yield* DateTime.now))
+          const goalEntry = yield* components
+            .get({ sessionID: input.sessionID, kind: "goal" })
+            .pipe(
+              Effect.catch((error: unknown) =>
+                Log.event("session.drive.goal.unavailable", {
+                  "session.id": input.sessionID,
+                  "session.cause": Log.fault(error),
+                }).pipe(Effect.as(undefined)),
+              ),
+            )
+          const planEntries = yield* components
+            .list({ sessionID: input.sessionID, kind: "plan" })
+            .pipe(
+              Effect.catch((error: unknown) =>
+                Log.event("session.drive.plan.unavailable", {
+                  "session.id": input.sessionID,
+                  "session.cause": Log.fault(error),
+                }).pipe(Effect.as([])),
+              ),
+            )
+          const decision = SessionDrive.decide(latest, driveState, DateTime.toEpochMillis(yield* DateTime.now), {
+            goal:
+              typeof goalEntry?.value === "object" && goalEntry.value !== null && "text" in goalEntry.value
+                ? String(goalEntry.value.text)
+                : undefined,
+            steps: planEntries.map((entry) => {
+              const value = entry.value as SessionComponentRegistry.PlanStep
+              return { text: value.text, status: value.status, verdict: value.verdict }
+            }),
+          })
           if (decision.kind === "continue") {
             driveState.rounds++
             yield* Log.event("session.drive.continue", {
@@ -2567,6 +2608,17 @@ export const layer = Layer.effect(
                 text: decision.notice,
               })
             }).pipe(Effect.ignore)
+          } else if (decision.kind === "complete") {
+            const timestamp = yield* DateTime.now
+            yield* events.publish(SessionEvent.Completed, {
+              sessionID: input.sessionID,
+              timestamp,
+              result: decision.result,
+            })
+            yield* events.publish(SessionStatusEvent.Status, {
+              sessionID: input.sessionID,
+              status: { type: "exited" },
+            })
           }
         }
       }
@@ -2612,5 +2664,6 @@ export const node = makeLocationNode({
     // The quality gate executes persisted (possibly model-supplied) commands through the agent
     // shell, so it asserts `bash` like every other execution surface — see `runQualityCheck`.
     PermissionV2.node,
+    SessionComponentRegistry.node,
   ],
 })
