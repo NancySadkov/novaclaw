@@ -36,9 +36,11 @@
 /* ── v2 design system ──────────────────────────────────────────────────────────────────────────
    ⚠️ v2 stylesheets belong HERE, not in their own `.tsx`. A stylesheet imported from a component
    file lands UNLAYERED and outranks every Tailwind utility, so `class=` overrides on that component
-   silently do nothing. `app/src/ui-fork-ledger.test.ts` pins the ones still doing that
-   (`UNLAYERED_V2_STYLESHEETS`) and the list is shrink-only — move one here, drop its own import,
-   check that component's call sites, and delete its name in the same commit. */
+   silently do nothing. The guard is `app/src/ui-fork-ledger.test.ts`'s `UNLAYERED_STYLESHEETS` —
+   renamed from `UNLAYERED_V2_STYLESHEETS` (the name this comment gave until 2026-08-08) in
+   `cf482c224`, when the sweep widened from `ui/v2` to all three UI packages. Its list is now EMPTY,
+   so it is no longer merely shrink-only: ANY `.tsx` importing a `.css` fails it, in `app` and
+   `session-ui` too. Add an `@import … layer(components)` line to the package's barrel instead. */
 @import "../v2/components/avatar-v2.css" layer(components);
 @import "../v2/components/badge-v2.css" layer(components);
 @import "../v2/components/button-v2.css" layer(components);
