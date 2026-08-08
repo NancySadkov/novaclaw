@@ -86,12 +86,20 @@ import zlib from "node:zlib"
  * of one fact).
  */
 
-/** ~16 weeks of normal use at the measured 69.5 KB/day; ~500 KB gzipped (§0.5). */
+/**
+ * ~14 weeks of normal use at the **measured 83 KB/day** (`LogRead.usage`, this machine, 2026-08-08 —
+ * the 69.5 KB/day this line used to cite is 2026-07-29's, and the file has since been re-measured
+ * twice at 134 and 83); ~500 KB gzipped (§0.5). A correctness parameter, not a preference (3c) —
+ * which is why it is here and not in `log-bounds.ts`.
+ */
 export const SEGMENT_BYTES = 8 * 1024 * 1024
-/** The ceiling that matters. Under sustained per-subsystem debug this is ~2–4 days of history. */
-export const TOTAL_BYTES = 256 * 1024 * 1024
-/** Matches Trash's decided retention, so the product tells the user ONE number. */
-export const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
+/**
+ * The two bounds a product surface may name, declared in a leaf module with no Node imports so a
+ * Settings panel can say the number instead of retyping it. See `log-bounds.ts` for what each one
+ * actually promises — {@link MAX_AGE_MS} is a FLOOR and the header of `sweep` below says why.
+ */
+export { TOTAL_BYTES, MAX_AGE_MS } from "./log-bounds"
+import { MAX_AGE_MS, TOTAL_BYTES } from "./log-bounds"
 /** Effect's own default. ⚠️ Do not lower it toward 0 — that burns idle CPU (§0.5). */
 export const FLUSH_MS = 1000
 /** Flush early when the buffer gets big, so a burst cannot hold a megabyte of lines hostage. */
@@ -164,6 +172,46 @@ export function segmentsIn(directory: string, name: string): Segment[] {
     segments.push({ file, stamp: match[1]!, time, compressed: match[2] !== undefined, bytes: sizeOf(file) })
   }
   return segments.sort((a, b) => a.stamp.localeCompare(b.stamp))
+}
+
+/**
+ * **When the ACTIVE segment's own first line was written**, or `undefined` when the file is empty,
+ * unreadable, or its first line is not one of ours.
+ *
+ * ⚠️ Read from the FIRST LINE rather than from `mtime`, for the reason this module's header gives
+ * about segment stamps: a backup, a copy into a bug report, or a restore rewrites mtime and cannot
+ * rewrite what the bytes say.
+ *
+ * ⚠️ This lives here rather than in `log-read.ts` because it is the WRITER's own file format, and
+ * because the writer needs it — {@link Writer.rotate} is age-driven as well as size-driven. Putting
+ * it in the reader and importing it back would be a cycle; putting a second copy in each would be
+ * the one-description-twice defect. `log-read.ts` imports this one.
+ */
+export function firstLineTime(file: string): number | undefined {
+  try {
+    const size = fsSync.statSync(file).size
+    if (size === 0) return undefined
+    const handle = fsSync.openSync(file, "r")
+    try {
+      const want = Math.min(size, 8192)
+      const buffer = Buffer.allocUnsafe(want)
+      fsSync.readSync(handle, buffer, 0, want, 0)
+      const text = buffer.toString("utf8")
+      const newline = text.indexOf("\n")
+      // A first line longer than the window is damage, not data — say nothing rather than parse half
+      // a line into a confident timestamp.
+      if (newline === -1 && size > want) return undefined
+      const line = newline === -1 ? text : text.slice(0, newline)
+      const stamp = /(?:^|\s)timestamp=("[^"]*"|\S+)/.exec(line)?.[1]
+      if (stamp === undefined) return undefined
+      const parsed = Date.parse(stamp.startsWith('"') ? stamp.slice(1, -1) : stamp)
+      return Number.isNaN(parsed) ? undefined : parsed
+    } finally {
+      fsSync.closeSync(handle)
+    }
+  } catch {
+    return undefined
+  }
 }
 
 /** `ok` until something refuses; then `unavailable`, named, and every line goes to stderr. */
@@ -241,6 +289,11 @@ export class Writer {
 
   private fd: number | undefined
   private size = 0
+  /**
+   * When the active segment's oldest line was written — the denominator of the AGE rotation below.
+   * `undefined` means "nothing readable in it yet"; the first successful append adopts `now`.
+   */
+  private activeSince: number | undefined
   private buffer: string[] = []
   private buffered = 0
   private timer: ReturnType<typeof setTimeout> | undefined
@@ -258,6 +311,11 @@ export class Writer {
   rotationsBlocked = 0
   /** Times the active segment was truncated because rotation stayed blocked past the hard cap. */
   truncations = 0
+  /**
+   * Rotations triggered by AGE rather than by size. Counted separately because the two answer
+   * different questions and the age one is the newer, load-bearing half — see {@link rotate}.
+   */
+  rotationsByAge = 0
 
   constructor(options: Options) {
     this.options = options
@@ -273,17 +331,39 @@ export class Writer {
     if (this.state.kind === "ok") {
       live.add(this)
       hookExit()
-      // ⚠️ **Rotation alone does not make the 30-day promise true.** At the measured 69.5 KB/day an
-      // 8 MB segment closes about every 16 weeks, so an instance that is merely *quiet* would keep
-      // segments for months past the age limit — the "the TTL is a retention FLOOR, not a deadline"
-      // shape `trash.ts` states honestly and this item cannot afford, because the number is going in
-      // a Settings row that says *"keep about 30 days"*.
+      // ⚠️ **Rotation alone does not make the 30-day promise true.** At the measured 83 KB/day an
+      // 8 MB segment closes about every 14 weeks, so an instance that is merely *quiet* would keep
+      // segments for months past the age limit.
+      //
+      // 🔴 **AND THE SWEEP DOES NOT FINISH THE JOB EITHER — measured 2026-08-08, and this comment
+      // used to claim otherwise.** It said the `open()` sweep is *"the thing that makes the 30-day
+      // number honest"*. It is not, because `sweep()` can only delete ROTATED segments — the active
+      // one is never a candidate — and `LogRead.usage` over this machine's two real log directories
+      // reports **`segments: 0` for both**: 3 089 922 B over 872.8 h (83 KB/day) and 968 034 B over
+      // 718.9 h (32 KB/day). Neither has ever rotated, so on both of them the entire history lives
+      // in the one file no sweep can reach, and will for ~99 more days.
+      //
+      // What survives is the honest half: **nothing newer than the age limit is deleted, and the
+      // byte ceiling is real** (it totals the whole directory, and the active segment is separately
+      // hard-capped by `ROTATION_STUCK_MULTIPLE`). What does NOT survive is *"about 30 days"* as a
+      // ceiling — it is the *"the TTL is a retention FLOOR, not a deadline"* shape `trash.ts` states
+      // honestly about itself, and `todo/logging.md` said this item *"cannot afford"* it because the
+      // number goes in a user-facing row. The measurement says it has it anyway, so the Settings row
+      // says **"at least"** (`log-bounds.ts`) rather than the code pretending. Changing the rotation
+      // policy to make the ceiling real is a Phase-2 decision with a genuine granularity trade —
+      // filed, not smuggled in here.
       //
       // Opening the log IS a write event, so the sweep rides it. This is deliberately the same
       // launch-triggered pattern §0.6 identified in electron-log and told us to copy: no daemon, no
       // timer, and an instance nobody starts does no work. Total by construction (`sweep` cannot
       // throw), and it is a `readdir` plus a `stat` over a few dozen entries — startup speed is
       // first-class, and this is not where it goes.
+      //
+      // ⭐ **AGE ROTATION, and it is the half that makes the sweep able to do anything at all.** An
+      // instance that has been closed for two months reopens with a two-month-old active segment;
+      // seal it here so it becomes a candidate, rather than waiting for it to reach 8 MB. This runs
+      // BEFORE the sweep so the segment it just sealed is considered in the same pass.
+      if (this.tooOld()) this.rotate()
       this.sweep()
     }
   }
@@ -297,9 +377,18 @@ export class Writer {
       fsSync.mkdirSync(this.directory, { recursive: true })
       this.fd = fsSync.openSync(this.file, "a")
       this.size = sizeOf(this.file)
+      // Read BEFORE anything is appended, so a segment inherited from an earlier run is aged from
+      // its own oldest line rather than from this process's start — otherwise every restart would
+      // reset the clock and a frequently restarted instance would never age-rotate at all.
+      this.activeSince = firstLineTime(this.file)
     } catch (cause) {
       this.degrade(cause instanceof Error ? cause.message : String(cause))
     }
+  }
+
+  /** True when the active segment has been open longer than the retention age. */
+  private tooOld(): boolean {
+    return this.activeSince !== undefined && this.now().getTime() - this.activeSince >= this.maxAgeMs
   }
 
   /**
@@ -393,13 +482,16 @@ export class Writer {
       const append = this.options.appendFn ?? defaultAppend
       append(this.fd, chunk)
       this.size += chunk.length
+      // A segment whose first line we could not read (a fresh file, or a damaged head) still has to
+      // age from somewhere, or it would never rotate on age at all.
+      this.activeSince ??= this.now().getTime()
     } catch (cause) {
       // Put the lines back so `degrade` can spill them, then give up on the file for this run.
       this.buffer = [chunk.toString("utf8")]
       this.degrade(cause instanceof Error ? cause.message : String(cause))
       return
     }
-    if (this.size >= this.segmentBytes) this.rotate()
+    if (this.size >= this.segmentBytes || this.tooOld()) this.rotate()
   }
 
   /**
@@ -413,9 +505,34 @@ export class Writer {
    * A rename that fails anyway (a reader holds the file) is not an error: keep writing the active
    * segment and try again next flush. {@link ROTATION_STUCK_MULTIPLE} is what stops that becoming
    * unbounded growth.
+   *
+   * ── ⭐ rotation is driven by AGE as well as by SIZE, and the measurement is why ─────────────────
+   *
+   * This module shipped size-only, with {@link SEGMENT_BYTES} chosen against *"the measured
+   * 69.5 KB/day"*. `LogRead.usage` — the Phase-3 event that exists precisely to re-derive those
+   * numbers — measured this machine's two real log directories on 2026-08-08 and reported **83
+   * KB/day** and **32 KB/day**, both with **`segments: 0`**. Neither had ever rotated, so on both of
+   * them every retention mechanism in this file was inert: `sweep` only ever considers ROTATED
+   * segments, and there were none. The 30-day number in a Settings row was describing behaviour that
+   * could not happen for another ~99 days on one directory and ~256 on the other.
+   *
+   * ⭐ **The generalisable fault is not the number, it is the SHAPE.** A size threshold makes the
+   * retention promise a function of the write rate — and the write rate is the one thing that
+   * measurement showed to be unstable: 69.5 → 134 → 83 KB/day on one file over nine days, and 2.6×
+   * apart between two directories on the same machine on the same day. Any single byte figure would
+   * have been wrong for somebody. An AGE threshold is rate-independent: a segment closes when it has
+   * been open for {@link MAX_AGE_MS} no matter how fast or slow it filled, so the sweep always has
+   * something to sweep. That is why the fix is a second trigger rather than a smaller
+   * {@link SEGMENT_BYTES} — a smaller byte figure would be the same mistake with better luck.
+   *
+   * ⚠️ **What it now promises, exactly.** A line is sealed at latest `MAX_AGE_MS` after its
+   * segment's first line, and a sealed segment is deleted `MAX_AGE_MS` after being sealed — so
+   * **nothing newer than 30 days is deleted, and nothing older than ~60 days survives**. The floor
+   * is the number the product says; the ceiling is new, and before this change there was none.
    */
   rotate(): void {
     if (this.state.kind === "unavailable") return
+    const byAge = this.tooOld()
     this.closeFd()
     const target = this.freeTarget()
     let renamed = true
@@ -468,6 +585,11 @@ export class Writer {
       return
     }
     this.rotations++
+    if (byAge) this.rotationsByAge++
+    // `open()` above re-read the (now empty) file, so `activeSince` is already `undefined` and the
+    // fresh segment ages from its own first line. Stated because forgetting it would leave the
+    // writer rotating on every flush forever, which is the loudest possible version of this bug and
+    // still one nothing would fail on.
     // Compression and the retention sweep are the only things here that are not on the hot path.
     // `zlib.gzip` runs on the libuv threadpool; a crash before it finishes leaves the plain `.log`,
     // which is still greppable and still swept.

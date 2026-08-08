@@ -148,29 +148,16 @@ export interface Usage {
  */
 export const MIN_RATE_SPAN_MS = 10 * 60 * 1000
 
-/** The first line's instant in a plain-text segment, without reading the whole file. */
-export function firstLineTime(file: string): number | undefined {
-  try {
-    const size = fs.statSync(file).size
-    if (size === 0) return undefined
-    const handle = fs.openSync(file, "r")
-    try {
-      const want = Math.min(size, 8192)
-      const buffer = Buffer.allocUnsafe(want)
-      fs.readSync(handle, buffer, 0, want, 0)
-      const text = buffer.toString("utf8")
-      const newline = text.indexOf("\n")
-      // A file whose first line is longer than the window is damage, not data — say nothing rather
-      // than parse half a line into a confident timestamp.
-      if (newline === -1 && size > want) return undefined
-      return parse((newline === -1 ? text : text.slice(0, newline)).trimEnd()).time
-    } finally {
-      fs.closeSync(handle)
-    }
-  } catch {
-    return undefined
-  }
-}
+/**
+ * The first line's instant in a plain-text segment.
+ *
+ * ⚠️ **Re-exported from the WRITER, not re-implemented here.** `log-file.ts` needs the same answer
+ * for age-driven rotation, and it cannot import this module (a cycle), so the one body lives there
+ * and this is a name for it. Two copies of "what instant does this segment start at" is the
+ * one-description-twice defect, and this pair would have drifted in the worst way: the reader would
+ * report a rate the writer's rotation did not agree with.
+ */
+export const firstLineTime = LogFile.firstLineTime
 
 /** Measure the log directory. Never throws — an unreadable directory reports zeroes. */
 export function usage(directory: string, name: string, nowMs: number = Date.now()): Usage {

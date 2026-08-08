@@ -74,6 +74,15 @@ export function DebugPage() {
     const path = global.ensureServerCtx(conn).sync.data.path
     return path?.home || path?.directory || ""
   }
+  // Where the INSTANCE's own log lives. `GET /instance` already reports it (`path.log`), which is
+  // the answer to todo/logging.md §0.6's *"the desktop GUESSES where the sidecar's logs are"* — ask
+  // the instance, never rebuild the path from environment guesses.
+  const serverLogPath = () => {
+    const conn = focused()
+    if (!conn) return undefined
+    return (global.ensureServerCtx(conn).sync.data.path as { log?: string } | undefined)?.log
+  }
+
   const [scheduler] = createResource(
     () => {
       const conn = focused()
@@ -134,13 +143,64 @@ export function DebugPage() {
     return contextTurns(global.ensureServerCtx(conn).sync.nativeMessages.messages(row.id) ?? [])
   })
 
+  // ── the error log as a READER (todo/logging.md 3f) ──────────────────────────────────────────
+  //
+  // 3f asks this panel to gain filters and a copyable line for a bug report rather than growing a
+  // second viewer beside it. Two things about what it filters, both worth stating because both are
+  // easy to get wrong from a distance:
+  //
+  // ⚠️ **These are the RENDERER's five levels, not the wire's four.** `error-log.ts`'s vocabulary is
+  // `error·warn·notice·uncaught·rejection`, and it is deliberately *not* a severity scale —
+  // `uncaught` and `rejection` say how a fault ARRIVED, `notice` is quieter than `warn`. So the
+  // filter is a set of names with counts, never a `>=` floor: a floor would have to invent an order
+  // that does not exist and would silently hide `rejection` behind `error`.
+  //
+  // ⚠️ **This panel shows the CLIENT's ring, and the instance's own `novaclaw.log` is a different
+  // file.** Saying so in the panel is the honest move — a developer reading "Error log" in the Debug
+  // app and finding no server faults would reasonably conclude the server had none. Showing the
+  // server's log needs a read route under `/api/*`, which is a deliberate scope addition (3f says as
+  // much) and is filed rather than half-built here.
+  const [levelFilter, setLevelFilter] = createSignal<string | undefined>(undefined)
+  const [logMatch, setLogMatch] = createSignal("")
+
+  const logCounts = createMemo(() => {
+    const counts = new Map<string, number>()
+    for (const entry of errorLogEntries()) counts.set(entry.level, (counts.get(entry.level) ?? 0) + 1)
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  })
+
+  const filteredLog = createMemo(() => {
+    const level = levelFilter()
+    const match = logMatch().trim().toLowerCase()
+    return errorLogEntries().filter(
+      (entry) =>
+        (level === undefined || entry.level === level) &&
+        (match.length === 0 || entry.text.toLowerCase().includes(match)),
+    )
+  })
+
+  /** One entry as one line. The ONE rendering of an entry as text — `copyLog` reuses it. */
+  const logLine = (entry: { at: number; level: string; text: string }) =>
+    `${new Date(entry.at).toISOString()} [${entry.level}] ${entry.text}`
+
   const copyLog = () => {
-    const text = errorLogEntries()
-      .map((e) => `${new Date(e.at).toISOString()} [${e.level}] ${e.text}`)
+    // A bug report wants to know WHICH instance and WHICH slice of the log, or the paste is a wall
+    // of lines with no provenance. The header is ours and stays outside the copied lines.
+    const conn = focused()
+    const filtered = filteredLog()
+    const header = [
+      `# NovaClaw client error log — ${filtered.length} of ${errorLogEntries().length} entries`,
+      `# instance: ${conn?.http.url ?? "(none)"}`,
+      `# server log (a different file, not included here): ${serverLogPath() ?? "(unknown)"}`,
+      levelFilter() ? `# filtered to level: ${levelFilter()}` : undefined,
+      logMatch().trim() ? `# filtered to text: ${logMatch().trim()}` : undefined,
+    ]
+      .filter((line) => line !== undefined)
       .join("\n")
+    const text = `${header}\n${filtered.map(logLine).join("\n") || "(empty)"}`
     void navigator.clipboard
-      .writeText(text || "(empty)")
-      .then(() => showToast({ title: "Error log copied" }))
+      .writeText(text)
+      .then(() => showToast({ title: `Copied ${filtered.length} log entr${filtered.length === 1 ? "y" : "ies"}` }))
       .catch(() => showToast({ variant: "error", title: "Copy failed" }))
   }
 
@@ -313,15 +373,15 @@ export function DebugPage() {
         </div>
 
         {/* ── Error log ──────────────────────────────────────────────────────────────── */}
-        <div class={section}>
+        <div class={section} data-panel="error-log">
           <div class={heading}>
             <span class={title}>Error log</span>
             <span class={hint}>
-              uncaught errors, rejections, console error/warn, and notices from NovaClaw's own subsystems — newest
-              first, last {200} kept
+              this UI's own uncaught errors, rejections, console error/warn and subsystem notices — newest first, last{" "}
+              {200} kept
             </span>
             <span class="flex-1" />
-            <button type="button" class={btn} onClick={copyLog} disabled={errorLogEntries().length === 0}>
+            <button type="button" class={btn} onClick={copyLog} disabled={filteredLog().length === 0}>
               <Icon name="copy" size="small" class="mr-1 inline-block align-[-2px]" />
               Copy
             </button>
@@ -329,9 +389,61 @@ export function DebugPage() {
               Clear
             </button>
           </div>
+          {/* ⚠️ Naming the OTHER file is the point of this line, not decoration. Someone reading
+              "Error log" in the Debug app and seeing no server faults would reasonably conclude the
+              server had none — this panel is the renderer's ring buffer and the instance writes a
+              separate, keyed, rotated `novaclaw.log`. Rendering that one needs a read route under
+              `/api/*`; the path comes from `GET /instance`, never from guessing (§0.6). */}
+          <div class={`${hint} px-4 pb-2`} data-slot="debug-server-log-note">
+            The instance's own log is a different file:{" "}
+            <code class="select-all font-mono">{serverLogPath() ?? "(ask the instance — not connected)"}</code>
+          </div>
+          {/* Filters (3f). The levels come from what is actually IN the ring with their counts,
+              rather than from a hard-coded list — a level nobody produced is not a useful chip, and
+              a level somebody adds to `error-log.ts` appears here without a second edit. */}
+          <div class="flex flex-wrap items-center gap-1.5 px-4 pb-2" data-slot="debug-log-filters">
+            <button
+              type="button"
+              class={btn}
+              classList={{ "bg-v2-background-bg-layer-02 text-v2-text-text-base": levelFilter() === undefined }}
+              onClick={() => setLevelFilter(undefined)}
+            >
+              all {errorLogEntries().length}
+            </button>
+            <For each={logCounts()}>
+              {([level, count]) => (
+                <button
+                  type="button"
+                  class={btn}
+                  classList={{ "bg-v2-background-bg-layer-02 text-v2-text-text-base": levelFilter() === level }}
+                  onClick={() => setLevelFilter(levelFilter() === level ? undefined : level)}
+                >
+                  {level} {count}
+                </button>
+              )}
+            </For>
+            <input
+              type="search"
+              class="ml-auto min-w-0 rounded-md border border-v2-border-border-base bg-transparent px-2 py-1 text-[11px] text-v2-text-text-base placeholder:text-v2-text-text-faint"
+              placeholder="filter text…"
+              aria-label="Filter the error log by text"
+              data-slot="debug-log-match"
+              value={logMatch()}
+              onInput={(event) => setLogMatch(event.currentTarget.value)}
+            />
+          </div>
           <div class="max-h-72 overflow-y-auto px-4 pb-3">
-            <Show when={errorLogEntries().length > 0} fallback={<div class={hint}>nothing captured this session</div>}>
-              <For each={[...errorLogEntries()].reverse()}>
+            <Show
+              when={filteredLog().length > 0}
+              fallback={
+                <div class={hint} data-slot="debug-log-empty">
+                  {errorLogEntries().length === 0
+                    ? "nothing captured this session"
+                    : `no entries match — ${errorLogEntries().length} hidden by the filter`}
+                </div>
+              }
+            >
+              <For each={[...filteredLog()].reverse()}>
                 {(entry) => (
                   <div class="flex gap-2 py-0.5 text-[11px] leading-4">
                     <span class="shrink-0 tabular-nums text-v2-text-text-faint">

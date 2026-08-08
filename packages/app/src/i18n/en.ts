@@ -1312,6 +1312,17 @@ export const dict = {
     "Where an agent works when you start a chat without picking a folder. Safe to empty when nothing is running.",
   "settings.storage.log": "Logs",
   "settings.storage.log.description": "Diagnostic logs. Handy when reporting a problem.",
+  // The activity-log retention row (todo/logging.md 3a). Anti-obscurantist wording is mandatory
+  // here: "Keep about 30 days of activity logs", never "retention: 30". And "at least" is not
+  // hedging — it is the measurement: the sweep only deletes segments that have been closed, so the
+  // limit is a floor rather than a deadline (packages/core/src/observability/log-bounds.ts).
+  "settings.storage.logs.title": "Activity log",
+  "settings.storage.logs.description":
+    "NovaClaw writes down what it does, so a problem can be explained instead of guessed at. This log stays on your computer — it is not the crash reporting you can switch off in Developer settings.",
+  "settings.storage.logs.retention": "How much is kept",
+  "settings.storage.logs.retention.description":
+    "At least {{days}} days of activity, and never more than {{size}} in total. Older entries are compressed, and the oldest are removed first when that limit is reached.",
+  "settings.storage.logs.retention.value": "{{days}} days · up to {{size}}",
   "settings.storage.state": "State",
   "settings.storage.state.description": "Window layout and other small bits of local state.",
   "settings.storage.cache": "Cache",

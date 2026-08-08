@@ -1,6 +1,13 @@
 import { For, Show, type Component } from "solid-js"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { Icon } from "@novaclaw/ui/icon"
+// ⚠️ VALUE import, and it is safe because `log-bounds.ts` has no imports at all — the writer it
+// belongs to (`observability/log-file.ts`) pulls in `node:fs`/`node:zlib` at module scope and would
+// break this bundle. The alternative was retyping "30 days" and "256 MB" into a user-facing
+// sentence, which is the one-description-twice defect with the copy in the worst possible place:
+// when the writer's bound moves, the product starts telling people something false and no test is
+// about it. See that module's header.
+import { LogBounds } from "@novaclaw/core/observability/log-bounds"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useServerSync } from "@/context/server-sync"
@@ -148,8 +155,54 @@ export const SettingsStorageV2: Component = () => {
           )}
         </For>
       </SettingsListV2>
+
+      {/* ── Activity log (todo/logging.md 3a) ────────────────────────────────────────────────────
+          3a says to put log retention BESIDE storage rather than in a new tab, and this is that row.
+
+          ⚠️ **Which knob this is, and which it deliberately is not.** This is the LOCAL log: it never
+          leaves the machine, and the self-healing loop reads it — *"an agent asked to repair an
+          instance needs to READ what went wrong."* There is therefore **no off switch here and there
+          must never be one**; a lay user who silenced this would be disabling the thing that makes
+          their own instance diagnosable, and they would do it believing they had turned off
+          telemetry. The switch they are actually looking for is crash reporting, which is a
+          different plane (AGENTS.md principle 4), is Developer-gated on purpose, and the description
+          below names so nobody hunts for it here.
+
+          Read-only, like every other row on this tab and for the tab's own stated reason: the bounds
+          are compiled into the writer, which opens before any settings store exists. A control here
+          would need `Config.Info` + `SETTINGS_KEYS` + a read-through into the live writer (3d/3e) —
+          filed in todo/logging.md, not faked with a field that cannot move anything. */}
+      <div>
+        <h3 class="settings-v2-section-title">{language.t("settings.storage.logs.title")}</h3>
+        <p class="settings-v2-tab-description">{language.t("settings.storage.logs.description")}</p>
+      </div>
+
+      <SettingsListV2>
+        <SettingsRowV2
+          title={language.t("settings.storage.logs.retention")}
+          description={language.t("settings.storage.logs.retention.description", RETENTION)}
+        >
+          <span class="text-[12px] text-v2-text-text-muted" data-slot="settings-v2-log-retention">
+            {language.t("settings.storage.logs.retention.value", RETENTION)}
+          </span>
+        </SettingsRowV2>
+      </SettingsListV2>
     </>
   )
+}
+
+/**
+ * The retention sentence's two numbers, read from the writer's own constants rather than typed here.
+ *
+ * ⚠️ `days` says *"at least"* in the copy, and that word is a measurement rather than a hedge: the
+ * sweep deletes a segment once the segment was CLOSED long enough ago, and never touches the segment
+ * currently being written — so on a quiet instance (measured: two real log directories on this
+ * machine, neither of which has ever rotated) the history kept is considerably longer than the
+ * limit. The byte ceiling has no such caveat, which is why it reads *"never more than"*.
+ */
+const RETENTION = {
+  days: LogBounds.MAX_AGE_DAYS,
+  size: `${Math.round(LogBounds.TOTAL_BYTES / (1024 * 1024))} MB`,
 }
 
 /** The path itself, selectable, plus Copy and (on desktop) Open. */

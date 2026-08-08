@@ -251,6 +251,112 @@ describe("retention — one bound, enforced over the directory", () => {
     expect(writer.rotations).toBe(0)
   })
 
+  /**
+   * ⭐ **AGE ROTATION — the half `LogRead.usage` proved was missing, 2026-08-08.**
+   *
+   * The writer shipped size-only, and the sweep can only ever delete a segment that has been
+   * SEALED. `LogRead.usage` over this machine's two real log directories reported **83 KB/day** and
+   * **32 KB/day** with **`segments: 0` on both** — neither had ever rotated, so every test above
+   * this one was proving a mechanism that, in production, nothing ever reached. The tests below are
+   * the ones that would have caught that, and each carries the size-only twin as its control.
+   */
+  test("an active segment older than the age limit is sealed on the write path — the size-only twin is not", async () => {
+    await using dir = await tmpdir()
+    const file = path.join(dir.path, "novaclaw.log")
+    const start = Date.parse("2026-06-01T00:00:00.000Z")
+    let clock = start
+    // A byte ceiling this segment will never come close to: the ONLY thing that can rotate it is age.
+    const writer = LogFile.open({
+      file,
+      segmentBytes: 8 * 1024 * 1024,
+      maxAgeMs: 30 * DAY,
+      now: () => new Date(clock),
+    })
+    writer.write("timestamp=2026-06-01T00:00:00.000Z level=INFO run=a message=first\n", true)
+
+    // THE CONTROL, in the same run against the same writer: 29 days in, size-only says nothing has
+    // happened and neither does age. Without this arm, the assertion below would also pass against
+    // a writer that rotated on every flush.
+    clock = start + 29 * DAY
+    writer.write("timestamp=x level=INFO run=a message=middle\n", true)
+    expect(writer.rotations).toBe(0)
+    expect(writer.rotationsByAge).toBe(0)
+
+    clock = start + 31 * DAY
+    writer.write("timestamp=y level=INFO run=a message=late\n", true)
+    await writer.idle()
+    expect(writer.rotations).toBe(1)
+    expect(writer.rotationsByAge).toBe(1)
+    // …and it did not then rotate on every subsequent flush, which is the loud version of this bug.
+    clock = start + 31 * DAY + 1000
+    writer.write("timestamp=z level=INFO run=a message=after\n", true)
+    expect(writer.rotations).toBe(1)
+    writer.close()
+    await writer.idle()
+    expect(LogFile.segmentsIn(dir.path, "novaclaw")).toHaveLength(1)
+  })
+
+  test("a segment inherited from an earlier run ages from ITS OWN first line, not from this boot", async () => {
+    await using dir = await tmpdir()
+    const file = path.join(dir.path, "novaclaw.log")
+    const now = Date.parse("2026-08-07T00:00:00.000Z")
+    // A log left behind by a run 40 days ago. Nothing is written this boot — the instance merely
+    // starts, which is §0.6's launch-triggered pattern.
+    const old = new Date(now - 40 * DAY).toISOString()
+    fsSync.writeFileSync(file, `timestamp=${old} level=INFO run=old message=ancient\n`)
+
+    const writer = LogFile.open({ file, segmentBytes: 8 * 1024 * 1024, maxAgeMs: 30 * DAY, now: () => new Date(now) })
+    await writer.idle()
+    writer.close()
+    await writer.idle()
+
+    // ⚠️ The claim is specifically that the clock did NOT reset at boot. If `activeSince` were taken
+    // from the process's start instead of from the file's first line, a frequently restarted
+    // instance would never age-rotate at all and this would be 0.
+    expect(writer.rotationsByAge).toBe(1)
+    expect(LogFile.segmentsIn(dir.path, "novaclaw")).toHaveLength(1)
+
+    // THE CONTROL: the same boot against a log whose first line is one day old rotates nothing.
+    await using fresh = await tmpdir()
+    const freshFile = path.join(fresh.path, "novaclaw.log")
+    const recent = new Date(now - 1 * DAY).toISOString()
+    fsSync.writeFileSync(freshFile, `timestamp=${recent} level=INFO run=new message=recent\n`)
+    const control = LogFile.open({
+      file: freshFile,
+      segmentBytes: 8 * 1024 * 1024,
+      maxAgeMs: 30 * DAY,
+      now: () => new Date(now),
+    })
+    control.close()
+    expect(control.rotationsByAge).toBe(0)
+    expect(LogFile.segmentsIn(fresh.path, "novaclaw")).toHaveLength(0)
+  })
+
+  test("firstLineTime reads the FIRST line's timestamp, and says nothing rather than guessing", async () => {
+    await using dir = await tmpdir()
+    const at = "2026-07-04T05:06:07.008Z"
+    const good = path.join(dir.path, "good.log")
+    fsSync.writeFileSync(good, `timestamp=${at} level=INFO run=a message=hello\ntimestamp=2026-08-01T00:00:00.000Z\n`)
+    expect(LogFile.firstLineTime(good)).toBe(Date.parse(at))
+
+    // Every way it may NOT answer. A confident wrong instant here would seal a segment early (data
+    // churn) or never (the defect this whole block exists for), and both are silent.
+    const empty = path.join(dir.path, "empty.log")
+    fsSync.writeFileSync(empty, "")
+    expect(LogFile.firstLineTime(empty)).toBeUndefined()
+    const prose = path.join(dir.path, "prose.log")
+    fsSync.writeFileSync(prose, "this is not logfmt at all\n")
+    expect(LogFile.firstLineTime(prose)).toBeUndefined()
+    const nonsense = path.join(dir.path, "nonsense.log")
+    fsSync.writeFileSync(nonsense, "timestamp=not-a-date level=INFO\n")
+    expect(LogFile.firstLineTime(nonsense)).toBeUndefined()
+    // A first line longer than the read window is damage, not data.
+    const huge = path.join(dir.path, "huge.log")
+    fsSync.writeFileSync(huge, `timestamp=${at} message=${"x".repeat(20000)}\n`)
+    expect(LogFile.firstLineTime(huge)).toBeUndefined()
+    expect(LogFile.firstLineTime(path.join(dir.path, "absent.log"))).toBeUndefined()
+  })
+
   test("reclaim(bytes) frees at least that much for the GC ladder, oldest first", async () => {
     await using dir = await tmpdir()
     const file = path.join(dir.path, "novaclaw.log")
