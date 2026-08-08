@@ -1542,7 +1542,7 @@ export const EVENTS = {
     message: "changes-summary refresh failed",
     attributes: { "session.id": "correlate", "session.cause": "fault" },
     content: "user",
-    file: "packages/core/src/session/runner/llm.ts",
+    file: "packages/core/src/session/runner/maintenance.ts",
   },
   "session.compaction.manual.failed": {
     level: "error",
@@ -1750,14 +1750,14 @@ export const EVENTS = {
     message: "memory extraction: model returned an empty completion",
     attributes: { "session.id": "correlate" },
     content: "correlated",
-    file: "packages/core/src/session/runner/llm.ts",
+    file: "packages/core/src/session/runner/maintenance.ts",
   },
   "session.memory.extract.retry": {
     level: "debug",
     message: "memory extraction: empty completion on a `length` finish — re-asking with a larger budget",
     attributes: { "session.id": "correlate", "extract.cap": "count" },
     content: "correlated",
-    file: "packages/core/src/session/runner/llm.ts",
+    file: "packages/core/src/session/runner/maintenance.ts",
   },
   // Ruling 2 — an empty extraction that was a BUDGET reading must be distinguishable from an honest
   // "nothing worth remembering". `….empty` says the completion was empty; this says the pass gave up
@@ -1767,14 +1767,14 @@ export const EVENTS = {
     message: "memory extraction: gave up after the budget ladder",
     attributes: { "session.id": "correlate", "extract.cause": "id", "extract.cap": "count" },
     content: "correlated",
-    file: "packages/core/src/session/runner/llm.ts",
+    file: "packages/core/src/session/runner/maintenance.ts",
   },
   "session.memory.extract.failed": {
     level: "warn",
     message: "memory extraction failed",
     attributes: { "session.id": "correlate", "session.cause": "fault" },
     content: "user",
-    file: "packages/core/src/session/runner/llm.ts",
+    file: "packages/core/src/session/runner/maintenance.ts",
   },
   "session.memory.invalidate.stale": {
     level: "info",
@@ -1955,21 +1955,21 @@ export const EVENTS = {
     message: "early auto-title failed",
     attributes: { "session.id": "correlate", "session.cause": "fault" },
     content: "user",
-    file: "packages/core/src/session/runner/llm.ts",
+    file: "packages/core/src/session/runner/maintenance.ts",
   },
   "session.title.generate.empty": {
     level: "warn",
     message: "auto-title: model returned an empty completion",
     attributes: { "session.id": "correlate" },
     content: "correlated",
-    file: "packages/core/src/session/runner/llm.ts",
+    file: "packages/core/src/session/runner/maintenance.ts",
   },
   "session.title.generate.failed": {
     level: "warn",
     message: "auto-title failed",
     attributes: { "session.id": "correlate", "session.cause": "fault" },
     content: "user",
-    file: "packages/core/src/session/runner/llm.ts",
+    file: "packages/core/src/session/runner/maintenance.ts",
   },
   "session.tool.textual.recovered": {
     level: "info",

@@ -258,6 +258,23 @@ const UNFILTERED_USER_ROLE_READS = new Map<string, string>([
     "runner/to-llm-message.ts",
     "DELIBERATE: lowering to the wire, not a read of what the user said — the model MUST see the steer",
   ],
+  // ⚠️ This entry is a CORRECTION to the guard's coverage, not a new gap. `runner/llm.ts` has had
+  // this read all along — `context.findLast(m => m.type === "user" && m.text.trim() === task)`,
+  // re-finding by id the message `SessionStrict.lastUserText(context)` has ALREADY chosen. The
+  // provenance question is answered upstream, in `lastUserText`, which picks the newest NON-STEER
+  // user message; this line only recovers that same message's id.
+  //
+  // 🔴 It was never covered by the vocabulary check — it was passing INCIDENTALLY, because an
+  // unrelated `SessionTitle.firstRealUserText` call happened to sit in the same file. When 5.1
+  // extracted the maintenance pass into `runner/maintenance.ts` the vocabulary went with it and
+  // this read stood exposed. The extraction did not introduce a defect; it removed a coincidence.
+  // ⚠️ That is worth keeping, because it is the guard's own shape: this check is FILE-level, so any
+  // file containing one vocabulary word covers every user-role read in it. A safe read and an unsafe
+  // one in the same file are indistinguishable to it.
+  [
+    "runner/llm.ts",
+    "DELIBERATE: re-finds the id of the message `SessionStrict.lastUserText` already filtered — the provenance question is answered upstream, not here",
+  ],
 ])
 
 describe("the ledger scan itself", () => {
