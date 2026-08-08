@@ -9,7 +9,8 @@ import { WorkspaceV2 } from "./workspace"
 import { ModelV2 } from "./model"
 import { ProviderV2 } from "./provider"
 // Ruling 8: a fork is seeded from the source's chain-RESOLVED config, never its raw row.
-import { forkSessionConfig } from "./session/config-resolve"
+import { forkSessionConfig, type SessionConfig } from "./session/config-resolve"
+import { SessionConfigColumns } from "./session/config-columns"
 import { Location } from "./location"
 import { SessionMessage } from "./session/message"
 import { Prompt } from "./session/prompt"
@@ -179,6 +180,32 @@ type CreateInput = {
   // create-time mode stick across later mode switches).
   permission?: PermissionRuleset.Ruleset
 }
+
+/**
+ * ⚠️ A COMPILE-TIME guard, and it closes the WRITE-direction half of ruling 8 (the ECS audit,
+ * `notes/reports/ecs-abstraction-audit-2026-08-08.md` §6 G1).
+ *
+ * `SESSION_CONFIG_FIELDS` made the READ direction undriftable — the fold, the fork, row⇄`Info` and
+ * the resolved-config endpoint are all generated from it, and the endpoint is even keyed as an OPEN
+ * MAP so the wire cannot become a second field list. The write direction never got that treatment:
+ * this struct is a hand-written enumeration of the same set, and nothing checked that it covered it.
+ * A field added to the descriptor and forgotten here would simply be unsettable at create — no error,
+ * no test, because `undefined` means *inherit* and an inherited field looks exactly like a correct one.
+ *
+ * The failing branch carries the missing keys so the compiler NAMES them rather than only refusing —
+ * the same shape `session/config-columns.ts` and `config-resolve.ts`'s `SessionLike` guard use.
+ *
+ * ⚠️ It checks KEY COVERAGE, not type compatibility: a field whose create type drifts from its
+ * `SessionConfig` type is not caught here. `configFromInput` is what makes that mostly moot — the
+ * spread has to typecheck against `Session.Info` — but say it out loud rather than let a reader
+ * assume this guard is stronger than it is.
+ */
+type CreateInputCarriesEveryConfigField =
+  keyof SessionConfig extends keyof CreateInput
+    ? true
+    : ["CreateInput is missing", Exclude<keyof SessionConfig, keyof CreateInput>]
+const _createInputCarriesEveryConfigField: CreateInputCarriesEveryConfigField = true
+void _createInputCarriesEveryConfigField
 
 type CompactInput = {
   sessionID: SessionSchema.ID
@@ -382,30 +409,17 @@ export const createSessionRecord = (
       // Chats list shows relative time). SessionTitle.isDefault matches this AND the old form.
       title: input.title ?? "New session",
       metadata: input.metadata,
-      agent: input.agent,
-      model: input.model
-        ? {
-            id: ModelV2.ID.make(input.model.id),
-            providerID: input.model.providerID,
-            variant: ModelV2.VariantID.make(input.model.variant ?? "default"),
-          }
-        : undefined,
-      device: input.device,
-      systemPromptOverride: input.systemPromptOverride,
-      type: input.type,
-      priority: input.priority,
+      // The seventeen per-session CONFIG fields, generated from `SESSION_CONFIG_FIELDS` rather than
+      // listed here. Until 2026-08-08 this literal named each one — the THIRD hand-written copy of
+      // that list, and the same defect class that made `sessionRow` drop `thinking_budget`,
+      // `surgical_edits` and `ask_before_changes` for four months (two of them RESTRICTIONS, so a
+      // create meaning to restrict produced an unrestricted session and nothing said so).
+      // `config-columns.ts` now generates all three directions from one descriptor.
+      ...SessionConfigColumns.configFromInput(input),
+      // NOT a config field: `permission` is the saved ruleset, which has no session column and does
+      // not resolve through the chain walk (ruling 16). Generating from the descriptor excludes it
+      // by construction, so it stays listed here on purpose.
       permission: input.permission ? [...input.permission] : undefined,
-      permissionMode: input.permissionMode,
-      responder: input.responder,
-      strict: input.strict,
-      introspection: input.introspection,
-      quality: input.quality,
-      affective: input.affective,
-      thinkingBudget: input.thinkingBudget,
-      surgicalEdits: input.surgicalEdits,
-      askBeforeChanges: input.askBeforeChanges,
-      safeMode: input.safeMode,
-      contextBudget: input.contextBudget,
       cost: 0,
       tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
       time: { created: DateTime.makeUnsafe(now), updated: DateTime.makeUnsafe(now) },

@@ -74,6 +74,65 @@ const DECODE: Partial<{ [K in keyof SessionConfig]: (row: Row) => unknown }> = {
       : undefined,
 }
 
+/**
+ * The config-bearing half of a CREATE input. Structural on purpose, so `SessionV2.CreateInput` stays
+ * a local type in `session.ts` and this module keeps its one-way dependency.
+ *
+ * ⚠️ `model` is the branded `ModelV2.Ref`, not `SessionConfig["model"]`. The chain algebra in
+ * `config-resolve.ts` is dependency-free and so carries plain strings; a create input comes off the
+ * wire already decoded. That difference is the entire reason this direction needs its own decode
+ * table below rather than reusing `DECODE`.
+ */
+export interface SessionConfigInput extends Omit<SessionConfig, "model"> {
+  readonly model?: ModelV2.Ref
+}
+
+/**
+ * The create direction's decode. One entry, for the same reason `DECODE` has two: a field needing
+ * bespoke handling here is usually a field in the wrong place.
+ *
+ * ⚠️ Deliberately NOT symmetric with `DECODE.model`, and the asymmetry is behaviour-preserving
+ * rather than an oversight: the row's `providerID` is a plain string and needs `ProviderV2.ID.make`,
+ * while a create input's is already branded. What both share is defaulting an absent `variant` to
+ * `"default"` — the one normalisation a caller must not be able to skip.
+ */
+const INPUT_DECODE: Partial<{ [K in keyof SessionConfig]: (input: SessionConfigInput) => unknown }> = {
+  model: (input) =>
+    input.model
+      ? {
+          id: ModelV2.ID.make(input.model.id),
+          providerID: input.model.providerID,
+          variant: ModelV2.VariantID.make(input.model.variant ?? "default"),
+        }
+      : undefined,
+}
+
+/**
+ * Create input → the config half of `Session.Info`. Generated; `create` spreads the result.
+ *
+ * ⚠️ **Why this exists: `create` was the THIRD hand-written copy of the field list** (the ECS audit,
+ * 2026-08-08, found the first two — `CreateInput` itself and the write-path wire). `configFromRow`
+ * and `configToRow` were generated in B2 precisely because a hand-maintained list of these fields
+ * had silently dropped three of them for four months, two of which were RESTRICTIONS; the create
+ * path kept its literal and therefore kept the defect class. A field added to the descriptor now
+ * reaches a new session's record without anyone remembering to list it here.
+ *
+ * ⚠️ It skips fields the row cannot carry, exactly as `configFromRow`/`configToRow` do. Putting a
+ * column-less field into the projected `Info` would publish a value that vanishes on the next read —
+ * ruling 2's *a fault is never described falsely*, in the create direction. (That set is ratcheted
+ * at zero by `session-fork-config.test.ts`, so this is a guard against a future field, not a live
+ * filter.)
+ */
+export const configFromInput = (input: SessionConfigInput): SessionConfigInfoFields => {
+  const info: Record<string, unknown> = {}
+  for (const key of SESSION_CONFIG_FIELD_KEYS) {
+    if (!isRowCarried(key)) continue
+    const decode = INPUT_DECODE[key]
+    info[key] = decode ? decode(input) : (input as Record<string, unknown>)[key]
+  }
+  return info as SessionConfigInfoFields
+}
+
 /** Row → the config half of `Session.Info`. Generated; `fromRow` spreads the result. */
 export const configFromRow = (row: Row): SessionConfigInfoFields => {
   const info: Record<string, unknown> = {}
