@@ -179,10 +179,37 @@ const ADJUDICATOR_PURPOSE = [
  * evidence this helps on our grounder specifically: the 08-06 probe found Holo's `reasoning` field
  * describing a screen correctly and unprompted — colours, relative positions, three named buttons —
  * on a task that only asked for a point.
+ *
+ * 🔴 **`checkpoint` MOVED IN FRONT OF `predicted` on 2026-08-08, and the cost of the old order was
+ * measured at up to 10/10 of the checkpoint's accuracy.** The 08-08 acceptance run played the whole
+ * Master of Magic oracle and scored 4/9 because `game-running` answered `no` on five consecutive
+ * frames it had itself described as the game. The filed cause was the question's wording. On frozen
+ * reference frames that is only true of ONE of those frames; on the others the same question,
+ * asked ALONE, answers `yes` — and it is the two-answer call that destroys it:
+ *
+ * | frame, old `game-running` wording | checkpoint ALONE | `predicted` first (the old order) | `checkpoint` first |
+ * |---|---|---|---|
+ * | Game Options dialog | 7/10 · 9/10 | **0/10 · 0/10** | **7/10 · 9/10** |
+ * | wizard select | 10/10 · 9/10 | **3/10 · 5/10** | **10/10 · 9/10** |
+ *
+ * (Two independent probes, N=10 each: `tmp/cu-adjudicator-twoquestion.json`,
+ * `tmp/cu-adjudicator-order.json`.) **The reorder recovers the ask-alone baseline exactly**, so the
+ * mechanism is generation order — the reader commits to one yes/no and drags the next along — and
+ * not the mere presence of a second question. That makes the fix FREE: it costs no extra call,
+ * where splitting the adjudication would have cost one per step.
+ *
+ * ⚠️ **Which answer goes first is decided by which one is LOAD-BEARING, not by taste.** `checkpoint`
+ * is the run's score and the sole path to `Done` (G1). `predicted` is reported and nothing else —
+ * it lands in the ledger's verdict string and changes no decision, because the attribution ladder
+ * runs on digests before the adjudicator is ever asked. If `predicted` is ever wired into a
+ * decision, this order has to be re-measured rather than kept.
+ *
+ * ⚠️ **The parser is unaffected and must stay that way** — `parseAdjudication` reads keys by name,
+ * so no reply shape becomes unreadable. The order is a prompt-side lever only.
  */
 const schemaLine = (withPrediction: boolean): string =>
   withPrediction
-    ? '{"observed": "<one line describing this screen>", "predicted": "yes|no", "checkpoint": "yes|no"}'
+    ? '{"observed": "<one line describing this screen>", "checkpoint": "yes|no", "predicted": "yes|no"}'
     : '{"observed": "<one line describing this screen>", "checkpoint": "yes|no"}'
 
 export interface AdjudicatorQuestion {
@@ -216,20 +243,23 @@ export function adjudicator(input: {
     "Describe what you see first, then answer. Do not explain your answers.",
   ].join("\n")
 
+  // ⚠️ The USER block follows the schema's order, and both were swapped together. Asking in one
+  // order while requiring the reply in the other is a third arm nobody measured, and it is the
+  // obvious way for a later edit to half-revert this fix without anything going red.
   const parts: string[] = []
-  if (withPrediction) {
-    parts.push(
-      "STATEMENT — is this true of the image?",
-      `  ${(input.prediction ?? "").replace(/\s+/g, " ").trim()}`,
-      '  → "predicted": "yes" if the image shows it, "no" if it does not.',
-    )
-  }
   if (input.checkpoint !== undefined) {
-    if (parts.length > 0) parts.push("")
     parts.push(
       "QUESTION — answer from the image alone.",
       `  ${input.checkpoint.question.replace(/\s+/g, " ").trim()}`,
       '  → "checkpoint": "yes" or "no".',
+    )
+  }
+  if (withPrediction) {
+    if (parts.length > 0) parts.push("")
+    parts.push(
+      "STATEMENT — is this true of the image?",
+      `  ${(input.prediction ?? "").replace(/\s+/g, " ").trim()}`,
+      '  → "predicted": "yes" if the image shows it, "no" if it does not.',
     )
   }
   if (parts.length === 0) parts.push("QUESTION — describe what is on this screen.")

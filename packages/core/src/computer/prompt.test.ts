@@ -86,11 +86,29 @@ describe("🔴 G5 — the adjudication prompt contains NEITHER the goal NOR the 
     expect(adjudication.image).toEqual(img("after"))
   })
 
-  test("the output schema is asked for in the causal field order: observed, then the answers", () => {
+  /**
+   * 🔴 **This test used to pin the OPPOSITE order and the order was measured wrong on 2026-08-08.**
+   * With `predicted` emitted first, the checkpoint answer collapsed — 7/10 → 0/10 on the Game
+   * Options frame, 10/10 → 3/10 on the wizard-select frame, against a checkpoint-ALONE baseline of
+   * the same 7/10 and 10/10. Emitting `checkpoint` first recovers the ask-alone baseline exactly
+   * (`tmp/cu-adjudicator-order.json`, N=10 per cell), so generation order is causal between the two
+   * ANSWERS and not only between the description and the answers.
+   *
+   * The load-bearing answer goes first: `checkpoint` is the run's score and the only path to `Done`,
+   * while `predicted` is reported into the ledger's verdict string and decides nothing.
+   */
+  test("the output schema puts `observed` first, then the LOAD-BEARING answer, then `predicted`", () => {
     const system = adjudication.system
     expect(system.indexOf('"observed"')).toBeGreaterThan(-1)
-    expect(system.indexOf('"observed"')).toBeLessThan(system.indexOf('"predicted"'))
-    expect(system.indexOf('"predicted"')).toBeLessThan(system.indexOf('"checkpoint"'))
+    expect(system.indexOf('"observed"')).toBeLessThan(system.indexOf('"checkpoint"'))
+    expect(system.indexOf('"checkpoint"')).toBeLessThan(system.indexOf('"predicted"'))
+  })
+
+  test("🔴 the USER block is asked in the SAME order as the schema requires the reply", () => {
+    // Asking in one order while requiring the reply in the other is a third arm nobody measured,
+    // and it is how a later edit half-reverts the fix with nothing going red.
+    expect(adjudication.user.indexOf("QUESTION")).toBeLessThan(adjudication.user.indexOf("STATEMENT"))
+    expect(adjudication.system.indexOf('"checkpoint"')).toBeLessThan(adjudication.system.indexOf('"predicted"'))
   })
 
   test("a calibration call drops `predicted` from the schema rather than asking about nothing", () => {
