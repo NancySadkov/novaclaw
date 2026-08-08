@@ -1,11 +1,14 @@
 export * as SessionComponentRegistry from "./component-registry"
 
 import { and, asc, eq } from "drizzle-orm"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, DateTime, Effect, Layer, Schema } from "effect"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
+import { EventV2 } from "../event"
+import { SessionEvent } from "./event"
+import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
-import { SessionComponentTable } from "./sql"
+import { SessionComponentTable, SessionTable } from "./sql"
 
 export const LIFETIMES = ["entity", "attempt", "bounded"] as const
 export type Lifetime = (typeof LIFETIMES)[number]
@@ -48,17 +51,26 @@ export interface AttemptFence {
   readonly generation: number
 }
 
-export interface Definition<A = unknown> {
+/** Adapter for a component whose canonical bytes already live in a kernel-owned store. */
+export interface Projection<A> {
+  readonly get: (sessionID: SessionSchema.ID) => Effect.Effect<A | undefined, unknown>
+  readonly put: (sessionID: SessionSchema.ID, value: A) => Effect.Effect<void, unknown>
+  readonly remove: (sessionID: SessionSchema.ID) => Effect.Effect<boolean, unknown>
+}
+
+export interface Definition<A = any> {
   readonly kind: KernelKind | ToolKind
   readonly owner: "kernel" | `tool/${string}`
   readonly description: string
   readonly cardinality: Cardinality
   readonly lifetime: Lifetime
   readonly version: number
-  readonly codec: Schema.Codec<A, Schema.Json, never, never>
+  readonly codec: Schema.Codec<A, Schema.Json>
+  readonly projection?: Projection<A>
   /** Decode an older stored version into the current typed value. Absence makes drift explicit. */
   readonly migrate?: (input: { readonly version: number; readonly value: Schema.Json }) => Effect.Effect<A>
 }
+type AnyDefinition = Definition
 
 export interface DefinitionInfo {
   readonly kind: string
@@ -129,6 +141,7 @@ export interface ReadInput {
 export interface Interface {
   readonly registerTool: <A>(definition: Definition<A>) => Effect.Effect<void, RegistryError>
   readonly definitions: () => ReadonlyArray<DefinitionInfo>
+  readonly validate: (kind: string, value: unknown) => Effect.Effect<Schema.Json, ComponentError>
   readonly get: (input: ReadInput) => Effect.Effect<Entry | undefined, ComponentError>
   readonly list: (input: Omit<ReadInput, "id">) => Effect.Effect<ReadonlyArray<Entry>, ComponentError>
   readonly put: (input: PutInput) => Effect.Effect<Entry, ComponentError>
@@ -154,7 +167,7 @@ export const toolDefinition = <A>(
   return { ...definition, kind: toolKind(owner, name), owner: `tool/${owner}` } satisfies Definition<A>
 }
 
-const infoOf = (definition: Definition): DefinitionInfo => ({
+const infoOf = (definition: AnyDefinition): DefinitionInfo => ({
   kind: definition.kind,
   owner: definition.owner,
   description: definition.description,
@@ -164,7 +177,7 @@ const infoOf = (definition: Definition): DefinitionInfo => ({
   schema: Schema.toJsonSchemaDocument(definition.codec),
 })
 
-const storedID = (definition: Definition, id: string | undefined): Effect.Effect<string, RegistryError> => {
+const storedID = (definition: AnyDefinition, id: string | undefined): Effect.Effect<string, RegistryError> => {
   if (definition.cardinality === "singleton") {
     return id === undefined
       ? Effect.succeed(SINGLETON_ID)
@@ -178,7 +191,7 @@ const storedID = (definition: Definition, id: string | undefined): Effect.Effect
   )
 }
 
-const assertLifetime = (definition: Definition, input: PutInput): Effect.Effect<void, RegistryError> => {
+const assertLifetime = (definition: AnyDefinition, input: PutInput): Effect.Effect<void, RegistryError> => {
   if (definition.lifetime === "entity") {
     return input.attempt === undefined && input.expiresAt === undefined
       ? Effect.void
@@ -204,7 +217,7 @@ const assertLifetime = (definition: Definition, input: PutInput): Effect.Effect<
       )
 }
 
-const definitionProblem = (definition: Definition, expectedOwner: "kernel" | "tool"): string | undefined => {
+const definitionProblem = (definition: AnyDefinition, expectedOwner: "kernel" | "tool"): string | undefined => {
   if (expectedOwner === "kernel") {
     if (definition.owner !== "kernel" || !kernelNames.has(definition.kind))
       return `Invalid compiled session component definition: ${definition.kind} (${definition.owner})`
@@ -223,19 +236,20 @@ const definitionProblem = (definition: Definition, expectedOwner: "kernel" | "to
   if (!Number.isInteger(definition.version) || definition.version < 1)
     return `Component schema version must be a positive integer`
   if (definition.description.trim().length === 0) return `Component description must not be empty`
+  if (definition.projection && (definition.cardinality !== "singleton" || definition.lifetime !== "entity"))
+    return `Projected component ${definition.kind} must be an entity-lifetime singleton`
   try {
     Schema.toJsonSchemaDocument(definition.codec)
   } catch (cause) {
     return `Component schema cannot be rendered for introspection: ${String(cause)}`
   }
+  return undefined
 }
 
-export const layerWith = (kernelDefinitions: ReadonlyArray<Definition> = []) =>
-  Layer.effect(
-    Service,
-    Effect.gen(function* () {
+export const make = (kernelDefinitions: ReadonlyArray<AnyDefinition> = []) =>
+  Effect.gen(function* () {
       const { db } = yield* Database.Service
-      const definitions = new Map<string, Definition>()
+      const definitions = new Map<string, AnyDefinition>()
 
       for (const definition of kernelDefinitions) {
         const problem = definitionProblem(definition, "kernel")
@@ -245,13 +259,49 @@ export const layerWith = (kernelDefinitions: ReadonlyArray<Definition> = []) =>
         definitions.set(definition.kind, definition)
       }
 
-      const definitionOf = (kind: string): Effect.Effect<Definition, UnknownKindError> => {
+      const definitionOf = (kind: string): Effect.Effect<AnyDefinition, UnknownKindError> => {
         const definition = definitions.get(kind)
         return definition ? Effect.succeed(definition) : Effect.fail(new UnknownKindError({ kind }))
       }
 
+      const projectionFailure = (definition: AnyDefinition, operation: string, cause: unknown) =>
+        new RegistryError({
+          message: `${operation} ${definition.kind} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+        })
+
+      const decodeInput = (definition: AnyDefinition, value: unknown) =>
+        Schema.decodeUnknownEffect(definition.codec)(value).pipe(
+          Effect.mapError((cause) => new InvalidValueError({ kind: definition.kind, message: String(cause) })),
+        )
+
+      const encodeInput = (definition: AnyDefinition, value: unknown) =>
+        Schema.encodeEffect(definition.codec)(value).pipe(
+          Effect.mapError((cause) => new InvalidValueError({ kind: definition.kind, message: String(cause) })),
+        )
+
+      const validate = Effect.fn("SessionComponent.validate")(function* (kind: string, value: unknown) {
+        const definition = yield* definitionOf(kind)
+        return yield* encodeInput(definition, yield* decodeInput(definition, value))
+      })
+
+      const projectedEntry = Effect.fn("SessionComponent.projectedEntry")(function* (
+        definition: AnyDefinition,
+        sessionID: SessionSchema.ID,
+        value: unknown,
+      ) {
+        const decoded = yield* decodeInput(definition, value)
+        return {
+          sessionID,
+          kind: definition.kind,
+          value: yield* encodeInput(definition, decoded),
+          version: definition.version,
+          lifetime: definition.lifetime,
+          stale: false,
+        } satisfies Entry
+      })
+
       const decodeStored = Effect.fn("SessionComponent.decodeStored")(function* (
-        definition: Definition,
+        definition: AnyDefinition,
         row: typeof SessionComponentTable.$inferSelect,
       ) {
         const decodeCurrent = (value: unknown) =>
@@ -301,7 +351,7 @@ export const layerWith = (kernelDefinitions: ReadonlyArray<Definition> = []) =>
       })
 
       const entryOf = Effect.fn("SessionComponent.entryOf")(function* (
-        definition: Definition,
+        definition: AnyDefinition,
         row: typeof SessionComponentTable.$inferSelect,
         attempt: AttemptFence | undefined,
         now: number,
@@ -336,6 +386,12 @@ export const layerWith = (kernelDefinitions: ReadonlyArray<Definition> = []) =>
       const get = Effect.fn("SessionComponent.get")(function* (input: ReadInput) {
         const definition = yield* definitionOf(input.kind)
         const componentID = yield* storedID(definition, input.id)
+        if (definition.projection) {
+          const value = yield* definition.projection.get(input.sessionID).pipe(
+            Effect.mapError((cause) => projectionFailure(definition, "Reading", cause)),
+          )
+          return value === undefined ? undefined : yield* projectedEntry(definition, input.sessionID, value)
+        }
         const row = yield* db
           .select()
           .from(SessionComponentTable)
@@ -353,6 +409,10 @@ export const layerWith = (kernelDefinitions: ReadonlyArray<Definition> = []) =>
 
       const list = Effect.fn("SessionComponent.list")(function* (input: Omit<ReadInput, "id">) {
         const definition = yield* definitionOf(input.kind)
+        if (definition.projection) {
+          const entry = yield* get(input)
+          return entry === undefined ? [] : [entry]
+        }
         const rows = yield* db
           .select()
           .from(SessionComponentTable)
@@ -369,12 +429,14 @@ export const layerWith = (kernelDefinitions: ReadonlyArray<Definition> = []) =>
         const definition = yield* definitionOf(input.kind)
         const componentID = yield* storedID(definition, input.id)
         yield* assertLifetime(definition, input)
-        const decoded = yield* Schema.decodeUnknownEffect(definition.codec)(input.value).pipe(
-          Effect.mapError((cause) => new InvalidValueError({ kind: definition.kind, message: String(cause) })),
-        )
-        const value = yield* Schema.encodeEffect(definition.codec)(decoded).pipe(
-          Effect.mapError((cause) => new InvalidValueError({ kind: definition.kind, message: String(cause) })),
-        )
+        const decoded = yield* decodeInput(definition, input.value)
+        const value = yield* encodeInput(definition, decoded)
+        if (definition.projection) {
+          yield* definition.projection.put(input.sessionID, decoded).pipe(
+            Effect.mapError((cause) => projectionFailure(definition, "Writing", cause)),
+          )
+          return yield* projectedEntry(definition, input.sessionID, decoded)
+        }
         const now = Date.now()
         yield* db
           .insert(SessionComponentTable)
@@ -417,6 +479,10 @@ export const layerWith = (kernelDefinitions: ReadonlyArray<Definition> = []) =>
       const remove = Effect.fn("SessionComponent.remove")(function* (input: Omit<ReadInput, "attempt" | "now">) {
         const definition = yield* definitionOf(input.kind)
         const componentID = yield* storedID(definition, input.id)
+        if (definition.projection)
+          return yield* definition.projection.remove(input.sessionID).pipe(
+            Effect.mapError((cause) => projectionFailure(definition, "Removing", cause)),
+          )
         const removed = yield* db
           .delete(SessionComponentTable)
           .where(
@@ -442,14 +508,68 @@ export const layerWith = (kernelDefinitions: ReadonlyArray<Definition> = []) =>
           return Effect.void
         },
         definitions: () => Array.from(definitions.values(), infoOf).sort((a, b) => a.kind.localeCompare(b.kind)),
+        validate,
         get,
         list,
         put,
         remove,
       })
-    }),
-  )
+    })
+
+export const layerWith = (kernelDefinitions: ReadonlyArray<AnyDefinition> = []) =>
+  Layer.effect(Service, make(kernelDefinitions))
 
 export const layer = layerWith()
 export const defaultLayer = layer.pipe(Layer.provide(Database.defaultLayer))
-export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node] })
+
+const compiledDefinitions = Effect.gen(function* () {
+  const { db } = yield* Database.Service
+  const events = yield* EventV2.Service
+  const current = (sessionID: SessionSchema.ID) =>
+    db
+      .select({ override: SessionTable.system_prompt_override })
+      .from(SessionTable)
+      .where(eq(SessionTable.id, sessionID))
+      .get()
+      .pipe(Effect.orDie)
+  const publish = (sessionID: SessionSchema.ID, override: string | null) =>
+    events.publish(SessionEvent.PromptOverrideSwitched, {
+      sessionID,
+      messageID: SessionMessage.ID.create(),
+      timestamp: DateTime.nowUnsafe(),
+      override,
+    })
+
+  return [
+    kernelDefinition({
+      kind: "system_prompt_override",
+      description:
+        "This session's full standing-instruction override. It composes above the immutable base prompt and is inherited by descendants.",
+      cardinality: "singleton",
+      lifetime: "entity",
+      version: 1,
+      codec: Schema.String,
+      projection: {
+        get: (sessionID) => current(sessionID).pipe(Effect.map((row) => row?.override ?? undefined)),
+        put: (sessionID, value) =>
+          Effect.gen(function* () {
+            const row = yield* current(sessionID)
+            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            if (row.override !== value) yield* publish(sessionID, value)
+            return undefined
+          }),
+        remove: (sessionID) =>
+          Effect.gen(function* () {
+            const row = yield* current(sessionID)
+            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            if (row.override === null) return false
+            yield* publish(sessionID, null)
+            return true
+          }),
+      },
+    }),
+  ]
+})
+
+export const kernelLayer = Layer.effect(Service, compiledDefinitions.pipe(Effect.flatMap(make)))
+export const node = makeGlobalNode({ service: Service, layer: kernelLayer, deps: [Database.node, EventV2.node] })

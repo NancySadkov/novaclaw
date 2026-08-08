@@ -83,10 +83,10 @@ const deferredCoreTools = [
   "quality_provision",
   "read-hex",
   "recipe",
-  "reconfigure",
   "register-app",
   "resource_status",
   "revert",
+  "session",
   "trash",
   "write-hex",
 ]

@@ -37,7 +37,7 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
 
   // B4/T2: the per-session system-prompt OVERRIDE layer (advanced+). The record value is the
   // load-time truth; the draft signal is what the user is editing. Saving posts the switch route
-  // (the same durable event the agent-side `reconfigure` tool publishes) — it applies from the
+  // (the same durable event the agent-side `session` tool publishes) — it applies from the
   // session's next turn, and children/forks inherit through the config walk.
   const recordOverride = () => (props.session as Session & { systemPromptOverride?: string }).systemPromptOverride ?? ""
   const [promptDraft, setPromptDraft] = createSignal<string | undefined>(undefined)

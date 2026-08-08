@@ -20,7 +20,7 @@ import { ProfileTool } from "./profile"
 import { QualityProvisionTool } from "./quality-provision"
 import { QuestionTool } from "./question"
 import { ReadTool } from "./read"
-import { ReconfigureTool } from "./reconfigure"
+import { SessionTool } from "./session"
 import { ResourceStatusTool } from "./resource-status"
 import { ReadHexTool } from "./read-hex"
 import { ReadToolFileSystem } from "./read-filesystem"
@@ -96,7 +96,7 @@ export const locationLayer = Layer.mergeAll(
   // `validateRegistration` REFUSES a declaration that repeats it (that shape reads as a gate while
   // gating nothing). `recipe.ts` asserts the `recipe` action itself, on `save` only.
   RecipeTool.layer,
-  ReconfigureTool.layer,
+  SessionTool.layer,
   ResourceStatusTool.layer,
   RegisterAppTool.layer,
   RevertTool.layer,
@@ -139,7 +139,7 @@ export const node = makeLocationNode({
     ReadTool.node,
     ReadHexTool.node,
     RecipeTool.node,
-    ReconfigureTool.node,
+    SessionTool.node,
     ResourceStatusTool.node,
     RegisterAppTool.node,
     RevertTool.node,

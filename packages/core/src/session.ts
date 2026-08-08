@@ -913,7 +913,7 @@ export const layer = Layer.effect(
           sessionType: input.type,
         })
       }),
-      // B4/T2: the per-session system-prompt override layer (info-sheet editor + the reconfigure
+      // B4/T2: the per-session system-prompt override layer (info-sheet editor + the session
       // tool) — applies on the next turn; `null` clears the layer (back to inherit via the walk).
       switchPromptOverride: Effect.fn("V2Session.switchPromptOverride")(function* (input) {
         yield* result.get(input.sessionID)

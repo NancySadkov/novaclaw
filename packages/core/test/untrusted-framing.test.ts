@@ -688,13 +688,15 @@ const NO_EXTERNAL = [
   "read-hex.ts",
   "read.ts",
   "recipe.ts",
-  "reconfigure.ts",
   "register-app.ts",
   "registry.ts",
   // Reads THIS instance's own RAM/disk pressure probe. Every byte it returns is a number this
   // process measured about the machine it is running on; no party other than the user is involved.
   "resource-status.ts",
   "revert.ts",
+  // Reads and writes this instance's own typed session-component stores; projected prompt text is
+  // authored by the user/agent already inside this trust boundary, never fetched from a third party.
+  "session.ts",
   "skill.ts",
   "spawn.ts",
   "todowrite.ts",

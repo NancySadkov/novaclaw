@@ -43,7 +43,7 @@ const CORE_CATEGORIES: Readonly<Record<string, string>> = {
   read: "files",
   "read-hex": "files",
   recipe: "knowledge",
-  reconfigure: "configuration",
+  session: "configuration",
   resource_status: "system",
   "register-app": "apps",
   revert: "files",

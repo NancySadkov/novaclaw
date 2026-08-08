@@ -88,7 +88,7 @@ export const name = "spawn"
 
 // Field naming follows THIS FILE and its sibling `wait.ts` (`systemPromptOverride`, `sessionID`),
 // i.e. camelCase — which is also what most tool inputs use (`patchText`, `oldString`, `replaceAll`,
-// `numResults`). `reconfigure`/`register-app` are the two snake_case outliers; the roadmap's
+// `numResults`). `register-app` is the remaining snake_case outlier; the roadmap's
 // `permission_mode` spelling would have made this struct disagree with itself.
 export const Input = Schema.Struct({
   prompt: Schema.String.annotate({ description: "The task / opening message for the new child agent session." }),

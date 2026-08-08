@@ -160,7 +160,7 @@ export const TypeSwitched = Event.define({
 export type TypeSwitched = typeof TypeSwitched.Type
 
 // B4/T2: the per-session system-prompt OVERRIDE layer (the info-sheet editor + the agent's own
-// guardrailed `reconfigure` tool). The override composes after the persona baseline and before the
+// guardrailed `session` tool). The override composes after the persona baseline and before the
 // agent prompt (runner llm.ts system assembly) and rides the config walk (children/forks inherit).
 // `override: null` clears the layer. Like the switches above, the projector writes the column and
 // the runner reads it fresh each turn.
