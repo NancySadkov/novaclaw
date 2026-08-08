@@ -1,7 +1,19 @@
 import { describe, expect, test } from "bun:test"
-import { shouldCloneTerminal, terminalConnectFailureMessage } from "./terminal-connection"
+import {
+  shouldCloneTerminal,
+  terminalConnectFailureMessage,
+  terminalPresenceFromStatus,
+} from "./terminal-connection"
 
 describe("terminal connection recovery", () => {
+  test("distinguishes a missing PTY from an unreachable server", () => {
+    expect(terminalPresenceFromStatus(200)).toBe("present")
+    expect(terminalPresenceFromStatus(503)).toBe("unavailable")
+    expect(terminalPresenceFromStatus(403)).toBe("unavailable")
+    expect(terminalPresenceFromStatus(404)).toBe("gone")
+    expect(terminalPresenceFromStatus(undefined)).toBe("unavailable")
+  })
+
   test("clones only a PTY confirmed gone", () => {
     expect(shouldCloneTerminal({ kind: "gone", error: new Error("gone") })).toBe(true)
     expect(shouldCloneTerminal({ kind: "blocked", error: new Error("forbidden") })).toBe(false)

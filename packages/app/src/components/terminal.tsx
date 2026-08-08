@@ -16,7 +16,7 @@ import type { LocalPTY } from "@/context/terminal"
 import { disposeIfDisposable, getHoveredLinkText, setOptionIfSupported } from "@/utils/runtime-adapters"
 import { terminalWriter } from "@/utils/terminal-writer"
 import { terminalWebSocketURL } from "@/utils/terminal-websocket-url"
-import type { TerminalConnectFailure } from "./terminal-connection"
+import { terminalPresenceFromStatus, type TerminalConnectFailure } from "./terminal-connection"
 import { restartTerminalCursorBlink, terminalClipboardShortcut } from "./terminal-keyboard"
 
 const TOGGLE_TERMINAL_ID = "terminal.toggle"
@@ -546,13 +546,13 @@ export const Terminal = (props: TerminalProps) => {
         local.onConnectError?.(failure)
       }
 
-      const gone = () =>
+      const presence = () =>
         client.v2.pty
           .get({ ptyID: id, location: { directory } }, { throwOnError: false })
-          .then((result) => result.response.status === 404)
+          .then((result) => terminalPresenceFromStatus(result.response.status))
           .catch((err) => {
             debugTerminal("failed to inspect terminal session", err)
-            return false
+            return terminalPresenceFromStatus(undefined)
           })
 
       const connectToken = async () => {
@@ -584,9 +584,15 @@ export const Terminal = (props: TerminalProps) => {
         reconn = setTimeout(async () => {
           reconn = undefined
           if (disposed) return
-          if (await gone()) {
+          const state = await presence()
+          if (state === "gone") {
             if (disposed) return
             fail({ kind: "gone", error: err })
+            return
+          }
+          if (state === "unavailable") {
+            if (disposed) return
+            fail({ kind: "unavailable", error: err })
             return
           }
           if (disposed) return
