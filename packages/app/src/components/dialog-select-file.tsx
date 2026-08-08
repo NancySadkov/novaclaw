@@ -1,5 +1,5 @@
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import { Dialog } from "@novaclaw/ui/dialog"
+import { Dialog, DialogBody } from "@novaclaw/ui/v2/dialog-v2"
 import { FileIcon } from "@novaclaw/ui/file-icon"
 import { Icon } from "@novaclaw/ui/icon"
 import { List } from "@novaclaw/ui/list"
@@ -405,89 +405,100 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
   }
 
   return (
-    <Dialog class="pt-3 pb-0 !max-h-[480px]" transition>
-      <List
-        class="px-3"
-        search={{
-          placeholder: filesOnly()
-            ? language.t("session.header.searchFiles")
-            : language.t("palette.search.placeholder"),
-          autofocus: true,
-          hideIcon: true,
-        }}
-        emptyMessage={language.t("palette.empty")}
-        loadingMessage={language.t("common.loading")}
-        items={items}
-        key={(item) => item.id}
-        filterKeys={["title", "description", "category"]}
-        skipFilter={(item) => item.type === "file"}
-        groupBy={grouped() ? (item) => item.category : () => ""}
-        onMove={handleMove}
-        onSelect={handleSelect}
-      >
-        {(item) => (
-          <Switch
-            fallback={
-              <div class="w-full flex items-center justify-between rounded-md pl-1">
-                <div class="flex items-center gap-x-3 grow min-w-0">
-                  <FileIcon node={{ path: item.path ?? "", type: "file" }} class="shrink-0 size-4" />
-                  <div class="flex items-center text-14-regular">
-                    <span class="text-text-weak whitespace-nowrap overflow-hidden overflow-ellipsis truncate min-w-0">
-                      {getDirectory(item.path ?? "")}
-                    </span>
-                    <span class="text-text-strong whitespace-nowrap">{getFilename(item.path ?? "")}</span>
+    // ⚠️ The only v1 call site that passed `transition`, and it has NO v2 equivalent — deliberately.
+    // v1's rule was `animation: contentShow 150ms ease-out` with no `prefers-reduced-motion` guard,
+    // which visual.md §6 law 3 makes mandatory *at authoring time*; every other dialog in the app
+    // (16 v2 call sites) already opens without it. Ruling 13 forbids a compatibility shim, so the
+    // prop is gone rather than reproduced, and a guarded entry animation is a v2-wide decision, not
+    // one call site's private prop.
+    //
+    // `size="large"` because the palette is the tall list dialog; the height cap the v1 site was
+    // pinning by hand (`!max-h-[480px]` against v1's 512px box) IS v2's `large` height.
+    <Dialog size="large" class="pt-3 pb-0">
+      <DialogBody>
+        <List
+          class="px-3"
+          search={{
+            placeholder: filesOnly()
+              ? language.t("session.header.searchFiles")
+              : language.t("palette.search.placeholder"),
+            autofocus: true,
+            hideIcon: true,
+          }}
+          emptyMessage={language.t("palette.empty")}
+          loadingMessage={language.t("common.loading")}
+          items={items}
+          key={(item) => item.id}
+          filterKeys={["title", "description", "category"]}
+          skipFilter={(item) => item.type === "file"}
+          groupBy={grouped() ? (item) => item.category : () => ""}
+          onMove={handleMove}
+          onSelect={handleSelect}
+        >
+          {(item) => (
+            <Switch
+              fallback={
+                <div class="w-full flex items-center justify-between rounded-md pl-1">
+                  <div class="flex items-center gap-x-3 grow min-w-0">
+                    <FileIcon node={{ path: item.path ?? "", type: "file" }} class="shrink-0 size-4" />
+                    <div class="flex items-center text-14-regular">
+                      <span class="text-text-weak whitespace-nowrap overflow-hidden overflow-ellipsis truncate min-w-0">
+                        {getDirectory(item.path ?? "")}
+                      </span>
+                      <span class="text-text-strong whitespace-nowrap">{getFilename(item.path ?? "")}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            }
-          >
-            <Match when={item.type === "command"}>
-              <div class="w-full flex items-center justify-between gap-4">
-                <div class="flex items-center gap-2 min-w-0">
-                  <span class="text-14-regular text-text-strong whitespace-nowrap">{item.title}</span>
-                  <Show when={item.description}>
-                    <span class="text-14-regular text-text-weak truncate">{item.description}</span>
-                  </Show>
-                </div>
-                <Show when={item.keybind}>
-                  {/* v2 renders one chip PER KEY, so the joined string becomes the parts array.
-                      The v1 twin's single 20px box needed `rounded-[4px]` to reach the 4px the
-                      design wanted; v2's key chips carry their own radius. */}
-                  <KeybindV2 keys={formatKeybindKeys(item.keybind ?? "", language.t)} />
-                </Show>
-              </div>
-            </Match>
-            <Match when={item.type === "session"}>
-              <div class="w-full flex items-center justify-between rounded-md pl-1">
-                <div class="flex items-center gap-x-3 grow min-w-0">
-                  <Icon name="bubble-5" size="small" class="shrink-0 text-icon-weak" />
+              }
+            >
+              <Match when={item.type === "command"}>
+                <div class="w-full flex items-center justify-between gap-4">
                   <div class="flex items-center gap-2 min-w-0">
-                    <span
-                      class="text-14-regular text-text-strong truncate"
-                      classList={{ "opacity-70": !!item.archived }}
-                    >
-                      {item.title}
-                    </span>
+                    <span class="text-14-regular text-text-strong whitespace-nowrap">{item.title}</span>
                     <Show when={item.description}>
-                      <span
-                        class="text-14-regular text-text-weak truncate"
-                        classList={{ "opacity-70": !!item.archived }}
-                      >
-                        {item.description}
-                      </span>
+                      <span class="text-14-regular text-text-weak truncate">{item.description}</span>
                     </Show>
                   </div>
+                  <Show when={item.keybind}>
+                    {/* v2 renders one chip PER KEY, so the joined string becomes the parts array.
+                      The v1 twin's single 20px box needed `rounded-[4px]` to reach the 4px the
+                      design wanted; v2's key chips carry their own radius. */}
+                    <KeybindV2 keys={formatKeybindKeys(item.keybind ?? "", language.t)} />
+                  </Show>
                 </div>
-                <Show when={item.updated}>
-                  <span class="text-12-regular text-text-weak whitespace-nowrap ml-2">
-                    {getRelativeTime(new Date(item.updated!).toISOString(), language.t)}
-                  </span>
-                </Show>
-              </div>
-            </Match>
-          </Switch>
-        )}
-      </List>
+              </Match>
+              <Match when={item.type === "session"}>
+                <div class="w-full flex items-center justify-between rounded-md pl-1">
+                  <div class="flex items-center gap-x-3 grow min-w-0">
+                    <Icon name="bubble-5" size="small" class="shrink-0 text-icon-weak" />
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span
+                        class="text-14-regular text-text-strong truncate"
+                        classList={{ "opacity-70": !!item.archived }}
+                      >
+                        {item.title}
+                      </span>
+                      <Show when={item.description}>
+                        <span
+                          class="text-14-regular text-text-weak truncate"
+                          classList={{ "opacity-70": !!item.archived }}
+                        >
+                          {item.description}
+                        </span>
+                      </Show>
+                    </div>
+                  </div>
+                  <Show when={item.updated}>
+                    <span class="text-12-regular text-text-weak whitespace-nowrap ml-2">
+                      {getRelativeTime(new Date(item.updated!).toISOString(), language.t)}
+                    </span>
+                  </Show>
+                </div>
+              </Match>
+            </Switch>
+          )}
+        </List>
+      </DialogBody>
     </Dialog>
   )
 }

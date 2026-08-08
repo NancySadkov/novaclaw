@@ -152,9 +152,9 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  * `{viewBox, body}` pairs), which is why `icon` is the expensive half of the migration rather than a
  * rename.
  *
- * This list may only ever get SHORTER. Retired so far, newest first: `select` (2026-08-08), `toast`,
- * `keybind`, `progress-circle`, `diff-changes`, `switch` (all 2026-08-07), `text-shimmer`
- * (2026-07-31), and the six v1-only components deleted alongside it.
+ * This list may only ever get SHORTER. Retired so far, newest first: `dialog`, `select` (both
+ * 2026-08-08), `toast`, `keybind`, `progress-circle`, `diff-changes`, `switch` (all 2026-08-07),
+ * `text-shimmer` (2026-07-31), and the six v1-only components deleted alongside it.
  *
  * ⭐ **The shape the rest of this list should copy — a pair is RETIRABLE when nothing in
  * `packages/ui` composes its v1 side.** Then migrating the leaf call sites leaves the v1 file with
@@ -162,8 +162,8 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  * shrinks the fork's WIDTH. `switch` (4 call sites), then `keybind` (2), `progress-circle` (1),
  * `diff-changes` (1) and `toast` (3) went that way. A widget that `packages/ui` composes internally
  * (`button`, `icon`, `icon-button`, `tooltip`) cannot reach zero until its v1 consumers die, which
- * is why those lines sit in the second block below. `dialog` and `tabs` are the two that are still
- * retirable — nothing in `packages/ui` composes them.
+ * is why those lines sit in the second block below. `dialog` went the same way on 2026-08-08;
+ * `tabs` is the one that is still retirable — nothing in `packages/ui` composes it.
  *
  * ⭐ **`select` was retired 2026-08-08, and the budget warning that stood here was RIGHT: it was a
  * contract decision, not an import swap.** The warning read that v1's four call sites pass `size`,
@@ -183,8 +183,36 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  * `data-*`, `aria-*` and DOM handlers go there too, and the Kobalte-root props are named
  * exhaustively instead of being whatever is left over. No `triggerProps`/`triggerStyle` shim came
  * back (ruling 13); sizing is `appearance`, and all three surviving call sites state `inline`.
+ *
+ * ⭐ **`dialog` was retired 2026-08-08. It paid the composition dividend AND had a dead call site —
+ * and the defect it turned up was on the V2 side, in the widget every other migration lands on.**
+ * Nine v1 call sites, of which `dialog-select-directory.tsx` had had ZERO importers since its `-v2`
+ * twin took over (`directory-picker.tsx` and `dialog-select-file.tsx` both reach for
+ * `DialogSelectDirectoryV2`). Deleting `ui/src/components/dialog.tsx` also took its own
+ * `icon-button` pair, so ten pairs and four files left for a nine-call-site widget.
+ *
+ * The three couplings the import graph could not show:
+ *
+ *   - **`[data-component="dialog-overlay"]` was declared by BOTH sheets, identical selector,
+ *     identical layer.** The overlay is rendered ONCE — `ui/src/context/dialog.tsx` — and shared by
+ *     both forks, so the later `@import` (v2) had been painting the overlay of every v1 dialog.
+ *     Read off the live DOM before and after the deletion — see the commit message for the two
+ *     computed values, which are equal.
+ *     Deleting v1's sheet was therefore a measured no-op on the overlay — the same computed value
+ *     after. **This is the `diff-changes` shape again: the render looked right because one sheet was
+ *     silently winning.**
+ *   - **v2's `DialogHeader` hardcoded the English string `"Close"`** as the close button's accessible
+ *     name, while the v1 `Dialog` it replaces had localized the same button via `ui.common.close`
+ *     since it was written. It was already live on `dialog-select-directory-v2.tsx` — the
+ *     project/file picker — and the migration would have carried eight more dialogs into it. Fixed
+ *     at the component: `closeLabel` now defaults to the localized key.
+ *   - **v1's `action` prop REPLACED the close button** (`<Switch>`: action, else `CloseButton`), so
+ *     `dialog-select-model.tsx` shipped with no close affordance. v2's header is a row of children
+ *     followed by the close button, so they now coexist. `data-no-header` and `transition` had no
+ *     port: the first was styled by nothing at all, and the second was a `prefers-reduced-motion`-less
+ *     animation on one call site out of nine (visual.md §6 law 3 makes that guard mandatory).
  */
-export const FORKED_WIDGETS: readonly string[] = ["button", "dialog", "icon", "icon-button", "tabs", "tooltip"]
+export const FORKED_WIDGETS: readonly string[] = ["button", "icon", "icon-button", "tabs", "tooltip"]
 
 /**
  * **Every file that imports the v1 side of a forked widget, pinned by name.**
@@ -229,15 +257,12 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/components/composer/model-control.tsx": ["button", "icon"],
   "app/src/components/composer/strict-control.tsx": ["button"],
   "app/src/components/debug-bar.tsx": ["tooltip"],
-  "app/src/components/dialog-edit-project.tsx": ["button", "dialog", "icon"],
-  "app/src/components/dialog-fork.tsx": ["dialog"],
-  "app/src/components/dialog-release-notes.tsx": ["button", "dialog"],
+  "app/src/components/dialog-edit-project.tsx": ["button", "icon"],
+  "app/src/components/dialog-release-notes.tsx": ["button"],
   "app/src/components/dialog-select-directory-v2.tsx": ["icon"],
-  "app/src/components/dialog-select-directory.tsx": ["dialog"],
-  "app/src/components/dialog-select-file.tsx": ["dialog", "icon"],
-  "app/src/components/dialog-select-mcp.tsx": ["dialog"],
-  "app/src/components/dialog-select-model.tsx": ["button", "dialog", "icon-button", "tooltip"],
-  "app/src/components/dialog-select-server.tsx": ["button", "dialog", "icon", "icon-button"],
+  "app/src/components/dialog-select-file.tsx": ["icon"],
+  "app/src/components/dialog-select-model.tsx": ["button", "icon-button", "tooltip"],
+  "app/src/components/dialog-select-server.tsx": ["button", "icon", "icon-button"],
   "app/src/components/dialog-session-info.tsx": ["button", "icon"],
   "app/src/components/file-tree.test.ts": ["icon", "tooltip"],
   "app/src/components/file-tree.tsx": ["icon"],
@@ -273,7 +298,7 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/pages/home-screen/help-tour.tsx": ["icon"],
   "app/src/pages/home-screen/new-agent-bar.tsx": ["icon"],
   "app/src/pages/home-screen/social-panel.tsx": ["icon"],
-  "app/src/pages/home.tsx": ["button", "dialog", "icon"],
+  "app/src/pages/home.tsx": ["button", "icon"],
   "app/src/pages/memory-graph.tsx": ["icon"],
   "app/src/pages/notes.tsx": ["icon"],
   "app/src/pages/recipes.tsx": ["icon"],
@@ -297,7 +322,6 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   // header. These lines retire by DELETING the component, which is how `card.tsx` left this list.
   "ui/src/components/button.tsx": ["icon"],
   "ui/src/components/collapsible.tsx": ["icon"],
-  "ui/src/components/dialog.tsx": ["icon-button"],
   "ui/src/components/icon-button.tsx": ["icon"],
   "ui/src/components/image-preview.tsx": ["icon-button"],
   "ui/src/components/list.tsx": ["icon", "icon-button"],
@@ -307,8 +331,8 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
 
 /**
  * `ui/src/components/*.tsx` was 45, then 38 (2026-07-31), 36 (`switch.tsx`, 2026-08-07), 33
- * (`keybind.tsx`, `progress-circle.tsx`, `diff-changes.tsx`), and is **32** after `toast.tsx` went
- * (2026-08-07). A bound rather than
+ * (`keybind.tsx`, `progress-circle.tsx`, `diff-changes.tsx`), 32 after `toast.tsx` (2026-08-07), and
+ * is **31** after `dialog.tsx` went (2026-08-08). A bound rather than
  * a name list, because ruling 13 pins the FORK and a v1-only widget forks nothing — see the header.
  * It may fall freely; raising it means adding a v1 component under a ruling that says new work is
  * v2, so raise it only with a reason written next to it.
@@ -317,11 +341,11 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
  * read 38 while the tree held 37 — one component had been deleted without the pin following, so a
  * new v1 component could have been added for free. Lower it in the same commit as any deletion.
  */
-const V1_COMPONENT_CEILING = 31
+const V1_COMPONENT_CEILING = 30
 
 /** Measured totals, pinned so the ledger stays a measurement rather than an aspiration. */
-const V1_CALL_SITE_FILES = 77
-const V1_CALL_SITE_PAIRS = 123
+const V1_CALL_SITE_FILES = 73
+const V1_CALL_SITE_PAIRS = 113
 
 // ---------------------------------------------------------------------------------------------
 // The sweep. Pure functions first so the negative controls can drive them without touching disk.
@@ -593,7 +617,7 @@ describe("the fork's DEPTH can only shrink", () => {
     expect(OBSERVED_PAIRS, "the observed (file, widget) pair count moved — reconcile V1_CALL_SITES").toBe(
       V1_CALL_SITE_PAIRS,
     )
-    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(6)
+    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(5)
   })
 
   test("both sides are genuinely live — this is a fork, not a finished migration", () => {
@@ -795,10 +819,10 @@ describe("the seven deleted v1 components stay deleted", () => {
   test("🔴 every v2 @import comes AFTER every v1 @import — same layer, so ORDER decides", () => {
     // ⚠️ **This became load-bearing the moment v2 stylesheets joined `layer(components)`, and it was
     // invisible before.** FOUR v2 sheets target a `[data-component]` a v1 sheet also targets (six on
-    // 2026-08-06, five that afternoon): `badge-v2` → `tag`, `dialog-v2` → `dialog-overlay`,
-    // `tabs-v2` → `icon-button`, `toast-v2` → `icon`. `switch-v2`/`switch.css` and then
-    // `diff-changes-v2`/`diff-changes.css` left the list when the v1 sheet was DELETED — the only
-    // way a collision goes away for good.
+    // 2026-08-06, five that afternoon): `badge-v2` → `tag`, `tabs-v2` → `icon-button`,
+    // `toast-v2` → `icon`. `switch-v2`/`switch.css`, then `diff-changes-v2`/`diff-changes.css`, then
+    // `dialog-v2`/`dialog.css` left the list when the v1 sheet was DELETED — the only way a
+    // collision goes away for good.
     //
     // While v2 was UNLAYERED it beat v1 unconditionally. Now both sit in `components`, equal
     // specificity, so the LATER declaration wins — i.e. the order of these `@import` lines is the only

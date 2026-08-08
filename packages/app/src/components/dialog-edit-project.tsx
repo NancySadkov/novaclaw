@@ -1,6 +1,6 @@
 import { Button } from "@novaclaw/ui/button"
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import { Dialog } from "@novaclaw/ui/dialog"
+import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
 import { TextField } from "@novaclaw/ui/text-field"
 import { useMutation } from "@tanstack/solid-query"
 import { Icon } from "@novaclaw/ui/icon"
@@ -97,160 +97,168 @@ export function DialogEditProject(props: { project: LocalProject; server: Server
   }
 
   return (
-    <Dialog title={language.t("dialog.project.edit.title")} class="w-full max-w-[480px] mx-auto">
-      <form onSubmit={handleSubmit} class="flex flex-col gap-6 p-6 pt-0">
-        <div class="flex flex-col gap-4">
-          <TextField
-            autofocus
-            type="text"
-            label={language.t("dialog.project.edit.name")}
-            placeholder={folderName()}
-            value={store.name}
-            onChange={(v) => setStore("name", v)}
-          />
+    // `size="normal"` IS the 480px the v1 call site was pinning by hand with
+    // `class="w-full max-w-[480px] mx-auto"` inside v1's 640px box, so the override is gone rather
+    // than ported; `fit` keeps the height hugging the form as v1's auto-height content did.
+    <Dialog size="normal" fit>
+      <DialogHeader>
+        <DialogTitle>{language.t("dialog.project.edit.title")}</DialogTitle>
+      </DialogHeader>
+      <DialogBody>
+        <form onSubmit={handleSubmit} class="flex flex-col gap-6 p-6 pt-0">
+          <div class="flex flex-col gap-4">
+            <TextField
+              autofocus
+              type="text"
+              label={language.t("dialog.project.edit.name")}
+              placeholder={folderName()}
+              value={store.name}
+              onChange={(v) => setStore("name", v)}
+            />
 
-          <div class="flex flex-col gap-2">
-            <label class="text-12-medium text-text-weak">{language.t("dialog.project.edit.icon")}</label>
-            <div class="flex gap-3 items-start">
-              <div
-                class="relative"
-                onMouseEnter={() => setStore("iconHover", true)}
-                onMouseLeave={() => setStore("iconHover", false)}
-              >
+            <div class="flex flex-col gap-2">
+              <label class="text-12-medium text-text-weak">{language.t("dialog.project.edit.icon")}</label>
+              <div class="flex gap-3 items-start">
                 <div
-                  class="relative size-16 rounded-md transition-colors cursor-pointer"
-                  classList={{
-                    "border-text-interactive-base bg-surface-info-base/20": store.dragOver,
-                    "border-border-base hover:border-border-strong": !store.dragOver,
-                    "overflow-hidden": !!store.iconOverride,
-                  }}
-                  onDrop={handleDrop}
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onClick={() => {
-                    if (store.iconOverride && store.iconHover) {
-                      clearIcon()
-                    } else {
-                      iconInput?.click()
-                    }
-                  }}
+                  class="relative"
+                  onMouseEnter={() => setStore("iconHover", true)}
+                  onMouseLeave={() => setStore("iconHover", false)}
                 >
-                  <Show
-                    when={getProjectAvatarSource(props.project.id, {
-                      color: store.color,
-                      url: props.project.icon?.url,
-                      override: store.iconOverride,
-                    })}
-                    fallback={
-                      <div class="size-full flex items-center justify-center">
+                  <div
+                    class="relative size-16 rounded-md transition-colors cursor-pointer"
+                    classList={{
+                      "border-text-interactive-base bg-surface-info-base/20": store.dragOver,
+                      "border-border-base hover:border-border-strong": !store.dragOver,
+                      "overflow-hidden": !!store.iconOverride,
+                    }}
+                    onDrop={handleDrop}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onClick={() => {
+                      if (store.iconOverride && store.iconHover) {
+                        clearIcon()
+                      } else {
+                        iconInput?.click()
+                      }
+                    }}
+                  >
+                    <Show
+                      when={getProjectAvatarSource(props.project.id, {
+                        color: store.color,
+                        url: props.project.icon?.url,
+                        override: store.iconOverride,
+                      })}
+                      fallback={
+                        <div class="size-full flex items-center justify-center">
+                          <Avatar
+                            fallback={store.name || defaultName()}
+                            {...getAvatarColors(store.color)}
+                            class="size-full text-[32px]"
+                          />
+                        </div>
+                      }
+                    >
+                      {(src) => (
+                        <img
+                          src={src()}
+                          alt={language.t("dialog.project.edit.icon.alt")}
+                          class="size-full object-cover"
+                        />
+                      )}
+                    </Show>
+                  </div>
+                  <div
+                    class="absolute inset-0 size-16 bg-surface-raised-stronger-non-alpha/90 rounded-[6px] z-10 pointer-events-none flex items-center justify-center transition-opacity"
+                    classList={{
+                      "opacity-100": store.iconHover && !store.iconOverride,
+                      "opacity-0": !(store.iconHover && !store.iconOverride),
+                    }}
+                  >
+                    <Icon name="cloud-upload" size="large" class="text-icon-on-interactive-base drop-shadow-sm" />
+                  </div>
+                  <div
+                    class="absolute inset-0 size-16 bg-surface-raised-stronger-non-alpha/90 rounded-[6px] z-10 pointer-events-none flex items-center justify-center transition-opacity"
+                    classList={{
+                      "opacity-100": store.iconHover && !!store.iconOverride,
+                      "opacity-0": !(store.iconHover && !!store.iconOverride),
+                    }}
+                  >
+                    <Icon name="trash" size="large" class="text-icon-on-interactive-base drop-shadow-sm" />
+                  </div>
+                </div>
+                <input
+                  id="icon-upload"
+                  ref={(el) => {
+                    iconInput = el
+                  }}
+                  type="file"
+                  accept="image/*"
+                  class="hidden"
+                  onChange={handleInputChange}
+                />
+                <div class="flex flex-col gap-1.5 text-12-regular text-text-weak self-center">
+                  <span>{language.t("dialog.project.edit.icon.hint")}</span>
+                  <span>{language.t("dialog.project.edit.icon.recommended")}</span>
+                </div>
+              </div>
+            </div>
+
+            <Show when={!store.iconOverride}>
+              <div class="flex flex-col gap-2">
+                <label class="text-12-medium text-text-weak">{language.t("dialog.project.edit.color")}</label>
+                <div class="flex gap-1.5">
+                  <For each={AVATAR_COLOR_KEYS}>
+                    {(color) => (
+                      <button
+                        type="button"
+                        aria-label={language.t("dialog.project.edit.color.select", { color })}
+                        aria-pressed={store.color === color}
+                        classList={{
+                          "flex items-center justify-center size-10 p-0.5 rounded-lg overflow-hidden transition-colors cursor-default": true,
+                          "bg-transparent border-2 border-icon-strong-base hover:bg-surface-base-hover":
+                            store.color === color,
+                          "bg-transparent border border-transparent hover:bg-surface-base-hover hover:border-border-weak-base":
+                            store.color !== color,
+                        }}
+                        onClick={() => {
+                          if (store.color === color && !props.project.icon?.url) return
+                          setStore("color", store.color === color ? undefined : color)
+                        }}
+                      >
                         <Avatar
                           fallback={store.name || defaultName()}
-                          {...getAvatarColors(store.color)}
-                          class="size-full text-[32px]"
+                          {...getAvatarColors(color)}
+                          class="size-full rounded"
                         />
-                      </div>
-                    }
-                  >
-                    {(src) => (
-                      <img
-                        src={src()}
-                        alt={language.t("dialog.project.edit.icon.alt")}
-                        class="size-full object-cover"
-                      />
+                      </button>
                     )}
-                  </Show>
-                </div>
-                <div
-                  class="absolute inset-0 size-16 bg-surface-raised-stronger-non-alpha/90 rounded-[6px] z-10 pointer-events-none flex items-center justify-center transition-opacity"
-                  classList={{
-                    "opacity-100": store.iconHover && !store.iconOverride,
-                    "opacity-0": !(store.iconHover && !store.iconOverride),
-                  }}
-                >
-                  <Icon name="cloud-upload" size="large" class="text-icon-on-interactive-base drop-shadow-sm" />
-                </div>
-                <div
-                  class="absolute inset-0 size-16 bg-surface-raised-stronger-non-alpha/90 rounded-[6px] z-10 pointer-events-none flex items-center justify-center transition-opacity"
-                  classList={{
-                    "opacity-100": store.iconHover && !!store.iconOverride,
-                    "opacity-0": !(store.iconHover && !!store.iconOverride),
-                  }}
-                >
-                  <Icon name="trash" size="large" class="text-icon-on-interactive-base drop-shadow-sm" />
+                  </For>
                 </div>
               </div>
-              <input
-                id="icon-upload"
-                ref={(el) => {
-                  iconInput = el
-                }}
-                type="file"
-                accept="image/*"
-                class="hidden"
-                onChange={handleInputChange}
-              />
-              <div class="flex flex-col gap-1.5 text-12-regular text-text-weak self-center">
-                <span>{language.t("dialog.project.edit.icon.hint")}</span>
-                <span>{language.t("dialog.project.edit.icon.recommended")}</span>
-              </div>
-            </div>
+            </Show>
+
+            <TextField
+              multiline
+              label={language.t("dialog.project.edit.worktree.startup")}
+              description={language.t("dialog.project.edit.worktree.startup.description")}
+              placeholder={language.t("dialog.project.edit.worktree.startup.placeholder")}
+              value={store.startup}
+              onChange={(v) => setStore("startup", v)}
+              spellcheck={false}
+              class="max-h-14 w-full overflow-y-auto font-mono text-xs"
+            />
           </div>
 
-          <Show when={!store.iconOverride}>
-            <div class="flex flex-col gap-2">
-              <label class="text-12-medium text-text-weak">{language.t("dialog.project.edit.color")}</label>
-              <div class="flex gap-1.5">
-                <For each={AVATAR_COLOR_KEYS}>
-                  {(color) => (
-                    <button
-                      type="button"
-                      aria-label={language.t("dialog.project.edit.color.select", { color })}
-                      aria-pressed={store.color === color}
-                      classList={{
-                        "flex items-center justify-center size-10 p-0.5 rounded-lg overflow-hidden transition-colors cursor-default": true,
-                        "bg-transparent border-2 border-icon-strong-base hover:bg-surface-base-hover":
-                          store.color === color,
-                        "bg-transparent border border-transparent hover:bg-surface-base-hover hover:border-border-weak-base":
-                          store.color !== color,
-                      }}
-                      onClick={() => {
-                        if (store.color === color && !props.project.icon?.url) return
-                        setStore("color", store.color === color ? undefined : color)
-                      }}
-                    >
-                      <Avatar
-                        fallback={store.name || defaultName()}
-                        {...getAvatarColors(color)}
-                        class="size-full rounded"
-                      />
-                    </button>
-                  )}
-                </For>
-              </div>
-            </div>
-          </Show>
-
-          <TextField
-            multiline
-            label={language.t("dialog.project.edit.worktree.startup")}
-            description={language.t("dialog.project.edit.worktree.startup.description")}
-            placeholder={language.t("dialog.project.edit.worktree.startup.placeholder")}
-            value={store.startup}
-            onChange={(v) => setStore("startup", v)}
-            spellcheck={false}
-            class="max-h-14 w-full overflow-y-auto font-mono text-xs"
-          />
-        </div>
-
-        <div class="flex justify-end gap-2">
-          <Button type="button" variant="ghost" size="large" onClick={() => dialog.close()}>
-            {language.t("common.cancel")}
-          </Button>
-          <Button type="submit" variant="primary" size="large" disabled={saveMutation.isPending}>
-            {saveMutation.isPending ? language.t("common.saving") : language.t("common.save")}
-          </Button>
-        </div>
-      </form>
+          <div class="flex justify-end gap-2">
+            <Button type="button" variant="ghost" size="large" onClick={() => dialog.close()}>
+              {language.t("common.cancel")}
+            </Button>
+            <Button type="submit" variant="primary" size="large" disabled={saveMutation.isPending}>
+              {saveMutation.isPending ? language.t("common.saving") : language.t("common.save")}
+            </Button>
+          </div>
+        </form>
+      </DialogBody>
     </Dialog>
   )
 }

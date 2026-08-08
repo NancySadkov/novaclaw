@@ -13,7 +13,6 @@
 @import "../components/checkbox.css" layer(components);
 @import "../components/collapsible.css" layer(components);
 @import "../components/dropdown-menu.css" layer(components);
-@import "../components/dialog.css" layer(components);
 @import "../components/file-icon.css" layer(components);
 @import "../components/provider-icon.css" layer(components);
 @import "../components/dock-surface.css" layer(components);

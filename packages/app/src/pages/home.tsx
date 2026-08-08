@@ -68,7 +68,7 @@ import { preloadMarkdown } from "@novaclaw/session-ui/markdown-cache"
 import { archiveHomeSession } from "./home-session-archive"
 import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
 import { compactTokens, homeSessionTimeLabel, subtreeRows, tokenTotals } from "./home-session-meta"
-import { Dialog } from "@novaclaw/ui/dialog"
+import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
 import { usePermission } from "@/context/permission"
 import { useChatsAttentionSets } from "@/apps/chats-attention"
 import { DialogSessionInfo } from "@/components/dialog-session-info"
@@ -1656,27 +1656,32 @@ function DialogBulkSessions(props: {
   const language = useLanguage()
   const [busy, setBusy] = createSignal(false)
   return (
-    <Dialog title={props.title} fit>
-      <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
-        <span class="text-12-regular text-text-weak">{props.description}</span>
-        <div class="flex justify-end gap-2">
-          <Button variant="ghost" size="large" onClick={() => dialog.close()}>
-            {language.t("common.cancel")}
-          </Button>
-          <Button
-            variant={props.danger ? "primary" : "secondary"}
-            size="large"
-            data-action="home-session-bulk-confirm"
-            disabled={busy()}
-            onClick={() => {
-              setBusy(true)
-              void props.onConfirm().finally(() => dialog.close())
-            }}
-          >
-            {props.actionLabel}
-          </Button>
+    <Dialog size="normal" fit>
+      <DialogHeader>
+        <DialogTitle>{props.title}</DialogTitle>
+      </DialogHeader>
+      <DialogBody>
+        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+          <span class="text-12-regular text-text-weak">{props.description}</span>
+          <div class="flex justify-end gap-2">
+            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+              {language.t("common.cancel")}
+            </Button>
+            <Button
+              variant={props.danger ? "primary" : "secondary"}
+              size="large"
+              data-action="home-session-bulk-confirm"
+              disabled={busy()}
+              onClick={() => {
+                setBusy(true)
+                void props.onConfirm().finally(() => dialog.close())
+              }}
+            >
+              {props.actionLabel}
+            </Button>
+          </div>
         </div>
-      </div>
+      </DialogBody>
     </Dialog>
   )
 }
@@ -1694,23 +1699,28 @@ function DialogRenameSession(props: { name: string; onConfirm: (title: string) =
     void props.onConfirm(title).finally(() => dialog.close())
   }
   return (
-    <Dialog title={language.t("common.rename")} fit>
-      <form onSubmit={submit} class="flex min-w-[22rem] flex-col gap-4 pl-6 pr-2.5 pb-3">
-        <TextInputV2
-          autofocus
-          value={value()}
-          aria-label={language.t("common.rename")}
-          onInput={(event) => setValue(event.currentTarget.value)}
-        />
-        <div class="flex justify-end gap-2">
-          <Button variant="ghost" size="large" type="button" onClick={() => dialog.close()}>
-            {language.t("common.cancel")}
-          </Button>
-          <Button variant="primary" size="large" type="submit" disabled={busy() || !value().trim()}>
-            {language.t("common.rename")}
-          </Button>
-        </div>
-      </form>
+    <Dialog size="normal" fit>
+      <DialogHeader>
+        <DialogTitle>{language.t("common.rename")}</DialogTitle>
+      </DialogHeader>
+      <DialogBody>
+        <form onSubmit={submit} class="flex min-w-[22rem] flex-col gap-4 pl-6 pr-2.5 pb-3">
+          <TextInputV2
+            autofocus
+            value={value()}
+            aria-label={language.t("common.rename")}
+            onInput={(event) => setValue(event.currentTarget.value)}
+          />
+          <div class="flex justify-end gap-2">
+            <Button variant="ghost" size="large" type="button" onClick={() => dialog.close()}>
+              {language.t("common.cancel")}
+            </Button>
+            <Button variant="primary" size="large" type="submit" disabled={busy() || !value().trim()}>
+              {language.t("common.rename")}
+            </Button>
+          </div>
+        </form>
+      </DialogBody>
     </Dialog>
   )
 }
@@ -1720,32 +1730,37 @@ function DialogDeleteSession(props: { name: string; onConfirm: () => Promise<voi
   const language = useLanguage()
   const [busy, setBusy] = createSignal(false)
   return (
-    <Dialog title={language.t("session.delete.title")} fit>
-      <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
-        <div class="flex flex-col gap-1">
-          <span class="text-14-regular text-text-strong">
-            {language.t("session.delete.confirm", { name: props.name })}
-          </span>
-          <span class="text-12-regular text-text-weak">{language.t("session.delete.description")}</span>
+    <Dialog size="normal" fit>
+      <DialogHeader>
+        <DialogTitle>{language.t("session.delete.title")}</DialogTitle>
+      </DialogHeader>
+      <DialogBody>
+        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+          <div class="flex flex-col gap-1">
+            <span class="text-14-regular text-text-strong">
+              {language.t("session.delete.confirm", { name: props.name })}
+            </span>
+            <span class="text-12-regular text-text-weak">{language.t("session.delete.description")}</span>
+          </div>
+          <div class="flex justify-end gap-2">
+            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+              {language.t("common.cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              size="large"
+              data-action="home-session-delete-confirm"
+              disabled={busy()}
+              onClick={() => {
+                setBusy(true)
+                void props.onConfirm().finally(() => dialog.close())
+              }}
+            >
+              {language.t("session.delete.button")}
+            </Button>
+          </div>
         </div>
-        <div class="flex justify-end gap-2">
-          <Button variant="ghost" size="large" onClick={() => dialog.close()}>
-            {language.t("common.cancel")}
-          </Button>
-          <Button
-            variant="primary"
-            size="large"
-            data-action="home-session-delete-confirm"
-            disabled={busy()}
-            onClick={() => {
-              setBusy(true)
-              void props.onConfirm().finally(() => dialog.close())
-            }}
-          >
-            {language.t("session.delete.button")}
-          </Button>
-        </div>
-      </div>
+      </DialogBody>
     </Dialog>
   )
 }

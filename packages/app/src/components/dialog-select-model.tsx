@@ -8,7 +8,7 @@ import { useDialog } from "@novaclaw/ui/context/dialog"
 import { Button } from "@novaclaw/ui/button"
 import { IconButton } from "@novaclaw/ui/icon-button"
 import { Tag } from "@novaclaw/ui/tag"
-import { Dialog } from "@novaclaw/ui/dialog"
+import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
 import { List } from "@novaclaw/ui/list"
 import { Tooltip } from "@novaclaw/ui/tooltip"
 import { ModelTooltip } from "./model-tooltip"
@@ -351,18 +351,23 @@ export const DialogSelectModel: Component<{ provider?: string; model?: ModelStat
   }
 
   return (
-    <Dialog
-      title={language.t("dialog.model.select.title")}
-      action={
-        <Button class="h-7 -my-1 text-14-medium" icon="plus-small" tabIndex={-1} onClick={provider}>
+    // ⚠️ v1's `action` prop REPLACED the close button (`<Switch>`: action, else CloseButton), so this
+    // dialog has been shipping with no close affordance at all. v2's header is a row of children
+    // followed by the close button, so the action and the close button now coexist — that is the v2
+    // shape, not a port of v1's either/or.
+    <Dialog size="large">
+      <DialogHeader>
+        <DialogTitle>{language.t("dialog.model.select.title")}</DialogTitle>
+        <Button class="h-7 -my-1 mr-2 text-14-medium" icon="plus-small" tabIndex={-1} onClick={provider}>
           {language.t("command.provider.connect")}
         </Button>
-      }
-    >
-      <ModelList provider={props.provider} model={props.model} onSelect={() => dialog.close()} />
-      <Button variant="ghost" class="ml-3 mt-5 mb-6 text-text-base self-start" onClick={manage}>
-        {language.t("dialog.model.manage")}
-      </Button>
+      </DialogHeader>
+      <DialogBody>
+        <ModelList provider={props.provider} model={props.model} onSelect={() => dialog.close()} />
+        <Button variant="ghost" class="ml-3 mt-5 mb-6 text-text-base self-start" onClick={manage}>
+          {language.t("dialog.model.manage")}
+        </Button>
+      </DialogBody>
     </Dialog>
   )
 }

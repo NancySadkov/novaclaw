@@ -1,5 +1,6 @@
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
 import { type ComponentProps, type JSXElement, type ParentProps, Show, children, splitProps } from "solid-js"
+import { useI18n } from "../../context/i18n"
 
 export interface DialogProps extends ParentProps {
   /** "content" hugs the children in BOTH axes and centers them (tour/placeholder-style cards);
@@ -12,6 +13,15 @@ export interface DialogProps extends ParentProps {
 }
 
 export interface DialogHeaderProps extends ParentProps {
+  /**
+   * Accessible name of the close button. Defaults to the localized `ui.common.close`.
+   *
+   * ⚠️ It used to default to the literal string `"Close"`, which shipped an English-only accessible
+   * name on every v2 dialog that renders a close button — the project/file picker
+   * (`dialog-select-directory-v2.tsx`) among them — while the v1 `Dialog` it replaces had localized
+   * the same button since it was written. Found while migrating v1's nine call sites here
+   * (2026-08-08); the migration would otherwise have carried eight more dialogs into the defect.
+   */
   closeLabel?: string
   hideClose?: boolean
 }
@@ -51,6 +61,7 @@ export function DialogTitleGroup(props: DialogTitleGroupProps) {
 }
 
 export function DialogHeader(props: DialogHeaderProps) {
+  const i18n = useI18n()
   const [local] = splitProps(props, ["closeLabel", "hideClose", "children"])
   const hideClose = () => local.hideClose === true
 
@@ -58,7 +69,7 @@ export function DialogHeader(props: DialogHeaderProps) {
     <div data-slot="dialog-header" data-hide-close={hideClose() ? "" : undefined}>
       {local.children}
       {!hideClose() && (
-        <Kobalte.CloseButton data-slot="dialog-close-button" aria-label={local.closeLabel ?? "Close"}>
+        <Kobalte.CloseButton data-slot="dialog-close-button" aria-label={local.closeLabel ?? i18n.t("ui.common.close")}>
           <svg
             width="16"
             height="16"

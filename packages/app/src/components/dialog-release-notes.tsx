@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js"
-import { Dialog } from "@novaclaw/ui/dialog"
+import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { Button } from "@novaclaw/ui/button"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useLanguage } from "@/context/language"
@@ -61,11 +61,12 @@ export function DialogReleaseNotes(props: { highlights: Highlight[] }) {
   }
 
   return (
-    <Dialog
-      size="large"
-      fit
-      class="w-[min(calc(100vw-40px),720px)] h-[min(calc(100vh-40px),400px)] -mt-20 min-h-0 overflow-hidden"
-    >
+    // `size="content"` is v2's shrink-wrap box, which is what the v1 site was hand-building: it passed
+    // `size="large" fit` and then overrode the content's width AND height anyway. Two of those
+    // overrides do not survive the move and should not: `-mt-20` slid the content out of the box (v2's
+    // container clips, v1's did not), and v2's `content` max-width is 640px, which is the v2 scale
+    // this card is now on instead of its bespoke 720px.
+    <Dialog size="content" class="w-[min(calc(100vw-64px),640px)] h-[400px] min-h-0">
       <div class="flex flex-1 min-w-0 min-h-0" tabIndex={0} autofocus onKeyDown={handleKeyDown}>
         {/* Left side - Text content */}
         <div class="flex flex-col flex-1 min-w-0 p-8">
@@ -126,7 +127,7 @@ export function DialogReleaseNotes(props: { highlights: Highlight[] }) {
 
         {/* Right side - Media content (edge to edge) */}
         {feature()?.media && (
-          <div class="flex-1 min-w-0 bg-surface-base overflow-hidden rounded-r-xl">
+          <div class="flex-1 min-w-0 bg-surface-base overflow-hidden">
             {feature()!.media!.type === "image" ? (
               <img
                 src={feature()!.media!.src}

@@ -4,7 +4,7 @@ import { useServerSync } from "@/context/server-sync"
 import { useSDK } from "@/context/sdk"
 import { usePrompt, DEFAULT_PROMPT } from "@/context/prompt"
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import { Dialog } from "@novaclaw/ui/dialog"
+import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
 import { List } from "@novaclaw/ui/list"
 import { showToast } from "@/utils/toast"
 import { promptFromUserMessage } from "@/utils/prompt"
@@ -92,23 +92,30 @@ export const DialogFork: Component = () => {
   }
 
   return (
-    <Dialog title={language.t("command.session.fork")}>
-      <List
-        class="flex-1 px-3 min-h-0 [&_[data-slot=list-scroll]]:flex-1 [&_[data-slot=list-scroll]]:min-h-0"
-        search={{ placeholder: language.t("common.search.placeholder"), autofocus: true }}
-        emptyMessage={language.t("dialog.fork.empty")}
-        key={(x) => x.id}
-        items={messages}
-        filterKeys={["text"]}
-        onSelect={handleSelect}
-      >
-        {(item) => (
-          <div class="w-full flex items-center gap-2">
-            <span class="truncate flex-1 min-w-0 text-left font-normal">{item.text}</span>
-            <span class="text-text-weak shrink-0 font-normal">{item.time}</span>
-          </div>
-        )}
-      </List>
+    // v1's default box was 640x512; `size="large"` is v2's 640x480, i.e. the searchable-list shape
+    // this dialog relied on the v1 default for. Stated rather than inherited (ruling 13).
+    <Dialog size="large">
+      <DialogHeader>
+        <DialogTitle>{language.t("command.session.fork")}</DialogTitle>
+      </DialogHeader>
+      <DialogBody>
+        <List
+          class="flex-1 px-3 min-h-0 [&_[data-slot=list-scroll]]:flex-1 [&_[data-slot=list-scroll]]:min-h-0"
+          search={{ placeholder: language.t("common.search.placeholder"), autofocus: true }}
+          emptyMessage={language.t("dialog.fork.empty")}
+          key={(x) => x.id}
+          items={messages}
+          filterKeys={["text"]}
+          onSelect={handleSelect}
+        >
+          {(item) => (
+            <div class="w-full flex items-center gap-2">
+              <span class="truncate flex-1 min-w-0 text-left font-normal">{item.text}</span>
+              <span class="text-text-weak shrink-0 font-normal">{item.time}</span>
+            </div>
+          )}
+        </List>
+      </DialogBody>
     </Dialog>
   )
 }

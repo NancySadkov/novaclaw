@@ -1,6 +1,6 @@
 import { Button } from "@novaclaw/ui/button"
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import { Dialog } from "@novaclaw/ui/dialog"
+import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
 import { DropdownMenu } from "@novaclaw/ui/dropdown-menu"
 import { Icon } from "@novaclaw/ui/icon"
 import { IconButton } from "@novaclaw/ui/icon-button"
@@ -178,12 +178,17 @@ export function DialogSelectServer() {
   const controller = useServerManagementController({ onSelect: dialog.close })
 
   return (
-    <Dialog title={controller.formTitle()}>
-      <div class="flex flex-1 min-h-0 flex-col px-5">
-        <Show when={controller.isFormMode()} fallback={<ServerConnectionList controller={controller} />}>
-          <ServerConnectionForm controller={controller} />
-        </Show>
-      </div>
+    <Dialog size="large">
+      <DialogHeader>
+        <DialogTitle>{controller.formTitle()}</DialogTitle>
+      </DialogHeader>
+      <DialogBody>
+        <div class="flex flex-1 min-h-0 flex-col px-5">
+          <Show when={controller.isFormMode()} fallback={<ServerConnectionList controller={controller} />}>
+            <ServerConnectionForm controller={controller} />
+          </Show>
+        </div>
+      </DialogBody>
     </Dialog>
   )
 }
