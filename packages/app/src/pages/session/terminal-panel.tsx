@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, on, onCleanup, onMount } from "solid-js"
+import { For, Show, createEffect, createMemo, on, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
@@ -162,16 +162,19 @@ export function TerminalPanel() {
     id: string,
     failure: TerminalConnectFailure,
     clone: (id: string) => Promise<void>,
+    disconnected: (id: string) => void,
   ) => {
     if (shouldCloneTerminal(failure)) {
       recoverTerminal(key, id, clone)
       return
     }
+    disconnected(id)
     setStore("errors", id, terminalConnectFailureMessage(failure, language.t("terminal.connectionLost.description")))
   }
 
-  const retryTerminal = (id: string) => {
+  const retryTerminal = (id: string, retry: (id: string) => void) => {
     setStore("errors", id, undefined)
+    retry(id)
   }
 
   const handleTerminalDragStart = (event: unknown) => {
@@ -304,33 +307,59 @@ export function TerminalPanel() {
                       <Show when={all().find((pty) => pty.id === id)}>
                         {(pty) => (
                           <div id={`terminal-wrapper-${id}`} class="absolute inset-0">
-                            <Show when={!store.errors[id]}>
+                            <Show when={pty().status === "running" && pty().ptyID !== undefined && !store.errors[id]}>
                               <Terminal
                                 pty={pty()}
                                 autoFocus={opened()}
-                                onConnect={() => markTerminalConnected(terminalRecoveryKey(pty()), id, ops.trim)}
-                                onCleanup={ops.update}
+                                onConnect={() => {
+                                  ops.connected(id)
+                                  markTerminalConnected(terminalRecoveryKey(pty()), id, (target) => ops.trim(target))
+                                }}
+                                onCleanup={(update) => ops.update(update)}
                                 onConnectError={(failure) =>
-                                  handleConnectFailure(terminalRecoveryKey(pty()), id, failure, ops.clone)
+                                  handleConnectFailure(
+                                    terminalRecoveryKey(pty()),
+                                    id,
+                                    failure,
+                                    (target) => ops.clone(target),
+                                    (target) => ops.disconnected(target),
+                                  )
                                 }
                               />
                             </Show>
-                            <Show when={store.errors[id]} keyed>
-                              {(message) => (
-                                <div class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background-stronger px-6 text-center">
-                                  <div class="text-14-medium text-text-strong">
-                                    {language.t("terminal.connectionLost.title")}
-                                  </div>
-                                  <div class="max-w-md text-13-regular text-text-weak">{message}</div>
-                                  <button
-                                    type="button"
-                                    class="rounded-md bg-surface-raised-base px-3 py-1.5 text-13-medium text-text-strong hover:bg-surface-raised-base-hover"
-                                    onClick={() => retryTerminal(id)}
-                                  >
-                                    {language.t("terminal.connectionLost.retry")}
-                                  </button>
+                            <Show when={pty().status === "starting"}>
+                              <div class="absolute inset-0 flex items-center justify-center text-text-weak">
+                                {language.t("terminal.loading")}
+                              </div>
+                            </Show>
+                            <Show when={pty().status === "disconnected" || pty().status === "exited"}>
+                              <div class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background-stronger px-6 text-center">
+                                <div class="text-14-medium text-text-strong">
+                                  {pty().status === "exited"
+                                    ? language.t("terminal.exited.title")
+                                    : language.t("terminal.connectionLost.title")}
                                 </div>
-                              )}
+                                <div class="max-w-md text-13-regular text-text-weak">
+                                  {pty().status === "exited"
+                                    ? language.t("terminal.exited.description", {
+                                        code: pty().exitCode ?? "unknown",
+                                      })
+                                    : (store.errors[id] ?? language.t("terminal.connectionLost.description"))}
+                                </div>
+                                <button
+                                  type="button"
+                                  class="rounded-md bg-surface-raised-base px-3 py-1.5 text-13-medium text-text-strong hover:bg-surface-raised-base-hover"
+                                  onClick={() =>
+                                    pty().status === "exited" || pty().ptyID === undefined
+                                      ? void ops.clone(id)
+                                      : retryTerminal(id, (target) => ops.retry(target))
+                                  }
+                                >
+                                  {pty().status === "exited" || pty().ptyID === undefined
+                                    ? language.t("terminal.exited.newShell")
+                                    : language.t("terminal.connectionLost.retry")}
+                                </button>
+                              </div>
                             </Show>
                           </div>
                         )}

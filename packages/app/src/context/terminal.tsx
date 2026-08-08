@@ -14,7 +14,12 @@ import { ScopedKey, ServerScope, type ServerScope as ServerScopeValue } from "@/
 import { showToast } from "@/utils/toast"
 
 export type LocalPTY = {
+  /** Durable UI identity. It survives server-PTY replacement so a tab, its active selection, and its
+   * handles do not become a different entity when the user asks for a new shell. */
   id: string
+  /** Ephemeral server process identity. Absent while creation is in flight. */
+  ptyID?: string
+  status: "starting" | "running" | "disconnected" | "exited"
   title: string
   titleNumber: number
   rows?: number
@@ -53,11 +58,49 @@ function numberFromTitle(title: string) {
   return titleNumber(title, MAX_TERMINAL_SESSIONS)
 }
 
+export function newTerminalClientID() {
+  return `terminal-${crypto.randomUUID()}`
+}
+
+export function bindCreatedTerminal(
+  local: LocalPTY,
+  info: { readonly id: string; readonly title?: string; readonly command?: string; readonly cwd?: string },
+): LocalPTY {
+  return {
+    ...local,
+    // `id` deliberately comes from `local`: replacing a process must not replace the tab entity.
+    ptyID: info.id,
+    status: "running",
+    title: info.title ?? local.title,
+    buffer: undefined,
+    cursor: undefined,
+    scrollY: undefined,
+    rows: undefined,
+    cols: undefined,
+    exitCode: undefined,
+    shell: info.command,
+    cwd: info.cwd,
+  }
+}
+
 function pty(value: unknown): LocalPTY | undefined {
   if (!record(value)) return
 
-  const id = text(value.id)
-  if (!id) return
+  const storedID = text(value.id)
+  if (!storedID) return
+
+  // Before T2 the one `id` was the server PTY id. Give those records a deterministic, distinct
+  // client identity so migration is idempotent and the active-tab pointer can be translated.
+  const storedPTYID = text(value.ptyID)
+  const isClientID = storedID.startsWith("terminal-") || storedID.startsWith("legacy-tab:")
+  const legacy = storedPTYID === undefined && !isClientID
+  const id = legacy ? `legacy-tab:${storedID}` : storedID
+  const ptyID = storedPTYID ?? (legacy ? storedID : undefined)
+  const storedStatus = text(value.status)
+  // A pending HTTP request cannot survive reload. Naming it disconnected is the honest recoverable
+  // state; pretending it is still starting strands a spinner forever.
+  const status =
+    storedStatus === "starting" ? "disconnected" : storedStatus === "disconnected" ? "disconnected" : "running"
 
   const title = text(value.title) ?? ""
   const number = num(value.titleNumber)
@@ -71,6 +114,8 @@ function pty(value: unknown): LocalPTY | undefined {
 
   return {
     id,
+    ...(ptyID === undefined ? {} : { ptyID }),
+    status,
     title,
     titleNumber: number && number > 0 ? number : (numberFromTitle(title) ?? 0),
     ...(rows !== undefined ? { rows } : {}),
@@ -87,14 +132,23 @@ export function migrateTerminalState(value: unknown) {
   if (!record(value)) return value
 
   const seen = new Set<string>()
+  const legacyIDs = new Map<string, string>()
   const all = (Array.isArray(value.all) ? value.all : []).flatMap((item) => {
+    // Exited tabs are a within-session diagnosis. The server retains at most 25 of them, but after a
+    // reload their Ghostty buffer is no longer authoritative and the old process cannot reconnect.
+    if (record(item) && (item.status === "exited" || num(item.exitCode) !== undefined)) return []
     const next = pty(item)
     if (!next || seen.has(next.id)) return []
     seen.add(next.id)
+    if (record(item)) {
+      const oldID = text(item.id)
+      if (oldID) legacyIDs.set(oldID, next.id)
+    }
     return [next]
   })
 
-  const active = text(value.active)
+  const storedActive = text(value.active)
+  const active = storedActive === undefined ? undefined : (legacyIDs.get(storedActive) ?? storedActive)
 
   return {
     active: active && seen.has(active) ? active : all[0]?.id,
@@ -210,7 +264,7 @@ function createWorkspaceTerminalSession(
     )
   }
 
-  const removeExited = (id: string) => {
+  const removeLocal = (id: string) => {
     const all = store.all
     const index = all.findIndex((x) => x.id === id)
     if (index === -1) return
@@ -231,16 +285,25 @@ function createWorkspaceTerminalSession(
   // `shouldKeepExitedTab` for the rule; the short version is that exit 0 closes (what every terminal
   // does) and a failure stays put, marked, with its buffer intact.
   const unsub = sdk.event.on("pty.exited", (event: { properties: { id: string; exitCode?: number } }) => {
-    const { id, exitCode } = event.properties
+    const { id: ptyID, exitCode } = event.properties
+    const item = store.all.find((item) => item.ptyID === ptyID)
+    if (!item) return
     if (!shouldKeepExitedTab(exitCode)) {
-      removeExited(id)
+      removeLocal(item.id)
       return
     }
-    const index = store.all.findIndex((item) => item.id === id)
+    const index = store.all.findIndex((candidate) => candidate.id === item.id)
     if (index === -1) return
-    setStore("all", index, (item) => ({ ...item, exitCode }))
+    setStore("all", index, (current) => ({ ...current, status: "exited", exitCode }))
   })
   onCleanup(unsub)
+
+  const unsubDeleted = sdk.event.on("pty.deleted", (event: { properties: { id: string } }) => {
+    const index = store.all.findIndex((item) => item.ptyID === event.properties.id)
+    if (index === -1 || store.all[index]?.status === "exited") return
+    setStore("all", index, (item) => ({ ...item, status: "disconnected" }))
+  })
+  onCleanup(unsubDeleted)
 
   const update = (client: DirectorySDK["client"], directory: string, pty: Partial<LocalPTY> & { id: string }) => {
     const index = store.all.findIndex((x) => x.id === pty.id)
@@ -249,9 +312,10 @@ function createWorkspaceTerminalSession(
     if (index === -1) return
     const previous = store.all[index]
     setStore("all", index, (item) => ({ ...item, ...pty }))
+    if (!previous?.ptyID) return
     client.v2.pty
       .update({
-        ptyID: pty.id,
+        ptyID: previous.ptyID,
         location: { directory },
         title: pty.title,
         size: pty.cols && pty.rows ? { rows: pty.rows, cols: pty.cols } : undefined,
@@ -267,6 +331,7 @@ function createWorkspaceTerminalSession(
     const index = store.all.findIndex((x) => x.id === id)
     const pty = store.all[index]
     if (!pty) return
+    setStore("all", index, (item) => ({ ...item, status: "starting", ptyID: undefined, exitCode: undefined }))
     const next = await client.v2.pty
       .create({
         location: { directory },
@@ -274,35 +339,24 @@ function createWorkspaceTerminalSession(
       })
       .catch((error: unknown) => {
         console.error("Failed to clone terminal", error)
+        const currentIndex = store.all.findIndex((item) => item.id === id)
+        if (currentIndex >= 0) setStore("all", currentIndex, pty)
         return undefined
       })
     if (!next?.data?.data) return
 
-    const active = store.active === pty.id
+    const currentIndex = store.all.findIndex((item) => item.id === id)
+    if (currentIndex === -1) {
+      // The user closed the starting tab before creation returned. Terminate the now-orphaned PTY
+      // instead of leaking a process with no UI handle.
+      await stopWorkspaceTerminal(client, directory, next.data.data.id).catch(() => undefined)
+      return
+    }
 
     batch(() => {
-      setStore("all", index, {
-        id: next.data.data.id,
-        title: next.data.data.title ?? pty.title,
-        titleNumber: pty.titleNumber,
-        buffer: undefined,
-        cursor: undefined,
-        scrollY: undefined,
-        rows: undefined,
-        cols: undefined,
-        // ⚠️ MUST be cleared explicitly, like every field above it: `setStore(path, object)` MERGES,
-        // so a field left out survives the clone. Caught live — "New shell" on an exited tab spawned a
-        // healthy PTY and the tab went on showing "The shell ended, exit code 1" over it, because the
-        // dead tab's code merged straight through. The recovery button looked broken while working.
-        exitCode: undefined,
-        // The replacement's own shell/cwd arrive with its create response; carrying the dead tab's
-        // would let the header describe a process that no longer exists.
-        shell: next.data.data.command,
-        cwd: next.data.data.cwd,
-      })
-      if (active) {
-        setStore("active", next.data.data.id)
-      }
+      // Every volatile/dead-process field is cleared by the pure constructor. `setStore(path, object)`
+      // MERGES, so omission here would carry an exit code or old shell through a successful clone.
+      setStore("all", currentIndex, bindCreatedTerminal(pty, next.data.data))
     })
   }
 
@@ -318,27 +372,38 @@ function createWorkspaceTerminalSession(
     },
     new() {
       const nextNumber = pickNextTerminalNumber()
+      const id = newTerminalClientID()
+      const starting: LocalPTY = {
+        id,
+        status: "starting",
+        title: defaultTitle(nextNumber),
+        titleNumber: nextNumber,
+      }
+      setStore("all", store.all.length, starting)
+      setStore("active", id)
 
       sdk.client.v2.pty
         .create({ location: { directory: sdk.directory }, title: defaultTitle(nextNumber) })
-        .then((pty) => {
-          const id = pty.data?.data.id
-          if (!id) return
+        .then(async (pty) => {
           const info = pty.data?.data
-          const newTerminal = {
-            id,
-            title: info?.title ?? defaultTitle(nextNumber),
-            titleNumber: nextNumber,
-            // `Pty.Info` already carries the resolved shell and cwd; keeping them is what lets the
-            // header say WHICH shell on WHICH machine instead of only naming the instance.
-            ...(info?.command ? { shell: info.command } : {}),
-            ...(info?.cwd ? { cwd: info.cwd } : {}),
+          const ptyID = info?.id
+          if (!ptyID) {
+            const index = store.all.findIndex((item) => item.id === id)
+            if (index >= 0) setStore("all", index, (item) => ({ ...item, status: "disconnected" }))
+            return
           }
-          setStore("all", store.all.length, newTerminal)
-          setStore("active", id)
+          const index = store.all.findIndex((item) => item.id === id)
+          if (index === -1) {
+            await stopWorkspaceTerminal(sdk.client, sdk.directory, ptyID).catch(() => undefined)
+            return
+          }
+          const newTerminal = bindCreatedTerminal(starting, info)
+          setStore("all", index, newTerminal)
         })
         .catch((error: unknown) => {
           console.error("Failed to create terminal", error)
+          const index = store.all.findIndex((item) => item.id === id)
+          if (index >= 0) setStore("all", index, (item) => ({ ...item, status: "disconnected" }))
         })
     },
     update(pty: Partial<LocalPTY> & { id: string }) {
@@ -373,6 +438,19 @@ function createWorkspaceTerminalSession(
         async clone(id: string) {
           await clone(client, sdk.directory, id)
         },
+        connected(id: string) {
+          const index = store.all.findIndex((item) => item.id === id)
+          if (index >= 0) setStore("all", index, (item) => ({ ...item, status: "running" }))
+        },
+        disconnected(id: string) {
+          const index = store.all.findIndex((item) => item.id === id)
+          if (index >= 0 && store.all[index]?.status !== "exited")
+            setStore("all", index, (item) => ({ ...item, status: "disconnected" }))
+        },
+        retry(id: string) {
+          const index = store.all.findIndex((item) => item.id === id)
+          if (index >= 0 && store.all[index]?.ptyID) setStore("all", index, (item) => ({ ...item, status: "running" }))
+        },
       }
     },
     open(id: string) {
@@ -391,8 +469,10 @@ function createWorkspaceTerminalSession(
       setStore("active", store.all[prevIndex]?.id)
     },
     async close(id: string) {
+      const local = store.all.find((item) => item.id === id)
+      if (!local) return
       try {
-        await stopWorkspaceTerminal(sdk.client, sdk.directory, id)
+        if (local.ptyID) await stopWorkspaceTerminal(sdk.client, sdk.directory, local.ptyID)
       } catch (error) {
         // Keep the tab visible: hiding it would strand a possibly-running process with no recovery
         // handle. The connection banner can still establish that a server-confirmed 404 is gone.
@@ -527,7 +607,7 @@ export const { use: useTerminal, provider: TerminalProvider } = createSimpleCont
       trim: (id: string) => workspace().trim(id),
       trimAll: () => workspace().trimAll(),
       clone: (id: string) => workspace().clone(id),
-      bind: () => workspace(),
+      bind: () => workspace().bind(),
       open: (id: string) => workspace().open(id),
       close: (id: string) => workspace().close(id),
       stopAll: () => workspace().stopAll(),

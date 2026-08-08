@@ -3,6 +3,7 @@ import { ServerScope } from "@/utils/server-scope"
 
 let getWorkspaceTerminalCacheKey: typeof import("./terminal").getWorkspaceTerminalCacheKey
 let getLegacyTerminalStorageKeys: (dir: string, legacySessionID?: string) => string[]
+let bindCreatedTerminal: typeof import("./terminal").bindCreatedTerminal
 let migrateTerminalState: (value: unknown) => unknown
 let stopAllWorkspaceTerminals: typeof import("./terminal").stopAllWorkspaceTerminals
 let stopWorkspaceTerminal: typeof import("./terminal").stopWorkspaceTerminal
@@ -21,11 +22,51 @@ beforeAll(async () => {
     }),
   }))
   const mod = await import("./terminal")
+  bindCreatedTerminal = mod.bindCreatedTerminal
   getWorkspaceTerminalCacheKey = mod.getWorkspaceTerminalCacheKey
   getLegacyTerminalStorageKeys = mod.getLegacyTerminalStorageKeys
   migrateTerminalState = mod.migrateTerminalState
   stopAllWorkspaceTerminals = mod.stopAllWorkspaceTerminals
   stopWorkspaceTerminal = mod.stopWorkspaceTerminal
+})
+
+describe("bindCreatedTerminal", () => {
+  test("replaces the server process without replacing the tab entity", () => {
+    expect(
+      bindCreatedTerminal(
+        {
+          id: "tab-stable",
+          ptyID: "pty_dead",
+          status: "exited",
+          exitCode: 137,
+          title: "server",
+          titleNumber: 3,
+          shell: "old-shell",
+          cwd: "/old",
+          buffer: "failure details",
+          cursor: 42,
+          scrollY: 5,
+          rows: 24,
+          cols: 80,
+        },
+        { id: "pty_new", title: "server", command: "new-shell", cwd: "/new" },
+      ),
+    ).toEqual({
+      id: "tab-stable",
+      ptyID: "pty_new",
+      status: "running",
+      exitCode: undefined,
+      title: "server",
+      titleNumber: 3,
+      shell: "new-shell",
+      cwd: "/new",
+      buffer: undefined,
+      cursor: undefined,
+      scrollY: undefined,
+      rows: undefined,
+      cols: undefined,
+    })
+  })
 })
 
 describe("stopAllWorkspaceTerminals", () => {
@@ -126,10 +167,18 @@ describe("migrateTerminalState", () => {
         ],
       }),
     ).toEqual({
-      active: "one",
+      active: "legacy-tab:one",
       all: [
-        { id: "one", title: "Terminal 2", titleNumber: 2 },
-        { id: "two", title: "logs", titleNumber: 4, rows: 24, cols: 80 },
+        { id: "legacy-tab:one", ptyID: "one", status: "running", title: "Terminal 2", titleNumber: 2 },
+        {
+          id: "legacy-tab:two",
+          ptyID: "two",
+          status: "running",
+          title: "logs",
+          titleNumber: 4,
+          rows: 24,
+          cols: 80,
+        },
       ],
     })
   })
@@ -144,10 +193,52 @@ describe("migrateTerminalState", () => {
         ],
       }),
     ).toEqual({
-      active: "two",
+      active: "legacy-tab:two",
       all: [
-        { id: "one", title: "Terminal 1", titleNumber: 1 },
-        { id: "two", title: "shell", titleNumber: 7 },
+        { id: "legacy-tab:one", ptyID: "one", status: "running", title: "Terminal 1", titleNumber: 1 },
+        { id: "legacy-tab:two", ptyID: "two", status: "running", title: "shell", titleNumber: 7 },
+      ],
+    })
+  })
+
+  test("preserves a durable client id separately from a replaced server PTY id", () => {
+    expect(
+      migrateTerminalState({
+        active: "tab-stable",
+        all: [{ id: "tab-stable", ptyID: "pty_replaced", status: "running", title: "build" }],
+      }),
+    ).toEqual({
+      active: "tab-stable",
+      all: [
+        {
+          id: "tab-stable",
+          ptyID: "pty_replaced",
+          status: "running",
+          title: "build",
+          titleNumber: 0,
+        },
+      ],
+    })
+  })
+
+  test("turns an interrupted start into a recoverable disconnect and does not resurrect exited tabs", () => {
+    expect(
+      migrateTerminalState({
+        active: "terminal-starting",
+        all: [
+          { id: "terminal-starting", status: "starting", title: "starting" },
+          { id: "dead-tab", ptyID: "pty_dead", status: "exited", exitCode: 1, title: "dead" },
+        ],
+      }),
+    ).toEqual({
+      active: "terminal-starting",
+      all: [
+        {
+          id: "terminal-starting",
+          status: "disconnected",
+          title: "starting",
+          titleNumber: 0,
+        },
       ],
     })
   })

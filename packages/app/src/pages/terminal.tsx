@@ -143,6 +143,7 @@ function TerminalWorkspace(props: { serverName: string }) {
       void ops.clone(id)
       return
     }
+    ops.disconnected(id)
     setError({
       id,
       message: terminalConnectFailureMessage(failure, language.t("terminal.connectionLost.description")),
@@ -183,20 +184,24 @@ function TerminalWorkspace(props: { serverName: string }) {
   }
   const [dragging, setDragging] = createSignal<string | undefined>()
   const [copied, setCopied] = createSignal<string | undefined>()
-  const copyDiagnosis = async (item: { id: string; shell?: string; cwd?: string; exitCode?: number }) => {
+  const copyDiagnosis = async (item: {
+    id: string
+    ptyID?: string
+    shell?: string
+    cwd?: string
+    exitCode?: number
+  }) => {
     const text = terminalDiagnosis({
       // The same words the panel is showing, so a forwarded copy cannot describe a different fault
       // from the one the user was looking at.
       headline:
-        item.exitCode === undefined
-          ? language.t("terminal.connectionLost.title")
-          : language.t("terminal.exited.title"),
+        item.exitCode === undefined ? language.t("terminal.connectionLost.title") : language.t("terminal.exited.title"),
       server: props.serverName,
       detail:
         item.exitCode === undefined
           ? (error()?.message ?? language.t("terminal.connectionLost.description"))
           : language.t("terminal.exited.description", { code: item.exitCode }),
-      ptyID: item.id,
+      ptyID: item.ptyID ?? "not-created",
       shell: shellName(item.shell),
       cwd: item.cwd,
       version: InstallationVersion,
@@ -259,7 +264,9 @@ function TerminalWorkspace(props: { serverName: string }) {
               // A fresh query restarts the walk; keeping the old index would step from a position
               // that belongs to a different set of matches.
               setMatchIndex(undefined)
-              setMatchCount(findMatches(handles.get(terminal.active() ?? "")?.readLines() ?? [], event.currentTarget.value).length)
+              setMatchCount(
+                findMatches(handles.get(terminal.active() ?? "")?.readLines() ?? [], event.currentTarget.value).length,
+              )
             }}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
@@ -390,60 +397,76 @@ function TerminalWorkspace(props: { serverName: string }) {
               const ops = terminal.bind()
               return (
                 <Show
-                  when={error()?.id !== item.id && item.exitCode === undefined}
+                  when={error()?.id !== item.id && item.status === "running" && item.ptyID !== undefined}
                   fallback={
-                    <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
-                      <div class="text-14-medium text-text-strong">
-                        {item.exitCode === undefined
-                          ? language.t("terminal.connectionLost.title")
-                          : language.t("terminal.exited.title")}
-                      </div>
-                      <div class="max-w-md text-13-regular text-text-weak">
-                        {item.exitCode === undefined
-                          ? error()?.message
-                          : language.t("terminal.exited.description", { code: item.exitCode })}
-                      </div>
-                      {/* T3: every action here is MODEL-FREE by requirement — this banner is what a
+                    <Show
+                      when={item.status !== "starting"}
+                      fallback={
+                        <div class="absolute inset-0 flex items-center justify-center text-13-regular text-text-weak">
+                          {language.t("terminal.loading")}
+                        </div>
+                      }
+                    >
+                      <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
+                        <div class="text-14-medium text-text-strong">
+                          {item.status === "exited"
+                            ? language.t("terminal.exited.title")
+                            : language.t("terminal.connectionLost.title")}
+                        </div>
+                        <div class="max-w-md text-13-regular text-text-weak">
+                          {item.status === "exited"
+                            ? language.t("terminal.exited.description", { code: item.exitCode ?? "unknown" })
+                            : (error()?.message ?? language.t("terminal.connectionLost.description"))}
+                        </div>
+                        {/* T3: every action here is MODEL-FREE by requirement — this banner is what a
                           user meets when the instance is already unwell, so nothing on it may depend
                           on a working agent, provider or network round-trip beyond the one being
                           retried. Retry/New shell differ by cause; Copy details and Stop are shared. */}
-                      <div class="flex items-center gap-2">
-                        <button
-                          type="button"
-                          class="rounded-md bg-surface-raised-base px-3 py-1.5 text-13-medium text-text-strong"
-                          onClick={() => (item.exitCode === undefined ? setError(undefined) : void ops.clone(item.id))}
-                        >
-                          {item.exitCode === undefined
-                            ? language.t("terminal.connectionLost.retry")
-                            : language.t("terminal.exited.newShell")}
-                        </button>
-                        <Show when={item.exitCode === undefined}>
+                        <div class="flex items-center gap-2">
+                          <button
+                            type="button"
+                            class="rounded-md bg-surface-raised-base px-3 py-1.5 text-13-medium text-text-strong"
+                            onClick={() => {
+                              if (item.status === "exited" || item.ptyID === undefined) {
+                                void ops.clone(item.id)
+                                return
+                              }
+                              setError(undefined)
+                              ops.retry(item.id)
+                            }}
+                          >
+                            {item.status !== "exited" && item.ptyID !== undefined
+                              ? language.t("terminal.connectionLost.retry")
+                              : language.t("terminal.exited.newShell")}
+                          </button>
+                          <Show when={item.status === "disconnected" && item.ptyID !== undefined}>
+                            <button
+                              type="button"
+                              class="rounded-md px-3 py-1.5 text-13-medium text-text-weak"
+                              onClick={() => void ops.clone(item.id)}
+                            >
+                              {language.t("terminal.exited.newShell")}
+                            </button>
+                          </Show>
                           <button
                             type="button"
                             class="rounded-md px-3 py-1.5 text-13-medium text-text-weak"
-                            onClick={() => void ops.clone(item.id)}
+                            onClick={() => void copyDiagnosis(item)}
                           >
-                            {language.t("terminal.exited.newShell")}
+                            {copied() === item.id
+                              ? language.t("terminal.connectionLost.copied")
+                              : language.t("terminal.connectionLost.copy")}
                           </button>
-                        </Show>
-                        <button
-                          type="button"
-                          class="rounded-md px-3 py-1.5 text-13-medium text-text-weak"
-                          onClick={() => void copyDiagnosis(item)}
-                        >
-                          {copied() === item.id
-                            ? language.t("terminal.connectionLost.copied")
-                            : language.t("terminal.connectionLost.copy")}
-                        </button>
-                        <button
-                          type="button"
-                          class="rounded-md px-3 py-1.5 text-13-medium text-text-weak"
-                          onClick={() => void terminal.close(item.id)}
-                        >
-                          {language.t("terminal.close")}
-                        </button>
+                          <button
+                            type="button"
+                            class="rounded-md px-3 py-1.5 text-13-medium text-text-weak"
+                            onClick={() => void terminal.close(item.id)}
+                          >
+                            {language.t("terminal.close")}
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    </Show>
                   }
                 >
                   <div
@@ -462,9 +485,10 @@ function TerminalWorkspace(props: { serverName: string }) {
                       autoFocus
                       onConnect={() => {
                         setError(undefined)
+                        ops.connected(item.id)
                         ops.trim(item.id)
                       }}
-                      onCleanup={ops.update}
+                      onCleanup={(update) => ops.update(update)}
                       onConnectError={(failure) => connectError(failure, item.id)}
                       onHandle={(handle) => {
                         if (handle) handles.set(item.id, handle)
@@ -484,7 +508,11 @@ function TerminalWorkspace(props: { serverName: string }) {
             {/* A full-surface backdrop so the next click anywhere dismisses — including a click that
                 lands on the terminal, which would otherwise both close the menu and be typed into
                 the shell. */}
-            <div class="fixed inset-0 z-40" onClick={() => setMenu(undefined)} onContextMenu={() => setMenu(undefined)} />
+            <div
+              class="fixed inset-0 z-40"
+              onClick={() => setMenu(undefined)}
+              onContextMenu={() => setMenu(undefined)}
+            />
             <div
               role="menu"
               aria-label={language.t("terminal.title")}

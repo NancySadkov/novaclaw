@@ -205,7 +205,9 @@ export const Terminal = (props: TerminalProps) => {
     "onConnectError",
     "onHandle",
   ])
-  const id = local.pty.id
+  const clientID = local.pty.id
+  const id = local.pty.ptyID
+  if (!id) throw new Error("A terminal renderer requires a server PTY id")
   const restore = typeof local.pty.buffer === "string" ? local.pty.buffer : ""
   const restoreSize =
     restore &&
@@ -710,7 +712,7 @@ export const Terminal = (props: TerminalProps) => {
     if (ws && ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) ws.close(1000)
 
     const finalize = () => {
-      persistTerminal({ term, addon: serializeAddon, cursor, id, onCleanup: props.onCleanup })
+      persistTerminal({ term, addon: serializeAddon, cursor, id: clientID, onCleanup: props.onCleanup })
       cleanup()
     }
 
