@@ -177,6 +177,7 @@ function TerminalWorkspace(props: { serverName: string }) {
   }
 
   const closeFind = () => {
+    for (const handle of handles.values()) handle.clearReveal()
     setFinding(false)
     setQuery("")
     setMatchCount(0)

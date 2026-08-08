@@ -4,13 +4,14 @@
  * is the API a search reaches for first — and it is HISTORY ONLY, explicitly "not including the active
  * screen". A search built on it cannot find text the user is looking at, which is the single most
  * likely thing they are searching for. `buffer.active` (xterm.js-compatible) spans scrollback AND the
- * active screen in one coordinate space, and it is the same space `select(column, row, length)` and
- * `scrollToLine(line)` take — so reveal is free once a match is found.
+ * active screen in one absolute coordinate space. Ghostty's reveal APIs do NOT share that space:
+ * `scrollToLine` counts backward from the live bottom and `select` takes a viewport row, so
+ * `components/terminal-reveal.ts` performs the required conversion.
  *
  * The matching itself lives here, away from the renderer, because it is the part with edge cases.
  */
 export interface TerminalMatch {
-  /** Absolute buffer row — the coordinate `select`/`scrollToLine` want. */
+  /** Absolute `buffer.active` row, oldest scrollback first. */
   row: number
   column: number
   length: number

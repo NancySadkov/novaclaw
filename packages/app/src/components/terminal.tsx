@@ -4,7 +4,16 @@ import { resolveThemeVariant } from "@novaclaw/ui/theme/resolve"
 import type { HexColor } from "@novaclaw/ui/theme/types"
 import { showToast } from "@/utils/toast"
 import type { FitAddon, Ghostty, Terminal as Term } from "ghostty-web"
-import { type ComponentProps, createEffect, createMemo, onCleanup, onMount, splitProps } from "solid-js"
+import {
+  type ComponentProps,
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount,
+  Show,
+  splitProps,
+} from "solid-js"
 import { SerializeAddon } from "@/addons/serialize"
 import { matchKeybind, parseKeybind } from "@/context/command"
 import { useLanguage } from "@/context/language"
@@ -18,6 +27,7 @@ import { terminalWriter } from "@/utils/terminal-writer"
 import { terminalWebSocketURL } from "@/utils/terminal-websocket-url"
 import { terminalPresenceFromStatus, type TerminalConnectFailure } from "./terminal-connection"
 import { restartTerminalCursorBlink, terminalClipboardShortcut } from "./terminal-keyboard"
+import { terminalRevealPosition } from "./terminal-reveal"
 
 const TOGGLE_TERMINAL_ID = "terminal.toggle"
 const DEFAULT_TOGGLE_TERMINAL_KEYBIND = "ctrl+`"
@@ -32,13 +42,15 @@ export interface TerminalHandle {
    * renderer: it deliberately does not send anything to the shell, so it cannot disturb a running
    * job or land a stray line in the user's shell history. */
   clear: () => void
-  /** Every buffer line as text, scrollback THROUGH the active screen, in the same coordinate space
-   * `reveal` takes. ⚠️ Read on demand rather than cached: a live shell appends while a find bar is
-   * open, and a cached snapshot would search a buffer the user is no longer looking at. */
+  /** Every buffer line as text, scrollback THROUGH the active screen. Read on demand rather than
+   * cached: a live shell appends while a find bar is open, and a cached snapshot would search a
+   * buffer the user is no longer looking at. */
   readLines: () => string[]
-  /** Select a match and scroll it into view. Coordinates are absolute buffer rows, as returned by
-   * `readLines` — the one place these two must agree, which is why they are neighbours here. */
+  /** Highlight a match and scroll it into view. Input rows are absolute `readLines` coordinates; the
+   * renderer owns conversion to Ghostty's bottom-relative scroll and viewport-relative highlight. */
   reveal: (match: { row: number; column: number; length: number }) => void
+  /** Remove Search's highlight without disturbing a selection the user made in the terminal. */
+  clearReveal: () => void
 }
 
 export interface TerminalProps extends ComponentProps<"div"> {
@@ -196,6 +208,12 @@ export const Terminal = (props: TerminalProps) => {
   const authToken = connection.type === "http" ? connection.authToken : false
   const sameOrigin = new URL(url, location.href).origin === location.origin
   let container!: HTMLDivElement
+  const [revealHighlight, setRevealHighlight] = createSignal<{
+    left: number
+    top: number
+    width: number
+    height: number
+  }>()
   const [local, others] = splitProps(props, [
     "pty",
     "class",
@@ -419,9 +437,25 @@ export const Terminal = (props: TerminalProps) => {
           return lines
         },
         reveal: (match) => {
-          t.select(match.column, match.row, match.length)
-          t.scrollToLine(match.row)
+          const position = terminalRevealPosition(match.row, t.buffer.active.length, t.rows)
+          t.scrollToLine(position.viewportY)
+          // ghostty-web 0.4.0's `select(column, viewportRow, length)` translates viewport rows in
+          // the opposite direction from its own renderer. Keep Search's highlight product-owned:
+          // that makes the exact match visible without corrupting the user's copy selection.
+          const canvas = container.querySelector("canvas")
+          if (!(canvas instanceof HTMLCanvasElement) || t.cols < 1 || t.rows < 1) return
+          const root = container.getBoundingClientRect()
+          const surface = canvas.getBoundingClientRect()
+          const cellWidth = surface.width / t.cols
+          const cellHeight = surface.height / t.rows
+          setRevealHighlight({
+            left: surface.left - root.left + match.column * cellWidth,
+            top: surface.top - root.top + position.viewportRow * cellHeight,
+            width: Math.max(cellWidth, match.length * cellWidth),
+            height: cellHeight,
+          })
         },
+        clearReveal: () => setRevealHighlight(undefined),
       })
       cleanups.push(() => local.onHandle?.(undefined))
       _ghostty = g
@@ -489,6 +523,7 @@ export const Terminal = (props: TerminalProps) => {
       }
 
       const onResize = t.onResize((size) => {
+        setRevealHighlight(undefined)
         scheduleSize(size.cols, size.rows)
       })
       cleanups.push(() => disposeIfDisposable(onResize))
@@ -658,6 +693,7 @@ export const Terminal = (props: TerminalProps) => {
 
           const data = typeof event.data === "string" ? event.data : ""
           if (!data) return
+          setRevealHighlight(undefined)
           output?.push(data)
           cursor += data.length
           seek = cursor
@@ -746,6 +782,23 @@ export const Terminal = (props: TerminalProps) => {
         [local.class ?? ""]: !!local.class,
       }}
       {...others}
-    />
+    >
+      <Show when={revealHighlight()}>
+        {(highlight) => (
+          <div
+            aria-hidden="true"
+            class="pointer-events-none absolute z-10 rounded-[2px]"
+            style={{
+              left: `${highlight().left}px`,
+              top: `${highlight().top}px`,
+              width: `${highlight().width}px`,
+              height: `${highlight().height}px`,
+              "background-color": terminalColors().selectionBackground,
+              outline: `1px solid ${terminalColors().foreground}`,
+            }}
+          />
+        )}
+      </Show>
+    </div>
   )
 }
