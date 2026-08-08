@@ -1,6 +1,8 @@
 import { Location } from "@novaclaw/core/location"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { PermissionSaved } from "@novaclaw/core/permission/saved"
+import { SessionExecution } from "@novaclaw/core/session/execution"
+import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
@@ -70,9 +72,16 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
           const permission = yield* PermissionV2.Service
           const request = yield* permission.get(ctx.params.requestID)
           if (!request || request.sessionID !== ctx.params.sessionID) return yield* missingRequest(ctx.params.requestID)
-          yield* permission
+          const result = yield* permission
             .reply({ requestID: ctx.params.requestID, reply: ctx.payload.reply, message: ctx.payload.message })
             .pipe(Effect.catchTag("PermissionV2.NotFoundError", () => missingRequest(ctx.params.requestID)))
+          // A live assertion continues through its Deferred. A recovered one has no worker left,
+          // so grant fresh operator authority and re-drive the interrupted turn; its exact one-shot
+          // verdict is consumed by PermissionV2.assert before the tool can dispatch a side effect.
+          if (result.recovered) {
+            yield* (yield* SessionExecutionAttempt.Service).authorizeRetry(result.sessionID)
+            yield* (yield* SessionExecution.Service).resume(result.sessionID).pipe(Effect.orDie)
+          }
           return HttpApiSchema.NoContent.make()
         }),
       )

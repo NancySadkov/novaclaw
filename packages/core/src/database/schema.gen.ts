@@ -278,6 +278,20 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`permission_pending\` (
+          \`id\` text PRIMARY KEY,
+          \`origin\` text NOT NULL,
+          \`session_id\` text NOT NULL,
+          \`request\` text NOT NULL,
+          \`agent\` text,
+          \`awaited\` integer NOT NULL,
+          \`resolution\` text,
+          \`feedback\` text,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`permission\` (
           \`id\` text PRIMARY KEY,
           \`origin\` text NOT NULL,
@@ -521,6 +535,9 @@ export default {
         `CREATE UNIQUE INDEX \`messenger_binding_chat_idx\` ON \`messenger_binding\` (\`account_id\`,\`chat_id\`);`,
       )
       yield* tx.run(`CREATE INDEX \`messenger_binding_session_idx\` ON \`messenger_binding\` (\`session_id\`);`)
+      yield* tx.run(
+        `CREATE INDEX \`permission_pending_origin_session_idx\` ON \`permission_pending\` (\`origin\`,\`session_id\`);`,
+      )
       yield* tx.run(
         `CREATE UNIQUE INDEX \`permission_origin_action_resource_idx\` ON \`permission\` (\`origin\`,\`action\`,\`resource\`);`,
       )

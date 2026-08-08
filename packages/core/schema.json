@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "028d0af3-faf4-49b7-93d3-0d520472891a",
+  "id": "1b65ad69-e218-4962-83e1-c08e0eb6da4d",
   "prevIds": [
-    "309b882d-afb2-436b-b274-2e3a1a042cc7"
+    "028d0af3-faf4-49b7-93d3-0d520472891a"
   ],
   "ddl": [
     {
@@ -112,6 +112,10 @@
     },
     {
       "name": "messenger_initiation",
+      "entityType": "tables"
+    },
+    {
+      "name": "permission_pending",
       "entityType": "tables"
     },
     {
@@ -1757,6 +1761,106 @@
       "name": "time_updated",
       "entityType": "columns",
       "table": "messenger_initiation"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "permission_pending"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "origin",
+      "entityType": "columns",
+      "table": "permission_pending"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "session_id",
+      "entityType": "columns",
+      "table": "permission_pending"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "request",
+      "entityType": "columns",
+      "table": "permission_pending"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "agent",
+      "entityType": "columns",
+      "table": "permission_pending"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "awaited",
+      "entityType": "columns",
+      "table": "permission_pending"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "resolution",
+      "entityType": "columns",
+      "table": "permission_pending"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "feedback",
+      "entityType": "columns",
+      "table": "permission_pending"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "permission_pending"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "permission_pending"
     },
     {
       "type": "text",
@@ -3747,6 +3851,15 @@
         "id"
       ],
       "nameExplicit": false,
+      "name": "permission_pending_pk",
+      "table": "permission_pending",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
       "name": "permission_pk",
       "table": "permission",
       "entityType": "pks"
@@ -3989,6 +4102,24 @@
       "name": "messenger_binding_session_idx",
       "entityType": "indexes",
       "table": "messenger_binding"
+    },
+    {
+      "columns": [
+        {
+          "value": "origin",
+          "isExpression": false
+        },
+        {
+          "value": "session_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "permission_pending_origin_session_idx",
+      "entityType": "indexes",
+      "table": "permission_pending"
     },
     {
       "columns": [

@@ -9,11 +9,12 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { Location } from "@novaclaw/core/location"
 import { PermissionV2 } from "@novaclaw/core/permission"
-import { PermissionTable } from "@novaclaw/core/permission/sql"
+import { PermissionPendingTable, PermissionTable } from "@novaclaw/core/permission/sql"
 import { PermissionSaved } from "@novaclaw/core/permission/saved"
 import { Project } from "@novaclaw/core/project"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionAutoGrant } from "@novaclaw/core/session/auto-grant"
 import { ASK_BEFORE_CHANGES_RULES, MODE_RULES } from "@novaclaw/core/session/config-resolve"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { Global } from "@novaclaw/core/global"
@@ -481,6 +482,98 @@ describe("PermissionV2", () => {
       const exit = yield* Fiber.await(fiber)
       expect(exit._tag).toBe("Failure")
       expect(yield* service.list()).toEqual([])
+    }),
+  )
+
+  it.effect("persists an interrupted ask and consumes its recovered answer exactly once", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const { service, fiber, request } = yield* waitForRequest()
+      const { db } = yield* Database.Service
+
+      expect(yield* db.select().from(PermissionPendingTable).all()).toMatchObject([
+        { id: request.id, awaited: true, resolution: null },
+      ])
+
+      // Models a worker disappearing while the host-owned permission assertion is parked. The
+      // durable card remains, but its Deferred no longer has a consumer.
+      yield* Fiber.interrupt(fiber)
+      expect(yield* service.list()).toEqual([request])
+
+      // Build the service again over the same database: this is the process-local half a restart
+      // actually replaces, and the card must be reconstructed without the old Map or Deferred.
+      const dependencyLayer = Layer.mergeAll(
+        Layer.succeed(Database.Service, yield* Database.Service),
+        Layer.succeed(EventV2.Service, yield* EventV2.Service),
+        current,
+        Layer.succeed(AgentV2.Service, yield* AgentV2.Service),
+        Layer.succeed(SessionStore.Service, yield* SessionStore.Service),
+        Layer.succeed(PermissionSaved.Service, yield* PermissionSaved.Service),
+        SessionAutoGrant.layer.pipe(Layer.provide(Layer.succeed(Database.Service, yield* Database.Service))),
+      )
+      const reply = yield* Effect.gen(function* () {
+        const recovered = yield* PermissionV2.Service
+        expect(yield* recovered.list()).toEqual([request])
+        return yield* recovered.reply({ requestID: request.id, reply: "once" })
+      }).pipe(Effect.provide(PermissionV2.layer.pipe(Layer.provide(dependencyLayer))), Effect.scoped)
+      expect(reply).toEqual({
+        sessionID: request.sessionID,
+        recovered: true,
+      })
+      expect(yield* db.select().from(PermissionPendingTable).all()).toMatchObject([
+        { id: request.id, resolution: "allow" },
+      ])
+
+      // A new request id is normal after re-driving the interrupted model turn. Matching is on the
+      // immutable operation identity, and consuming the row before returning makes the grant one-shot.
+      yield* service.assert(assertion({ id: PermissionV2.ID.create("per_retry") }))
+      expect(yield* db.select().from(PermissionPendingTable).all()).toEqual([])
+
+      const after = yield* service.ask(assertion({ id: PermissionV2.ID.create("per_after") }))
+      expect(after.effect).toBe("ask")
+      expect(yield* service.list()).toHaveLength(1)
+      yield* service.reply({ requestID: after.id, reply: "reject" })
+    }),
+  )
+
+  it.effect("preserves a recovered denial through the same-session cascade", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const deniedInput = assertion({
+        id: PermissionV2.ID.create("per_denied"),
+        action: "skill",
+        resources: ["dangerous-skill"],
+      })
+      const { fiber, request } = yield* waitForRequest(deniedInput)
+      const { db } = yield* Database.Service
+      yield* Fiber.interrupt(fiber)
+
+      const dependencyLayer = Layer.mergeAll(
+        Layer.succeed(Database.Service, yield* Database.Service),
+        Layer.succeed(EventV2.Service, yield* EventV2.Service),
+        current,
+        Layer.succeed(AgentV2.Service, yield* AgentV2.Service),
+        Layer.succeed(SessionStore.Service, yield* SessionStore.Service),
+        Layer.succeed(PermissionSaved.Service, yield* PermissionSaved.Service),
+        SessionAutoGrant.layer.pipe(Layer.provide(Layer.succeed(Database.Service, yield* Database.Service))),
+      )
+      const error = yield* Effect.gen(function* () {
+        const recovered = yield* PermissionV2.Service
+        expect(yield* recovered.reply({ requestID: request.id, reply: "reject", message: "Not this time" })).toEqual({
+          sessionID: request.sessionID,
+          recovered: true,
+        })
+        expect(yield* db.select().from(PermissionPendingTable).all()).toMatchObject([
+          { id: request.id, resolution: "deny", feedback: "Not this time" },
+        ])
+        return yield* recovered
+          .assert({ ...deniedInput, id: PermissionV2.ID.create("per_denied_retry") })
+          .pipe(Effect.flip)
+      }).pipe(Effect.provide(PermissionV2.layer.pipe(Layer.provide(dependencyLayer))), Effect.scoped)
+
+      expect(error).toBeInstanceOf(PermissionV2.CorrectedError)
+      expect(error).toMatchObject({ feedback: "Not this time" })
+      expect(yield* db.select().from(PermissionPendingTable).all()).toEqual([])
     }),
   )
 

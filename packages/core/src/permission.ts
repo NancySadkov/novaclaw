@@ -1,6 +1,7 @@
 export * as PermissionV2 from "./permission"
 
 import path from "path"
+import { and, eq, ne } from "drizzle-orm"
 import { makeLocationNode } from "./effect/app-node"
 import { Global } from "./global"
 import { Context, Deferred, Effect as EffectRuntime, FiberSet, Layer, Schema } from "effect"
@@ -25,6 +26,8 @@ import {
 } from "./session/config-resolve"
 import { SessionAutoGrant } from "./session/auto-grant"
 import { PermissionSaved } from "./permission/saved"
+import { Database } from "./database/database"
+import { PermissionPendingTable } from "./permission/sql"
 
 /** Where an Analyze-mode session may still write its report: the app's own temp dir, which the agent
  *  baseline already whitelists for external read/write. Slashed to match `LocationMutation.resolve`. */
@@ -424,10 +427,16 @@ export function merge(...rulesets: Permission.Ruleset[]): Permission.Ruleset {
 export interface Interface {
   readonly ask: (input: AssertInput) => EffectRuntime.Effect<AskResult, SessionV2.NotFoundError>
   readonly assert: (input: AssertInput) => EffectRuntime.Effect<void, Error | SessionV2.NotFoundError>
-  readonly reply: (input: ReplyInput) => EffectRuntime.Effect<void, NotFoundError>
+  readonly reply: (input: ReplyInput) => EffectRuntime.Effect<ReplyResult, NotFoundError>
   readonly get: (id: ID) => EffectRuntime.Effect<Request | undefined>
   readonly forSession: (sessionID: SessionV2.ID) => EffectRuntime.Effect<ReadonlyArray<Request>>
   readonly list: () => EffectRuntime.Effect<ReadonlyArray<Request>>
+}
+
+export interface ReplyResult {
+  readonly sessionID: SessionV2.ID
+  /** True when no live waiter remains and the HTTP seam must re-drive the interrupted session. */
+  readonly recovered: boolean
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/Permission") {}
@@ -435,7 +444,8 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 interface Pending {
   readonly request: Request
   readonly agent?: AgentV2.ID
-  readonly deferred: Deferred.Deferred<void, RejectedError | CorrectedError>
+  readonly awaited: boolean
+  deferred?: Deferred.Deferred<void, RejectedError | CorrectedError>
 }
 
 export const layer = Layer.effect(
@@ -447,7 +457,39 @@ export const layer = Layer.effect(
     const sessions = yield* SessionStore.Service
     const autoGrants = yield* SessionAutoGrant.Service
     const saved = yield* PermissionSaved.Service
+    const { db } = yield* Database.Service
     const pending = new Map<ID, Pending>()
+
+    const decodeRequest = (value: string) => Schema.decodeUnknownSync(Request)(JSON.parse(value))
+    const rowValues = (item: Pick<Pending, "request" | "agent" | "awaited">) => ({
+      id: item.request.id,
+      origin: location.origin,
+      session_id: String(item.request.sessionID),
+      request: JSON.stringify(item.request),
+      agent: item.agent === undefined ? null : String(item.agent),
+      awaited: item.awaited,
+    })
+
+    // Rehydrate before serving HTTP. Pending rows keep rendering as consent cards; resolved rows stay
+    // out of the list until the retried assertion consumes their one-shot verdict.
+    const durableRows = yield* db
+      .select()
+      .from(PermissionPendingTable)
+      .where(eq(PermissionPendingTable.origin, location.origin))
+      .all()
+      .pipe(EffectRuntime.orDie)
+    for (const row of durableRows) {
+      if (row.resolution !== null) continue
+      const request = decodeRequest(row.request)
+      pending.set(request.id, {
+        request,
+        awaited: row.awaited,
+        ...(row.agent === null ? {} : { agent: AgentV2.ID.make(row.agent) }),
+      })
+    }
+
+    const deleteDurable = (id: ID) =>
+      db.delete(PermissionPendingTable).where(eq(PermissionPendingTable.id, id)).run().pipe(EffectRuntime.orDie)
 
     // Asked/Replied must carry this service's location EXPLICITLY: publishes can run on fibers
     // without Location.Service in context (tool settlement, the session-deleted sweep), and the
@@ -459,9 +501,13 @@ export const layer = Layer.effect(
     }
 
     yield* EffectRuntime.addFinalizer(() =>
-      EffectRuntime.forEach(pending.values(), (item) => Deferred.fail(item.deferred, new RejectedError()), {
-        discard: true,
-      }).pipe(
+      EffectRuntime.forEach(
+        pending.values(),
+        (item) => (item.deferred ? Deferred.fail(item.deferred, new RejectedError()) : EffectRuntime.void),
+        {
+          discard: true,
+        },
+      ).pipe(
         EffectRuntime.ensuring(
           EffectRuntime.sync(() => {
             pending.clear()
@@ -475,11 +521,12 @@ export const layer = Layer.effect(
     // session row is gone the V2 session-scoped reply route can never settle these (it 404s on
     // the missing session), so an orphaned ask would pollute pending lists and attention badges
     // forever with no way to dismiss it.
-    const rejectSessionPending = (sessionID: string) =>
+    const rejectSessionPending = (sessionID: string, preserveID?: ID) =>
       EffectRuntime.uninterruptible(
         EffectRuntime.gen(function* () {
           for (const [id, item] of pending) {
             if (String(item.request.sessionID) !== sessionID) continue
+            if (id === preserveID) continue
             yield* events.publish(
               Event.Replied,
               {
@@ -489,9 +536,24 @@ export const layer = Layer.effect(
               },
               { location: eventLocation },
             )
-            yield* Deferred.fail(item.deferred, new RejectedError())
+            if (item.deferred) yield* Deferred.fail(item.deferred, new RejectedError())
             pending.delete(id)
+            yield* deleteDurable(id)
           }
+          // A recovered or already-resolved row may not be in the in-memory map. Session
+          // settlement still owns deleting it: a one-shot verdict must not survive the retried
+          // turn and accidentally authorize the same operation much later.
+          yield* db
+            .delete(PermissionPendingTable)
+            .where(
+              and(
+                eq(PermissionPendingTable.origin, location.origin),
+                eq(PermissionPendingTable.session_id, sessionID),
+                ...(preserveID === undefined ? [] : [ne(PermissionPendingTable.id, preserveID)]),
+              ),
+            )
+            .run()
+            .pipe(EffectRuntime.orDie)
         }),
       )
 
@@ -701,9 +763,9 @@ export const layer = Layer.effect(
         )
       const protecting = attachment !== undefined && !releasedByName && mode !== "yolo"
       // Deny-fast rather than park, exactly as the unattended stance above does. An ask nobody can
-      // answer is not protection — it is a hang, and pending asks are in-memory and location-scoped,
-      // so it would not even survive the restart the maintenance plane is designed to cause. `yolo`
-      // stays the one deliberate way out, matching `unattendedStanceRules`.
+      // answer is not protection — durable consent survives a restart now, but it cannot conjure an
+      // operator for an unattended chain. `yolo` stays the one deliberate way out, matching
+      // `unattendedStanceRules`.
       if (protecting && !attendedRoot(rootType))
         return {
           effect: "deny" as const,
@@ -730,10 +792,10 @@ export const layer = Layer.effect(
       // in that list until 2026-08-04, when the owner promoted both INTO the baseline. Read the
       // constant, never this sentence — a stale example here left five tests red for a day.)
       //
-      // Under an UNATTENDED chain that ask parks on a consent card nobody will ever answer — and
-      // `pending` above is an in-memory, location-scoped Map, so it does not even survive the
-      // restart the maintenance plane is designed to cause. The measured pathology is "the run
-      // looking alive and doing nothing". The stance's own doctrine already rules on it
+      // Under an UNATTENDED chain that ask parks on a consent card nobody will ever answer. Persisting
+      // the card fixes attended restart recovery; it does not fix the absence of an operator. The
+      // measured pathology is "the run looking alive and doing nothing". The stance's own doctrine
+      // already rules on it
       // (`config-resolve.ts` §UNATTENDED CONFINEMENT: *an ask nobody is present to answer is a
       // HANG, not a gate*), so the honest answer is an IMMEDIATE refusal the model can route
       // around, with its own reason so the wording can be actionable.
@@ -800,16 +862,22 @@ export const layer = Layer.effect(
       }
     }
 
-    const create = (request: Request, agent?: AgentV2.ID) =>
+    const create = (request: Request, agent: AgentV2.ID | undefined, awaited: boolean) =>
       EffectRuntime.uninterruptible(
         EffectRuntime.gen(function* () {
           const deferred = yield* Deferred.make<void, RejectedError | CorrectedError>()
-          const item = { request, agent, deferred }
+          const item = { request, agent, awaited, deferred }
           if (pending.has(request.id)) return yield* EffectRuntime.die(`Duplicate pending permission ID: ${request.id}`)
+          yield* db.insert(PermissionPendingTable).values(rowValues(item)).run().pipe(EffectRuntime.orDie)
           pending.set(request.id, item)
-          yield* events
-            .publish(Event.Asked, request, { location: eventLocation })
-            .pipe(EffectRuntime.onError(() => EffectRuntime.sync(() => pending.delete(request.id))))
+          yield* events.publish(Event.Asked, request, { location: eventLocation }).pipe(
+            EffectRuntime.onError(() =>
+              EffectRuntime.gen(function* () {
+                pending.delete(request.id)
+                yield* deleteDurable(request.id)
+              }),
+            ),
+          )
           return item
         }),
       )
@@ -817,13 +885,41 @@ export const layer = Layer.effect(
     const ask = EffectRuntime.fn("PermissionV2.ask")(function* (input: AssertInput) {
       const result = yield* evaluateInput(input)
       const value = request(input, result.attachment)
-      if (result.effect === "ask") yield* create(value, input.agent)
+      if (result.effect === "ask") yield* create(value, input.agent, false)
       return { id: value.id, effect: result.effect }
     })
 
     const assert = EffectRuntime.fn("PermissionV2.assert")((input: AssertInput) =>
       EffectRuntime.uninterruptibleMask((restore) =>
         EffectRuntime.gen(function* () {
+          // A reboot cannot preserve the Deferred that was waiting in the old worker. Its answer is
+          // therefore stored beside the request and consumed exactly once by the retried assertion.
+          const resolved = yield* db
+            .select()
+            .from(PermissionPendingTable)
+            .where(
+              and(
+                eq(PermissionPendingTable.origin, location.origin),
+                eq(PermissionPendingTable.session_id, String(input.sessionID)),
+              ),
+            )
+            .all()
+            .pipe(EffectRuntime.orDie)
+          const replay = resolved.find((row) => {
+            if (row.resolution === null) return false
+            const prior = decodeRequest(row.request)
+            return (
+              prior.action === input.action &&
+              prior.resources.length === input.resources.length &&
+              prior.resources.every((resource, index) => resource === input.resources[index])
+            )
+          })
+          if (replay) {
+            yield* deleteDurable(ID.make(replay.id))
+            if (replay.resolution === "allow") return
+            if (replay.feedback) return yield* new CorrectedError({ feedback: replay.feedback })
+            return yield* new RejectedError()
+          }
           const result = yield* evaluateInput(input)
           if (result.effect === "deny") {
             return yield* new DeniedError({
@@ -832,31 +928,15 @@ export const layer = Layer.effect(
             })
           }
           if (result.effect === "allow") return
-          const item = yield* create(request(input, result.attachment), input.agent)
+          const item = yield* create(request(input, result.attachment), input.agent, true)
           return yield* restore(Deferred.await(item.deferred)).pipe(
             EffectRuntime.ensuring(
               EffectRuntime.sync(() => {
-                // The awaiting tool is going away — settled or INTERRUPTED (Stop). An entry
-                // still pending here means nobody replied, so tell every client the ask is
-                // dead (Replied/reject), or the ask dock wedges on a stale card with the
-                // composer gone (owner-hit 2026-07-22). Detached via the service FiberSet:
-                // this finalizer runs on the dying drain fiber, where an inline publish dies
-                // with the fiber and is silently swallowed. (A settled reply deletes the
-                // entry first, so this publishes nothing on the normal path.)
-                if (pending.delete(item.request.id))
-                  fork(
-                    events
-                      .publish(
-                        Event.Replied,
-                        {
-                          sessionID: item.request.sessionID,
-                          requestID: item.request.id,
-                          reply: "reject",
-                        },
-                        { location: eventLocation },
-                      )
-                      .pipe(EffectRuntime.asVoid),
-                  )
+                // A disappearing waiter may mean Stop, a worker crash, or an autoupdate. Keep the
+                // card durable here; the authoritative idle/exited event deletes it for Stop, while
+                // a lost host leaves it available for recovery.
+                const current = pending.get(item.request.id)
+                if (current) current.deferred = undefined
               }),
             ),
           )
@@ -881,6 +961,7 @@ export const layer = Layer.effect(
 
           const { verdict, scope } = normalizeReply(input.reply)
           const persisted = savedResources(existing.request, scope)
+          const recovered = existing.awaited && existing.deferred === undefined
 
           if (verdict === "deny") {
             // 1K: a deny can persist (file/always scope) so the same ask never comes back.
@@ -891,14 +972,23 @@ export const layer = Layer.effect(
                 resources: persisted,
                 effect: "deny",
               })
-            yield* Deferred.fail(
-              existing.deferred,
-              input.message ? new CorrectedError({ feedback: input.message }) : new RejectedError(),
-            )
+            if (existing.deferred)
+              yield* Deferred.fail(
+                existing.deferred,
+                input.message ? new CorrectedError({ feedback: input.message }) : new RejectedError(),
+              )
             pending.delete(input.requestID)
+            if (recovered)
+              yield* db
+                .update(PermissionPendingTable)
+                .set({ resolution: "deny", feedback: input.message ?? null })
+                .where(eq(PermissionPendingTable.id, input.requestID))
+                .run()
+                .pipe(EffectRuntime.orDie)
+            else yield* deleteDurable(input.requestID)
             // The deny cascades: the session's other queued asks reject too.
-            yield* rejectSessionPending(String(existing.request.sessionID))
-            return
+            yield* rejectSessionPending(String(existing.request.sessionID), recovered ? existing.request.id : undefined)
+            return { sessionID: existing.request.sessionID, recovered }
           }
 
           if (persisted.length) {
@@ -909,12 +999,23 @@ export const layer = Layer.effect(
               effect: "allow",
             })
           }
-          yield* Deferred.succeed(existing.deferred, undefined)
+          if (existing.deferred) yield* Deferred.succeed(existing.deferred, undefined)
           pending.delete(input.requestID)
-          if (!persisted.length) return
+          if (recovered && !persisted.length)
+            yield* db
+              .update(PermissionPendingTable)
+              .set({ resolution: "allow", feedback: null })
+              .where(eq(PermissionPendingTable.id, input.requestID))
+              .run()
+              .pipe(EffectRuntime.orDie)
+          else yield* deleteDurable(input.requestID)
+          if (!persisted.length) return { sessionID: existing.request.sessionID, recovered }
 
           const rememberedRules = yield* savedRules()
           for (const [id, item] of pending) {
+            // No live waiter means this card belongs to a drain that must be explicitly re-driven.
+            // Do not silently clear it as collateral from another session's remembered answer.
+            if (!item.deferred) continue
             const input = { ...item.request }
             const rules = yield* configured(item.request.sessionID, item.agent).pipe(
               EffectRuntime.catchTag("Session.NotFoundError", () => EffectRuntime.succeed(undefined)),
@@ -937,9 +1038,11 @@ export const layer = Layer.effect(
               },
               { location: eventLocation },
             )
-            yield* Deferred.succeed(item.deferred, undefined)
+            if (item.deferred) yield* Deferred.succeed(item.deferred, undefined)
             pending.delete(id)
+            yield* deleteDurable(id)
           }
+          return { sessionID: existing.request.sessionID, recovered }
         }),
       ),
     )
@@ -965,5 +1068,13 @@ export const locationLayer = layer.pipe(Layer.provideMerge(AgentV2.locationLayer
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [EventV2.node, Location.node, AgentV2.node, SessionStore.node, PermissionSaved.node, SessionAutoGrant.node],
+  deps: [
+    EventV2.node,
+    Location.node,
+    AgentV2.node,
+    SessionStore.node,
+    PermissionSaved.node,
+    SessionAutoGrant.node,
+    Database.node,
+  ],
 })
