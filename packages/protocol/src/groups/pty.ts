@@ -25,6 +25,7 @@ export const PtyPaths = {
   create: "/api/pty",
   removeAll: "/api/pty",
   get: "/api/pty/:ptyID",
+  activity: "/api/pty/:ptyID/activity",
   update: "/api/pty/:ptyID",
   remove: "/api/pty/:ptyID",
   connectToken: "/api/pty/:ptyID/connect-token",
@@ -91,6 +92,23 @@ export const PtyGroup = HttpApiGroup.make("server.pty")
           identifier: "v2.pty.get",
           summary: "Get PTY session",
           description: "Get one PTY session, including its exit code once exited.",
+        }),
+      ),
+  )
+  .add(
+    HttpApiEndpoint.get("pty.activity", PtyPaths.activity, {
+      params: { ptyID: Pty.ID },
+      query: LocationQuery,
+      success: Location.response(Pty.Activity),
+      error: PtyNotFoundError,
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.pty.activity",
+          summary: "Inspect PTY process activity",
+          description:
+            "Report whether a running terminal shell has descendant processes before a destructive close.",
         }),
       ),
   )

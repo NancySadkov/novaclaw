@@ -31,6 +31,12 @@ export const Info = Schema.Struct({
 }).annotate({ identifier: "Pty" })
 export interface Info extends Schema.Schema.Type<typeof Info> {}
 
+export const Activity = Schema.Struct({
+  state: Schema.Literals(["idle", "foreground", "unknown"]),
+  descendants: optional(NonNegativeInt),
+}).annotate({ identifier: "PtyActivity" })
+export interface Activity extends Schema.Schema.Type<typeof Activity> {}
+
 const Created = define({ type: "pty.created", schema: { info: Info } })
 const Updated = define({ type: "pty.updated", schema: { info: Info } })
 const Exited = define({ type: "pty.exited", schema: { id: ID, exitCode: NonNegativeInt } })

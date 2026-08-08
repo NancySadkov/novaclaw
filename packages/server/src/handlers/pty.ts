@@ -80,6 +80,24 @@ export const PtyHandler = HttpApiBuilder.group(Api, "server.pty", (handlers) =>
         }),
       )
       .handle(
+        "pty.activity",
+        Effect.fn(function* (ctx) {
+          const pty = yield* Pty.Service
+          return yield* response(
+            pty.activity(ctx.params.ptyID).pipe(
+              Effect.catchTag(
+                "Pty.NotFoundError",
+                () =>
+                  new PtyNotFoundError({
+                    ptyID: ctx.params.ptyID,
+                    message: `PTY session not found: ${ctx.params.ptyID}`,
+                  }),
+              ),
+            ),
+          )
+        }),
+      )
+      .handle(
         "pty.update",
         Effect.fn(function* (ctx) {
           const pty = yield* Pty.Service

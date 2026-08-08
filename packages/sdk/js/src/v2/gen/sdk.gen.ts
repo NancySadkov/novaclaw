@@ -294,6 +294,8 @@ import type {
   V2ProviderRemoveResponses,
   V2ProviderStopLocalModelErrors,
   V2ProviderStopLocalModelResponses,
+  V2PtyActivityErrors,
+  V2PtyActivityResponses,
   V2PtyConnectErrors,
   V2PtyConnectResponses,
   V2PtyConnectTokenErrors,
@@ -7113,6 +7115,39 @@ export class Pty extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Inspect PTY process activity
+   *
+   * Report whether a running terminal shell has descendant processes before a destructive close.
+   */
+  public activity<ThrowOnError extends boolean = false>(
+    parameters: {
+      ptyID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "ptyID" },
+            { in: "query", key: "location" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2PtyActivityResponses, V2PtyActivityErrors, ThrowOnError>({
+      url: "/api/pty/{ptyID}/activity",
+      ...options,
+      ...params,
     })
   }
 

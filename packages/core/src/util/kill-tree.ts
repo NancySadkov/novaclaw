@@ -125,13 +125,53 @@ function parsePs(text: string, into: Map<number, number>): Map<number, number> {
   return into
 }
 
+type ParentSnapshot = { readonly parents: Map<number, number>; readonly available: boolean }
+
+/** Windows has no `/proc` and `tasklist` omits PPIDs. CIM is part of Windows and returns the same
+ * pid/ppid relation as the POSIX snapshots. The command is fixed—not assembled from user input. */
+async function windowsParentMap(): Promise<ParentSnapshot> {
+  return new Promise<ParentSnapshot>((resolve) => {
+    let out = ""
+    let settled = false
+    const finish = (available: boolean) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      const parents = parsePs(out, new Map())
+      resolve({ parents, available: available && parents.size > 0 })
+    }
+    const powershell = spawn(
+      "powershell.exe",
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "Get-CimInstance Win32_Process | ForEach-Object { Write-Output ([string]$_.ProcessId + ' ' + [string]$_.ParentProcessId) }",
+      ],
+      { stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
+    )
+    powershell.stdout?.on("data", (chunk) => {
+      out += String(chunk)
+    })
+    powershell.once("error", () => finish(false))
+    powershell.once("close", (code) => finish(code === 0))
+    const timeout = setTimeout(() => {
+      powershell.kill()
+      finish(false)
+    }, 5_000)
+    timeout.unref()
+  })
+}
+
 /**
  * `pid -> ppid` for every process on the box.
  *
  * Linux reads `/proc` directly (no spawn — this runs inside teardown finalizers); every other POSIX
  * shells out to `ps` exactly ONCE, never a per-node `pgrep -P` BFS.
  */
-async function parentMap(): Promise<Map<number, number>> {
+async function parentSnapshot(): Promise<ParentSnapshot> {
+  if (process.platform === "win32") return windowsParentMap()
   const map = new Map<number, number>()
   if (existsSync("/proc/self/stat")) {
     const entries = await readdir("/proc").catch(() => [] as string[])
@@ -144,7 +184,7 @@ async function parentMap(): Promise<Map<number, number>> {
         if (ppid !== undefined) map.set(pid, ppid)
       }),
     )
-    if (map.size) return map
+    if (map.size) return { parents: map, available: true }
   }
   const text = await new Promise<string>((resolve) => {
     let out = ""
@@ -155,7 +195,12 @@ async function parentMap(): Promise<Map<number, number>> {
     ps.once("error", () => resolve(""))
     ps.once("close", () => resolve(out))
   })
-  return parsePs(text, map)
+  parsePs(text, map)
+  return { parents: map, available: map.size > 0 }
+}
+
+async function parentMap(): Promise<Map<number, number>> {
+  return (await parentSnapshot()).parents
 }
 
 /** The synchronous twin of {@link parentMap}, for `process.on("exit")` hooks. */
@@ -211,6 +256,14 @@ export function descendantsOf(pid: number, parents: ReadonlyMap<number, number>)
   }
   walk(pid)
   return out
+}
+
+/** Snapshot and return every live descendant of `pid`, deepest first. `undefined` means the platform
+ * snapshot failed; callers must not collapse that into an empty (idle/safe) result. */
+export async function descendants(pid: number): Promise<number[] | undefined> {
+  if (!Number.isInteger(pid) || pid <= 0) return undefined
+  const snapshot = await parentSnapshot()
+  return snapshot.available ? descendantsOf(pid, snapshot.parents) : undefined
 }
 
 /**

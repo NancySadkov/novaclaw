@@ -558,6 +558,12 @@ export const dict = {
   "terminal.title": "Terminal",
   "terminal.title.numbered": "Terminal {{number}}",
   "terminal.close": "Zatvori terminal",
+  "terminal.closeRunning.action": "Zaustavi i zatvori",
+  "terminal.closeRunning.title": "Zaustaviti aktivnu naredbu?",
+  "terminal.closeRunning.description":
+    "Ovaj terminal još uvijek izvršava naredbu. Zatvaranje će zaustaviti tu naredbu i sve što je pokrenula.",
+  "terminal.closeRunning.unknownDescription":
+    "NovaClaw nije mogao provjeriti izvršava li ovaj terminal naredbu. Zatvaranje može zaustaviti nedovršen rad.",
   "terminal.connectionLost.title": "Veza prekinuta",
   "terminal.connectionLost.description":
     "Veza s terminalom je prekinuta. Ovo se može desiti kada se server restartuje.",

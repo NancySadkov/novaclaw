@@ -243,3 +243,20 @@ describe("Shell.descendantsOf", () => {
     expect([...result].sort((a, b) => a - b)).toEqual([20, 30])
   })
 })
+
+describe("Shell.descendants", () => {
+  test("finds a real child through the platform process snapshot", async () => {
+    const tree = await startTree(false)
+    const descendants = await Shell.descendants(tree.parent)
+    expect(descendants).toBeDefined()
+    expect(descendants).toContain(tree.grandchild)
+  })
+
+  test("returns an empty list for a live leaf instead of confusing it with probe failure", async () => {
+    const descendants = await Shell.descendants(process.pid)
+    expect(descendants).toBeDefined()
+    // The test runner may own workers, so use the fixture's grandchild: it deliberately just waits.
+    const tree = await startTree(false)
+    expect(await Shell.descendants(tree.grandchild)).toEqual([])
+  })
+})

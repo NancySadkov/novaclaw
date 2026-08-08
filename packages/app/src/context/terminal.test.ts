@@ -9,6 +9,7 @@ let migrateTerminalState: (value: unknown) => unknown
 let reconcileTerminalSnapshot: typeof import("./terminal").reconcileTerminalSnapshot
 let stopAllInstanceTerminals: typeof import("./terminal").stopAllInstanceTerminals
 let stopWorkspaceTerminal: typeof import("./terminal").stopWorkspaceTerminal
+let inspectTerminalClose: typeof import("./terminal").inspectTerminalClose
 
 beforeAll(async () => {
   mock.module("@solidjs/router", () => ({
@@ -32,6 +33,7 @@ beforeAll(async () => {
   reconcileTerminalSnapshot = mod.reconcileTerminalSnapshot
   stopAllInstanceTerminals = mod.stopAllInstanceTerminals
   stopWorkspaceTerminal = mod.stopWorkspaceTerminal
+  inspectTerminalClose = mod.inspectTerminalClose
 })
 
 describe("disconnectLiveTerminals", () => {
@@ -286,6 +288,41 @@ describe("stopWorkspaceTerminal", () => {
       "wrk_one",
     )
     expect(input).toEqual({ ptyID: "pty_one", location: { directory: "/repo", workspace: "wrk_one" } })
+  })
+})
+
+describe("inspectTerminalClose", () => {
+  test("reports foreground activity and preserves the workspace location", async () => {
+    let input: unknown
+    const state = await inspectTerminalClose(
+      {
+        v2: {
+          pty: {
+            activity: async (value: unknown) => {
+              input = value
+              return { data: { data: { state: "foreground", descendants: 2 } } }
+            },
+          },
+        },
+      } as never,
+      "/repo",
+      "pty_one",
+      "workspace_one",
+    )
+    expect(state).toBe("foreground")
+    expect(input).toEqual({
+      ptyID: "pty_one",
+      location: { directory: "/repo", workspace: "workspace_one" },
+    })
+  })
+
+  test("fails closed when activity cannot be inspected", async () => {
+    const state = await inspectTerminalClose(
+      { v2: { pty: { activity: async () => Promise.reject(new Error("offline")) } } } as never,
+      "/repo",
+      "pty_one",
+    )
+    expect(state).toBe("unknown")
   })
 })
 

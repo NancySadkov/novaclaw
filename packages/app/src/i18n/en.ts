@@ -1148,6 +1148,12 @@ export const dict = {
   "terminal.title.numbered": "Terminal {{number}}",
   "terminal.close": "Close terminal",
   "terminal.closeFailed": "Could not stop terminal",
+  "terminal.closeRunning.action": "Stop and close",
+  "terminal.closeRunning.title": "Stop the running command?",
+  "terminal.closeRunning.description":
+    "This terminal still has a command running. Closing it will stop that command and anything it started.",
+  "terminal.closeRunning.unknownDescription":
+    "NovaClaw could not check whether this terminal still has a command running. Closing it may stop unfinished work.",
   "terminal.stopAll.action": "Stop all",
   "terminal.stopAll.title": "Stop all terminals?",
   "terminal.stopAll.description":

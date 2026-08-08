@@ -10,6 +10,7 @@ import { Effect, Schema } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import { Location } from "@novaclaw/core/location"
 import { Pty } from "@novaclaw/core/pty"
+import { killTreeSync } from "@novaclaw/core/util/kill-tree"
 import { cliIt, type CliFixture } from "../../lib/cli-process"
 
 function hardKill(pid: number): void {
@@ -17,11 +18,7 @@ function hardKill(pid: number): void {
     process.kill(pid, "SIGKILL")
     return
   }
-  const killed = Bun.spawnSync(["taskkill", "/pid", String(pid), "/f"], {
-    stdout: "ignore",
-    stderr: "pipe",
-  })
-  if (killed.exitCode !== 0) throw new Error(`taskkill failed: ${killed.stderr.toString()}`)
+  killTreeSync(pid)
 }
 
 describe("novaclaw serve (subprocess)", () => {

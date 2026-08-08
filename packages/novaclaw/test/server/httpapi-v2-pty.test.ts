@@ -6,6 +6,7 @@ import * as Socket from "effect/unstable/socket/Socket"
 import { Location } from "@novaclaw/core/location"
 import { Pty } from "@novaclaw/core/pty"
 import { PtyTicket } from "@novaclaw/core/pty/ticket"
+import { PtyPaths } from "@novaclaw/protocol/groups/pty"
 import { PtyInstancePaths } from "@novaclaw/protocol/groups/pty-instance"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { resetDatabase } from "../fixture/db"
@@ -179,6 +180,42 @@ describe("v2 pty HttpApi", () => {
     const missing = await request(`/api/pty/${body.data.id}`, tmp.path)
     expect(missing.status).toBe(404)
     expect(await missing.json()).toMatchObject({ _tag: "PtyNotFoundError", ptyID: body.data.id })
+  })
+
+  testPty("distinguishes an idle shell from a running foreground command", async () => {
+    await using tmp = await tmpdir({ git: true, config: { formatter: false } })
+    const create = (args: string[]) =>
+      request("/api/pty", tmp.path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ command: "/usr/bin/env", args }),
+      })
+
+    const idleCreated = await create(["sh"])
+    expect(idleCreated.status).toBe(200)
+    const idle = Schema.decodeUnknownSync(Location.response(Pty.Info))(await idleCreated.json()).data
+    const idleActivity = await request(PtyPaths.activity.replace(":ptyID", idle.id), tmp.path)
+    expect(idleActivity.status).toBe(200)
+    expect(await idleActivity.json()).toMatchObject({ data: { state: "idle", descendants: 0 } })
+
+    const busyCreated = await create(["sh", "-c", "sleep 30"])
+    expect(busyCreated.status).toBe(200)
+    const busy = Schema.decodeUnknownSync(Location.response(Pty.Info))(await busyCreated.json()).data
+    const deadline = Date.now() + 5_000
+    let activityState: string | undefined
+    let descendantCount: number | undefined
+    while (Date.now() < deadline) {
+      const response = await request(PtyPaths.activity.replace(":ptyID", busy.id), tmp.path)
+      expect(response.status).toBe(200)
+      const activity = Schema.decodeUnknownSync(Location.response(Pty.Activity))(await response.json()).data
+      activityState = activity.state
+      descendantCount = activity.descendants
+      if (activityState === "foreground") break
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    expect({ state: activityState, descendants: descendantCount }).toEqual({ state: "foreground", descendants: 1 })
+
+    await request("/api/pty", tmp.path, { method: "DELETE" })
   })
 
   testPty("rejects connect tokens without the CSRF header and connects with a valid ticket", async () => {

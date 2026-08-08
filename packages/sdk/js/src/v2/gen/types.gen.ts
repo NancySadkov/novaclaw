@@ -1929,6 +1929,11 @@ export type PtyNotFoundError = {
   message: string
 }
 
+export type PtyActivity = {
+  state: "idle" | "foreground" | "unknown"
+  descendants?: number
+}
+
 export type ForbiddenError = {
   _tag: "ForbiddenError"
   message: string
@@ -14725,6 +14730,49 @@ export type V2PtyUpdateResponses = {
 }
 
 export type V2PtyUpdateResponse = V2PtyUpdateResponses[keyof V2PtyUpdateResponses]
+
+export type V2PtyActivityData = {
+  body?: never
+  path: {
+    ptyID: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/pty/{ptyID}/activity"
+}
+
+export type V2PtyActivityErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * PtyNotFoundError
+   */
+  404: PtyNotFoundError
+}
+
+export type V2PtyActivityError = V2PtyActivityErrors[keyof V2PtyActivityErrors]
+
+export type V2PtyActivityResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: PtyActivity
+  }
+}
+
+export type V2PtyActivityResponse = V2PtyActivityResponses[keyof V2PtyActivityResponses]
 
 export type V2PtyConnectTokenData = {
   body?: never

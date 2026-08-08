@@ -81,6 +81,7 @@ export class ExitedError extends Schema.TaggedErrorClass<ExitedError>()("Pty.Exi
 export interface Interface {
   readonly list: () => Effect.Effect<Info[]>
   readonly get: (id: PtyID) => Effect.Effect<Info, NotFoundError>
+  readonly activity: (id: PtyID) => Effect.Effect<Pty.Activity, NotFoundError>
   readonly create: (input: CreateInput) => Effect.Effect<Info>
   readonly update: (id: PtyID, input: UpdateInput) => Effect.Effect<Info, NotFoundError>
   readonly remove: (id: PtyID) => Effect.Effect<void, NotFoundError>
@@ -176,6 +177,17 @@ export const layer = Layer.effect(
 
     const get = Effect.fn("Pty.get")(function* (id: PtyID) {
       return (yield* requireSession(id)).info
+    })
+
+    const activity = Effect.fn("Pty.activity")(function* (id: PtyID) {
+      const session = yield* requireSession(id)
+      if (session.info.status !== "running") return { state: "idle" as const, descendants: 0 }
+      const descendants = yield* Effect.promise(() => Shell.descendants(session.process.pid))
+      if (descendants === undefined) return { state: "unknown" as const }
+      return {
+        state: descendants.length > 0 ? ("foreground" as const) : ("idle" as const),
+        descendants: descendants.length,
+      }
     })
 
     const create = Effect.fn("Pty.create")(function* (input: CreateInput) {
@@ -331,7 +343,7 @@ export const layer = Layer.effect(
       }
     })
 
-    return Service.of({ list, get, create, update, remove, removeAll, write, attach })
+    return Service.of({ list, get, activity, create, update, remove, removeAll, write, attach })
   }),
 )
 

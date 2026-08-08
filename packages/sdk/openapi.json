@@ -18676,6 +18676,103 @@
         ]
       }
     },
+    "/api/pty/{ptyID}/activity": {
+      "get": {
+        "tags": ["pty"],
+        "operationId": "v2.pty.activity",
+        "parameters": [
+          {
+            "name": "ptyID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^pty"
+            },
+            "required": true
+          },
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "$ref": "#/components/schemas/LocationInfo"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/PtyActivity"
+                    }
+                  },
+                  "required": ["location", "data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "PtyNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PtyNotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Report whether a running terminal shell has descendant processes before a destructive close.",
+        "summary": "Inspect PTY process activity",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.pty.activity({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/pty/{ptyID}/connect-token": {
       "post": {
         "tags": ["pty"],
@@ -25964,6 +26061,21 @@
           }
         },
         "required": ["_tag", "ptyID", "message"],
+        "additionalProperties": false
+      },
+      "PtyActivity": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": ["idle", "foreground", "unknown"]
+          },
+          "descendants": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": ["state"],
         "additionalProperties": false
       },
       "ForbiddenError": {

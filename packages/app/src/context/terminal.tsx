@@ -12,6 +12,7 @@ import { shouldKeepExitedTab } from "@/pages/terminal-exit"
 import { Persist, persisted, removePersisted } from "@/utils/persist"
 import { ScopedKey, ServerScope, type ServerScope as ServerScopeValue } from "@/utils/server-scope"
 import { showToast } from "@/utils/toast"
+import { useConfirm } from "@/components/dialog-confirm"
 import type { V2PtyInstanceListResponse } from "@novaclaw/sdk/v2/types"
 
 export type LocalPTY = {
@@ -305,11 +306,27 @@ export async function stopWorkspaceTerminal(
   })
 }
 
+export async function inspectTerminalClose(
+  client: DirectorySDK["client"],
+  directory: string,
+  ptyID: string,
+  workspaceID?: string,
+): Promise<"idle" | "foreground" | "unknown"> {
+  return client.v2.pty
+    .activity({
+      ptyID,
+      location: { directory, ...(workspaceID ? { workspace: workspaceID } : {}) },
+    })
+    .then((response) => response.data?.data.state ?? "unknown")
+    .catch(() => "unknown")
+}
+
 function createWorkspaceTerminalSession(
   sdk: DirectorySDK,
   dir: string,
   scope: ServerScopeValue,
   reportCloseError: (error: unknown) => void,
+  confirmClose: (state: "foreground" | "unknown") => Promise<boolean>,
   legacySessionID?: string,
 ) {
   const legacy = scope === ServerScope.local ? getLegacyTerminalStorageKeys(dir, legacySessionID) : []
@@ -575,7 +592,13 @@ function createWorkspaceTerminalSession(
       const local = store.all.find((item) => item.id === id)
       if (!local) return
       try {
-        if (local.ptyID) await stopWorkspaceTerminal(sdk.client, sdk.directory, local.ptyID, local.workspaceID)
+        if (local.ptyID) {
+          if (local.status === "running") {
+            const activity = await inspectTerminalClose(sdk.client, sdk.directory, local.ptyID, local.workspaceID)
+            if (activity !== "idle" && !(await confirmClose(activity))) return
+          }
+          await stopWorkspaceTerminal(sdk.client, sdk.directory, local.ptyID, local.workspaceID)
+        }
       } catch (error) {
         // Keep the tab visible: hiding it would strand a possibly-running process with no recovery
         // handle. The connection banner can still establish that a server-confirmed 404 is gone.
@@ -628,6 +651,7 @@ export const { use: useTerminal, provider: TerminalProvider } = createSimpleCont
     const sdk = useSDK()
     const serverSDK = useServerSDK()
     const language = useLanguage()
+    const confirm = useConfirm()
     const params = useParams()
     const cache = new Map<string, TerminalCacheEntry>()
     const scope = () => serverSDK().scope
@@ -675,6 +699,17 @@ export const { use: useTerminal, provider: TerminalProvider } = createSimpleCont
               variant: "error",
               title: language.t("terminal.closeFailed"),
               description: String(error),
+            }),
+          (state) =>
+            confirm({
+              title: language.t("terminal.closeRunning.title"),
+              description: language.t(
+                state === "foreground"
+                  ? "terminal.closeRunning.description"
+                  : "terminal.closeRunning.unknownDescription",
+              ),
+              confirmLabel: language.t("terminal.closeRunning.action"),
+              destructive: true,
             }),
           legacySessionID,
         ),

@@ -19,7 +19,7 @@ import { which } from "./util/which"
  *
  * ⚠️ Do not hand-roll another one. `test/kill-tree-ledger.test.ts` fails the build if you do.
  */
-export { SIGKILL_TIMEOUT_MS, descendantsOf, killTree, killTreeSync } from "./util/kill-tree"
+export { SIGKILL_TIMEOUT_MS, descendants, descendantsOf, killTree, killTreeSync } from "./util/kill-tree"
 export type { KillTreeOptions, KillTreeTarget } from "./util/kill-tree"
 
 const META: Record<string, { deny?: boolean; login?: boolean; posix?: boolean; ps?: boolean }> = {
