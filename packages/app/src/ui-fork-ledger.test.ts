@@ -196,8 +196,16 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  *   - **`[data-component="dialog-overlay"]` was declared by BOTH sheets, identical selector,
  *     identical layer.** The overlay is rendered ONCE — `ui/src/context/dialog.tsx` — and shared by
  *     both forks, so the later `@import` (v2) had been painting the overlay of every v1 dialog.
- *     Read off the live DOM before and after the deletion — see the commit message for the two
- *     computed values, which are equal.
+ *     **Measured in the browser 2026-08-08, with both controls.** Rebuilding the pre-deletion
+ *     cascade in a live page — one `@layer components` block holding v1's rule then v2's, exactly
+ *     the barrel's order — computes `rgba(10, 6, 24, 0.6)`, byte-identical to v2's rule ALONE, while
+ *     v1's rule alone computes `color(srgb 0.0706 0.0706 0.0706 / 0.2)`. Those are not near-misses:
+ *     v1 asked for a 20% wash of `--background-base` and the user saw a 60% near-black scrim on
+ *     every v1 dialog for as long as both sheets existed. After the deletion the real overlay behind
+ *     the command palette computes `rgba(10, 6, 24, 0.6)` — the same value, so removing v1's sheet
+ *     is a measured no-op here rather than an argued one. (The element carries no animation and an
+ *     inline `!important` overrode it, so neither the transition trap nor a non-cascade cause is in
+ *     play.)
  *     Deleting v1's sheet was therefore a measured no-op on the overlay — the same computed value
  *     after. **This is the `diff-changes` shape again: the render looked right because one sheet was
  *     silently winning.**
@@ -519,7 +527,13 @@ describe("the sweep", () => {
     expect(V1_NAMES.length, "no v1 components found — has packages/ui/src/components moved?").toBeGreaterThan(20)
     expect(V2_NAMES.length, "no v2 components found — has packages/ui/src/v2/components moved?").toBeGreaterThan(10)
     expect(SWEPT.files, "the file walk found almost nothing — check SKIP_DIRS").toBeGreaterThan(1_000)
-    expect(SWEPT.specifiers, "no forked-widget import found at all — SPECIFIER_PATTERNS is broken").toBeGreaterThan(200)
+    // ⚠️ **This floor counts BOTH sides, so a retired pair drops it by more than the migration did.**
+    // `dialog` (2026-08-08) cost it 10 v1 pairs AND every v2 `dialog-v2` import at once, because a
+    // widget that is no longer forked stops being counted on either side; it reads 184 today, having
+    // been above 200 before that pair retired — this assertion is what caught the drop. Lower it with
+    // each retirement; it is a sanity floor against a broken sweep, never a target, and if it ever
+    // has to go near zero the whole ledger should be retired instead (see the last test in this file).
+    expect(SWEPT.specifiers, "no forked-widget import found at all — SPECIFIER_PATTERNS is broken").toBeGreaterThan(150)
     expect(SWEPT.v1.size, "the v1 half of the fork reads as empty").toBeGreaterThan(50)
     expect(SWEPT.v2.size, "the v2 half of the fork reads as empty").toBeGreaterThan(20)
   })
