@@ -20,6 +20,7 @@ import { MessengerHandler } from "./handlers/messenger"
 import { CalendarHandler } from "./handlers/calendar"
 import { RecipeHandler } from "./handlers/recipe"
 import { ConfigHandler } from "./handlers/config"
+import { LogHandler } from "./handlers/log"
 
 export const handlers = Layer.mergeAll(
   HealthHandler,
@@ -43,4 +44,5 @@ export const handlers = Layer.mergeAll(
   QuestionHandler,
   ReferenceHandler,
   ConfigHandler,
+  LogHandler,
 )

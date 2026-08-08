@@ -1912,6 +1912,38 @@ export type ConfigRemoveResult = {
   cleared: Array<string>
 }
 
+/**
+ * Log level
+ */
+export type LogLevel = "debug" | "info" | "warn" | "error"
+
+export type LogPlane = "local" | "maintenance"
+
+export type LogReadRequest = {
+  level?: LogLevel
+  key?: string
+  subsystem?: string
+  correlator?: string
+  match?: string
+  since?: string
+  limit?: number
+  plane?: LogPlane
+}
+
+export type LogReadResult = {
+  /**
+   * The matching lines, oldest first, already rendered for the requested plane. Display it; do not re-derive it — the server owns the one rendering.
+   */
+  text: string
+  lines: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  scanned: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  /**
+   * The scan ceiling stopped the walk, so older history was not examined.
+   */
+  truncated: boolean
+  plane: LogPlane
+}
+
 export type CredentialValue = CredentialOAuth | CredentialKey
 
 export type IntegrationInputs = {
@@ -14837,3 +14869,32 @@ export type V2ConfigRemoveResponses = {
 }
 
 export type V2ConfigRemoveResponse = V2ConfigRemoveResponses[keyof V2ConfigRemoveResponses]
+
+export type V2LogReadData = {
+  body: LogReadRequest
+  path?: never
+  query?: never
+  url: "/api/log/read"
+}
+
+export type V2LogReadErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2LogReadError = V2LogReadErrors[keyof V2LogReadErrors]
+
+export type V2LogReadResponses = {
+  /**
+   * LogReadResult
+   */
+  200: LogReadResult
+}
+
+export type V2LogReadResponse = V2LogReadResponses[keyof V2LogReadResponses]

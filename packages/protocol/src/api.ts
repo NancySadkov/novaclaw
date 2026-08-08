@@ -24,6 +24,7 @@ import { MessengerGroup } from "./groups/messenger"
 import { CalendarGroup } from "./groups/calendar"
 import { RecipeGroup } from "./groups/recipe"
 import { ConfigGroup } from "./groups/config"
+import { LogGroup } from "./groups/log"
 
 // Protocol owns middleware placement, while Server injects concrete keys so Core service identities stay downstream.
 const makeApiFromGroup = <
@@ -74,6 +75,9 @@ const makeApiFromGroup = <
     .add(ReferenceGroup.middleware(locationMiddleware))
     // Instance-wide, so no location middleware: the config stores are global nodes.
     .add(ConfigGroup)
+    // Instance-wide for the same reason: the log directory is `Global.Path.log`, one per instance.
+    // A location would be the wrong axis — there is one log, not one per workspace.
+    .add(LogGroup)
     .annotateMerge(
       OpenApi.annotations({
         title: "novaclaw HttpApi",

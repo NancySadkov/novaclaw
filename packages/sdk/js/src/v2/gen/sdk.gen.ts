@@ -98,6 +98,7 @@ import type {
   InstanceSchedulerErrors,
   InstanceSchedulerResponses,
   LocationRef,
+  LogReadRequest,
   McpAddErrors,
   McpAddResponses,
   McpAuthAuthenticateErrors,
@@ -241,6 +242,8 @@ import type {
   V2IntegrationListResponses,
   V2LocationGetErrors,
   V2LocationGetResponses,
+  V2LogReadErrors,
+  V2LogReadResponses,
   V2MessengerAccountChatsErrors,
   V2MessengerAccountChatsResponses,
   V2MessengerAccountCreateErrors,
@@ -7293,6 +7296,32 @@ export class Config3 extends HeyApiClient {
   }
 }
 
+export class Log extends HeyApiClient {
+  /**
+   * Read this instance's own log
+   *
+   * Read `novaclaw.log` — the instance's keyed, rotated activity log — filtered and rendered server-side. The instance's own log directory is the only source; there is no path parameter. The response carries the rendered text and nothing structured, so there is exactly one renderer of a log line in the product.
+   */
+  public read<ThrowOnError extends boolean = false>(
+    parameters: {
+      logReadRequest: LogReadRequest
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "logReadRequest", map: "body" }] }])
+    return (options?.client ?? this.client).post<V2LogReadResponses, V2LogReadErrors, ThrowOnError>({
+      url: "/api/log/read",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class V2 extends HeyApiClient {
   private _health?: Health
   get health(): Health {
@@ -7392,6 +7421,11 @@ export class V2 extends HeyApiClient {
   private _config?: Config3
   get config(): Config3 {
     return (this._config ??= new Config3({ client: this.client }))
+  }
+
+  private _log?: Log
+  get log(): Log {
+    return (this._log ??= new Log({ client: this.client }))
   }
 }
 

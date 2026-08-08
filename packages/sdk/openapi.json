@@ -19431,6 +19431,71 @@
           }
         ]
       }
+    },
+    "/api/log/read": {
+      "post": {
+        "tags": ["log"],
+        "operationId": "v2.log.read",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "LogReadResult",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogReadResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Read `novaclaw.log` — the instance's keyed, rotated activity log — filtered and rendered server-side. The instance's own log directory is the only source; there is no path parameter. The response carries the rendered text and nothing structured, so there is exactly one renderer of a log line in the product.",
+        "summary": "Read this instance's own log",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogReadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.log.read({\n  ...\n})"
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -25632,6 +25697,109 @@
           }
         },
         "required": ["removed", "cleared"],
+        "additionalProperties": false
+      },
+      "LogLevel": {
+        "type": "string",
+        "enum": ["debug", "info", "warn", "error"],
+        "description": "Log level"
+      },
+      "LogPlane": {
+        "type": "string",
+        "enum": ["local", "maintenance"]
+      },
+      "LogReadRequest": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "$ref": "#/components/schemas/LogLevel"
+          },
+          "key": {
+            "type": "string"
+          },
+          "subsystem": {
+            "type": "string"
+          },
+          "correlator": {
+            "type": "string"
+          },
+          "match": {
+            "type": "string"
+          },
+          "since": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "plane": {
+            "$ref": "#/components/schemas/LogPlane"
+          }
+        },
+        "additionalProperties": false
+      },
+      "LogReadResult": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The matching lines, oldest first, already rendered for the requested plane. Display it; do not re-derive it — the server owns the one rendering."
+          },
+          "lines": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "scanned": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "The scan ceiling stopped the walk, so older history was not examined."
+          },
+          "plane": {
+            "$ref": "#/components/schemas/LogPlane"
+          }
+        },
+        "required": ["text", "lines", "scanned", "truncated", "plane"],
         "additionalProperties": false
       },
       "CredentialValue": {
@@ -43088,6 +43256,10 @@
     {
       "name": "config",
       "description": "Instance-wide configuration deletion."
+    },
+    {
+      "name": "log",
+      "description": "The instance's own activity log, read-only."
     }
   ]
 }
