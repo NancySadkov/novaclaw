@@ -261,6 +261,7 @@ export const makeSessionGroup = <
           type: Schema.Literals(["interactive", "sub-agent", "auto-prompting", "goal-oriented"]).pipe(Schema.optional),
           priority: Schema.Finite.pipe(Schema.optional),
           permissionMode: Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"]).pipe(Schema.optional),
+          responder: Schema.Literals(["nova", "operator"]).pipe(Schema.optional),
           location: Location.Ref.pipe(Schema.optional),
           title: Schema.String.pipe(Schema.optional),
           // The caller's explicit saved permission ruleset (the headless runner's allow-all).

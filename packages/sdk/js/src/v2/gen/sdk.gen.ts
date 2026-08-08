@@ -4284,6 +4284,7 @@ export class Session extends HeyApiClient {
       type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
       priority?: number
       permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+      responder?: "nova" | "operator"
       location?: LocationRef
       title?: string
       permission?: PermissionRuleset
@@ -4313,6 +4314,7 @@ export class Session extends HeyApiClient {
             { in: "body", key: "type" },
             { in: "body", key: "priority" },
             { in: "body", key: "permissionMode" },
+            { in: "body", key: "responder" },
             { in: "body", key: "location" },
             { in: "body", key: "title" },
             { in: "body", key: "permission" },

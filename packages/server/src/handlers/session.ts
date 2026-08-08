@@ -113,6 +113,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 type: ctx.payload.type,
                 priority: ctx.payload.priority,
                 permissionMode: ctx.payload.permissionMode,
+                responder: ctx.payload.responder,
                 title: ctx.payload.title,
                 permission: ctx.payload.permission,
                 strict: ctx.payload.strict,

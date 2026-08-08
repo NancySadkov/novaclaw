@@ -10627,6 +10627,7 @@ export type V2SessionCreateData = {
     type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
     priority?: number
     permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+    responder?: "nova" | "operator"
     location?: LocationRef
     title?: string
     permission?: PermissionRuleset

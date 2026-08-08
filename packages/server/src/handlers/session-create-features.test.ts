@@ -333,4 +333,20 @@ describe("session.create carries every per-chat switch a draft can stage", () =>
       "the create INVENTED a device affinity — absent must mean inherit-then-derive, never a stamped default",
     ).toBeUndefined()
   })
+
+  // C1a: `responder` already existed in the kernel CreateInput, row projection and switch route,
+  // but the create payload omitted it. Effect's decoder stripped the unknown key and returned 200,
+  // so only an edge-to-row check can distinguish a real create-time writer from an inert column.
+  test("an operator responder set on create reaches the persisted session", async () => {
+    const { echoed, stored } = await createAndReload({ responder: "operator" })
+    expect(stored["responder"], "the create payload or handler discarded the responder").toBe("operator")
+    expect(echoed["responder"], "the created session's response omits the responder the row carries").toBe("operator")
+  })
+
+  // Sparse override discipline: omission must remain inheritance. Stamping `nova` here would make
+  // a child ignore an operator responder inherited from its parent.
+  test("a create that names no responder stays absent", async () => {
+    const { stored } = await createAndReload({})
+    expect(stored["responder"], "the create invented a responder instead of inheriting one").toBeUndefined()
+  })
 })

@@ -8975,6 +8975,10 @@
                     "type": "string",
                     "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
                   },
+                  "responder": {
+                    "type": "string",
+                    "enum": ["nova", "operator"]
+                  },
                   "location": {
                     "$ref": "#/components/schemas/LocationRef"
                   },
