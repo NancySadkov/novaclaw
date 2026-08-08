@@ -113,6 +113,8 @@ export type RunOpts = SpawnOpts & {
 export type ServeOpts = SpawnOpts & {
   readonly port?: number
   readonly hostname?: string
+  /** Exercise the production restart loop. Tests default to a bare child so their finalizers stay simple. */
+  readonly supervise?: boolean
   readonly extraArgs?: string[]
   // How long to wait for the "listening on http://..." line before failing.
   // Default 15s — startup is dominated by bun's transpile + plugin init, not
@@ -126,6 +128,15 @@ export type ServeHandle = {
   readonly url: string
   readonly hostname: string
   readonly port: number
+  /** Present only for a supervised serve. This is the bare server child, not the supervisor. */
+  readonly childPID: number | undefined
+  /** Wait until a replacement child has reached its listening sentinel. */
+  readonly waitForRestart: (previousPID: number, timeoutMs?: number) => Promise<{
+    readonly pid: number
+    readonly url: string
+    readonly hostname: string
+    readonly port: number
+  }>
   // Sends SIGTERM. The scope finalizer also calls this, so tests rarely need
   // to invoke it directly — useful for tests that assert exit behavior.
   readonly kill: () => void
@@ -296,7 +307,8 @@ export function withCliFixture<A, E>(
       // Tests exercise the SERVER itself — run it bare. With supervision (the production default,
       // dependability P4) the spawned process is a restart loop whose child survives a plain
       // kill, leaking a supervisor+server pair per test.
-      const argv = ["serve", "--no-supervise"]
+      const argv = ["serve"]
+      if (!opts?.supervise) argv.push("--no-supervise")
       // Default port 0 — let the OS pick a free port, parse the actual one
       // off stdout. Hard-coded ports flake under parallel tests.
       argv.push("--port", String(opts?.port ?? 0))
@@ -334,14 +346,25 @@ export function withCliFixture<A, E>(
       // (see src/cli/cmd/serve.ts):
       //   "novaclaw server listening on http://<host>:<port>"
       const readyRe = /listening on (http:\/\/([^\s:]+):(\d+))/
-      const readyDeferred = yield* Deferred.make<{ url: string; hostname: string; port: number }>()
+      const childRe = /\[supervise\] server child started \(pid (\d+)\)/
+      type Ready = { url: string; hostname: string; port: number; pid: number | undefined }
+      const ready: Ready[] = []
+      const stdoutLines: string[] = []
+      let lastChildPID: number | undefined
+      const readyDeferred = yield* Deferred.make<Ready>()
       yield* Effect.forkScoped(
         fromBunStream("stdout", () => proc.stdout).pipe(
           Stream.decodeText(),
           Stream.splitLines,
           Stream.runForEach((line) => {
+            stdoutLines.push(line)
+            const child = line.match(childRe)
+            if (child) lastChildPID = Number(child[1])
             const m = line.match(readyRe)
-            return m ? Deferred.succeed(readyDeferred, { url: m[1], hostname: m[2], port: Number(m[3]) }) : Effect.void
+            if (!m) return Effect.void
+            const item = { url: m[1], hostname: m[2], port: Number(m[3]), pid: lastChildPID }
+            ready.push(item)
+            return Deferred.succeed(readyDeferred, item)
           }),
           Effect.ignore({ log: true }),
         ),
@@ -365,6 +388,20 @@ export function withCliFixture<A, E>(
         url: match.url,
         hostname: match.hostname,
         port: match.port,
+        childPID: match.pid,
+        waitForRestart: async (previousPID, timeoutMs = 15_000) => {
+          const deadline = Date.now() + timeoutMs
+          while (Date.now() < deadline) {
+            const replacement = ready.find((item) => item.pid !== undefined && item.pid !== previousPID)
+            if (replacement?.pid !== undefined) return { ...replacement, pid: replacement.pid }
+            await new Promise((resolve) => setTimeout(resolve, 25))
+          }
+          throw new Error(
+            `supervised serve did not replace child ${previousPID} within ${timeoutMs}ms\n` +
+              `stdout (last 2000):\n${stdoutLines.join("\n").slice(-2000)}\n` +
+              `stderr (last 2000):\n${stderrChunks.join("").slice(-2000)}`,
+          )
+        },
         kill: () => {
           proc.kill()
         },

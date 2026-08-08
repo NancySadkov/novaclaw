@@ -6,9 +6,23 @@
 // and kills the process when the test scope closes. The OS-assigned port is
 // parsed off the "listening on http://..." line.
 import { describe, expect } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { HttpClient } from "effect/unstable/http"
-import { cliIt } from "../../lib/cli-process"
+import { Location } from "@novaclaw/core/location"
+import { Pty } from "@novaclaw/core/pty"
+import { cliIt, type CliFixture } from "../../lib/cli-process"
+
+function hardKill(pid: number): void {
+  if (process.platform !== "win32") {
+    process.kill(pid, "SIGKILL")
+    return
+  }
+  const killed = Bun.spawnSync(["taskkill", "/pid", String(pid), "/f"], {
+    stdout: "ignore",
+    stderr: "pipe",
+  })
+  if (killed.exitCode !== 0) throw new Error(`taskkill failed: ${killed.stderr.toString()}`)
+}
 
 describe("novaclaw serve (subprocess)", () => {
   // Smoke test: server starts, binds a port, and /global/health responds.
@@ -36,6 +50,98 @@ describe("novaclaw serve (subprocess)", () => {
   // The scope-close finalizer must actually terminate the child. Without this
   // test a regression in the kill path (e.g. a future refactor that forgets
   // to wire the finalizer) would leak processes on every test run.
+  cliIt.live(
+    "replaces a hard-killed server child and serves health again",
+    ({ novaclaw }) =>
+      Effect.gen(function* () {
+        // Reserve a stable port: production reconnects to one configured URL, whereas port 0 may
+        // legitimately choose a different address for the replacement child.
+        const reservation = Bun.serve({ port: 0, fetch: () => new Response("reserved") })
+        const port = reservation.port
+        yield* Effect.promise(() => reservation.stop(true))
+
+        const server = yield* novaclaw.serve({ port, supervise: true })
+        const firstPID = server.childPID
+        expect(firstPID).toBeGreaterThan(0)
+        if (firstPID === undefined) throw new Error("supervisor did not report its initial child pid")
+
+        hardKill(firstPID)
+
+        const replacement = yield* Effect.promise(() => server.waitForRestart(firstPID))
+        expect(replacement.pid).not.toBe(firstPID)
+        expect(replacement.url).toBe(server.url)
+
+        const response = yield* Effect.promise(() => fetch(`${server.url}/global/health`))
+        expect(response.status).toBe(200)
+      }),
+    60_000,
+  )
+
+  const terminalRestart = ({ novaclaw, home }: CliFixture) =>
+    Effect.gen(function* () {
+      const reservation = Bun.serve({ port: 0, fetch: () => new Response("reserved") })
+      const port = reservation.port
+      yield* Effect.promise(() => reservation.stop(true))
+
+      const server = yield* novaclaw.serve({ port, supervise: true })
+      const firstPID = server.childPID
+      if (firstPID === undefined) throw new Error("supervisor did not report its initial child pid")
+      const headers = { "content-type": "application/json", "x-novaclaw-directory": home }
+      const created = yield* Effect.promise(() =>
+        fetch(`${server.url}/api/pty`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ command: "/usr/bin/env", args: ["sh", "-c", "sleep 30"], title: "before-crash" }),
+        }),
+      )
+      expect(created.status).toBe(200)
+      const first = Schema.decodeUnknownSync(Location.response(Pty.Info))(yield* Effect.promise(() => created.json()))
+      expect(first.data.status).toBe("running")
+      expect(first.data.pid).toBeGreaterThan(0)
+
+      hardKill(firstPID)
+      const replacement = yield* Effect.promise(() => server.waitForRestart(firstPID))
+      expect(replacement.url).toBe(server.url)
+
+      const descendantDeadline = Date.now() + 5_000
+      let descendantAlive = true
+      while (descendantAlive && Date.now() < descendantDeadline) {
+        try {
+          process.kill(first.data.pid, 0)
+          yield* Effect.sleep("25 millis")
+        } catch {
+          descendantAlive = false
+        }
+      }
+      expect(descendantAlive).toBe(false)
+
+      const route = `${server.url}/api/instance/pty?location[directory]=${encodeURIComponent(home)}`
+      const reconciled = yield* Effect.promise(() => fetch(route, { headers }))
+      expect(reconciled.status).toBe(200)
+      expect(yield* Effect.promise(() => reconciled.json())).toEqual([])
+
+      const recreated = yield* Effect.promise(() =>
+        fetch(`${server.url}/api/pty`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ command: "/usr/bin/env", args: ["sh", "-c", "sleep 30"], title: "after-crash" }),
+        }),
+      )
+      expect(recreated.status).toBe(200)
+      const second = Schema.decodeUnknownSync(Location.response(Pty.Info))(yield* Effect.promise(() => recreated.json()))
+      expect(second.data.id).not.toBe(first.data.id)
+
+      const stopped = yield* Effect.promise(() => fetch(route, { method: "DELETE", headers }))
+      expect(stopped.status).toBe(200)
+      expect(yield* Effect.promise(() => stopped.json())).toBe(1)
+    })
+
+  if (process.platform === "win32") {
+    cliIt.skip("reconciles terminals after a hard server crash and creates a replacement", terminalRestart, 60_000)
+  } else {
+    cliIt.live("reconciles terminals after a hard server crash and creates a replacement", terminalRestart, 60_000)
+  }
+
   cliIt.live(
     "kills the subprocess on scope close",
     ({ novaclaw }) =>
