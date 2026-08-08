@@ -5,6 +5,7 @@ import { Schema } from "effect"
 import { JhExtract } from "../jh/extract"
 import { ComputerLedger } from "./ledger"
 import { ComputerProposal } from "./proposal"
+import { ComputerAccessibility } from "./accessibility"
 
 /**
  * Computer Use 2.1 / S3 — the two prompts the loop sends, and the one it must never send.
@@ -142,6 +143,7 @@ export function planner(input: {
   readonly goal: string
   readonly ledger: ComputerLedger.Ledger
   readonly image?: Image
+  readonly accessibility?: ReadonlyArray<ComputerAccessibility.Candidate>
   /** A repair re-prompt or a Guard refusal. Rendered last so the stable prefix stays stable. */
   readonly note?: string
 }): Prompt {
@@ -158,6 +160,13 @@ export function planner(input: {
 
   const user = [
     ...log,
+    ...(input.accessibility === undefined
+      ? []
+      : [
+          "",
+          "ACCESSIBILITY CANDIDATES — id, role, own name, x,y,width,height, actions:",
+          ComputerAccessibility.render(input.accessibility),
+        ]),
     "",
     ...PLANNER_QUESTION,
     ...(input.note === undefined || input.note.trim() === "" ? [] : ["", input.note]),

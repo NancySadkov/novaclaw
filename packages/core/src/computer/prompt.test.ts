@@ -159,6 +159,29 @@ describe("🔴 G11 — exactly one image, regardless of N", () => {
   })
 })
 
+describe("P5 — accessibility is a binary source, never an inferred container", () => {
+  test("the planner sees filtered candidates and the explicit fallback law", () => {
+    const prompt = CP.planner({
+      goal: GOAL,
+      ledger: ledgerOf(0),
+      image: img("now"),
+      accessibility: [
+        { id: "app/0/button/4", role: "push button", name: "Save", bounds: { x: 10, y: 20, width: 30, height: 40 }, actions: ["click"] },
+      ],
+    })
+    expect(prompt.user).toContain('app/0/button/4\tpush button\t"Save"\t10,20,30,40\tclick')
+    expect(prompt.system).toContain("Otherwise OMIT element_id and use the screenshot")
+    for (const container of ["RootWebArea", "Chrome Legacy Window", "BrowserWindow"])
+      expect(prompt.system).toContain(container)
+  })
+
+  test("an empty tree explicitly sends the planner to pixels", () => {
+    expect(CP.planner({ goal: GOAL, ledger: ledgerOf(0), image: img("now"), accessibility: [] }).user).toContain(
+      "(none — use the screenshot channel)",
+    )
+  })
+})
+
 describe("🔴 G11 — the prefix is byte-identical across steps", () => {
   const prompts = Array.from({ length: 25 }, (_, i) =>
     CP.planner({ goal: GOAL, ledger: ledgerOf(i), image: img(`frame${i + 1}`) }),

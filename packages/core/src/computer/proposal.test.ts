@@ -45,6 +45,30 @@ describe("the decode is tolerant, because the reply comes from the floor model",
     expect(errorCodes(parsed.draft)).toEqual([])
   })
 
+  test("P5 decodes one accessibility id without inventing coordinate fields", () => {
+    const parsed = CP.parseProposal(
+      JSON.stringify({
+        observation: "Save is listed in the accessibility candidates",
+        action: { kind: "click", target: "Save", element_id: "app/0/button/4" },
+        expect: "the document is saved",
+      }),
+    )
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.draft.action?.element_id).toBe("app/0/button/4")
+    expect(errorCodes(parsed.draft)).toEqual([])
+  })
+
+  test("P5 refuses an accessibility id on a non-pointer action instead of silently dropping it", () => {
+    expect(
+      errorCodes({
+        observation: "field",
+        action: { kind: "type", text: "hello", element_id: "entry/4" },
+        expect: "text appears",
+      }),
+    ).toEqual(["element_id_non_pointer"])
+  })
+
   test("🔴 `null` for every absent optional — measured on qwen, and it must not be a decode failure", () => {
     // Small models write `"watch": null` rather than omitting the key. If the codec rejected that,
     // the engine would never see the draft and could only answer with a schema error.

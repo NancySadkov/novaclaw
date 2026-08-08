@@ -58,6 +58,7 @@ describe("the directory-sweeping guards cover every module, including the new on
    * screen. The test is here so the decision is made rather than defaulted.
    */
   const EXPECTED = [
+    "accessibility.ts",
     "actions.ts",
     "coordinates.ts",
     "driver.ts",

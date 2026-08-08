@@ -126,6 +126,8 @@ export interface ActionDraft {
   readonly kind?: string | null
   /** Pointer actions: the control's visible label, with no positional description. */
   readonly target?: string | null
+  /** P5: exact id from the supplied accessibility candidates; absent means screenshot grounding. */
+  readonly element_id?: string | null
   /** Decode-only legacy fields. Structural validation rejects them so the repair can name the drift. */
   readonly point?: PointDraft | null
   readonly button?: string | null
@@ -137,6 +139,7 @@ export interface ActionDraft {
 export const ActionDraft = Schema.Struct({
   kind: Schema.optional(Schema.NullOr(Schema.String)),
   target: Schema.optional(Schema.NullOr(Schema.String)),
+  element_id: Schema.optional(Schema.NullOr(Schema.String)),
   point: Schema.optional(Schema.NullOr(PointDraft)),
   button: Schema.optional(Schema.NullOr(Schema.String)),
   text: Schema.optional(Schema.NullOr(Schema.String)),
@@ -256,7 +259,7 @@ export function coerceProposalShape(value: unknown): unknown {
     // the model flattened it once already.
     if (action.kind == null && typeof action.action === "string") action.kind = action.action
     if (action.kind == null && typeof action.type === "string") action.kind = action.type
-    for (const key of ["target", "button", "text", "keys", "direction", "amount"]) {
+    for (const key of ["target", "element_id", "button", "text", "keys", "direction", "amount"]) {
       if (action[key] == null && out[key] != null) action[key] = out[key]
     }
     if (action.amount !== undefined) action.amount = numeric(action.amount)
@@ -321,6 +324,8 @@ export type IssueCode =
   | "harness_owned_action"
   /** A pointer action with no visible label for the split grounder. */
   | "pointer_missing_target"
+  /** An accessibility id on an action with no target must not be silently ignored. */
+  | "element_id_non_pointer"
   /** Planner-authored coordinates/watch would bypass the measured split path. */
   | "planner_grounding_fields"
   /** The kind's payload field is absent, so no action can be built at all. */
@@ -421,7 +426,12 @@ export function structuralIssues(draft: ProposalDraft): ReadonlyArray<Structural
     }
   }
 
-  if (!isPointerKind(kind)) return issues
+  if (!isPointerKind(kind)) {
+    if (!blank(action.element_id)) {
+      issues.push({ severity: "error", code: "element_id_non_pointer", path: "action.element_id", detail: kind })
+    }
+    return issues
+  }
 
   if (blank(action.target)) {
     issues.push({ severity: "error", code: "pointer_missing_target", path: "action.target", detail: kind })
@@ -591,6 +601,9 @@ export const CONTRACT_LINES: ReadonlyArray<string> = [
   "",
   `action.kind is one of: ${ACTION_KINDS.join(" | ")}. The harness takes the screenshots — never ask for one.`,
   '  move | click | double_click → "target": "<the control\'s visible LABEL, nothing else>"',
+  '    When ACCESSIBILITY CANDIDATES contains that exact own name, also copy its "element_id".',
+  '    Otherwise OMIT element_id and use the screenshot. Never combine an id with estimated bounds.',
+  '    RootWebArea, Chrome Legacy Window and BrowserWindow are containers, never controls.',
   '                                  (click also takes "button")',
   '  type → "text"      type_submit → "text"      key → "keys"      scroll → "direction" + "amount"',
   "  type_submit types the text and presses Return as ONE semantic action.",
@@ -615,6 +628,7 @@ const MESSAGE: Record<IssueCode, string> = {
   unknown_action_kind: `not an action this harness can perform — use one of: ${ACTION_KINDS.join(" | ")}`,
   harness_owned_action: "the harness takes the screenshots; propose an action that changes the screen",
   pointer_missing_target: "this pointer action needs `action.target`: the control's visible label and nothing else",
+  element_id_non_pointer: "`element_id` is only legal on a move, click, or double_click target",
   planner_grounding_fields:
     "do not emit coordinates or a watch region — the harness uses a separate blind grounder and derives the watched pixels",
   missing_action_payload: "this action kind needs that field",
