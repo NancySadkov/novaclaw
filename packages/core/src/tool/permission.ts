@@ -30,7 +30,7 @@
  * that can raise its own ceiling has no ceiling.
  *
  * ⚠️ And the guarantee does not rest on this file being correct. `PermissionV2`'s evaluator folds the
- * grant in with `moreRestrictive`, so even a grant of `yolo` forged into the map leaves an `ask`
+ * grant in with `moreRestrictive`, so even a grant of `yolo` forged into the component leaves an `ask`
  * session at `ask`. This file decides what is *reported* and what is *asked about*; the boundary
  * itself is one `moreRestrictive` call one layer down.
  *
@@ -85,6 +85,7 @@ import {
 } from "../session/config-resolve"
 import type { SessionSchema } from "../session/schema"
 import { SessionStore } from "../session/store"
+import { SessionAutoGrant } from "../session/auto-grant"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -305,7 +306,7 @@ export const description =
   "chat (and never above bypass when nobody is attending), so it is a way back to what you had, not a way " +
   "past it; the refusal names the bound when it bites. A `justification` is required on every call — that is " +
   "the point of the tool, not paperwork. The level applies to the very next tool call and to every session " +
-  "you spawn afterwards; it does not survive an instance restart."
+  "you spawn afterwards, and survives an instance restart."
 
 const failure = (message: string) => new ToolFailure({ message })
 
@@ -314,6 +315,7 @@ export const layer = Layer.effectDiscard(
     const tools = yield* Tools.Service
     const permission = yield* PermissionV2.Service
     const sessions = yield* SessionStore.Service
+    const autoGrants = yield* SessionAutoGrant.Service
     const get = (id: string) => sessions.get(id as SessionSchema.ID)
 
     yield* tools
@@ -349,8 +351,8 @@ export const layer = Layer.effectDiscard(
                 const ancestorGrant =
                   row.parentID === undefined
                     ? undefined
-                    : yield* chainAutoGrant(String(row.parentID), get, PermissionV2.autoGrantMode)
-                const ownGrant = PermissionV2.autoGrantMode(sessionID)
+                    : yield* chainAutoGrant(String(row.parentID), get, autoGrants.mode)
+                const ownGrant = yield* autoGrants.mode(sessionID)
                 const chainGrant =
                   ownGrant === undefined
                     ? ancestorGrant
@@ -410,7 +412,7 @@ export const layer = Layer.effectDiscard(
                   })
 
                 // Only now — a refused card must leave the level exactly as it was.
-                PermissionV2.setAutoGrant(sessionID, {
+                yield* autoGrants.set(sessionID, {
                   mode: input.mode,
                   justification: input.justification.trim(),
                   at: Date.now(),
@@ -453,5 +455,5 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/permission",
   layer,
-  deps: [ToolRegistry.node, PermissionV2.node, SessionStore.node],
+  deps: [ToolRegistry.node, PermissionV2.node, SessionStore.node, SessionAutoGrant.node],
 })

@@ -305,6 +305,15 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`session_auto_grant\` (
+          \`session_id\` text PRIMARY KEY,
+          \`mode\` text NOT NULL,
+          \`justification\` text NOT NULL,
+          \`at\` integer NOT NULL,
+          CONSTRAINT \`fk_session_auto_grant_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`session_compaction\` (
           \`id\` text PRIMARY KEY,
           \`session_id\` text NOT NULL,

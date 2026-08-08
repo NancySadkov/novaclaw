@@ -12,6 +12,7 @@ import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionStore } from "@novaclaw/core/session/store"
+import { SessionAutoGrant } from "@novaclaw/core/session/auto-grant"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
@@ -34,6 +35,7 @@ const it = testEffect(
       Database.node,
       EventV2.node,
       SessionStore.node,
+      SessionAutoGrant.node,
       PermissionSaved.node,
       AgentV2.node,
       PermissionV2.node,
@@ -79,12 +81,14 @@ const setRules = Effect.gen(function* () {
   )
 })
 
-/** ⚠️ The grant map is process-global by design (`permission.ts` §AUTO MODE), so a test that does
- *  not clear it inherits the previous one. */
 const setup = Effect.gen(function* () {
-  PermissionV2.clearAutoGrants()
+  yield* (yield* SessionAutoGrant.Service).clear()
   yield* setRules
 })
+
+const setGrant = (sessionID: string, grant: SessionAutoGrant.Grant) =>
+  Effect.flatMap(SessionAutoGrant.Service, (store) => store.set(sessionID, grant))
+const clearGrants = Effect.flatMap(SessionAutoGrant.Service, (store) => store.clear())
 
 const verdict = (sessionID: string, action: string, resource: string) =>
   Effect.gen(function* () {
@@ -102,7 +106,7 @@ describe("auto mode reaches the live evaluator", () => {
       expect(yield* verdict("ses_auto_one", "write", "src/x.ts")).toBe("allow")
 
       // The agent drops itself to Analyze, in writing. The mode overlay's HARD deny arm now bites.
-      PermissionV2.setAutoGrant("ses_auto_one", {
+      yield* setGrant("ses_auto_one", {
         mode: "plan",
         justification: "reading the codebase first; I will not change anything yet",
         at: Date.now(),
@@ -111,7 +115,7 @@ describe("auto mode reaches the live evaluator", () => {
 
       // NEGATIVE CONTROL: nothing about the session, the agent or the mode overlay changed — only
       // the grant. Remove it and the same call is allowed again.
-      PermissionV2.clearAutoGrants()
+      yield* clearGrants
       expect(yield* verdict("ses_auto_one", "write", "src/x.ts")).toBe("allow")
     }),
   )
@@ -123,7 +127,7 @@ describe("auto mode reaches the live evaluator", () => {
 
       expect(yield* verdict("ses_auto_widen", "write", "src/x.ts")).toBe("ask")
       // The strongest thing a forged or injected grant could ask for, at the live seam.
-      PermissionV2.setAutoGrant("ses_auto_widen", { mode: "yolo", justification: "trust me", at: Date.now() })
+      yield* setGrant("ses_auto_widen", { mode: "yolo", justification: "trust me", at: Date.now() })
       expect(yield* verdict("ses_auto_widen", "write", "src/x.ts")).toBe("ask")
     }),
   )
@@ -138,7 +142,7 @@ describe("auto mode reaches the live evaluator", () => {
 
       // The parent drops itself. The child's own row is untouched — and that is exactly the escape
       // this fold closes: a child resolves its mode from stored rows, which a grant never writes.
-      PermissionV2.setAutoGrant("ses_auto_root", {
+      yield* setGrant("ses_auto_root", {
         mode: "plan",
         justification: "handing off; the helper only needs to read",
         at: Date.now(),
@@ -146,7 +150,7 @@ describe("auto mode reaches the live evaluator", () => {
       expect(yield* verdict("ses_auto_kid", "write", "src/x.ts")).toBe("deny")
 
       // NEGATIVE CONTROL.
-      PermissionV2.clearAutoGrants()
+      yield* clearGrants
       expect(yield* verdict("ses_auto_kid", "write", "src/x.ts")).toBe("allow")
     }),
   )
@@ -162,7 +166,7 @@ describe("auto mode reaches the live evaluator", () => {
 
       // It self-manages, asking for exactly what it already had. `AUTO_UNATTENDED_CEILING` caps it
       // at `bypass`, so the unattended confinement stance re-engages.
-      PermissionV2.setAutoGrant("ses_auto_unattended", {
+      yield* setGrant("ses_auto_unattended", {
         mode: "yolo",
         justification: "I would like to keep full access for this run",
         at: Date.now(),
@@ -185,7 +189,7 @@ describe("auto mode reaches the live evaluator", () => {
       expect((error as PermissionV2.DeniedError).reason).toBe("unattended-confined")
 
       // NEGATIVE CONTROL: the user's own `yolo` is still the way out — only the SELF-grant is capped.
-      PermissionV2.clearAutoGrants()
+      yield* clearGrants
       expect(yield* verdict("ses_auto_unattended", "external_directory_write", "/outside/x.ts")).toBe("allow")
     }),
   )
@@ -197,7 +201,7 @@ describe("auto mode reaches the live evaluator", () => {
       // not attended. The tri-state exists for exactly this.
       yield* insert({ id: "ses_auto_broken", permissionMode: "yolo", parentID: "ses_auto_missing" })
 
-      PermissionV2.setAutoGrant("ses_auto_broken", {
+      yield* setGrant("ses_auto_broken", {
         mode: "yolo",
         justification: "keeping full access across the broken chain",
         at: Date.now(),
@@ -208,7 +212,7 @@ describe("auto mode reaches the live evaluator", () => {
       // grant, `unattendedStanceRules` bows out because the mode is `yolo` (the deliberate way out
       // of the stance), so the call is allowed. The refusal above is therefore the auto-mode cap
       // and nothing else, which is the claim this test is entitled to make.
-      PermissionV2.clearAutoGrants()
+      yield* clearGrants
       expect(yield* verdict("ses_auto_broken", "external_directory_write", "/outside/x.ts")).toBe("allow")
     }),
   )

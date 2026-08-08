@@ -527,10 +527,9 @@ export interface SessionLike {
  * because `undefined` means *inherit*. This makes it a type error instead. The failing branch
  * carries the missing keys so the compiler NAMES them rather than only refusing.
  */
-type SessionLikeCarriesEveryConfigField =
-  keyof SessionConfig extends keyof SessionLike
-    ? true
-    : ["SessionLike is missing", Exclude<keyof SessionConfig, keyof SessionLike>]
+type SessionLikeCarriesEveryConfigField = keyof SessionConfig extends keyof SessionLike
+  ? true
+  : ["SessionLike is missing", Exclude<keyof SessionConfig, keyof SessionLike>]
 const _sessionLikeCarriesEveryConfigField: SessionLikeCarriesEveryConfigField = true
 void _sessionLikeCarriesEveryConfigField
 
@@ -955,8 +954,8 @@ export const autoCeiling = (input: {
  * hatch. The attendance cap enters only through `autoCeiling`, i.e. only once a grant exists.
  *
  * ⚠️ **The fold is `moreRestrictive` against BOTH the resolved mode and the ceiling, which makes a
- * forged grant harmless.** There is exactly one writer of the grant map (`tool/permission.ts`, via
- * `PermissionV2.setAutoGrant`), but the guarantee does not rest on that: the worst a grant of `yolo`
+ * forged grant harmless.** There is exactly one writer of the grant component (`tool/permission.ts`),
+ * but the guarantee does not rest on that: the worst a grant of `yolo`
  * can do to an `ask` session is leave it at `ask`.
  */
 export const autoResolvedMode = (input: {
@@ -972,25 +971,24 @@ export const autoResolvedMode = (input: {
  * The `moreRestrictive` fold of every auto-mode self-grant on `[root … session]`, walking `parentID`
  * root-ward with the same cycle guard as `resolveSessionConfig`. `undefined` when no layer has one.
  *
- * `grantOf` is a plain lookup rather than an Effect so this stays cheap enough to run on the
- * permission evaluator's hot path — and the evaluator skips the walk entirely while no grant exists
- * anywhere, so a default install pays nothing for this feature.
+ * `grantOf` is effectful because the durable component may live across a process boundary. The
+ * evaluator performs a cheap table-existence query before calling this walk.
  *
  * ⚠️ It reads `grantOf(id)` BEFORE confirming the row is still there. That is deliberate: a grant is
  * a restriction, so honouring a stale one over a vanished row can only refuse more, never less.
  */
-export const chainAutoGrant = <E, R>(
+export const chainAutoGrant = <E, R, E2, R2>(
   sessionID: string,
   getSession: (id: string) => Effect.Effect<SessionLike | undefined, E, R>,
-  grantOf: (id: string) => PermissionMode | undefined,
-): Effect.Effect<PermissionMode | undefined, E, R> =>
+  grantOf: (id: string) => Effect.Effect<PermissionMode | undefined, E2, R2>,
+): Effect.Effect<PermissionMode | undefined, E | E2, R | R2> =>
   Effect.gen(function* () {
     const seen = new Set<string>()
     let id: string | undefined = sessionID
     let grant: PermissionMode | undefined
     while (id !== undefined && !seen.has(id)) {
       seen.add(id)
-      const own = grantOf(id)
+      const own = yield* grantOf(id)
       if (own !== undefined) grant = grant === undefined ? own : moreRestrictive(grant, own)
       const session: SessionLike | undefined = yield* getSession(id)
       if (!session) break

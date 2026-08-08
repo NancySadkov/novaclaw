@@ -107,7 +107,7 @@ describe("chainAutoGrant: the root-ward fold", () => {
       chainAutoGrant(
         from,
         (id: string) => Effect.succeed(rows[id]),
-        (id) => grants[id],
+        (id) => Effect.succeed(grants[id]),
       ),
     )
 

@@ -1,4 +1,4 @@
-import { afterAll, describe, expect } from "bun:test"
+import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -8,6 +8,7 @@ import { PermissionV2 } from "@novaclaw/core/permission"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionStore } from "@novaclaw/core/session/store"
+import { SessionAutoGrant } from "@novaclaw/core/session/auto-grant"
 import { PermissionTool } from "@novaclaw/core/tool/permission"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
@@ -46,6 +47,7 @@ const it = testEffect(
       Database.node,
       EventV2.node,
       SessionStore.node,
+      SessionAutoGrant.node,
       ToolRegistry.node,
       ToolRegistry.toolsNode,
       PermissionTool.node,
@@ -81,19 +83,13 @@ const insert = (input: {
       .pipe(Effect.orDie)
   })
 
-const setup = Effect.sync(() => {
+const setup = Effect.gen(function* () {
   assertions.length = 0
   assertFailure = undefined
-  PermissionV2.clearAutoGrants()
+  yield* (yield* SessionAutoGrant.Service).clear()
 })
 
-// ⚠️ `bun test` runs every file of a unit in ONE process and the grant map is process-global, so a
-// file that leaves grants behind changes `anyAutoGrant()` for whatever runs next. Harmless (the ids
-// are unique, so a later session folds to `undefined`) but it would make this file a suspect the
-// next time somebody bisects a core failure. Clean up after ourselves.
-afterAll(() => {
-  PermissionV2.clearAutoGrants()
-})
+const grant = (sessionID: string) => Effect.flatMap(SessionAutoGrant.Service, (store) => store.get(sessionID))
 
 const REASON = "the plan is agreed and I now need to edit src/ to apply it"
 
@@ -143,7 +139,7 @@ describe("the `permission` tool (Auto mode)", () => {
       expect(result.value).toContain("reading first; changing nothing yet")
       // "Lowering is always permitted and never asks."
       expect(assertions).toEqual([])
-      expect(PermissionV2.autoGrant("ses_tool_lower")?.mode).toBe("plan")
+      expect((yield* grant("ses_tool_lower"))?.mode).toBe("plan")
     }),
   )
 
@@ -161,7 +157,7 @@ describe("the `permission` tool (Auto mode)", () => {
       // The whole reason the card sits at `yolo` and not lower: nobody is present to answer here, so
       // a card on this raise would strand the run at `plan` for the rest of its life.
       expect(assertions).toEqual([])
-      expect(PermissionV2.autoGrant("ses_tool_back")?.mode).toBe("bypass")
+      expect((yield* grant("ses_tool_back"))?.mode).toBe("bypass")
     }),
   )
 
@@ -175,7 +171,7 @@ describe("the `permission` tool (Auto mode)", () => {
       expect(result.type).toBe("error")
       expect(result.value).toContain("the user set this chat to")
       expect(assertions).toEqual([])
-      expect(PermissionV2.autoGrant("ses_tool_ceiling")).toBeUndefined()
+      expect(yield* grant("ses_tool_ceiling")).toBeUndefined()
     }),
   )
 
@@ -191,13 +187,13 @@ describe("the `permission` tool (Auto mode)", () => {
       )
       expect(blank.type).toBe("error")
       expect(blank.value).toContain("empty")
-      expect(PermissionV2.autoGrant("ses_tool_blank")).toBeUndefined()
+      expect(yield* grant("ses_tool_blank")).toBeUndefined()
 
       // NEGATIVE CONTROL: the identical call with a real justification lands, so the refusal above
       // is the justification and nothing else about this session.
       const written = yield* executeTool(registry, call("ses_tool_blank", { op: "lower", mode: "plan" }))
       expect(written.type).toBe("text")
-      expect(PermissionV2.autoGrant("ses_tool_blank")?.mode).toBe("plan")
+      expect((yield* grant("ses_tool_blank"))?.mode).toBe("plan")
     }),
   )
 
@@ -212,7 +208,7 @@ describe("the `permission` tool (Auto mode)", () => {
 
       const result = yield* executeTool(registry, call("ses_tool_yolo", { op: "raise", mode: "yolo" }))
       expect(result.type).toBe("text")
-      expect(PermissionV2.autoGrant("ses_tool_yolo")?.mode).toBe("yolo")
+      expect((yield* grant("ses_tool_yolo"))?.mode).toBe("yolo")
       // A SEPARATE action from the tool's own name, and `save` scoped to the mode rather than `*`:
       // an "always" answer means "this agent may return to yolo", never "…may do anything".
       expect(assertions).toMatchObject([
@@ -242,7 +238,7 @@ describe("the `permission` tool (Auto mode)", () => {
       // The denial keeps its own identity instead of collapsing into a generic tool error.
       expect(result.value).toContain(PermissionV2.denialMessage(new PermissionV2.RejectedError()) ?? "<missing>")
       // The write happens AFTER the card, so a refusal cannot half-apply.
-      expect(PermissionV2.autoGrant("ses_tool_refused")?.mode).toBe("plan")
+      expect((yield* grant("ses_tool_refused"))?.mode).toBe("plan")
     }),
   )
 
@@ -260,7 +256,7 @@ describe("the `permission` tool (Auto mode)", () => {
       expect(result.value).toContain("UNATTENDED")
       // The cap is MECHANICAL, not a card nobody could answer: no assert was spent at all.
       expect(assertions).toEqual([])
-      expect(PermissionV2.autoGrant("ses_tool_unattended")?.mode).toBe("bypass")
+      expect((yield* grant("ses_tool_unattended"))?.mode).toBe("bypass")
 
       // NEGATIVE CONTROL: the identical sequence on an ATTENDED root does reach the card, so the
       // refusal above is the attendance cap rather than something about `yolo` in general.

@@ -121,6 +121,18 @@ export const SessionExecutionTable = sqliteTable(
   (table) => [index("session_execution_state_heartbeat_idx").on(table.state, table.heartbeat_at)],
 )
 
+// Entity-lifetime permission self-revocation. This must be a row rather than process memory:
+// the permission tool runs in a disposable session worker while the evaluator runs in the host.
+export const SessionAutoGrantTable = sqliteTable("session_auto_grant", {
+  session_id: text()
+    .$type<SessionSchema.ID>()
+    .primaryKey()
+    .references(() => SessionTable.id, { onDelete: "cascade" }),
+  mode: text().$type<"plan" | "ask" | "surgical" | "bypass" | "yolo">().notNull(),
+  justification: text().notNull(),
+  at: integer().notNull(),
+})
+
 export const TodoTable = sqliteTable(
   "todo",
   {
