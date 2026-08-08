@@ -29,6 +29,12 @@ import { ComputerProposal } from "./proposal"
  * > and never a substitute for it. A task supplied with no terminal checkpoint can never reach
  * > `Done` — it terminates `Blocked(done-unverifiable)` and says so.
  *
+ * ⚠️ **{@link CHECKPOINT_LOOKAHEAD} widened WHICH frame can carry that answer and nothing else about
+ * the law.** When the terminal checkpoint is the lookahead target it is asked by the harness, on a
+ * harness-captured frame, and gated by {@link CHECKPOINT_CONFIRMATIONS} exactly like every other
+ * award — the evidence standard is unchanged; only the requirement that the answer arrive on the one
+ * frame where the ratchet happened to be pointing at it is gone.
+ *
  * `claim_done` therefore does not transition anywhere: it schedules an adjudication and continues.
  * This is the jh completion gate's law with a screen as the witness instead of a command
  * (`todo.md`, run 3: unsatisfiable gate → `task_blocked: completion_unverified`).
@@ -125,6 +131,43 @@ export const DEFAULT_NO_PROGRESS_LIMIT = 4
  * false rate further (the samples are near-independent) at one call each.
  */
 export const CHECKPOINT_CONFIRMATIONS = 1
+
+/**
+ * 🔴 **How far PAST the next unsatisfied checkpoint the battery may look on one frame. MEASURED,
+ * 2026-08-08 — this is the fix for a battery that is a STOPWATCH rather than a progress marker.**
+ *
+ * The 2.2 acceptance run of 2026-08-08 played the *entire* hand-played oracle — DOS prompt to the
+ * *"Choose a new spell to research"* dialog — and scored 4/9, because the ordered ratchet asked
+ * exactly one question per frame and could therefore advance at most one checkpoint per step. A run
+ * that clears one screen per step outruns it immediately, and in an ordered battery that is not
+ * merely lossy: the frame that satisfies checkpoint k+1 is already gone by the time k is awarded,
+ * so k+1…n become unreachable **forever**. It froze at 2/7 for twenty steps while the game was
+ * being played correctly in front of it.
+ *
+ * ⭐ **The award is therefore decoupled from the exact frame, in the one direction that is sound.**
+ * These checkpoints are stages of a MONOTONE progression through a state machine that is the game's,
+ * not ours: Master of Magic cannot draw the overland map without having passed wizard creation, and
+ * cannot show wizard creation without having left the main menu. So *a later checkpoint being true
+ * is evidence that the earlier one was passed*, and awarding both is an inference from the
+ * substrate's own structure rather than a guess. The converse — inferring a later checkpoint from an
+ * earlier one — is nonsense and is not expressible here.
+ *
+ * ⚠️ **Ordering is KEPT and this is deliberate.** Asking every remaining checkpoint on every frame
+ * would cost 7× the adjudication calls, and it would also destroy the two properties the ordering
+ * buys: `checkpointIndex` is a watermark the driver scores directly, and the start-frame calibration
+ * is only meaningful because every checkpoint is known-`no` before the run starts. What is wrong is
+ * not that the battery is ordered — it is that an award required the exact frame.
+ *
+ * ⚠️ **The cost is one extra adjudication on a step that does NOT advance, and it is NOT gated on
+ * the step having been `attributed`.** That gate was considered and refused for §7g's reason: an
+ * overshoot is exactly as reachable on a step whose watch region measured `no-visible-effect` (G13
+ * branch (b) — the effect rendered outside the region), so a guard gated on the run's own history
+ * would be silent in a case it is written for.
+ *
+ * **Residual, named rather than hidden:** at depth 1 a run that clears TWO stages in one step still
+ * jams. The knob is here; raising it costs one call per level per non-advancing step.
+ */
+export const CHECKPOINT_LOOKAHEAD = 1
 
 /** How many times one step may be re-prompted before the step is spent. G3: exactly one. */
 export const REPAIRS_PER_STEP = 1
@@ -259,6 +302,7 @@ export type Phase =
   | "propose"
   | "act"
   | "adjudicate-step"
+  | "lookahead-checkpoint"
   | "confirm-checkpoint"
   | "adjudicate-claim"
   | "terminal"
@@ -337,6 +381,12 @@ export interface State {
    * the same reason the driver reads verdicts off the reducer instead of recomputing them.
    */
   readonly confirming?: Measured
+  /**
+   * How many checkpoints the award currently being confirmed covers: 1 for the ordinary next-one
+   * award, 2 when {@link CHECKPOINT_LOOKAHEAD} found the run had already overshot. Parked beside
+   * `confirming` so the confirmation phase never has to re-derive which question it is confirming.
+   */
+  readonly awarding?: number
   readonly outcome?: Outcome
 }
 
@@ -387,8 +437,10 @@ const voided = (state: State, reason: VoidReason, detail: string): Transition =>
   finish(state, { kind: "void", reason, detail })
 
 /**
- * `n/m`, and `n/m?` when a checkpoint award was CLAIMED this step and the confirming re-ask did not
- * agree.
+ * `n/m`, `n/m?` when a checkpoint award was CLAIMED this step and the confirming re-ask did not
+ * agree, and `n/m^` when the award came from {@link CHECKPOINT_LOOKAHEAD} — i.e. the run had already
+ * overshot and one earlier checkpoint was awarded by monotone inference rather than by being seen.
+ * That distinction is reported, never hidden: `^` is the mark of an award nobody looked at directly.
  *
  * ⚠️ **The marker lives in this column rather than in `verdict` because `verdict` is a ratcheted
  * field.** `FIELD_LIMIT.verdict` is 28 and the longest verdict the ladder can produce is
@@ -397,10 +449,13 @@ const voided = (state: State, reason: VoidReason, detail: string): Transition =>
  * in-file is a lie about what was observed rather than an abbreviation. One character here costs
  * nothing and the planner still sees that its claim was refused.
  */
-const checkpointColumn = (state: State, unconfirmed: boolean): string =>
-  `${state.checkpointIndex}/${state.spec.checkpoints.length}${unconfirmed ? "?" : ""}`
+const checkpointColumn = (state: State, unconfirmed: boolean, lookahead: boolean): string =>
+  `${state.checkpointIndex}/${state.spec.checkpoints.length}${unconfirmed ? "?" : lookahead ? "^" : ""}`
 
-const record = (state: State, fields: { readonly verdict: string; readonly unconfirmed?: boolean }): State => ({
+const record = (
+  state: State,
+  fields: { readonly verdict: string; readonly unconfirmed?: boolean; readonly lookahead?: boolean },
+): State => ({
   ...state,
   ledger: ComputerLedger.append(state.ledger, {
     n: state.step,
@@ -408,7 +463,7 @@ const record = (state: State, fields: { readonly verdict: string; readonly uncon
     action: state.pending?.summary ?? ComputerLedger.ABSENT,
     expect: state.pending?.expect ?? ComputerLedger.ABSENT,
     verdict: fields.verdict,
-    checkpoint: checkpointColumn(state, fields.unconfirmed === true),
+    checkpoint: checkpointColumn(state, fields.unconfirmed === true, fields.lookahead === true),
   }),
 })
 
@@ -777,10 +832,11 @@ const unexpected = (state: State, event: Event): Transition =>
  * call sites — the ordinary step and the confirmed award — and two copies of it would be two
  * opinions about how a step ends.
  */
-const settleMeasured = (state: State, measured: Measured, advanced: boolean, unconfirmed = false): Transition => {
+const settleMeasured = (state: State, measured: Measured, advance: number, unconfirmed = false): Transition => {
+  const advanced = advance > 0
   const advancedState: State = {
     ...state,
-    checkpointIndex: advanced ? state.checkpointIndex + 1 : state.checkpointIndex,
+    checkpointIndex: state.checkpointIndex + advance,
     consecutiveNoEffect: measured.consecutiveNoEffect,
     lastNoEffect: measured.lastNoEffect,
     // Run-long, never reset — G13's differential reports it. A REFUSED award still counts here if
@@ -792,8 +848,9 @@ const settleMeasured = (state: State, measured: Measured, advanced: boolean, unc
     // other step and increments `noProgress` when the screen did not move either.
     noProgress: advanced || measured.attributed ? 0 : state.noProgress + 1,
     confirming: undefined,
+    awarding: undefined,
   }
-  const logged = record(advancedState, { verdict: measured.verdict, unconfirmed })
+  const logged = record(advancedState, { verdict: measured.verdict, unconfirmed, lookahead: advance > 1 })
   return settle({ ...logged, pending: undefined })
 }
 
@@ -1074,7 +1131,7 @@ export function next(state: State, event: Event): Transition {
       // this — every measurement is already in `measured` — so a confirmation that never arrives
       // costs the award and not the step.
       if (advanced) {
-        const confirming: State = { ...spent, phase: "confirm-checkpoint", confirming: measured }
+        const confirming: State = { ...spent, phase: "confirm-checkpoint", confirming: measured, awarding: 1 }
         return ask(
           confirming,
           ComputerPrompt.adjudicator({
@@ -1088,7 +1145,40 @@ export function next(state: State, event: Event): Transition {
           "ask-adjudicator",
         )
       }
-      return settleMeasured(spent, measured, false)
+
+      // 🔴 The battery is a PROGRESS MARKER, not a stopwatch. See {@link CHECKPOINT_LOOKAHEAD}: a run
+      // that clears one screen per step outruns a one-question-per-frame ratchet, and the frame that
+      // satisfies k+1 is gone by the time k lands. So when the next checkpoint says `no`, ask the one
+      // AFTER it on the same frame — if that is true the run has already overshot, and the skipped
+      // one is passed by the substrate's own monotone structure.
+      const lookahead = spent.spec.checkpoints[spent.checkpointIndex + 1]
+      if (CHECKPOINT_LOOKAHEAD > 0 && lookahead !== undefined) {
+        const probing: State = { ...spent, phase: "lookahead-checkpoint", confirming: measured }
+        return ask(probing, ComputerPrompt.adjudicator({ checkpoint: lookahead, image: spent.image }), "ask-adjudicator")
+      }
+      return settleMeasured(spent, measured, 0)
+    }
+
+    // ── Lookahead (the overshoot probe) ───────────────────────────────────────────────────────
+    case "lookahead-checkpoint": {
+      if (event.kind !== "adjudicated") return unexpected(state, event)
+      const spent = spend(state, event.promptTokens)
+      const measured = state.confirming
+      if (measured === undefined) {
+        return voided(spent, "protocol", "a checkpoint lookahead arrived with no parked measurement to settle")
+      }
+      const parsed = ComputerPrompt.parseAdjudication(event.text)
+      const overshot = parsed.ok && parsed.reply.checkpoint === "yes"
+      if (!overshot) return settleMeasured(spent, measured, 0)
+      // A lookahead award is a CANDIDATE like any other and gets the same confirmation gate — more
+      // so, since it awards two checkpoints on one answer. `awarding: 2` is what the confirmation
+      // then spends.
+      const confirming: State = { ...spent, phase: "confirm-checkpoint", confirming: measured, awarding: 2 }
+      return ask(
+        confirming,
+        ComputerPrompt.adjudicator({ checkpoint: spent.spec.checkpoints[spent.checkpointIndex + 1], image: spent.image }),
+        "ask-adjudicator",
+      )
     }
 
     // ── Confirm (the intermediate-checkpoint gate) ────────────────────────────────────────────
@@ -1107,7 +1197,7 @@ export function next(state: State, event: Event): Transition {
       // victory on a screen nobody looked at — and it binds here with more force, because this
       // question exists precisely to be the second opinion.
       const confirmed = parsed.ok && parsed.reply.checkpoint === "yes"
-      return settleMeasured(spent, measured, confirmed, !confirmed)
+      return settleMeasured(spent, measured, confirmed ? (state.awarding ?? 1) : 0, !confirmed)
     }
   }
 }

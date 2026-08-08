@@ -113,6 +113,11 @@ const CALIBRATE: ReadonlyArray<LOOP.Event> = [captured("start"), adjudged({ chec
  * that claims and is never confirmed would otherwise leave the reducer parked in
  * `confirm-checkpoint` and the failure would read as a missing command somewhere else entirely.
  * `confirm` overrides it, which is how the refusal cases are written.
+ *
+ * ⚠️ **`lookahead` must be supplied for a `checkpoint: "no"` step on a spec that has a checkpoint
+ * AFTER the next unsatisfied one** — {@link LOOP.CHECKPOINT_LOOKAHEAD} asks it there. It is NOT
+ * defaulted, because appending an event the reducer is not parked for would be consumed by the next
+ * phase and the failure would read as a protocol void somewhere else entirely.
  */
 const step = (
   proposal: LOOP.Event,
@@ -120,12 +125,17 @@ const step = (
   verdict: Record<string, unknown>,
   tag: string,
   confirm?: Record<string, unknown>,
+  lookahead?: Record<string, unknown>,
 ): ReadonlyArray<LOOP.Event> => [
   captured(tag),
   proposal,
   acted(evidence, `${tag}-after`),
   adjudged(verdict),
-  ...(verdict.checkpoint === "yes" ? [adjudged(confirm ?? { checkpoint: "yes" })] : []),
+  ...(verdict.checkpoint === "yes"
+    ? [adjudged(confirm ?? { checkpoint: "yes" })]
+    : lookahead === undefined
+      ? []
+      : [adjudged(lookahead), ...(lookahead.checkpoint === "yes" ? [adjudged(confirm ?? { checkpoint: "yes" })] : [])]),
 ]
 
 const commandKinds = (run: Run) => run.commands.map((c) => c.kind)
@@ -577,7 +587,10 @@ describe("🔴 a checkpoint award is CONFIRMED before it counts", () => {
 
   test("it costs ONE extra call, and only on a step that claims something", () => {
     const claimed = claiming({ checkpoint: "yes" }).commands.filter((c) => c.kind === "ask-adjudicator").length
-    const quietRun = drive(twoCheckpoints, [
+    // ⚠️ The comparison run must NOT claim and must NOT probe ahead, or it would be measuring the
+    // confirmation against the lookahead instead of against a bare step. A one-checkpoint spec has
+    // nothing after the next unsatisfied checkpoint, so it spends neither.
+    const quietRun = drive(spec({ noProgressLimit: 99 }), [
       ...CALIBRATE,
       ...step(proposeAt(464, 684), moved(), { predicted: "yes", checkpoint: "no" }, "s1"),
     ])
@@ -629,6 +642,160 @@ describe("🔴 a checkpoint award is CONFIRMED before it counts", () => {
     const cheap = drive(spec(), script(0))
     const dear = drive(spec(), script(1_300))
     expect(dear.state.promptTokens - cheap.state.promptTokens).toBe(1_300)
+  })
+})
+
+// ------------------------------------------------------------------------------------------------
+// CHECKPOINT_LOOKAHEAD — the battery is a progress marker, not a stopwatch
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * 🔴 **The 2026-08-08 acceptance run PLAYED THE WHOLE ORACLE and scored 4/9**, because the ordered
+ * ratchet asked one question per frame and could therefore advance at most one checkpoint per step.
+ * `checkpointIndex` froze at 2/7 for twenty steps while the game was being played correctly in front
+ * of it: the frame that satisfies k+1 had already gone by the time k was awarded, and in an ordered
+ * battery that forecloses every later checkpoint FOREVER.
+ *
+ * These tests are the scripted form of that live shape — three lines of events where the live case
+ * was a 120,000-token run on the Spark.
+ */
+describe("🔴 CHECKPOINT_LOOKAHEAD — an award must not require the exact frame", () => {
+  const CP_A = { id: "cp-a", question: "Is the main menu showing?" }
+  const CP_B = { id: "cp-b", question: "Is the Game Options dialog showing?" }
+  const three = spec({ checkpoints: [CP_A, CP_B, CP9], noProgressLimit: 99 })
+
+  /** The overshoot: `cp-a`'s frame is gone, `cp-b` is what is on screen now. */
+  const overshoot = (lookahead: Record<string, unknown>, confirm?: Record<string, unknown>) =>
+    drive(three, [
+      ...CALIBRATE,
+      ...step(proposeAt(464, 684), moved(), { predicted: "yes", checkpoint: "no" }, "s1", confirm, lookahead),
+    ])
+
+  test("POSITIVE — a confirmed lookahead awards BOTH: the one seen and the one it implies", () => {
+    const run = overshoot({ checkpoint: "yes" })
+    expect(run.state.checkpointIndex).toBe(2)
+  })
+
+  test("🔴 NEGATIVE CONTROL — a lookahead that answers `no` advances NOTHING", () => {
+    // Without this the positive test above is indistinguishable from a battery that advances on any
+    // answer at all, which is the yes-machine the start-frame sweep exists to catch.
+    const run = overshoot({ checkpoint: "no" })
+    expect(run.state.checkpointIndex).toBe(0)
+  })
+
+  test("an award nobody looked at is MARKED — `^` in the ledger's checkpoint column", () => {
+    expect(overshoot({ checkpoint: "yes" }).state.ledger.at(-1)?.checkpoint).toBe("2/3^")
+    // The pair: an ordinary in-order award carries no marker, or the marker would mean nothing.
+    const ordinary = drive(three, [
+      ...CALIBRATE,
+      ...step(proposeAt(464, 684), moved(), { predicted: "yes", checkpoint: "yes" }, "s1"),
+    ])
+    expect(ordinary.state.ledger.at(-1)?.checkpoint).toBe("1/3")
+  })
+
+  test("it asks the checkpoint AFTER the next one — not the next one twice", () => {
+    const asks = overshoot({ checkpoint: "no" }).commands.filter((c) => c.kind === "ask-adjudicator")
+    const probe = asks.at(-1)
+    if (probe?.kind !== "ask-adjudicator") throw new Error("expected a lookahead adjudication")
+    expect(probe.prompt.user).toContain(CP_B.question)
+    expect(probe.prompt.user).not.toContain(CP_A.question)
+  })
+
+  test("G5 holds on the probe too — it is blind, and carries no prediction and no goal", () => {
+    const asks = overshoot({ checkpoint: "no" }).commands.filter((c) => c.kind === "ask-adjudicator")
+    const probe = asks.at(-1)
+    if (probe?.kind !== "ask-adjudicator") throw new Error("expected a lookahead adjudication")
+    const rendered = `${probe.prompt.system}${probe.prompt.user}`
+    expect(rendered).not.toContain(three.goal)
+    expect(rendered).not.toContain("STATEMENT")
+  })
+
+  test("🔴 the lookahead award is CONFIRMED like any other — a refused confirmation advances nothing", () => {
+    // It awards TWO checkpoints on one answer, so it gets more scrutiny than an ordinary award, not
+    // less. A confirmation gate that skipped exactly the widest award would be the wrong shape.
+    const run = overshoot({ checkpoint: "yes" }, { checkpoint: "no" })
+    expect(run.state.checkpointIndex).toBe(0)
+    expect(run.state.ledger.at(-1)?.checkpoint).toBe("0/3?")
+  })
+
+  test("🔴 it is NOT gated on the step having been attributed — §7g's ruling, applied here", () => {
+    // An overshoot is exactly as reachable on a step whose watch region measured `no-visible-effect`
+    // (G13 branch (b): the effect rendered outside the region). A guard gated on the run's own
+    // history would be silent in a case it is written for.
+    const run = drive(three, [
+      ...CALIBRATE,
+      ...step(proposeAt(464, 684), quiet(), { predicted: "no", checkpoint: "no" }, "s1", undefined, {
+        checkpoint: "yes",
+      }),
+    ])
+    expect(run.state.checkpointIndex).toBe(2)
+  })
+
+  test("no checkpoint after the next one means NO probe — the cost is zero on a short battery", () => {
+    const run = drive(spec({ noProgressLimit: 99 }), [
+      ...CALIBRATE,
+      ...step(proposeAt(464, 684), moved(), { predicted: "yes", checkpoint: "no" }, "s1"),
+    ])
+    // 1 calibration + 1 step adjudication. A third would mean it probed past the end of the battery.
+    expect(run.commands.filter((c) => c.kind === "ask-adjudicator").length).toBe(2)
+  })
+
+  test("the probe is bounded — one confirmed lookahead advances by 2 and never further", () => {
+    const four = spec({ checkpoints: [CP_A, CP_B, { id: "cp-c", question: "Is the map showing?" }, CP9] })
+    const run = drive(four, [
+      ...CALIBRATE,
+      ...step(proposeAt(464, 684), moved(), { predicted: "yes", checkpoint: "no" }, "s1", undefined, {
+        checkpoint: "yes",
+      }),
+    ])
+    expect(run.state.checkpointIndex).toBe(2)
+  })
+
+  test("🔴 the widened `Done` path is still the harness's own adjudication of the TERMINAL checkpoint", () => {
+    // The lookahead can BE the terminal checkpoint, which is how a run that ends turn 1 on the step
+    // after the map appears can finish at all. G1 is unchanged: the harness asked it, on a frame the
+    // harness captured, and the confirmation agreed.
+    const two = spec({ checkpoints: [CP_A, CP9] })
+    const run = drive(two, [
+      ...CALIBRATE,
+      ...step(proposeAt(464, 684), moved(), { predicted: "yes", checkpoint: "no" }, "s1", undefined, {
+        checkpoint: "yes",
+      }),
+    ])
+    expect(run.outcome?.kind).toBe("done")
+    // The pair: the identical script whose probe says `no` does NOT finish.
+    const unfinished = drive(two, [
+      ...CALIBRATE,
+      ...step(proposeAt(464, 684), moved(), { predicted: "yes", checkpoint: "no" }, "s1", undefined, {
+        checkpoint: "no",
+      }),
+    ])
+    expect(unfinished.outcome?.kind).not.toBe("done")
+  })
+
+  test("an UNREADABLE probe reply advances nothing — never `yes` on an unanswered question", () => {
+    const run = drive(three, [
+      ...CALIBRATE,
+      captured("s1"),
+      proposeAt(464, 684),
+      acted(moved(), "s1-after"),
+      adjudged({ predicted: "yes", checkpoint: "no" }),
+      { kind: "adjudicated", text: "I am not sure what this screen is." },
+    ])
+    expect(run.state.checkpointIndex).toBe(0)
+    expect(run.outcome?.kind).toBeUndefined()
+  })
+
+  test("a confirmed lookahead is PROGRESS — it resets the no-progress counter", () => {
+    // The live shape it exists for: the screen moved and the run advanced two stages, so a battery
+    // that then counted the step as no-progress would end a run that is working.
+    const run = drive(three, [
+      ...CALIBRATE,
+      ...step(proposeAt(464, 684), quiet(), { predicted: "no", checkpoint: "no" }, "s1", undefined, {
+        checkpoint: "yes",
+      }),
+    ])
+    expect(run.state.noProgress).toBe(0)
   })
 })
 
