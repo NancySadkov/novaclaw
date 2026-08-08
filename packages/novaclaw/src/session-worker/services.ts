@@ -146,6 +146,7 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
           text: request.text,
           ...(request.agent === undefined ? {} : { agent: request.agent }),
           ...(request.model === undefined ? {} : { model: request.model }),
+          ...(request.controlBinding === undefined ? {} : { controlBinding: request.controlBinding }),
           ...(request.systemPromptOverride === undefined ? {} : { systemPromptOverride: request.systemPromptOverride }),
           ...(request.type === undefined ? {} : { type: request.type }),
           ...(request.priority === undefined ? {} : { priority: request.priority }),

@@ -23,6 +23,7 @@ export type Event =
   | EventSessionNextPromptOverrideSwitched
   | EventSessionNextDeviceSwitched
   | EventSessionNextPrioritySwitched
+  | EventSessionNextControlBindingSwitched
   | EventSessionNextMoved
   | EventSessionNextPrompted
   | EventSessionNextPromptAdmitted
@@ -430,6 +431,16 @@ export type GlobalEvent = {
           sessionID: string
           messageID: string
           priority: number | null
+        }
+      }
+    | {
+        id: string
+        type: "session.next.control-binding.switched"
+        properties: {
+          timestamp: number
+          sessionID: string
+          messageID: string
+          controlBinding: string | null
         }
       }
     | {
@@ -1210,6 +1221,7 @@ export type GlobalEvent = {
     | SyncEventSessionNextPromptOverrideSwitched
     | SyncEventSessionNextDeviceSwitched
     | SyncEventSessionNextPrioritySwitched
+    | SyncEventSessionNextControlBindingSwitched
     | SyncEventSessionNextMoved
     | SyncEventSessionNextPrompted
     | SyncEventSessionNextPromptAdmitted
@@ -1672,6 +1684,7 @@ export type SessionDurableEvent =
   | SessionNextPromptOverrideSwitched
   | SessionNextDeviceSwitched
   | SessionNextPrioritySwitched
+  | SessionNextControlBindingSwitched
   | SessionNextMoved
   | SessionNextPrompted
   | SessionNextPromptAdmitted
@@ -1830,6 +1843,7 @@ export type V2Event =
   | SessionNextPromptOverrideSwitched
   | SessionNextDeviceSwitched
   | SessionNextPrioritySwitched
+  | SessionNextControlBindingSwitched
   | SessionNextMoved
   | SessionNextPrompted
   | SessionNextPromptAdmitted
@@ -2070,6 +2084,7 @@ export type SessionV2Info = {
   agent?: string
   model?: ModelRef
   device?: string
+  controlBinding?: string
   systemPromptOverride?: string
   type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
   priority?: number
@@ -2751,6 +2766,23 @@ export type SyncEventSessionNextPrioritySwitched = {
       sessionID: string
       messageID: string
       priority: number | null
+    }
+  }
+}
+
+export type SyncEventSessionNextControlBindingSwitched = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.control-binding.switched.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      messageID: string
+      controlBinding: string | null
     }
   }
 }
@@ -4346,6 +4378,26 @@ export type SessionNextPrioritySwitched = {
     sessionID: string
     messageID: string
     priority: number | null
+  }
+}
+
+export type SessionNextControlBindingSwitched = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.control-binding.switched"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    controlBinding: string | null
   }
 }
 
@@ -6557,6 +6609,17 @@ export type EventSessionNextPrioritySwitched = {
     sessionID: string
     messageID: string
     priority: number | null
+  }
+}
+
+export type EventSessionNextControlBindingSwitched = {
+  id: string
+  type: "session.next.control-binding.switched"
+  properties: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    controlBinding: string | null
   }
 }
 
@@ -10747,6 +10810,7 @@ export type V2SessionCreateData = {
     agent?: string
     model?: ModelRef
     device?: string
+    controlBinding?: string
     systemPromptOverride?: string
     type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
     priority?: number

@@ -174,6 +174,7 @@ describe("the spawn tool carries the kernel's whole child-config surface", () =>
         prompt: PROMPT,
         agent: "plan",
         model: "dgx-spark/qwen3.6-35b",
+        controlBinding: ":100",
         systemPromptOverride: "answer in one line",
         type: "auto-prompting",
         permissionMode: "plan",
@@ -189,6 +190,7 @@ describe("the spawn tool carries the kernel's whole child-config surface", () =>
       expect(String(child?.model?.id)).toBe("qwen3.6-35b")
       expect(child?.type).toBe("auto-prompting")
       expect(child?.permissionMode).toBe("plan")
+      expect(child?.controlBinding).toBe(":100")
       // …and the two that already were, so a regression that drops the OLD forwarding also bites.
       expect(String(child?.agent)).toBe("plan")
       expect(child?.systemPromptOverride).toBe("answer in one line")
@@ -208,6 +210,7 @@ describe("the spawn tool carries the kernel's whole child-config surface", () =>
       expect(child?.model).toBeUndefined()
       expect(child?.permissionMode).toBeUndefined()
       expect(child?.systemPromptOverride).toBeUndefined()
+      expect(child?.controlBinding).toBeUndefined()
       // `type` is the one deliberate exception, and it is the SEAM's default, not the tool's.
       expect(child?.type).toBe("sub-agent")
     }),

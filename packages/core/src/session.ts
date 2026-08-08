@@ -148,6 +148,8 @@ type CreateInput = {
   // Device affinity (v0.2.0 B2): the `DeviceRegistry` id this session's turns are scheduled on.
   // undefined = inherit, then derive from the resolved model's endpoint.
   device?: string
+  /** Explicit computer display for this session; undefined = inherit, then instance default. */
+  controlBinding?: string
   systemPromptOverride?: string
   type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
   priority?: number
@@ -1047,6 +1049,7 @@ export const layer = Layer.effect(
             // pinned to a device stays on that device, because a fork that silently moved to
             // another backend would be scheduled against capacity its source never claimed.
             device: inherited.device,
+            controlBinding: inherited.controlBinding,
             systemPromptOverride: inherited.systemPromptOverride,
             type: inherited.type,
             priority: inherited.priority,

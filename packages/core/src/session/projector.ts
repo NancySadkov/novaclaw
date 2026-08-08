@@ -53,7 +53,7 @@ export function sessionRow(info: SessionSchema.Info): typeof SessionTable.$infer
     directory: info.location.directory,
     path: info.subpath,
     title: info.title,
-    // The sixteen per-session CONFIG columns, generated from `SESSION_CONFIG_FIELDS` — the same
+    // The per-session CONFIG columns, generated from `SESSION_CONFIG_FIELDS` — the same
     // descriptor `info.ts`'s `fromRow` reads, so the two directions cannot drift. See the ⚠️ below
     // about the four months in which they did.
     ...SessionConfigColumns.configToRow(info),
@@ -342,6 +342,17 @@ export const layer = Layer.effectDiscard(
       db
         .update(SessionTable)
         .set({ priority: event.data.priority, time_updated: DateTime.toEpochMillis(event.data.timestamp) })
+        .where(eq(SessionTable.id, event.data.sessionID))
+        .run()
+        .pipe(Effect.orDie, Effect.andThen(run(db, event))),
+    )
+    yield* events.project(SessionEvent.ControlBindingSwitched, (event) =>
+      db
+        .update(SessionTable)
+        .set({
+          control_binding: event.data.controlBinding,
+          time_updated: DateTime.toEpochMillis(event.data.timestamp),
+        })
         .where(eq(SessionTable.id, event.data.sessionID))
         .run()
         .pipe(Effect.orDie, Effect.andThen(run(db, event))),

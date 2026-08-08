@@ -17,7 +17,7 @@ export function fromRow(row: typeof SessionTable.$inferSelect): SessionSchema.In
     metadata: row.metadata ?? undefined,
     title: row.title,
     parentID: row.parent_id ? SessionSchema.ID.make(row.parent_id) : undefined,
-    // The sixteen per-session CONFIG fields (`model`, `agent`, the mode, the Tuning switches, …)
+    // The per-session CONFIG fields (`model`, `agent`, the mode, the Tuning switches, …)
     // are generated from `SESSION_CONFIG_FIELDS` — one descriptor, so this direction and
     // `projector.ts`'s `sessionRow` cannot disagree about which columns exist. They disagreed for
     // four months (`sessionRow` dropped three of them); see `config-columns.ts`.

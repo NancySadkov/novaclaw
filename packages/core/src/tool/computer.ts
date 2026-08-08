@@ -14,6 +14,9 @@ import { Image } from "../image"
 import { Location } from "../location"
 import { AppProcess } from "../process"
 import { PermissionV2 } from "../permission"
+import { EFFECTIVE_CONFIG_DEFAULTS, resolveSessionConfig, type SessionLike } from "../session/config-resolve"
+import { SessionSchema } from "../session/schema"
+import { SessionStore } from "../session/store"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -244,9 +247,20 @@ export interface Input extends Schema.Schema.Type<typeof Input> {}
  */
 export const UNCONFIGURED =
   "No display is configured for computer use, so there is nothing to observe or click. " +
-  "Set `computer.display` (for example \":99\") to the X display of a desktop this instance can reach. " +
-  "A display is never inherited from the environment: that would either fail on a headless host or " +
+  "Set this session's `control_binding` component (for example \":99\"), or set `computer.display` " +
+  "as the instance default. A display is never inherited from the process environment: that would " +
+  "either fail on a headless host or " +
   "silently drive the operator's real screen."
+
+/** Resolve the session/ancestor override first and the instance setting only as the final default. */
+export const resolveControlDisplay = <E, R>(
+  sessionID: SessionSchema.ID,
+  instanceDisplay: string | undefined,
+  getSession: (id: SessionSchema.ID) => Effect.Effect<SessionLike | undefined, E, R>,
+): Effect.Effect<string | undefined, E, R> =>
+  resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, sessionID, (id) => getSession(SessionSchema.ID.make(id))).pipe(
+    Effect.map((resolved) => resolved.controlBinding ?? instanceDisplay),
+  )
 
 /**
  * The MIME of the file `scrot` just wrote, read off the configured path's extension.
@@ -331,6 +345,7 @@ export const layer = Layer.effectDiscard(
     const processes = yield* AppProcess.Service
     const location = yield* Location.Service
     const images = yield* Image.Service
+    const sessions = yield* SessionStore.Service
 
     yield* tools
       .register({
@@ -361,9 +376,9 @@ export const layer = Layer.effectDiscard(
           execute: (input, context) =>
             Effect.gen(function* () {
               const settings = Config.latest(yield* config.entries(), "computer") as ConfigComputer.Info | undefined
-              const display = settings?.display
+              const display = yield* resolveControlDisplay(context.sessionID, settings?.display, sessions.get)
               if (!display) return yield* Effect.fail(new ToolFailure({ message: UNCONFIGURED }))
-              const screenshotPath = settings.screenshotPath ?? ConfigComputer.DEFAULT_SCREENSHOT_PATH
+              const screenshotPath = settings?.screenshotPath ?? ConfigComputer.DEFAULT_SCREENSHOT_PATH
 
               const action = toAction(input)
               if ("error" in action) return yield* Effect.fail(new ToolFailure({ message: action.error }))
@@ -468,7 +483,15 @@ export const node = makeLocationNode({
   layer,
   // `Image.node` is here for the SAME reason `tool/read.ts` has it: a tool that returns pixels
   // consults the one image seam before it does, so the size policy lives in a single place.
-  deps: [ToolRegistry.node, PermissionV2.node, AppProcess.node, Location.node, Config.node, Image.node],
+  deps: [
+    ToolRegistry.node,
+    PermissionV2.node,
+    AppProcess.node,
+    Location.node,
+    Config.node,
+    Image.node,
+    SessionStore.node,
+  ],
 })
 
 /** Re-exported so a caller converting a grounder's output has one obvious place to look. */

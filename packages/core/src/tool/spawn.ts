@@ -28,7 +28,7 @@ import { Tools } from "./tools"
 // `started: false` case: a spawn with no executor attached is a real, durable, NOT-running child.
 //
 // THE TOOL SURFACE IS THE KERNEL SURFACE, MINUS ONE FIELD. `SpawnInput` (`session/spawner.ts`)
-// carries agent · model · systemPromptOverride · type · priority · permissionMode, and the child
+// carries agent · model · controlBinding · systemPromptOverride · type · priority · permissionMode, and the child
 // record persists every one of them (`createSessionRecord`, session.ts). All are reachable here
 // EXCEPT `priority`: it is a scheduler weight, not a capability the child needs to do its job, and
 // unlike `permissionMode` below nothing clamps it against the parent — a model free to set its
@@ -99,6 +99,10 @@ export const Input = Schema.Struct({
     description:
       'Optional model for the child, as the full "provider/model-id" (e.g. "dgx-spark/qwen3.6-35b"). ' +
       "Omit to inherit this session's model — use it to put a cheap sub-task on a smaller model.",
+  }),
+  controlBinding: Schema.NonEmptyString.pipe(Schema.optional).annotate({
+    description:
+      'Optional X display for the child (for example ":100"). Omit to inherit this session\'s control binding.',
   }),
   systemPromptOverride: Schema.String.pipe(Schema.optional).annotate({
     description: "Optional system-prompt override for the child. Omit to inherit this session's prompt.",
@@ -208,6 +212,7 @@ export const layer = Layer.effectDiscard(
                   text: input.prompt,
                   agent: input.agent ? AgentV2.ID.make(input.agent) : undefined,
                   model,
+                  controlBinding: input.controlBinding,
                   systemPromptOverride: input.systemPromptOverride,
                   type: input.type,
                   permissionMode: input.permissionMode,

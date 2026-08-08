@@ -557,6 +557,7 @@ const compiledDefinitions = Effect.gen(function* () {
         override: SessionTable.system_prompt_override,
         device: SessionTable.device,
         priority: SessionTable.priority,
+        controlBinding: SessionTable.control_binding,
         directory: SessionTable.directory,
       })
       .from(SessionTable)
@@ -583,6 +584,13 @@ const compiledDefinitions = Effect.gen(function* () {
       messageID: SessionMessage.ID.create(),
       timestamp: DateTime.nowUnsafe(),
       priority,
+    })
+  const publishControlBinding = (sessionID: SessionSchema.ID, controlBinding: string | null) =>
+    events.publish(SessionEvent.ControlBindingSwitched, {
+      sessionID,
+      messageID: SessionMessage.ID.create(),
+      timestamp: DateTime.nowUnsafe(),
+      controlBinding,
     })
   const resolveWorkingFolder = (sessionID: SessionSchema.ID, value: string) =>
     Effect.gen(function* () {
@@ -676,6 +684,33 @@ const compiledDefinitions = Effect.gen(function* () {
             if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
             if (row.priority === null) return false
             yield* publishPriority(sessionID, null)
+            return true
+          }),
+      },
+    }),
+    kernelDefinition({
+      kind: "control_binding",
+      description:
+        "The X display this session controls. Descendants inherit it; remove to fall back through the chain to the instance default.",
+      cardinality: "singleton",
+      lifetime: "entity",
+      version: 1,
+      codec: Schema.NonEmptyString,
+      projection: {
+        get: (sessionID) => current(sessionID).pipe(Effect.map((row) => row?.controlBinding ?? undefined)),
+        put: (sessionID, value) =>
+          Effect.gen(function* () {
+            const row = yield* current(sessionID)
+            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            if (row.controlBinding !== value) yield* publishControlBinding(sessionID, value)
+            return undefined
+          }),
+        remove: (sessionID) =>
+          Effect.gen(function* () {
+            const row = yield* current(sessionID)
+            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            if (row.controlBinding === null) return false
+            yield* publishControlBinding(sessionID, null)
             return true
           }),
       },

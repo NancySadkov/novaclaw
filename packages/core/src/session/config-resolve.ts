@@ -343,6 +343,8 @@ export interface SessionConfig {
    * column-less set at ZERO, so it cannot.
    */
   readonly device?: string
+  /** Explicit X display for this session. Absent = inherit, then use instance `computer.display`. */
+  readonly controlBinding?: string
   readonly systemPromptOverride?: string
   readonly type?: SessionType
   readonly priority?: number
@@ -427,6 +429,8 @@ export interface EffectiveConfig {
   /** The chain-resolved device affinity (see `SessionConfig.device`); `undefined` = derive it from
    *  the resolved model's endpoint. This is the value `deviceKey = resolvedDevice` refers to. */
   readonly device?: string
+  /** The chain-resolved computer display. Absent = use instance `computer.display`. */
+  readonly controlBinding?: string
   readonly systemPromptOverride?: string
   readonly type: SessionType
   readonly priority: number
@@ -497,6 +501,7 @@ export interface SessionLike {
   readonly agent?: string
   /** Device affinity (see `SessionConfig.device`); `undefined` = inherit. */
   readonly device?: string
+  readonly controlBinding?: string
   readonly systemPromptOverride?: string
   readonly type?: SessionType
   readonly priority?: number
@@ -705,6 +710,7 @@ export const SESSION_CONFIG_FIELDS = {
   // consumer (`SessionRunnerModel.deviceKeyFor`) in one slice — the forced order the decisions doc
   // gives, and the reason the phantom was deleted first rather than repaired in place.
   device: { column: "device", merge: "override" },
+  controlBinding: { column: "control_binding", merge: "override" },
   systemPromptOverride: { column: "system_prompt_override", merge: "override" },
   type: { column: "type", merge: "override" },
   priority: { column: "priority", merge: "override" },

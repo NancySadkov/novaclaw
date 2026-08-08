@@ -58,6 +58,9 @@ export const Info = Schema.Struct({
   // — one admission gate, one batch cap, one fairness ledger per device. Absent = inherit, then
   // derive from the resolved model's endpoint. A scheduling key, never a model router.
   device: Schema.String.pipe(optional),
+  // The explicit computer substrate for this session. Absent = inherit from the parent chain,
+  // then fall back to the instance's `computer.display` default.
+  controlBinding: Schema.NonEmptyString.pipe(optional),
   systemPromptOverride: Schema.String.pipe(optional),
   type: SessionType.Info.pipe(optional),
   priority: Schema.Finite.pipe(optional),

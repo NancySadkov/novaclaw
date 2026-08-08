@@ -80,3 +80,29 @@ test("restores permission denial identity from the host reply", async () => {
   expect(Exit.isFailure(result)).toBe(true)
   if (Exit.isFailure(result)) expect(Cause.squash(result.cause)).toBeInstanceOf(PermissionV2.DeniedError)
 })
+
+test("forwards a child's control binding through the worker RPC without forwarding parent authority", async () => {
+  let request: Record<string, unknown> | undefined
+  const services = SessionWorkerServices.make({
+    spawnChild: async (input: Record<string, unknown>) => {
+      request = input
+      return {
+        version: 1,
+        type: "spawn-result",
+        sessionID,
+        attemptID: "exe_services",
+        generation: 1,
+        requestID: "rpc_services",
+        outcome: "spawned",
+        child: SessionSchema.ID.make("ses_worker_child"),
+        started: true,
+      }
+    },
+  } as unknown as SessionWorkerCapabilities.Capabilities)
+
+  await Effect.runPromise(
+    services.spawner.spawn({ parentID: sessionID, text: "drive the other surface", controlBinding: ":100" }),
+  )
+  expect(request?.["controlBinding"]).toBe(":100")
+  expect("parentID" in (request ?? {})).toBe(false)
+})

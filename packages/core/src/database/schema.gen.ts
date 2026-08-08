@@ -431,6 +431,7 @@ export default {
           \`agent\` text,
           \`model\` text,
           \`device\` text,
+          \`control_binding\` text,
           \`system_prompt_override\` text,
           \`type\` text,
           \`priority\` integer,

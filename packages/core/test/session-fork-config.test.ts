@@ -85,6 +85,7 @@ const createFullyConfigured = (session: SessionV2.Interface, parentID?: SessionS
       // loop below requires a fork to carry it — a fork that silently moved to another backend would
       // be scheduled against capacity its source never claimed.
       device: "spark",
+      controlBinding: ":99",
       systemPromptOverride: "You are Neo.",
       type: "goal-oriented",
       priority: 7,
@@ -139,6 +140,7 @@ describe("SESSION_CONFIG_FIELDS — the descriptor is honest about what a row ca
         contextBudget: true,
         strict: { enabled: true },
         device: "spark",
+        controlBinding: ":99",
         tools: ["bash"],
       } as unknown as SessionLike
       const mapped = sessionToConfig(everything) as Record<string, unknown>

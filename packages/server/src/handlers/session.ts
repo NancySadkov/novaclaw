@@ -109,6 +109,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 // same reason: `undefined` means INHERIT, so coalescing it to a derived key here
                 // would stamp one session's backend onto every child it ever spawns.
                 device: ctx.payload.device,
+                controlBinding: ctx.payload.controlBinding,
                 systemPromptOverride: ctx.payload.systemPromptOverride,
                 type: ctx.payload.type,
                 priority: ctx.payload.priority,

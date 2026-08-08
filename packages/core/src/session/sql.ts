@@ -55,6 +55,10 @@ export const SessionTable = sqliteTable(
     // fairness ledger this session's turns queue on. NULL = inherit (parent chain), then derive from
     // the resolved model's endpoint origin. A scheduling key only — it never selects the model.
     device: text(),
+    // Per-session computer substrate. NULL = inherit from the parent chain, then use the instance
+    // `computer.display` default. Kept as the display string because that is the whole substrate
+    // binding (`config/computer.ts`); a remote host would violate the atomic-instance rule.
+    control_binding: text(),
     system_prompt_override: text(),
     type: text().$type<"interactive" | "sub-agent" | "auto-prompting" | "goal-oriented">(),
     priority: integer(),

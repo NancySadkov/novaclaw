@@ -61,6 +61,14 @@ describe("resolveConfig — simple fields (undefined = inherit)", () => {
     ).toBe("B")
   })
 
+  test("controlBinding inherits the nearest explicit display and otherwise stays absent", () => {
+    expect(resolveConfig(DEFAULTS, []).controlBinding).toBeUndefined()
+    expect(resolveConfig(DEFAULTS, [{ controlBinding: ":99" }, {}]).controlBinding).toBe(":99")
+    expect(resolveConfig(DEFAULTS, [{ controlBinding: ":99" }, { controlBinding: ":100" }]).controlBinding).toBe(
+      ":100",
+    )
+  })
+
   test("feature toggles (T1): tri-state — child inherits parent's stance, own stance wins, explicit false is real", () => {
     // No stance anywhere → undefined (the runner falls back to the global config block).
     expect(resolveConfig(DEFAULTS, [{}]).quality).toBeUndefined()

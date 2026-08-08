@@ -38,6 +38,7 @@ function populatedInfo(): SessionSchema.Info {
     location: { directory: "C:/tmp/row-inverse" } as SessionSchema.Info["location"],
     metadata: { probe: true },
     agent: "build" as SessionSchema.Info["agent"],
+    controlBinding: ":99",
     systemPromptOverride: "ROW-INVERSE-OVERRIDE",
     type: "goal-oriented",
     priority: 7,
@@ -86,6 +87,7 @@ describe("sessionRow is fromRow's inverse", () => {
     )
     expect(back.responder, "responder did not survive").toBe(info.responder)
     expect(back.contextBudget, "contextBudget did not survive").toBe(info.contextBudget)
+    expect(back.controlBinding, "controlBinding did not survive").toBe(info.controlBinding)
     expect(back.providerRecovery, "providerRecovery did not survive").toEqual(info.providerRecovery)
   })
 
@@ -134,6 +136,7 @@ describe("sessionRow is fromRow's inverse", () => {
     expect(back.thinkingBudget).toBeUndefined()
     expect(back.responder).toBeUndefined()
     expect(back.contextBudget).toBeUndefined()
+    expect(back.controlBinding).toBeUndefined()
     expect(back.providerRecovery).toBeUndefined()
     expect(back.systemPromptOverride).toBeUndefined()
   })

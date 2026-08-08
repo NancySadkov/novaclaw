@@ -135,6 +135,19 @@ describe("SessionWorkerProtocol", () => {
     })
   })
 
+  test("round-trips a spawned child's control binding", () => {
+    const spawn = {
+      ...identity,
+      type: "spawn-child" as const,
+      requestID: "rpc_spawn",
+      input: { text: "Inspect the second display", controlBinding: ":100" },
+    }
+    expect(SessionWorkerProtocol.decodeWorkerLine(SessionWorkerProtocol.encodeLine(spawn).trimEnd())).toEqual({
+      ok: true,
+      message: spawn,
+    })
+  })
+
   test("round-trips host-owned execution checkpoints", () => {
     const advance = {
       ...identity,

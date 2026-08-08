@@ -304,7 +304,7 @@ describe("session.create carries every per-chat switch a draft can stage", () =>
   //
   // It rides this file rather than a new one because the failure it guards is character-for-character
   // the one above: `additionalProperties: false` means an unlisted field is REJECTED at the edge, and
-  // a handler that forwards seventeen fields and not the eighteenth is exactly how `thinkingBudget`,
+  // a handler that forwards every nearby field except the new one is exactly how `thinkingBudget`,
   // `surgicalEdits`, `askBeforeChanges` and `safeMode` were lost for a month. It cannot join the
   // `FEATURES` loop — those are the boolean Tuning switches read off `SessionFeature.Name`, and a
   // device affinity is a string naming a `DeviceRegistry` entry.
@@ -332,6 +332,17 @@ describe("session.create carries every per-chat switch a draft can stage", () =>
       stored["device"],
       "the create INVENTED a device affinity — absent must mean inherit-then-derive, never a stamped default",
     ).toBeUndefined()
+  })
+
+  test("a control binding set on create reaches the persisted session", async () => {
+    const { echoed, stored } = await createAndReload({ controlBinding: ":99" })
+    expect(stored["controlBinding"], "the create payload or handler discarded the control binding").toBe(":99")
+    expect(echoed["controlBinding"], "the created session response omitted its control binding").toBe(":99")
+  })
+
+  test("a create with no control binding stays sparse for parent and instance fallback", async () => {
+    const { stored } = await createAndReload({})
+    expect(stored["controlBinding"]).toBeUndefined()
   })
 
   // C1a: `responder` already existed in the kernel CreateInput, row projection and switch route,

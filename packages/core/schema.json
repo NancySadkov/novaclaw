@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "309b882d-afb2-436b-b274-2e3a1a042cc7",
+  "id": "028d0af3-faf4-49b7-93d3-0d520472891a",
   "prevIds": [
-    "f672ca0b-b3e9-4864-84ac-37ea33aa7263"
+    "309b882d-afb2-436b-b274-2e3a1a042cc7"
   ],
   "ddl": [
     {
@@ -2795,6 +2795,16 @@
       "default": null,
       "generated": null,
       "name": "device",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "control_binding",
       "entityType": "columns",
       "table": "session"
     },

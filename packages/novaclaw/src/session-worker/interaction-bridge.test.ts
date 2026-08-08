@@ -233,11 +233,15 @@ test("the optional fields ride through, and absent ones stay absent", async () =
       spawner,
       join: joinStub,
       lease,
-      message: { ...spawnRequest, input: { text: "t", agent: "plan", permissionMode: "ask" } },
+      message: {
+        ...spawnRequest,
+        input: { text: "t", agent: "plan", controlBinding: ":100", permissionMode: "ask" },
+      },
     }),
   )
   expect(saw?.agent).toBe("plan")
   expect(saw?.permissionMode).toBe("ask")
+  expect(saw?.controlBinding).toBe(":100")
   // An absent option must not become an explicit `undefined` — `resolveConfig` narrows against the
   // parent chain, and a present-but-undefined field is not the same as inheriting.
   expect("model" in (saw ?? {})).toBe(false)

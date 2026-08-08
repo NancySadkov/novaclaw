@@ -197,6 +197,19 @@ export const PrioritySwitched = Event.define({
 })
 export type PrioritySwitched = typeof PrioritySwitched.Type
 
+// The session's explicit computer substrate. `null` clears the sparse override so the parent
+// chain, then the instance's `computer.display`, becomes effective again on the next tool call.
+export const ControlBindingSwitched = Event.define({
+  type: "session.next.control-binding.switched",
+  ...options,
+  schema: {
+    ...Base,
+    messageID: SessionMessage.ID,
+    controlBinding: Schema.NullOr(Schema.NonEmptyString),
+  },
+})
+export type ControlBindingSwitched = typeof ControlBindingSwitched.Type
+
 export const Moved = Event.define({
   type: "session.next.moved",
   ...options,
@@ -678,6 +691,7 @@ export const DurableDefinitions = Event.inventory(
   PromptOverrideSwitched,
   DeviceSwitched,
   PrioritySwitched,
+  ControlBindingSwitched,
   Moved,
   Prompted,
   PromptAdmitted,
@@ -724,6 +738,7 @@ export const Definitions = Event.inventory(
   PromptOverrideSwitched,
   DeviceSwitched,
   PrioritySwitched,
+  ControlBindingSwitched,
   Moved,
   Prompted,
   PromptAdmitted,

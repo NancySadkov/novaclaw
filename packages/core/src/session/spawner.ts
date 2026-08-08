@@ -64,6 +64,8 @@ export interface SpawnInput {
   readonly text: string
   readonly agent?: AgentV2.ID
   readonly model?: ModelV2.Ref
+  /** Explicit computer display for the child. Omit to inherit from its parent. */
+  readonly controlBinding?: string
   readonly systemPromptOverride?: string
   /** Thread type for the child (defaults to "sub-agent" — a spawned session waits on its supervisor). */
   readonly type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
@@ -157,6 +159,7 @@ export const layer = Layer.effect(
                 parentID: input.parentID,
                 agent: input.agent,
                 model: input.model,
+                controlBinding: input.controlBinding,
                 systemPromptOverride: input.systemPromptOverride,
                 // A spawned session is a sub-agent thread unless the caller says otherwise (Vision).
                 type: input.type ?? "sub-agent",

@@ -152,6 +152,8 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
       // Scheduling affinity and weight are control signals projected onto the session row.
       "session.next.device.switched": () => Effect.void,
       "session.next.priority.switched": () => Effect.void,
+      // The computer substrate binding is another row-projected control signal.
+      "session.next.control-binding.switched": () => Effect.void,
       "session.next.prompted": (event) => {
         return adapter.appendMessage(
           SessionMessage.User.make({

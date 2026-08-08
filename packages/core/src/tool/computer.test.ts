@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import path from "node:path"
-import { DateTime } from "effect"
+import { DateTime, Effect } from "effect"
 import { Model, type ToolContent } from "@novaclaw/llm"
 import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
 import { ComputerTool } from "./computer"
@@ -10,6 +10,8 @@ import { ComputerActions } from "../computer/actions"
 import { ModelV2 } from "../model"
 import { ProviderV2 } from "../provider"
 import { SessionMessage } from "../session/message"
+import { type SessionLike } from "../session/config-resolve"
+import { SessionSchema } from "../session/schema"
 import { SessionOrigin } from "../session/origin"
 import { toLLMMessages, type InputCapabilities } from "../session/runner/to-llm-message"
 
@@ -95,8 +97,28 @@ describe("unconfigured declines by NAMING the knob", () => {
     // Ruling 2 — an unavailable subsystem names itself. Unconfigured is the COMMON case (a Windows
     // laptop, a headless server), so this is the message most callers meet, and it is the one an
     // agent needs in order to repair the instance itself.
+    expect(ComputerTool.UNCONFIGURED).toContain("control_binding")
     expect(ComputerTool.UNCONFIGURED).toContain("computer.display")
-    expect(ComputerTool.UNCONFIGURED).toContain("never inherited")
+    expect(ComputerTool.UNCONFIGURED).toContain("process environment")
+  })
+
+  test("session and ancestor bindings outrank the instance default", () => {
+    const sessions: Record<string, SessionLike> = {
+      ses_root: { id: "ses_root", controlBinding: ":99" },
+      ses_child: { id: "ses_child", parentID: "ses_root" },
+      ses_override: { id: "ses_override", parentID: "ses_root", controlBinding: ":100" },
+      ses_bare: { id: "ses_bare" },
+    }
+    const resolved = (id: string, instanceDisplay: string | undefined) =>
+      Effect.runSync(
+        ComputerTool.resolveControlDisplay(SessionSchema.ID.make(id), instanceDisplay, (key) =>
+          Effect.succeed(sessions[String(key)]),
+        ),
+      )
+    expect(resolved("ses_child", ":0")).toBe(":99")
+    expect(resolved("ses_override", ":0")).toBe(":100")
+    expect(resolved("ses_bare", ":0")).toBe(":0")
+    expect(resolved("ses_bare", undefined)).toBeUndefined()
   })
 
   test("the tool is named `computer`, which is also its permission action", () => {

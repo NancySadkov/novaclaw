@@ -257,6 +257,7 @@ export const makeSessionGroup = <
           // `session.device` column with no wire writer would be settable by nothing outside the
           // kernel, which is the inert shape B2's first step deleted three fields for.
           device: Schema.String.pipe(Schema.optional),
+          controlBinding: Schema.NonEmptyString.pipe(Schema.optional),
           systemPromptOverride: Schema.String.pipe(Schema.optional),
           type: Schema.Literals(["interactive", "sub-agent", "auto-prompting", "goal-oriented"]).pipe(Schema.optional),
           priority: Schema.Finite.pipe(Schema.optional),

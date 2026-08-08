@@ -258,6 +258,7 @@ export const SpawnChild = Schema.Struct({
     text: Schema.String,
     agent: Schema.String.pipe(Schema.optional),
     model: Model.Ref.pipe(Schema.optional),
+    controlBinding: Schema.NonEmptyString.pipe(Schema.optional),
     systemPromptOverride: Schema.String.pipe(Schema.optional),
     type: Schema.Literals(["interactive", "sub-agent", "auto-prompting", "goal-oriented"]).pipe(Schema.optional),
     priority: Schema.Finite.pipe(Schema.optional),
