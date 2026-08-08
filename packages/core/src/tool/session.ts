@@ -8,6 +8,9 @@ import { PermissionV2 } from "../permission"
 import { SessionComponentRegistry } from "../session/component-registry"
 import { SessionComponentTier } from "../session/component-tier"
 import { SessionExecutionAttempt } from "../session/execution-attempt"
+import { SessionOrigin } from "../session/origin"
+import { SessionSchema } from "../session/schema"
+import { SessionStore } from "../session/store"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -22,40 +25,57 @@ const SchemaOp = Schema.Struct({
 })
 const ReadOp = Schema.Struct({
   op: Schema.Literal("read"),
+  sessionID: Schema.optional(SessionSchema.ID).annotate({
+    description: "Session to inspect. Omit for your own session.",
+  }),
   kind: Schema.String,
   id: Schema.optional(Schema.String),
 })
-const ListOp = Schema.Struct({ op: Schema.Literal("list"), kind: Schema.String })
+const ListOp = Schema.Struct({
+  op: Schema.Literal("list"),
+  sessionID: Schema.optional(SessionSchema.ID).annotate({
+    description: "Session to inspect. Omit for your own session.",
+  }),
+  kind: Schema.String,
+})
 const SetOp = Schema.Struct({
   op: Schema.Literal("set"),
+  sessionID: Schema.optional(SessionSchema.ID).annotate({
+    description: "Reserved for a future descendant-write capability. Omit: writes are self-only.",
+  }),
   kind: Schema.String,
   id: Schema.optional(Schema.String),
   value: Schema.Unknown,
 })
 const RemoveOp = Schema.Struct({
   op: Schema.Literal("remove"),
+  sessionID: Schema.optional(SessionSchema.ID).annotate({
+    description: "Reserved for a future descendant-write capability. Omit: writes are self-only.",
+  }),
   kind: Schema.String,
   id: Schema.optional(Schema.String),
 })
 
 export const Input = Schema.Union([SchemaOp, ReadOp, ListOp, SetOp, RemoveOp])
-const Output = Schema.Struct({ op: Schema.String, message: Schema.String })
+const Output = Schema.Struct({ op: Schema.String, message: Schema.String, foreign: Schema.optional(Schema.Boolean) })
+export type Output = typeof Output.Type
+
+export const toModelOutput = (output: Output): string =>
+  (output.foreign ? SessionOrigin.externalContentFrame("another NovaClaw session") : "") + output.message
 
 const description =
-  "Inspect and manage YOUR session's components through one typed registry. Operations: schema describes " +
-  "available kinds and their exact JSON shape; read gets one singleton or set member; list gets every " +
-  "member of one kind; set validates and stores a value; remove clears it so inheritance can resume. " +
-  "Start with schema when unsure. Component ids are accepted only for set-valued kinds. Writes to standing " +
-  "instructions require explicit privileged approval. This first reach is deliberately self-only; it cannot " +
-  "stage state in a sibling, ancestor, or child session."
+  "Inspect session components and manage YOUR OWN through one typed registry. Operations: schema describes " +
+  "available kinds and their exact JSON shape; read gets one singleton or set member; list gets every member " +
+  "of one kind; set validates and stores a value; remove clears it so inheritance can resume. Read/list may " +
+  "name any session in this instance; prompt-bearing values require privileged approval. Set/remove remain " +
+  "self-only and reject a target. Start with schema when unsure. Component ids are only for set-valued kinds."
 
 const failure = (message: string) => new ToolFailure({ message })
 
 /** Pure diff breadcrumb retained from the retired one-field `reconfigure` tool. */
 export function diffSummary(previous: string, next: string | null) {
   const target = next ?? ""
-  if (previous === target)
-    return `System-prompt override unchanged (${previous.length} chars).`
+  if (previous === target) return `System-prompt override unchanged (${previous.length} chars).`
   if (next === null) return `System-prompt override cleared (${previous.length} -> 0 chars).`
   const previousLines = previous.split("\n")
   const nextLines = next.split("\n")
@@ -76,6 +96,7 @@ export function diffSummary(previous: string, next: string | null) {
 
 const renderEntry = (entry: SessionComponentRegistry.Entry) =>
   JSON.stringify({
+    sessionID: entry.sessionID,
     kind: entry.kind,
     ...(entry.id === undefined ? {} : { id: entry.id }),
     value: entry.value,
@@ -92,6 +113,8 @@ export const layer = Layer.effectDiscard(
     const tools = yield* Tools.Service
     const components = yield* SessionComponentRegistry.Service
     const permission = yield* PermissionV2.Service
+    const sessions = yield* SessionStore.Service
+    const attempts = yield* SessionExecutionAttempt.Service
 
     yield* tools
       .register({
@@ -100,9 +123,43 @@ export const layer = Layer.effectDiscard(
             description,
             input: Input,
             output: Output,
-            toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
+            toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
             execute: (input, context) =>
               Effect.gen(function* () {
+                const prepareRead = Effect.fn("SessionTool.prepareRead")(function* (
+                  targetID: SessionSchema.ID,
+                  kind: string,
+                  operation: "read" | "list",
+                ) {
+                  if (!(yield* sessions.get(targetID))) return yield* failure(`Target session not found: ${targetID}`)
+                  const definition = components.definitions().find((item) => item.kind === kind)
+                  if (!definition) return yield* failure(`Unknown session component kind: ${kind}`)
+                  const crossSession = targetID !== context.sessionID
+                  const readTier = SessionComponentTier.readTierOf(kind, crossSession)
+                  if (readTier !== "operational")
+                    yield* permission.assert({
+                      action: SessionComponentTier.TIER_ACTION[readTier],
+                      resources: [`${targetID}/${kind}`],
+                      save: [`${targetID}/${kind}`],
+                      metadata: { tier: readTier, operation, targetSessionID: targetID },
+                      sessionID: context.sessionID,
+                      agent: context.agent,
+                      source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                    })
+                  const attempt = crossSession
+                    ? yield* attempts
+                        .get(targetID)
+                        .pipe(
+                          Effect.map((attempt) =>
+                            attempt !== undefined && ["starting", "busy", "recovering"].includes(attempt.state)
+                              ? { attemptID: attempt.attemptID, generation: attempt.generation }
+                              : undefined,
+                          ),
+                        )
+                    : yield* SessionExecutionAttempt.currentFence()
+                  return { targetID, attempt }
+                })
+
                 if (input.op === "schema") {
                   const definitions = components.definitions()
                   const selected = input.kind
@@ -118,7 +175,7 @@ export const layer = Layer.effectDiscard(
                         : selected
                             .map(
                               (definition) =>
-                                `${definition.kind} [${definition.cardinality}, ${definition.lifetime}, ${SessionComponentTier.tierOf(definition.kind)}] — ${definition.description}\n` +
+                                `${definition.kind} [${definition.cardinality}, ${definition.lifetime}, write:${SessionComponentTier.tierOf(definition.kind)}, cross-read:${SessionComponentTier.readTierOf(definition.kind, true)}] — ${definition.description}\n` +
                                 (definition.removable ? "" : "remove: unavailable (this component is required)\n") +
                                 JSON.stringify(definition.schema),
                             )
@@ -127,37 +184,46 @@ export const layer = Layer.effectDiscard(
                 }
 
                 if (input.op === "read") {
-                  const attempt = yield* SessionExecutionAttempt.currentFence()
+                  const targetID = input.sessionID ?? context.sessionID
+                  const { attempt } = yield* prepareRead(targetID, input.kind, "read")
                   const entry = yield* components.get({
-                    sessionID: context.sessionID,
+                    sessionID: targetID,
                     kind: input.kind,
                     ...(input.id === undefined ? {} : { id: input.id }),
                     ...(attempt === undefined ? {} : { attempt }),
                   })
                   return {
                     op: input.op,
+                    ...(targetID === context.sessionID ? {} : { foreign: true }),
                     message:
                       entry === undefined
-                        ? `This session declares no ${input.kind}${input.id ? ` component with id ${input.id}` : " component"}.`
+                        ? `Session ${targetID} declares no ${input.kind}${input.id ? ` component with id ${input.id}` : " component"}.`
                         : renderEntry(entry),
                   }
                 }
 
                 if (input.op === "list") {
-                  const attempt = yield* SessionExecutionAttempt.currentFence()
+                  const targetID = input.sessionID ?? context.sessionID
+                  const { attempt } = yield* prepareRead(targetID, input.kind, "list")
                   const entries = yield* components.list({
-                    sessionID: context.sessionID,
+                    sessionID: targetID,
                     kind: input.kind,
                     ...(attempt === undefined ? {} : { attempt }),
                   })
                   return {
                     op: input.op,
+                    ...(targetID === context.sessionID ? {} : { foreign: true }),
                     message:
                       entries.length === 0
-                        ? `This session declares no ${input.kind} components.`
+                        ? `Session ${targetID} declares no ${input.kind} components.`
                         : entries.map(renderEntry).join("\n"),
                   }
                 }
+
+                if (input.sessionID !== undefined)
+                  return yield* failure(
+                    `Cross-session ${input.op} is unavailable. Omit sessionID to change only your own session.`,
+                  )
 
                 const definition = components.definitions().find((item) => item.kind === input.kind)
                 if (input.op === "remove" && definition?.removable === false)
@@ -221,9 +287,9 @@ export const layer = Layer.effectDiscard(
                   const message =
                     input.kind === "system_prompt_override"
                       ? diffSummary(typeof previous?.value === "string" ? previous.value : "", null)
-                        : removed
-                          ? `Removed ${input.kind}${input.id ? `/${input.id}` : ""}.`
-                          : `Nothing changed: this session declared no ${input.kind}${input.id ? `/${input.id}` : ""}.`
+                      : removed
+                        ? `Removed ${input.kind}${input.id ? `/${input.id}` : ""}.`
+                        : `Nothing changed: this session declared no ${input.kind}${input.id ? `/${input.id}` : ""}.`
                   return { op: input.op, message }
                 }
 
@@ -260,5 +326,11 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/session",
   layer,
-  deps: [ToolRegistry.node, SessionComponentRegistry.node, PermissionV2.node],
+  deps: [
+    ToolRegistry.node,
+    SessionComponentRegistry.node,
+    PermissionV2.node,
+    SessionStore.node,
+    SessionExecutionAttempt.node,
+  ],
 })
