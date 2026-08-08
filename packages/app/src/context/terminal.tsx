@@ -12,6 +12,7 @@ import { shouldKeepExitedTab } from "@/pages/terminal-exit"
 import { Persist, persisted, removePersisted } from "@/utils/persist"
 import { ScopedKey, ServerScope, type ServerScope as ServerScopeValue } from "@/utils/server-scope"
 import { showToast } from "@/utils/toast"
+import type { V2PtyInstanceListResponse } from "@novaclaw/sdk/v2/types"
 
 export type LocalPTY = {
   /** Durable UI identity. It survives server-PTY replacement so a tab, its active selection, and its
@@ -19,6 +20,8 @@ export type LocalPTY = {
   id: string
   /** Ephemeral server process identity. Absent while creation is in flight. */
   ptyID?: string
+  /** Location variant owning the server PTY. Absent for the ordinary directory location. */
+  workspaceID?: string
   status: "starting" | "running" | "disconnected" | "exited"
   title: string
   titleNumber: number
@@ -121,6 +124,7 @@ function pty(value: unknown): LocalPTY | undefined {
   const cursor = num(value.cursor)
   const shell = text(value.shell)
   const cwd = text(value.cwd)
+  const workspaceID = text(value.workspaceID)
 
   return {
     id,
@@ -135,6 +139,7 @@ function pty(value: unknown): LocalPTY | undefined {
     ...(cursor !== undefined ? { cursor } : {}),
     ...(shell !== undefined ? { shell } : {}),
     ...(cwd !== undefined ? { cwd } : {}),
+    ...(workspaceID !== undefined ? { workspaceID } : {}),
   }
 }
 
@@ -164,6 +169,64 @@ export function migrateTerminalState(value: unknown) {
     active: active && seen.has(active) ? active : all[0]?.id,
     all,
   }
+}
+
+type InstancePTY = V2PtyInstanceListResponse[number]
+
+export function reconcileTerminalSnapshot(
+  all: LocalPTY[],
+  remote: readonly InstancePTY[],
+  options: { readonly ids?: ReadonlySet<string>; readonly makeID?: () => string } = {},
+): LocalPTY[] {
+  const byPTY = new Map(remote.map((entry) => [entry.data.id, entry]))
+  const claimed = new Set<string>()
+  const existingNumbers = new Set(all.map((item) => item.titleNumber).filter((number) => number > 0))
+  const nextNumber = () => {
+    for (let number = 1; ; number++) {
+      if (existingNumbers.has(number)) continue
+      existingNumbers.add(number)
+      return number
+    }
+  }
+
+  const reconciled = all.map((local) => {
+    const entry = local.ptyID ? byPTY.get(local.ptyID) : undefined
+    if (entry) claimed.add(entry.data.id)
+    if (options.ids && !options.ids.has(local.id)) return local
+    if (!entry) {
+      if (!local.ptyID || local.status === "exited" || local.status === "disconnected") return local
+      return { ...local, status: "disconnected" as const }
+    }
+    return {
+      ...local,
+      ptyID: entry.data.id,
+      workspaceID: entry.location.workspaceID,
+      status: entry.data.status,
+      title: entry.data.title,
+      shell: entry.data.command,
+      cwd: entry.data.cwd,
+      exitCode: entry.data.exitCode,
+    }
+  })
+
+  for (const entry of remote) {
+    if (claimed.has(entry.data.id)) continue
+    const parsed = numberFromTitle(entry.data.title)
+    const titleNumber = parsed && !existingNumbers.has(parsed) ? parsed : nextNumber()
+    existingNumbers.add(titleNumber)
+    reconciled.push({
+      id: (options.makeID ?? newTerminalClientID)(),
+      ptyID: entry.data.id,
+      workspaceID: entry.location.workspaceID,
+      status: entry.data.status,
+      title: entry.data.title,
+      titleNumber,
+      shell: entry.data.command,
+      cwd: entry.data.cwd,
+      exitCode: entry.data.exitCode,
+    })
+  }
+  return reconciled
 }
 
 export function getWorkspaceTerminalCacheKey(dir: string, scope: ServerScopeValue = ServerScope.local) {
@@ -224,14 +287,22 @@ export function clearWorkspaceTerminals(
   }
 }
 
-export async function stopAllWorkspaceTerminals(client: DirectorySDK["client"], directory: string, clear: () => void) {
-  const result = await client.v2.pty.removeAll({ location: { directory } })
+export async function stopAllInstanceTerminals(client: DirectorySDK["client"], directory: string, clear: () => void) {
+  const result = await client.v2.pty.instanceRemoveAll({ location: { directory } })
   clear()
-  return result.data?.data ?? 0
+  return result.data ?? 0
 }
 
-export async function stopWorkspaceTerminal(client: DirectorySDK["client"], directory: string, id: string) {
-  await client.v2.pty.remove({ ptyID: id, location: { directory } })
+export async function stopWorkspaceTerminal(
+  client: DirectorySDK["client"],
+  directory: string,
+  id: string,
+  workspaceID?: string,
+) {
+  await client.v2.pty.remove({
+    ptyID: id,
+    location: { directory, ...(workspaceID ? { workspace: workspaceID } : {}) },
+  })
 }
 
 function createWorkspaceTerminalSession(
@@ -255,6 +326,20 @@ function createWorkspaceTerminalSession(
       all: [],
     }),
   )
+
+  let disposed = false
+  onCleanup(() => {
+    disposed = true
+  })
+  void ready.promise
+    .then(async () => {
+      const hydratedIDs = new Set(store.all.map((item) => item.id))
+      const response = await sdk.client.v2.pty.instanceList({ location: { directory: sdk.directory } })
+      if (disposed || !response.data) return
+      setStore("all", (all) => reconcileTerminalSnapshot(all, response.data, { ids: hydratedIDs }))
+      if (!store.active && store.all[0]) setStore("active", store.all[0].id)
+    })
+    .catch((error: unknown) => console.error("Failed to reconcile instance terminals", error))
 
   const pickNextTerminalNumber = () => {
     const existingTitleNumbers = new Set(
@@ -334,7 +419,7 @@ function createWorkspaceTerminalSession(
     client.v2.pty
       .update({
         ptyID: previous.ptyID,
-        location: { directory },
+        location: { directory, workspace: previous?.workspaceID },
         title: pty.title,
         size: pty.cols && pty.rows ? { rows: pty.rows, cols: pty.cols } : undefined,
       })
@@ -352,7 +437,7 @@ function createWorkspaceTerminalSession(
     setStore("all", index, (item) => ({ ...item, status: "starting", ptyID: undefined, exitCode: undefined }))
     const next = await client.v2.pty
       .create({
-        location: { directory },
+        location: { directory, workspace: pty.workspaceID },
         title: pty.title,
       })
       .catch((error: unknown) => {
@@ -367,7 +452,7 @@ function createWorkspaceTerminalSession(
     if (currentIndex === -1) {
       // The user closed the starting tab before creation returned. Terminate the now-orphaned PTY
       // instead of leaking a process with no UI handle.
-      await stopWorkspaceTerminal(client, directory, next.data.data.id).catch(() => undefined)
+      await stopWorkspaceTerminal(client, directory, next.data.data.id, pty.workspaceID).catch(() => undefined)
       return
     }
 
@@ -490,7 +575,7 @@ function createWorkspaceTerminalSession(
       const local = store.all.find((item) => item.id === id)
       if (!local) return
       try {
-        if (local.ptyID) await stopWorkspaceTerminal(sdk.client, sdk.directory, local.ptyID)
+        if (local.ptyID) await stopWorkspaceTerminal(sdk.client, sdk.directory, local.ptyID, local.workspaceID)
       } catch (error) {
         // Keep the tab visible: hiding it would strand a possibly-running process with no recovery
         // handle. The connection banner can still establish that a server-confirmed 404 is gone.
@@ -516,7 +601,7 @@ function createWorkspaceTerminalSession(
       }
     },
     async stopAll() {
-      return stopAllWorkspaceTerminals(sdk.client, sdk.directory, () => {
+      return stopAllInstanceTerminals(sdk.client, sdk.directory, () => {
         batch(() => {
           setStore("active", undefined)
           setStore("all", [])

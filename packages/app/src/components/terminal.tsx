@@ -205,6 +205,7 @@ export const Terminal = (props: TerminalProps) => {
     "onConnectError",
     "onHandle",
   ])
+  const ptyLocation = { directory, workspace: local.pty.workspaceID }
   const clientID = local.pty.id
   const id = local.pty.ptyID
   if (!id) throw new Error("A terminal renderer requires a server PTY id")
@@ -257,7 +258,7 @@ export const Terminal = (props: TerminalProps) => {
     return client.v2.pty
       .update({
         ptyID: id,
-        location: { directory },
+        location: ptyLocation,
         size: { cols, rows },
       })
       .catch((err) => {
@@ -548,7 +549,7 @@ export const Terminal = (props: TerminalProps) => {
 
       const presence = () =>
         client.v2.pty
-          .get({ ptyID: id, location: { directory } }, { throwOnError: false })
+          .get({ ptyID: id, location: ptyLocation }, { throwOnError: false })
           .then((result) => terminalPresenceFromStatus(result.response.status))
           .catch((err) => {
             debugTerminal("failed to inspect terminal session", err)
@@ -558,7 +559,7 @@ export const Terminal = (props: TerminalProps) => {
       const connectToken = async () => {
         const result = await client.v2.pty
           .connectToken(
-            { ptyID: id, location: { directory } },
+            { ptyID: id, location: ptyLocation },
             {
               throwOnError: false,
               headers: { "x-novaclaw-ticket": "1" },
@@ -617,6 +618,7 @@ export const Terminal = (props: TerminalProps) => {
             url,
             id,
             directory,
+            workspaceID: local.pty.workspaceID,
             cursor: seek,
             ticket,
             sameOrigin,

@@ -18889,6 +18889,154 @@
         ]
       }
     },
+    "/api/instance/pty": {
+      "get": {
+        "tags": ["pty-instance"],
+        "operationId": "v2.pty.instanceList",
+        "parameters": [
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "location": {
+                        "$ref": "#/components/schemas/LocationInfo"
+                      },
+                      "data": {
+                        "$ref": "#/components/schemas/Pty"
+                      }
+                    },
+                    "required": ["location", "data"],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "List PTY sessions across every active location owned by one instance directory.",
+        "summary": "List instance PTYs",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.pty.instanceList({\n  ...\n})"
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["pty-instance"],
+        "operationId": "v2.pty.instanceRemoveAll",
+        "parameters": [
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Terminate every PTY session across active locations owned by one instance directory.",
+        "summary": "Stop all instance PTYs",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.pty.instanceRemoveAll({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/question/request": {
       "get": {
         "tags": ["session questions"],
@@ -43903,6 +44051,10 @@
     {
       "name": "pty",
       "description": "Experimental location-scoped PTY routes."
+    },
+    {
+      "name": "pty-instance",
+      "description": "Instance-wide PTY reconciliation."
     },
     {
       "name": "session questions",

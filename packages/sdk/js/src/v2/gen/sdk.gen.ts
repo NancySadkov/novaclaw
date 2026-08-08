@@ -302,6 +302,10 @@ import type {
   V2PtyCreateResponses,
   V2PtyGetErrors,
   V2PtyGetResponses,
+  V2PtyInstanceListErrors,
+  V2PtyInstanceListResponses,
+  V2PtyInstanceRemoveAllErrors,
+  V2PtyInstanceRemoveAllResponses,
   V2PtyListErrors,
   V2PtyListResponses,
   V2PtyRemoveAllErrors,
@@ -7176,6 +7180,54 @@ export class Pty extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<V2PtyConnectResponses, V2PtyConnectErrors, ThrowOnError>({
       url: "/api/pty/{ptyID}/connect",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Stop all instance PTYs
+   *
+   * Terminate every PTY session across active locations owned by one instance directory.
+   */
+  public instanceRemoveAll<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).delete<
+      V2PtyInstanceRemoveAllResponses,
+      V2PtyInstanceRemoveAllErrors,
+      ThrowOnError
+    >({
+      url: "/api/instance/pty",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * List instance PTYs
+   *
+   * List PTY sessions across every active location owned by one instance directory.
+   */
+  public instanceList<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2PtyInstanceListResponses, V2PtyInstanceListErrors, ThrowOnError>({
+      url: "/api/instance/pty",
       ...options,
       ...params,
     })

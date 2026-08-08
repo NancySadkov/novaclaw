@@ -6,7 +6,8 @@ let getLegacyTerminalStorageKeys: (dir: string, legacySessionID?: string) => str
 let bindCreatedTerminal: typeof import("./terminal").bindCreatedTerminal
 let disconnectLiveTerminals: typeof import("./terminal").disconnectLiveTerminals
 let migrateTerminalState: (value: unknown) => unknown
-let stopAllWorkspaceTerminals: typeof import("./terminal").stopAllWorkspaceTerminals
+let reconcileTerminalSnapshot: typeof import("./terminal").reconcileTerminalSnapshot
+let stopAllInstanceTerminals: typeof import("./terminal").stopAllInstanceTerminals
 let stopWorkspaceTerminal: typeof import("./terminal").stopWorkspaceTerminal
 
 beforeAll(async () => {
@@ -28,7 +29,8 @@ beforeAll(async () => {
   getWorkspaceTerminalCacheKey = mod.getWorkspaceTerminalCacheKey
   getLegacyTerminalStorageKeys = mod.getLegacyTerminalStorageKeys
   migrateTerminalState = mod.migrateTerminalState
-  stopAllWorkspaceTerminals = mod.stopAllWorkspaceTerminals
+  reconcileTerminalSnapshot = mod.reconcileTerminalSnapshot
+  stopAllInstanceTerminals = mod.stopAllInstanceTerminals
   stopWorkspaceTerminal = mod.stopWorkspaceTerminal
 })
 
@@ -90,6 +92,75 @@ describe("disconnectLiveTerminals", () => {
   })
 })
 
+describe("reconcileTerminalSnapshot", () => {
+  test("refreshes known tabs, disconnects missing ones, and adopts server-only PTYs", () => {
+    const newDuringRequest = { id: "new", status: "starting" as const, title: "new", titleNumber: 3 }
+    const result = reconcileTerminalSnapshot(
+      [
+        { id: "known", ptyID: "pty_known", status: "disconnected", title: "old", titleNumber: 1 },
+        { id: "missing", ptyID: "pty_missing", status: "running", title: "missing", titleNumber: 2 },
+        newDuringRequest,
+      ],
+      [
+        {
+          location: { directory: "/repo", workspaceID: "wrk_one", root: "/repo", origin: "origin" },
+          data: {
+            id: "pty_known",
+            title: "known",
+            command: "/bin/sh",
+            args: [],
+            cwd: "/repo",
+            status: "running",
+            pid: 10,
+          },
+        },
+        {
+          location: { directory: "/repo", root: "/repo", origin: "origin" },
+          data: {
+            id: "pty_orphan",
+            title: "Terminal 4",
+            command: "/bin/bash",
+            args: [],
+            cwd: "/repo",
+            status: "exited",
+            pid: 11,
+            exitCode: 7,
+          },
+        },
+      ] as never,
+      { ids: new Set(["known", "missing"]), makeID: () => "adopted" },
+    )
+
+    expect(result).toEqual([
+      {
+        id: "known",
+        ptyID: "pty_known",
+        workspaceID: "wrk_one",
+        status: "running",
+        title: "known",
+        titleNumber: 1,
+        shell: "/bin/sh",
+        cwd: "/repo",
+        exitCode: undefined,
+      },
+      { id: "missing", ptyID: "pty_missing", status: "disconnected", title: "missing", titleNumber: 2 },
+      newDuringRequest,
+      {
+        id: "adopted",
+        ptyID: "pty_orphan",
+        workspaceID: undefined,
+        status: "exited",
+        title: "Terminal 4",
+        titleNumber: 4,
+        shell: "/bin/bash",
+        cwd: "/repo",
+        exitCode: 7,
+      },
+    ])
+    expect(result[2]).toBe(newDuringRequest)
+  })
+})
+
 describe("bindCreatedTerminal", () => {
   test("replaces the server process without replacing the tab entity", () => {
     expect(
@@ -129,11 +200,21 @@ describe("bindCreatedTerminal", () => {
   })
 })
 
-describe("stopAllWorkspaceTerminals", () => {
+describe("stopAllInstanceTerminals", () => {
   test("clears local tabs after the server confirms termination", async () => {
     let cleared = false
-    const removed = await stopAllWorkspaceTerminals(
-      { v2: { pty: { removeAll: async () => ({ data: { data: 3 } }) } } } as never,
+    let input: unknown
+    const removed = await stopAllInstanceTerminals(
+      {
+        v2: {
+          pty: {
+            instanceRemoveAll: async (value: unknown) => {
+              input = value
+              return { data: 3 }
+            },
+          },
+        },
+      } as never,
       "/repo",
       () => {
         cleared = true
@@ -141,13 +222,14 @@ describe("stopAllWorkspaceTerminals", () => {
     )
     expect(removed).toBe(3)
     expect(cleared).toBe(true)
+    expect(input).toEqual({ location: { directory: "/repo" } })
   })
 
   test("retains local tabs when server termination fails", async () => {
     let cleared = false
     await expect(
-      stopAllWorkspaceTerminals(
-        { v2: { pty: { removeAll: async () => Promise.reject(new Error("offline")) } } } as never,
+      stopAllInstanceTerminals(
+        { v2: { pty: { instanceRemoveAll: async () => Promise.reject(new Error("offline")) } } } as never,
         "/repo",
         () => {
           cleared = true
@@ -185,6 +267,25 @@ describe("stopWorkspaceTerminal", () => {
         "pty_one",
       ),
     ).rejects.toThrow("offline")
+  })
+
+  test("preserves the owning workspace location", async () => {
+    let input: unknown
+    await stopWorkspaceTerminal(
+      {
+        v2: {
+          pty: {
+            remove: async (value: unknown) => {
+              input = value
+            },
+          },
+        },
+      } as never,
+      "/repo",
+      "pty_one",
+      "wrk_one",
+    )
+    expect(input).toEqual({ ptyID: "pty_one", location: { directory: "/repo", workspace: "wrk_one" } })
   })
 })
 

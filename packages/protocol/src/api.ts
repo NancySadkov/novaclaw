@@ -14,6 +14,7 @@ import type { Definition } from "@novaclaw/schema/event"
 import { AgentGroup } from "./groups/agent"
 import { HealthGroup } from "./groups/health"
 import { PtyGroup } from "./groups/pty"
+import { PtyInstanceGroup } from "./groups/pty-instance"
 import { makeQuestionGroup } from "./groups/question"
 import { ReferenceGroup } from "./groups/reference"
 import { Authorization } from "./middleware/authorization"
@@ -71,6 +72,9 @@ const makeApiFromGroup = <
     .add(SkillGroup.middleware(locationMiddleware))
     .add(eventGroup)
     .add(PtyGroup.middleware(locationMiddleware))
+    // Instance-wide aggregation enumerates already-active location graphs; applying location
+    // middleware here would build one merely by observing the instance.
+    .add(PtyInstanceGroup)
     .add(makeQuestionGroup(locationMiddleware, sessionLocationMiddleware).middleware(workspaceRoutingMiddleware))
     .add(ReferenceGroup.middleware(locationMiddleware))
     // Instance-wide, so no location middleware: the config stores are global nodes.
@@ -119,7 +123,8 @@ export const makeDefaultApi = <
   readonly locationMiddleware: Context.Key<LocationId, LocationService>
   readonly sessionLocationMiddleware: Context.Key<SessionLocationId, SessionLocationService>
   readonly workspaceRoutingMiddleware: Context.Key<WorkspaceRoutingId, WorkspaceRoutingService>
-}) => makeApiFromGroup(
+}) =>
+  makeApiFromGroup(
     EventGroup,
     options.locationMiddleware,
     options.sessionLocationMiddleware,

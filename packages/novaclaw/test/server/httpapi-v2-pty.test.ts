@@ -6,6 +6,7 @@ import * as Socket from "effect/unstable/socket/Socket"
 import { Location } from "@novaclaw/core/location"
 import { Pty } from "@novaclaw/core/pty"
 import { PtyTicket } from "@novaclaw/core/pty/ticket"
+import { PtyInstancePaths } from "@novaclaw/protocol/groups/pty-instance"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, tmpdir, tmpdirScoped } from "../fixture/fixture"
@@ -25,6 +26,9 @@ function request(route: string, directory: string, init: RequestInit = {}) {
     context,
   )
 }
+
+const instancePtyRoute = (directory: string) =>
+  `${PtyInstancePaths.root}?location[directory]=${encodeURIComponent(directory)}`
 
 const testStateLayer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -66,7 +70,11 @@ describe("v2 pty HttpApi", () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: expect.any(String), name: expect.any(String), acceptable: expect.any(Boolean) }),
+        expect.objectContaining({
+          path: expect.any(String),
+          name: expect.any(String),
+          acceptable: expect.any(Boolean),
+        }),
       ]),
     )
   })
@@ -76,6 +84,64 @@ describe("v2 pty HttpApi", () => {
     const response = await request("/api/pty", tmp.path, { method: "DELETE" })
     expect(response.status).toBe(200)
     expect(Schema.decodeUnknownSync(Location.response(Schema.Number))(await response.json()).data).toBe(0)
+  })
+
+  test("lists and stops instance PTYs idempotently without building a location", async () => {
+    await using tmp = await tmpdir({ git: true, config: { formatter: false } })
+    const listed = await request(instancePtyRoute(tmp.path), tmp.path)
+    expect(listed.status).toBe(200)
+    expect(await listed.json()).toEqual([])
+
+    const stopped = await request(instancePtyRoute(tmp.path), tmp.path, { method: "DELETE" })
+    expect(stopped.status).toBe(200)
+    expect(await stopped.json()).toBe(0)
+  })
+
+  testPty("reconciles every active PTY for one instance without crossing directories", async () => {
+    await using first = await tmpdir({ git: true, config: { formatter: false } })
+    await using second = await tmpdir({ git: true, config: { formatter: false } })
+    const create = (directory: string, title: string) =>
+      request("/api/pty", directory, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ command: "/usr/bin/env", args: ["sh", "-c", "sleep 30"], title }),
+      })
+
+    const [firstCreated, secondCreated] = await Promise.all([
+      create(first.path, "first"),
+      create(second.path, "second"),
+    ])
+    expect(firstCreated.status).toBe(200)
+    expect(secondCreated.status).toBe(200)
+
+    try {
+      const listed = await request(instancePtyRoute(first.path), first.path)
+      expect(listed.status).toBe(200)
+      expect(await listed.json()).toEqual([
+        expect.objectContaining({
+          location: expect.objectContaining({ directory: first.path }),
+          data: expect.objectContaining({ title: "first", status: "running" }),
+        }),
+      ])
+
+      const stopped = await request(instancePtyRoute(first.path), first.path, { method: "DELETE" })
+      expect(stopped.status).toBe(200)
+      expect(await stopped.json()).toBe(1)
+
+      const [firstAfter, secondAfter] = await Promise.all([
+        request("/api/pty", first.path),
+        request("/api/pty", second.path),
+      ])
+      expect(Schema.decodeUnknownSync(Location.response(Schema.Array(Pty.Info)))(await firstAfter.json()).data).toEqual(
+        [],
+      )
+      expect(
+        Schema.decodeUnknownSync(Location.response(Schema.Array(Pty.Info)))(await secondAfter.json()).data,
+      ).toHaveLength(1)
+    } finally {
+      await request("/api/pty", first.path, { method: "DELETE" })
+      await request("/api/pty", second.path, { method: "DELETE" })
+    }
   })
 
   testPty("serves location-wrapped PTY routes and retains exited sessions", async () => {

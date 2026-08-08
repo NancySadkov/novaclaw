@@ -14817,6 +14817,77 @@ export type V2PtyConnectResponses = {
 
 export type V2PtyConnectResponse = V2PtyConnectResponses[keyof V2PtyConnectResponses]
 
+export type V2PtyInstanceRemoveAllData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/instance/pty"
+}
+
+export type V2PtyInstanceRemoveAllErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2PtyInstanceRemoveAllError = V2PtyInstanceRemoveAllErrors[keyof V2PtyInstanceRemoveAllErrors]
+
+export type V2PtyInstanceRemoveAllResponses = {
+  /**
+   * Success
+   */
+  200: number
+}
+
+export type V2PtyInstanceRemoveAllResponse = V2PtyInstanceRemoveAllResponses[keyof V2PtyInstanceRemoveAllResponses]
+
+export type V2PtyInstanceListData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/instance/pty"
+}
+
+export type V2PtyInstanceListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2PtyInstanceListError = V2PtyInstanceListErrors[keyof V2PtyInstanceListErrors]
+
+export type V2PtyInstanceListResponses = {
+  /**
+   * Success
+   */
+  200: Array<{
+    location: LocationInfo
+    data: Pty
+  }>
+}
+
+export type V2PtyInstanceListResponse = V2PtyInstanceListResponses[keyof V2PtyInstanceListResponses]
+
 export type V2QuestionRequestListData = {
   body?: never
   path?: never

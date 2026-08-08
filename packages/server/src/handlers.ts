@@ -11,6 +11,7 @@ import { EventHandler } from "./handlers/event"
 import { AgentHandler } from "./handlers/agent"
 import { HealthHandler } from "./handlers/health"
 import { PtyHandler } from "./handlers/pty"
+import { PtyInstanceHandler } from "./handlers/pty-instance"
 import { QuestionHandler } from "./handlers/question"
 import { ReferenceHandler } from "./handlers/reference"
 import { LocationHandler } from "./handlers/location"
@@ -41,6 +42,7 @@ export const handlers = Layer.mergeAll(
   SkillHandler,
   EventHandler,
   PtyHandler,
+  PtyInstanceHandler,
   QuestionHandler,
   ReferenceHandler,
   ConfigHandler,

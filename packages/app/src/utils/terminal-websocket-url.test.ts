@@ -7,6 +7,7 @@ describe("terminalWebSocketURL", () => {
       url: "http://127.0.0.1:49365",
       id: "pty_test",
       directory: "/tmp/project",
+      workspaceID: "wrk_one",
       cursor: 0,
       sameOrigin: false,
       username: "novaclaw",
@@ -16,6 +17,7 @@ describe("terminalWebSocketURL", () => {
     expect(url.protocol).toBe("ws:")
     expect(url.pathname).toBe("/api/pty/pty_test/connect")
     expect(url.searchParams.get("location[directory]")).toBe("/tmp/project")
+    expect(url.searchParams.get("location[workspace]")).toBe("wrk_one")
     expect(url.username).toBe("")
     expect(url.password).toBe("")
     expect(url.searchParams.get("auth_token")).toBe(btoa("novaclaw:secret"))

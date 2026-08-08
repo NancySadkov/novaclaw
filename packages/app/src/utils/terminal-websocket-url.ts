@@ -4,6 +4,7 @@ export function terminalWebSocketURL(input: {
   url: string
   id: string
   directory: string
+  workspaceID?: string
   cursor: number
   ticket?: string
   sameOrigin?: boolean
@@ -13,6 +14,7 @@ export function terminalWebSocketURL(input: {
 }) {
   const next = new URL(`${input.url}/api/pty/${input.id}/connect`)
   next.searchParams.set("location[directory]", input.directory)
+  if (input.workspaceID) next.searchParams.set("location[workspace]", input.workspaceID)
   next.searchParams.set("cursor", String(input.cursor))
   next.protocol = next.protocol === "https:" ? "wss:" : "ws:"
   if (input.ticket) {
