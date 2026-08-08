@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Cause, Deferred, Effect, Exit, Layer, Queue } from "effect"
+import { Cause, Context, Deferred, Effect, Exit, Layer, Queue, Scope } from "effect"
 import { Config } from "@novaclaw/core/config"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
@@ -18,12 +18,11 @@ const locationLayer = Layer.succeed(
   Location.Service.of(location({ directory: AbsolutePath.make("/tmp") })),
 )
 const configLayer = Layer.mock(Config.Service)({ entries: () => Effect.succeed([]) })
-const it = testEffect(
-  AppNodeBuilder.build(LayerNode.group([Pty.node, EventV2.node]), [
-    [Config.node, configLayer],
-    [Location.node, locationLayer],
-  ]),
-)
+const ptyLayer = AppNodeBuilder.build(LayerNode.group([Pty.node, EventV2.node]), [
+  [Config.node, configLayer],
+  [Location.node, locationLayer],
+])
+const it = testEffect(ptyLayer)
 const ptyTest = process.platform === "win32" ? it.live.skip : it.live
 
 const subscribePtyEvents = Effect.fn("PtySessionTest.subscribePtyEvents")(function* () {
@@ -142,6 +141,25 @@ describe("pty", () => {
       expect(yield* waitForEvents(events, first.id, 1)).toEqual(["deleted"])
       expect(yield* waitForEvents(events, second.id, 1)).toEqual(["deleted"])
       expect(yield* pty.removeAll()).toBe(0)
+    }),
+  )
+
+  ptyTest("tears down live sessions when the service scope closes", () =>
+    Effect.gen(function* () {
+      const scope = yield* Scope.make()
+      const context = yield* Layer.buildWithScope(Layer.fresh(ptyLayer), scope)
+      const pty = Context.get(context, Pty.Service)
+      const ended = yield* Deferred.make<{ exitCode?: number }>()
+      const info = yield* pty.create({ command: "cat", cwd: "/tmp" })
+      const attachment = yield* pty.attach(info.id, {
+        onData: () => {},
+        onEnd: (event) => Deferred.doneUnsafe(ended, Effect.succeed(event)),
+      })
+      attachment.activate()
+
+      yield* Scope.close(scope, Exit.void)
+
+      expect(yield* Deferred.await(ended).pipe(Effect.timeout("5 seconds"))).toEqual({})
     }),
   )
 

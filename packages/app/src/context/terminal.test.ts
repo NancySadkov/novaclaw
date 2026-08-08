@@ -4,6 +4,7 @@ import { ServerScope } from "@/utils/server-scope"
 let getWorkspaceTerminalCacheKey: typeof import("./terminal").getWorkspaceTerminalCacheKey
 let getLegacyTerminalStorageKeys: (dir: string, legacySessionID?: string) => string[]
 let bindCreatedTerminal: typeof import("./terminal").bindCreatedTerminal
+let disconnectLiveTerminals: typeof import("./terminal").disconnectLiveTerminals
 let migrateTerminalState: (value: unknown) => unknown
 let stopAllWorkspaceTerminals: typeof import("./terminal").stopAllWorkspaceTerminals
 let stopWorkspaceTerminal: typeof import("./terminal").stopWorkspaceTerminal
@@ -23,11 +24,70 @@ beforeAll(async () => {
   }))
   const mod = await import("./terminal")
   bindCreatedTerminal = mod.bindCreatedTerminal
+  disconnectLiveTerminals = mod.disconnectLiveTerminals
   getWorkspaceTerminalCacheKey = mod.getWorkspaceTerminalCacheKey
   getLegacyTerminalStorageKeys = mod.getLegacyTerminalStorageKeys
   migrateTerminalState = mod.migrateTerminalState
   stopAllWorkspaceTerminals = mod.stopAllWorkspaceTerminals
   stopWorkspaceTerminal = mod.stopWorkspaceTerminal
+})
+
+describe("disconnectLiveTerminals", () => {
+  test("marks starting and running tabs disconnected while preserving diagnosis and identity", () => {
+    const disconnected = {
+      id: "already-offline",
+      ptyID: "pty_offline",
+      status: "disconnected" as const,
+      title: "offline",
+      titleNumber: 3,
+    }
+    const exited = {
+      id: "failed",
+      ptyID: "pty_failed",
+      status: "exited" as const,
+      exitCode: 137,
+      title: "failed",
+      titleNumber: 4,
+      buffer: "diagnosis",
+    }
+    const result = disconnectLiveTerminals([
+      { id: "starting", status: "starting", title: "starting", titleNumber: 1 },
+      {
+        id: "running",
+        ptyID: "pty_running",
+        status: "running",
+        title: "running",
+        titleNumber: 2,
+        buffer: "kept output",
+      },
+      disconnected,
+      exited,
+    ])
+
+    expect(result).toEqual([
+      { id: "starting", status: "disconnected", title: "starting", titleNumber: 1 },
+      {
+        id: "running",
+        ptyID: "pty_running",
+        status: "disconnected",
+        title: "running",
+        titleNumber: 2,
+        buffer: "kept output",
+      },
+      disconnected,
+      exited,
+    ])
+    expect(result[2]).toBe(disconnected)
+    expect(result[3]).toBe(exited)
+  })
+
+  test("preserves the collection when every tab is already terminal", () => {
+    const all = [
+      { id: "offline", status: "disconnected" as const, title: "offline", titleNumber: 1 },
+      { id: "failed", status: "exited" as const, title: "failed", titleNumber: 2, exitCode: 1 },
+    ]
+    expect(disconnectLiveTerminals(all)).toBe(all)
+  })
 })
 
 describe("bindCreatedTerminal", () => {

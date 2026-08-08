@@ -83,6 +83,16 @@ export function bindCreatedTerminal(
   }
 }
 
+export function disconnectLiveTerminals(all: LocalPTY[]): LocalPTY[] {
+  let changed = false
+  const next = all.map((terminal) => {
+    if (terminal.status === "exited" || terminal.status === "disconnected") return terminal
+    changed = true
+    return { ...terminal, status: "disconnected" as const }
+  })
+  return changed ? next : all
+}
+
 function pty(value: unknown): LocalPTY | undefined {
   if (!record(value)) return
 
@@ -304,6 +314,14 @@ function createWorkspaceTerminalSession(
     setStore("all", index, (item) => ({ ...item, status: "disconnected" }))
   })
   onCleanup(unsubDeleted)
+
+  // Deliberate instance disposal is stronger than one socket dropping: the server has closed the
+  // entire location layer and its PTY finalizer has killed every live process tree. Reflect that
+  // fact immediately instead of leaving tabs apparently running until each websocket notices EOF.
+  const unsubDisposed = sdk.event.on("server.instance.disposed", () => {
+    setStore("all", disconnectLiveTerminals)
+  })
+  onCleanup(unsubDisposed)
 
   const update = (client: DirectorySDK["client"], directory: string, pty: Partial<LocalPTY> & { id: string }) => {
     const index = store.all.findIndex((x) => x.id === pty.id)
