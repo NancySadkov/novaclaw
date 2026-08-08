@@ -1935,8 +1935,14 @@ export type LogReadResult = {
    * The matching lines, oldest first, already rendered for the requested plane. Display it; do not re-derive it — the server owns the one rendering.
    */
   text: string
-  lines: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  scanned: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  /**
+   * How many log lines `text` contains.
+   */
+  lines: number
+  /**
+   * Lines examined. 0 with no lines means an empty or absent log.
+   */
+  scanned: number
   /**
    * The scan ceiling stopped the walk, so older history was not examined.
    */

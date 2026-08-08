@@ -1,6 +1,8 @@
 import { A } from "@solidjs/router"
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
+import type { LogReadResult } from "@novaclaw/sdk/v2/types"
 import { Icon } from "@novaclaw/ui/icon"
+import { instanceFetch } from "@/utils/instance-fetch"
 import { useGlobal } from "@/context/global"
 import { useServer, ServerConnection } from "@/context/server"
 import type { ServerStreamStatus } from "@/context/server-sdk"
@@ -157,9 +159,10 @@ export function DebugPage() {
   //
   // ⚠️ **This panel shows the CLIENT's ring, and the instance's own `novaclaw.log` is a different
   // file.** Saying so in the panel is the honest move — a developer reading "Error log" in the Debug
-  // app and finding no server faults would reasonably conclude the server had none. Showing the
-  // server's log needs a read route under `/api/*`, which is a deliberate scope addition (3f says as
-  // much) and is filed rather than half-built here.
+  // app and finding no server faults would reasonably conclude the server had none. The server's log
+  // now has its own panel below (`data-panel="server-log"`, `POST /api/log/read`), and the two stay
+  // SEPARATE: they are two formats written by two processes, and interleaving them would need a
+  // second renderer of a log line — the defect that route was shaped to make unbuildable.
   const [levelFilter, setLevelFilter] = createSignal<string | undefined>(undefined)
   const [logMatch, setLogMatch] = createSignal("")
 
@@ -201,6 +204,112 @@ export function DebugPage() {
     void navigator.clipboard
       .writeText(text)
       .then(() => showToast({ title: `Copied ${filtered.length} log entr${filtered.length === 1 ? "y" : "ies"}` }))
+      .catch(() => showToast({ variant: "error", title: "Copy failed" }))
+  }
+
+  // ── the SERVER's log (todo/logging.md 3f — the half that was blocked) ───────────────────────
+  //
+  // 3f shipped the panel above without server lines and recorded why: the read route's only legal
+  // home is `/api/*` (ruling 11 pins the legacy surface shrink-only) and `formatLines` reaches
+  // `node:fs`/`node:zlib`, so it can never run here. `POST /api/log/read` is that route.
+  //
+  // ⭐ **This displays a STRING and never re-derives one.** The response carries `text` and nothing
+  // structured — no columns, no line array — so a second formatter beside `formatLines` +
+  // `LogRead.project` + the class table is not merely discouraged here, it is unbuildable. That
+  // pairing is the *one description existing twice* defect this repo has found repeatedly.
+  //
+  // ⚠️ **A SEPARATE panel from the Error log above, deliberately.** They are two files written by
+  // two processes in two formats — the ring is `{at, level, text}`, the instance writes keyed
+  // logfmt. Interleaving them into one list would need exactly the second renderer the paragraph
+  // above refuses.
+  //
+  // ⚠️ **The subsystem filter is FREE TEXT and the vocabulary comes from the instance**, not from a
+  // list compiled into this bundle. `packages/app` deliberately does not depend on
+  // `@novaclaw/schema` (see `submit-draft-features.test.ts`), and there is a better reason than the
+  // dependency: this UI can be driving a REMOTE instance on a different build, so a vocabulary read
+  // out of the renderer could disagree with the machine being looked at. The route answers an
+  // unknown subsystem with a 400 that NAMES the declared set, and that message is what the panel
+  // shows — the instance teaches its own vocabulary.
+  const LEVELS = ["debug", "info", "warn", "error"] as const
+  const [logTick, setLogTick] = createSignal(0)
+  const [serverLevel, setServerLevel] = createSignal<string | undefined>(undefined)
+  const [serverPlane, setServerPlane] = createSignal<"local" | "maintenance">("local")
+  // Draft vs applied: a keystroke here is an HTTP request and a 4 MB scan on the instance, so the
+  // text filters commit on Enter/blur/Refresh rather than on input. The level chips and the plane
+  // toggle are discrete acts and apply immediately.
+  const [subsystemDraft, setSubsystemDraft] = createSignal("")
+  const [matchDraft, setMatchDraft] = createSignal("")
+  const [subsystem, setSubsystem] = createSignal("")
+  const [match, setMatch] = createSignal("")
+  const applyServerFilters = () => {
+    setSubsystem(subsystemDraft().trim())
+    setMatch(matchDraft().trim())
+    setLogTick((t) => t + 1)
+  }
+
+  type ServerLog = { ok: true; data: LogReadResult } | { ok: false; message: string }
+  const [serverLog] = createResource(
+    () => {
+      const conn = focused()
+      if (!conn) return undefined
+      return {
+        conn,
+        // One key so a change to any filter refetches exactly once.
+        key: `${logTick()}|${serverLevel() ?? ""}|${serverPlane()}|${subsystem()}|${match()}`,
+      }
+    },
+    async ({ conn }): Promise<ServerLog> => {
+      try {
+        const data = await instanceFetch<LogReadResult>(conn.http, {
+          method: "POST",
+          route: "api/log/read",
+          body: {
+            ...(serverLevel() === undefined ? {} : { level: serverLevel() }),
+            ...(subsystem() ? { subsystem: subsystem() } : {}),
+            ...(match() ? { match: match() } : {}),
+            plane: serverPlane(),
+            limit: 200,
+          },
+        })
+        return { ok: true, data }
+      } catch (error) {
+        // The instance's own words. A 400 here is not noise — it is the vocabulary ("… is not a
+        // subsystem. Subsystems: …") and the repair, which is the whole reason this branch renders
+        // the message instead of a generic failure line.
+        return { ok: false, message: error instanceof Error ? error.message : String(error) }
+      }
+    },
+  )
+
+  /** The answer when there is one, so the JSX below branches on data rather than on a discriminant. */
+  const serverLogData = createMemo(() => {
+    const state = serverLog()
+    return state?.ok === true ? state.data : undefined
+  })
+  const serverLogError = createMemo(() => {
+    const state = serverLog()
+    return state?.ok === false ? state.message : undefined
+  })
+
+  const copyServerLog = () => {
+    const state = serverLog()
+    if (!state?.ok) return
+    const conn = focused()
+    const header = [
+      `# NovaClaw instance log — ${state.data.lines} line${state.data.lines === 1 ? "" : "s"} of ${state.data.scanned} examined`,
+      `# instance: ${conn?.http.url ?? "(none)"}`,
+      `# file: ${serverLogPath() ?? "(unknown)"}`,
+      `# plane: ${state.data.plane}${state.data.plane === "maintenance" ? " (local-only columns shown as <class>)" : " (full detail — this has not been filtered for sharing)"}`,
+      serverLevel() ? `# level at or above: ${serverLevel()}` : undefined,
+      subsystem() ? `# subsystem: ${subsystem()}` : undefined,
+      match() ? `# text: ${match()}` : undefined,
+      state.data.truncated ? "# the scan ceiling was reached — older history was not examined" : undefined,
+    ]
+      .filter((line) => line !== undefined)
+      .join("\n")
+    void navigator.clipboard
+      .writeText(`${header}\n${state.data.text || "(no matching lines)"}`)
+      .then(() => showToast({ title: `Copied ${state.data.lines} log line${state.data.lines === 1 ? "" : "s"}` }))
       .catch(() => showToast({ variant: "error", title: "Copy failed" }))
   }
 
@@ -392,10 +501,10 @@ export function DebugPage() {
           {/* ⚠️ Naming the OTHER file is the point of this line, not decoration. Someone reading
               "Error log" in the Debug app and seeing no server faults would reasonably conclude the
               server had none — this panel is the renderer's ring buffer and the instance writes a
-              separate, keyed, rotated `novaclaw.log`. Rendering that one needs a read route under
-              `/api/*`; the path comes from `GET /instance`, never from guessing (§0.6). */}
+              separate, keyed, rotated `novaclaw.log`, read by the Instance log panel below. The path
+              comes from `GET /instance`, never from guessing (§0.6). */}
           <div class={`${hint} px-4 pb-2`} data-slot="debug-server-log-note">
-            The instance's own log is a different file:{" "}
+            The instance's own log is a different file, shown below:{" "}
             <code class="select-all font-mono">{serverLogPath() ?? "(ask the instance — not connected)"}</code>
           </div>
           {/* Filters (3f). The levels come from what is actually IN the ring with their counts,
@@ -470,6 +579,152 @@ export function DebugPage() {
                   </div>
                 )}
               </For>
+            </Show>
+          </div>
+        </div>
+
+        {/* ── Instance log (todo/logging.md 3f, server half) ─────────────────────────── */}
+        <div class={section} data-panel="server-log">
+          <div class={heading}>
+            <span class={title}>Instance log</span>
+            <span class={hint}>
+              what the OS itself did — keyed, rotated, and read from the instance rather than from this UI
+            </span>
+            <span class="flex-1" />
+            <button
+              type="button"
+              class={btn}
+              onClick={copyServerLog}
+              disabled={(serverLogData()?.lines ?? 0) === 0}
+            >
+              <Icon name="copy" size="small" class="mr-1 inline-block align-[-2px]" />
+              Copy
+            </button>
+            <button type="button" class={btn} onClick={applyServerFilters}>
+              Refresh
+            </button>
+          </div>
+          <div class="flex flex-wrap items-center gap-1.5 px-4 pb-2" data-slot="server-log-filters">
+            <button
+              type="button"
+              class={btn}
+              classList={{ "bg-v2-background-bg-layer-02 text-v2-text-text-base": serverLevel() === undefined }}
+              onClick={() => setServerLevel(undefined)}
+            >
+              all levels
+            </button>
+            {/* A FLOOR, unlike the client ring's chips above: the wire's four levels ARE a severity
+                scale, so "warn" meaning "warnings and errors" is what every reader expects. The
+                names are the request schema's closed union — send one the instance does not know
+                and it answers a 400 that this panel shows, so a drift is loud rather than silent. */}
+            <For each={LEVELS}>
+              {(level) => (
+                <button
+                  type="button"
+                  class={btn}
+                  classList={{ "bg-v2-background-bg-layer-02 text-v2-text-text-base": serverLevel() === level }}
+                  onClick={() => setServerLevel(serverLevel() === level ? undefined : level)}
+                >
+                  {level}+
+                </button>
+              )}
+            </For>
+            <input
+              type="search"
+              class="min-w-0 rounded-md border border-v2-border-border-base bg-transparent px-2 py-1 text-[11px] text-v2-text-text-base placeholder:text-v2-text-text-faint"
+              placeholder="subsystem…"
+              aria-label="Filter the instance log by subsystem"
+              data-slot="server-log-subsystem"
+              value={subsystemDraft()}
+              onInput={(event) => setSubsystemDraft(event.currentTarget.value)}
+              onChange={applyServerFilters}
+              onKeyDown={(event) => event.key === "Enter" && applyServerFilters()}
+            />
+            <input
+              type="search"
+              class="min-w-0 flex-1 rounded-md border border-v2-border-border-base bg-transparent px-2 py-1 text-[11px] text-v2-text-text-base placeholder:text-v2-text-text-faint"
+              placeholder="text in the line… (press Enter)"
+              aria-label="Filter the instance log by text"
+              data-slot="server-log-match"
+              value={matchDraft()}
+              onInput={(event) => setMatchDraft(event.currentTarget.value)}
+              onChange={applyServerFilters}
+              onKeyDown={(event) => event.key === "Enter" && applyServerFilters()}
+            />
+          </div>
+          {/* The two planes, in the user's words rather than in ours. AGENTS.md principle 4: the
+              data plane never egresses and the maintenance plane is scrubbed — so the toggle is
+              "what you are looking at" vs "what you would send", never "safe/unsafe". Withheld
+              columns are NAMED as `‹class›` by the server; nothing is silently dropped. */}
+          <div class="flex flex-wrap items-center gap-1.5 px-4 pb-2" data-slot="server-log-plane">
+            <button
+              type="button"
+              class={btn}
+              classList={{ "bg-v2-background-bg-layer-02 text-v2-text-text-base": serverPlane() === "local" }}
+              onClick={() => setServerPlane("local")}
+            >
+              Full detail
+            </button>
+            <button
+              type="button"
+              class={btn}
+              classList={{ "bg-v2-background-bg-layer-02 text-v2-text-text-base": serverPlane() === "maintenance" }}
+              onClick={() => setServerPlane("maintenance")}
+            >
+              Ready to send onward
+            </button>
+            <span class={hint}>
+              {serverPlane() === "local"
+                ? "everything the log holds — this stays on your computer"
+                : "columns that may not leave this machine are shown as ‹their kind›, never dropped"}
+            </span>
+          </div>
+          <div class="max-h-72 overflow-y-auto px-4 pb-3">
+            <Show
+              when={serverLog()}
+              fallback={
+                <div class={hint} data-slot="server-log-empty">
+                  {serverLog.loading ? "reading the instance log…" : "no instance connected"}
+                </div>
+              }
+            >
+              <Show
+                  when={serverLogData()}
+                  fallback={
+                    <div class="text-[11px] text-v2-state-fg-danger" data-slot="server-log-error">
+                      {serverLogError()}
+                    </div>
+                  }
+                >
+                  {(data) => (
+                    <Show
+                      when={data().lines > 0}
+                      fallback={
+                        // Two different facts, and only one of them is about the instance:
+                        // `scanned === 0` means there is no log file to read yet.
+                        <div class={hint} data-slot="server-log-empty">
+                          {data().scanned === 0
+                            ? `no log file yet under ${serverLogPath() ?? "the instance's log directory"}`
+                            : `no line matches — ${data().scanned} examined`}
+                        </div>
+                      }
+                    >
+                      {/* ⭐ The server's string, displayed. Not parsed, not re-rendered, not
+                          re-coloured per column — there is one renderer of a log line and it ran
+                          on the instance. */}
+                      <pre
+                        class="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-4 text-v2-text-text-muted"
+                        data-slot="server-log-text"
+                      >
+                        {data().text}
+                      </pre>
+                      <div class={hint} data-slot="server-log-status">
+                        {data().lines} line{data().lines === 1 ? "" : "s"} of {data().scanned} examined
+                        {data().truncated ? " · scan ceiling reached, older history not examined" : ""}
+                      </div>
+                    </Show>
+                  )}
+              </Show>
             </Show>
           </div>
         </div>

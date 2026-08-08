@@ -141,13 +141,13 @@ export const LogReadResult = Schema.Struct({
       "The matching lines, oldest first, already rendered for the requested plane. Display it; do " +
       "not re-derive it — the server owns the one rendering.",
   }),
-  lines: Schema.Number.annotate({ description: "How many log lines `text` contains." }),
+  lines: Schema.Int.annotate({ description: "How many log lines `text` contains." }),
   /**
    * Lines examined. **`scanned === 0` with `lines === 0` means there is no log file yet**, which is
    * a different fact from "the filter matched nothing" — and only one of the two is about the
    * instance. The empty state a reader is shown depends on this.
    */
-  scanned: Schema.Number.annotate({ description: "Lines examined. 0 with no lines means an empty or absent log." }),
+  scanned: Schema.Int.annotate({ description: "Lines examined. 0 with no lines means an empty or absent log." }),
   truncated: Schema.Boolean.annotate({
     description: "The scan ceiling stopped the walk, so older history was not examined.",
   }),

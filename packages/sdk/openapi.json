@@ -25746,50 +25746,12 @@
             "description": "The matching lines, oldest first, already rendered for the requested plane. Display it; do not re-derive it — the server owns the one rendering."
           },
           "lines": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
+            "type": "integer",
+            "description": "How many log lines `text` contains."
           },
           "scanned": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
+            "type": "integer",
+            "description": "Lines examined. 0 with no lines means an empty or absent log."
           },
           "truncated": {
             "type": "boolean",
