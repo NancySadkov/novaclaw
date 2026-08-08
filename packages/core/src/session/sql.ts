@@ -9,6 +9,7 @@ import type { SessionSchema } from "./schema"
 import { WorkspaceV2 } from "../workspace"
 import { Timestamps } from "../database/schema.sql"
 import type { SystemContext } from "../system-context/index"
+import type { Schema } from "effect"
 import { AgentV2 } from "../agent"
 import type { Revert } from "@novaclaw/schema/revert"
 import type { SessionProviderRecovery } from "@novaclaw/schema/session-provider-recovery"
@@ -132,6 +133,34 @@ export const SessionAutoGrantTable = sqliteTable("session_auto_grant", {
   justification: text().notNull(),
   at: integer().notNull(),
 })
+
+// The sanctioned open component tier. Kernel config remains in typed columns; this table is for
+// versioned component values introduced through the registry. `component_id = ""` is the physical
+// key for a declared singleton (the service never exposes that sentinel). Lifetime is copied onto
+// every row so stale attempt/bounded data remains observable even when its defining tool is absent.
+export const SessionComponentTable = sqliteTable(
+  "session_component",
+  {
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    kind: text().notNull(),
+    component_id: text().notNull(),
+    schema_version: integer().notNull(),
+    lifetime: text().$type<"entity" | "attempt" | "bounded">().notNull(),
+    attempt_id: text(),
+    generation: integer(),
+    expires_at: integer(),
+    value: text({ mode: "json" }).$type<Schema.Json>().notNull(),
+    ...Timestamps,
+  },
+  (table) => [
+    primaryKey({ columns: [table.session_id, table.kind, table.component_id] }),
+    index("session_component_kind_idx").on(table.kind),
+    index("session_component_expiry_idx").on(table.expires_at),
+  ],
+)
 
 export const TodoTable = sqliteTable(
   "todo",

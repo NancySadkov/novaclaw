@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "f672ca0b-b3e9-4864-84ac-37ea33aa7263",
+  "id": "309b882d-afb2-436b-b274-2e3a1a042cc7",
   "prevIds": [
-    "e53287b5-f495-494c-a2e9-791e3707661d"
+    "f672ca0b-b3e9-4864-84ac-37ea33aa7263"
   ],
   "ddl": [
     {
@@ -132,6 +132,10 @@
     },
     {
       "name": "session_compaction",
+      "entityType": "tables"
+    },
+    {
+      "name": "session_component",
       "entityType": "tables"
     },
     {
@@ -2046,6 +2050,116 @@
     },
     {
       "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "session_id",
+      "entityType": "columns",
+      "table": "session_component"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "kind",
+      "entityType": "columns",
+      "table": "session_component"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "component_id",
+      "entityType": "columns",
+      "table": "session_component"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "schema_version",
+      "entityType": "columns",
+      "table": "session_component"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lifetime",
+      "entityType": "columns",
+      "table": "session_component"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "attempt_id",
+      "entityType": "columns",
+      "table": "session_component"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "generation",
+      "entityType": "columns",
+      "table": "session_component"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "expires_at",
+      "entityType": "columns",
+      "table": "session_component"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "value",
+      "entityType": "columns",
+      "table": "session_component"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "session_component"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "session_component"
+    },
+    {
+      "type": "text",
       "notNull": false,
       "autoincrement": false,
       "default": null,
@@ -3235,6 +3349,21 @@
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
+      "name": "fk_session_component_session_id_session_id_fk",
+      "entityType": "fks",
+      "table": "session_component"
+    },
+    {
+      "columns": [
+        "session_id"
+      ],
+      "tableTo": "session",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
       "name": "fk_session_context_epoch_session_id_session_id_fk",
       "entityType": "fks",
       "table": "session_context_epoch"
@@ -3363,6 +3492,17 @@
       "name": "messenger_contact_pk",
       "entityType": "pks",
       "table": "messenger_contact"
+    },
+    {
+      "columns": [
+        "session_id",
+        "kind",
+        "component_id"
+      ],
+      "nameExplicit": false,
+      "name": "session_component_pk",
+      "entityType": "pks",
+      "table": "session_component"
     },
     {
       "columns": [
@@ -3897,6 +4037,34 @@
       "name": "session_compaction_session_prefix_idx",
       "entityType": "indexes",
       "table": "session_compaction"
+    },
+    {
+      "columns": [
+        {
+          "value": "kind",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "session_component_kind_idx",
+      "entityType": "indexes",
+      "table": "session_component"
+    },
+    {
+      "columns": [
+        {
+          "value": "expires_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "session_component_expiry_idx",
+      "entityType": "indexes",
+      "table": "session_component"
     },
     {
       "columns": [

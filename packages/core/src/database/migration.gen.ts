@@ -84,5 +84,6 @@ export const migrations = (
     import("./migration/20260804164548_stormy_skreet"),
     import("./migration/20260807173556_add_session_device"),
     import("./migration/20260808122357_add_session_auto_grant"),
+    import("./migration/20260808131913_add_session_component_registry"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

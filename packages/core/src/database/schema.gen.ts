@@ -329,6 +329,23 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`session_component\` (
+          \`session_id\` text NOT NULL,
+          \`kind\` text NOT NULL,
+          \`component_id\` text NOT NULL,
+          \`schema_version\` integer NOT NULL,
+          \`lifetime\` text NOT NULL,
+          \`attempt_id\` text,
+          \`generation\` integer,
+          \`expires_at\` integer,
+          \`value\` text NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL,
+          CONSTRAINT \`session_component_pk\` PRIMARY KEY(\`session_id\`, \`kind\`, \`component_id\`),
+          CONSTRAINT \`fk_session_component_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`session_context_epoch\` (
           \`session_id\` text PRIMARY KEY,
           \`baseline\` text NOT NULL,
@@ -512,6 +529,8 @@ export default {
       yield* tx.run(
         `CREATE INDEX \`session_compaction_session_prefix_idx\` ON \`session_compaction\` (\`session_id\`,\`prefix_seq\`);`,
       )
+      yield* tx.run(`CREATE INDEX \`session_component_kind_idx\` ON \`session_component\` (\`kind\`);`)
+      yield* tx.run(`CREATE INDEX \`session_component_expiry_idx\` ON \`session_component\` (\`expires_at\`);`)
       yield* tx.run(
         `CREATE INDEX \`session_execution_state_heartbeat_idx\` ON \`session_execution\` (\`state\`,\`heartbeat_at\`);`,
       )
