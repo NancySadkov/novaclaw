@@ -40,6 +40,12 @@ type Active = {
 export const Info = Pty.Info
 export type Info = Types.DeepMutable<typeof Info.Type>
 
+// Keep the core PTY namespace complete for consumers that decode canonical HTTP responses through
+// `@novaclaw/core/pty`. Protocol owns the route, but callers already obtain Info/CreateInput/etc. here;
+// omitting Activity made the route test compile only until the workspace-wide typecheck reached it.
+export const Activity = Pty.Activity
+export type Activity = Types.DeepMutable<typeof Activity.Type>
+
 export const CreateInput = Pty.CreateInput
 
 export type CreateInput = Types.DeepMutable<typeof CreateInput.Type>
