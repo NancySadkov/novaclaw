@@ -11,6 +11,7 @@ import { PermissionV2 } from "@novaclaw/core/permission"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionComponentRegistry } from "@novaclaw/core/session/component-registry"
 import { SessionComponentTier } from "@novaclaw/core/session/component-tier"
+import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { SessionComponentTable, SessionContextEpochTable, SessionTable } from "@novaclaw/core/session/sql"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionTool } from "@novaclaw/core/tool/session"
@@ -94,6 +95,40 @@ describe("session tool", () => {
       consequential: "session",
       privileged: "session_privileged",
     })
+  })
+
+  test("reads an attempt observation as fresh only under its execution fence", () => {
+    const asserted: Asserted[] = []
+    return Effect.runPromise(
+      withTool(asserted, ({ registry, sessionID }) =>
+        Effect.gen(function* () {
+          const components = yield* SessionComponentRegistry.Service
+          const fence = { attemptID: "exe_observation", generation: 3 }
+          yield* components.put({
+            sessionID,
+            kind: "observation",
+            attempt: fence,
+            value: { handle: "/tmp/frame.png", capturedAt: 123, digest: "a".repeat(64), region: null },
+          })
+          const current: SessionExecutionAttempt.CurrentInterface = {
+            fence,
+            advance: () => Effect.void,
+            toolDispatched: () => Effect.void,
+            toolSettled: () => Effect.void,
+            providerStarted: () => Effect.void,
+            providerToolProtocol: () => Effect.void,
+            providerSettled: () => Effect.void,
+            providerRecovery: () => Effect.succeed(undefined),
+          }
+          const read = yield* call(registry, sessionID, { op: "read", kind: "observation" }).pipe(
+            Effect.provideService(SessionExecutionAttempt.Current, current),
+          )
+          expect(textOf(read)).toContain('"stale":false')
+          expect(textOf(read)).toContain('"attempt":{"attemptID":"exe_observation","generation":3}')
+          expect(asserted).toEqual([])
+        }),
+      ),
+    )
   })
 
   test("projects the prompt override through its canonical row and retires a second component store", () => {

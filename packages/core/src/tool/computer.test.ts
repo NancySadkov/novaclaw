@@ -15,7 +15,6 @@ import { SessionSchema } from "../session/schema"
 import { SessionOrigin } from "../session/origin"
 import { toLLMMessages, type InputCapabilities } from "../session/runner/to-llm-message"
 
-
 const input = (over: Partial<ComputerTool.Input>): ComputerTool.Input =>
   ({ action: "screenshot", ...over }) as ComputerTool.Input
 
@@ -60,11 +59,39 @@ describe("flat input becomes an action, or an honest refusal", () => {
 
   test("every declared action maps to something — no silent hole in the switch", () => {
     for (const action of ["screenshot", "move", "click", "double_click", "type", "key", "scroll", "cursor"] as const) {
-      const result = ComputerTool.toAction(
-        input({ action, x: 1, y: 2, text: "t", keys: "Return", direction: "up" }),
-      )
+      const result = ComputerTool.toAction(input({ action, x: 1, y: 2, text: "t", keys: "Return", direction: "up" }))
       expect("error" in result).toBe(false)
     }
+  })
+})
+
+describe("captured pixels become attempt evidence", () => {
+  test("hashes the actual bytes and records a clipped crop's decoded extent", () => {
+    expect(
+      ComputerTool.observationOfCapture({
+        handle: "/tmp/frame.png",
+        bytes: Buffer.from("frame"),
+        capturedAt: 123.9,
+        dimensions: { width: 80, height: 40 },
+        requestedRegion: { x: 1200, y: 760, width: 400, height: 400 },
+      }),
+    ).toEqual({
+      handle: "/tmp/frame.png",
+      capturedAt: 123,
+      digest: "9dff50df08c635815f4b19da10f756605a34a79a48d4ba48712782502975a70e",
+      region: { x: 1200, y: 760, width: 80, height: 40 },
+    })
+  })
+
+  test("represents a whole-display capture without inventing viewport dimensions", () => {
+    expect(
+      ComputerTool.observationOfCapture({
+        handle: "/tmp/frame.png",
+        bytes: Buffer.from("frame"),
+        capturedAt: 1,
+        dimensions: { width: 1280, height: 800 },
+      }).region,
+    ).toBeNull()
   })
 })
 
@@ -209,14 +236,15 @@ describe("the region rides the flat input through to argv", () => {
 
 const PIXELS = "aXRpc2FzY3JlZW5zaG90"
 
-const screenshotOutput = (over: Record<string, unknown> = {}) => ({
-  action: "screenshot",
-  ok: true,
-  detail: "screenshot attached below — look at the image in this result",
-  screenshotPath: "/tmp/novaclaw-computer.png",
-  image: { data: PIXELS, mime: "image/png" },
-  ...over,
-}) as Parameters<typeof ComputerTool.toModelContent>[0]
+const screenshotOutput = (over: Record<string, unknown> = {}) =>
+  ({
+    action: "screenshot",
+    ok: true,
+    detail: "screenshot attached below — look at the image in this result",
+    screenshotPath: "/tmp/novaclaw-computer.png",
+    image: { data: PIXELS, mime: "image/png" },
+    ...over,
+  }) as Parameters<typeof ComputerTool.toModelContent>[0]
 
 describe("a screenshot returns its pixels, not just a path", () => {
   test("🔴 the model gets the image ALONGSIDE the detail, in one result", () => {
@@ -279,6 +307,9 @@ describe("the pixels travel ONE way — never a second copy through `structured`
     expect(source).toContain("toModelOutput: ({ output }) => toModelContent(output)")
     expect(source).toContain("toStructuredOutput: ({ output }) => toStructured(output)")
     expect(source).toContain("structured: StructuredOutput")
+    expect(source).toContain("SessionExecutionAttempt.currentFence()")
+    expect(source).toContain('kind: "observation"')
+    expect(source).toContain("value: capture.observation")
   })
 })
 

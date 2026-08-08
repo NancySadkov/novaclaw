@@ -173,6 +173,45 @@ describe("SessionComponentRegistry", () => {
       }),
     ))
 
+  test("fences the latest screen observation to the execution attempt", () =>
+    withRegistry([SessionComponentRegistry.ObservationDefinition], ({ sessionID }) =>
+      Effect.gen(function* () {
+        const registry = yield* SessionComponentRegistry.Service
+        const value = {
+          handle: "/tmp/frame.png",
+          capturedAt: 123,
+          digest: "a".repeat(64),
+          region: { x: 1200, y: 760, width: 80, height: 40 },
+        }
+        const missingFence = yield* registry.put({ sessionID, kind: "observation", value }).pipe(Effect.flip)
+        expect(missingFence).toBeInstanceOf(SessionComponentRegistry.RegistryError)
+        const badDigest = yield* registry
+          .put({
+            sessionID,
+            kind: "observation",
+            value: { ...value, digest: "not-a-sha256" },
+            attempt: { attemptID: "exe_capture", generation: 4 },
+          })
+          .pipe(Effect.flip)
+        expect(badDigest).toBeInstanceOf(SessionComponentRegistry.InvalidValueError)
+
+        const attempt = { attemptID: "exe_capture", generation: 4 }
+        const written = yield* registry.put({ sessionID, kind: "observation", value, attempt })
+        expect(written).toMatchObject({ value, attempt, lifetime: "attempt", stale: false })
+        expect(yield* registry.get({ sessionID, kind: "observation" })).toMatchObject({
+          stale: true,
+          staleReason: "attempt-missing",
+        })
+        expect(
+          yield* registry.get({
+            sessionID,
+            kind: "observation",
+            attempt: { attemptID: "exe_capture", generation: 5 },
+          }),
+        ).toMatchObject({ stale: true, staleReason: "attempt-mismatch" })
+      }),
+    ))
+
   test("names undecodable and unmigrated stored versions instead of rendering them empty", () =>
     withRegistry([Goal], ({ sessionID }) =>
       Effect.gen(function* () {

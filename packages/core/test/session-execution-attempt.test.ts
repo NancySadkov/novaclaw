@@ -26,6 +26,27 @@ const makeSession = (id: SessionSchema.ID) =>
   })
 
 describe("SessionExecutionAttempt", () => {
+  it.effect("exposes the authoritative attempt fence only inside a draining capability", () =>
+    Effect.gen(function* () {
+      expect(yield* SessionExecutionAttempt.currentFence()).toBeUndefined()
+      const current = {
+        fence: { attemptID: "exe_current", generation: 7 },
+        advance: () => Effect.void,
+        toolDispatched: () => Effect.void,
+        toolSettled: () => Effect.void,
+        providerStarted: () => Effect.void,
+        providerToolProtocol: () => Effect.void,
+        providerSettled: () => Effect.void,
+        providerRecovery: () => Effect.succeed(undefined),
+      }
+      expect(
+        yield* SessionExecutionAttempt.currentFence().pipe(
+          Effect.provideService(SessionExecutionAttempt.Current, current),
+        ),
+      ).toEqual(current.fence)
+    }),
+  )
+
   it.effect("atomically replaces ownership and fences stale settlement", () =>
     Effect.gen(function* () {
       const sessionID = SessionSchema.ID.make("ses_execution_fence")

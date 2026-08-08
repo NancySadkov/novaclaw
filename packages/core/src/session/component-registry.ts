@@ -6,7 +6,7 @@ import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { EventV2 } from "../event"
 import { ProjectV2 } from "../project"
-import { AbsolutePath, RelativePath } from "../schema"
+import { AbsolutePath, NonNegativeInt, PositiveInt, RelativePath } from "../schema"
 import path from "node:path"
 import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
@@ -53,6 +53,21 @@ export interface AttemptFence {
   readonly attemptID: string
   readonly generation: number
 }
+
+export const Observation = Schema.Struct({
+  handle: Schema.NonEmptyString,
+  capturedAt: NonNegativeInt,
+  digest: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/)),
+  region: Schema.NullOr(
+    Schema.Struct({
+      x: NonNegativeInt,
+      y: NonNegativeInt,
+      width: PositiveInt,
+      height: PositiveInt,
+    }),
+  ),
+}).annotate({ identifier: "SessionComponent.Observation" })
+export type Observation = typeof Observation.Type
 
 /** Adapter for a component whose canonical bytes already live in a kernel-owned store. */
 export interface Projection<A> {
@@ -169,6 +184,16 @@ export const toolKind = (owner: string, name: string): ToolKind =>
 export const kernelDefinition = <A>(input: Omit<Definition<A>, "owner"> & { readonly kind: KernelKind }) =>
   ({ ...input, owner: "kernel" }) satisfies Definition<A>
 
+export const ObservationDefinition = kernelDefinition({
+  kind: "observation",
+  description:
+    "The latest screen frame sampled during this execution attempt: its local handle, capture time, SHA-256 digest, and exact covered region. A null region means the whole bound display.",
+  cardinality: "singleton",
+  lifetime: "attempt",
+  version: 1,
+  codec: Observation,
+})
+
 export const toolDefinition = <A>(
   owner: string,
   input: Omit<Definition<A>, "kind" | "owner"> & { readonly name: string },
@@ -259,105 +284,73 @@ const definitionProblem = (definition: AnyDefinition, expectedOwner: "kernel" | 
 
 export const make = (kernelDefinitions: ReadonlyArray<AnyDefinition> = []) =>
   Effect.gen(function* () {
-      const { db } = yield* Database.Service
-      const definitions = new Map<string, AnyDefinition>()
+    const { db } = yield* Database.Service
+    const definitions = new Map<string, AnyDefinition>()
 
-      for (const definition of kernelDefinitions) {
-        const problem = definitionProblem(definition, "kernel")
-        if (problem) return yield* Effect.die(new Error(problem))
-        if (definitions.has(definition.kind))
-          return yield* Effect.die(new Error(`Duplicate compiled session component kind: ${definition.kind}`))
-        definitions.set(definition.kind, definition)
-      }
+    for (const definition of kernelDefinitions) {
+      const problem = definitionProblem(definition, "kernel")
+      if (problem) return yield* Effect.die(new Error(problem))
+      if (definitions.has(definition.kind))
+        return yield* Effect.die(new Error(`Duplicate compiled session component kind: ${definition.kind}`))
+      definitions.set(definition.kind, definition)
+    }
 
-      const definitionOf = (kind: string): Effect.Effect<AnyDefinition, UnknownKindError> => {
-        const definition = definitions.get(kind)
-        return definition ? Effect.succeed(definition) : Effect.fail(new UnknownKindError({ kind }))
-      }
+    const definitionOf = (kind: string): Effect.Effect<AnyDefinition, UnknownKindError> => {
+      const definition = definitions.get(kind)
+      return definition ? Effect.succeed(definition) : Effect.fail(new UnknownKindError({ kind }))
+    }
 
-      const projectionFailure = (definition: AnyDefinition, operation: string, cause: unknown) =>
-        new RegistryError({
-          message: `${operation} ${definition.kind} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-        })
+    const projectionFailure = (definition: AnyDefinition, operation: string, cause: unknown) =>
+      new RegistryError({
+        message: `${operation} ${definition.kind} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+      })
 
-      const decodeInput = (definition: AnyDefinition, value: unknown) =>
+    const decodeInput = (definition: AnyDefinition, value: unknown) =>
+      Schema.decodeUnknownEffect(definition.codec)(value).pipe(
+        Effect.mapError((cause) => new InvalidValueError({ kind: definition.kind, message: String(cause) })),
+      )
+
+    const encodeInput = (definition: AnyDefinition, value: unknown) =>
+      Schema.encodeEffect(definition.codec)(value).pipe(
+        Effect.mapError((cause) => new InvalidValueError({ kind: definition.kind, message: String(cause) })),
+      )
+
+    const validate = Effect.fn("SessionComponent.validate")(function* (input: {
+      sessionID: SessionSchema.ID
+      kind: string
+      value: unknown
+    }) {
+      const definition = yield* definitionOf(input.kind)
+      const decoded = yield* decodeInput(definition, input.value)
+      if (definition.projection?.validate)
+        yield* definition.projection
+          .validate(input.sessionID, decoded)
+          .pipe(Effect.mapError((cause) => projectionFailure(definition, "Validating", cause)))
+      return yield* encodeInput(definition, decoded)
+    })
+
+    const projectedEntry = Effect.fn("SessionComponent.projectedEntry")(function* (
+      definition: AnyDefinition,
+      sessionID: SessionSchema.ID,
+      value: unknown,
+    ) {
+      const decoded = yield* decodeInput(definition, value)
+      return {
+        sessionID,
+        kind: definition.kind,
+        value: yield* encodeInput(definition, decoded),
+        version: definition.version,
+        lifetime: definition.lifetime,
+        stale: false,
+      } satisfies Entry
+    })
+
+    const decodeStored = Effect.fn("SessionComponent.decodeStored")(function* (
+      definition: AnyDefinition,
+      row: typeof SessionComponentTable.$inferSelect,
+    ) {
+      const decodeCurrent = (value: unknown) =>
         Schema.decodeUnknownEffect(definition.codec)(value).pipe(
-          Effect.mapError((cause) => new InvalidValueError({ kind: definition.kind, message: String(cause) })),
-        )
-
-      const encodeInput = (definition: AnyDefinition, value: unknown) =>
-        Schema.encodeEffect(definition.codec)(value).pipe(
-          Effect.mapError((cause) => new InvalidValueError({ kind: definition.kind, message: String(cause) })),
-        )
-
-      const validate = Effect.fn("SessionComponent.validate")(function* (input: {
-        sessionID: SessionSchema.ID
-        kind: string
-        value: unknown
-      }) {
-        const definition = yield* definitionOf(input.kind)
-        const decoded = yield* decodeInput(definition, input.value)
-        if (definition.projection?.validate)
-          yield* definition.projection.validate(input.sessionID, decoded).pipe(
-            Effect.mapError((cause) => projectionFailure(definition, "Validating", cause)),
-          )
-        return yield* encodeInput(definition, decoded)
-      })
-
-      const projectedEntry = Effect.fn("SessionComponent.projectedEntry")(function* (
-        definition: AnyDefinition,
-        sessionID: SessionSchema.ID,
-        value: unknown,
-      ) {
-        const decoded = yield* decodeInput(definition, value)
-        return {
-          sessionID,
-          kind: definition.kind,
-          value: yield* encodeInput(definition, decoded),
-          version: definition.version,
-          lifetime: definition.lifetime,
-          stale: false,
-        } satisfies Entry
-      })
-
-      const decodeStored = Effect.fn("SessionComponent.decodeStored")(function* (
-        definition: AnyDefinition,
-        row: typeof SessionComponentTable.$inferSelect,
-      ) {
-        const decodeCurrent = (value: unknown) =>
-          Schema.decodeUnknownEffect(definition.codec)(value).pipe(
-            Effect.mapError(
-              (cause) =>
-                new StoredValueError({
-                  kind: row.kind,
-                  ...(row.component_id === SINGLETON_ID ? {} : { id: row.component_id }),
-                  version: row.schema_version,
-                  message: String(cause),
-                }),
-            ),
-          )
-        const decoded =
-          row.schema_version === definition.version
-            ? yield* decodeCurrent(row.value)
-            : definition.migrate
-              ? yield* definition.migrate({ version: row.schema_version, value: row.value }).pipe(
-                  Effect.mapError(
-                    (cause) =>
-                      new StoredValueError({
-                        kind: row.kind,
-                        ...(row.component_id === SINGLETON_ID ? {} : { id: row.component_id }),
-                        version: row.schema_version,
-                        message: String(cause),
-                      }),
-                  ),
-                )
-              : yield* new StoredValueError({
-                  kind: row.kind,
-                  ...(row.component_id === SINGLETON_ID ? {} : { id: row.component_id }),
-                  version: row.schema_version,
-                  message: `No migration from schema version ${row.schema_version} to ${definition.version}`,
-                })
-        return yield* Schema.encodeEffect(definition.codec)(decoded).pipe(
           Effect.mapError(
             (cause) =>
               new StoredValueError({
@@ -368,178 +361,210 @@ export const make = (kernelDefinitions: ReadonlyArray<AnyDefinition> = []) =>
               }),
           ),
         )
-      })
+      const decoded =
+        row.schema_version === definition.version
+          ? yield* decodeCurrent(row.value)
+          : definition.migrate
+            ? yield* definition.migrate({ version: row.schema_version, value: row.value }).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new StoredValueError({
+                      kind: row.kind,
+                      ...(row.component_id === SINGLETON_ID ? {} : { id: row.component_id }),
+                      version: row.schema_version,
+                      message: String(cause),
+                    }),
+                ),
+              )
+            : yield* new StoredValueError({
+                kind: row.kind,
+                ...(row.component_id === SINGLETON_ID ? {} : { id: row.component_id }),
+                version: row.schema_version,
+                message: `No migration from schema version ${row.schema_version} to ${definition.version}`,
+              })
+      return yield* Schema.encodeEffect(definition.codec)(decoded).pipe(
+        Effect.mapError(
+          (cause) =>
+            new StoredValueError({
+              kind: row.kind,
+              ...(row.component_id === SINGLETON_ID ? {} : { id: row.component_id }),
+              version: row.schema_version,
+              message: String(cause),
+            }),
+        ),
+      )
+    })
 
-      const entryOf = Effect.fn("SessionComponent.entryOf")(function* (
-        definition: AnyDefinition,
-        row: typeof SessionComponentTable.$inferSelect,
-        attempt: AttemptFence | undefined,
-        now: number,
-      ) {
-        const value = yield* decodeStored(definition, row)
-        const staleReason =
-          row.lifetime === "attempt"
-            ? attempt === undefined
-              ? "attempt-missing"
-              : row.attempt_id !== attempt.attemptID || row.generation !== attempt.generation
-                ? "attempt-mismatch"
-                : undefined
-            : row.lifetime === "bounded" && row.expires_at !== null && row.expires_at <= now
-              ? "expired"
+    const entryOf = Effect.fn("SessionComponent.entryOf")(function* (
+      definition: AnyDefinition,
+      row: typeof SessionComponentTable.$inferSelect,
+      attempt: AttemptFence | undefined,
+      now: number,
+    ) {
+      const value = yield* decodeStored(definition, row)
+      const staleReason =
+        row.lifetime === "attempt"
+          ? attempt === undefined
+            ? "attempt-missing"
+            : row.attempt_id !== attempt.attemptID || row.generation !== attempt.generation
+              ? "attempt-mismatch"
               : undefined
-        return {
-          sessionID: row.session_id,
-          kind: row.kind,
-          ...(row.component_id === SINGLETON_ID ? {} : { id: ComponentID.make(row.component_id) }),
+          : row.lifetime === "bounded" && row.expires_at !== null && row.expires_at <= now
+            ? "expired"
+            : undefined
+      return {
+        sessionID: row.session_id,
+        kind: row.kind,
+        ...(row.component_id === SINGLETON_ID ? {} : { id: ComponentID.make(row.component_id) }),
+        value,
+        version: row.schema_version,
+        lifetime: row.lifetime,
+        ...(row.attempt_id === null || row.generation === null
+          ? {}
+          : { attempt: { attemptID: row.attempt_id, generation: row.generation } }),
+        ...(row.expires_at === null ? {} : { expiresAt: row.expires_at }),
+        stale: staleReason !== undefined,
+        ...(staleReason === undefined ? {} : { staleReason }),
+      } satisfies Entry
+    })
+
+    const get = Effect.fn("SessionComponent.get")(function* (input: ReadInput) {
+      const definition = yield* definitionOf(input.kind)
+      const componentID = yield* storedID(definition, input.id)
+      if (definition.projection) {
+        const value = yield* definition.projection
+          .get(input.sessionID)
+          .pipe(Effect.mapError((cause) => projectionFailure(definition, "Reading", cause)))
+        return value === undefined ? undefined : yield* projectedEntry(definition, input.sessionID, value)
+      }
+      const row = yield* db
+        .select()
+        .from(SessionComponentTable)
+        .where(
+          and(
+            eq(SessionComponentTable.session_id, input.sessionID),
+            eq(SessionComponentTable.kind, definition.kind),
+            eq(SessionComponentTable.component_id, componentID),
+          ),
+        )
+        .get()
+        .pipe(Effect.orDie)
+      return row ? yield* entryOf(definition, row, input.attempt, input.now ?? Date.now()) : undefined
+    })
+
+    const list = Effect.fn("SessionComponent.list")(function* (input: Omit<ReadInput, "id">) {
+      const definition = yield* definitionOf(input.kind)
+      if (definition.projection) {
+        const entry = yield* get(input)
+        return entry === undefined ? [] : [entry]
+      }
+      const rows = yield* db
+        .select()
+        .from(SessionComponentTable)
+        .where(
+          and(eq(SessionComponentTable.session_id, input.sessionID), eq(SessionComponentTable.kind, definition.kind)),
+        )
+        .orderBy(asc(SessionComponentTable.component_id))
+        .all()
+        .pipe(Effect.orDie)
+      return yield* Effect.forEach(rows, (row) => entryOf(definition, row, input.attempt, input.now ?? Date.now()))
+    })
+
+    const put = Effect.fn("SessionComponent.put")(function* (input: PutInput) {
+      const definition = yield* definitionOf(input.kind)
+      const componentID = yield* storedID(definition, input.id)
+      yield* assertLifetime(definition, input)
+      const decoded = yield* decodeInput(definition, input.value)
+      const value = yield* encodeInput(definition, decoded)
+      if (definition.projection) {
+        yield* definition.projection
+          .put(input.sessionID, decoded)
+          .pipe(Effect.mapError((cause) => projectionFailure(definition, "Writing", cause)))
+        return yield* projectedEntry(definition, input.sessionID, decoded)
+      }
+      const now = Date.now()
+      yield* db
+        .insert(SessionComponentTable)
+        .values({
+          session_id: input.sessionID,
+          kind: definition.kind,
+          component_id: componentID,
+          schema_version: definition.version,
+          lifetime: definition.lifetime,
+          attempt_id: input.attempt?.attemptID,
+          generation: input.attempt?.generation,
+          expires_at: input.expiresAt,
           value,
-          version: row.schema_version,
-          lifetime: row.lifetime,
-          ...(row.attempt_id === null || row.generation === null
-            ? {}
-            : { attempt: { attemptID: row.attempt_id, generation: row.generation } }),
-          ...(row.expires_at === null ? {} : { expiresAt: row.expires_at }),
-          stale: staleReason !== undefined,
-          ...(staleReason === undefined ? {} : { staleReason }),
-        } satisfies Entry
-      })
-
-      const get = Effect.fn("SessionComponent.get")(function* (input: ReadInput) {
-        const definition = yield* definitionOf(input.kind)
-        const componentID = yield* storedID(definition, input.id)
-        if (definition.projection) {
-          const value = yield* definition.projection.get(input.sessionID).pipe(
-            Effect.mapError((cause) => projectionFailure(definition, "Reading", cause)),
-          )
-          return value === undefined ? undefined : yield* projectedEntry(definition, input.sessionID, value)
-        }
-        const row = yield* db
-          .select()
-          .from(SessionComponentTable)
-          .where(
-            and(
-              eq(SessionComponentTable.session_id, input.sessionID),
-              eq(SessionComponentTable.kind, definition.kind),
-              eq(SessionComponentTable.component_id, componentID),
-            ),
-          )
-          .get()
-          .pipe(Effect.orDie)
-        return row ? yield* entryOf(definition, row, input.attempt, input.now ?? Date.now()) : undefined
-      })
-
-      const list = Effect.fn("SessionComponent.list")(function* (input: Omit<ReadInput, "id">) {
-        const definition = yield* definitionOf(input.kind)
-        if (definition.projection) {
-          const entry = yield* get(input)
-          return entry === undefined ? [] : [entry]
-        }
-        const rows = yield* db
-          .select()
-          .from(SessionComponentTable)
-          .where(
-            and(eq(SessionComponentTable.session_id, input.sessionID), eq(SessionComponentTable.kind, definition.kind)),
-          )
-          .orderBy(asc(SessionComponentTable.component_id))
-          .all()
-          .pipe(Effect.orDie)
-        return yield* Effect.forEach(rows, (row) => entryOf(definition, row, input.attempt, input.now ?? Date.now()))
-      })
-
-      const put = Effect.fn("SessionComponent.put")(function* (input: PutInput) {
-        const definition = yield* definitionOf(input.kind)
-        const componentID = yield* storedID(definition, input.id)
-        yield* assertLifetime(definition, input)
-        const decoded = yield* decodeInput(definition, input.value)
-        const value = yield* encodeInput(definition, decoded)
-        if (definition.projection) {
-          yield* definition.projection.put(input.sessionID, decoded).pipe(
-            Effect.mapError((cause) => projectionFailure(definition, "Writing", cause)),
-          )
-          return yield* projectedEntry(definition, input.sessionID, decoded)
-        }
-        const now = Date.now()
-        yield* db
-          .insert(SessionComponentTable)
-          .values({
-            session_id: input.sessionID,
-            kind: definition.kind,
-            component_id: componentID,
+          time_created: now,
+          time_updated: now,
+        })
+        .onConflictDoUpdate({
+          target: [SessionComponentTable.session_id, SessionComponentTable.kind, SessionComponentTable.component_id],
+          set: {
             schema_version: definition.version,
             lifetime: definition.lifetime,
-            attempt_id: input.attempt?.attemptID,
-            generation: input.attempt?.generation,
-            expires_at: input.expiresAt,
+            attempt_id: input.attempt?.attemptID ?? null,
+            generation: input.attempt?.generation ?? null,
+            expires_at: input.expiresAt ?? null,
             value,
-            time_created: now,
             time_updated: now,
-          })
-          .onConflictDoUpdate({
-            target: [SessionComponentTable.session_id, SessionComponentTable.kind, SessionComponentTable.component_id],
-            set: {
-              schema_version: definition.version,
-              lifetime: definition.lifetime,
-              attempt_id: input.attempt?.attemptID ?? null,
-              generation: input.attempt?.generation ?? null,
-              expires_at: input.expiresAt ?? null,
-              value,
-              time_updated: now,
-            },
-          })
-          .run()
-          .pipe(Effect.orDie)
-        return (yield* get({
-          sessionID: input.sessionID,
-          kind: definition.kind,
-          ...(input.id === undefined ? {} : { id: input.id }),
-          ...(input.attempt === undefined ? {} : { attempt: input.attempt }),
-          now,
-        }))!
-      })
-
-      const remove = Effect.fn("SessionComponent.remove")(function* (input: Omit<ReadInput, "attempt" | "now">) {
-        const definition = yield* definitionOf(input.kind)
-        const componentID = yield* storedID(definition, input.id)
-        if (definition.removable === false)
-          return yield* new RegistryError({ message: `${definition.kind} cannot be removed` })
-        if (definition.projection) {
-          if (!definition.projection.remove)
-            return yield* new RegistryError({ message: `${definition.kind} has no removal adapter` })
-          return yield* definition.projection.remove(input.sessionID).pipe(
-            Effect.mapError((cause) => projectionFailure(definition, "Removing", cause)),
-          )
-        }
-        const removed = yield* db
-          .delete(SessionComponentTable)
-          .where(
-            and(
-              eq(SessionComponentTable.session_id, input.sessionID),
-              eq(SessionComponentTable.kind, definition.kind),
-              eq(SessionComponentTable.component_id, componentID),
-            ),
-          )
-          .returning({ componentID: SessionComponentTable.component_id })
-          .all()
-          .pipe(Effect.orDie)
-        return removed.length > 0
-      })
-
-      return Service.of({
-        registerTool: (definition) => {
-          const problem = definitionProblem(definition, "tool")
-          if (problem) return Effect.fail(new RegistryError({ message: problem }))
-          if (definitions.has(definition.kind))
-            return Effect.fail(new RegistryError({ message: `Duplicate session component kind: ${definition.kind}` }))
-          definitions.set(definition.kind, definition)
-          return Effect.void
-        },
-        definitions: () => Array.from(definitions.values(), infoOf).sort((a, b) => a.kind.localeCompare(b.kind)),
-        validate,
-        get,
-        list,
-        put,
-        remove,
-      })
+          },
+        })
+        .run()
+        .pipe(Effect.orDie)
+      return (yield* get({
+        sessionID: input.sessionID,
+        kind: definition.kind,
+        ...(input.id === undefined ? {} : { id: input.id }),
+        ...(input.attempt === undefined ? {} : { attempt: input.attempt }),
+        now,
+      }))!
     })
+
+    const remove = Effect.fn("SessionComponent.remove")(function* (input: Omit<ReadInput, "attempt" | "now">) {
+      const definition = yield* definitionOf(input.kind)
+      const componentID = yield* storedID(definition, input.id)
+      if (definition.removable === false)
+        return yield* new RegistryError({ message: `${definition.kind} cannot be removed` })
+      if (definition.projection) {
+        if (!definition.projection.remove)
+          return yield* new RegistryError({ message: `${definition.kind} has no removal adapter` })
+        return yield* definition.projection
+          .remove(input.sessionID)
+          .pipe(Effect.mapError((cause) => projectionFailure(definition, "Removing", cause)))
+      }
+      const removed = yield* db
+        .delete(SessionComponentTable)
+        .where(
+          and(
+            eq(SessionComponentTable.session_id, input.sessionID),
+            eq(SessionComponentTable.kind, definition.kind),
+            eq(SessionComponentTable.component_id, componentID),
+          ),
+        )
+        .returning({ componentID: SessionComponentTable.component_id })
+        .all()
+        .pipe(Effect.orDie)
+      return removed.length > 0
+    })
+
+    return Service.of({
+      registerTool: (definition) => {
+        const problem = definitionProblem(definition, "tool")
+        if (problem) return Effect.fail(new RegistryError({ message: problem }))
+        if (definitions.has(definition.kind))
+          return Effect.fail(new RegistryError({ message: `Duplicate session component kind: ${definition.kind}` }))
+        definitions.set(definition.kind, definition)
+        return Effect.void
+      },
+      definitions: () => Array.from(definitions.values(), infoOf).sort((a, b) => a.kind.localeCompare(b.kind)),
+      validate,
+      get,
+      list,
+      put,
+      remove,
+    })
+  })
 
 export const layerWith = (kernelDefinitions: ReadonlyArray<AnyDefinition> = []) =>
   Layer.effect(Service, make(kernelDefinitions))
@@ -715,6 +740,7 @@ const compiledDefinitions = Effect.gen(function* () {
           }),
       },
     }),
+    ObservationDefinition,
     kernelDefinition({
       kind: "working_folder",
       description:

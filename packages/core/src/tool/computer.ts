@@ -4,6 +4,7 @@ import { ToolFailure } from "@novaclaw/llm"
 import { ChildProcess } from "effect/unstable/process"
 import { Effect, Layer, Schema } from "effect"
 import fs from "node:fs/promises"
+import { createHash } from "node:crypto"
 import { makeLocationNode } from "../effect/app-node"
 import { Config } from "../config"
 import { ConfigComputer } from "../config/computer"
@@ -15,6 +16,8 @@ import { Location } from "../location"
 import { AppProcess } from "../process"
 import { PermissionV2 } from "../permission"
 import { EFFECTIVE_CONFIG_DEFAULTS, resolveSessionConfig, type SessionLike } from "../session/config-resolve"
+import { SessionComponentRegistry } from "../session/component-registry"
+import { SessionExecutionAttempt } from "../session/execution-attempt"
 import { SessionSchema } from "../session/schema"
 import { SessionStore } from "../session/store"
 import { ToolRegistry } from "./registry"
@@ -34,9 +37,9 @@ Coordinates are SCREEN PIXELS from the top-left. Screenshot first and read the t
 ⚠️ Verify by looking: a click that lands on nothing still reports success, so the only evidence it worked is the screen changing.`
 
 export const Input = Schema.Struct({
-  action: Schema.Literals(["screenshot", "move", "click", "double_click", "type", "key", "scroll", "cursor"]).annotate(
-    { description: "What to do." },
-  ),
+  action: Schema.Literals(["screenshot", "move", "click", "double_click", "type", "key", "scroll", "cursor"]).annotate({
+    description: "What to do.",
+  }),
   x: Schema.Number.pipe(Schema.optional).annotate({ description: "Target X in screen pixels (move/click)." }),
   y: Schema.Number.pipe(Schema.optional).annotate({ description: "Target Y in screen pixels (move/click)." }),
   button: Schema.Literals(["left", "middle", "right"]).pipe(Schema.optional).annotate({
@@ -182,8 +185,7 @@ export const toModelContent = (output: OutputEncoded): ReadonlyArray<Tool.Conten
  */
 export const parseRegion = (raw: string): ComputerActions.Region | { readonly error: string } => {
   const parts = raw.split(",").map((part) => part.trim())
-  if (parts.length !== 4)
-    return { error: `region must be "x,y,width,height" — got ${parts.length} value(s): ${raw}` }
+  if (parts.length !== 4) return { error: `region must be "x,y,width,height" — got ${parts.length} value(s): ${raw}` }
   const [x, y, width, height] = parts.map(Number)
   for (const [name, value] of [
     ["x", x],
@@ -191,8 +193,7 @@ export const parseRegion = (raw: string): ComputerActions.Region | { readonly er
     ["width", width],
     ["height", height],
   ] as const)
-    if (value === undefined || !Number.isFinite(value))
-      return { error: `region ${name} is not a number: ${raw}` }
+    if (value === undefined || !Number.isFinite(value)) return { error: `region ${name} is not a number: ${raw}` }
   return { x: x!, y: y!, width: width!, height: height! }
 }
 
@@ -202,8 +203,7 @@ export const parseRegion = (raw: string): ComputerActions.Region | { readonly er
  * cost is this one translation.
  */
 export const toAction = (input: Input): ComputerActions.Action | { readonly error: string } => {
-  const point = () =>
-    input.x === undefined || input.y === undefined ? undefined : { x: input.x, y: input.y }
+  const point = () => (input.x === undefined || input.y === undefined ? undefined : { x: input.x, y: input.y })
   switch (input.action) {
     case "screenshot": {
       if (input.region === undefined) return { kind: "screenshot" }
@@ -247,7 +247,7 @@ export interface Input extends Schema.Schema.Type<typeof Input> {}
  */
 export const UNCONFIGURED =
   "No display is configured for computer use, so there is nothing to observe or click. " +
-  "Set this session's `control_binding` component (for example \":99\"), or set `computer.display` " +
+  'Set this session\'s `control_binding` component (for example ":99"), or set `computer.display` ' +
   "as the instance default. A display is never inherited from the process environment: that would " +
   "either fail on a headless host or " +
   "silently drive the operator's real screen."
@@ -280,6 +280,27 @@ const captureMime = (screenshotPath: string): string => {
   return "image/png"
 }
 
+export const observationOfCapture = (input: {
+  readonly handle: string
+  readonly bytes: Uint8Array
+  readonly capturedAt: number
+  readonly dimensions: { readonly width: number; readonly height: number }
+  readonly requestedRegion?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+}): SessionComponentRegistry.Observation => ({
+  handle: input.handle,
+  capturedAt: Math.max(0, Math.floor(input.capturedAt)),
+  digest: createHash("sha256").update(input.bytes).digest("hex"),
+  region: input.requestedRegion
+    ? {
+        x: input.requestedRegion.x,
+        y: input.requestedRegion.y,
+        // `scrot` clips at the display edge. The decoded file is the authority for the covered extent.
+        width: input.dimensions.width,
+        height: input.dimensions.height,
+      }
+    : null,
+})
+
 /**
  * Read the capture back and prepare it for the result — or say, in words, why it is not there.
  *
@@ -301,31 +322,75 @@ const captureMime = (screenshotPath: string): string => {
 const readCapture = (
   images: Image.Interface,
   screenshotPath: string,
-): Effect.Effect<{ readonly image?: { readonly data: string; readonly mime: string }; readonly note?: string }> =>
+  requestedRegion?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+): Effect.Effect<{
+  readonly image?: { readonly data: string; readonly mime: string }
+  readonly observation?: SessionComponentRegistry.Observation
+  readonly note?: string
+}> =>
   Effect.gen(function* () {
-    const bytes = yield* Effect.tryPromise({
-      try: () => fs.readFile(screenshotPath),
+    const captured = yield* Effect.tryPromise({
+      try: async () => {
+        const file = await fs.open(screenshotPath, "r")
+        try {
+          const [bytes, stat] = await Promise.all([file.readFile(), file.stat()])
+          return { bytes, capturedAt: stat.mtimeMs }
+        } finally {
+          await file.close()
+        }
+      },
       catch: (error) => error,
     })
     const content = {
       uri: `file://${screenshotPath}`,
       name: screenshotPath,
-      content: bytes.toString("base64"),
+      content: captured.bytes.toString("base64"),
       encoding: "base64" as const,
       mime: captureMime(screenshotPath),
     }
+    const dimensions = yield* images
+      .inspect(screenshotPath, content)
+      .pipe(Effect.catch(() => Effect.succeed(undefined)))
+    const observation = dimensions
+      ? observationOfCapture({
+          handle: screenshotPath,
+          bytes: captured.bytes,
+          capturedAt: captured.capturedAt,
+          dimensions,
+          ...(requestedRegion === undefined ? {} : { requestedRegion }),
+        })
+      : undefined
     // Same fallback `read.ts` takes: no resizer (the wasm decoder failed to load) is not a reason to
     // withhold a capture that is almost certainly within limits anyway.
-    const normalized = yield* images
-      .normalize(screenshotPath, content)
-      .pipe(Effect.catchTag("Image.ResizerUnavailableError", () => Effect.succeed(content)))
-    if (normalized.content === content.content) return { image: { data: content.content, mime: content.mime } }
+    const normalizedResult = yield* images.normalize(screenshotPath, content).pipe(
+      Effect.catchTag("Image.ResizerUnavailableError", () => Effect.succeed(content)),
+      Effect.match({ onFailure: (error) => ({ error }), onSuccess: (normalized) => ({ normalized }) }),
+    )
+    if ("error" in normalizedResult)
+      return {
+        ...(observation === undefined ? {} : { observation }),
+        note:
+          ` ⚠️ The image could NOT be attached to this result (${String(normalizedResult.error)}), so you have not seen ` +
+          "it — say so rather than describing the screen. Capture a smaller `region` and try again.",
+      }
+    const normalized = normalizedResult.normalized
+    const metadataNote =
+      observation === undefined
+        ? " ⚠️ The frame was returned but its dimensions could not be decoded, so no current observation component was recorded."
+        : ""
+    if (normalized.content === content.content)
+      return {
+        image: { data: content.content, mime: content.mime },
+        ...(observation === undefined ? {} : { observation }),
+        ...(metadataNote ? { note: metadataNote } : {}),
+      }
     return {
       image: { data: normalized.content, mime: normalized.mime },
+      ...(observation === undefined ? {} : { observation }),
       note:
         " ⚠️ The attached image was DOWNSCALED to fit attachment limits, so its pixels are NOT 1:1 " +
         "with screen pixels: give targets in normalized coordinates, or capture a `region` of the " +
-        "screen instead of the whole thing.",
+        `screen instead of the whole thing.${metadataNote}`,
     }
   }).pipe(
     Effect.catch((error: unknown) =>
@@ -346,6 +411,7 @@ export const layer = Layer.effectDiscard(
     const location = yield* Location.Service
     const images = yield* Image.Service
     const sessions = yield* SessionStore.Service
+    const components = yield* SessionComponentRegistry.Service
 
     yield* tools
       .register({
@@ -365,114 +431,131 @@ export const layer = Layer.effectDiscard(
          * Worth ~2.4 KB of every fresh request (1.8 KB of input schema plus the description), which is
          * a far larger win than the budget failure that surfaced it.
          */
-        [name]: Tool.withDeferred(Tool.make({
-          sideEffect: "non-idempotent",
-          description,
-          input: Input,
-          output: Output,
-          structured: StructuredOutput,
-          toStructuredOutput: ({ output }) => toStructured(output),
-          toModelOutput: ({ output }) => toModelContent(output),
-          execute: (input, context) =>
-            Effect.gen(function* () {
-              const settings = Config.latest(yield* config.entries(), "computer") as ConfigComputer.Info | undefined
-              const display = yield* resolveControlDisplay(context.sessionID, settings?.display, sessions.get)
-              if (!display) return yield* Effect.fail(new ToolFailure({ message: UNCONFIGURED }))
-              const screenshotPath = settings?.screenshotPath ?? ConfigComputer.DEFAULT_SCREENSHOT_PATH
+        [name]: Tool.withDeferred(
+          Tool.make({
+            sideEffect: "non-idempotent",
+            description,
+            input: Input,
+            output: Output,
+            structured: StructuredOutput,
+            toStructuredOutput: ({ output }) => toStructured(output),
+            toModelOutput: ({ output }) => toModelContent(output),
+            execute: (input, context) =>
+              Effect.gen(function* () {
+                const settings = Config.latest(yield* config.entries(), "computer") as ConfigComputer.Info | undefined
+                const display = yield* resolveControlDisplay(context.sessionID, settings?.display, sessions.get)
+                if (!display) return yield* Effect.fail(new ToolFailure({ message: UNCONFIGURED }))
+                const screenshotPath = settings?.screenshotPath ?? ConfigComputer.DEFAULT_SCREENSHOT_PATH
 
-              const action = toAction(input)
-              if ("error" in action) return yield* Effect.fail(new ToolFailure({ message: action.error }))
-
-              const built = ComputerActions.build(action, { display, screenshotPath })
-              if (!built.ok) return yield* Effect.fail(new ToolFailure({ message: built.reason }))
-
-              // One assert for the whole tool: the resource is the ACTION, not a coordinate — a
-              // permission rule a person can read ("allow computer/screenshot") and not a pixel.
-              yield* permission.assert({
-                action: name,
-                resources: [input.action],
-                save: ["*"],
-                metadata: input,
-                sessionID: context.sessionID,
-                source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
-              })
-
-              // Each command goes through the ONE host-execution gate as literal argv — never a
-              // shell string, because `type` carries model-authored text read off an untrusted
-              // screen. `overlay` is the functional, non-secret channel the display rides.
-              const outputs: string[] = []
-              for (const argv of built.argv) {
-                const plan = HostExec.plan({
-                  shape: { kind: "argv", argv },
-                  cwd: location.directory,
-                  worktree: location.directory,
-                  consent: "none",
-                  overlay: { ...built.env },
-                })
-                if (plan.via === "none") return yield* Effect.fail(new ToolFailure({ message: plan.message }))
-                if (plan.via !== "exec")
-                  // Unreachable: an argv shape always takes the exec arm. Fail loudly rather than
-                  // fall back to a shell, which is the injection this shape exists to prevent.
-                  return yield* Effect.fail(new ToolFailure({ message: "computer: refusing a non-argv execution" }))
-                const result = yield* processes
-                  .run(
-                    ChildProcess.make(plan.file, [...plan.args], {
-                      env: plan.env.vars,
-                      extendEnv: plan.env.inherit,
+                const action = toAction(input)
+                if ("error" in action) return yield* Effect.fail(new ToolFailure({ message: action.error }))
+                const attempt = action.kind === "screenshot" ? yield* SessionExecutionAttempt.currentFence() : undefined
+                if (action.kind === "screenshot" && attempt === undefined)
+                  return yield* Effect.fail(
+                    new ToolFailure({
+                      message: "computer: no current execution attempt is available for this capture",
                     }),
                   )
-                  .pipe(
-                    Effect.mapError(
-                      (error) => new ToolFailure({ message: `computer: ${plan.file} failed — ${String(error)}` }),
-                    ),
-                  )
-                const text = result.stdout.toString().trim()
-                if (text) outputs.push(text)
-              }
 
-              // The pixels are read back HERE rather than in `toModelOutput`, because that projection
-              // is pure and synchronous — it gets the encoded output and nothing else. So the bytes
-              // have to travel on the output, and `toStructuredOutput` above is what keeps them from
-              // being persisted a second time as JSON.
-              const capture = action.kind === "screenshot" ? yield* readCapture(images, screenshotPath) : {}
+                const built = ComputerActions.build(action, { display, screenshotPath })
+                if (!built.ok) return yield* Effect.fail(new ToolFailure({ message: built.reason }))
 
-              const detail =
-                action.kind === "screenshot"
-                  ? // The region is named back, because the file at `screenshotPath` is a CROP and a
-                    // reader who assumes a full frame will ground every coordinate off by the origin.
-                    //
-                    // ⚠️ The ORIGIN is stated as fact and the SIZE only as an upper bound, because
-                    // `scrot` silently clips a region that overruns the screen: measured 2026-08-06,
-                    // `-a 1200,760,400,400` on a 1280x800 display wrote an 80x40 file with no error.
-                    // The origin survives clipping, so it stays exact; asserting the requested size
-                    // would be describing the file as something it is not.
-                    (action.region
-                      ? `screenshot attached below — a CROP with its origin at ` +
-                        `(${action.region.x},${action.region.y}) and up to ` +
-                        `${action.region.width}x${action.region.height} (clipped at the screen edge). ` +
-                        `Coordinates read off it are relative to that origin: add it back before clicking. ` +
-                        `Also written to ${screenshotPath}.`
-                      : `screenshot attached below — look at the image in this result rather than ` +
-                        `reading ${screenshotPath}, which is the same capture.`) + (capture.note ?? "")
-                  : outputs.length > 0
-                    ? outputs.join("\n")
-                    : `${input.action} done`
-              return {
-                action: input.action,
-                ok: true,
-                detail,
-                ...(action.kind === "screenshot" ? { screenshotPath } : {}),
-                ...(capture.image === undefined ? {} : { image: capture.image }),
-              }
-            }).pipe(
-              // The tool's contract is ToolFailure only. Config reads and the process runner have
-              // their own error types; a leaked one becomes a defect at settlement rather than an
-              // observation the model can act on.
-              Effect.mapError((error) =>
-                error instanceof ToolFailure ? error : new ToolFailure({ message: `computer: ${String(error)}` }),
+                // One assert for the whole tool: the resource is the ACTION, not a coordinate — a
+                // permission rule a person can read ("allow computer/screenshot") and not a pixel.
+                yield* permission.assert({
+                  action: name,
+                  resources: [input.action],
+                  save: ["*"],
+                  metadata: input,
+                  sessionID: context.sessionID,
+                  source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                })
+
+                // Each command goes through the ONE host-execution gate as literal argv — never a
+                // shell string, because `type` carries model-authored text read off an untrusted
+                // screen. `overlay` is the functional, non-secret channel the display rides.
+                const outputs: string[] = []
+                for (const argv of built.argv) {
+                  const plan = HostExec.plan({
+                    shape: { kind: "argv", argv },
+                    cwd: location.directory,
+                    worktree: location.directory,
+                    consent: "none",
+                    overlay: { ...built.env },
+                  })
+                  if (plan.via === "none") return yield* Effect.fail(new ToolFailure({ message: plan.message }))
+                  if (plan.via !== "exec")
+                    // Unreachable: an argv shape always takes the exec arm. Fail loudly rather than
+                    // fall back to a shell, which is the injection this shape exists to prevent.
+                    return yield* Effect.fail(new ToolFailure({ message: "computer: refusing a non-argv execution" }))
+                  const result = yield* processes
+                    .run(
+                      ChildProcess.make(plan.file, [...plan.args], {
+                        env: plan.env.vars,
+                        extendEnv: plan.env.inherit,
+                      }),
+                    )
+                    .pipe(
+                      Effect.mapError(
+                        (error) => new ToolFailure({ message: `computer: ${plan.file} failed — ${String(error)}` }),
+                      ),
+                    )
+                  const text = result.stdout.toString().trim()
+                  if (text) outputs.push(text)
+                }
+
+                // The pixels are read back HERE rather than in `toModelOutput`, because that projection
+                // is pure and synchronous — it gets the encoded output and nothing else. So the bytes
+                // have to travel on the output, and `toStructuredOutput` above is what keeps them from
+                // being persisted a second time as JSON.
+                const capture =
+                  action.kind === "screenshot" ? yield* readCapture(images, screenshotPath, action.region) : {}
+                if (capture.observation && attempt)
+                  yield* components.put({
+                    sessionID: context.sessionID,
+                    kind: "observation",
+                    value: capture.observation,
+                    attempt,
+                  })
+
+                const detail =
+                  action.kind === "screenshot"
+                    ? // The region is named back, because the file at `screenshotPath` is a CROP and a
+                      // reader who assumes a full frame will ground every coordinate off by the origin.
+                      //
+                      // ⚠️ The ORIGIN is stated as fact and the SIZE only as an upper bound, because
+                      // `scrot` silently clips a region that overruns the screen: measured 2026-08-06,
+                      // `-a 1200,760,400,400` on a 1280x800 display wrote an 80x40 file with no error.
+                      // The origin survives clipping, so it stays exact; asserting the requested size
+                      // would be describing the file as something it is not.
+                      (action.region
+                        ? `screenshot attached below — a CROP with its origin at ` +
+                          `(${action.region.x},${action.region.y}) and up to ` +
+                          `${action.region.width}x${action.region.height} (clipped at the screen edge). ` +
+                          `Coordinates read off it are relative to that origin: add it back before clicking. ` +
+                          `Also written to ${screenshotPath}.`
+                        : `screenshot attached below — look at the image in this result rather than ` +
+                          `reading ${screenshotPath}, which is the same capture.`) + (capture.note ?? "")
+                    : outputs.length > 0
+                      ? outputs.join("\n")
+                      : `${input.action} done`
+                return {
+                  action: input.action,
+                  ok: true,
+                  detail,
+                  ...(action.kind === "screenshot" ? { screenshotPath } : {}),
+                  ...(capture.image === undefined ? {} : { image: capture.image }),
+                }
+              }).pipe(
+                // The tool's contract is ToolFailure only. Config reads and the process runner have
+                // their own error types; a leaked one becomes a defect at settlement rather than an
+                // observation the model can act on.
+                Effect.mapError((error) =>
+                  error instanceof ToolFailure ? error : new ToolFailure({ message: `computer: ${String(error)}` }),
+                ),
               ),
-            ),
-        })),
+          }),
+        ),
       })
       .pipe(Effect.orDie)
   }),
@@ -491,6 +574,7 @@ export const node = makeLocationNode({
     Config.node,
     Image.node,
     SessionStore.node,
+    SessionComponentRegistry.node,
   ],
 })
 

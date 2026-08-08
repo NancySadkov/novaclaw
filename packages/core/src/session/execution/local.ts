@@ -64,6 +64,7 @@ export const layer = Layer.effect(
               .pipe(Effect.repeat(Schedule.spaced(HEARTBEAT_INTERVAL)), Effect.forkScoped)
             return yield* SessionRunner.Service.use((runner) => runner.run({ sessionID, force })).pipe(
               Effect.provideService(SessionExecutionAttempt.Current, {
+                fence: { attemptID: lease.attemptID, generation: lease.generation },
                 advance: (phase, checkpoint) => attempts.advance(lease, phase, checkpoint),
                 toolDispatched: (receipt) => attempts.toolDispatched(lease, receipt),
                 toolSettled: (callID) => attempts.toolSettled(lease, callID),

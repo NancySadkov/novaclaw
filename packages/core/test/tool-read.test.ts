@@ -127,7 +127,10 @@ const mutation = Layer.succeed(
 )
 const unavailableImage = Layer.succeed(
   Image.Service,
-  Image.Service.of({ normalize: () => Effect.fail(new Image.ResizerUnavailableError()) }),
+  Image.Service.of({
+    inspect: () => Effect.fail(new Image.ResizerUnavailableError()),
+    normalize: () => Effect.fail(new Image.ResizerUnavailableError()),
+  }),
 )
 const readLayer = (imageLayer: Layer.Layer<Image.Service>) =>
   AppNodeBuilder.build(LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, ReadTool.node]), [

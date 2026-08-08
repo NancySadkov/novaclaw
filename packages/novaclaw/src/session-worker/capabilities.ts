@@ -172,6 +172,7 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
       return reply
     },
     execution: {
+      fence: { attemptID: input.lease.attemptID, generation: input.lease.generation },
       advance: (phase, checkpoint) =>
         Effect.promise(() =>
           execution({ ...identity, type: "execution-advance", requestID: requestID(), phase, checkpoint }),

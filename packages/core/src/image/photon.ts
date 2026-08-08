@@ -17,7 +17,22 @@ export const make = Effect.gen(function* () {
       catch: () => new ResizerUnavailableError(),
     }),
   )
-  return Effect.fn("Image.Photon.normalize")(function* (
+  const inspect = Effect.fn("Image.Photon.inspect")(function* (
+    resource: string,
+    content: FileSystem.Content & { readonly encoding: "base64" },
+  ) {
+    const photon = yield* loadPhoton
+    const decoded = yield* Effect.try({
+      try: () => photon.PhotonImage.new_from_byteslice(Buffer.from(content.content, "base64")),
+      catch: () => new DecodeError({ resource }),
+    })
+    try {
+      return { width: decoded.get_width(), height: decoded.get_height() }
+    } finally {
+      decoded.free()
+    }
+  })
+  const normalize = Effect.fn("Image.Photon.normalize")(function* (
     resource: string,
     content: FileSystem.Content & { readonly encoding: "base64" },
     limits: {
@@ -91,4 +106,5 @@ export const make = Effect.gen(function* () {
       decoded.free()
     }
   })
+  return { inspect, normalize }
 })

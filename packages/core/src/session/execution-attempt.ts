@@ -83,6 +83,8 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
  * runner remains usable in narrow unit tests and migrations; the authoritative local executor
  * always provides it. */
 export interface CurrentInterface {
+  /** Immutable identity of the drain this capability belongs to; component writes use it as a fence. */
+  readonly fence: Pick<Lease, "attemptID" | "generation">
   readonly advance: (phase: Phase, checkpoint: "clear" | "mark" | "keep") => Effect.Effect<void>
   readonly toolDispatched: (receipt: {
     callID: string
@@ -141,6 +143,8 @@ export const advanceCurrent = (phase: Phase, checkpoint: "clear" | "mark" | "kee
 export const toolDispatchedCurrent = (receipt: { callID: string; name: string; sideEffect: ToolSideEffect }) =>
   useCurrent((current) => current.toolDispatched(receipt), undefined)
 export const toolSettledCurrent = (callID: string) => useCurrent((current) => current.toolSettled(callID), undefined)
+export const currentFence = () =>
+  useCurrent((current) => Effect.succeed(current.fence), undefined as CurrentInterface["fence"] | undefined)
 
 const useCurrent = <A>(f: (current: CurrentInterface) => Effect.Effect<A>, fallback: A) =>
   Effect.serviceOption(Current).pipe(

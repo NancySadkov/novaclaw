@@ -7,6 +7,7 @@ import { makeLocationNode } from "../effect/app-node"
 import { PermissionV2 } from "../permission"
 import { SessionComponentRegistry } from "../session/component-registry"
 import { SessionComponentTier } from "../session/component-tier"
+import { SessionExecutionAttempt } from "../session/execution-attempt"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -80,6 +81,8 @@ const renderEntry = (entry: SessionComponentRegistry.Entry) =>
     value: entry.value,
     version: entry.version,
     lifetime: entry.lifetime,
+    ...(entry.attempt === undefined ? {} : { attempt: entry.attempt }),
+    ...(entry.expiresAt === undefined ? {} : { expiresAt: entry.expiresAt }),
     stale: entry.stale,
     ...(entry.staleReason === undefined ? {} : { staleReason: entry.staleReason }),
   })
@@ -124,10 +127,12 @@ export const layer = Layer.effectDiscard(
                 }
 
                 if (input.op === "read") {
+                  const attempt = yield* SessionExecutionAttempt.currentFence()
                   const entry = yield* components.get({
                     sessionID: context.sessionID,
                     kind: input.kind,
                     ...(input.id === undefined ? {} : { id: input.id }),
+                    ...(attempt === undefined ? {} : { attempt }),
                   })
                   return {
                     op: input.op,
@@ -139,7 +144,12 @@ export const layer = Layer.effectDiscard(
                 }
 
                 if (input.op === "list") {
-                  const entries = yield* components.list({ sessionID: context.sessionID, kind: input.kind })
+                  const attempt = yield* SessionExecutionAttempt.currentFence()
+                  const entries = yield* components.list({
+                    sessionID: context.sessionID,
+                    kind: input.kind,
+                    ...(attempt === undefined ? {} : { attempt }),
+                  })
                   return {
                     op: input.op,
                     message:

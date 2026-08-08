@@ -29,6 +29,7 @@ test("stamps the fenced session identity onto interaction requests", async () =>
     },
   })
   const capabilities = SessionWorkerCapabilities.make({ lease, client })
+  expect(capabilities.execution.fence).toEqual({ attemptID: lease.attemptID, generation: lease.generation })
   const reply = await capabilities.assertPermission({
     sessionID: SessionSchema.ID.make("ses_forged"),
     action: "read",
