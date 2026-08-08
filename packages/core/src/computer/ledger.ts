@@ -171,6 +171,8 @@ export const summarizeAction = (action: ComputerProposal.ActionDraft | null | un
       return `${action.button == null || action.button === "left" ? "click" : `${action.button}-click`}${target}`
     case "type":
       return `type "${action.text ?? ""}"`
+    case "type_submit":
+      return `type_submit "${action.text ?? ""}"`
     case "key":
       return `key ${action.keys ?? ""}`
     case "scroll":

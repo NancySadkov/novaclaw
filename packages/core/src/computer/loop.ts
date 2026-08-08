@@ -708,6 +708,10 @@ const buildAction = (
       if (source.text == null) return { ok: false, reason: "type needs text" }
       action = { kind: "type", text: source.text }
       break
+    case "type_submit":
+      if (source.text == null) return { ok: false, reason: "type_submit needs text" }
+      action = { kind: "type_submit", text: source.text }
+      break
     case "key":
       if (source.keys == null) return { ok: false, reason: "key needs keys" }
       action = { kind: "key", keys: source.keys }

@@ -21,9 +21,7 @@ const why = (built: CA.Built) => {
 // work, so a "tidy-up" that changes a flag has to argue with a measurement.
 describe("the argv matches what was proven live in the substrate", () => {
   test("screenshot writes to the given path, overwriting", () => {
-    expect(ok(CA.build({ kind: "screenshot" }, OPTIONS))).toEqual([
-      ["scrot", "-o", "/tmp/shot.png"],
-    ])
+    expect(ok(CA.build({ kind: "screenshot" }, OPTIONS))).toEqual([["scrot", "-o", "/tmp/shot.png"]])
   })
 
   test("move is one command carrying whole pixels", () => {
@@ -42,9 +40,7 @@ describe("the argv matches what was proven live in the substrate", () => {
   })
 
   test("a click with no point clicks where the pointer already is", () => {
-    expect(ok(CA.build({ kind: "click", button: "right" }, OPTIONS))).toEqual([
-      ["xdotool", "click", "3"],
-    ])
+    expect(ok(CA.build({ kind: "click", button: "right" }, OPTIONS))).toEqual([["xdotool", "click", "3"]])
   })
 
   test("double click repeats rather than issuing two clicks", () => {
@@ -53,9 +49,7 @@ describe("the argv matches what was proven live in the substrate", () => {
   })
 
   test("cursor is the cheap substrate liveness probe", () => {
-    expect(ok(CA.build({ kind: "cursor" }, OPTIONS))).toEqual([
-      ["xdotool", "getmouselocation"],
-    ])
+    expect(ok(CA.build({ kind: "cursor" }, OPTIONS))).toEqual([["xdotool", "getmouselocation"]])
   })
 })
 
@@ -76,16 +70,16 @@ describe("typed text is data, never a command", () => {
   ]
 
   for (const text of HOSTILE) {
-    test(`stays ONE argv element: ${JSON.stringify(text)}`, () => {
-      const argv = ok(CA.build({ kind: "type", text }, OPTIONS))
-      expect(argv).toHaveLength(1)
-      const command = argv[0]
-      // The text is the LAST element and appears exactly once, unsplit and unescaped.
-      expect(command.at(-1)).toBe(text)
-      expect(command.filter((part) => part === text)).toHaveLength(1)
-      // Nothing anywhere in the command line is a joined string containing the payload.
-      expect(command.slice(0, -1).some((part) => part.includes(text))).toBe(false)
-    })
+    for (const kind of ["type", "type_submit"] as const)
+      test(`${kind} keeps text in ONE argv element: ${JSON.stringify(text)}`, () => {
+        const argv = ok(CA.build({ kind, text }, OPTIONS))
+        const command = argv[0]
+        // The text is the LAST element and appears exactly once, unsplit and unescaped.
+        expect(command.at(-1)).toBe(text)
+        expect(command.filter((part) => part === text)).toHaveLength(1)
+        // Nothing anywhere in the command line is a joined string containing the payload.
+        expect(command.slice(0, -1).some((part) => part.includes(text))).toBe(false)
+      })
   }
 
   test("`--` precedes the text, so text starting with a dash is typed and not parsed as a flag", () => {
@@ -96,6 +90,14 @@ describe("typed text is data, never a command", () => {
 
   test("empty text is rejected rather than issuing a no-op command", () => {
     expect(why(CA.build({ kind: "type", text: "" }, OPTIONS))).toContain("nothing to type")
+    expect(why(CA.build({ kind: "type_submit", text: "" }, OPTIONS))).toContain("nothing to type")
+  })
+
+  test("type_submit keeps submission separate and sequenced after the opaque text argv", () => {
+    expect(ok(CA.build({ kind: "type_submit", text: "MAGIC" }, OPTIONS))).toEqual([
+      ["xdotool", "type", "--delay", "12", "--", "MAGIC"],
+      ["xdotool", "key", "--", "Return"],
+    ])
   })
 
   test("the delay is a number we control, never interpolated from the action", () => {
@@ -161,6 +163,7 @@ describe("every command is addressed to the substrate's display", () => {
       { kind: "click", button: "left" },
       { kind: "double_click" },
       { kind: "type", text: "x" },
+      { kind: "type_submit", text: "x" },
       { kind: "key", keys: "Return" },
       { kind: "scroll", direction: "down", amount: 1 },
       { kind: "cursor" },

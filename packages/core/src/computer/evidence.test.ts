@@ -134,9 +134,9 @@ describe("rung 1 on the REAL substrate digests", () => {
     if (result.kind !== "needs-adjudication") return
     expect(result.reason).toContain("animates")
     // The negative control for the pair: idle-stable, same after digest, and it IS attributed.
-    expect(CE.attribute(probe({ watchIdlePair: [ok(MOM_AFTER), ok(MOM_AFTER)], watchAfter: ok(REGION_CHANGED) })).kind).toBe(
-      "attributed",
-    )
+    expect(
+      CE.attribute(probe({ watchIdlePair: [ok(MOM_AFTER), ok(MOM_AFTER)], watchAfter: ok(REGION_CHANGED) })).kind,
+    ).toBe("attributed")
   })
 
   test("🔴 UNCHANGED convicts whether or not the region animates — the asymmetry, inherited", () => {
@@ -225,7 +225,17 @@ describe("attribution is only defined for actions that SHOULD change the screen"
   })
 
   test("every input kind is answered — no hole in the ladder", () => {
-    const kinds = ["screenshot", "cursor", "move", "click", "double_click", "type", "key", "scroll"] as const
+    const kinds = [
+      "screenshot",
+      "cursor",
+      "move",
+      "click",
+      "double_click",
+      "type",
+      "type_submit",
+      "key",
+      "scroll",
+    ] as const
     for (const kind of kinds) {
       for (const after of [ok(REGION_IDLE), ok(REGION_CHANGED)]) {
         const result = CE.attribute(probe({ kind, watchAfter: after }))

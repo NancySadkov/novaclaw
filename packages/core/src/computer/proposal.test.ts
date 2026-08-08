@@ -318,6 +318,7 @@ describe("the action vocabulary is closed, and the harness keeps its own half", 
       click: { kind: "click", target: "New Game" },
       double_click: { kind: "double_click", target: "Document" },
       type: { kind: "type", text: "magic" },
+      type_submit: { kind: "type_submit", text: "magic" },
       key: { kind: "key", keys: "Return" },
       scroll: { kind: "scroll", direction: "down", amount: 3 },
     }
@@ -332,12 +333,14 @@ describe("the action vocabulary is closed, and the harness keeps its own half", 
     // Values (a keysym spec, a scroll bound, an empty string) belong to ComputerActions.build, which
     // is the one place that knows the tool. This checks only that the field is there to build from.
     expect(errorCodes(act({ action: { kind: "type" }, watch: null }))).toEqual(["missing_action_payload"])
+    expect(errorCodes(act({ action: { kind: "type_submit" }, watch: null }))).toEqual(["missing_action_payload"])
     expect(errorCodes(act({ action: { kind: "key" }, watch: null }))).toEqual(["missing_action_payload"])
     expect(errorCodes(act({ action: { kind: "scroll" }, watch: null }))).toEqual([
       "missing_action_payload",
       "missing_action_payload",
     ])
     expect(errorCodes(act({ action: { kind: "type", text: "magic" }, watch: null }))).toEqual([])
+    expect(errorCodes(act({ action: { kind: "type_submit", text: "magic" }, watch: null }))).toEqual([])
   })
 
   test("a non-pointer action needs no grounding target", () => {

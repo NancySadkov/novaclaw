@@ -1130,6 +1130,7 @@ describe("🔴 the Guard calls `ComputerActions.build`, which is where value-lev
     { name: "a keysym spec `build` rejects", action: { kind: "key", keys: "ctrl s" }, says: "keysym" },
     { name: "a scroll beyond MAX_SCROLL", action: { kind: "scroll", direction: "down", amount: 40 }, says: "exceeds" },
     { name: "an empty `type` string", action: { kind: "type", text: "" }, says: "nothing to type" },
+    { name: "an empty `type_submit` string", action: { kind: "type_submit", text: "" }, says: "nothing to type" },
   ]
 
   for (const testCase of cases) {
@@ -1157,6 +1158,7 @@ describe("🔴 the Guard calls `ComputerActions.build`, which is where value-lev
       { kind: "key", keys: "ctrl+s" },
       { kind: "scroll", direction: "down", amount: 3 },
       { kind: "type", text: "magic" },
+      { kind: "type_submit", text: "magic" },
     ]) {
       const run = drive(spec(), [
         ...CALIBRATE,
@@ -1181,6 +1183,7 @@ describe("🔴 the Guard calls `ComputerActions.build`, which is where value-lev
       { kind: "key", keys: "ctrl s" },
       { kind: "scroll", direction: "down", amount: 40 },
       { kind: "type", text: "" },
+      { kind: "type_submit", text: "" },
     ]) {
       const issues = ComputerProposal.errorsOf(
         ComputerProposal.structuralIssues({ observation: "a screen", action, expect: "something changes" }),

@@ -74,6 +74,7 @@ export const expectationFor = (kind: ComputerActions.Action["kind"]): Expectatio
     case "click":
     case "double_click":
     case "type":
+    case "type_submit":
     case "key":
     case "scroll":
       return "should-change"
@@ -177,7 +178,10 @@ export const judge = (observation: Observation): Verdict => {
   switch (expectationFor(observation.kind)) {
     case "must-not-change":
       // An animated screen is EXPECTED to move during an observation, so it is not a finding there.
-      if (changed) return observation.animated ? { ok: true, kind: "inconclusive" } : { ok: false, kind: "changed-while-observing", advice: OBSERVING_ADVICE }
+      if (changed)
+        return observation.animated
+          ? { ok: true, kind: "inconclusive" }
+          : { ok: false, kind: "changed-while-observing", advice: OBSERVING_ADVICE }
       return { ok: true, kind: "stable" }
     case "may-change":
       return { ok: true, kind: "inconclusive" }

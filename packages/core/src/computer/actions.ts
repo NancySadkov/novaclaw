@@ -65,6 +65,8 @@ export type Action =
   | { readonly kind: "double_click"; readonly point?: Point }
   /** Type literal text. The text is never parsed by a shell — see the module note. */
   | { readonly kind: "type"; readonly text: string }
+  /** Type literal text and submit it with Return as one semantic action. */
+  | { readonly kind: "type_submit"; readonly text: string }
   /** Press a key combination, e.g. `ctrl+s`, `Return`, `alt+Tab`. */
   | { readonly kind: "key"; readonly keys: string }
   | { readonly kind: "scroll"; readonly direction: ScrollDirection; readonly amount: number }
@@ -194,22 +196,21 @@ export const build = (action: Action, options: Options): Built => {
         if (bad) return bad
         commands.push(xdotool("mousemove", String(action.point.x), String(action.point.y)))
       }
-      commands.push(
-        action.kind === "double_click"
-          ? xdotool("click", "--repeat", "2", code)
-          : xdotool("click", code),
-      )
+      commands.push(action.kind === "double_click" ? xdotool("click", "--repeat", "2", code) : xdotool("click", code))
       return { ok: true, env, argv: commands }
     }
 
-    case "type": {
+    case "type":
+    case "type_submit": {
       if (action.text.length === 0) return { ok: false, reason: "nothing to type" }
       // `--` ends option parsing so text beginning with `-` is typed rather than read as a flag.
       // The text stays ONE argv element; nothing splits it and no shell sees it.
+      const argv = [xdotool("type", "--delay", String(options.typeDelayMs ?? 12), "--", action.text)]
+      if (action.kind === "type_submit") argv.push(xdotool("key", "--", "Return"))
       return {
         ok: true,
         env,
-        argv: [xdotool("type", "--delay", String(options.typeDelayMs ?? 12), "--", action.text)],
+        argv,
       }
     }
 

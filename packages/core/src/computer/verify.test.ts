@@ -26,12 +26,12 @@ describe("the autolock signature: a clean command that changed nothing", () => {
   })
 
   test("every input action gets the same scrutiny", () => {
-    for (const kind of ["click", "double_click", "type", "key", "scroll"] as const)
+    for (const kind of ["click", "double_click", "type", "type_submit", "key", "scroll"] as const)
       expect(CV.judge(obs(kind, "x", "x")).ok).toBe(false)
   })
 
   test("and a visible effect on a STILL screen is the positive signal", () => {
-    for (const kind of ["click", "double_click", "type", "key", "scroll"] as const) {
+    for (const kind of ["click", "double_click", "type", "type_submit", "key", "scroll"] as const) {
       const verdict = CV.judge(obs(kind, "before", "after"))
       expect(verdict.ok).toBe(true)
       if (verdict.ok) expect(verdict.kind).toBe("changed")
@@ -72,7 +72,17 @@ describe("a move concludes nothing, on purpose", () => {
 
 describe("the expectation table is complete and deliberate", () => {
   test("every action kind has an expectation — no silent hole in the switch", () => {
-    const kinds = ["screenshot", "cursor", "move", "click", "double_click", "type", "key", "scroll"] as const
+    const kinds = [
+      "screenshot",
+      "cursor",
+      "move",
+      "click",
+      "double_click",
+      "type",
+      "type_submit",
+      "key",
+      "scroll",
+    ] as const
     for (const kind of kinds) expect(CV.expectationFor(kind)).toBeDefined()
   })
 
@@ -82,6 +92,7 @@ describe("the expectation table is complete and deliberate", () => {
     // loop abandon correct work, so the verdict is a suspicion the planner weighs.
     expect(CV.expectationFor("click")).toBe("should-change")
     expect(CV.expectationFor("type")).toBe("should-change")
+    expect(CV.expectationFor("type_submit")).toBe("should-change")
   })
 
   test("observations are the only `must-not-change` kinds", () => {

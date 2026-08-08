@@ -61,7 +61,7 @@ import { JhExtract } from "../jh/extract"
  * invisibly. A model proposing one is not an error to be silently dropped (ruling 2) — it is
  * reported by name, so the repair prompt can say *"the harness captures; propose an action"*.
  */
-export const ACTION_KINDS = ["move", "click", "double_click", "type", "key", "scroll"] as const
+export const ACTION_KINDS = ["move", "click", "double_click", "type", "type_submit", "key", "scroll"] as const
 export type ActionKind = (typeof ACTION_KINDS)[number]
 
 /** Kinds that aim at a point, and therefore need a watch region containing it. */
@@ -79,6 +79,7 @@ export const isPointerKind = (kind: string): kind is PointerKind =>
 /** The payload field each kind cannot be executed without. Presence only — values belong to `build`. */
 const REQUIRED_PAYLOAD: Partial<Record<ActionKind, ReadonlyArray<"text" | "keys" | "direction" | "amount">>> = {
   type: ["text"],
+  type_submit: ["text"],
   key: ["keys"],
   scroll: ["direction", "amount"],
 }
@@ -591,7 +592,8 @@ export const CONTRACT_LINES: ReadonlyArray<string> = [
   `action.kind is one of: ${ACTION_KINDS.join(" | ")}. The harness takes the screenshots — never ask for one.`,
   '  move | click | double_click → "target": "<the control\'s visible LABEL, nothing else>"',
   '                                  (click also takes "button")',
-  '  type → "text"      key → "keys"      scroll → "direction" + "amount"',
+  '  type → "text"      type_submit → "text"      key → "keys"      scroll → "direction" + "amount"',
+  "  type_submit types the text and presses Return as ONE semantic action.",
   "",
   "`expect` is REQUIRED on every action. It is checked against the next screenshot by a separate",
   "reader who is shown only that screenshot and your sentence — so write what will be VISIBLE, not",
