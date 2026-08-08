@@ -36,17 +36,14 @@ import { ToolOutputStore } from "../../tool-output-store"
 import { SessionContextEpoch } from "../context-epoch"
 import { SessionCompaction } from "../compaction"
 import { SessionCompactionRequest } from "../compaction-request"
-import { SessionChanges } from "../changes"
 import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
 import { SessionInput } from "../input"
 import { SessionMessage } from "../message"
-import { SessionMessageRead } from "../message-read"
 import { Prompt } from "../prompt"
 import { SessionPatch } from "../patch"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
-import { SessionTitle } from "../title"
 import { SessionTodo } from "../todo"
 import { Log } from "@novaclaw/schema/log"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
@@ -65,11 +62,11 @@ import { PermissionV2 } from "../../permission"
 import { SessionScheduler } from "../scheduler"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
+import { SessionMaintenance } from "./maintenance"
 import { SystemCompose } from "./system-compose"
 import { TierScaffold } from "./tier-scaffold"
 import { SessionRecall } from "./recall"
 import { MemoryCorrection } from "./memory-correction"
-import { SessionExtract } from "./extract"
 import { Memory } from "../../kb-graph/memory"
 import { KbEmbedder } from "../../kb-graph/embedder"
 import { MemoryClient } from "../../kb-graph/memory-client"
@@ -221,6 +218,7 @@ export const layer = Layer.effect(
     const scheduler = yield* SessionScheduler.Service
     const compactionRequests = yield* SessionCompactionRequest.Service
     const memory = yield* MemoryClient.Service
+    const maintenance = yield* SessionMaintenance.Service
     const db = (yield* Database.Service).db
     /**
      * B7 tier-1 / ruling 3 — the harness configuration, derived ONCE PER TURN and never at layer
@@ -496,306 +494,14 @@ export const layer = Layer.effect(
     // model toward its tiny answer. Its final mechanical backstop remains the best-effort
     // `chat_template_kwargs` switch for providers that support it. The other utility passes still use
     // that direct switch and should migrate through the same controller independently.
-    const NO_THINKING = { chat_template_kwargs: { enable_thinking: false } } as const
-
-    // A title needs essentially no reasoning. Keep this deliberately far below an interactive turn's
-    // model-level budget; ReasoningBudget owns the bounded multi-request recovery when a reasoning
-    // model nevertheless opens a think stream. This is provider-neutral until the controller's final
-    // best-effort hard stop, unlike putting a Qwen-specific flag on the first request.
-    const TITLE_REASONING_BUDGET = 128
-
-    // True unless the turn explicitly disabled reasoning via the `NO_THINKING` overlay above — the
-    // thinking-budget controller only engages when the model is actually allowed to reason.
+    // True unless the turn explicitly disabled reasoning via a `chat_template_kwargs` overlay (what
+    // `maintenance.ts`'s utility passes send) — the thinking-budget controller only engages when the
+    // model is actually allowed to reason.
     const thinkingEnabled = (req: LLMRequest): boolean => {
       const body = req.http?.body as { chat_template_kwargs?: { enable_thinking?: boolean } } | undefined
       return body?.chat_template_kwargs?.enable_thinking !== false
     }
 
-    // Sessions with an auto-title pass in flight. Two callers race for it — the 30s timer below and the
-    // drain end — and both would otherwise see `isDefault` still true and each spend a model call.
-    const titling = new Set<string>()
-
-    const generateTitle = Effect.fn("SessionRunner.generateTitle")(function* (sessionID: SessionSchema.ID) {
-      const session = yield* getSession(sessionID)
-      // A title the USER set is never overwritten — `isDefault` is the whole consent check here.
-      if (!SessionTitle.isDefault(session.title)) return
-      const text = SessionTitle.firstRealUserText(yield* getContext(sessionID))
-      if (!text) return
-      const model = yield* models.resolve(session)
-      // ⚠️ **This pass deliberately does NOT take the `UtilityCap` ladder the two extraction passes
-      // and the introspection pass now use, and the reason is worth keeping.** `ReasoningBudget`
-      // already owns a bounded multi-phase recovery for exactly this failure: it counts reasoning
-      // tokens live, nudges at 70% and 100% of `TITLE_REASONING_BUDGET` (128), and its mechanical
-      // hard stop re-issues the turn with thinking structurally disabled — which measurably drops
-      // completion to ~126 tokens, far inside this 512. Stacking a second retry loop on top would be
-      // two recoveries racing over one turn, which is how a bounded thing becomes an unbounded one.
-      //
-      // 🔴 **But note a real assumption mismatch, recorded rather than fixed here.**
-      // `reasoning-budget.ts` argues its safety from phases inheriting a `max_tokens` that is
-      // "typically UNSET → the server uses the remaining context window", so an answer that starts
-      // inside a phase always completes. This call site passes an explicit **512**, so that argument
-      // does not hold verbatim — the checkpoints bound REASONING, not the answer. It is covered in
-      // practice only because the hard stop lands so far under the cap. If either number moves, this
-      // is the pairing to re-check.
-      const chunks: string[] = []
-      const request = LLM.request({
-        model,
-        system: [SystemPart.make(SessionTitle.SYSTEM)],
-        messages: [Message.user(text)],
-        tools: [],
-        generation: { maxTokens: 512 },
-      })
-      yield* ReasoningBudget.stream({
-        request,
-        stream: (next) => llm.stream(next),
-        budget: TITLE_REASONING_BUDGET,
-      }).pipe(
-        Stream.runForEach((event) => {
-          if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
-          return Effect.void
-        }),
-      )
-      const raw = chunks.join("")
-      // An EMPTY completion is a broken call, not "no title worth writing" — say so. Silence here is
-      // exactly how this stayed dead across three shipped phases.
-      if (raw.trim() === "") yield* Log.event("session.title.generate.empty", { "session.id": sessionID })
-      const title = SessionTitle.clean(raw)
-      if (!title) return
-      yield* SessionPatch.patchSessionRecord({ db, events }, sessionID, (info) =>
-        SessionSchema.Info.make({ ...info, title, time: { ...info.time, updated: DateTime.makeUnsafe(Date.now()) } }),
-      )
-    })
-
-    /** `generateTitle`, but at most one pass per session at a time — the guard always clears. */
-    const generateTitleOnce = (sessionID: SessionSchema.ID) =>
-      Effect.suspend(() => {
-        if (titling.has(sessionID)) return Effect.void
-        titling.add(sessionID)
-        return generateTitle(sessionID).pipe(Effect.ensuring(Effect.sync(() => titling.delete(sessionID))))
-      })
-
-    /**
-     * Title the session after 30s if the turn is still going (owner 2026-07-25). The drain-end pass is the
-     * right moment for a SHORT turn — the user is reading the answer while the model is idle — but a long
-     * one (compile, test, retry) leaves the chat list showing a placeholder for minutes, which is exactly
-     * when a name is most useful for finding it again. Whichever fires first wins; the loser no-ops on
-     * `isDefault` (or the in-flight guard), and a user-set title stops both.
-     *
-     * Detached, because it must outlive neither the turn's failure nor its interruption: forked into the
-     * service scope so an interrupted drain cannot swallow it (the dying-fiber trap).
-     */
-    const scheduleEarlyTitle = (sessionID: SessionSchema.ID) =>
-      Effect.forkDetach(
-        Effect.sleep(Duration.seconds(30)).pipe(
-          Effect.andThen(generateTitleOnce(sessionID)),
-          Effect.catchCause((cause) =>
-            Log.event("session.title.early.failed", {
-              "session.id": sessionID,
-              "session.cause": Log.fault(cause),
-            }),
-          ),
-        ),
-      )
-
-    // Auto-extraction (kb-graph §1.3.3): after the drain settles, a model pass reads the latest
-    // REAL user turn and records durable facts into SESSION-scope memory (staged) — so memory fills
-    // WITHOUT the agent calling `remember`, and auto-recall surfaces them in future turns. Only an
-    // interactive session may enter: sub-agents and scheduled/heartbeat work are proposers, not
-    // durable-memory authorities. Idempotent by content hash (re-extraction dedups). Best-effort +
-    // gated on the engine being live so a disabled/still-opening memory costs no model call.
-    const extractMemory = Effect.fn("SessionRunner.extractMemory")(function* (sessionID: SessionSchema.ID) {
-      const session = yield* getSession(sessionID)
-      const config = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, session.id, (id) =>
-        store.get(id as SessionSchema.ID),
-      )
-      if (!SessionExtract.allowsDurableMemory(config.type)) return
-      if (!MemorySetting.memoryEnabled()) return // the user turned memory off — record nothing
-      if (!(yield* memory.health())) return
-      const exchange = SessionExtract.buildExchange(yield* getContext(sessionID))
-      if (!exchange) return
-      const model = yield* models.resolve({ ...session, model: config.model as typeof session.model })
-      // ONE re-ask with a doubled budget when the pass spends everything and answers nothing.
-      //
-      // Measured 2026-08-06: a reasoning model cut off mid-think returns ZERO content chars, not a
-      // partial answer, and `parseExtraction` reads that emptiness as "nothing worth remembering" —
-      // so the pass silently records nothing. `NO_THINKING` below usually keeps us far from the
-      // cliff (it is honoured by holo3.1, which drops reasoning to 0 and completion to ~126), but it
-      // is a REQUEST: a growing class of models ignores it, and one that does puts this pass back on
-      // a cliff at ~450 with 512 to spend. `UtilityCap` is the mechanical backstop for that case.
-      //
-      // ⚠️ NOT `finish-recovery.ts`: that steers a truncated turn to CONTINUE from the cutoff, which
-      // is right for a conversational turn and impossible here — there is nothing to continue from
-      // when the content is zero chars. Re-asking with room is the shape that fits one JSON blob.
-      const chunks: string[] = []
-      let cap = 512
-      for (let attempt = 0; ; attempt++) {
-        chunks.length = 0
-        let finish: FinishReason | undefined
-        const attemptCap = cap
-        yield* llm
-          .stream(
-            LLM.request({
-              model,
-              system: [SystemPart.make(SessionExtract.SYSTEM)],
-              messages: [Message.user(exchange)],
-              tools: [],
-              generation: { maxTokens: attemptCap },
-              http: { body: NO_THINKING }, // else the budget goes to reasoning and the reply is EMPTY
-            }),
-          )
-          .pipe(
-            Stream.runForEach((event) => {
-              if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
-              else if (event.type === "finish") finish = event.reason
-              return Effect.void
-            }),
-          )
-        const verdict = UtilityCap.decide({ finish, text: chunks.join(""), attempt, cap: attemptCap })
-        if (!verdict.retry) {
-          // Ruling 2: an empty result that was a BUDGET reading must not look like an honest "[]".
-          if (chunks.join("").trim() === "")
-            yield* Log.event("session.memory.extract.giveup", {
-              "session.id": sessionID,
-              "extract.cause": UtilityCap.giveUpCause({ finish, text: "", attempt, cap: attemptCap }),
-              "extract.cap": attemptCap,
-            })
-          break
-        }
-        yield* Log.event("session.memory.extract.retry", {
-          "session.id": sessionID,
-          "extract.cap": verdict.cap,
-        })
-        cap = verdict.cap
-      }
-      const scope = `session:${sessionID}`
-      const rawExtraction = chunks.join("")
-      // Distinguish "the model said there is nothing to remember" (a legitimate `[]`) from "the model
-      // returned NOTHING" (a broken call). Conflating them is what hid this failure for three phases.
-      if (rawExtraction.trim() === "") yield* Log.event("session.memory.extract.empty", { "session.id": sessionID })
-      const facts = SessionExtract.parseExtraction(rawExtraction)
-      const namedFacts = facts.filter((f): f is SessionExtract.Extracted & { name: string } => !!f.name)
-      const names = [...new Set(namedFacts.map((f) => f.name))]
-      // Embed the extracted facts so they're reachable by the VECTOR leg later (measured: hybrid
-      // retrieval 85% vs 77% keyword-only). ONE batched call for the whole extraction, and this runs
-      // in postRunMaintenance — off the turn hot-path. No device ⇒ undefined ⇒ FTS-only memories.
-      const vectors =
-        facts.length === 0 ? undefined : yield* Effect.promise(() => KbEmbedder.embed(facts.map((f) => f.text)))
-      for (const [index, fact] of facts.entries()) {
-        const vector = vectors?.[index]
-        yield* memory
-          .addMemory({
-            id: SessionExtract.memoryID(scope, fact.text),
-            kind: "episode",
-            text: fact.text,
-            ...(fact.name === undefined ? {} : { name: fact.name }),
-            scope,
-            source: "auto-extract",
-            relation: "staged",
-            ...(vector === undefined ? {} : { embedding: vector }),
-          })
-          .pipe(Effect.ignore) // duplicate id = already remembered (dedup); never fail the drain
-      }
-      // Stage 2 (KB-D (a)): link the facts we just wrote. Deliberately AFTER the node writes — an edge
-      // needs its endpoints to exist, and more importantly a failing/slow link call must never cost us
-      // the memories themselves (computing links first would abort the whole extraction on any link
-      // error). Skipped entirely below 2 named facts: nothing to connect, so no model call.
-      const links =
-        names.length < 2
-          ? []
-          : yield* Effect.gen(function* () {
-              // Stage 2 rides the SAME budget ladder as stage 1 above, for the same reason: an empty
-              // completion here is read as "no relationships", which is a legitimate answer and
-              // therefore indistinguishable from a truncated one. Without this the graph quietly
-              // accumulates disconnected nodes and the multi-hop win never materialises — the exact
-              // outcome `LINK_SYSTEM`'s own note says the edges exist to prevent.
-              const linkChunks: string[] = []
-              let linkCap = 512
-              for (let attempt = 0; ; attempt++) {
-                linkChunks.length = 0
-                let finish: FinishReason | undefined
-                const attemptCap = linkCap
-                yield* llm
-                  .stream(
-                    LLM.request({
-                      model,
-                      system: [SystemPart.make(SessionExtract.LINK_SYSTEM)],
-                      messages: [Message.user(SessionExtract.buildLinkPrompt(exchange, names))],
-                      tools: [],
-                      generation: { maxTokens: attemptCap },
-                      http: { body: NO_THINKING }, // else the budget goes to reasoning and the reply is EMPTY
-                    }),
-                  )
-                  .pipe(
-                    Stream.runForEach((event) => {
-                      if (LLMEvent.is.textDelta(event)) linkChunks.push(event.text)
-                      else if (event.type === "finish") finish = event.reason
-                      return Effect.void
-                    }),
-                  )
-                const verdict = UtilityCap.decide({ finish, text: linkChunks.join(""), attempt, cap: attemptCap })
-                if (!verdict.retry) break
-                yield* Log.event("session.memory.extract.retry", {
-                  "session.id": sessionID,
-                  "extract.cap": verdict.cap,
-                })
-                linkCap = verdict.cap
-              }
-              return SessionExtract.parseLinks(linkChunks.join(""), names)
-            }).pipe(Effect.catchCause(() => Effect.succeed([] as SessionExtract.ExtractedLink[])))
-      // `parseLinks` already guaranteed both endpoints are names from `names`, so every lookup here
-      // resolves; a name shared by several facts binds to the first (the node is the thing, not the
-      // sentence).
-      if (links.length > 0) {
-        const idByName = new Map<string, string>()
-        for (const fact of namedFacts)
-          if (!idByName.has(fact.name)) idByName.set(fact.name, SessionExtract.memoryID(scope, fact.text))
-        for (const link of links) {
-          const from = idByName.get(link.from)
-          const to = idByName.get(link.to)
-          if (from === undefined || to === undefined) continue
-          yield* memory.addEdge({ from, to, type: link.type, scope, source: "auto-extract" }).pipe(Effect.ignore) // duplicate edge = already linked; never fail the drain
-        }
-      }
-    })
-
-    // The session-changes summary (the app's "Changes" review + the chats badge reads
-    // `SessionInfo.summary` — F1e re-pointed it to the record; V1 wrote per-user-message
-    // diffs the native transcript doesn't carry, and NOTHING wrote the record field until
-    // this landed). Recomputed after each drain from the FULL transcript's cumulative
-    // snapshot boundaries (the packed runner context may have compacted the first
-    // `snapshot.start` away, so read the store, not the context) and patched onto the
-    // record only when it actually changed — the app updates live off `session.updated`.
-    const refreshChangesSummary = Effect.fn("SessionRunner.refreshChangesSummary")(function* (
-      sessionID: SessionSchema.ID,
-    ) {
-      const messages = yield* SessionMessageRead.list(db, { sessionID, order: "asc" })
-      const { from, to } = SessionChanges.boundaries(messages)
-      if (!from || !to) return
-      const diff = from === to ? [] : yield* snapshots.diff({ from: Snapshot.ID.make(from), to: Snapshot.ID.make(to) })
-      const summary = SessionChanges.summary(diff, { from, to, complete: true })
-      yield* SessionPatch.patchSessionRecord({ db, events }, sessionID, (info) =>
-        SessionChanges.equal(info.summary, summary)
-          ? undefined
-          : SessionSchema.Info.make({
-              ...info,
-              summary,
-              time: { ...info.time, updated: DateTime.makeUnsafe(Date.now()) },
-            }),
-      )
-    })
-
-    const markChangesIncomplete = Effect.fn("SessionRunner.markChangesIncomplete")(function* (
-      sessionID: SessionSchema.ID,
-    ) {
-      yield* SessionPatch.patchSessionRecord({ db, events }, sessionID, (info) =>
-        info.summary?.complete === false
-          ? undefined
-          : SessionSchema.Info.make({
-              ...info,
-              summary: SessionChanges.incomplete(info.summary),
-            }),
-      )
-    })
 
     const failInterruptedTools = Effect.fn("SessionRunner.failInterruptedTools")(function* (
       sessionID: SessionSchema.ID,
@@ -1797,35 +1503,6 @@ export const layer = Layer.effect(
         })
     })
 
-    // Post-run maintenance — best-effort, must never fail the drain it follows (shared by the normal
-    // and the Strict routes): the changes summary first (one git tree-diff; feeds the Changes
-    // review/badge), then the auto-title (an LLM call) while the user reads the response.
-    const postRunMaintenance = Effect.fnUntraced(function* (sessionID: SessionSchema.ID) {
-      yield* refreshChangesSummary(sessionID).pipe(
-        Effect.catchCause((cause) =>
-          Log.event("session.changes.refresh.failed", {
-            "session.id": sessionID,
-            "session.cause": Log.fault(cause),
-          }),
-        ),
-      )
-      yield* generateTitleOnce(sessionID).pipe(
-        Effect.catchCause((cause) =>
-          Log.event("session.title.generate.failed", {
-            "session.id": sessionID,
-            "session.cause": Log.fault(cause),
-          }),
-        ),
-      )
-      yield* extractMemory(sessionID).pipe(
-        Effect.catchCause((cause) =>
-          Log.event("session.memory.extract.failed", {
-            "session.id": sessionID,
-            "session.cause": Log.fault(cause),
-          }),
-        ),
-      )
-    })
 
     // P14-minimal (jh-improve8 P3) + P14.1 (jh MVP): the Strict-harness drain — one JhEngine task per
     // pending user message; queued messages drain in order. The engine self-terminates at its wall
@@ -2373,7 +2050,7 @@ export const layer = Layer.effect(
           if (!single && winnerIdx !== undefined)
             for (const action of racerActions[winnerIdx]!) yield* publishAction(action)
           yield* publishSummary(report, appliedFiles)
-          yield* postRunMaintenance(sessionID)
+          yield* maintenance.postRun(sessionID)
         }).pipe(
           Effect.catchCause((cause) =>
             Log.event("session.strict.finalize.failed", {
@@ -2404,7 +2081,7 @@ export const layer = Layer.effect(
       // Arm the 30s title fallback for LONG turns. A short turn finishes first and titles at drain end as
       // before; a compile-test-retry turn gets a name while it is still working, instead of sitting in the
       // chat list as a placeholder for minutes.
-      yield* scheduleEarlyTitle(input.sessionID)
+      yield* maintenance.scheduleEarlyTitle(input.sessionID)
       // A manual compaction request is consumed FIRST: it may ride a wake with no pending input
       // (the early return below must not skip it), it must not force a model turn itself, and
       // when input IS pending the drain proceeds over the freshly compacted history.
@@ -2474,14 +2151,7 @@ export const layer = Layer.effect(
       } else {
         yield* failInterruptedTools(input.sessionID)
       }
-      yield* markChangesIncomplete(input.sessionID).pipe(
-        Effect.catchCause((cause) =>
-          Log.event("session.changes.refresh.failed", {
-            "session.id": input.sessionID,
-            "session.cause": Log.fault(cause),
-          }),
-        ),
-      )
+      yield* maintenance.markChangesIncomplete(input.sessionID)
       // B7 tier-1 / ruling 3 — the DRAIN-ENTRY derivation, placed after every early return so a wake
       // that does nothing reads nothing. It answers only the questions asked before any turn exists:
       // the Strict routing decision and the once-per-session quality-provision nudge. Each turn below
@@ -2507,7 +2177,7 @@ export const layer = Layer.effect(
           // "handled": engine work ran — its detached finalizer owns the maintenance (it must run
           // even after a Stop interrupts this fiber). "chat": the routed message is conversational —
           // fall THROUGH to the normal loop below (it runs the turn over the already-promoted
-          // context and ends with its own postRunMaintenance).
+          // context and ends with its own post-run maintenance).
           if (outcome === "handled") return
         } else {
           yield* Effect.gen(function* () {
@@ -2868,7 +2538,7 @@ export const layer = Layer.effect(
           }
         }
       }
-      yield* postRunMaintenance(input.sessionID)
+      yield* maintenance.postRun(input.sessionID)
     })
 
     return Service.of({
@@ -2889,6 +2559,7 @@ export const node = makeLocationNode({
     ToolRegistry.node,
     ToolCatalogueGuidance.node,
     SessionRunnerModel.node,
+    SessionMaintenance.node,
     SessionStore.node,
     Location.node,
     SystemContextRegistry.node,

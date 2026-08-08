@@ -48,8 +48,12 @@ describe("SessionExtract durable-memory origin policy", () => {
   })
 
   test("the runner applies the kind gate before touching memory health or starting model work", () => {
-    const source = readFileSync(path.join(import.meta.dir, "../src/session/runner/llm.ts"), "utf8")
-    const start = source.indexOf('const extractMemory = Effect.fn("SessionRunner.extractMemory")')
+    // The pass moved out of the runner's 2 900-line closure into the `SessionMaintenance` service
+    // (5.1). A SOURCE-scanning guard's site is invisible to behaviour, so it has to follow the code
+    // it guards — the two `toBeGreaterThan(0)` assertions below are what stop it from silently
+    // becoming a scan of an empty string.
+    const source = readFileSync(path.join(import.meta.dir, "../src/session/runner/maintenance.ts"), "utf8")
+    const start = source.indexOf('const extractMemory = Effect.fn("SessionMaintenance.extractMemory")')
     const end = source.indexOf("const refreshChangesSummary", start)
     expect(start).toBeGreaterThan(0)
     expect(end).toBeGreaterThan(start)
