@@ -1,8 +1,10 @@
 import { SkillV2 } from "@novaclaw/core/skill"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
-import { Api } from "../api"
+import { SkillApi, handlerLayer } from "../handler-api"
 import { response } from "../location"
 
-export const SkillHandler = HttpApiBuilder.group(Api, "server.skill", (handlers) =>
-  handlers.handle("skill.list", () => response(SkillV2.Service.use((skill) => skill.list()))),
+export const SkillHandler = handlerLayer(
+  HttpApiBuilder.group(SkillApi, "server.skill", (handlers) =>
+    handlers.handle("skill.list", () => response(SkillV2.Service.use((skill) => skill.list()))),
+  ),
 )

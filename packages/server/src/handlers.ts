@@ -24,7 +24,37 @@ import { ConfigHandler } from "./handlers/config"
 import { LogHandler } from "./handlers/log"
 import { TelemetryHandler } from "./handlers/telemetry"
 
-export const handlers = Layer.mergeAll(
+type HandlerLayers =
+  | typeof HealthHandler
+  | typeof LocationHandler
+  | typeof AgentHandler
+  | typeof SessionHandler
+  | typeof MessageHandler
+  | typeof ModelHandler
+  | typeof ProviderHandler
+  | typeof IntegrationHandler
+  | typeof CredentialHandler
+  | typeof MessengerHandler
+  | typeof CalendarHandler
+  | typeof RecipeHandler
+  | typeof PermissionHandler
+  | typeof FileSystemHandler
+  | typeof CommandHandler
+  | typeof SkillHandler
+  | typeof EventHandler
+  | typeof PtyHandler
+  | typeof PtyInstanceHandler
+  | typeof QuestionHandler
+  | typeof ReferenceHandler
+  | typeof ConfigHandler
+  | typeof LogHandler
+  | typeof TelemetryHandler
+
+export const handlers: Layer.Layer<
+  Layer.Success<HandlerLayers>,
+  Layer.Error<HandlerLayers>,
+  Layer.Services<HandlerLayers>
+> = Layer.mergeAll(
   HealthHandler,
   LocationHandler,
   AgentHandler,

@@ -154,8 +154,8 @@ const createEndpoint = () => {
       >
     }
   >
-  const group = groups["server.session"]
-  expect(group, "the api no longer declares a `server.session` group — re-aim this file").toBeDefined()
+  const group = groups["server.session.catalog"]
+  expect(group, "the api no longer declares a `server.session.catalog` group — re-aim this file").toBeDefined()
   const endpoint = Object.values(group!.endpoints).find((item) => item.name === "session.create")
   expect(endpoint, "`session.create` is no longer declared — re-aim this file").toBeDefined()
   const json = endpoint!.payload?.get("application/json")
@@ -191,7 +191,10 @@ const withCreate = <A>(body: (create: CreateHandler) => Effect.Effect<A, unknown
         readonly handlers: Map<string, { readonly handler: CreateHandler }>
       }
       const item = built.handlers.get("session.create")
-      expect(item, 'server.session registered no handler for "session.create" — the route would 404').toBeDefined()
+      expect(
+        item,
+        'server.session.catalog registered no handler for "session.create" — the route would 404',
+      ).toBeDefined()
       return yield* body(item!.handler)
     }).pipe(Effect.scoped, Effect.provide(environment)) as Effect.Effect<A>,
   )

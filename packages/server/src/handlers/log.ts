@@ -5,7 +5,7 @@ import { MAX_FILTER_CHARS } from "@novaclaw/protocol/groups/log"
 import { SUBSYSTEMS, type Subsystem } from "@novaclaw/schema/log-events"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
-import { Api } from "../api"
+import { LogApi, handlerLayer } from "../handler-api"
 
 /**
  * **`POST /api/log/read` — the server half of the Debug app's log panel** (`todo/logging.md` 3f).
@@ -143,17 +143,19 @@ export function read(
   }
 }
 
-export const LogHandler = HttpApiBuilder.group(Api, "server.log", (handlers) =>
-  handlers.handle(
-    "log.read",
-    Effect.fn(function* (ctx) {
-      const refusal = refuse(ctx.payload)
-      if (refusal !== undefined) return yield* refusal
-      // 🔴 **The source is DERIVED, never received.** `instanceSource()` reads `Global.Path.log`, and
-      // the request carries no field that could name another directory. Reusing the tool's own
-      // accessor rather than rebuilding the path keeps one answer to *"where does this instance's log
-      // live"* — the same reason §0.6 says to ask `GET /instance` instead of guessing it.
-      return read(ctx.payload, LogTool.instanceSource())
-    }),
+export const LogHandler = handlerLayer(
+  HttpApiBuilder.group(LogApi, "server.log", (handlers) =>
+    handlers.handle(
+      "log.read",
+      Effect.fn(function* (ctx) {
+        const refusal = refuse(ctx.payload)
+        if (refusal !== undefined) return yield* refusal
+        // 🔴 **The source is DERIVED, never received.** `instanceSource()` reads `Global.Path.log`, and
+        // the request carries no field that could name another directory. Reusing the tool's own
+        // accessor rather than rebuilding the path keeps one answer to *"where does this instance's log
+        // live"* — the same reason §0.6 says to ask `GET /instance` instead of guessing it.
+        return read(ctx.payload, LogTool.instanceSource())
+      }),
+    ),
   ),
 )

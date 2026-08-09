@@ -8,9 +8,10 @@ import { SessionTags } from "@novaclaw/core/session/tags"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { ModelV2 } from "@novaclaw/core/model"
 import { ProviderV2 } from "@novaclaw/core/provider"
-import { DateTime, Effect, Stream } from "effect"
+import { DateTime, Effect, Layer, Stream } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
-import { Api } from "../api"
+import { SessionCatalogApi, SessionControlApi, SessionObservationApi, SessionRuntimeApi } from "../handler-api-session"
+import { handlerLayer } from "../handler-api"
 import { SessionHistoryResponse, SessionsCursor } from "@novaclaw/protocol/groups/session"
 import {
   ConflictError,
@@ -31,272 +32,155 @@ import { resolveConfigView } from "./session-config"
 const DefaultSessionsLimit = 50
 const DefaultSessionHistoryLimit = 50
 
-export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handlers) =>
-  Effect.gen(function* () {
-    const session = yield* SessionV2.Service
-    const tags = yield* SessionTags.Service
-    const attempts = yield* SessionExecutionAttempt.Service
-    const execution = yield* SessionExecution.Service
+const SessionCatalogHandler = handlerLayer(
+  HttpApiBuilder.group(SessionCatalogApi, "server.session.catalog", (handlers) =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const tags = yield* SessionTags.Service
+      const attempts = yield* SessionExecutionAttempt.Service
+      const execution = yield* SessionExecution.Service
 
-    return (
-      handlers
-        .handle(
-          "session.tags.set",
-          Effect.fn(function* (ctx) {
-            yield* tags.set(ctx.params.sessionID, ctx.payload.tags)
-            return HttpApiSchema.NoContent.make()
-          }),
-        )
-        .handle(
-          "session.tags.all",
-          Effect.fn(function* () {
-            return { data: yield* tags.all() }
-          }),
-        )
-        .handle(
-          "session.list",
-          Effect.fn(function* (ctx) {
-            const query =
-              ctx.query.cursor !== undefined
-                ? yield* SessionsCursor.parse(ctx.query.cursor).pipe(
-                    Effect.mapError(() => new InvalidCursorError({ message: "Invalid cursor" })),
-                  )
-                : ctx.query
-            const sessions = yield* session.list({
-              ...query,
-              workspaceID: query.workspace,
-              limit: ctx.query.limit ?? DefaultSessionsLimit,
-            })
-            const first = sessions[0]
-            const last = sessions.at(-1)
-            return {
-              data: sessions,
-              cursor: {
-                previous: first
-                  ? SessionsCursor.make({
-                      ...query,
-                      anchor: {
-                        id: first.id,
-                        time: DateTime.toEpochMillis(first.time.created),
-                        direction: "previous",
-                      },
-                    })
-                  : undefined,
-                next: last
-                  ? SessionsCursor.make({
-                      ...query,
-                      anchor: {
-                        id: last.id,
-                        time: DateTime.toEpochMillis(last.time.created),
-                        direction: "next",
-                      },
-                    })
-                  : undefined,
-              },
-            }
-          }),
-        )
-        .handle(
-          "session.create",
-          Effect.fn(function* (ctx) {
-            return {
-              data: yield* session.create({
-                id: ctx.payload.id,
-                parentID: ctx.payload.parentID,
-                agent: ctx.payload.agent,
-                model: ctx.payload.model,
-                // Device affinity (v0.2.0 B2). Forwarded raw like the tri-states below and for the
-                // same reason: `undefined` means INHERIT, so coalescing it to a derived key here
-                // would stamp one session's backend onto every child it ever spawns.
-                device: ctx.payload.device,
-                controlBinding: ctx.payload.controlBinding,
-                systemPromptOverride: ctx.payload.systemPromptOverride,
-                type: ctx.payload.type,
-                priority: ctx.payload.priority,
-                permissionMode: ctx.payload.permissionMode,
-                responder: ctx.payload.responder,
-                title: ctx.payload.title,
-                permission: ctx.payload.permission,
-                strict: ctx.payload.strict,
-                // ⚠️ The per-session feature overrides are forwarded ONE-FOR-ONE with
-                // `SessionFeature.Name`, and a plain `ctx.payload.<name>` is deliberate: each is a
-                // TRI-STATE where `undefined` means INHERIT. Never coalesce one to a boolean here
-                // (`?? false` and friends) — `createSessionRecord` writes exactly what it is handed,
-                // so a coalesced default would stamp a stance into every new session's row and, for
-                // the three narrowing switches, hand a fork of a restricted parent LESS restriction
-                // than its source (ruling 8).
-                //
-                // This list was the SECOND of three places a draft's restrictions were dropped (the
-                // payload schema and `app/.../prompt-input/submit.ts` were the others): it carried
-                // only the first three until 2026-07-31, so `thinkingBudget`, `surgicalEdits`,
-                // `askBeforeChanges` and `safeMode` never reached the kernel, which had accepted all
-                // seven since 2026-07-29. Pinned by `./session-create-features.test.ts`.
-                introspection: ctx.payload.introspection,
-                quality: ctx.payload.quality,
-                affective: ctx.payload.affective,
-                thinkingBudget: ctx.payload.thinkingBudget,
-                surgicalEdits: ctx.payload.surgicalEdits,
-                askBeforeChanges: ctx.payload.askBeforeChanges,
-                safeMode: ctx.payload.safeMode,
-                contextBudget: ctx.payload.contextBudget,
-                // 🔴 **Was `?? { directory: AbsolutePath.make(process.cwd()) }`** — the SERVER
-                // PROCESS's directory, not the one the request named. `list` honours the request's
-                // location, so a create-then-list in one breath returned NOTHING, and the create
-                // response was not even wrong: it faithfully reported the directory it had used.
-                // `process.cwd()` is only ever right for a CLI; on the shipped headless/remote path
-                // it filed every session where `list` would never look again.
-                //
-                // ⚠️ `Location.Service` is resolvable here ONLY because `session.create` now declares
-                // `locationMiddleware` (see `protocol/groups/session.ts`). Resolving a service that no
-                // middleware provides typechecks and then fails on every request — measured: this exact
-                // line returned 500 on every create before the endpoint carried the middleware.
-                location: ctx.payload.location ?? {
-                  directory: (yield* Location.Service).directory,
-                  workspaceID: (yield* Location.Service).workspaceID,
-                },
-              }),
-            }
-          }),
-        )
-        .handle(
-          "session.active",
-          Effect.fn(function* () {
-            return {
-              data: Object.fromEntries(
-                Array.from(yield* session.active, (sessionID) => [sessionID, { type: "running" as const }]),
-              ),
-            }
-          }),
-        )
-        .handle(
-          "session.execution.list",
-          Effect.fn(function* () {
-            return { data: yield* attempts.list() }
-          }),
-        )
-        .handle(
-          "session.get",
-          Effect.fn(function* (ctx) {
-            return {
-              data: yield* session.get(ctx.params.sessionID).pipe(
-                Effect.catchTag(
-                  "Session.NotFoundError",
-                  (error) =>
-                    new SessionNotFoundError({
-                      sessionID: error.sessionID,
-                      message: `Session not found: ${error.sessionID}`,
-                    }),
-                ),
-              ),
-            }
-          }),
-        )
-        // v0.2.0 batch 4.4 — the resolved-config view. See `./session-config.ts` for why the shape is
-        // generated from `SESSION_CONFIG_FIELDS` rather than written out here.
-        .handle(
-          "session.config",
-          Effect.fn(function* (ctx) {
-            // Resolve the target FIRST so a session that does not exist 404s. Without this the walk
-            // would answer "every field is at its default" for an id that names nothing — ruling 2's
-            // *a fault is never described falsely*, and the most misleading possible answer from an
-            // endpoint whose whole job is telling you where a value came from.
-            yield* session.get(ctx.params.sessionID).pipe(
-              Effect.catchTag(
-                "Session.NotFoundError",
-                (error) =>
-                  new SessionNotFoundError({
-                    sessionID: error.sessionID,
-                    message: `Session not found: ${error.sessionID}`,
-                  }),
-              ),
-            )
-            return {
-              data: yield* resolveConfigView(ctx.params.sessionID, (id) =>
-                // The same feeder the runner passes to `resolveSessionConfig`: a missing row is
-                // `undefined`, which the walk reads as "the chain ends here".
-                session
-                  .get(id as SessionSchema.ID)
-                  .pipe(Effect.catchTag("Session.NotFoundError", () => Effect.succeed(undefined))),
-              ),
-            }
-          }),
-        )
-        // V1-nuke A0: native twins of the last live bare-/session operations. Same core ops the V1
-        // handlers routed to; the wire shape is the native Session.Info.
-        .handle(
-          "session.children",
-          Effect.fn(function* (ctx) {
-            return {
-              data: yield* session.children(ctx.params.sessionID).pipe(
-                Effect.catchTag(
-                  "Session.NotFoundError",
-                  (error) =>
-                    new SessionNotFoundError({
-                      sessionID: error.sessionID,
-                      message: `Session not found: ${error.sessionID}`,
-                    }),
-                ),
-              ),
-            }
-          }),
-        )
-        .handle(
-          "session.update",
-          Effect.fn(function* (ctx) {
-            const notFound = (error: { sessionID: string }) =>
-              new SessionNotFoundError({
-                sessionID: error.sessionID,
-                message: `Session not found: ${error.sessionID}`,
+      return (
+        handlers
+          .handle(
+            "session.tags.set",
+            Effect.fn(function* (ctx) {
+              yield* tags.set(ctx.params.sessionID, ctx.payload.tags)
+              return HttpApiSchema.NoContent.make()
+            }),
+          )
+          .handle(
+            "session.tags.all",
+            Effect.fn(function* () {
+              return { data: yield* tags.all() }
+            }),
+          )
+          .handle(
+            "session.list",
+            Effect.fn(function* (ctx) {
+              const query =
+                ctx.query.cursor !== undefined
+                  ? yield* SessionsCursor.parse(ctx.query.cursor).pipe(
+                      Effect.mapError(() => new InvalidCursorError({ message: "Invalid cursor" })),
+                    )
+                  : ctx.query
+              const sessions = yield* session.list({
+                ...query,
+                workspaceID: query.workspace,
+                limit: ctx.query.limit ?? DefaultSessionsLimit,
               })
-            if (ctx.payload.title !== undefined)
-              yield* session
-                .setTitle({ sessionID: ctx.params.sessionID, title: ctx.payload.title })
-                .pipe(Effect.catchTag("Session.NotFoundError", (error) => notFound(error)))
-            if (ctx.payload.metadata !== undefined)
-              yield* session
-                .setMetadata({ sessionID: ctx.params.sessionID, metadata: ctx.payload.metadata })
-                .pipe(Effect.catchTag("Session.NotFoundError", (error) => notFound(error)))
-            if (ctx.payload.archived !== undefined)
-              yield* session
-                .setArchived({
-                  sessionID: ctx.params.sessionID,
-                  // null on the wire = unarchive (the core op takes undefined for restore)
-                  ...(ctx.payload.archived === null ? {} : { time: ctx.payload.archived }),
-                })
-                .pipe(Effect.catchTag("Session.NotFoundError", (error) => notFound(error)))
-            return {
-              data: yield* session
-                .get(ctx.params.sessionID)
-                .pipe(Effect.catchTag("Session.NotFoundError", (error) => notFound(error))),
-            }
-          }),
-        )
-        .handle(
-          "session.remove",
-          Effect.fn(function* (ctx) {
-            yield* session.remove(ctx.params.sessionID).pipe(
-              Effect.catchTag(
-                "Session.NotFoundError",
-                (error) =>
-                  new SessionNotFoundError({
-                    sessionID: error.sessionID,
-                    message: `Session not found: ${error.sessionID}`,
-                  }),
-              ),
-            )
-            return HttpApiSchema.NoContent.make()
-          }),
-        )
-        .handle(
-          "session.fork",
-          Effect.fn(function* (ctx) {
-            return {
-              data: yield* session
-                .fork({
-                  sessionID: ctx.params.sessionID,
-                  messageID: ctx.query.messageID,
-                })
-                .pipe(
+              const first = sessions[0]
+              const last = sessions.at(-1)
+              return {
+                data: sessions,
+                cursor: {
+                  previous: first
+                    ? SessionsCursor.make({
+                        ...query,
+                        anchor: {
+                          id: first.id,
+                          time: DateTime.toEpochMillis(first.time.created),
+                          direction: "previous",
+                        },
+                      })
+                    : undefined,
+                  next: last
+                    ? SessionsCursor.make({
+                        ...query,
+                        anchor: {
+                          id: last.id,
+                          time: DateTime.toEpochMillis(last.time.created),
+                          direction: "next",
+                        },
+                      })
+                    : undefined,
+                },
+              }
+            }),
+          )
+          .handle(
+            "session.create",
+            Effect.fn(function* (ctx) {
+              return {
+                data: yield* session.create({
+                  id: ctx.payload.id,
+                  parentID: ctx.payload.parentID,
+                  agent: ctx.payload.agent,
+                  model: ctx.payload.model,
+                  // Device affinity (v0.2.0 B2). Forwarded raw like the tri-states below and for the
+                  // same reason: `undefined` means INHERIT, so coalescing it to a derived key here
+                  // would stamp one session's backend onto every child it ever spawns.
+                  device: ctx.payload.device,
+                  controlBinding: ctx.payload.controlBinding,
+                  systemPromptOverride: ctx.payload.systemPromptOverride,
+                  type: ctx.payload.type,
+                  priority: ctx.payload.priority,
+                  permissionMode: ctx.payload.permissionMode,
+                  responder: ctx.payload.responder,
+                  title: ctx.payload.title,
+                  permission: ctx.payload.permission,
+                  strict: ctx.payload.strict,
+                  // ⚠️ The per-session feature overrides are forwarded ONE-FOR-ONE with
+                  // `SessionFeature.Name`, and a plain `ctx.payload.<name>` is deliberate: each is a
+                  // TRI-STATE where `undefined` means INHERIT. Never coalesce one to a boolean here
+                  // (`?? false` and friends) — `createSessionRecord` writes exactly what it is handed,
+                  // so a coalesced default would stamp a stance into every new session's row and, for
+                  // the three narrowing switches, hand a fork of a restricted parent LESS restriction
+                  // than its source (ruling 8).
+                  //
+                  // This list was the SECOND of three places a draft's restrictions were dropped (the
+                  // payload schema and `app/.../prompt-input/submit.ts` were the others): it carried
+                  // only the first three until 2026-07-31, so `thinkingBudget`, `surgicalEdits`,
+                  // `askBeforeChanges` and `safeMode` never reached the kernel, which had accepted all
+                  // seven since 2026-07-29. Pinned by `./session-create-features.test.ts`.
+                  introspection: ctx.payload.introspection,
+                  quality: ctx.payload.quality,
+                  affective: ctx.payload.affective,
+                  thinkingBudget: ctx.payload.thinkingBudget,
+                  surgicalEdits: ctx.payload.surgicalEdits,
+                  askBeforeChanges: ctx.payload.askBeforeChanges,
+                  safeMode: ctx.payload.safeMode,
+                  contextBudget: ctx.payload.contextBudget,
+                  // 🔴 **Was `?? { directory: AbsolutePath.make(process.cwd()) }`** — the SERVER
+                  // PROCESS's directory, not the one the request named. `list` honours the request's
+                  // location, so a create-then-list in one breath returned NOTHING, and the create
+                  // response was not even wrong: it faithfully reported the directory it had used.
+                  // `process.cwd()` is only ever right for a CLI; on the shipped headless/remote path
+                  // it filed every session where `list` would never look again.
+                  //
+                  // ⚠️ `Location.Service` is resolvable here ONLY because `session.create` now declares
+                  // `locationMiddleware` (see `protocol/groups/session.ts`). Resolving a service that no
+                  // middleware provides typechecks and then fails on every request — measured: this exact
+                  // line returned 500 on every create before the endpoint carried the middleware.
+                  location: ctx.payload.location ?? {
+                    directory: (yield* Location.Service).directory,
+                    workspaceID: (yield* Location.Service).workspaceID,
+                  },
+                }),
+              }
+            }),
+          )
+          .handle(
+            "session.active",
+            Effect.fn(function* () {
+              return {
+                data: Object.fromEntries(
+                  Array.from(yield* session.active, (sessionID) => [sessionID, { type: "running" as const }]),
+                ),
+              }
+            }),
+          )
+          .handle(
+            "session.execution.list",
+            Effect.fn(function* () {
+              return { data: yield* attempts.list() }
+            }),
+          )
+          .handle(
+            "session.get",
+            Effect.fn(function* (ctx) {
+              return {
+                data: yield* session.get(ctx.params.sessionID).pipe(
                   Effect.catchTag(
                     "Session.NotFoundError",
                     (error) =>
@@ -305,21 +189,150 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                         message: `Session not found: ${error.sessionID}`,
                       }),
                   ),
+                ),
+              }
+            }),
+          )
+          // v0.2.0 batch 4.4 — the resolved-config view. See `./session-config.ts` for why the shape is
+          // generated from `SESSION_CONFIG_FIELDS` rather than written out here.
+          .handle(
+            "session.config",
+            Effect.fn(function* (ctx) {
+              // Resolve the target FIRST so a session that does not exist 404s. Without this the walk
+              // would answer "every field is at its default" for an id that names nothing — ruling 2's
+              // *a fault is never described falsely*, and the most misleading possible answer from an
+              // endpoint whose whole job is telling you where a value came from.
+              yield* session.get(ctx.params.sessionID).pipe(
+                Effect.catchTag(
+                  "Session.NotFoundError",
+                  (error) =>
+                    new SessionNotFoundError({
+                      sessionID: error.sessionID,
+                      message: `Session not found: ${error.sessionID}`,
+                    }),
+                ),
+              )
+              return {
+                data: yield* resolveConfigView(ctx.params.sessionID, (id) =>
+                  // The same feeder the runner passes to `resolveSessionConfig`: a missing row is
+                  // `undefined`, which the walk reads as "the chain ends here".
+                  session
+                    .get(id as SessionSchema.ID)
+                    .pipe(Effect.catchTag("Session.NotFoundError", () => Effect.succeed(undefined))),
+                ),
+              }
+            }),
+          )
+          // V1-nuke A0: native twins of the last live bare-/session operations. Same core ops the V1
+          // handlers routed to; the wire shape is the native Session.Info.
+          .handle(
+            "session.children",
+            Effect.fn(function* (ctx) {
+              return {
+                data: yield* session.children(ctx.params.sessionID).pipe(
                   Effect.catchTag(
-                    "Session.MessageNotFoundError",
+                    "Session.NotFoundError",
                     (error) =>
-                      new MessageNotFoundError({
-                        sessionID: ctx.params.sessionID,
-                        messageID: error.messageID,
-                        message: `Message not found: ${error.messageID}`,
+                      new SessionNotFoundError({
+                        sessionID: error.sessionID,
+                        message: `Session not found: ${error.sessionID}`,
                       }),
                   ),
-                  // A stored message that fails to decode is corrupt state, not a client error.
-                  Effect.catchTag("Session.MessageDecodeError", (error) => Effect.die(error)),
                 ),
-            }
-          }),
-        )
+              }
+            }),
+          )
+          .handle(
+            "session.update",
+            Effect.fn(function* (ctx) {
+              const notFound = (error: { sessionID: string }) =>
+                new SessionNotFoundError({
+                  sessionID: error.sessionID,
+                  message: `Session not found: ${error.sessionID}`,
+                })
+              if (ctx.payload.title !== undefined)
+                yield* session
+                  .setTitle({ sessionID: ctx.params.sessionID, title: ctx.payload.title })
+                  .pipe(Effect.catchTag("Session.NotFoundError", (error) => notFound(error)))
+              if (ctx.payload.metadata !== undefined)
+                yield* session
+                  .setMetadata({ sessionID: ctx.params.sessionID, metadata: ctx.payload.metadata })
+                  .pipe(Effect.catchTag("Session.NotFoundError", (error) => notFound(error)))
+              if (ctx.payload.archived !== undefined)
+                yield* session
+                  .setArchived({
+                    sessionID: ctx.params.sessionID,
+                    // null on the wire = unarchive (the core op takes undefined for restore)
+                    ...(ctx.payload.archived === null ? {} : { time: ctx.payload.archived }),
+                  })
+                  .pipe(Effect.catchTag("Session.NotFoundError", (error) => notFound(error)))
+              return {
+                data: yield* session
+                  .get(ctx.params.sessionID)
+                  .pipe(Effect.catchTag("Session.NotFoundError", (error) => notFound(error))),
+              }
+            }),
+          )
+          .handle(
+            "session.remove",
+            Effect.fn(function* (ctx) {
+              yield* session.remove(ctx.params.sessionID).pipe(
+                Effect.catchTag(
+                  "Session.NotFoundError",
+                  (error) =>
+                    new SessionNotFoundError({
+                      sessionID: error.sessionID,
+                      message: `Session not found: ${error.sessionID}`,
+                    }),
+                ),
+              )
+              return HttpApiSchema.NoContent.make()
+            }),
+          )
+          .handle(
+            "session.fork",
+            Effect.fn(function* (ctx) {
+              return {
+                data: yield* session
+                  .fork({
+                    sessionID: ctx.params.sessionID,
+                    messageID: ctx.query.messageID,
+                  })
+                  .pipe(
+                    Effect.catchTag(
+                      "Session.NotFoundError",
+                      (error) =>
+                        new SessionNotFoundError({
+                          sessionID: error.sessionID,
+                          message: `Session not found: ${error.sessionID}`,
+                        }),
+                    ),
+                    Effect.catchTag(
+                      "Session.MessageNotFoundError",
+                      (error) =>
+                        new MessageNotFoundError({
+                          sessionID: ctx.params.sessionID,
+                          messageID: error.messageID,
+                          message: `Message not found: ${error.messageID}`,
+                        }),
+                    ),
+                    // A stored message that fails to decode is corrupt state, not a client error.
+                    Effect.catchTag("Session.MessageDecodeError", (error) => Effect.die(error)),
+                  ),
+              }
+            }),
+          )
+      )
+    }),
+  ),
+)
+
+const SessionControlHandler = handlerLayer(
+  HttpApiBuilder.group(SessionControlApi, "server.session.control", (handlers) =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+
+      return handlers
         .handle(
           "session.pending",
           Effect.fn(function* (ctx) {
@@ -559,6 +572,16 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
             return HttpApiSchema.NoContent.make()
           }),
         )
+    }),
+  ),
+)
+
+const SessionRuntimeHandler = handlerLayer(
+  HttpApiBuilder.group(SessionRuntimeApi, "server.session.runtime", (handlers) =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+
+      return handlers
         .handle(
           "session.prompt",
           Effect.fn(function* (ctx) {
@@ -740,6 +763,18 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
             return HttpApiSchema.NoContent.make()
           }),
         )
+    }),
+  ),
+)
+
+const SessionObservationHandler = handlerLayer(
+  HttpApiBuilder.group(SessionObservationApi, "server.session.observation", (handlers) =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const attempts = yield* SessionExecutionAttempt.Service
+      const execution = yield* SessionExecution.Service
+
+      return handlers
         .handle(
           "session.context",
           Effect.fn(function* (ctx) {
@@ -850,6 +885,13 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
             })
           }),
         )
-    )
-  }),
+    }),
+  ),
+)
+
+export const SessionHandler = Layer.mergeAll(
+  SessionCatalogHandler,
+  SessionControlHandler,
+  SessionRuntimeHandler,
+  SessionObservationHandler,
 )

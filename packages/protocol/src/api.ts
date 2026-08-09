@@ -4,7 +4,7 @@ import { SchemaErrorMiddleware } from "./middleware/schema-error"
 import { MessageGroup } from "./groups/message"
 import { ModelGroup } from "./groups/model"
 import { ProviderGroup } from "./groups/provider"
-import { makeSessionGroup } from "./groups/session"
+import { makeSessionGroups } from "./groups/session"
 import { makePermissionGroup } from "./groups/permission"
 import { FileSystemGroup } from "./groups/fs"
 import { CommandGroup } from "./groups/command"
@@ -58,7 +58,7 @@ const makeApiFromGroup = <
     // on an ask that was, from the user's side, answered. Session routing was added to
     // `makeSessionGroup` on 2026-08-07 and these three were missed in the same pass — the gap survives
     // exactly as long as the declaration is per-group and invisible from one place.
-    .add(makeSessionGroup(locationMiddleware, sessionLocationMiddleware, workspaceRoutingMiddleware))
+    .add(...makeSessionGroups(locationMiddleware, sessionLocationMiddleware, workspaceRoutingMiddleware))
     .add(MessageGroup.middleware(sessionLocationMiddleware).middleware(workspaceRoutingMiddleware))
     .add(ModelGroup.middleware(locationMiddleware))
     .add(ProviderGroup.middleware(locationMiddleware))
@@ -111,7 +111,7 @@ type ApiFromGroup<
       | HttpApiGroup.AddMiddleware<typeof LocationGroup, LocationId>
       | HttpApiGroup.AddMiddleware<typeof AgentGroup, LocationId>
       | ReturnType<
-          typeof makeSessionGroup<
+          typeof makeSessionGroups<
             LocationId,
             LocationService,
             SessionLocationId,
@@ -119,7 +119,7 @@ type ApiFromGroup<
             WorkspaceRoutingId,
             WorkspaceRoutingService
           >
-        >
+        >[number]
       | HttpApiGroup.AddMiddleware<
           HttpApiGroup.AddMiddleware<typeof MessageGroup, SessionLocationId>,
           WorkspaceRoutingId
@@ -144,9 +144,7 @@ type ApiFromGroup<
       | HttpApiGroup.AddMiddleware<typeof PtyGroup, LocationId>
       | typeof PtyInstanceGroup
       | HttpApiGroup.AddMiddleware<
-          ReturnType<
-            typeof makeQuestionGroup<LocationId, LocationService, SessionLocationId, SessionLocationService>
-          >,
+          ReturnType<typeof makeQuestionGroup<LocationId, LocationService, SessionLocationId, SessionLocationService>>,
           WorkspaceRoutingId
         >
       | HttpApiGroup.AddMiddleware<typeof ReferenceGroup, LocationId>

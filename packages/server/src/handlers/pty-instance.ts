@@ -4,7 +4,7 @@ import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { Pty } from "@novaclaw/core/pty"
 import { Effect, RcMap } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
-import { Api } from "../api"
+import { PtyInstanceApi, handlerLayer } from "../handler-api"
 
 const directoryFrom = (query: { readonly location?: { readonly directory?: string } }) =>
   FSUtil.resolve(query.location?.directory ?? process.cwd())
@@ -23,35 +23,37 @@ const listAt = Effect.gen(function* () {
   }))
 })
 
-export const PtyInstanceHandler = HttpApiBuilder.group(Api, "server.pty-instance", (handlers) =>
-  Effect.gen(function* () {
-    const locations = yield* LocationServiceMap.Service
-    const refsFor = (directory: string) =>
-      RcMap.keys(locations.rcMap).pipe(
-        Effect.map((refs) => Array.from(refs).filter((ref) => FSUtil.resolve(ref.directory) === directory)),
-      )
-    return handlers
-      .handle(
-        "pty.instanceList",
-        Effect.fn("PtyInstanceHandler.list")(function* (ctx) {
-          const refs = yield* refsFor(directoryFrom(ctx.query))
-          const nested = yield* Effect.forEach(refs, (ref) => listAt.pipe(Effect.provide(locations.get(ref))), {
-            concurrency: "unbounded",
-          })
-          return nested.flat()
-        }),
-      )
-      .handle(
-        "pty.instanceRemoveAll",
-        Effect.fn("PtyInstanceHandler.removeAll")(function* (ctx) {
-          const refs = yield* refsFor(directoryFrom(ctx.query))
-          const counts = yield* Effect.forEach(
-            refs,
-            (ref) => Pty.Service.use((pty) => pty.removeAll()).pipe(Effect.provide(locations.get(ref))),
-            { concurrency: "unbounded" },
-          )
-          return counts.reduce((total, count) => total + count, 0)
-        }),
-      )
-  }),
+export const PtyInstanceHandler = handlerLayer(
+  HttpApiBuilder.group(PtyInstanceApi, "server.pty-instance", (handlers) =>
+    Effect.gen(function* () {
+      const locations = yield* LocationServiceMap.Service
+      const refsFor = (directory: string) =>
+        RcMap.keys(locations.rcMap).pipe(
+          Effect.map((refs) => Array.from(refs).filter((ref) => FSUtil.resolve(ref.directory) === directory)),
+        )
+      return handlers
+        .handle(
+          "pty.instanceList",
+          Effect.fn("PtyInstanceHandler.list")(function* (ctx) {
+            const refs = yield* refsFor(directoryFrom(ctx.query))
+            const nested = yield* Effect.forEach(refs, (ref) => listAt.pipe(Effect.provide(locations.get(ref))), {
+              concurrency: "unbounded",
+            })
+            return nested.flat()
+          }),
+        )
+        .handle(
+          "pty.instanceRemoveAll",
+          Effect.fn("PtyInstanceHandler.removeAll")(function* (ctx) {
+            const refs = yield* refsFor(directoryFrom(ctx.query))
+            const counts = yield* Effect.forEach(
+              refs,
+              (ref) => Pty.Service.use((pty) => pty.removeAll()).pipe(Effect.provide(locations.get(ref))),
+              { concurrency: "unbounded" },
+            )
+            return counts.reduce((total, count) => total + count, 0)
+          }),
+        )
+    }),
+  ),
 )

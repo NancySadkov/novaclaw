@@ -285,8 +285,8 @@ const configEndpoint = () => {
       readonly endpoints: Record<string, { readonly name: string; readonly success?: Set<{ readonly ast?: unknown }> }>
     }
   >
-  const group = groups["server.session"]
-  expect(group, "the api no longer declares a `server.session` group — re-aim this file").toBeDefined()
+  const group = groups["server.session.catalog"]
+  expect(group, "the api no longer declares a `server.session.catalog` group — re-aim this file").toBeDefined()
   const endpoint = Object.values(group!.endpoints).find((item) => item.name === "session.config")
   expect(endpoint, "`session.config` is no longer declared — the route would 404").toBeDefined()
   // ⚠️ `endpoint.success` is a SET of schemas, not a schema. Reaching in is guarded: if effect
@@ -305,7 +305,10 @@ const withHandler = <A>(body: (call: ConfigHandlerFn) => Effect.Effect<A, unknow
         readonly handlers: Map<string, { readonly handler: ConfigHandlerFn }>
       }
       const item = built.handlers.get("session.config")
-      expect(item, 'server.session registered no handler for "session.config" — the route would 404').toBeDefined()
+      expect(
+        item,
+        'server.session.catalog registered no handler for "session.config" — the route would 404',
+      ).toBeDefined()
       return yield* body(item!.handler)
     }).pipe(Effect.scoped, Effect.provide(environment)) as Effect.Effect<A>,
   )

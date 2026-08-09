@@ -3,6 +3,13 @@
   "extends": "@tsconfig/bun/tsconfig.json",
   "compilerOptions": {
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "noUncheckedIndexedAccess": false
-  }
+    "noUncheckedIndexedAccess": false,
+    "composite": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "outDir": "../../.ts-dist/server"
+  },
+  "exclude": ["src/**/*.test.ts"],
+  "references": [{ "path": "../core" }, { "path": "../protocol" }, { "path": "../schema" }]
 }
