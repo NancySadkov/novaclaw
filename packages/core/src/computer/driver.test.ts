@@ -278,6 +278,40 @@ test("an unreadable blind-grounder reply never reaches the screen", async () => 
   expect(ledgerVerdicts(report)).toContain("grounding unreadable")
 })
 
+test("P5 scans the current frame and invokes the exact advertised accessibility action", async () => {
+  const screen = substrate()
+  const invoked: DRV.AccessibilityInvokeRequest[] = []
+  const candidate = {
+    id: "gtk/button/save",
+    role: "push button",
+    name: "Save",
+    bounds: { x: 900, y: 720, width: 100, height: 40 },
+    actions: ["Press"],
+  }
+  const planner = JSON.stringify({
+    observation: "Save is available",
+    action: { kind: "click", button: "left", target: "Save", element_id: candidate.id },
+    expect: "the document is saved",
+  })
+  const { report } = await drive({
+    screen,
+    spec: spec({ budget: { maxSteps: 1, maxPromptTokens: 500_000 } }),
+    llm: model({ planner: [planner], adjudicator: CALIBRATED }),
+    deps: {
+      scanAccessibility: () => Effect.succeed([candidate]),
+      invokeAccessibility: (request) =>
+        Effect.sync(() => {
+          invoked.push(request)
+          return { ok: true as const }
+        }),
+    },
+  })
+  expect(invoked).toEqual([{ elementID: candidate.id, ownName: candidate.name, actionName: "Press" }])
+  expect(screen.acts).toEqual([])
+  expect(report.acted).toBe(1)
+  expect(report.usage.some((sample) => sample.call === "grounder")).toBe(false)
+})
+
 // ================================================================================================
 // G2 — the capture freshness assertion
 // ================================================================================================

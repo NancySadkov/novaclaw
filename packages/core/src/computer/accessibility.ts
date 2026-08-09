@@ -5,6 +5,7 @@ import type { ComputerCoordinates } from "./coordinates"
 
 /** Roles/names that identify a whole surface rather than an actionable control. */
 export const CONTAINER_ANTI_PATTERNS = ["RootWebArea", "Chrome Legacy Window", "BrowserWindow"] as const
+const CONTAINER_ROLES = new Set(["application", "desktop frame", "frame", "panel", "section", "viewport", "window"])
 
 export interface Candidate {
   readonly id: string
@@ -76,6 +77,8 @@ export function normalize(
     if (role === undefined) return rejected.push({ index, reason: "missing role" })
     if ((CONTAINER_ANTI_PATTERNS as ReadonlyArray<string>).some((value) => value === role || value === name))
       return rejected.push({ index, reason: `container anti-pattern: ${role}/${name}` })
+    if (CONTAINER_ROLES.has(role.toLowerCase()))
+      return rejected.push({ index, reason: `container role: ${role}` })
     if (bounds === undefined) return rejected.push({ index, reason: "invalid or off-screen bounds" })
     const actions = Array.isArray(raw.actions)
       ? raw.actions.map(text).filter((value): value is string => value !== undefined)
@@ -97,6 +100,29 @@ export function select(candidates: ReadonlyArray<Candidate>, id: string, target:
   if (candidate.name !== target.replace(/\s+/g, " ").trim())
     return { ok: false, reason: `element_id ${candidate.id} is named ${JSON.stringify(candidate.name)}, not ${JSON.stringify(target)}` }
   return { ok: true, candidate }
+}
+
+/** Centre of application-supplied bounds, in screen pixels. */
+export const center = (candidate: Candidate): ComputerCoordinates.Point => ({
+  x: Math.round(candidate.bounds.x + candidate.bounds.width / 2),
+  y: Math.round(candidate.bounds.y + candidate.bounds.height / 2),
+})
+
+/**
+ * Prefer a semantic AT-SPI action for a left click. The exact advertised spelling is returned so
+ * the adapter invokes what the application exposed, never an action name the harness invented.
+ */
+export function semanticAction(
+  candidate: Candidate,
+  kind: "move" | "click" | "double_click",
+  button?: ComputerActions.Button,
+): string | undefined {
+  if (kind !== "click" || (button ?? "left") !== "left") return undefined
+  for (const preferred of ["click", "press", "activate"]) {
+    const action = candidate.actions.find((value) => value.toLowerCase() === preferred)
+    if (action !== undefined) return action
+  }
+  return undefined
 }
 
 /** Compact, bounded planner projection. Bounds remain pixels supplied by the application. */

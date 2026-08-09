@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { ComputerLoop as LOOP } from "./loop"
 import { ComputerEvidence as CE } from "./evidence"
 import { ComputerActions } from "./actions"
+import type { ComputerAccessibility } from "./accessibility"
 import { ComputerProposal } from "./proposal"
 import type { ComputerPrompt } from "./prompt"
 
@@ -92,6 +93,12 @@ interface Run {
 const drive = (task: LOOP.TaskSpec, events: ReadonlyArray<LOOP.Event>): Run => {
   let transition = LOOP.start(task)
   const commands: LOOP.Command[] = [transition.command]
+  const answerAccessibility = () => {
+    while (transition.command.kind === "scan-accessibility") {
+      transition = LOOP.next(transition.state, { kind: "accessibility-scanned", candidates: [] })
+      commands.push(transition.command)
+    }
+  }
   const answerGrounder = () => {
     while (transition.command.kind === "ask-grounder") {
       const match = transition.command.prompt.user.match(/target-(\d+)-(\d+)/)
@@ -104,8 +111,10 @@ const drive = (task: LOOP.TaskSpec, events: ReadonlyArray<LOOP.Event>): Run => {
     if (transition.command.kind === "finish") break
     transition = LOOP.next(transition.state, event)
     commands.push(transition.command)
+    answerAccessibility()
     answerGrounder()
   }
+  answerAccessibility()
   answerGrounder()
   return { commands, state: transition.state, last: transition.command, outcome: transition.state.outcome }
 }
@@ -184,16 +193,19 @@ describe("a clean 3-step run reaches Done — and only through the harness's own
       "capture",
       "ask-adjudicator",
       "capture",
+      "scan-accessibility",
       "ask-planner",
       "ask-grounder",
       "act",
       "ask-adjudicator",
       "capture",
+      "scan-accessibility",
       "ask-planner",
       "ask-grounder",
       "act",
       "ask-adjudicator",
       "capture",
+      "scan-accessibility",
       "ask-planner",
       "ask-grounder",
       "act",
@@ -225,11 +237,82 @@ describe("a clean 3-step run reaches Done — and only through the harness's own
       spec().actionOptions,
     )
     if (!built.ok) throw new Error("fixture does not build")
-    expect(act.argv).toEqual(built.argv)
-    expect(act.env).toEqual({ DISPLAY: ":99" })
+    expect(act.execution).toEqual({ kind: "argv", argv: built.argv, env: { DISPLAY: ":99" } })
     // 464/1000 × 1280 = 594, 684/1000 × 800 = 547 — the P1 coordinate math, not a re-derivation.
     expect(act.action).toEqual({ kind: "click", button: "left", point: { x: 594, y: 547 } })
     expect(act.watch).toEqual({ x: 553, y: 522, width: 82, height: 51 })
+  })
+})
+
+describe("P5 — each pointer target chooses exactly one fresh source", () => {
+  const candidate = {
+    id: "gtk/button/save",
+    role: "push button",
+    name: "Save",
+    bounds: { x: 900, y: 720, width: 100, height: 40 },
+    actions: ["Press"],
+  } as const
+
+  const reachPlanner = (candidates: ReadonlyArray<ComputerAccessibility.Candidate>) => {
+    let transition = LOOP.start(spec())
+    transition = LOOP.next(transition.state, captured("start"))
+    transition = LOOP.next(transition.state, adjudged({ checkpoint: "no" }))
+    transition = LOOP.next(transition.state, captured("s1"))
+    expect(transition.command.kind).toBe("scan-accessibility")
+    transition = LOOP.next(transition.state, { kind: "accessibility-scanned", candidates })
+    expect(transition.command.kind).toBe("ask-planner")
+    return transition
+  }
+
+  test("an exact id + own name skips grounding and prefers the advertised semantic action", () => {
+    let transition = reachPlanner([candidate])
+    transition = LOOP.next(
+      transition.state,
+      propose({ action: { kind: "click", button: "left", target: "Save", element_id: candidate.id } }),
+    )
+    expect(transition.command.kind).toBe("act")
+    if (transition.command.kind !== "act") return
+    expect(transition.command.execution).toEqual({
+      kind: "accessibility",
+      elementID: candidate.id,
+      ownName: candidate.name,
+      actionName: "Press",
+    })
+    expect(transition.command.watch).toEqual(candidate.bounds)
+  })
+
+  test("a selected node with no semantic action uses its application-supplied centre and bounds", () => {
+    const plain = { ...candidate, actions: [] }
+    let transition = reachPlanner([plain])
+    transition = LOOP.next(
+      transition.state,
+      propose({ action: { kind: "click", button: "left", target: "Save", element_id: candidate.id } }),
+    )
+    expect(transition.command.kind).toBe("act")
+    if (transition.command.kind !== "act") return
+    expect(transition.command.execution).toEqual({
+      kind: "argv",
+      argv: [
+        ["xdotool", "mousemove", "950", "740"],
+        ["xdotool", "click", "1"],
+      ],
+      env: { DISPLAY: ":99" },
+    })
+    expect(transition.command.watch).toEqual(plain.bounds)
+  })
+
+  test("a stale or name-mismatched id is refused, never silently sent to the pixel grounder", () => {
+    for (const [id, target] of [["missing", "Save"], [candidate.id, "Save button"]] as const) {
+      let transition = reachPlanner([candidate])
+      transition = LOOP.next(
+        transition.state,
+        propose({ action: { kind: "click", button: "left", target, element_id: id } }),
+      )
+      expect(transition.command.kind).toBe("ask-planner")
+      if (transition.command.kind !== "ask-planner") continue
+      expect(transition.command.prompt.user).toContain("REFUSED accessibility target")
+      expect(transition.command.prompt.user).not.toContain("Point to the control")
+    }
   })
 })
 
@@ -1172,7 +1255,7 @@ describe("🔴 the Guard calls `ComputerActions.build`, which is where value-lev
       if (run.last.kind !== "act") continue
       const built = ComputerActions.build(action as ComputerActions.Action, spec().actionOptions)
       if (!built.ok) throw new Error(`fixture does not build: ${built.reason}`)
-      expect(run.last.argv).toEqual(built.argv)
+      expect(run.last.execution).toEqual({ kind: "argv", argv: built.argv, env: built.env })
     }
   })
 

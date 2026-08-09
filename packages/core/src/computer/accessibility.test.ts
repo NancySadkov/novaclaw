@@ -48,6 +48,14 @@ describe("P5 accessibility candidate boundary", () => {
     expect(A11y.select(candidates, "missing", "Save").ok).toBe(false)
   })
 
+  test("prefers the exact advertised semantic click action and otherwise supplies a pixel centre", () => {
+    const candidate = A11y.normalize([node({ actions: ["show menu", "Press"] })], viewport).candidates[0]!
+    expect(A11y.semanticAction(candidate, "click", "left")).toBe("Press")
+    expect(A11y.semanticAction(candidate, "click", "right")).toBeUndefined()
+    expect(A11y.semanticAction(candidate, "double_click")).toBeUndefined()
+    expect(A11y.center(candidate)).toEqual({ x: 950, y: 740 })
+  })
+
   test("the projection is bounded and names omitted candidates", () => {
     const candidates = A11y.normalize(
       [node(), node({ id: "app/0/button/5", name: "Cancel", actions: [] })],

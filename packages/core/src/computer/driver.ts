@@ -2,6 +2,7 @@ export * as ComputerDriver from "./driver"
 
 import { Duration, Effect } from "effect"
 import { ComputerActions } from "./actions"
+import { ComputerAccessibility } from "./accessibility"
 import { ComputerEvidence } from "./evidence"
 import type { ComputerLedger } from "./ledger"
 import { ComputerLoop } from "./loop"
@@ -126,6 +127,14 @@ export interface ActRequest {
   readonly env: Readonly<Record<string, string>>
 }
 
+export interface AccessibilityInvokeRequest {
+  readonly elementID: string
+  /** Revalidated immediately before invocation so a changed traversal index cannot hit a new node. */
+  readonly ownName: string
+  /** Exact action name advertised by that node in the immediately preceding scan. */
+  readonly actionName: string
+}
+
 export type ActOutcome = { readonly ok: true } | { readonly ok: false; readonly reason: string }
 
 export type AskKind = "planner" | "grounder" | "adjudicator"
@@ -151,6 +160,10 @@ export type AskOutcome =
 export interface Deps {
   readonly capture: (request: CaptureRequest) => Effect.Effect<CaptureOutcome>
   readonly act: (request: ActRequest) => Effect.Effect<ActOutcome>
+  /** Absent means this substrate exposes no accessibility channel; pixels remain the floor. */
+  readonly scanAccessibility?: () => Effect.Effect<ReadonlyArray<unknown>>
+  /** Required only when a selected candidate advertised an invokable semantic action. */
+  readonly invokeAccessibility?: (request: AccessibilityInvokeRequest) => Effect.Effect<ActOutcome>
   readonly ask: (request: AskRequest) => Effect.Effect<AskOutcome>
   /**
    * Directory the per-capture files go in — a path on the machine the DISPLAY lives on, so it is
@@ -544,7 +557,20 @@ export function run(spec: ComputerLoop.TaskSpec, deps: Deps): Effect.Effect<RunR
           }
         }
 
-        const outcome = yield* deps.act({ action: command.action, argv: command.argv, env: command.env })
+        const outcome =
+          command.execution.kind === "argv"
+            ? yield* deps.act({
+                action: command.action,
+                argv: command.execution.argv,
+                env: command.execution.env,
+              })
+            : deps.invokeAccessibility === undefined
+              ? ({ ok: false, reason: "the selected accessibility node is invokable but this substrate has no accessibility actuator" } as const)
+              : yield* deps.invokeAccessibility({
+                  elementID: command.execution.elementID,
+                  ownName: command.execution.ownName,
+                  actionName: command.execution.actionName,
+                })
         if (!outcome.ok) return { kind: "act-failed", reason: outcome.reason }
         acted += 1
 
@@ -591,6 +617,12 @@ export function run(spec: ComputerLoop.TaskSpec, deps: Deps): Effect.Effect<RunR
               capture: taken.capture,
               ...(taken.image === undefined ? {} : { image: taken.image }),
             }
+          }
+          case "scan-accessibility": {
+            if (deps.scanAccessibility === undefined) return { kind: "accessibility-scanned", candidates: [] }
+            const raw = yield* deps.scanAccessibility()
+            const normalized = ComputerAccessibility.normalize(raw, spec.viewport)
+            return { kind: "accessibility-scanned", candidates: normalized.candidates }
           }
           case "ask-planner":
           case "ask-grounder":
