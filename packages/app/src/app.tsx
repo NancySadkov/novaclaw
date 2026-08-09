@@ -68,7 +68,7 @@ import { RegistryPage } from "@/pages/registry"
 import { MemoryGraphPage } from "@/pages/memory-graph"
 import { TrashPage } from "@/pages/trash"
 import { TerminalPage } from "@/pages/terminal"
-import { installErrorLog } from "@/utils/error-log"
+import { clientLogPayload, installClientLogSender, installErrorLog } from "@/utils/error-log"
 import { publicAssetUrl } from "@/utils/public-asset"
 
 const NewSession = lazy(() => import("@/pages/new-session"))
@@ -552,6 +552,33 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
   )
 }
 
+/**
+ * Drain renderer faults to whichever whole instance the shell currently operates.
+ *
+ * This sits inside ServerProvider + GlobalProvider but outside ConnectionGate: errors captured while
+ * an instance is reconnecting stay queued, and selecting another instance swaps the target without
+ * remounting the app. Failures are intentionally silent here — console logging would feed the same
+ * tap and manufacture an error loop; the bounded in-memory ring remains visible in Debug.
+ */
+function ClientErrorLogDrain() {
+  const server = useServer()
+  const global = useGlobal()
+
+  createEffect(() => {
+    const connection = server.current
+    if (!connection) return
+    const client = global.ensureServerCtx(connection).sdk.client
+    const sender = async (entry: Parameters<typeof clientLogPayload>[0]) => {
+      const response = await client.app.log(clientLogPayload(entry))
+      return response.data === true
+    }
+    const remove = installClientLogSender(sender)
+    onCleanup(remove)
+  })
+
+  return null
+}
+
 function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key: ServerConnection.Key) => void }) {
   const language = useLanguage()
   const server = useServer()
@@ -652,6 +679,7 @@ export function AppInterface(props: {
     >
       <GlobalProvider>
         <SettingsProvider>
+          <ClientErrorLogDrain />
           <ConnectionGate disableHealthCheck={props.disableHealthCheck}>
             <ExpertiseMirror />
             <Dynamic
