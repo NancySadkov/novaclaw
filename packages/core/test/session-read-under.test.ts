@@ -42,6 +42,9 @@ describe("SessionRead.list under", () => {
       const under = yield* SessionRead.list(db, { under: AbsolutePath.make("C:\\repo") })
       expect(under.map((s) => String(s.id)).sort()).toEqual(["ses_root", "ses_sub_posix", "ses_sub_win"])
 
+      const exact = yield* SessionRead.list(db, { directory: AbsolutePath.make("C:\\repo") })
+      expect(exact.map((s) => String(s.id))).toEqual(["ses_root"])
+
       const all = yield* SessionRead.list(db)
       expect(all).toHaveLength(5)
     }),

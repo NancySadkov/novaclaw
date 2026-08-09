@@ -138,7 +138,8 @@ it.effect("subagent self permissions are preserved", () =>
     expect(Permission.evaluate("bash", "git status", effective).action).toBe("allow")
     expect(Permission.evaluate("task", "worker", effective).action).toBe("allow")
     expect(Permission.evaluate("task", "other", effective).action).toBe("deny")
-    expect(Permission.evaluate("write", "/some/file.ts", effective).action).not.toBe("deny")
+    expect(Permission.evaluate("edit", "/some/file.ts", effective).action).toBe("allow")
+    expect(Permission.evaluate("write", "/some/file.ts", effective).action).toBe("deny")
   }),
 )
 

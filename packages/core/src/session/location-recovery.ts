@@ -1,6 +1,6 @@
 export * as SessionLocationRecovery from "./location-recovery"
 
-import { and, eq, sql } from "drizzle-orm"
+import { and, eq, or, sql } from "drizzle-orm"
 import { Effect } from "effect"
 import type { Database } from "../database/database"
 import type { AbsolutePath } from "../schema"
@@ -65,10 +65,13 @@ export const clear = (db: Db, sessionID: SessionSchema.ID) =>
 
 /** Correlated predicate: current folder OR the folder automatic recovery moved this session out of. */
 export const matchesDirectory = (directory: AbsolutePath) =>
-  sql<boolean>`(${SessionTable.directory} = ${directory} or exists (
+  or(
+    eq(SessionTable.directory, directory),
+    sql<boolean>`exists (
     select 1 from ${SessionComponentTable}
     where ${SessionComponentTable.session_id} = ${SessionTable.id}
       and ${SessionComponentTable.kind} = ${KIND}
       and ${SessionComponentTable.component_id} = ''
       and json_extract(${SessionComponentTable.value}, '$') = ${directory}
-  ))`
+  )`,
+  )!

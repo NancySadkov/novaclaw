@@ -273,7 +273,7 @@ describe("HttpApi SDK", () => {
   httpapiInstance(
     "uses the generated SDK for safe instance routes",
     { serverPath: "raw", git: false, setup: writeStandardFiles },
-    ({ sdk }) =>
+    ({ sdk, directory }) =>
       Effect.gen(function* () {
         const file = yield* call(() => sdk.file.read({ path: "hello.txt" }))
         const session = yield* call(() => sdk.v2.session.create({ title: "sdk" }))
@@ -282,7 +282,7 @@ describe("HttpApi SDK", () => {
         expect(file.response.status).toBe(200)
         expect(file.data).toMatchObject({ content: "hello" })
         expect(session.response.status).toBe(200)
-        expect(session.data?.data).toMatchObject({ title: "sdk" })
+        expect(session.data?.data).toMatchObject({ title: "sdk", location: { directory } })
         expect(listed.response.status).toBe(200)
         expect(listed.data?.data.map((item) => item.id)).toContain(session.data?.data.id)
 
