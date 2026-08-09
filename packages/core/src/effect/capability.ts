@@ -1,4 +1,5 @@
 import { Cause, Clock, Context, Effect, Exit, Layer, Option, Ref, Scope, Semaphore } from "effect"
+import { Log } from "@novaclaw/schema/log"
 
 export type Unavailable = {
   readonly capability: string
@@ -89,7 +90,10 @@ export const make = <A>(options: MakeOptions<A>): Effect.Effect<Capability<A>> =
         const attempts = current.attempts + 1
         const error = unavailableFrom(options, outcome.cause)
         const result = { ok: false, error } as const
-        yield* Effect.logError(error.summary)
+        yield* Log.event("instance.capability.start.failed", {
+          "instance.capability": options.name,
+          "instance.cause": Log.fault(outcome.cause),
+        })
         yield* Ref.set(state, { status: { state: "unavailable", reason: error, at, attempts }, result, attempts })
         return result
       }

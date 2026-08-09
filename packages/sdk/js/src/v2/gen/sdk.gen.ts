@@ -664,7 +664,7 @@ class ApiCapability extends NovaClawApiClient {
   ) {
     const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
     return (options?.client ?? this.client).get<T.CapabilityListResponses, T.CapabilityListErrors, ThrowOnError>({
-      url: "/capability",
+      url: "/api/capability",
       ...options,
       query,
     })
@@ -686,7 +686,7 @@ class ApiCapability extends NovaClawApiClient {
     const path = { name: parameters?.["name"] }
     const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
     return (options?.client ?? this.client).post<T.CapabilityRetryResponses, T.CapabilityRetryErrors, ThrowOnError>({
-      url: "/capability/{name}/retry",
+      url: "/api/capability/{name}/retry",
       ...options,
       path,
       query,

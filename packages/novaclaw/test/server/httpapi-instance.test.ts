@@ -57,7 +57,7 @@ describe("instance HttpApi", () => {
   it.live("observes optional capabilities without starting them and rejects unknown retries", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
-      const list = yield* HttpClient.get(`/capability?directory=${encodeURIComponent(dir)}`)
+      const list = yield* HttpClient.get(`/api/capability?directory=${encodeURIComponent(dir)}`)
 
       expect(list.status).toBe(200)
       expect(yield* list.json).toEqual(
@@ -75,7 +75,7 @@ describe("instance HttpApi", () => {
       expect(yield* accounts.json).toEqual([])
 
       const retry = yield* HttpClientRequest.post(
-        `/capability/not-declared/retry?directory=${encodeURIComponent(dir)}`,
+        `/api/capability/not-declared/retry?directory=${encodeURIComponent(dir)}`,
       ).pipe(HttpClient.execute)
       expect(retry.status).toBe(400)
       expect(yield* retry.json).toMatchObject({ message: "Unknown capability: not-declared" })

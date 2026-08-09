@@ -1648,7 +1648,7 @@
         ]
       }
     },
-    "/capability": {
+    "/api/capability": {
       "get": {
         "tags": ["capability"],
         "operationId": "capability.list",
@@ -1670,6 +1670,7 @@
             "required": false
           }
         ],
+        "security": [],
         "responses": {
           "200": {
             "description": "Every declared optional capability and its live state, without starting idle capabilities",
@@ -1859,14 +1860,17 @@
             }
           },
           "400": {
-            "description": "Bad request",
+            "description": "InvalidRequestError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
+                  "$ref": "#/components/schemas/InvalidRequestError"
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized"
           }
         },
         "description": "Inspect the live capability graph without waking capabilities that have not been used.",
@@ -1879,7 +1883,7 @@
         ]
       }
     },
-    "/capability/{name}/retry": {
+    "/api/capability/{name}/retry": {
       "post": {
         "tags": ["capability"],
         "operationId": "capability.retry",
@@ -1909,6 +1913,7 @@
             "required": false
           }
         ],
+        "security": [],
         "responses": {
           "200": {
             "description": "The capability's state after the retry attempt",
@@ -2110,6 +2115,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized"
           }
         },
         "description": "Re-arm one cached startup failure and attempt it once. Ready, starting, and idle capabilities are unchanged.",

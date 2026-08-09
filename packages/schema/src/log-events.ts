@@ -779,6 +779,14 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/project/bootstrap.ts",
   },
+  /** An optional capability could not start; its refusal is cached while the rest of the instance stays live. */
+  "instance.capability.start.failed": {
+    level: "error",
+    message: "optional capability could not start",
+    attributes: { "instance.capability": "id", "instance.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/effect/capability.ts",
+  },
   /**
    * The instance database could not be opened, upgraded, or recognised, so the boot STOPPED. The
    * one fault on this list that is deliberately not survivable: coming up on an unusable or

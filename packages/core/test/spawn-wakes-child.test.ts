@@ -4,6 +4,7 @@ import { DateTime, Deferred, Duration, Effect, Fiber, Layer } from "effect"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { CapabilityRegistry } from "@novaclaw/core/effect/capability-registry"
 import { makeLocationNode, Node } from "@novaclaw/core/effect/app-node"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
@@ -312,17 +313,20 @@ describe("SessionSpawner quotas use durable session facts", () => {
 describe("the spawn seam stays cycle-free", () => {
   // Why the wake is PUSHED into a dependency-free relay instead of the spawner PULLING
   // `SessionExecution`: the obvious edge is not a smell, it is fatal. `buildLocationServiceMap`
-  // hoists global nodes out of every location subtree and compiles them, and `LayerNode.compile`
-  // throws on an unbound node — so one added dependency breaks every location boot in the product,
-  // including the plain `locationServiceMapLayer` the CLI debug commands use.
+  // first binds the one process-wide CapabilityRegistry seam, then hoists global nodes out of every
+  // location subtree and compiles them. `LayerNode.compile` throws on any OTHER unbound node — so one
+  // added dependency still breaks every location boot in the product, including the plain
+  // `locationServiceMapLayer` the CLI debug commands use.
   test("no unbound node is reachable from the location graph", () => {
-    const { hoisted } = LayerNode.hoist(locationServices, Node.tags.values.global)
+    const replacements = CapabilityRegistry.bind(locationServices, [])
+    const { hoisted } = LayerNode.hoist(locationServices, Node.tags.values.global, replacements)
     expect(() => LayerNode.compile(hoisted)).not.toThrow()
   })
 
   test("the guard actually bites: one SessionExecution edge makes the location graph uncompilable", () => {
     const withExecution = LayerNode.group([...locationServices.dependencies, SessionExecution.node])
-    const { hoisted } = LayerNode.hoist(withExecution, Node.tags.values.global)
+    const replacements = CapabilityRegistry.bind(withExecution, [])
+    const { hoisted } = LayerNode.hoist(withExecution, Node.tags.values.global, replacements)
     expect(() => LayerNode.compile(hoisted)).toThrow(/Unbound layer node/)
   })
 

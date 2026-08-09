@@ -8186,14 +8186,18 @@ export type CapabilityListData = {
     directory?: string
     workspace?: string
   }
-  url: "/capability"
+  url: "/api/capability"
 }
 
 export type CapabilityListErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
 }
 
 export type CapabilityListError = CapabilityListErrors[keyof CapabilityListErrors]
@@ -8242,7 +8246,7 @@ export type CapabilityRetryData = {
     directory?: string
     workspace?: string
   }
-  url: "/capability/{name}/retry"
+  url: "/api/capability/{name}/retry"
 }
 
 export type CapabilityRetryErrors = {
@@ -8250,6 +8254,10 @@ export type CapabilityRetryErrors = {
    * InvalidRequestError
    */
   400: InvalidRequestError | InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
 }
 
 export type CapabilityRetryError = CapabilityRetryErrors[keyof CapabilityRetryErrors]

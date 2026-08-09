@@ -87,8 +87,8 @@ export const boundNode = (nodes: ReadonlyArray<LayerNode.CapabilityNode<unknown,
   makeGlobalNode({ service: Service, layer: layer(nodes), deps: nodes as never })
 
 /** Replace the registry seam exactly once with a registry derived from this application's graph. */
-export const bind = (
-  root: LayerNode.Node<unknown, unknown, any>,
+export const bind = <R>(
+  root: LayerNode.Node<unknown, unknown, any, R>,
   replacements: LayerNode.Replacements,
 ): LayerNode.Replacements => {
   if (!LayerNode.hasUnbound(root, node) || replacements.some(([source]) => source.name === node.name)) {

@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { InvalidRequestError } from "../errors"
+import { Authorization } from "../middleware/authorization"
 import { WorkspaceRoutingQuery } from "../middleware/workspace-routing"
 import { described } from "./metadata"
 
@@ -31,7 +32,7 @@ const RetryParams = Schema.Struct({ name: Schema.String })
 export const CapabilityApi = HttpApi.make("capability").add(
   HttpApiGroup.make("capability")
     .add(
-      HttpApiEndpoint.get("list", "/capability", {
+      HttpApiEndpoint.get("list", "/api/capability", {
         query: WorkspaceRoutingQuery,
         success: described(
           Schema.Array(CapabilitySnapshot),
@@ -44,7 +45,7 @@ export const CapabilityApi = HttpApi.make("capability").add(
           description: "Inspect the live capability graph without waking capabilities that have not been used.",
         }),
       ),
-      HttpApiEndpoint.post("retry", "/capability/:name/retry", {
+      HttpApiEndpoint.post("retry", "/api/capability/:name/retry", {
         params: RetryParams,
         query: WorkspaceRoutingQuery,
         success: described(CapabilitySnapshot, "The capability's state after the retry attempt"),
@@ -63,5 +64,6 @@ export const CapabilityApi = HttpApi.make("capability").add(
         title: "capability",
         description: "Live optional-capability status and recovery controls for the Developer-mode Debug app.",
       }),
-    ),
+    )
+    .middleware(Authorization),
 )

@@ -24,13 +24,13 @@ export interface CapabilitySnapshot {
 }
 
 export function capabilities(server: ServerConnection.HttpBase, directory: string) {
-  return instanceFetchList<CapabilitySnapshot>(server, { route: "capability", directory }, "optional capabilities")
+  return instanceFetchList<CapabilitySnapshot>(server, { route: "api/capability", directory }, "optional capabilities")
 }
 
 export function retryCapability(server: ServerConnection.HttpBase, name: string, directory: string) {
   return instanceFetch<CapabilitySnapshot>(server, {
     method: "POST",
-    route: `capability/${encodeURIComponent(name)}/retry`,
+    route: `api/capability/${encodeURIComponent(name)}/retry`,
     directory,
   })
 }

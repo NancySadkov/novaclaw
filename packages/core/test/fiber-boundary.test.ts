@@ -26,7 +26,7 @@ const KNOWN: ReadonlyArray<string> = [
   // exonerated `kb-graph/memory.ts:85` for the same reason. **Two of three grep-derived beliefs about
   // this class were wrong** — which is the argument for the parser over a pattern, and the reason
   // this list is populated from the instrument rather than from what I expected it to say.
-  "packages/novaclaw/src/local-model/runtime.ts:559 Effect.runPromise",
+  "packages/novaclaw/src/local-model/runtime.ts:566 Effect.runPromise",
 ]
 
 const crossings = scanWorkspace(ROOT).map((c) => `${c.file}:${c.line} ${c.call}`)
