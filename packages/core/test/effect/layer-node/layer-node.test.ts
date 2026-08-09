@@ -23,6 +23,154 @@ const value = make({ service: Value, layer: valueLayer, deps: [] })
 const greeting = make({ service: Greeting, layer: greetingLayer, deps: [value] })
 
 describe("layer node", () => {
+  test("builds a capability once on first use and exposes status without starting it", async () => {
+    let builds = 0
+    const inner = make({
+      service: Value,
+      layer: Layer.effect(
+        Value,
+        Effect.sync(() => {
+          builds++
+          return Value.of({ value: "lazy" })
+        }),
+      ),
+      deps: [],
+    })
+    const capability = LayerNode.capability(inner, { name: "test.lazy", service: Value, timeout: "1 second" })
+    const program = Effect.gen(function* () {
+      const handle = yield* capability.service
+      const before = yield* handle.status
+      const [first, second] = yield* Effect.all([handle.get, handle.get], { concurrency: "unbounded" })
+      const after = yield* handle.status
+      return { before, first, second, after }
+    }).pipe(Effect.provide(build(LayerNode.group([capability]))))
+
+    const result = await Effect.runPromise(program)
+    expect(result.before).toEqual({ state: "idle" })
+    expect(result.first).toEqual({ ok: true, value: { value: "lazy" } })
+    expect(result.second).toEqual(result.first)
+    expect(result.after.state).toBe("ready")
+    expect(builds).toBe(1)
+  })
+
+  test("closes a started capability with its owning layer scope", async () => {
+    let closed = false
+    const inner = make({
+      service: Value,
+      layer: Layer.effect(
+        Value,
+        Effect.gen(function* () {
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              closed = true
+            }),
+          )
+          return Value.of({ value: "scoped" })
+        }),
+      ),
+      deps: [],
+    })
+    const capability = LayerNode.capability(inner, { name: "test.scoped", service: Value })
+    const program = Effect.gen(function* () {
+      const handle = yield* capability.service
+      return yield* handle.get
+    }).pipe(Effect.provide(build(LayerNode.group([capability]))))
+
+    expect(await Effect.runPromise(program)).toEqual({ ok: true, value: { value: "scoped" } })
+    expect(closed).toBe(true)
+  })
+
+  test("provides the deferred service's declared dependencies", async () => {
+    const inner = make({ service: Greeting, layer: greetingLayer, deps: [value] })
+    const capability = LayerNode.capability(inner, { name: "test.dependencies", service: Greeting })
+    const program = Effect.gen(function* () {
+      const handle = yield* capability.service
+      return yield* handle.get
+    }).pipe(Effect.provide(build(LayerNode.group([capability]))))
+
+    expect(await Effect.runPromise(program)).toEqual({ ok: true, value: { value: "hello production" } })
+  })
+
+  test("turns defects and timeouts into cached unavailable values", async () => {
+    const failed = make({
+      service: Value,
+      layer: Layer.effect(Value, Effect.die(new Error("forced defect"))),
+      deps: [],
+    })
+    const stalled = make({ service: Left, layer: Layer.effect(Left, Effect.never), deps: [] })
+    const failedCapability = LayerNode.capability(failed, {
+      name: "test.failed",
+      service: Value,
+      timeout: "1 second",
+    })
+    const stalledCapability = LayerNode.capability(stalled, {
+      name: "test.stalled",
+      service: Left,
+      timeout: "10 millis",
+    })
+    const program = Effect.gen(function* () {
+      const failedHandle = yield* failedCapability.service
+      const stalledHandle = yield* stalledCapability.service
+      return { failed: yield* failedHandle.get, stalled: yield* stalledHandle.get }
+    }).pipe(Effect.provide(build(LayerNode.group([failedCapability, stalledCapability]))))
+
+    const result = await Effect.runPromise(program)
+    expect(result.failed).toMatchObject({
+      ok: false,
+      error: { capability: "test.failed", kind: "failed" },
+    })
+    expect(result.stalled).toMatchObject({
+      ok: false,
+      error: { capability: "test.stalled", kind: "timeout" },
+    })
+  })
+
+  test("retry re-arms only a cached failure", async () => {
+    let refuse = true
+    let builds = 0
+    const inner = make({
+      service: Value,
+      layer: Layer.effect(
+        Value,
+        Effect.sync(() => {
+          builds++
+          if (refuse) throw new Error("not yet")
+          return Value.of({ value: "repaired" })
+        }),
+      ),
+      deps: [],
+    })
+    const capability = LayerNode.capability(inner, { name: "test.retry", service: Value })
+    const program = Effect.gen(function* () {
+      const handle = yield* capability.service
+      const first = yield* handle.get
+      refuse = false
+      const retried = yield* handle.retry
+      const second = yield* handle.get
+      const readyRetry = yield* handle.retry
+      return { first, retried, second, readyRetry }
+    }).pipe(Effect.provide(build(LayerNode.group([capability]))))
+
+    const result = await Effect.runPromise(program)
+    expect(result.first.ok).toBe(false)
+    expect(result.retried.state).toBe("ready")
+    expect(result.second).toEqual({ ok: true, value: { value: "repaired" } })
+    expect(result.readyRetry.state).toBe("ready")
+    expect(builds).toBe(2)
+  })
+
+  test("applies replacements to the capability's deferred inner node", async () => {
+    const inner = make({ service: Value, layer: valueLayer, deps: [] })
+    const capability = LayerNode.capability(inner, { name: "test.replaced", service: Value })
+    const replacement = Layer.succeed(Value, Value.of({ value: "simulation" }))
+    const program = Effect.gen(function* () {
+      const handle = yield* capability.service
+      return yield* handle.get
+    }).pipe(Effect.provide(build(LayerNode.group([capability]), [[inner, replacement]])))
+
+    expect(await Effect.runPromise(program)).toEqual({ ok: true, value: { value: "simulation" } })
+  })
+
   test("builds an untagged graph", async () => {
     const value = LayerNode.make({ service: Value, layer: valueLayer, deps: [] })
     const greeting = LayerNode.make({ service: Greeting, layer: greetingLayer, deps: [value] })

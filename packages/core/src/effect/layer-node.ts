@@ -1,4 +1,5 @@
-import { Brand, Context, Layer } from "effect"
+import { Brand, Context, Effect, Layer } from "effect"
+import { Capability } from "./capability"
 
 type AnyNode = Node<unknown, unknown, any>
 type RuntimeLayer = Layer.Layer<never, unknown, unknown>
@@ -20,7 +21,7 @@ export type Tag<Name extends string = string> = Name & Brand.Brand<"LayerNode.Ta
 const makeTag = Brand.nominal<Tag>()
 
 export interface Node<A, E = never, T extends Tag | undefined = undefined> {
-  readonly kind: "layer" | "unbound" | "group"
+  readonly kind: "layer" | "unbound" | "group" | "capability"
   readonly name: string
   readonly service?: Context.Service.Any
   readonly implementation?: Layer.Any
@@ -28,6 +29,17 @@ export interface Node<A, E = never, T extends Tag | undefined = undefined> {
   readonly tag?: T
   readonly [$OutputType]?: () => A
   readonly [$ErrorType]?: () => E
+}
+
+export interface CapabilityNode<A, E = never, T extends Tag | undefined = undefined>
+  extends Node<Capability.Capability<A>, never, T> {
+  readonly kind: "capability"
+  readonly inner: Node<unknown, E, T>
+  readonly innerService: Context.Service.Any
+  readonly service: Context.Service<Capability.Capability<A>, Capability.Capability<A>>
+  readonly capabilityName: string
+  readonly timeout: import("effect").Duration.Input
+  readonly repair?: readonly string[]
 }
 
 type NodeIdentity =
@@ -109,6 +121,37 @@ export function group<const Items extends readonly AnyNode[]>(
   dependencies: Items,
 ): Node<Output<Items[number]>, Error<Items[number]>, NodeTag<Items[number]>> {
   return { kind: "group", name: "group", dependencies }
+}
+
+/** Wrap one service node in a first-use, failure-as-data capability. */
+export function capability<S extends Context.Service.Any, E, T extends Tag | undefined>(
+  inner: Node<Context.Service.Identifier<S>, E, T>,
+  options: {
+    readonly name: string
+    readonly service: S
+    readonly timeout?: import("effect").Duration.Input
+    readonly repair?: readonly string[]
+  },
+): CapabilityNode<Context.Service.Shape<S>, E, T> {
+  if (inner.service === undefined) throw new Error(`Capability ${options.name} must wrap one service node`)
+  if (inner.service.key !== options.service.key) {
+    throw new Error(`Capability ${options.name} service does not match ${inner.name}`)
+  }
+  const service = Context.Service<Capability.Capability<Context.Service.Shape<S>>>(
+    `@novaclaw/capability/${options.name}`,
+  )
+  return {
+    kind: "capability",
+    name: service.key,
+    service,
+    dependencies: [inner],
+    inner,
+    innerService: options.service,
+    capabilityName: options.name,
+    tag: inner.tag,
+    timeout: options.timeout ?? "30 seconds",
+    ...(options.repair === undefined ? {} : { repair: options.repair }),
+  }
 }
 
 export type Replacement = readonly [source: AnyNode, replacement: AnyNode | Layer.Any]
@@ -294,6 +337,35 @@ export function compile<A, E, const Items extends Replacements = readonly []>(
       node,
       (node, context) => {
         if (node.kind === "unbound") throw new Error(`Unbound layer node: ${node.name}`)
+        if (node.kind === "capability") {
+          const capabilityNode = node as CapabilityNode<unknown, unknown, Tag | undefined>
+          const rawInner = capabilityNode.dependencies[0]!
+          const inner = replacementMap.get(rawInner.name) ?? rawInner
+          if (inner.kind !== "layer" || inner.service === undefined) {
+            throw new Error(`Capability ${capabilityNode.name} must resolve to one service layer`)
+          }
+          const dependencies = inner.dependencies.flatMap(flatten).map(context.visit)
+          const implementation = inner.implementation! as RuntimeLayer
+          const wrapper = Layer.effect(
+            capabilityNode.service,
+            Effect.gen(function* () {
+              const environment = yield* Effect.context<unknown>()
+              const parentScope = yield* Effect.scope
+              return yield* Capability.make({
+                name: capabilityNode.capabilityName,
+                service: capabilityNode.innerService,
+                layer: implementation as Layer.Layer<unknown, unknown, unknown>,
+                environment,
+                parentScope,
+                timeout: capabilityNode.timeout,
+                ...(capabilityNode.repair === undefined ? {} : { repair: capabilityNode.repair }),
+              })
+            }),
+          ) as unknown as RuntimeLayer
+          return dependencies.length === 0
+            ? wrapper
+            : wrapper.pipe(Layer.provide(dependencies as [RuntimeLayer, ...RuntimeLayer[]]))
+        }
         const dependencies = node.dependencies.flatMap(flatten).map(context.visit)
         const implementation = node.implementation! as RuntimeLayer
         return dependencies.length === 0
