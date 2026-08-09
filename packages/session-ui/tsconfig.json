@@ -10,10 +10,19 @@
     "isolatedModules": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "noEmit": true,
+    "composite": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "outDir": "../../.ts-dist/session-ui",
     "lib": ["es2023", "dom", "dom.iterable"],
     "strict": true,
     "types": ["vite/client", "bun"]
   },
-  "exclude": ["**/*.stories.*", "**/*.mdx"]
+  "exclude": ["**/*.stories.*", "**/*.mdx"],
+  "references": [
+    { "path": "../core" },
+    { "path": "../sdk/js" },
+    { "path": "../ui" }
+  ]
 }
