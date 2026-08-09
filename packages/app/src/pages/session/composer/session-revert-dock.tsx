@@ -1,6 +1,6 @@
 import { For, Show, createEffect, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
-import { Button } from "@novaclaw/ui/button"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { DockTray } from "@novaclaw/ui/dock-surface"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
@@ -82,15 +82,15 @@ export function SessionRevertDock(props: {
             {(item) => (
               <div class="flex items-center gap-2 min-w-0 py-1">
                 <span class="min-w-0 flex-1 truncate text-13-regular text-text-strong">{item.text}</span>
-                <Button
+                <ButtonV2
                   size="small"
-                  variant="secondary"
+                  variant="neutral"
                   class="shrink-0"
                   disabled={props.disabled || !!props.restoring}
                   onClick={() => props.onRestore(item.id)}
                 >
                   {language.t("session.revertDock.restore")}
-                </Button>
+                </ButtonV2>
               </div>
             )}
           </For>
@@ -99,7 +99,7 @@ export function SessionRevertDock(props: {
               native transcript). Offering it per item would promise a granularity the engine does
               not have. The count is in the label so the scope is legible before the confirm. */}
           <div class="flex items-center justify-end border-t border-border-weak pt-2">
-            <Button
+            <ButtonV2
               size="small"
               variant="ghost"
               class="shrink-0 text-state-fg-danger"
@@ -107,7 +107,7 @@ export function SessionRevertDock(props: {
               onClick={() => props.onDiscard()}
             >
               {language.t("session.revertDock.discard", { count: total() })}
-            </Button>
+            </ButtonV2>
           </div>
         </div>
       </Show>

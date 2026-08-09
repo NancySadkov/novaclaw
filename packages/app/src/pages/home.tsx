@@ -16,7 +16,6 @@ import {
 } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
-import { Button } from "@novaclaw/ui/button"
 import { Logo } from "@novaclaw/ui/logo"
 import { Spinner } from "@novaclaw/ui/spinner"
 import { ScrollView } from "@novaclaw/ui/scroll-view"
@@ -1664,11 +1663,11 @@ function DialogBulkSessions(props: {
         <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
           <span class="text-12-regular text-text-weak">{props.description}</span>
           <div class="flex justify-end gap-2">
-            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+            <ButtonV2 variant="ghost" size="large" onClick={() => dialog.close()}>
               {language.t("common.cancel")}
-            </Button>
-            <Button
-              variant={props.danger ? "primary" : "secondary"}
+            </ButtonV2>
+            <ButtonV2
+              variant={props.danger ? "danger" : "neutral"}
               size="large"
               data-action="home-session-bulk-confirm"
               disabled={busy()}
@@ -1678,7 +1677,7 @@ function DialogBulkSessions(props: {
               }}
             >
               {props.actionLabel}
-            </Button>
+            </ButtonV2>
           </div>
         </div>
       </DialogBody>
@@ -1712,12 +1711,12 @@ function DialogRenameSession(props: { name: string; onConfirm: (title: string) =
             onInput={(event) => setValue(event.currentTarget.value)}
           />
           <div class="flex justify-end gap-2">
-            <Button variant="ghost" size="large" type="button" onClick={() => dialog.close()}>
+            <ButtonV2 variant="ghost" size="large" type="button" onClick={() => dialog.close()}>
               {language.t("common.cancel")}
-            </Button>
-            <Button variant="primary" size="large" type="submit" disabled={busy() || !value().trim()}>
+            </ButtonV2>
+            <ButtonV2 variant="gold" size="large" type="submit" disabled={busy() || !value().trim()}>
               {language.t("common.rename")}
-            </Button>
+            </ButtonV2>
           </div>
         </form>
       </DialogBody>
@@ -1743,11 +1742,11 @@ function DialogDeleteSession(props: { name: string; onConfirm: () => Promise<voi
             <span class="text-12-regular text-text-weak">{language.t("session.delete.description")}</span>
           </div>
           <div class="flex justify-end gap-2">
-            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+            <ButtonV2 variant="ghost" size="large" onClick={() => dialog.close()}>
               {language.t("common.cancel")}
-            </Button>
-            <Button
-              variant="primary"
+            </ButtonV2>
+            <ButtonV2
+              variant="danger"
               size="large"
               data-action="home-session-delete-confirm"
               disabled={busy()}
@@ -1757,7 +1756,7 @@ function DialogDeleteSession(props: { name: string; onConfirm: () => Promise<voi
               }}
             >
               {language.t("session.delete.button")}
-            </Button>
+            </ButtonV2>
           </div>
         </div>
       </DialogBody>
@@ -1884,7 +1883,7 @@ export function LegacyHome() {
   return (
     <div class="mx-auto mt-55 w-full md:w-auto px-4">
       <Logo class="md:w-xl opacity-12" />
-      <Button
+      <ButtonV2
         size="large"
         variant="ghost"
         class="mt-4 mx-auto text-14-regular text-text-weak"
@@ -1897,13 +1896,13 @@ export function LegacyHome() {
           }}
         />
         {server.name}
-      </Button>
+      </ButtonV2>
       <Switch>
         <Match when={recent().length > 0}>
           <div class="mt-20 w-full flex flex-col gap-4">
             <div class="flex gap-2 items-center justify-between pl-3">
               <div class="text-14-medium text-text-strong">{language.t("home.recentProjects")}</div>
-              <Button
+              <ButtonV2
                 icon="folder-add-left"
                 size="normal"
                 class="pl-2 pr-3"
@@ -1911,19 +1910,19 @@ export function LegacyHome() {
                 onClick={chooseProject}
               >
                 {language.t("command.project.open")}
-              </Button>
+              </ButtonV2>
             </div>
             <ul class="flex flex-col gap-2">
               <For each={recent()}>
                 {(worktree) => (
-                  <Button
+                  <ButtonV2
                     size="large"
                     variant="ghost"
                     class="text-14-mono text-left justify-between px-3"
                     onClick={() => openProject(server.current!, worktree)}
                   >
                     {worktree.replace(homedir(), "~")}
-                  </Button>
+                  </ButtonV2>
                 )}
               </For>
             </ul>
@@ -1932,9 +1931,9 @@ export function LegacyHome() {
         <Match when={!sync().ready}>
           <div class="mt-30 mx-auto flex flex-col items-center gap-3">
             <div class="text-12-regular text-text-weak">{language.t("common.loading")}</div>
-            <Button class="px-3" disabled={serverUnreachable()} onClick={chooseProject}>
+            <ButtonV2 class="px-3" disabled={serverUnreachable()} onClick={chooseProject}>
               {language.t("command.project.open")}
-            </Button>
+            </ButtonV2>
           </div>
         </Match>
         <Match when={true}>
@@ -1944,9 +1943,9 @@ export function LegacyHome() {
               <div class="text-14-medium text-text-strong">{language.t("home.empty.title")}</div>
               <div class="text-12-regular text-text-weak">{language.t("home.empty.description")}</div>
             </div>
-            <Button class="px-3 mt-1" disabled={serverUnreachable()} onClick={chooseProject}>
+            <ButtonV2 class="px-3 mt-1" disabled={serverUnreachable()} onClick={chooseProject}>
               {language.t("command.project.open")}
-            </Button>
+            </ButtonV2>
           </div>
         </Match>
       </Switch>

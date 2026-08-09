@@ -1,6 +1,6 @@
 import { createSignal, Show, type JSX } from "solid-js"
 import { Popover as KobaltePopover } from "@kobalte/core/popover"
-import { Button } from "@novaclaw/ui/button"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { useLanguage } from "@/context/language"
@@ -138,12 +138,12 @@ export function ComposerStrictControl(props: { state: ComposerStrictControlState
             </span>
           </Show>
           <div class="flex items-center justify-end gap-2">
-            <Button variant="ghost" type="button" onClick={close}>
+            <ButtonV2 variant="ghost" type="button" onClick={close}>
               {language.t("common.cancel")}
-            </Button>
-            <Button variant="primary" type="button" data-action="prompt-strict-enable" onClick={enable}>
+            </ButtonV2>
+            <ButtonV2 variant="gold" type="button" data-action="prompt-strict-enable" onClick={enable}>
               {language.t("prompt.strict.popover.enable")}
-            </Button>
+            </ButtonV2>
           </div>
         </KobaltePopover.Content>
       </KobaltePopover.Portal>

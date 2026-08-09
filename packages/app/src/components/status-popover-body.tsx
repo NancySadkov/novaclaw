@@ -1,4 +1,4 @@
-import { Button } from "@novaclaw/ui/button"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { Icon } from "@novaclaw/ui/icon"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
@@ -224,9 +224,9 @@ function ServerStatusList(props: { state: ServerStatusState }) {
           }}
         </For>
 
-        <Button variant="secondary" class="mt-3 self-start h-8 px-3 py-1.5" onClick={props.state.onManage}>
+        <ButtonV2 variant="neutral" class="mt-3 self-start h-8 px-3 py-1.5" onClick={props.state.onManage}>
           {props.state.manageLabel}
-        </Button>
+        </ButtonV2>
       </div>
     </div>
   )

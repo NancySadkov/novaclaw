@@ -1,4 +1,4 @@
-import { Button } from "@novaclaw/ui/button"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { Spinner } from "@novaclaw/ui/spinner"
 import { showToast } from "@/utils/toast"
@@ -351,14 +351,14 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
                 <div class="flex items-center justify-between gap-3">
                   <div class="text-14-medium text-text-strong">{language.t("wsl.server.label")}</div>
                   <Show when={current()?.runtime && !wslReady() && !current()?.pendingRestart}>
-                    <Button
-                      variant="secondary"
+                    <ButtonV2
+                      variant="neutral"
                       size="large"
                       disabled={busy()}
                       onClick={() => void run(() => api.installWsl())}
                     >
                       {language.t("wsl.onboarding.installWsl")}
-                    </Button>
+                    </ButtonV2>
                   </Show>
                 </div>
                 <div class="text-12-regular text-text-weak whitespace-pre-wrap break-words">{wslMessage()}</div>
@@ -370,14 +370,14 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
                   </div>
                 </Show>
                 <div class="flex items-center justify-end">
-                  <Button
-                    variant="secondary"
+                  <ButtonV2
+                    variant="neutral"
                     size="large"
                     disabled={busy() || !wslReady()}
                     onClick={() => setStore("step", "distro")}
                   >
                     {language.t("wsl.onboarding.next")}
-                  </Button>
+                  </ButtonV2>
                 </div>
               </div>
             </Match>
@@ -387,14 +387,14 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
                 <div class="flex items-center justify-between gap-3">
                   <div class="text-14-medium text-text-strong">{language.t("wsl.onboarding.step.distro")}</div>
                   <Show when={selectedDistro()}>
-                    <Button
+                    <ButtonV2
                       variant="ghost"
                       size="small"
                       disabled={busy()}
                       onClick={() => runSelectedDistro((distro) => api.probeDistro(distro))}
                     >
                       {language.t("wsl.onboarding.refresh")}
-                    </Button>
+                    </ButtonV2>
                   </Show>
                 </div>
                 <div class="text-12-regular text-text-weak whitespace-pre-wrap break-words">{distroMessage()}</div>
@@ -438,8 +438,8 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
                         <Show when={installingDistro()}>
                           <Spinner class="h-4 w-4 text-icon-info-base shrink-0" />
                         </Show>
-                        <Button
-                          variant="secondary"
+                        <ButtonV2
+                          variant="neutral"
                           size="small"
                           disabled={busy() || !installTarget()}
                           onClick={() => void run(() => api.installDistro(installTarget()!.name))}
@@ -447,7 +447,7 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
                           {installingDistro()
                             ? language.t("wsl.onboarding.installing")
                             : language.t("wsl.onboarding.install")}
-                        </Button>
+                        </ButtonV2>
                       </div>
                     </div>
                     <div
@@ -505,33 +505,33 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
                 </Show>
 
                 <div class="flex items-center gap-2">
-                  <Button
-                    variant="secondary"
+                  <ButtonV2
+                    variant="neutral"
                     size="large"
                     disabled={busy() || !selectedInstalled()}
                     onClick={() => runSelectedDistro((distro) => api.openTerminal(distro))}
                   >
                     {language.t("wsl.onboarding.openTerminal")}
-                  </Button>
-                  <Button
+                  </ButtonV2>
+                  <ButtonV2
                     variant="ghost"
                     size="large"
                     disabled={busy() || !selectedDistro()}
                     onClick={() => runSelectedDistro((distro) => api.probeDistro(distro))}
                   >
                     {language.t("wsl.onboarding.refresh")}
-                  </Button>
+                  </ButtonV2>
                 </div>
 
                 <div class="flex items-center justify-end">
-                  <Button
-                    variant="secondary"
+                  <ButtonV2
+                    variant="neutral"
                     size="large"
                     disabled={busy() || !selectedDistro() || !distroReady()}
                     onClick={openNovaclawStep}
                   >
                     {language.t("wsl.onboarding.next")}
-                  </Button>
+                  </ButtonV2>
                 </div>
               </div>
             </Match>
@@ -542,18 +542,18 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
                   <div class="text-14-medium text-text-strong">{language.t("wsl.onboarding.step.novaclaw")}</div>
                   <div class="flex items-center gap-2">
                     <Show when={selectedDistro()}>
-                      <Button
+                      <ButtonV2
                         variant="ghost"
                         size="large"
                         disabled={busy()}
                         onClick={() => runSelectedDistro((distro) => api.probeNovaclaw(distro))}
                       >
                         {language.t("wsl.onboarding.refresh")}
-                      </Button>
+                      </ButtonV2>
                     </Show>
                     <Show when={!novaclawReady() || novaclawCheck()?.matchesDesktop === false}>
-                      <Button
-                        variant="secondary"
+                      <ButtonV2
+                        variant="neutral"
                         size="large"
                         disabled={busy()}
                         onClick={() => runSelectedDistro((distro) => api.installNovaclaw(distro))}
@@ -564,7 +564,7 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
                         {novaclawCheck()?.resolvedPath
                           ? language.t("wsl.onboarding.updateNovaclaw")
                           : language.t("wsl.onboarding.installNovaclaw")}
-                      </Button>
+                      </ButtonV2>
                     </Show>
                   </div>
                 </div>
@@ -599,12 +599,12 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
 
           <Show when={activeStep() === "novaclaw" && allReady() && selectedDistro()}>
             <div class="flex items-center justify-end gap-2">
-              <Button variant="ghost" size="large" disabled={store.adding} onClick={() => dialog.close()}>
+              <ButtonV2 variant="ghost" size="large" disabled={store.adding} onClick={() => dialog.close()}>
                 {language.t("common.cancel")}
-              </Button>
-              <Button variant="primary" size="large" disabled={addDisabled()} onClick={() => void finish()}>
+              </ButtonV2>
+              <ButtonV2 variant="gold" size="large" disabled={addDisabled()} onClick={() => void finish()}>
                 {store.adding ? language.t("wsl.onboarding.adding") : language.t("wsl.server.add")}
-              </Button>
+              </ButtonV2>
             </div>
           </Show>
         </Show>

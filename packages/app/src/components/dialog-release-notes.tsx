@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
-import { Button } from "@novaclaw/ui/button"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
@@ -85,18 +85,18 @@ export function DialogReleaseNotes(props: { highlights: Highlight[] }) {
           <div class="flex flex-col gap-12">
             <div class="flex flex-col items-start gap-3">
               {isLast() ? (
-                <Button variant="primary" size="large" onClick={handleClose}>
+                <ButtonV2 variant="gold" size="large" onClick={handleClose}>
                   {language.t("dialog.releaseNotes.action.getStarted")}
-                </Button>
+                </ButtonV2>
               ) : (
-                <Button variant="secondary" size="large" onClick={handleNext}>
+                <ButtonV2 variant="neutral" size="large" onClick={handleNext}>
                   {language.t("dialog.releaseNotes.action.next")}
-                </Button>
+                </ButtonV2>
               )}
 
-              <Button variant="ghost" size="small" onClick={handleDisable}>
+              <ButtonV2 variant="ghost" size="small" onClick={handleDisable}>
                 {language.t("dialog.releaseNotes.action.hideFuture")}
-              </Button>
+              </ButtonV2>
             </div>
 
             {paged() && (

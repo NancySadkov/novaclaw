@@ -1,5 +1,5 @@
 import { Show, createMemo, createResource, createSignal } from "solid-js"
-import { Button } from "@novaclaw/ui/button"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { DockTray } from "@novaclaw/ui/dock-surface"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
@@ -52,15 +52,15 @@ export function SessionResponderDock(props: { sessionID: string | undefined }) {
           <span class="min-w-0 flex-1 truncate text-13-regular text-text-base cursor-default">
             {language.t("session.responderDock.operatorHint")}
           </span>
-          <Button
+          <ButtonV2
             size="small"
-            variant="secondary"
+            variant="neutral"
             class="shrink-0 ml-auto"
             disabled={busy()}
             onClick={() => void toggle()}
           >
             {language.t("session.responderDock.handBack")}
-          </Button>
+          </ButtonV2>
         </div>
       </DockTray>
     </Show>
@@ -94,9 +94,9 @@ export function ResponderTakeoverButton(props: { sessionID: string | undefined }
 
   return (
     <Show when={props.sessionID && responder() === "nova"}>
-      <Button size="small" variant="ghost" disabled={busy()} onClick={() => void takeOver()}>
+      <ButtonV2 size="small" variant="ghost" disabled={busy()} onClick={() => void takeOver()}>
         {language.t("session.responderDock.takeOver")}
-      </Button>
+      </ButtonV2>
     </Show>
   )
 }

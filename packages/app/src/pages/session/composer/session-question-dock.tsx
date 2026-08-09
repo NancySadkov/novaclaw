@@ -1,7 +1,7 @@
 import { For, Show, createMemo, onCleanup, onMount, type Component } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useMutation } from "@tanstack/solid-query"
-import { Button } from "@novaclaw/ui/button"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { DockPrompt } from "@novaclaw/session-ui/dock-prompt"
 import { Icon } from "@novaclaw/ui/icon"
 import { showToast } from "@/utils/toast"
@@ -453,24 +453,24 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
       }
       footer={
         <>
-          <Button variant="ghost" size="large" disabled={sending()} onClick={reject} aria-keyshortcuts="Escape">
+          <ButtonV2 variant="ghost" size="large" disabled={sending()} onClick={reject} aria-keyshortcuts="Escape">
             {language.t("ui.common.dismiss")}
-          </Button>
+          </ButtonV2>
           <div data-slot="question-footer-actions">
             <Show when={store.tab > 0}>
-              <Button variant="secondary" size="large" disabled={sending()} onClick={back}>
+              <ButtonV2 variant="neutral" size="large" disabled={sending()} onClick={back}>
                 {language.t("ui.common.back")}
-              </Button>
+              </ButtonV2>
             </Show>
-            <Button
-              variant={last() ? "primary" : "secondary"}
+            <ButtonV2
+              variant={last() ? "gold" : "neutral"}
               size="large"
               disabled={sending()}
               onClick={next}
               aria-keyshortcuts="Meta+Enter Control+Enter"
             >
               {last() ? language.t("ui.common.submit") : language.t("ui.common.next")}
-            </Button>
+            </ButtonV2>
           </div>
         </>
       }

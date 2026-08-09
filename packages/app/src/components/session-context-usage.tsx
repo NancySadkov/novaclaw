@@ -1,7 +1,7 @@
 import { Match, Show, Switch, createMemo } from "solid-js"
 import { TooltipV2, type TooltipV2Props } from "@novaclaw/ui/v2/tooltip-v2"
 import { ProgressCircleV2 } from "@novaclaw/ui/v2/progress-circle-v2"
-import { Button } from "@novaclaw/ui/button"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 
 import { useFile } from "@/context/file"
@@ -155,7 +155,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
             />
           </Match>
           <Match when={true}>
-            <Button
+            <ButtonV2
               type="button"
               variant="ghost"
               class="size-6"
@@ -163,7 +163,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
               aria-label={language.t("context.usage.view")}
             >
               {circle()}
-            </Button>
+            </ButtonV2>
           </Match>
         </Switch>
       </TooltipV2>

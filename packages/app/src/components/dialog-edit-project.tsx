@@ -1,4 +1,4 @@
-import { Button } from "@novaclaw/ui/button"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
 import { TextField } from "@novaclaw/ui/text-field"
@@ -250,12 +250,12 @@ export function DialogEditProject(props: { project: LocalProject; server: Server
           </div>
 
           <div class="flex justify-end gap-2">
-            <Button type="button" variant="ghost" size="large" onClick={() => dialog.close()}>
+            <ButtonV2 type="button" variant="ghost" size="large" onClick={() => dialog.close()}>
               {language.t("common.cancel")}
-            </Button>
-            <Button type="submit" variant="primary" size="large" disabled={saveMutation.isPending}>
+            </ButtonV2>
+            <ButtonV2 type="submit" variant="gold" size="large" disabled={saveMutation.isPending}>
               {saveMutation.isPending ? language.t("common.saving") : language.t("common.save")}
-            </Button>
+            </ButtonV2>
           </div>
         </form>
       </DialogBody>

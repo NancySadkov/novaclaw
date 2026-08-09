@@ -1,7 +1,7 @@
 import { Component, For, Show, createMemo, lazy, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { Button } from "@novaclaw/ui/button"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { Icon } from "@novaclaw/ui/icon"
 import { TextField } from "@novaclaw/ui/text-field"
 import { showToast } from "@/utils/toast"
@@ -11,7 +11,6 @@ import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { SettingsList } from "./settings-list"
 
-const ButtonV2 = lazy(() => import("@novaclaw/ui/v2/button-v2").then((module) => ({ default: module.ButtonV2 })))
 const IconV2 = lazy(() => import("@novaclaw/ui/v2/icon").then((module) => ({ default: module.Icon })))
 const IconButtonV2 = lazy(() =>
   import("@novaclaw/ui/v2/icon-button-v2").then((module) => ({ default: module.IconButtonV2 })),
@@ -490,9 +489,9 @@ export const SettingsKeybinds: Component<{ v2?: boolean }> = (props) => {
             <div class="flex flex-col gap-4 pt-6 pb-6 max-w-[720px]">
               <div class="flex items-center justify-between gap-4">
                 <h2 class="text-16-medium text-text-strong">{language.t("settings.shortcuts.title")}</h2>
-                <Button size="small" variant="secondary" onClick={resetAll} disabled={!hasOverrides()}>
+                <ButtonV2 size="small" variant="neutral" onClick={resetAll} disabled={!hasOverrides()}>
                   {language.t("settings.shortcuts.reset.button")}
-                </Button>
+                </ButtonV2>
               </div>
 
               <div class="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface-base">

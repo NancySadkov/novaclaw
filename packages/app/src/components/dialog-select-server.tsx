@@ -1,4 +1,4 @@
-import { Button } from "@novaclaw/ui/button"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
 import { DropdownMenu } from "@novaclaw/ui/dropdown-menu"
@@ -647,15 +647,15 @@ export function ServerConnectionList(props: { controller: ReturnType<typeof useS
       </List>
 
       <div class="shrink-0 pb-5">
-        <Button
-          variant="secondary"
+        <ButtonV2
+          variant="neutral"
           icon="plus-small"
           size="large"
           onClick={props.controller.startAdd}
           class="py-1.5 pl-1.5 pr-3 flex items-center gap-1.5"
         >
           {language.t("dialog.server.add.button")}
-        </Button>
+        </ButtonV2>
       </div>
     </div>
   )
@@ -683,8 +683,8 @@ export function ServerConnectionForm(props: { controller: ReturnType<typeof useS
         onBack={props.controller.resetForm}
       />
       <div class="shrink-0 pb-5">
-        <Button
-          variant="primary"
+        <ButtonV2
+          variant="gold"
           size="large"
           onClick={props.controller.submitForm}
           disabled={props.controller.formBusy()}
@@ -695,7 +695,7 @@ export function ServerConnectionForm(props: { controller: ReturnType<typeof useS
             : props.controller.isAddMode()
               ? language.t("dialog.server.add.button")
               : language.t("common.save")}
-        </Button>
+        </ButtonV2>
       </div>
     </div>
   )

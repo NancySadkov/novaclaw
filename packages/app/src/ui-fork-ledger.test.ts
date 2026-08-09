@@ -162,13 +162,13 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  * shrinks the fork's WIDTH. `switch` (4 call sites), then `keybind` (2), `progress-circle` (1),
  * `diff-changes` (1), `toast` (3), `dialog` (9) and `tabs` (7) went that way.
  *
- * ⛔ **`tabs` was the LAST of them, and the four names left cannot follow.** Every remaining pair is
- * composed by another v1 component — see the second block of `V1_CALL_SITES`: v1 `button`,
- * `collapsible` and `icon-button` import v1 `icon`; `image-preview`, `list`, `popover` and
- * `text-field` import v1 `icon-button`; `text-field` imports v1 `tooltip`. So none of them can
- * reach zero importers until the v1 components that compose them are themselves deleted, and this
- * ledger's WIDTH pin cannot fall again by migrating call sites alone. From here the migration only
- * shrinks DEPTH — or it deletes a v1 component outright, which is the move that unblocks WIDTH.
+ * ⭐ **`button` proved the next shape, 2026-08-09.** It composed v1 `icon`, but no v1 component
+ * composed `button` itself, so migrating its 22 external importer files let the component and sheet
+ * disappear and paid one extra `icon` pair as a composition dividend. The three names left really
+ * are composed by other v1 components — see the second block of `V1_CALL_SITES`: v1 `collapsible`
+ * and `icon-button` import v1 `icon`; `image-preview`, `list`, `popover` and `text-field` import v1
+ * `icon-button`; `text-field` imports v1 `tooltip`. Those parents must retire before WIDTH can fall
+ * again; external call-site migration alone now only thins DEPTH.
  *
  * ⭐ **`select` was retired 2026-08-08, and the budget warning that stood here was RIGHT: it was a
  * contract decision, not an import swap.** The warning read that v1's four call sites pass `size`,
@@ -257,7 +257,7 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  * migrated, on the grounds that porting a v1 sheet settles a brand question by copying the v1 app
  * (AGENTS.md — the running app is not a visual reference).
  */
-export const FORKED_WIDGETS: readonly string[] = ["button", "icon", "icon-button", "tooltip"]
+export const FORKED_WIDGETS: readonly string[] = ["icon", "icon-button", "tooltip"]
 
 /**
  * **Every file that imports the v1 side of a forked widget, pinned by name.**
@@ -299,64 +299,55 @@ export const FORKED_WIDGETS: readonly string[] = ["button", "icon", "icon-button
 export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/apps/manifest-apps.ts": ["icon"],
   "app/src/components/composer/features-control.tsx": ["icon"],
-  "app/src/components/composer/model-control.tsx": ["button", "icon"],
-  "app/src/components/composer/strict-control.tsx": ["button"],
-  "app/src/components/dialog-edit-project.tsx": ["button", "icon"],
-  "app/src/components/dialog-release-notes.tsx": ["button"],
+  "app/src/components/composer/model-control.tsx": ["icon"],
+  "app/src/components/dialog-edit-project.tsx": ["icon"],
   "app/src/components/dialog-select-directory-v2.tsx": ["icon"],
   "app/src/components/dialog-select-file.tsx": ["icon"],
-  "app/src/components/dialog-select-model.tsx": ["button"],
-  "app/src/components/dialog-select-server.tsx": ["button", "icon"],
-  "app/src/components/dialog-session-info.tsx": ["button", "icon"],
+  "app/src/components/dialog-select-server.tsx": ["icon"],
+  "app/src/components/dialog-session-info.tsx": ["icon"],
   "app/src/components/file-tree.test.ts": ["icon"],
   "app/src/components/file-tree.tsx": ["icon"],
-  "app/src/components/prompt-input.tsx": ["button", "icon"],
+  "app/src/components/prompt-input.tsx": ["icon"],
   "app/src/components/prompt-input/drag-overlay.tsx": ["icon"],
   "app/src/components/prompt-input/image-attachments.tsx": ["icon"],
   "app/src/components/prompt-input/slash-popover.tsx": ["icon"],
   "app/src/components/prompt-project-selector.tsx": ["icon"],
   "app/src/components/prompt-workspace-selector.tsx": ["icon"],
-  "app/src/components/session-context-usage.tsx": ["button"],
   "app/src/components/session/session-context-tab.tsx": ["icon"],
   "app/src/components/session/session-new-view.tsx": ["icon"],
   "app/src/components/session/session-sortable-terminal-tab.tsx": ["icon"],
-  "app/src/components/settings-keybinds.tsx": ["button", "icon"],
+  "app/src/components/settings-keybinds.tsx": ["icon"],
   "app/src/components/settings-v2/dialog-expertise.tsx": ["icon"],
   "app/src/components/settings-v2/dialog-model-tier.tsx": ["icon"],
   "app/src/components/settings-v2/dialog-new-model.tsx": ["icon"],
   "app/src/components/settings-v2/dialog-settings-v2.tsx": ["icon"],
   "app/src/components/settings-v2/models.tsx": ["icon"],
   "app/src/components/settings-v2/storage.tsx": ["icon"],
-  "app/src/components/status-popover-body.tsx": ["button", "icon"],
-  "app/src/components/status-popover.tsx": ["button", "icon"],
+  "app/src/components/status-popover-body.tsx": ["icon"],
+  "app/src/components/status-popover.tsx": ["icon"],
   "app/src/pages/calendar.tsx": ["icon"],
   "app/src/pages/debug.tsx": ["icon"],
-  "app/src/pages/error.tsx": ["button", "icon"],
+  "app/src/pages/error.tsx": ["icon"],
   "app/src/pages/files.tsx": ["icon"],
   "app/src/pages/home-screen/app-placeholder.tsx": ["icon"],
   "app/src/pages/home-screen/app-tile.tsx": ["icon"],
   "app/src/pages/home-screen/help-tour.tsx": ["icon"],
   "app/src/pages/home-screen/new-agent-bar.tsx": ["icon"],
   "app/src/pages/home-screen/social-panel.tsx": ["icon"],
-  "app/src/pages/home.tsx": ["button", "icon"],
+  "app/src/pages/home.tsx": ["icon"],
   "app/src/pages/memory-graph.tsx": ["icon"],
   "app/src/pages/notes.tsx": ["icon"],
   "app/src/pages/recipes.tsx": ["icon"],
   "app/src/pages/registry.tsx": ["icon"],
-  "app/src/pages/session.tsx": ["button"],
-  "app/src/pages/session/composer/session-permission-dock.tsx": ["button", "icon"],
-  "app/src/pages/session/composer/session-question-dock.tsx": ["button", "icon"],
-  "app/src/pages/session/composer/session-responder-dock.tsx": ["button"],
-  "app/src/pages/session/composer/session-revert-dock.tsx": ["button"],
+  "app/src/pages/session/composer/session-permission-dock.tsx": ["icon"],
+  "app/src/pages/session/composer/session-question-dock.tsx": ["icon"],
   "app/src/pages/trash.tsx": ["icon"],
   "app/src/utils/toast.tsx": ["icon"],
-  "app/src/wsl/dialog-add-server.tsx": ["button"],
   "session-ui/src/components/file-search.tsx": ["icon"],
-  "session-ui/src/components/line-comment.tsx": ["button", "icon"],
-  "session-ui/src/components/session-review.tsx": ["button", "icon"],
+  "session-ui/src/components/line-comment.tsx": ["icon"],
+  "session-ui/src/components/session-review.tsx": ["icon"],
   // `packages/ui`'s own v1 components composing other v1 components. Not migratable — see the
   // header. These lines retire by DELETING the component, which is how `card.tsx` left this list.
-  "ui/src/components/button.tsx": ["icon"],
   "ui/src/components/collapsible.tsx": ["icon"],
   "ui/src/components/icon-button.tsx": ["icon"],
   "ui/src/components/image-preview.tsx": ["icon-button"],
@@ -377,11 +368,11 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
  * read 38 while the tree held 37 — one component had been deleted without the pin following, so a
  * new v1 component could have been added for free. Lower it in the same commit as any deletion.
  */
-const V1_COMPONENT_CEILING = 29
+const V1_COMPONENT_CEILING = 28
 
 /** Measured totals, pinned so the ledger stays a measurement rather than an aspiration. */
-const V1_CALL_SITE_FILES = 64
-const V1_CALL_SITE_PAIRS = 80
+const V1_CALL_SITE_FILES = 55
+const V1_CALL_SITE_PAIRS = 57
 
 // ---------------------------------------------------------------------------------------------
 // The sweep. Pure functions first so the negative controls can drive them without touching disk.
@@ -561,7 +552,7 @@ describe("the sweep", () => {
     // been above 200 before that pair retired — this assertion is what caught the drop. Lower it with
     // each retirement; it is a sanity floor against a broken sweep, never a target, and if it ever
     // has to go near zero the whole ledger should be retired instead (see the last test in this file).
-    expect(SWEPT.specifiers, "no forked-widget import found at all — SPECIFIER_PATTERNS is broken").toBeGreaterThan(150)
+    expect(SWEPT.specifiers, "no forked-widget import found at all — SPECIFIER_PATTERNS is broken").toBeGreaterThan(120)
     expect(SWEPT.v1.size, "the v1 half of the fork reads as empty").toBeGreaterThan(50)
     expect(SWEPT.v2.size, "the v2 half of the fork reads as empty").toBeGreaterThan(20)
   })
@@ -659,7 +650,7 @@ describe("the fork's DEPTH can only shrink", () => {
     expect(OBSERVED_PAIRS, "the observed (file, widget) pair count moved — reconcile V1_CALL_SITES").toBe(
       V1_CALL_SITE_PAIRS,
     )
-    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(4)
+    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(3)
   })
 
   test("both sides are genuinely live — this is a fork, not a finished migration", () => {
@@ -772,11 +763,11 @@ describe("the guard actually bites (negative control)", () => {
   })
 })
 
-describe("the seven deleted v1 components stay deleted", () => {
+describe("retired v1 components stay deleted", () => {
   // The other half of this change: 1,164 lines with zero importers by every reference form the
   // sweep understands. Re-adding one is re-adding cruft todo.md's *we discard all the cruft* ruling
   // deleted, and `text-shimmer` in particular would re-widen the fork.
-  const DELETED = ["text-shimmer", "card", "context-menu", "hover-card", "inline-input", "progress", "typewriter"]
+  const DELETED = ["button", "text-shimmer", "card", "context-menu", "hover-card", "inline-input", "progress", "typewriter"]
 
   test("neither the component nor its stylesheet is back", () => {
     const present = readdirSync(V1_DIR)

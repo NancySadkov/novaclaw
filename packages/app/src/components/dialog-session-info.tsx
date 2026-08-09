@@ -1,7 +1,7 @@
 import { Component, createMemo, createResource, createSignal, For, Show } from "solid-js"
 import type { SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
-import { Button } from "@novaclaw/ui/button"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { Icon } from "@novaclaw/ui/icon"
 import { RequiresLevel } from "@/context/expertise"
 import { useLanguage } from "@/context/language"
@@ -222,24 +222,24 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
                 </span>
                 <div class="flex items-center gap-2">
                   <Show when={promptSaved().length > 0 || promptDirty()}>
-                    <Button
+                    <ButtonV2
                       variant="ghost"
                       type="button"
                       data-action="session-info-prompt-clear"
                       onClick={() => savePromptOverride(null)}
                     >
                       {language.t("common.clear")}
-                    </Button>
+                    </ButtonV2>
                   </Show>
                   <Show when={promptDirty()}>
-                    <Button
-                      variant="primary"
+                    <ButtonV2
+                      variant="gold"
                       type="button"
                       data-action="session-info-prompt-save"
                       onClick={() => savePromptOverride(promptValue().trim() === "" ? null : promptValue())}
                     >
                       {language.t("common.save")}
-                    </Button>
+                    </ButtonV2>
                   </Show>
                 </div>
               </div>
@@ -277,23 +277,23 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
                             </span>
                           }
                         >
-                          <Button
+                          <ButtonV2
                             variant="ghost"
                             type="button"
                             data-action="session-info-adhoc-promote"
                             onClick={() => promoteRecipe(recipe.name)}
                           >
                             {language.t("session.info.adhoc.promote")}
-                          </Button>
+                          </ButtonV2>
                         </Show>
-                        <Button
+                        <ButtonV2
                           variant="ghost"
                           type="button"
                           data-action="session-info-adhoc-discard"
                           onClick={() => discardRecipe(recipe.name)}
                         >
                           {language.t("session.info.adhoc.discard")}
-                        </Button>
+                        </ButtonV2>
                       </div>
                       <details class="text-[12px] text-v2-text-text-faint">
                         <summary class="cursor-pointer select-none">{language.t("session.info.adhoc.manual")}</summary>

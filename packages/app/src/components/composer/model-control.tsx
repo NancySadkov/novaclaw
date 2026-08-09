@@ -1,5 +1,5 @@
 import { Show, type JSX } from "solid-js"
-import { Button } from "@novaclaw/ui/button"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { Icon } from "@novaclaw/ui/icon"
 import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
@@ -33,7 +33,7 @@ export function ComposerModelControl(props: { state: ComposerModelControlState }
       >
         <ModelSelectorPopover
           model={props.state.model}
-          triggerAs={Button}
+          triggerAs={ButtonV2}
           triggerProps={{
             variant: "ghost",
             size: "normal",

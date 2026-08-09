@@ -1,6 +1,6 @@
 import { For, Show, createSignal } from "solid-js"
 import type { PermissionV2Request } from "@novaclaw/sdk/v2"
-import { Button } from "@novaclaw/ui/button"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { DockPrompt } from "@novaclaw/session-ui/dock-prompt"
 import { Icon } from "@novaclaw/ui/icon"
 import { dynamicKey, useLanguage } from "@/context/language"
@@ -49,7 +49,7 @@ export function SessionPermissionDock(props: {
           <div data-slot="permission-header-title">{language.t("notification.permission.title")}</div>
           <Show when={props.onStop}>
             {(onStop) => (
-              <Button
+              <ButtonV2
                 variant="ghost"
                 size="normal"
                 class="ml-auto shrink-0"
@@ -58,7 +58,7 @@ export function SessionPermissionDock(props: {
               >
                 <Icon name="stop" size="small" />
                 {language.t("ui.permission.stopRun")}
-              </Button>
+              </ButtonV2>
             )}
           </Show>
         </div>
@@ -75,36 +75,36 @@ export function SessionPermissionDock(props: {
           />
           <div data-slot="permission-footer-rows">
             <div data-slot="permission-footer-actions" data-variant="deny">
-              <Button variant="ghost" size="normal" onClick={() => decide("deny-once")} disabled={props.responding}>
+              <ButtonV2 variant="ghost" size="normal" onClick={() => decide("deny-once")} disabled={props.responding}>
                 {language.t("ui.permission.denyOnce")}
-              </Button>
-              <Button variant="ghost" size="normal" onClick={() => decide("deny-file")} disabled={props.responding}>
+              </ButtonV2>
+              <ButtonV2 variant="ghost" size="normal" onClick={() => decide("deny-file")} disabled={props.responding}>
                 {language.t("ui.permission.denyFile")}
-              </Button>
-              <Button variant="ghost" size="normal" onClick={() => decide("deny-always")} disabled={props.responding}>
+              </ButtonV2>
+              <ButtonV2 variant="ghost" size="normal" onClick={() => decide("deny-always")} disabled={props.responding}>
                 {language.t("ui.permission.denyAlways")}
-              </Button>
+              </ButtonV2>
             </div>
             <div data-slot="permission-footer-actions" data-variant="allow">
-              <Button
-                variant="secondary"
+              <ButtonV2
+                variant="neutral"
                 size="normal"
                 onClick={() => decide("allow-file")}
                 disabled={props.responding}
               >
                 {language.t("ui.permission.allowFile")}
-              </Button>
-              <Button
-                variant="secondary"
+              </ButtonV2>
+              <ButtonV2
+                variant="neutral"
                 size="normal"
                 onClick={() => decide("allow-always")}
                 disabled={props.responding}
               >
                 {language.t("ui.permission.allowAlways")}
-              </Button>
-              <Button variant="primary" size="normal" onClick={() => decide("allow-once")} disabled={props.responding}>
+              </ButtonV2>
+              <ButtonV2 variant="gold" size="normal" onClick={() => decide("allow-once")} disabled={props.responding}>
                 {language.t("ui.permission.allowOnce")}
-              </Button>
+              </ButtonV2>
             </div>
           </div>
         </div>

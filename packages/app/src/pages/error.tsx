@@ -1,6 +1,6 @@
 import { TextField } from "@novaclaw/ui/text-field"
 import { Logo } from "@novaclaw/ui/logo"
-import { Button } from "@novaclaw/ui/button"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { Component, createSignal, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { usePlatform } from "@/context/platform"
@@ -307,23 +307,23 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
         </div>
         <div class="flex flex-row items-center justify-center gap-3 flex-wrap max-w-64">
           <Show when={props.reset}>
-            <Button size="large" onClick={() => props.reset?.()}>
+            <ButtonV2 size="large" onClick={() => props.reset?.()}>
               {language.t("error.page.action.retry")}
-            </Button>
+            </ButtonV2>
           </Show>
-          <Button size="large" variant={props.reset ? "ghost" : undefined} onClick={platform.restart}>
+          <ButtonV2 size="large" variant={props.reset ? "ghost" : undefined} onClick={platform.restart}>
             {language.t("error.page.action.restart")}
-          </Button>
+          </ButtonV2>
           <Show when={platform.platform === "desktop" && platform.exportDebugLogs}>
-            <Button size="large" variant="ghost" onClick={exportDebugLogs}>
+            <ButtonV2 size="large" variant="ghost" onClick={exportDebugLogs}>
               {language.t("error.page.action.exportLogs")}
-            </Button>
+            </ButtonV2>
           </Show>
           <Show when={platform.updater}>
             <Show
               when={updateVersion()}
               fallback={
-                <Button
+                <ButtonV2
                   size="large"
                   variant="ghost"
                   onClick={checkForUpdates}
@@ -332,13 +332,13 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
                   {platform.updater?.state().status === "checking"
                     ? language.t("error.page.action.checking")
                     : language.t("error.page.action.checkUpdates")}
-                </Button>
+                </ButtonV2>
               }
             >
               {(version) => (
-                <Button size="large" onClick={installUpdate}>
+                <ButtonV2 size="large" onClick={installUpdate}>
                   {language.t("error.page.action.updateTo", { version: version() })}
-                </Button>
+                </ButtonV2>
               )}
             </Show>
           </Show>

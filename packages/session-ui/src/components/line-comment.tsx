@@ -1,7 +1,7 @@
 import { useFilteredList } from "@novaclaw/ui/hooks"
 import { getDirectory, getFilename } from "@novaclaw/core/util/path"
 import { createSignal, For, onMount, Show, splitProps, type JSX } from "solid-js"
-import { Button } from "@novaclaw/ui/button"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { FileIcon } from "@novaclaw/ui/file-icon"
 import { Icon } from "@novaclaw/ui/icon"
 import { installLineCommentStyles } from "./line-comment-styles"
@@ -435,12 +435,12 @@ export const LineCommentEditor = (props: LineCommentEditorProps) => {
               </>
             }
           >
-            <Button size="small" variant="ghost" onClick={split.onCancel}>
+            <ButtonV2 size="small" variant="ghost" onClick={split.onCancel}>
               {split.cancelLabel ?? i18n.t("ui.common.cancel")}
-            </Button>
-            <Button size="small" variant="primary" disabled={split.value.trim().length === 0} onClick={submit}>
+            </ButtonV2>
+            <ButtonV2 size="small" variant="gold" disabled={split.value.trim().length === 0} onClick={submit}>
               {split.submitLabel ?? i18n.t("ui.lineComment.submit")}
-            </Button>
+            </ButtonV2>
           </Show>
         </div>
       </div>

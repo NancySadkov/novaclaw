@@ -1,4 +1,4 @@
-import { Button } from "@novaclaw/ui/button"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { Icon } from "@novaclaw/ui/icon"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
@@ -34,7 +34,7 @@ export function StatusPopover() {
     <Popover
       open={shown()}
       onOpenChange={setShown}
-      triggerAs={Button}
+      triggerAs={ButtonV2}
       triggerProps={{
         variant: "ghost",
         class: "titlebar-icon w-8 h-6 p-0 box-border",

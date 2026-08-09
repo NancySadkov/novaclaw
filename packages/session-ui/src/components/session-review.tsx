@@ -1,5 +1,5 @@
 import { Accordion } from "@novaclaw/ui/accordion"
-import { Button } from "@novaclaw/ui/button"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { DropdownMenu } from "@novaclaw/ui/dropdown-menu"
 import { RadioGroup } from "@novaclaw/ui/radio-group"
 import { DiffChanges } from "@novaclaw/ui/v2/diff-changes-v2"
@@ -378,7 +378,7 @@ export const SessionReview = (props: SessionReviewProps) => {
             />
           </Show>
           <Show when={hasDiffs()}>
-            <Button
+            <ButtonV2
               size="small"
               icon="chevron-grabber-vertical"
               class="w-[106px] justify-start"
@@ -388,7 +388,7 @@ export const SessionReview = (props: SessionReviewProps) => {
                 <Match when={open().length > 0}>{i18n.t("ui.sessionReview.collapseAll")}</Match>
                 <Match when={true}>{i18n.t("ui.sessionReview.expandAll")}</Match>
               </Switch>
-            </Button>
+            </ButtonV2>
           </Show>
           {props.actions}
         </div>
@@ -633,13 +633,13 @@ export const SessionReview = (props: SessionReviewProps) => {
                                       })}
                                     </div>
                                     <div data-slot="session-review-large-diff-actions">
-                                      <Button
+                                      <ButtonV2
                                         size="normal"
-                                        variant="secondary"
+                                        variant="neutral"
                                         onClick={() => setStore("force", file, true)}
                                       >
                                         {i18n.t("ui.sessionReview.largeDiff.renderAnyway")}
-                                      </Button>
+                                      </ButtonV2>
                                     </div>
                                   </div>
                                 </Match>
@@ -683,12 +683,12 @@ export const SessionReview = (props: SessionReviewProps) => {
               </Accordion>
               <Show when={hiddenFileCount() > 0}>
                 <div data-slot="session-review-show-all" class="flex items-center justify-center py-3">
-                  <Button size="small" variant="secondary" onClick={() => setShowAllFiles(true)}>
+                  <ButtonV2 size="small" variant="neutral" onClick={() => setShowAllFiles(true)}>
                     {i18n.t("ui.sessionReview.showAll", {
                       shown: visibleFiles().length.toLocaleString(),
                       total: files().length.toLocaleString(),
                     })}
-                  </Button>
+                  </ButtonV2>
                 </div>
               </Show>
             </div>

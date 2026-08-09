@@ -26,7 +26,7 @@ import { ResizeHandle } from "@novaclaw/ui/resize-handle"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { createAutoScroll } from "@novaclaw/ui/hooks"
 import { previewSelectedLines } from "@novaclaw/session-ui/pierre/selection-bridge"
-import { Button } from "@novaclaw/ui/button"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { showToast } from "@/utils/toast"
 import { base64Encode, checksum } from "@novaclaw/core/util/encode"
 import { useLocation, useNavigate, useSearchParams } from "@solidjs/router"
@@ -841,9 +841,9 @@ export default function Page() {
           <div class={input.emptyClass}>
             <div class="flex max-w-72 flex-col items-center gap-3 text-center">
               <div class="text-14-regular text-text-weak">{language.t("session.review.loadFailed")}</div>
-              <Button size="small" variant="secondary" onClick={() => void vcsQuery.refetch()}>
+              <ButtonV2 size="small" variant="neutral" onClick={() => void vcsQuery.refetch()}>
                 {language.t("session.review.retry")}
-              </Button>
+              </ButtonV2>
             </div>
           </div>
         )
@@ -1696,14 +1696,14 @@ export default function Page() {
                   "Execution stopped before Nova could confirm the outcome."}
               </span>
               <Show when={attempt().state !== "recovering"}>
-                <Button size="small" variant="secondary" onClick={() => void executionAction("retry")}>
+                <ButtonV2 size="small" variant="neutral" onClick={() => void executionAction("retry")}>
                   Retry
-                </Button>
+                </ButtonV2>
               </Show>
               <Show when={attempt().state === "recovering"}>
-                <Button size="small" variant="secondary" onClick={() => void executionAction("stop")}>
+                <ButtonV2 size="small" variant="neutral" onClick={() => void executionAction("stop")}>
                   Stop
-                </Button>
+                </ButtonV2>
               </Show>
             </div>
           </Show>

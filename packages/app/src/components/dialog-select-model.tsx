@@ -5,7 +5,7 @@ import { useLocal } from "@/context/local"
 import { useServer, type ServerConnection } from "@/context/server"
 import { providerProbe, type ProbeResult } from "@/utils/fs-api"
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import { Button } from "@novaclaw/ui/button"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { Tag } from "@novaclaw/ui/tag"
@@ -357,15 +357,15 @@ export const DialogSelectModel: Component<{ provider?: string; model?: ModelStat
     <Dialog size="large">
       <DialogHeader>
         <DialogTitle>{language.t("dialog.model.select.title")}</DialogTitle>
-        <Button class="h-7 -my-1 mr-2 text-14-medium" icon="plus-small" tabIndex={-1} onClick={provider}>
+        <ButtonV2 class="h-7 -my-1 mr-2 text-14-medium" icon="plus-small" tabIndex={-1} onClick={provider}>
           {language.t("command.provider.connect")}
-        </Button>
+        </ButtonV2>
       </DialogHeader>
       <DialogBody>
         <ModelList provider={props.provider} model={props.model} onSelect={() => dialog.close()} />
-        <Button variant="ghost" class="ml-3 mt-5 mb-6 text-text-base self-start" onClick={manage}>
+        <ButtonV2 variant="ghost" class="ml-3 mt-5 mb-6 text-text-base self-start" onClick={manage}>
           {language.t("dialog.model.manage")}
-        </Button>
+        </ButtonV2>
       </DialogBody>
     </Dialog>
   )
