@@ -61,6 +61,7 @@ describe("the directory-sweeping guards cover every module, including the new on
     "accessibility.ts",
     "actions.ts",
     "atspi.ts",
+    "control-target.ts",
     "coordinates.ts",
     "driver.ts",
     "evidence.ts",
@@ -239,7 +240,7 @@ describe("none of the loop entered the tool's input schema", () => {
 
   test("🔴 the field list is a ratchet", () => {
     expect(fields.sort()).toEqual(
-      ["action", "amount", "button", "direction", "keys", "region", "text", "x", "y"].sort(),
+      ["action", "amount", "button", "direction", "display", "keys", "region", "text", "x", "y"].sort(),
     )
   })
 

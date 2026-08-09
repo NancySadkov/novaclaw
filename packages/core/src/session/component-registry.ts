@@ -783,7 +783,7 @@ const compiledDefinitions = Effect.gen(function* () {
     kernelDefinition({
       kind: "control_binding",
       description:
-        "The X display this session controls. Descendants inherit it; remove to fall back through the chain to the instance default.",
+        "The controlled surface. Use `x11-sandbox:<encoded-display>` for an isolated display. A real desktop requires `x11-window:<encoded-display>:<window-id>:<pid>:<encoded-WM_CLASS>` from a human-selected application; a plain display is never accepted. Descendants inherit it; remove to fall back to the sandbox-only instance default.",
       cardinality: "singleton",
       lifetime: "entity",
       version: 1,

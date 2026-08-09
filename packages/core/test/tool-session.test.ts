@@ -455,14 +455,16 @@ describe("session tool", () => {
     )
   })
 
-  test("writes and clears the consequential control binding through its canonical sparse column", () => {
+  test("writes and clears the privileged control binding through its canonical sparse column", () => {
     const asserted: Asserted[] = []
     return Effect.runPromise(
       withTool(asserted, ({ registry, db, sessionID }) =>
         Effect.gen(function* () {
           const set = yield* call(registry, sessionID, { op: "set", kind: "control_binding", value: ":99" })
           expect(set.type).toBe("text")
-          expect(asserted).toEqual([{ action: "session", resources: ["control_binding"], save: ["control_binding"] }])
+          expect(asserted).toEqual([
+            { action: "session_privileged", resources: ["control_binding"], save: ["control_binding"] },
+          ])
           expect(
             yield* db
               .select({ controlBinding: SessionTable.control_binding })

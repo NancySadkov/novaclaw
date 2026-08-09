@@ -21,7 +21,9 @@ export const KERNEL_KIND_TIERS: Record<SessionComponentRegistry.KernelKind, Tier
   priority: "operational",
   goal: "privileged",
   plan: "privileged",
-  control_binding: "consequential",
+  // It may grant one real-desktop application, so the whole kind takes the higher tier. Values are
+  // not classified from model-authored strings after the fact.
+  control_binding: "privileged",
   observation: "operational",
 }
 const KIND_TIERS: Readonly<Record<string, Tier>> = KERNEL_KIND_TIERS

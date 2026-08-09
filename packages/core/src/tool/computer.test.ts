@@ -7,6 +7,7 @@ import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
 import { ComputerTool } from "./computer"
 import { Tool } from "./tool"
 import { ComputerActions } from "../computer/actions"
+import { ComputerControlTarget } from "../computer/control-target"
 import { ModelV2 } from "../model"
 import { ProviderV2 } from "../provider"
 import { SessionMessage } from "../session/message"
@@ -62,6 +63,12 @@ describe("flat input becomes an action, or an honest refusal", () => {
       const result = ComputerTool.toAction(input({ action, x: 1, y: 2, text: "t", keys: "Return", direction: "up" }))
       expect("error" in result).toBe(false)
     }
+  })
+
+  test("bind is explicitly owned by the human-selection controller", () => {
+    expect(ComputerTool.toAction(input({ action: "bind", display: ":0" }))).toEqual({
+      error: "bind is handled by the human-selection controller",
+    })
   })
 })
 
@@ -130,21 +137,41 @@ describe("unconfigured declines by NAMING the knob", () => {
   })
 
   test("session and ancestor bindings outrank the instance default", () => {
+    const root = ComputerControlTarget.encodeWindow({
+      display: ":0",
+      windowID: "8388611",
+      processID: 83,
+      wmClass: "Chromium",
+    })
+    const override = ComputerControlTarget.encodeWindow({
+      display: ":1",
+      windowID: "4194307",
+      processID: 91,
+      wmClass: "Firefox",
+    })
     const sessions: Record<string, SessionLike> = {
-      ses_root: { id: "ses_root", controlBinding: ":99" },
+      ses_root: { id: "ses_root", controlBinding: root },
       ses_child: { id: "ses_child", parentID: "ses_root" },
-      ses_override: { id: "ses_override", parentID: "ses_root", controlBinding: ":100" },
+      ses_override: { id: "ses_override", parentID: "ses_root", controlBinding: override },
+      ses_sandbox: { id: "ses_sandbox", controlBinding: ComputerControlTarget.encodeSandbox(":98") },
       ses_bare: { id: "ses_bare" },
     }
     const resolved = (id: string, instanceDisplay: string | undefined) =>
       Effect.runSync(
-        ComputerTool.resolveControlDisplay(SessionSchema.ID.make(id), instanceDisplay, (key) =>
+        ComputerTool.resolveControlTarget(SessionSchema.ID.make(id), instanceDisplay, (key) =>
           Effect.succeed(sessions[String(key)]),
         ),
       )
-    expect(resolved("ses_child", ":0")).toBe(":99")
-    expect(resolved("ses_override", ":0")).toBe(":100")
-    expect(resolved("ses_bare", ":0")).toBe(":0")
+    expect(resolved("ses_child", ":99")).toEqual(ComputerControlTarget.parse(root))
+    expect(resolved("ses_override", ":99")).toEqual(ComputerControlTarget.parse(override))
+    expect(resolved("ses_sandbox", ":99")).toEqual({
+      ok: true,
+      target: { kind: "sandbox-x11", display: ":98" },
+    })
+    expect(resolved("ses_bare", ":99")).toEqual({
+      ok: true,
+      target: { kind: "sandbox-x11", display: ":99" },
+    })
     expect(resolved("ses_bare", undefined)).toBeUndefined()
   })
 

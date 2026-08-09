@@ -10,9 +10,11 @@ import { Config } from "../config"
 import { ConfigComputer } from "../config/computer"
 import { ComputerActions } from "../computer/actions"
 import { ComputerCoordinates } from "../computer/coordinates"
+import { ComputerControlTarget } from "../computer/control-target"
 import { HostExec } from "../host-exec"
 import { Image } from "../image"
 import { Location } from "../location"
+import { Offline } from "../offline"
 import { AppProcess } from "../process"
 import { PermissionV2 } from "../permission"
 import { EFFECTIVE_CONFIG_DEFAULTS, resolveSessionConfig, type SessionLike } from "../session/config-resolve"
@@ -26,19 +28,33 @@ import { Tools } from "./tools"
 
 export const name = "computer"
 
-export const description = `Observe and control a graphical desktop: screenshot, move, click, type, key, scroll.
+export const description = `Observe and control a graphical desktop: bind, screenshot, move, click, type, key, scroll.
 
 For tasks with no API and no text interface — a native app, a game, a site that will not work headlessly. Prefer a dedicated tool when one exists; this is the slow fallback.
 
+\`bind\` is the ONLY real-desktop entry: after approval it gives the human 60 seconds to click one application window on the controlled X11 display. Later calls can see and address only that exact WM_CLASS/PID/window tuple. The \`display\` field belongs only to \`bind\` (usually \`:0\`); ordinary actions use the durable grant.
+
 \`screenshot\` returns the captured image in its own result — look at it directly; do not call \`read\` on the path.
 
-Coordinates are SCREEN PIXELS from the top-left. Screenshot first and read the target off it; never reuse a position from before an action, because what you clicked may have moved it.
+Coordinates are screenshot pixels from the top-left (window-local under a real-desktop grant). Screenshot first and read the target off it; never reuse a position from before an action, because what you clicked may have moved it.
 
 ⚠️ Verify by looking: a click that lands on nothing still reports success, so the only evidence it worked is the screen changing.`
 
 export const Input = Schema.Struct({
-  action: Schema.Literals(["screenshot", "move", "click", "double_click", "type", "key", "scroll", "cursor"]).annotate({
-    description: "What to do.",
+  action: Schema.Literals([
+    "bind",
+    "screenshot",
+    "move",
+    "click",
+    "double_click",
+    "type",
+    "key",
+    "scroll",
+    "cursor",
+  ]).annotate({ description: "What to do." }),
+  display: Schema.String.pipe(Schema.optional).annotate({
+    description:
+      'X11 display used only by `bind`, e.g. ":0". Approval plus the user clicking a window creates the scoped grant.',
   }),
   x: Schema.Number.pipe(Schema.optional).annotate({ description: "Target X in screen pixels (move/click)." }),
   y: Schema.Number.pipe(Schema.optional).annotate({ description: "Target Y in screen pixels (move/click)." }),
@@ -205,6 +221,8 @@ export const parseRegion = (raw: string): ComputerActions.Region | { readonly er
 export const toAction = (input: Input): ComputerActions.Action | { readonly error: string } => {
   const point = () => (input.x === undefined || input.y === undefined ? undefined : { x: input.x, y: input.y })
   switch (input.action) {
+    case "bind":
+      return { error: "bind is handled by the human-selection controller" }
     case "screenshot": {
       if (input.region === undefined) return { kind: "screenshot" }
       const region = parseRegion(input.region)
@@ -247,19 +265,26 @@ export interface Input extends Schema.Schema.Type<typeof Input> {}
  */
 export const UNCONFIGURED =
   "No display is configured for computer use, so there is nothing to observe or click. " +
-  'Set this session\'s `control_binding` component (for example ":99"), or set `computer.display` ' +
-  "as the instance default. A display is never inherited from the process environment: that would " +
+  "Set `computer.display` as the instance's SANDBOX default. A real desktop never uses that default: " +
+  "it needs a human-granted, app-specific `control_binding` component. A display is never inherited " +
+  "from the process environment: that would " +
   "either fail on a headless host or " +
   "silently drive the operator's real screen."
 
-/** Resolve the session/ancestor override first and the instance setting only as the final default. */
-export const resolveControlDisplay = <E, R>(
+/** Resolve a tagged session grant first; the instance display is an explicitly sandbox-only default. */
+export const resolveControlTarget = <E, R>(
   sessionID: SessionSchema.ID,
   instanceDisplay: string | undefined,
   getSession: (id: SessionSchema.ID) => Effect.Effect<SessionLike | undefined, E, R>,
-): Effect.Effect<string | undefined, E, R> =>
+): Effect.Effect<ComputerControlTarget.Parsed | undefined, E, R> =>
   resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, sessionID, (id) => getSession(SessionSchema.ID.make(id))).pipe(
-    Effect.map((resolved) => resolved.controlBinding ?? instanceDisplay),
+    Effect.map((resolved) =>
+      resolved.controlBinding !== undefined
+        ? ComputerControlTarget.parse(resolved.controlBinding)
+        : instanceDisplay === undefined
+          ? undefined
+          : { ok: true, target: ComputerControlTarget.sandbox(instanceDisplay) },
+    ),
   )
 
 /**
@@ -412,6 +437,7 @@ export const layer = Layer.effectDiscard(
     const images = yield* Image.Service
     const sessions = yield* SessionStore.Service
     const components = yield* SessionComponentRegistry.Service
+    const offline = yield* Offline.Service
 
     yield* tools
       .register({
@@ -442,9 +468,129 @@ export const layer = Layer.effectDiscard(
             toModelOutput: ({ output }) => toModelContent(output),
             execute: (input, context) =>
               Effect.gen(function* () {
+                const runArgv = (display: string, argv: ReadonlyArray<string>, interactive = false) => {
+                  const plan = HostExec.plan({
+                    shape: { kind: "argv", argv },
+                    cwd: location.directory,
+                    worktree: location.directory,
+                    consent: "none",
+                    overlay: { DISPLAY: display },
+                  })
+                  if (plan.via === "none") return Effect.fail(new ToolFailure({ message: plan.message }))
+                  if (plan.via !== "exec")
+                    return Effect.fail(new ToolFailure({ message: "computer: refusing a non-argv execution" }))
+                  const run = processes.run(
+                    ChildProcess.make(plan.file, [...plan.args], {
+                      env: plan.env.vars,
+                      extendEnv: plan.env.inherit,
+                    }),
+                  )
+                  return (interactive ? run.pipe(Effect.timeout("60 seconds")) : run).pipe(
+                    Effect.mapError(
+                      (error) => new ToolFailure({ message: `computer: ${plan.file} failed — ${String(error)}` }),
+                    ),
+                  )
+                }
+
                 const settings = Config.latest(yield* config.entries(), "computer") as ConfigComputer.Info | undefined
-                const display = yield* resolveControlDisplay(context.sessionID, settings?.display, sessions.get)
-                if (!display) return yield* Effect.fail(new ToolFailure({ message: UNCONFIGURED }))
+                if (input.action === "bind") {
+                  const offlineRefusal = ComputerControlTarget.offlineRealDesktopRefusal(offline.policy.enabled)
+                  if (offlineRefusal)
+                    return yield* Effect.fail(
+                      new ToolFailure({
+                        message: `computer: ${offlineRefusal}`,
+                      }),
+                    )
+                  const display = input.display?.trim()
+                  if (!display)
+                    return yield* Effect.fail(
+                      new ToolFailure({
+                        message: 'computer: bind needs the real desktop X11 display, for example ":0"',
+                      }),
+                    )
+                  const resource = `bind-x11-window/${encodeURIComponent(display)}`
+                  yield* permission.assert({
+                    action: name,
+                    resources: [resource],
+                    save: [resource],
+                    metadata: { action: input.action, display },
+                    sessionID: context.sessionID,
+                    source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                  })
+                  const selection = yield* runArgv(display, ["xdotool", "selectwindow"], true)
+                  const selectedWindowID = ComputerControlTarget.parseWindowID(selection.stdout.toString())
+                  if (!selectedWindowID)
+                    return yield* Effect.fail(
+                      new ToolFailure({ message: "computer: the window selector returned no valid X11 window id" }),
+                    )
+                  // Window managers commonly return their decoration frame rather than the client
+                  // the human clicked. Descend the authoritative X tree and accept exactly one
+                  // PID+WM_CLASS client; zero or ambiguity fails closed.
+                  const selectedArg = ComputerControlTarget.xWindowArg(selectedWindowID)
+                  const tree = yield* runArgv(display, ["xwininfo", "-id", selectedArg, "-tree"])
+                  const treeText = tree.stdout.toString()
+                  const clientList = yield* runArgv(display, [
+                    "xprop",
+                    "-root",
+                    "_NET_CLIENT_LIST_STACKING",
+                    "_NET_CLIENT_LIST",
+                  ])
+                  const resolvedClient = ComputerControlTarget.resolveSelectedClient(
+                    selectedWindowID,
+                    treeText,
+                    clientList.stdout.toString(),
+                  )
+                  if (!resolvedClient.ok)
+                    return yield* Effect.fail(
+                      new ToolFailure({
+                        message: `computer: ${resolvedClient.reason}`,
+                      }),
+                    )
+                  const windowID = resolvedClient.windowID
+                  const windowArg = ComputerControlTarget.xWindowArg(windowID)
+                  const [pidResult, classResult] = yield* Effect.all([
+                    runArgv(display, ["xdotool", "getwindowpid", windowArg]),
+                    runArgv(display, ["xprop", "-id", windowArg, "WM_CLASS"]),
+                  ])
+                  const processID = ComputerControlTarget.parseWindowPID(pidResult.stdout.toString())
+                  const wmClass = ComputerControlTarget.parseWmClass(classResult.stdout.toString())
+                  if (processID === undefined || wmClass === undefined)
+                    return yield* Effect.fail(
+                      new ToolFailure({
+                        message:
+                          "computer: the selected application did not expose a readable PID and WM_CLASS, so it cannot be scoped safely",
+                      }),
+                    )
+                  const binding = ComputerControlTarget.encodeWindow({ display, windowID, processID, wmClass })
+                  yield* components.put({
+                    sessionID: context.sessionID,
+                    kind: "control_binding",
+                    value: binding,
+                  })
+                  return {
+                    action: input.action,
+                    ok: true,
+                    detail:
+                      `Connected this session to the human-selected ${wmClass} window only ` +
+                      `(pid ${processID}, window ${windowID}). Other applications and the ambient desktop remain outside scope.`,
+                  }
+                }
+                const resolvedTarget = yield* resolveControlTarget(context.sessionID, settings?.display, sessions.get)
+                if (!resolvedTarget) return yield* Effect.fail(new ToolFailure({ message: UNCONFIGURED }))
+                if (!resolvedTarget.ok)
+                  return yield* Effect.fail(new ToolFailure({ message: `computer: ${resolvedTarget.reason}` }))
+                const target = resolvedTarget.target
+                const offlineRefusal =
+                  target.kind === "x11-window"
+                    ? ComputerControlTarget.offlineRealDesktopRefusal(offline.policy.enabled)
+                    : undefined
+                if (offlineRefusal)
+                  return yield* Effect.fail(
+                    new ToolFailure({
+                      message: `computer: ${offlineRefusal}`,
+                    }),
+                  )
+                const display = target.display
                 const screenshotPath = settings?.screenshotPath ?? ConfigComputer.DEFAULT_SCREENSHOT_PATH
 
                 const action = toAction(input)
@@ -457,16 +603,46 @@ export const layer = Layer.effectDiscard(
                     }),
                   )
 
-                const built = ComputerActions.build(action, { display, screenshotPath })
+                let windowArg: string | undefined
+                if (target.kind === "x11-window") {
+                  windowArg = ComputerControlTarget.xWindowArg(target.windowID)
+                  const [pidResult, classResult] = yield* Effect.all([
+                    runArgv(display, ["xdotool", "getwindowpid", windowArg]),
+                    runArgv(display, ["xprop", "-id", windowArg, "WM_CLASS"]),
+                  ])
+                  const identity = ComputerControlTarget.verifyWindowIdentity(
+                    target,
+                    pidResult.stdout.toString(),
+                    classResult.stdout.toString(),
+                  )
+                  if (!identity.ok)
+                    return yield* Effect.fail(
+                      new ToolFailure({
+                        message:
+                          `computer: the human-granted ${target.wmClass} window is no longer the same application ` +
+                          `(expected pid ${target.processID} / WM_CLASS ${JSON.stringify(target.wmClass)}, found ` +
+                          `${identity.actualPID ?? "unreadable"} / ` +
+                          `${JSON.stringify(identity.actualClass ?? "unreadable")}). ` +
+                          "The grant is stale; ask the user to select the application again.",
+                      }),
+                    )
+                }
+
+                const built = ComputerActions.build(action, {
+                  display,
+                  screenshotPath,
+                  ...(windowArg === undefined ? {} : { windowID: windowArg }),
+                })
                 if (!built.ok) return yield* Effect.fail(new ToolFailure({ message: built.reason }))
 
                 // One assert for the whole tool: the resource is the ACTION, not a coordinate — a
                 // permission rule a person can read ("allow computer/screenshot") and not a pixel.
+                const permissionResource = ComputerControlTarget.permissionResource(target, input.action)
                 yield* permission.assert({
                   action: name,
-                  resources: [input.action],
-                  save: ["*"],
-                  metadata: input,
+                  resources: [permissionResource],
+                  save: [permissionResource],
+                  metadata: { ...input, controlTarget: target },
                   sessionID: context.sessionID,
                   source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
                 })
@@ -476,30 +652,7 @@ export const layer = Layer.effectDiscard(
                 // screen. `overlay` is the functional, non-secret channel the display rides.
                 const outputs: string[] = []
                 for (const argv of built.argv) {
-                  const plan = HostExec.plan({
-                    shape: { kind: "argv", argv },
-                    cwd: location.directory,
-                    worktree: location.directory,
-                    consent: "none",
-                    overlay: { ...built.env },
-                  })
-                  if (plan.via === "none") return yield* Effect.fail(new ToolFailure({ message: plan.message }))
-                  if (plan.via !== "exec")
-                    // Unreachable: an argv shape always takes the exec arm. Fail loudly rather than
-                    // fall back to a shell, which is the injection this shape exists to prevent.
-                    return yield* Effect.fail(new ToolFailure({ message: "computer: refusing a non-argv execution" }))
-                  const result = yield* processes
-                    .run(
-                      ChildProcess.make(plan.file, [...plan.args], {
-                        env: plan.env.vars,
-                        extendEnv: plan.env.inherit,
-                      }),
-                    )
-                    .pipe(
-                      Effect.mapError(
-                        (error) => new ToolFailure({ message: `computer: ${plan.file} failed — ${String(error)}` }),
-                      ),
-                    )
+                  const result = yield* runArgv(display, argv)
                   const text = result.stdout.toString().trim()
                   if (text) outputs.push(text)
                 }
@@ -528,6 +681,10 @@ export const layer = Layer.effectDiscard(
                       // `-a 1200,760,400,400` on a 1280x800 display wrote an 80x40 file with no error.
                       // The origin survives clipping, so it stays exact; asserting the requested size
                       // would be describing the file as something it is not.
+                      (target.kind === "x11-window"
+                        ? `Only the human-granted ${target.wmClass} application window is attached; ` +
+                          "coordinates are relative to that window. "
+                        : "") +
                       (action.region
                         ? `screenshot attached below — a CROP with its origin at ` +
                           `(${action.region.x},${action.region.y}) and up to ` +
@@ -535,7 +692,8 @@ export const layer = Layer.effectDiscard(
                           `Coordinates read off it are relative to that origin: add it back before clicking. ` +
                           `Also written to ${screenshotPath}.`
                         : `screenshot attached below — look at the image in this result rather than ` +
-                          `reading ${screenshotPath}, which is the same capture.`) + (capture.note ?? "")
+                          `reading ${screenshotPath}, which is the same capture.`) +
+                      (capture.note ?? "")
                     : outputs.length > 0
                       ? outputs.join("\n")
                       : `${input.action} done`
@@ -575,6 +733,7 @@ export const node = makeLocationNode({
     Image.node,
     SessionStore.node,
     SessionComponentRegistry.node,
+    Offline.node,
   ],
 })
 

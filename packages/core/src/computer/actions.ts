@@ -79,6 +79,11 @@ export interface Options {
   /** Where `screenshot` writes. */
   readonly screenshotPath: string
   /**
+   * One human-granted X11 window. When present, screenshot coordinates are window-local and every
+   * input event is addressed to this XID; no full-desktop capture is expressible.
+   */
+  readonly windowID?: string
+  /**
    * Inter-keystroke delay for `type`, ms. `xdotool`'s own default is 12 ms; the substrate probe used
    * 5 ms without loss. Kept a knob because a slow remote X connection drops keys at low values.
    */
@@ -143,23 +148,43 @@ export const build = (action: Action, options: Options): Built => {
   // The display travels in `env`, not in argv — `xdotool` has no `--display` flag (measured).
   const env = { DISPLAY: options.display } as const
   const xdotool = (...args: string[]) => ["xdotool", ...args]
+  const windowArgs = options.windowID === undefined ? [] : ["--window", options.windowID]
 
   switch (action.kind) {
     case "screenshot": {
+      const validateRegion = (r: Region): Invalid | undefined => {
+        for (const [name, value] of [
+          ["x", r.x],
+          ["y", r.y],
+          ["width", r.width],
+          ["height", r.height],
+        ] as const) {
+          if (!Number.isInteger(value))
+            return { ok: false, reason: `region ${name} must be a whole pixel, got ${value}` }
+          if (name === "x" || name === "y" ? value < 0 : value < 1)
+            return { ok: false, reason: `region ${name} is out of range: ${value}` }
+        }
+      }
+      if (action.region) {
+        const invalid = validateRegion(action.region)
+        if (invalid) return invalid
+      }
+      if (options.windowID !== undefined) {
+        const crop = action.region
+          ? ["-crop", `${action.region.width}x${action.region.height}+${action.region.x}+${action.region.y}`, "+repage"]
+          : []
+        return {
+          ok: true,
+          env,
+          // ImageMagick captures the selected window's backing pixels, not whatever overlaps it on
+          // the ambient desktop. `xWindowArg` is prepared by the validated binding resolver.
+          argv: [["import", "-window", options.windowID, ...crop, options.screenshotPath]],
+        }
+      }
       // `-o` overwrites: the substrate reuses one path per capture and a stale file read as a fresh
       // frame is the worst possible failure for a loop that decides what to click from it.
       if (!action.region) return { ok: true, env, argv: [["scrot", "-o", options.screenshotPath]] }
       const r = action.region
-      for (const [name, value] of [
-        ["x", r.x],
-        ["y", r.y],
-        ["width", r.width],
-        ["height", r.height],
-      ] as const) {
-        if (!Number.isInteger(value)) return { ok: false, reason: `region ${name} must be a whole pixel, got ${value}` }
-        if (name === "x" || name === "y" ? value < 0 : value < 1)
-          return { ok: false, reason: `region ${name} is out of range: ${value}` }
-      }
       // `scrot -a x,y,w,h` — run against the real `scrot` (1.10) in the substrate on 2026-08-06 in
       // THIS flag order, not assumed from the flag's existence: a flag that is not there fails at run
       // time under a green unit suite, which is exactly how `xdotool --display` got through.
@@ -178,12 +203,18 @@ export const build = (action: Action, options: Options): Built => {
     }
 
     case "cursor":
+      if (options.windowID !== undefined)
+        return { ok: false, reason: "cursor is unavailable in a window scope; capture the window instead" }
       return { ok: true, env, argv: [xdotool("getmouselocation")] }
 
     case "move": {
       const bad = point(action.point)
       if (bad) return bad
-      return { ok: true, env, argv: [xdotool("mousemove", String(action.point.x), String(action.point.y))] }
+      return {
+        ok: true,
+        env,
+        argv: [xdotool("mousemove", ...windowArgs, String(action.point.x), String(action.point.y))],
+      }
     }
 
     case "click":
@@ -194,9 +225,13 @@ export const build = (action: Action, options: Options): Built => {
       if (action.point) {
         const bad = point(action.point)
         if (bad) return bad
-        commands.push(xdotool("mousemove", String(action.point.x), String(action.point.y)))
+        commands.push(xdotool("mousemove", ...windowArgs, String(action.point.x), String(action.point.y)))
       }
-      commands.push(action.kind === "double_click" ? xdotool("click", "--repeat", "2", code) : xdotool("click", code))
+      commands.push(
+        action.kind === "double_click"
+          ? xdotool("click", ...windowArgs, "--repeat", "2", code)
+          : xdotool("click", ...windowArgs, code),
+      )
       return { ok: true, env, argv: commands }
     }
 
@@ -205,8 +240,8 @@ export const build = (action: Action, options: Options): Built => {
       if (action.text.length === 0) return { ok: false, reason: "nothing to type" }
       // `--` ends option parsing so text beginning with `-` is typed rather than read as a flag.
       // The text stays ONE argv element; nothing splits it and no shell sees it.
-      const argv = [xdotool("type", "--delay", String(options.typeDelayMs ?? 12), "--", action.text)]
-      if (action.kind === "type_submit") argv.push(xdotool("key", "--", "Return"))
+      const argv = [xdotool("type", ...windowArgs, "--delay", String(options.typeDelayMs ?? 12), "--", action.text)]
+      if (action.kind === "type_submit") argv.push(xdotool("key", ...windowArgs, "--", "Return"))
       return {
         ok: true,
         env,
@@ -216,7 +251,7 @@ export const build = (action: Action, options: Options): Built => {
 
     case "key": {
       if (!KEYSYM.test(action.keys)) return { ok: false, reason: `not a keysym spec: ${action.keys}` }
-      return { ok: true, env, argv: [xdotool("key", "--", action.keys)] }
+      return { ok: true, env, argv: [xdotool("key", ...windowArgs, "--", action.keys)] }
     }
 
     case "scroll": {
@@ -225,7 +260,11 @@ export const build = (action: Action, options: Options): Built => {
       if (!Number.isInteger(action.amount) || action.amount < 1)
         return { ok: false, reason: `amount must be a positive whole number, got ${action.amount}` }
       if (action.amount > MAX_SCROLL) return { ok: false, reason: `amount exceeds ${MAX_SCROLL}` }
-      return { ok: true, env, argv: [xdotool("click", "--repeat", String(action.amount), code)] }
+      return {
+        ok: true,
+        env,
+        argv: [xdotool("click", ...windowArgs, "--repeat", String(action.amount), code)],
+      }
     }
   }
 }

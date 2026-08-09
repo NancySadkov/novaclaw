@@ -238,3 +238,32 @@ describe("regional capture — the verifier's answer to a screen that animates i
     for (const command of ok(built)) expect(command).not.toContain("--display")
   })
 })
+
+describe("P6 exact-window X11 scope", () => {
+  const WINDOW = { ...OPTIONS, display: ":0", windowID: "0x800003" }
+
+  test("captures only the granted window, with an optional window-local crop", () => {
+    expect(ok(CA.build({ kind: "screenshot" }, WINDOW))).toEqual([["import", "-window", "0x800003", "/tmp/shot.png"]])
+    expect(ok(CA.build({ kind: "screenshot", region: { x: 20, y: 30, width: 100, height: 80 } }, WINDOW))).toEqual([
+      ["import", "-window", "0x800003", "-crop", "100x80+20+30", "+repage", "/tmp/shot.png"],
+    ])
+  })
+
+  test("pointer and keyboard events are addressed to the granted window", () => {
+    expect(ok(CA.build({ kind: "click", button: "left", point: { x: 40, y: 50 } }, WINDOW))).toEqual([
+      ["xdotool", "mousemove", "--window", "0x800003", "40", "50"],
+      ["xdotool", "click", "--window", "0x800003", "1"],
+    ])
+    expect(ok(CA.build({ kind: "type_submit", text: "hello" }, WINDOW))).toEqual([
+      ["xdotool", "type", "--window", "0x800003", "--delay", "12", "--", "hello"],
+      ["xdotool", "key", "--window", "0x800003", "--", "Return"],
+    ])
+    expect(ok(CA.build({ kind: "scroll", direction: "down", amount: 2 }, WINDOW))).toEqual([
+      ["xdotool", "click", "--window", "0x800003", "--repeat", "2", "5"],
+    ])
+  })
+
+  test("a global cursor coordinate is refused because window screenshots are local", () => {
+    expect(why(CA.build({ kind: "cursor" }, WINDOW))).toContain("unavailable in a window scope")
+  })
+})
