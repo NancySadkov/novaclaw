@@ -2,6 +2,7 @@ import { EOL } from "os"
 import { Effect } from "effect"
 import { ModelsDev } from "@novaclaw/core/models-dev"
 import { Catalog } from "@novaclaw/core/catalog"
+import { PluginV2 } from "@novaclaw/core/plugin"
 import { LocationServiceMap, locationServiceMapLayer } from "@novaclaw/core/location-services"
 import { Location } from "@novaclaw/core/location"
 import { AbsolutePath } from "@novaclaw/core/schema"
@@ -44,6 +45,9 @@ export const ModelsCommand = effectCmd({
     yield* Config.use.getGlobal()
 
     const result = yield* Effect.gen(function* () {
+      // The location graph starts PluginInternal in a scoped fork. Await its initial
+      // batch before reading Catalog or a fast CLI process can observe an empty store.
+      yield* (yield* PluginV2.Service).ready
       const catalog = yield* Catalog.Service
       const providers = yield* catalog.provider.all()
       const models = yield* catalog.model.all()

@@ -16,6 +16,7 @@
 // cuts per-spawn cost when this suite gets bigger.
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
+import path from "path"
 import { cliIt } from "../../lib/cli-process"
 
 describe("novaclaw read-only commands (smoke)", () => {
@@ -98,9 +99,9 @@ describe("novaclaw read-only commands (smoke)", () => {
     60_000,
   )
 
-  // `db path` prints the DB file location. Under harness isolation the DB
-  // resolves to SQLite's `:memory:` (no on-disk pollution between tests);
-  // in production it'd be a path under NOVACLAW_TEST_HOME / XDG_DATA_HOME.
+  // `db path` prints the DB file location. The CLI harness uses one disposable
+  // absolute file per process so the host and its worker share the same SQLite
+  // database; callers may still explicitly configure SQLite's `:memory:`.
   // Accept either form — both prove the resolver ran without crashing.
   cliIt.live(
     "db path: exits 0 and prints a path or :memory:",
@@ -108,7 +109,8 @@ describe("novaclaw read-only commands (smoke)", () => {
       Effect.gen(function* () {
         const r = yield* novaclaw.spawn(["db", "path"])
         novaclaw.expectExit(r, 0, "db path")
-        expect(r.stdout.trim()).toMatch(/^(:memory:|[/\\].+\.(db|sqlite|sqlite3))$/i)
+        const output = r.stdout.trim()
+        expect(output === ":memory:" || (path.isAbsolute(output) && /\.(db|sqlite|sqlite3)$/i.test(output))).toBe(true)
       }),
     60_000,
   )
