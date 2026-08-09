@@ -185,6 +185,10 @@ test("tool_call forwards the exact disclosed name and input through the resident
     ),
   )
   if (!registered) throw new Error("tool_call did not register")
+  expect(ToolCallTool.description).toContain('{"name":"computer","input":{"action":"screenshot"}}')
+  expect(Tool.definition("tool_call", registered).inputSchema).toMatchObject({
+    properties: { input: { type: "object", additionalProperties: true } },
+  })
   const seen: Array<{ name: string; input: Record<string, unknown> }> = []
   const output = await Effect.runPromise(
     Tool.settle(
