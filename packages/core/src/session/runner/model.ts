@@ -137,7 +137,11 @@ export interface Interface {
    * Best-effort like `tier`/`ref` — an unresolvable model yields `undefined` and the runner keeps
    * its own fallback, because a scheduling key must never be able to fail a turn.
    */
-  readonly device: (session: SessionSchema.Info) => Effect.Effect<string | undefined>
+  readonly device: (session: SessionSchema.Info) => Effect.Effect<ScheduledDevice | undefined>
+}
+
+export interface ScheduledDevice extends DeviceRegistry.SchedulingProfile {
+  readonly key: string
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/SessionRunnerModel") {}
@@ -196,10 +200,8 @@ export const layerWith = (
  * model all fall back to the per-model key (over-partition, the *cheap* error), while a declaration
  * is honoured verbatim (over-group, also the cheap error).
  *
- * ⚠️ And the third leg is still missing entirely: there is **no KV/VRAM accounting anywhere**, just
- * a global `MAX_BATCH = 2`. Grouping models onto their real device makes that cap *mean* something
- * for the first time, but it does not make it a measurement — and the registry entry deliberately
- * carries no `concurrency` field until the scheduler can read one (`config/device.ts`).
+ * The declared Device's concurrency and locality ride beside this key. Concurrency is an operator
+ * declaration, not a measurement: there is still no KV/VRAM accounting anywhere in the tree.
  */
 export interface DeviceOverride {
   /** The session's chain-resolved `SessionConfig.device`, if it declared one. */
@@ -468,8 +470,12 @@ export const locationLayer = Layer.effect(
         // A declared pin still holds when the model cannot be resolved — the turn is about to fail
         // on `resolve` anyway, and dropping the declaration here would be the one case where an
         // explicit affinity silently became a per-model key.
-        if (model === undefined) return session.device
-        return deviceKeyFor(model, { declared: session.device, endpoints: yield* devices.endpoints() })
+        const key =
+          model === undefined
+            ? session.device
+            : deviceKeyFor(model, { declared: session.device, endpoints: yield* devices.endpoints() })
+        if (key === undefined) return undefined
+        return { key, ...(yield* devices.profile(key)) }
       }),
     })
   }),

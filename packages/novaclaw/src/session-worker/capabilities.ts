@@ -98,6 +98,8 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
             deviceKey: request.deviceKey,
             sessionClass: request.sessionClass,
             ...(request.priority === undefined ? {} : { priority: request.priority }),
+            ...(request.concurrency === undefined ? {} : { concurrency: request.concurrency }),
+            ...(request.locality === undefined ? {} : { locality: request.locality }),
           },
           signal,
         ),

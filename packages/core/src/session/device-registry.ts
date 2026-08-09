@@ -18,22 +18,25 @@
  * registry's grouping and the derived origin all resolve there, in one function, never at a call
  * site. What lives here is the store read and the origin→device index it produces.
  *
- * ⚠️ **And the third leg is still absent, deliberately.** There is no KV/VRAM accounting anywhere in
- * the tree; `MAX_BATCH = 2` is the single capacity constant. Grouping endpoints onto their real
- * device makes that number MEAN something for the first time. It does not make it a measurement, and
- * this module must not be read as introducing one — `config/device.ts` records why `concurrency`
- * and `locality` are not fields here yet.
+ * Capacity and locality are declared on that same Device entry. They are not inferred from an
+ * endpoint and they are not model capabilities: two endpoint processes can share one capacity.
  */
 export * as DeviceRegistry from "./device-registry"
 
 import { Context, Effect, Layer } from "effect"
 import { Config } from "../config"
+import type { ConfigDevice } from "../config/device"
 import { makeLocationNode } from "../effect/app-node"
 
 /** Normalized endpoint origin → the device id that claims it. */
 export type EndpointMap = ReadonlyMap<string, string>
 
 export const EMPTY_ENDPOINTS: EndpointMap = new Map()
+
+export interface SchedulingProfile {
+  readonly concurrency?: number
+  readonly locality?: ConfigDevice.Locality
+}
 
 /**
  * The one normalization both sides of the comparison must agree on: `new URL(…).origin` collapses a
@@ -80,6 +83,8 @@ export interface Interface {
    * an unchanged Map — see the layer for why that memo is the state this service is guarded on.
    */
   readonly endpoints: () => Effect.Effect<EndpointMap>
+  /** Live scheduler-facing facts for a declared device id. */
+  readonly profile: (deviceID: string) => Effect.Effect<SchedulingProfile | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/DeviceRegistry") {}
@@ -107,21 +112,38 @@ export const layer = Layer.effect(
     // therefore the thing that makes a duplicated instance observable at all.
     let signature: string | undefined
     let map: EndpointMap = EMPTY_ENDPOINTS
+    let entries: Readonly<Record<string, ConfigDevice.Info>> = {}
+    const refresh = Effect.fnUntraced(function* () {
+      const devices = Config.latest(yield* config.entries(), "devices")
+      const next = devices === undefined ? "" : JSON.stringify(devices)
+      if (next !== signature) {
+        signature = next
+        entries = devices ?? {}
+        map = endpointMap(devices)
+      }
+    })
     return Service.of({
       endpoints: Effect.fn("DeviceRegistry.endpoints")(function* () {
-        const devices = Config.latest(yield* config.entries(), "devices")
-        const next = devices === undefined ? "" : JSON.stringify(devices)
-        if (next !== signature) {
-          signature = next
-          map = endpointMap(devices)
-        }
+        yield* refresh()
         return map
+      }),
+      profile: Effect.fn("DeviceRegistry.profile")(function* (deviceID) {
+        yield* refresh()
+        const entry = entries[deviceID]
+        return entry === undefined ? undefined : { concurrency: entry.concurrency, locality: entry.locality }
       }),
     })
   }),
 )
 
 /** Test/embedding seam: a fixed index, with no config graph behind it. */
-export const layerOf = (endpoints: EndpointMap) => Layer.succeed(Service, Service.of({ endpoints: () => Effect.succeed(endpoints) }))
+export const layerOf = (endpoints: EndpointMap, profiles: Readonly<Record<string, SchedulingProfile>> = {}) =>
+  Layer.succeed(
+    Service,
+    Service.of({
+      endpoints: () => Effect.succeed(endpoints),
+      profile: (deviceID) => Effect.succeed(profiles[deviceID]),
+    }),
+  )
 
 export const node = makeLocationNode({ service: Service, layer, deps: [Config.node] })

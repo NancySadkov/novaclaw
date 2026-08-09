@@ -30,6 +30,7 @@
 export * as SessionScheduler from "./scheduler"
 
 import { Context, Deferred, Effect, Layer } from "effect"
+import type { ConfigDevice } from "../config/device"
 import { makeGlobalNode } from "../effect/app-node"
 import { KernelEevdf } from "../kernel/eevdf"
 
@@ -62,6 +63,10 @@ export interface AdmitInput {
   readonly sessionClass: SessionClass
   /** K1 priority: > 0 overrides the class weight (EEVDF share). */
   readonly priority?: number
+  /** Device-declared concurrent background generation cap; defaults to the conservative floor. */
+  readonly concurrency?: number
+  /** Operator-declared placement fact, exposed in snapshots for routing and diagnosis. */
+  readonly locality?: ConfigDevice.Locality
 }
 
 export interface ReleaseInput {
@@ -75,6 +80,8 @@ export interface ReportInput extends ReleaseInput {
 
 export interface DeviceSnapshot {
   readonly deviceKey: string
+  readonly concurrency: number
+  readonly locality?: ConfigDevice.Locality
   readonly inFlightInteractive: readonly string[]
   readonly inFlightBatch: readonly string[]
   readonly waiting: readonly string[]
@@ -105,6 +112,8 @@ interface DeviceState {
   readonly inFlightInteractive: Set<string>
   readonly inFlightBatch: Set<string>
   readonly waiters: Map<string, Waiter>
+  concurrency: number
+  locality?: ConfigDevice.Locality
   lastDispatched?: string
 }
 
@@ -135,6 +144,7 @@ export const make = (options?: Options): Interface => {
           inFlightInteractive: new Set(),
           inFlightBatch: new Set(),
           waiters: new Map(),
+          concurrency: MAX_BATCH,
         }),
       )
     return device
@@ -154,7 +164,7 @@ export const make = (options?: Options): Interface => {
     )
 
   const batchCapacity = (device: DeviceState) =>
-    device.inFlightInteractive.size === 0 && device.inFlightBatch.size < MAX_BATCH
+    device.inFlightInteractive.size === 0 && device.inFlightBatch.size < device.concurrency
 
   const drain = (device: DeviceState) => {
     while (batchCapacity(device) && device.waiters.size > 0) {
@@ -176,7 +186,15 @@ export const make = (options?: Options): Interface => {
     Effect.suspend(() => {
       if (disabled()) return Effect.void
       const device = deviceFor(input.deviceKey)
+      // Config is runtime-editable: the newest admission refreshes policy for the whole device.
+      // Lowering the cap never preempts an in-flight generation; it simply closes admission until
+      // the live count falls below the new ceiling.
+      device.concurrency = input.concurrency ?? MAX_BATCH
+      device.locality = input.locality
       sweep(device)
+      // A raised cap belongs to the device, not to the newcomer that happened to carry it. Give
+      // already-waiting sessions first claim through EEVDF before considering this admission.
+      drain(device)
       device.ledger.ensure(
         input.sessionID,
         input.sessionClass,
@@ -254,6 +272,8 @@ export const make = (options?: Options): Interface => {
     Effect.sync(() =>
       [...devices.entries()].map(([deviceKey, device]) => ({
         deviceKey,
+        concurrency: device.concurrency,
+        ...(device.locality === undefined ? {} : { locality: device.locality }),
         inFlightInteractive: [...device.inFlightInteractive],
         inFlightBatch: [...device.inFlightBatch],
         waiting: [...device.waiters.keys()],

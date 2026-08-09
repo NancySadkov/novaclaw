@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { Config } from "@novaclaw/core/config"
 import { ConfigDevice } from "@novaclaw/core/config/device"
 import { DeviceRegistry } from "@novaclaw/core/session/device-registry"
@@ -9,7 +9,11 @@ import { it } from "./lib/effect"
 // service's read-THROUGH behaviour (`Config.entries()` hits the settings store on every call and
 // returns fresh objects — ruling 3, "a settings change is not a reboot"). Returning a NEW array each
 // time is the point: it is why the registry memoizes on the decoded VALUE rather than on a reference.
-const configOf = (devices: () => Record<string, { endpoints: string[] }> | undefined) =>
+const configOf = (
+  devices: () =>
+    | Record<string, { endpoints: string[]; concurrency?: number; locality?: ConfigDevice.Locality }>
+    | undefined,
+) =>
   Layer.succeed(
     Config.Service,
     Config.Service.of({
@@ -18,7 +22,7 @@ const configOf = (devices: () => Record<string, { endpoints: string[] }> | undef
           const value = devices()
           if (value === undefined) return []
           const decoded = Object.fromEntries(
-            Object.entries(value).map(([id, entry]) => [id, new ConfigDevice.Info({ endpoints: entry.endpoints })]),
+            Object.entries(value).map(([id, entry]) => [id, new ConfigDevice.Info(entry)]),
           )
           return [new Config.Document({ type: "document", info: new Config.Info({ devices: decoded }) })]
         }),
@@ -28,6 +32,16 @@ const configOf = (devices: () => Record<string, { endpoints: string[] }> | undef
 const registryIn = (config: Layer.Layer<Config.Service>) => DeviceRegistry.layer.pipe(Layer.provide(config))
 
 describe("DeviceRegistry.endpointMap — the grouping algebra", () => {
+  it.effect("device capacity is a positive integer and locality is closed-vocabulary", () =>
+    Effect.sync(() => {
+      const decode = Schema.decodeUnknownSync(ConfigDevice.Info)
+      expect(decode({ endpoints: [], concurrency: 3, locality: "local" }).concurrency).toBe(3)
+      expect(() => decode({ endpoints: [], concurrency: 0 })).toThrow()
+      expect(() => decode({ endpoints: [], concurrency: 1.5 })).toThrow()
+      expect(() => decode({ endpoints: [], locality: "nearby" })).toThrow()
+    }),
+  )
+
   it.effect("collapses several endpoint origins onto ONE device", () =>
     Effect.sync(() => {
       const map = DeviceRegistry.endpointMap({
@@ -99,8 +113,22 @@ describe("DeviceRegistry reads through the settings store", () => {
     Effect.gen(function* () {
       const registry = yield* DeviceRegistry.Service
       expect((yield* registry.endpoints()).get("http://192.168.178.40:8010")).toBe("spark")
+    }).pipe(Effect.provide(registryIn(configOf(() => ({ spark: { endpoints: ["http://192.168.178.40:8010/v1"] } }))))),
+  )
+
+  it.effect("serves scheduling facts from the same live Device entry", () =>
+    Effect.gen(function* () {
+      const registry = yield* DeviceRegistry.Service
+      expect(yield* registry.profile("spark")).toEqual({ concurrency: 6, locality: "lan" })
+      expect(yield* registry.profile("missing")).toBeUndefined()
     }).pipe(
-      Effect.provide(registryIn(configOf(() => ({ spark: { endpoints: ["http://192.168.178.40:8010/v1"] } })))),
+      Effect.provide(
+        registryIn(
+          configOf(() => ({
+            spark: { endpoints: ["http://192.168.178.40:8010/v1"], concurrency: 6, locality: "lan" },
+          })),
+        ),
+      ),
     ),
   )
 

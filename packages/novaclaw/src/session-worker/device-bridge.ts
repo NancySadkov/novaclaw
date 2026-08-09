@@ -42,6 +42,8 @@ export const handle = Effect.fn("SessionWorkerDeviceBridge.handle")(function* (i
         deviceKey: input.message.deviceKey,
         sessionClass: input.message.sessionClass,
         ...(input.message.priority === undefined ? {} : { priority: input.message.priority }),
+        ...(input.message.concurrency === undefined ? {} : { concurrency: input.message.concurrency }),
+        ...(input.message.locality === undefined ? {} : { locality: input.message.locality }),
       })
       return { ...identity(input.message), type: "device-admitted" as const }
     case "device-release":

@@ -20,14 +20,13 @@ import { Schema } from "effect"
  * says it, once, and `PATCH /config` is where they say it — which is the self-healing law's own
  * shape: an operational fact lives in a runtime-editable store, not compiled in.
  *
- * ⚠️ **`endpoints` is the ONLY field, deliberately.** `locality` and `concurrency` were filed to land
- * here (and, in the original filing, on `ModelV2.Capabilities`). They are not here because neither
- * has a consumer yet: `MAX_BATCH` is a single global constant, there is no KV/VRAM accounting
- * anywhere in the tree, and the scheduler's admit input does not carry a per-device cap across the
- * session-worker protocol. B2's own first step deleted three `SessionConfig` fields for exactly that
- * property — they resolved for nobody — so adding a declared capacity number that nothing reads
- * would re-file the phantom under a new name. They land with the scheduler change that reads them.
+ * `concurrency` and `locality` live here, rather than on a model: several models and several endpoint
+ * processes may share this one backend. Concurrency is the scheduler's batch-generation cap; it is
+ * carried on every admission request so a runtime config edit takes effect on the next turn.
  */
+export const Locality = Schema.Literals(["local", "lan", "remote"])
+export type Locality = typeof Locality.Type
+
 export class Info extends Schema.Class<Info>("ConfigV2.Device")({
   /**
    * The endpoint origins this device serves — every model whose `api.url` has one of these origins
@@ -37,4 +36,8 @@ export class Info extends Schema.Class<Info>("ConfigV2.Device")({
    * schedule would be a worse one).
    */
   endpoints: Schema.Array(Schema.String),
+  /** Concurrent background generations admitted when no interactive turn is active. */
+  concurrency: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).pipe(Schema.optional),
+  /** Where this backend runs relative to the instance. Informational; never inferred from a URL. */
+  locality: Locality.pipe(Schema.optional),
 }) {}

@@ -37,6 +37,22 @@ test("worker device admission remains globally visible and exit reclaim frees it
   expect((await Effect.runPromise(scheduler.snapshot()))[0]?.inFlightInteractive).toEqual([])
 })
 
+test("host scheduler receives the device's declared capacity and locality", async () => {
+  const scheduler = SessionScheduler.make()
+  await Effect.runPromise(
+    SessionWorkerDeviceBridge.handle({
+      scheduler,
+      lease,
+      message: request("device-admit", {
+        sessionClass: "auto-prompting",
+        concurrency: 5,
+        locality: "local",
+      }),
+    }),
+  )
+  expect((await Effect.runPromise(scheduler.snapshot()))[0]).toMatchObject({ concurrency: 5, locality: "local" })
+})
+
 test("release/report are host-owned and invalid or stale requests fail closed", async () => {
   const scheduler = SessionScheduler.make()
   expect(

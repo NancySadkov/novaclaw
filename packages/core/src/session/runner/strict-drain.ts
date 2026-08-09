@@ -108,12 +108,14 @@ export const make = (dependencies: Dependencies) => {
       )
     if (model === undefined) return "handled" as const
     const maxProviderAttempts = ProviderRetry.maxAttempts(yield* models.retryAttempts(modelSession))
-    const deviceKey = (yield* models.device(modelSession)) ?? `${model.provider}/${model.id}`
+    const scheduledDevice = yield* models.device(modelSession)
     const dispatchSlot = {
       sessionID: session.id as string,
-      deviceKey,
+      deviceKey: scheduledDevice?.key ?? `${model.provider}/${model.id}`,
       sessionClass: SessionScheduler.classForSessionType(resolved.type),
       ...(resolved.priority > 0 ? { priority: resolved.priority } : {}),
+      ...(scheduledDevice?.concurrency === undefined ? {} : { concurrency: scheduledDevice.concurrency }),
+      ...(scheduledDevice?.locality === undefined ? {} : { locality: scheduledDevice.locality }),
     }
     const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
     const thinkingBudget = model.route.defaults.limits?.thinkingBudget ?? 0

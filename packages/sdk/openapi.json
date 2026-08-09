@@ -3829,6 +3829,13 @@
                       "deviceKey": {
                         "type": "string"
                       },
+                      "concurrency": {
+                        "type": "integer"
+                      },
+                      "locality": {
+                        "type": "string",
+                        "enum": ["local", "lan", "remote"]
+                      },
                       "inFlightInteractive": {
                         "type": "array",
                         "items": {
@@ -3953,7 +3960,14 @@
                         }
                       }
                     },
-                    "required": ["deviceKey", "inFlightInteractive", "inFlightBatch", "waiting", "ledger"],
+                    "required": [
+                      "deviceKey",
+                      "concurrency",
+                      "inFlightInteractive",
+                      "inFlightBatch",
+                      "waiting",
+                      "ledger"
+                    ],
                     "additionalProperties": false
                   },
                   "description": "Live scheduler state, one entry per device"
@@ -31676,6 +31690,14 @@
             "items": {
               "type": "string"
             }
+          },
+          "concurrency": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "locality": {
+            "type": "string",
+            "enum": ["local", "lan", "remote"]
           }
         },
         "required": ["endpoints"],

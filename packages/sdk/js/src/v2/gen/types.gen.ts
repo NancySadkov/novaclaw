@@ -3728,6 +3728,8 @@ export type ConfigV2LocalModelCatalog = {
 
 export type ConfigV2Device = {
   endpoints: Array<string>
+  concurrency?: number
+  locality?: "local" | "lan" | "remote"
 }
 
 export type ProviderAisdk = {
@@ -9129,6 +9131,8 @@ export type InstanceSchedulerResponses = {
    */
   200: Array<{
     deviceKey: string
+    concurrency: number
+    locality?: "local" | "lan" | "remote"
     inFlightInteractive: Array<string>
     inFlightBatch: Array<string>
     waiting: Array<string>

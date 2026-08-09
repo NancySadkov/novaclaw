@@ -415,7 +415,11 @@ describe("SessionRunnerModel", () => {
 describe("deviceKeyFor — a DEVICE is a backend, not a model", () => {
   const named = (id: string, providerID: string, url?: string) =>
     ModelV2.Info.make({
-      ...model(url === undefined ? { type: "native", settings: {} } : { type: "aisdk", package: "@ai-sdk/openai-compatible", url }),
+      ...model(
+        url === undefined
+          ? { type: "native", settings: {} }
+          : { type: "aisdk", package: "@ai-sdk/openai-compatible", url },
+      ),
       id: ModelV2.ID.make(id),
       providerID: ProviderV2.ID.make(providerID),
     })
@@ -551,14 +555,14 @@ describe("the runner CONSULTS the device key (source ratchet)", () => {
     // Non-vacuity: an empty or moved file must FAIL rather than satisfy every "not present" check.
     expect(raw.length).toBeGreaterThan(10_000)
     const code = stripComments(raw)
-    expect(code).toContain("const deviceKey")
+    expect(code).toContain("const scheduledDevice")
     return code
   }
 
-  it.effect("computes deviceKey from SessionRunnerModel.device, not from the wire model id", () =>
+  it.effect("computes scheduling facts from SessionRunnerModel.device, not from the wire model id", () =>
     Effect.sync(() => {
       const code = runnerSource()
-      const line = code.split("\n").find((text) => text.includes("const deviceKey"))
+      const line = code.split("\n").find((text) => text.includes("const scheduledDevice"))
       expect(line).toBeDefined()
       expect(line).toContain("models.device(")
     }),
@@ -567,9 +571,16 @@ describe("the runner CONSULTS the device key (source ratchet)", () => {
   it.effect("the retired per-model expression survives ONLY as the never-fails fallback", () =>
     Effect.sync(() => {
       const code = runnerSource()
-      // It may still appear — as the `??` arm — but only on the line that also asks the service.
-      for (const line of code.split("\n"))
-        if (line.includes("${model.provider}/${model.id}")) expect(line).toContain("models.device(")
+      const fallback = code.split("\n").find((line) => line.includes("${model.provider}/${model.id}"))
+      expect(fallback).toContain("scheduledDevice?.key")
+    }),
+  )
+
+  it.effect("carries declared concurrency and locality into the scheduler slot", () =>
+    Effect.sync(() => {
+      const code = runnerSource()
+      expect(code).toContain("scheduledDevice?.concurrency")
+      expect(code).toContain("scheduledDevice?.locality")
     }),
   )
 

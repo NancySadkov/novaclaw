@@ -204,6 +204,8 @@ export const DeviceAdmit = Schema.Struct({
     "cron",
   ]),
   priority: Schema.Finite.pipe(Schema.optional),
+  concurrency: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).pipe(Schema.optional),
+  locality: Schema.Literals(["local", "lan", "remote"]).pipe(Schema.optional),
 }).annotate({ identifier: "SessionWorker.DeviceAdmit" })
 export const DeviceRelease = Schema.Struct({
   ...DeviceRequestBase,
@@ -230,7 +232,7 @@ export const DeviceReport = Schema.Struct({
  * nothing else, and that property is structural rather than checked.
  */
 /** The payload half of `SpawnChild` — what a worker may ask for. */
-export type SpawnChildInput = typeof SpawnChild.Type["input"]
+export type SpawnChildInput = (typeof SpawnChild.Type)["input"]
 
 /**
  * Join a child session — the second worker→host operation, and the sibling of `SpawnChild`.

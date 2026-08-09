@@ -76,3 +76,21 @@ test("a scheduler object cannot overwrite the fenced session identity", async ()
   await SessionWorkerCapabilities.make({ lease, client }).admitDevice(forged)
   expect(sent?.sessionID).toBe(lease.sessionID)
 })
+
+test("device scheduling facts cross the worker protocol intact", async () => {
+  let sent: SessionWorkerClient.Request | undefined
+  const client = SessionWorkerClient.make({
+    lease,
+    send: (message) => {
+      sent = message
+      queueMicrotask(() => client.accept({ ...identity, type: "device-admitted", requestID: message.requestID }))
+    },
+  })
+  await SessionWorkerCapabilities.make({ lease, client }).admitDevice({
+    deviceKey: "spark",
+    sessionClass: "sub-agent",
+    concurrency: 7,
+    locality: "lan",
+  })
+  expect(sent).toMatchObject({ type: "device-admit", deviceKey: "spark", concurrency: 7, locality: "lan" })
+})

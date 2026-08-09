@@ -59,6 +59,77 @@ describe("session scheduler admission gate", () => {
     expect(admitted).toBe(true)
   })
 
+  test("device concurrency overrides the fallback cap and locality is observable", async () => {
+    const gate = make()
+    await run(
+      gate.admit({
+        sessionID: "b1",
+        deviceKey: "spark",
+        sessionClass: "auto-prompting",
+        concurrency: 1,
+        locality: "lan",
+      }),
+    )
+    let admitted = false
+    const fiber = Effect.runFork(
+      gate
+        .admit({
+          sessionID: "b2",
+          deviceKey: "spark",
+          sessionClass: "auto-prompting",
+          concurrency: 1,
+          locality: "lan",
+        })
+        .pipe(Effect.map(() => (admitted = true))),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const [device] = await run(gate.snapshot())
+    expect(admitted).toBe(false)
+    expect(device).toMatchObject({ deviceKey: "spark", concurrency: 1, locality: "lan" })
+    await run(gate.release({ sessionID: "b1", deviceKey: "spark" }))
+    await run(Fiber.await(fiber))
+    expect(admitted).toBe(true)
+  })
+
+  test("a live concurrency increase opens capacity on the next admission", async () => {
+    const gate = make()
+    await run(gate.admit({ sessionID: "b1", deviceKey: "d", sessionClass: "auto-prompting", concurrency: 1 }))
+    // The second request carries the newly edited Device value. It refreshes the shared device
+    // policy before checking capacity, so no restart or release is needed to use the added slot.
+    await run(gate.admit({ sessionID: "b2", deviceKey: "d", sessionClass: "auto-prompting", concurrency: 2 }))
+    const [device] = await run(gate.snapshot())
+    expect(device!.concurrency).toBe(2)
+    expect(device!.inFlightBatch).toEqual(["b1", "b2"])
+  })
+
+  test("a raised cap admits an existing waiter before the request that carried the edit", async () => {
+    const gate = make()
+    await run(gate.admit({ sessionID: "b1", deviceKey: "d", sessionClass: "auto-prompting", concurrency: 1 }))
+    let oldAdmitted = false
+    const old = Effect.runFork(
+      gate
+        .admit({ sessionID: "old", deviceKey: "d", sessionClass: "auto-prompting", concurrency: 1 })
+        .pipe(Effect.map(() => (oldAdmitted = true))),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    let newAdmitted = false
+    const newcomer = Effect.runFork(
+      gate
+        .admit({ sessionID: "new", deviceKey: "d", sessionClass: "auto-prompting", concurrency: 2 })
+        .pipe(Effect.map(() => (newAdmitted = true))),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(oldAdmitted).toBe(true)
+    expect(newAdmitted).toBe(false)
+    expect((await run(gate.snapshot()))[0]!.inFlightBatch).toEqual(["b1", "old"])
+
+    await run(gate.release({ sessionID: "b1", deviceKey: "d" }))
+    await run(Fiber.await(old))
+    await run(Fiber.await(newcomer))
+    expect(newAdmitted).toBe(true)
+  })
+
   test("drain picks fairly: the indebted session yields the first freed slot", async () => {
     const gate = make()
     await run(gate.admit({ sessionID: "b1", deviceKey: "d", sessionClass: "auto-prompting" }))

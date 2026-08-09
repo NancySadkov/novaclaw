@@ -105,6 +105,8 @@ const SchedulerLedgerEntry = Schema.Struct({
 })
 const SchedulerDevice = Schema.Struct({
   deviceKey: Schema.String,
+  concurrency: Schema.Int,
+  locality: Schema.Literals(["local", "lan", "remote"]).pipe(Schema.optional),
   inFlightInteractive: Schema.Array(Schema.String),
   inFlightBatch: Schema.Array(Schema.String),
   waiting: Schema.Array(Schema.String),

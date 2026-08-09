@@ -1084,12 +1084,14 @@ export const layer = Layer.effect(
       // for why this is the substrate for `deviceKey = resolvedDevice` rather than the whole of it.
       // The `??` keeps a scheduling key from ever failing a turn: `device` is best-effort, and the
       // old per-model key is always safe (it can only over-partition, never over-share).
-      const deviceKey = (yield* models.device(modelSession)) ?? `${model.provider}/${model.id}`
+      const scheduledDevice = yield* models.device(modelSession)
       const dispatchSlot = {
         sessionID: session.id as string,
-        deviceKey,
+        deviceKey: scheduledDevice?.key ?? `${model.provider}/${model.id}`,
         sessionClass: SessionScheduler.classForSessionType(config.type),
         ...(config.priority > 0 ? { priority: config.priority } : {}),
+        ...(scheduledDevice?.concurrency === undefined ? {} : { concurrency: scheduledDevice.concurrency }),
+        ...(scheduledDevice?.locality === undefined ? {} : { locality: scheduledDevice.locality }),
       }
       const generation = (stream: Exit.Exit<void, LLMError>, restore: ProviderDispatch.Restore) =>
         Effect.gen(function* () {
