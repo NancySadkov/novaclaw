@@ -1,9 +1,12 @@
 import fs from "fs/promises"
+import { createHash } from "crypto"
 import path from "path"
 import { fileURLToPath } from "url"
 import { describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
 import { FileMutation } from "@novaclaw/core/file-mutation"
+import { FileObservation } from "@novaclaw/core/file-observation"
+import { Image } from "@novaclaw/core/image"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { FSUtil } from "@novaclaw/core/fs-util"
@@ -12,8 +15,10 @@ import { LocationMutation } from "@novaclaw/core/location-mutation"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
+import { ReadTool } from "@novaclaw/core/tool/read"
 import { WriteTool } from "@novaclaw/core/tool/write"
 import { location } from "./fixture/location"
 import { tmpdir } from "./fixture/tmpdir"
@@ -25,6 +30,21 @@ const assertions: PermissionV2.AssertInput[] = []
 const writes: string[] = []
 let denyAction: string | undefined
 let onAssert: ((input: PermissionV2.AssertInput) => Promise<void>) | undefined
+
+const observations = Layer.succeed(
+  FileObservation.Service,
+  FileObservation.Service.of({
+    snapshot: () => Effect.die("unused"),
+    record: () => Effect.die("unused"),
+    validate: ({ token, target }) =>
+      token === "observed"
+        ? Effect.promise(() => fs.readFile(target.canonical)).pipe(
+            Effect.map((content) => createHash("sha256").update(content).digest("hex")),
+            Effect.orDie,
+          )
+        : Effect.fail(new FileObservation.InvalidError({ reason: "missing" })),
+  }),
+)
 
 const permission = Layer.succeed(
   PermissionV2.Service,
@@ -82,12 +102,58 @@ const withTool = <A, E, R>(directory: string, body: (registry: ToolRegistry.Inte
           ToolRegistry.toolsNode,
           LocationMutation.node,
           FileMutation.node,
+          FileObservation.node,
           WriteTool.node,
         ]),
         [
           [FSUtil.node, filesystem],
           [Location.node, activeLocation],
           [PermissionV2.node, permission],
+          [FileObservation.node, observations],
+          [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+        ],
+      ),
+    ),
+  )
+}
+
+const current: SessionExecutionAttempt.CurrentInterface = {
+  fence: { attemptID: "exe_tool_observation", generation: 1 },
+  advance: () => Effect.void,
+  toolDispatched: () => Effect.void,
+  toolSettled: () => Effect.void,
+  providerStarted: () => Effect.void,
+  providerToolProtocol: () => Effect.void,
+  providerSettled: () => Effect.void,
+  providerRecovery: () => Effect.succeed(undefined),
+}
+const noImage = Layer.succeed(
+  Image.Service,
+  Image.Service.of({
+    inspect: () => Effect.fail(new Image.ResizerUnavailableError()),
+    normalize: () => Effect.fail(new Image.ResizerUnavailableError()),
+  }),
+)
+const withObservedTools = <A, E, R>(
+  directory: string,
+  body: (registry: ToolRegistry.Interface) => Effect.Effect<A, E, R>,
+) => {
+  const activeLocation = Layer.succeed(
+    Location.Service,
+    Location.Service.of(location({ directory: AbsolutePath.make(directory) })),
+  )
+  return Effect.gen(function* () {
+    return yield* body(yield* ToolRegistry.Service)
+  }).pipe(
+    Effect.provideService(SessionExecutionAttempt.Current, current),
+    Effect.provide(
+      AppNodeBuilder.build(
+        LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, ReadTool.node, WriteTool.node]),
+        [
+          [FSUtil.node, filesystem],
+          [Location.node, activeLocation],
+          [PermissionV2.node, permission],
+          [Image.node, noImage],
           [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
         ],
       ),
@@ -144,7 +210,9 @@ describe("WriteTool", () => {
         reset()
         return Effect.promise(() => fs.writeFile(path.join(tmp.path, "existing.txt"), "before")).pipe(
           Effect.andThen(
-            withTool(tmp.path, (registry) => settleTool(registry, call({ path: "existing.txt", content: "after" }))),
+            withTool(tmp.path, (registry) =>
+              settleTool(registry, call({ path: "existing.txt", content: "after", observation: "observed" })),
+            ),
           ),
           Effect.andThen((settled) =>
             Effect.gen(function* () {
@@ -155,6 +223,71 @@ describe("WriteTool", () => {
               )
               expect(writes).toHaveLength(1)
             }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("refuses an existing-file replacement without a complete observation token", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        const target = path.join(tmp.path, "unobserved.txt")
+        return Effect.promise(() => fs.writeFile(target, "before")).pipe(
+          Effect.andThen(
+            withTool(tmp.path, (registry) =>
+              settleTool(registry, call({ path: "unobserved.txt", content: "blind replacement" })),
+            ),
+          ),
+          Effect.andThen((settled) =>
+            Effect.gen(function* () {
+              expect(settled.result).toMatchObject({ type: "error" })
+              expect(String(settled.result.value)).toContain("complete, current read")
+              expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("before")
+              expect(assertions).toEqual([])
+              expect(writes).toEqual([])
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("carries a real complete-read token into the locked whole-file replacement", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        const target = path.join(tmp.path, "roundtrip.txt")
+        return Effect.promise(() => fs.writeFile(target, "observed bytes")).pipe(
+          Effect.andThen(
+            withObservedTools(tmp.path, (registry) =>
+              Effect.gen(function* () {
+                const read = yield* settleTool(registry, {
+                  sessionID,
+                  ...toolIdentity,
+                  call: { type: "tool-call", id: "call-observe", name: "read", input: { path: "roundtrip.txt" } },
+                })
+                const structured = read.output?.structured as { observation?: FileObservation.Token } | undefined
+                expect(structured?.observation).toMatchObject({ coverage: "full" })
+                const write = yield* settleTool(
+                  registry,
+                  call({
+                    path: "roundtrip.txt",
+                    content: "replacement",
+                    observation: structured?.observation?.token,
+                  }),
+                )
+                expect(write.result).toEqual({ type: "text", value: "Wrote file successfully: roundtrip.txt" })
+              }),
+            ),
+          ),
+          Effect.andThen(
+            Effect.promise(async () => expect(await fs.readFile(target, "utf8")).toBe("replacement")),
           ),
         )
       },
@@ -175,10 +308,16 @@ describe("WriteTool", () => {
           Effect.andThen(
             withTool(tmp.path, (registry) =>
               Effect.gen(function* () {
-                yield* settleTool(registry, call({ path: "preserved.txt", content: "after" }, "call-preserved"))
                 yield* settleTool(
                   registry,
-                  call({ path: "deduplicated.txt", content: "\uFEFFafter" }, "call-deduplicated"),
+                  call({ path: "preserved.txt", content: "after", observation: "observed" }, "call-preserved"),
+                )
+                yield* settleTool(
+                  registry,
+                  call(
+                    { path: "deduplicated.txt", content: "\uFEFFafter", observation: "observed" },
+                    "call-deduplicated",
+                  ),
                 )
 
                 expect(yield* Effect.promise(() => fs.readFile(preserved, "utf8"))).toBe("\uFEFFafter")
@@ -204,14 +343,18 @@ describe("WriteTool", () => {
               onAssert = async (input) => {
                 if (input.action === "write") await fs.writeFile(target, "changed by the user")
               }
-              return settleTool(registry, call({ path: "raced.txt", content: "agent overwrite" }))
+              return settleTool(
+                registry,
+                call({ path: "raced.txt", content: "agent overwrite", observation: "observed" }),
+              )
             }),
           ),
           Effect.andThen((settled) =>
             Effect.gen(function* () {
               expect(settled.result).toEqual({
                 type: "error",
-                value: "File changed after permission approval. Read it again before writing.",
+                value:
+                  "File changed since the observed version. Read it fully again before replacing it, or use edit/apply_patch for a surgical change.",
               })
               expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("changed by the user")
               expect(writes).toEqual([])
@@ -239,7 +382,7 @@ describe("WriteTool", () => {
             Effect.gen(function* () {
               expect(settled.result).toEqual({
                 type: "error",
-                value: "File changed after permission approval. Read it again before writing.",
+                value: "File appeared after permission approval. Read it before replacing it.",
               })
               expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("created by the user")
               expect(writes).toEqual([])
@@ -351,7 +494,7 @@ test("keeps the locked write schema, semantics docstring, and deferred UX TODOs 
   )
   const schema = definition[0]?.inputSchema as { readonly properties?: Record<string, unknown> }
 
-  expect(Object.keys(schema.properties ?? {}).sort()).toEqual(["content", "path"])
+  expect(Object.keys(schema.properties ?? {}).sort()).toEqual(["content", "observation", "path"])
   expect(source).toContain(
     "absolute external paths retain mutation capability through a separate\n * external_directory approval before edit approval.",
   )

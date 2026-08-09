@@ -1,5 +1,6 @@
 import fs from "fs/promises"
 import path from "path"
+import { createHash } from "crypto"
 import { describe, expect } from "bun:test"
 import { Deferred, Effect, Fiber, Layer } from "effect"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -335,6 +336,26 @@ describe("FileMutation", () => {
             ),
           ),
         ).toBe(false)
+      }).pipe(provide(directory)),
+    ),
+  )
+
+  it.live("rechecks an observation digest under the target lock", () =>
+    withTmp((directory) =>
+      Effect.gen(function* () {
+        const targetPath = path.join(directory, "observed.txt")
+        yield* Effect.promise(() => fs.writeFile(targetPath, "observed"))
+        const target = yield* (yield* LocationMutation.Service).resolve({ path: "observed.txt" })
+        const digest = createHash("sha256").update("observed").digest("hex")
+        yield* (yield* FileMutation.Service).writeIfObserved({ target, expectedDigest: digest, content: "accepted" })
+        expect(yield* Effect.promise(() => fs.readFile(targetPath, "utf8"))).toBe("accepted")
+
+        expect(
+          yield* (yield* FileMutation.Service)
+            .writeIfObserved({ target, expectedDigest: digest, content: "stale overwrite" })
+            .pipe(Effect.flip),
+        ).toMatchObject({ _tag: "FileMutation.StaleContentError" })
+        expect(yield* Effect.promise(() => fs.readFile(targetPath, "utf8"))).toBe("accepted")
       }).pipe(provide(directory)),
     ),
   )

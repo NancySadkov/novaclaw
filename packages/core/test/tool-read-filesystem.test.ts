@@ -99,6 +99,40 @@ describe("ReadToolFileSystem", () => {
     }),
   )
 
+  it.effect("derives lossless page coverage across LF and CRLF without blessing truncated lines", () =>
+    Effect.sync(() => {
+      const page = new ReadToolFileSystem.TextPage({
+        type: "text-page",
+        content: "two",
+        mime: "text/plain",
+        offset: 2,
+        truncated: true,
+        next: 3,
+      })
+      expect(ReadToolFileSystem.pageCoverage("one\ntwo\nthree", page)).toEqual({
+        start: 1,
+        end: 2,
+        total: 3,
+        full: false,
+        lossless: true,
+      })
+      expect(ReadToolFileSystem.pageCoverage("one\r\ntwo\r\nthree", page)).toMatchObject({ lossless: true })
+      const long = "x".repeat(ReadToolFileSystem.MAX_LINE_LENGTH + 1)
+      expect(
+        ReadToolFileSystem.pageCoverage(
+          long,
+          new ReadToolFileSystem.TextPage({
+            type: "text-page",
+            content: `${long.slice(0, ReadToolFileSystem.MAX_LINE_LENGTH)}... (line truncated to ${ReadToolFileSystem.MAX_LINE_LENGTH} chars)`,
+            mime: "text/plain",
+            offset: 1,
+            truncated: false,
+          }),
+        ),
+      ).toMatchObject({ full: true, lossless: false })
+    }),
+  )
+
   it.effect("stops reading after the requested page is complete", () =>
     Effect.gen(function* () {
       const { fs, files, directory } = yield* fixture

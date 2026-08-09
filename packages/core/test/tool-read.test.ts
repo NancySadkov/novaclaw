@@ -6,6 +6,7 @@ import { ConfigAttachments } from "@novaclaw/core/config/attachments"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { FileSystem } from "@novaclaw/core/filesystem"
+import { FileObservation } from "@novaclaw/core/file-observation"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Location } from "@novaclaw/core/location"
 import { Image } from "@novaclaw/core/image"
@@ -41,6 +42,7 @@ let readResult: FileSystem.Content | ReadToolFileSystem.TextPage = {
 }
 let readFailure: ReadToolFileSystem.ReadError | undefined
 let configEntries: Config.Entry[] = []
+let observationResult: FileObservation.Token | undefined
 const reader = Layer.succeed(
   ReadToolFileSystem.Service,
   ReadToolFileSystem.Service.of({
@@ -55,6 +57,22 @@ const reader = Layer.succeed(
         listCalls.push(input)
         return new ReadToolFileSystem.ListPage({ entries: [], truncated: false })
       }),
+  }),
+)
+const observations = Layer.succeed(
+  FileObservation.Service,
+  FileObservation.Service.of({
+    snapshot: () => {
+      const text =
+        readResult instanceof ReadToolFileSystem.TextPage
+          ? `${readResult.offset > 1 ? "before\n" : ""}${readResult.content}${readResult.next ? "\nafter" : ""}`
+          : readResult.encoding === "utf8"
+            ? readResult.content
+            : ""
+      return Effect.succeed({ digest: "a".repeat(64), totalLength: Buffer.byteLength(text), text })
+    },
+    record: () => Effect.succeed(observationResult),
+    validate: () => Effect.die("unused"),
   }),
 )
 let allow = true
@@ -135,6 +153,7 @@ const unavailableImage = Layer.succeed(
 const readLayer = (imageLayer: Layer.Layer<Image.Service>) =>
   AppNodeBuilder.build(LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, ReadTool.node]), [
     [ReadToolFileSystem.node, reader],
+    [FileObservation.node, observations],
     [PermissionV2.node, permission],
     [Config.node, config],
     [Image.node, imageLayer],
@@ -165,6 +184,7 @@ describe("ReadTool", () => {
     }
     readFailure = undefined
     configEntries = []
+    observationResult = undefined
   })
 
   it.effect("registers, authorizes, and reads through the location filesystem", () =>
@@ -196,6 +216,20 @@ describe("ReadTool", () => {
           page: { offset: undefined, limit: undefined },
         },
       ])
+    }),
+  )
+
+  it.effect("returns the opaque freshness token minted for a complete text read", () =>
+    Effect.gen(function* () {
+      observationResult = { token: "fob_complete", coverage: "full" }
+      const registry = yield* ToolRegistry.Service
+      expect(
+        yield* executeTool(registry, {
+          sessionID,
+          ...toolIdentity,
+          call: { type: "tool-call", id: "call-observed", name: "read", input: { path: "README.md" } },
+        }),
+      ).toMatchObject({ type: "json", value: { observation: observationResult } })
     }),
   )
 

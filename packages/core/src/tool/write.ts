@@ -11,6 +11,7 @@ import { Effect, Layer, Schema } from "effect"
 import fs from "fs/promises"
 import { makeLocationNode } from "../effect/app-node"
 import { FileMutation } from "../file-mutation"
+import { FileObservation } from "../file-observation"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
 import { ToolRegistry } from "./registry"
@@ -26,6 +27,9 @@ export const Input = Schema.Struct({
       "File path to write. Relative paths resolve within the active Location. Absolute paths inside that Location are accepted; external absolute paths require external_directory approval.",
   }),
   content: Schema.String.annotate({ description: "Content to write to the file" }),
+  observation: Schema.String.pipe(Schema.optional).annotate({
+    description: "Opaque token returned by a complete read of this exact file in the current execution attempt",
+  }),
 })
 
 export const Output = Schema.Struct({
@@ -50,13 +54,14 @@ export const layer = Layer.effectDiscard(
     const mutation = yield* LocationMutation.Service
     const files = yield* FileMutation.Service
     const permission = yield* PermissionV2.Service
+    const observations = yield* FileObservation.Service
 
     yield* tools
       .register({
         [name]: Tool.make({
           sideEffect: "idempotent-write",
           description:
-            "Write content to one file. Prefer `edit` for any change short of a full rewrite — every rewrite is a fresh chance to introduce a typo, and wholesale overwrites can be denied by permission mode. Known failure mode: content beyond a few hundred lines can be truncated by the model server mid-stream, breaking the call — build any large NEW file in chunks from the FIRST call (write the head, then append parts with bash `cat >> path <<'EOF'`), and never retry a truncated whole-file write through any tool. Relative paths resolve within the active Location. Absolute paths inside the Location are accepted. Explicit external absolute paths require external_directory approval before edit approval.",
+            "Create or wholly replace one file. Replacing an existing file requires the observation token from a complete, current `read` of that exact file in this execution attempt; creation does not. Prefer `edit` for smaller changes. Model servers can truncate large calls: build a large NEW file in chunks from the first call and never retry a truncated whole-file write. Relative paths use the active location; internal absolute paths work; external absolute paths require external-directory approval.",
           input: Input,
           output: Output,
           toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
@@ -89,6 +94,13 @@ export const layer = Layer.effectDiscard(
                 ),
               )
               const existed = current !== undefined
+              const observedDigest = existed
+                ? yield* observations.validate({
+                    token: input.observation,
+                    sessionID: context.sessionID,
+                    target,
+                  })
+                : undefined
               yield* permission.assert({
                 action: existed ? "write" : "create",
                 resources: [target.resource],
@@ -101,20 +113,27 @@ export const layer = Layer.effectDiscard(
               })
               const content = preserveBom(input.content, current)
               return yield* current
-                ? files.writeIfUnchanged({ target, expected: current, content })
+                ? files.writeIfObserved({ target, expectedDigest: observedDigest!, content })
                 : files.create({ target, content })
             }).pipe(
               Effect.mapError((error) => {
                 const denial = PermissionV2.denialMessage(error)
                 if (denial) return new ToolFailure({ message: denial })
-                if (
-                  error instanceof FileMutation.StaleContentError ||
-                  error instanceof FileMutation.TargetExistsError
-                ) {
+                if (error instanceof FileObservation.InvalidError) {
                   return new ToolFailure({
-                    message: "File changed after permission approval. Read it again before writing.",
+                    message:
+                      "Whole-file replacement needs a complete, current read of this exact file. Read it fully and retry with the returned observation token, or use edit/apply_patch for a surgical change.",
                   })
                 }
+                if (error instanceof FileMutation.StaleContentError)
+                  return new ToolFailure({
+                    message:
+                      "File changed since the observed version. Read it fully again before replacing it, or use edit/apply_patch for a surgical change.",
+                  })
+                if (error instanceof FileMutation.TargetExistsError)
+                  return new ToolFailure({
+                    message: "File appeared after permission approval. Read it before replacing it.",
+                  })
                 return new ToolFailure({ message: `Unable to write ${input.path}` })
               }),
             ),
@@ -127,7 +146,7 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/write",
   layer,
-  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, PermissionV2.node],
+  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, FileObservation.node, PermissionV2.node],
 })
 
 function preserveBom(content: string, current: Uint8Array | undefined) {

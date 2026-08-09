@@ -4,10 +4,12 @@ import { ToolFailure } from "@novaclaw/llm"
 import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { FileSystem } from "../filesystem"
+import { FileObservation } from "../file-observation"
 import { Image } from "../image"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
 import { AbsolutePath } from "../schema"
+import { SessionSchema } from "../session/schema"
 import { binaryNote } from "./hex"
 import { ReadGuidance } from "./read-guidance"
 import { ReadToolFileSystem } from "./read-filesystem"
@@ -27,7 +29,15 @@ const LocationInput = Schema.Struct({
   }),
 })
 const Input = LocationInput
-const Output = Schema.Union([FileSystem.Content, ReadToolFileSystem.TextPage, ReadToolFileSystem.ListPage])
+const Observation = Schema.Struct({
+  token: Schema.String,
+  coverage: Schema.Literals(["partial", "full"]),
+})
+const Output = Schema.Union([
+  Schema.Struct({ ...FileSystem.Content.fields, observation: Observation.pipe(Schema.optional) }),
+  Schema.Struct({ ...ReadToolFileSystem.TextPage.fields, observation: Observation.pipe(Schema.optional) }),
+  ReadToolFileSystem.ListPage,
+])
 
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -36,13 +46,14 @@ export const layer = Layer.effectDiscard(
     const mutation = yield* LocationMutation.Service
     const image = yield* Image.Service
     const permission = yield* PermissionV2.Service
+    const observations = yield* FileObservation.Service
 
     yield* tools
       .register({
         [name]: Tool.make({
           sideEffect: "read",
           description:
-            "Read a text file or supported image, page through a large UTF-8 text file by line offset, or list a directory page. Prefer this over `bash` cat/head/tail — it pages safely and warns on large slices. A large file comes back in chunks (~1500 lines / 24 KB per read): continue with `offset`, and never review or conclude from a partial view — read the rest first. Binary files are refused with a format hint: use `read-hex` for those. Relative paths resolve from the current location; absolute paths may point anywhere the host account can read. Reading never grants permission to modify that path.",
+            "Read text or a supported image, page through large UTF-8 text, or list a directory. Prefer this over bash cat/head/tail. Continue paged reads with `offset` until complete; never conclude from a partial view. A complete lossless text read returns the observation token `write` needs to replace that existing file; pages accumulate only while its version is unchanged. Binary files give a `read-hex` hint. Relative paths use the current location; absolute paths may read anywhere the host account permits. An observation proves freshness, not write permission.",
           input: Input,
           output: Output,
           // ── Deliberately NOT untrusted-framed, and this is the reasoning ────────────────────────
@@ -110,6 +121,7 @@ export const layer = Layer.effectDiscard(
                 offset: input.offset,
                 limit: input.limit,
               })
+              const observation = yield* observeText(observations, context.sessionID, target, content)
               if ("encoding" in content && content.encoding === "base64" && SUPPORTED_IMAGE_MIMES.has(content.mime)) {
                 return yield* image
                   .normalize(resource, { ...content, encoding: "base64" })
@@ -131,13 +143,19 @@ export const layer = Layer.effectDiscard(
                   offset: content.offset,
                   ...(content.next === undefined ? {} : { next: content.next }),
                 })
-                return note
-                  ? new ReadToolFileSystem.TextPage({ ...content, content: `${content.content}\n\n[read] ${note}` })
-                  : content
+                return {
+                  ...content,
+                  ...(observation ? { observation } : {}),
+                  ...(note ? { content: `${content.content}\n\n[read] ${note}` } : {}),
+                }
               }
               if (content.encoding === "utf8") {
                 const note = ReadGuidance.forText({ text: content.content, truncated: false, offset: 1 })
-                return note ? { ...content, content: `${content.content}\n\n[read] ${note}` } : content
+                return {
+                  ...content,
+                  ...(observation ? { observation } : {}),
+                  ...(note ? { content: `${content.content}\n\n[read] ${note}` } : {}),
+                }
               }
               return content
             }).pipe(
@@ -145,7 +163,9 @@ export const layer = Layer.effectDiscard(
                 const denial = PermissionV2.denialMessage(error)
                 if (denial) return new ToolFailure({ message: denial })
                 const message =
-                  error instanceof ReadToolFileSystem.BinaryFileError ||
+                  error instanceof FileObservation.ChangedDuringReadError
+                    ? "File changed while it was being read. Read it again before relying on its contents."
+                    : error instanceof ReadToolFileSystem.BinaryFileError ||
                   error instanceof ReadToolFileSystem.MediaIngestLimitError ||
                   error instanceof Image.DecodeError ||
                   error instanceof Image.SizeError
@@ -164,5 +184,31 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/read",
   layer,
-  deps: [ToolRegistry.node, ReadToolFileSystem.node, LocationMutation.node, Image.node, PermissionV2.node],
+  deps: [
+    ToolRegistry.node,
+    ReadToolFileSystem.node,
+    LocationMutation.node,
+    FileObservation.node,
+    Image.node,
+    PermissionV2.node,
+  ],
+})
+
+const observeText = Effect.fn("ReadTool.observeText")(function* (
+  observations: FileObservation.Interface,
+  sessionID: SessionSchema.ID,
+  target: FileObservation.Target,
+  content: FileSystem.Content | ReadToolFileSystem.TextPage,
+) {
+  if (!(content instanceof ReadToolFileSystem.TextPage) && content.encoding !== "utf8") return undefined
+  const version = yield* observations.snapshot(target)
+  const coverage =
+    content instanceof ReadToolFileSystem.TextPage
+      ? ReadToolFileSystem.pageCoverage(version.text, content)
+      : version.text === content.content
+        ? { start: 0, end: version.totalLength, total: version.totalLength, full: true }
+        : undefined
+  if (!coverage) return yield* new FileObservation.ChangedDuringReadError({ path: target.resource })
+  if ("lossless" in coverage && !coverage.lossless) return undefined
+  return yield* observations.record({ sessionID, target, version, coverage })
 })

@@ -8,6 +8,7 @@ import { Config } from "./config"
 import { LayerNode } from "./effect/layer-node"
 import { Node } from "./effect/app-node"
 import { FileMutation } from "./file-mutation"
+import { FileObservation } from "./file-observation"
 import { FileSystem } from "./filesystem"
 import { FileSystemSearch } from "./filesystem/search"
 import { Watcher } from "./filesystem/watcher"
@@ -66,6 +67,7 @@ export const locationServices = LayerNode.group([
   SystemContextBuiltIns.node,
   LocationMutation.node,
   FileMutation.node,
+  FileObservation.node,
   PermissionV2.node,
   ToolOutputStore.node,
   ExternalToolSource.node,

@@ -2,6 +2,7 @@ export * as FileMutation from "./file-mutation"
 
 import { makeLocationNode } from "./effect/app-node"
 import { Context, Effect, Layer, Schema } from "effect"
+import { createHash } from "crypto"
 import { dirname } from "path"
 import { KeyedMutex } from "./effect/keyed-mutex"
 import { FSUtil } from "./fs-util"
@@ -23,6 +24,10 @@ export interface TextWriteInput {
 
 export interface ConditionalWriteInput extends WriteInput {
   readonly expected: Uint8Array
+}
+
+export interface ObservedWriteInput extends WriteInput {
+  readonly expectedDigest: string
 }
 
 export interface RemoveInput {
@@ -61,6 +66,8 @@ export interface Interface {
   readonly writeIfUnchanged: (
     input: ConditionalWriteInput,
   ) => Effect.Effect<WriteResult, StaleContentError | FSUtil.Error>
+  /** Commit only if an existing target still matches an attempt-scoped observation digest. */
+  readonly writeIfObserved: (input: ObservedWriteInput) => Effect.Effect<WriteResult, StaleContentError | FSUtil.Error>
   readonly remove: (input: RemoveInput) => Effect.Effect<RemoveResult, FSUtil.Error>
 }
 
@@ -162,6 +169,26 @@ export const layer = Layer.effect(
       ),
     )
 
+    const writeIfObserved = Effect.fn("FileMutation.writeIfObserved")((input: ObservedWriteInput) =>
+      withTargetLock(input.target)(
+        Effect.gen(function* () {
+          const current = yield* fs
+            .readFile(input.target.canonical)
+            .pipe(
+              Effect.catchReason("PlatformError", "NotFound", () =>
+                Effect.fail(new StaleContentError({ path: input.target.canonical })),
+              ),
+            )
+          if (createHash("sha256").update(current).digest("hex") !== input.expectedDigest)
+            return yield* new StaleContentError({ path: input.target.canonical })
+          yield* typeof input.content === "string"
+            ? fs.writeFileString(input.target.canonical, input.content)
+            : fs.writeFile(input.target.canonical, input.content)
+          return writeResult(input.target, true)
+        }),
+      ),
+    )
+
     const remove = Effect.fn("FileMutation.remove")((input: RemoveInput) =>
       withTargetLock(input.target)(
         Effect.gen(function* () {
@@ -174,7 +201,7 @@ export const layer = Layer.effect(
       ),
     )
 
-    return Service.of({ create, write, writeTextPreservingBom, writeIfUnchanged, remove })
+    return Service.of({ create, write, writeTextPreservingBom, writeIfUnchanged, writeIfObserved, remove })
   }),
 )
 

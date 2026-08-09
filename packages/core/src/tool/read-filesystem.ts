@@ -12,8 +12,30 @@ import { binaryNote, detectFileType } from "./hex"
 export const MAX_READ_LINES = 2_000
 export const MAX_READ_BYTES = 50 * 1024
 export const MAX_MEDIA_INGEST_BYTES = 20 * 1024 * 1024
-const MAX_LINE_LENGTH = 2_000
+export const MAX_LINE_LENGTH = 2_000
 const MAX_LINE_SUFFIX = `... (line truncated to ${MAX_LINE_LENGTH} chars)`
+
+export function pageCoverage(
+  text: string,
+  page: TextPage,
+): { start: number; end: number; total: number; full: boolean; lossless: boolean } | undefined {
+  const lines = text.split("\n").map((line) => (line.endsWith("\r") ? line.slice(0, -1) : line))
+  if (lines.at(-1) === "") lines.pop()
+  const startLine = page.offset - 1
+  const endLine = page.next === undefined ? lines.length : page.next - 1
+  const selected = lines.slice(startLine, endLine)
+  const rendered = selected.map((line) =>
+    line.length > MAX_LINE_LENGTH ? line.slice(0, MAX_LINE_LENGTH) + MAX_LINE_SUFFIX : line,
+  )
+  if (rendered.join("\n") !== page.content) return undefined
+  return {
+    start: startLine,
+    end: endLine,
+    total: lines.length,
+    full: startLine === 0 && endLine === lines.length,
+    lossless: selected.every((line) => line.length <= MAX_LINE_LENGTH),
+  }
+}
 
 export class BinaryFileError extends Schema.TaggedErrorClass<BinaryFileError>()("ReadTool.BinaryFileError", {
   resource: Schema.String,
