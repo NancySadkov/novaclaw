@@ -2,6 +2,7 @@ import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import * as TestClock from "effect/testing/TestClock"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { CapabilityRegistry } from "@novaclaw/core/effect/capability-registry"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Location } from "@novaclaw/core/location"
 import { FSUtil } from "@novaclaw/core/fs-util"
@@ -13,6 +14,8 @@ import { SystemContextBuiltIns } from "@novaclaw/core/system-context/builtins"
 import { SystemContextRegistry } from "@novaclaw/core/system-context/registry"
 import { ResourcePressureContext } from "@novaclaw/core/resource-pressure-context"
 import { McpHealthContext } from "@novaclaw/core/mcp-health-context"
+import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { makeGlobalNode, makeLocationNode } from "@novaclaw/core/effect/app-node"
 import { location } from "../fixture/location"
 import { testEffect } from "../lib/effect"
@@ -79,7 +82,10 @@ const itWithResourcePressure = testEffect(
 let mcpLines: ReadonlyArray<string> = []
 const mcpHealthNode = makeLocationNode({
   service: McpHealthContext.Service,
-  layer: Layer.succeed(McpHealthContext.Service, McpHealthContext.Service.of({ lines: () => Effect.sync(() => mcpLines) })),
+  layer: Layer.succeed(
+    McpHealthContext.Service,
+    McpHealthContext.Service.of({ lines: () => Effect.sync(() => mcpLines) }),
+  ),
   deps: [],
 })
 const itWithMcpHealth = testEffect(
@@ -87,6 +93,23 @@ const itWithMcpHealth = testEffect(
     [Location.node, locationLayer],
     [Global.node, Global.layerWith({ config: "/global" })],
     [McpHealthContext.node, mcpHealthNode],
+  ]),
+)
+let memoryRefuses = true
+let memoryBuilds = 0
+const memoryInner = Layer.effect(
+  MemoryClient.Service,
+  Effect.sync(() => {
+    memoryBuilds++
+    if (memoryRefuses) throw new Error("forced ambient memory defect")
+    return MemoryClient.stub()
+  }),
+)
+const itWithCapability = testEffect(
+  AppNodeBuilder.build(LayerNode.group([builtInsNode, Memory.node, CapabilityRegistry.node]), [
+    [Location.node, locationLayer],
+    [Global.node, Global.layerWith({ config: "/global" })],
+    [Memory.serviceNode, memoryInner],
   ]),
 )
 
@@ -174,7 +197,9 @@ describe("SystemContextBuiltIns", () => {
       expect(broken).toMatchObject({ _tag: "Updated" })
       if (broken._tag !== "Updated") return
       // Indented like every other `<env>` line — an un-indented line would read as a new section.
-      expect(broken.text).toContain('  MCP server "searxng" is configured but unavailable this session: spawn npx ENOENT.')
+      expect(broken.text).toContain(
+        '  MCP server "searxng" is configured but unavailable this session: spawn npx ENOENT.',
+      )
 
       // Recovery must be reported too: a stale "unavailable" is a fault described falsely (ruling 2).
       mcpLines = []
@@ -182,6 +207,34 @@ describe("SystemContextBuiltIns", () => {
       expect(recovered).toMatchObject({ _tag: "Updated" })
       if (recovered._tag !== "Updated") return
       expect(recovered.text).not.toContain("searxng")
+    }),
+  )
+
+  itWithCapability.effect("lazy capability refusal is exception-only ambient context and clears after retry", () =>
+    Effect.gen(function* () {
+      memoryRefuses = true
+      memoryBuilds = 0
+      const contexts = yield* SystemContextRegistry.Service
+      const capabilities = yield* CapabilityRegistry.Service
+      const memory = Memory.client(yield* Memory.node.service)
+      const initialized = yield* SystemContext.initialize(yield* contexts.load())
+
+      expect(initialized.baseline).not.toContain('Capability "memory"')
+      expect(memoryBuilds).toBe(0)
+
+      expect(yield* memory.health()).toBe(false)
+      const broken = yield* SystemContext.reconcile(yield* contexts.load(), initialized.snapshot)
+      expect(broken).toMatchObject({ _tag: "Updated" })
+      if (broken._tag !== "Updated") return
+      expect(broken.text).toContain('  Capability "memory" is unavailable:')
+
+      memoryRefuses = false
+      expect(yield* capabilities.retry("memory")).toMatchObject({ state: "ready" })
+      const recovered = yield* SystemContext.reconcile(yield* contexts.load(), broken.snapshot)
+      expect(recovered).toMatchObject({ _tag: "Updated" })
+      if (recovered._tag !== "Updated") return
+      expect(recovered.text).not.toContain('Capability "memory"')
+      expect(memoryBuilds).toBe(2)
     }),
   )
 

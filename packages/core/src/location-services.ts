@@ -6,6 +6,7 @@ import { CommandV2 } from "./command"
 import { ExternalCommandSource } from "./command/external-command-source"
 import { Config } from "./config"
 import { LayerNode } from "./effect/layer-node"
+import { CapabilityRegistry } from "./effect/capability-registry"
 import { Node } from "./effect/app-node"
 import { FileMutation } from "./file-mutation"
 import { FileObservation } from "./file-observation"
@@ -168,13 +169,16 @@ let locationBoots = 0
 export function buildLocationServiceMap(
   replacements: LayerNode.Replacements = [],
 ): Layer.Layer<LocationServiceMap.Service> {
+  const boundReplacements = CapabilityRegistry.bind(locationServices, replacements)
   return Layer.effect(
     LocationServiceMap.Service,
     Effect.map(
       LayerMap.make(
         (ref: Location.Ref) => {
           BootProfile.mark("location:boot-start")
-          let allReplacements: LayerNode.Replacement[] = replacements.concat([[Location.node, Location.boundNode(ref)]])
+          let allReplacements: LayerNode.Replacement[] = boundReplacements.concat([
+            [Location.node, Location.boundNode(ref)],
+          ])
           // ⚠️ Under the profile flag the replacements must be rewritten too, through the SAME node
           // cache as the tree. `Location.boundNode(ref)` declares `deps: [Project.node]` — the
           // ORIGINAL object — so a rewritten tree plus an un-rewritten replacement hands `hoist` two

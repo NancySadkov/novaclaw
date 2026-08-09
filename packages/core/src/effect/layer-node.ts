@@ -367,6 +367,11 @@ export function compile<A, E, const Items extends Replacements = readonly []>(
   // therefore a property of the MEMO MAP the results are built with, never of this cache — see the
   // measurement in `location-services.ts`.
   const cache = new Map<AnyNode, RuntimeLayer>()
+  // A bound capability registry can reach the same declaration through a replacement-rewritten
+  // clone while another root reaches the original node. Key the wrapper by BOTH service and resolved
+  // inner node so those two paths share one latch, without collapsing genuinely different branch
+  // implementations of the same service.
+  const capabilityCache = new Map<string, Map<AnyNode, RuntimeLayer>>()
   const compileNode = (node: AnyNode) =>
     walk<RuntimeLayer>(
       node,
@@ -379,6 +384,8 @@ export function compile<A, E, const Items extends Replacements = readonly []>(
           if (inner.kind !== "layer" || inner.service === undefined) {
             throw new Error(`Capability ${capabilityNode.name} must resolve to one service layer`)
           }
+          const cachedCapability = capabilityCache.get(capabilityNode.service.key)?.get(inner)
+          if (cachedCapability !== undefined) return cachedCapability
           const dependencies = inner.dependencies.flatMap(flatten).map(context.visit)
           const implementation = inner.implementation! as RuntimeLayer
           // Preserve the module-level wrapper object on the ordinary path: the shared MemoMap keys on
@@ -397,9 +404,14 @@ export function compile<A, E, const Items extends Replacements = readonly []>(
                   repair: capabilityNode.repair,
                 })
           ) as RuntimeLayer
-          return dependencies.length === 0
-            ? wrapper
-            : wrapper.pipe(Layer.provide(dependencies as [RuntimeLayer, ...RuntimeLayer[]]))
+          const compiled =
+            dependencies.length === 0
+              ? wrapper
+              : wrapper.pipe(Layer.provide(dependencies as [RuntimeLayer, ...RuntimeLayer[]]))
+          const byInner = capabilityCache.get(capabilityNode.service.key) ?? new Map<AnyNode, RuntimeLayer>()
+          byInner.set(inner, compiled)
+          capabilityCache.set(capabilityNode.service.key, byInner)
+          return compiled
         }
         const dependencies = node.dependencies.flatMap(flatten).map(context.visit)
         const implementation = node.implementation! as RuntimeLayer
@@ -474,6 +486,31 @@ export function hasUnbound(root: Node<unknown, unknown, any>, source: AnyNode): 
     if (node === source) return true
     return node.dependencies.some(context.visit)
   })
+}
+
+/** Capability declarations reachable in this graph, after replacements, without building them. */
+export function capabilities(
+  root: Node<unknown, unknown, any>,
+  replacements?: Replacements,
+): ReadonlyArray<CapabilityNode<unknown, unknown, any>> {
+  const replacementMap = replacementMapFrom(replacements)
+  const found = new Map<string, CapabilityNode<unknown, unknown, any>>()
+  walk<void>(
+    root,
+    (node, context) => {
+      if (node.kind === "capability") {
+        const capability = node as CapabilityNode<unknown, unknown, any>
+        const existing = found.get(capability.capabilityName)
+        if (existing !== undefined && existing.service.key !== capability.service.key) {
+          throw new Error(`Conflicting capability declaration: ${capability.capabilityName}`)
+        }
+        found.set(capability.capabilityName, capability)
+      }
+      for (const dependency of node.dependencies) context.visit(dependency)
+    },
+    { resolve: (node) => replacementMap.get(node.name) ?? node },
+  )
+  return [...found.values()].toSorted((a, b) => a.capabilityName.localeCompare(b.capabilityName))
 }
 
 function flatten(node: AnyNode): readonly AnyNode[] {

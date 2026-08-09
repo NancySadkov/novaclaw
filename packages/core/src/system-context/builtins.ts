@@ -12,6 +12,7 @@ import { SettingsConfigStore } from "../settings-config-store"
 import { Shell } from "../shell"
 import { ResourcePressureContext } from "../resource-pressure-context"
 import { McpHealthContext } from "../mcp-health-context"
+import { CapabilityRegistry } from "../effect/capability-registry"
 
 /**
  * Is the resolved workspace root worth telling the model about?
@@ -34,6 +35,7 @@ const builtIns = Layer.effectDiscard(
     const settingsStore = yield* SettingsConfigStore.Service
     const resourcePressure = yield* ResourcePressureContext.Service
     const mcpHealth = yield* McpHealthContext.Service
+    const capabilities = yield* CapabilityRegistry.Service
     // P2P: tell the model about configured peer instances — full free-form HTTP access with the
     // token from env (the bash tool injects NOVACLAW_INSTANCE_<NAME>_URL/_TOKEN; tokens are never
     // printed into the prompt itself).
@@ -42,8 +44,8 @@ const builtIns = Layer.effectDiscard(
       const key = peer.name.toUpperCase().replace(/[^A-Z0-9]+/g, "_")
       return `  Peer instance "${peer.name}": ${peer.url} — same HTTP API as this instance (sessions, registry, config). Drive it from bash, e.g. curl -u "novaclaw:$NOVACLAW_INSTANCE_${key}_TOKEN" $NOVACLAW_INSTANCE_${key}_URL/api/session (the env vars are preset).`
     })
-    const environment = Effect.all([resourcePressure.lines(), mcpHealth.lines()]).pipe(
-      Effect.map(([resourceLines, mcpLines]) =>
+    const environment = Effect.all([resourcePressure.lines(), mcpHealth.lines(), capabilities.lines()]).pipe(
+      Effect.map(([resourceLines, mcpLines, capabilityLines]) =>
         [
           "<env>",
           `  Working directory: ${location.directory}`,
@@ -52,7 +54,9 @@ const builtIns = Layer.effectDiscard(
           // "Workspace root folder: C:" is worse than silence: it tells the model nothing and invites
           // it to treat the whole drive as its workspace (owner, 2026-08-05). Principle 11 says the
           // opposite: outside the session's own folder we read, and nothing more.
-          ...(isInformativeRoot(location.root, location.directory) ? [`  Workspace root folder: ${location.root}`] : []),
+          ...(isInformativeRoot(location.root, location.directory)
+            ? [`  Workspace root folder: ${location.root}`]
+            : []),
           // Only when it is TRUE. "Is directory a git repo: no" spends a line to say a folder is
           // ordinary; the absence of the line carries the same information.
           ...(location.vcs?.type === "git" ? ["  Is directory a git repo: yes"] : []),
@@ -71,6 +75,9 @@ const builtIns = Layer.effectDiscard(
           // `test/system-context/builtins.test.ts` for the check that keeps it that way. A server the
           // user switched OFF is deliberately absent from this list: that is a preference, not a fault.
           ...mcpLines.map((line) => `  ${line}`),
+          // Generic lazy-capability failures use the same exception-only ambient channel. Merely
+          // reading these lines never starts an idle capability; healthy/idle/starting is [] exactly.
+          ...capabilityLines.map((line) => `  ${line}`),
           ...peerLines,
           "</env>",
         ].join("\n"),
@@ -121,5 +128,6 @@ export const node = makeLocationNode({
     SettingsConfigStore.node,
     ResourcePressureContext.node,
     McpHealthContext.node,
+    CapabilityRegistry.node,
   ],
 })

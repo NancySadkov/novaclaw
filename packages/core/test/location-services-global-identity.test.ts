@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Context, Effect, Layer, LayerMap } from "effect"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
+import { CapabilityRegistry } from "@novaclaw/core/effect/capability-registry"
 import { Node } from "@novaclaw/core/effect/app-node"
 import { Database } from "@novaclaw/core/database/database"
 import { CredentialCipher } from "@novaclaw/core/credential-cipher"
@@ -108,12 +109,13 @@ const observedGlobals = () => {
 const mirrorLocationServiceMap = (
   replacements: LayerNode.Replacements,
   options: { readonly freshGlobals: boolean },
-): Layer.Layer<LocationServiceMap.Service> =>
-  Layer.effect(
+): Layer.Layer<LocationServiceMap.Service> => {
+  const boundReplacements = CapabilityRegistry.bind(locationServices, replacements)
+  return Layer.effect(
     LocationServiceMap.Service,
     Effect.map(
       LayerMap.make((ref: Location.Ref) => {
-        const all = replacements.concat([[Location.node, Location.boundNode(ref)]])
+        const all = boundReplacements.concat([[Location.node, Location.boundNode(ref)]])
         const location = LayerNode.hoist(locationServices, Node.tags.values.global, all)
         const globals = LayerNode.compile(location.hoisted)
         return LayerNode.compile(location.node).pipe(
@@ -124,6 +126,7 @@ const mirrorLocationServiceMap = (
       (map) => ({ ...map }),
     ),
   ) as Layer.Layer<LocationServiceMap.Service>
+}
 
 const measure = async (
   mapLayer?: (replacements: LayerNode.Replacements) => Layer.Layer<LocationServiceMap.Service>,
