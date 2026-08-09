@@ -93,7 +93,7 @@ export const layer = Layer.effect(
         Effect.catch((error) =>
           Log.event("skill.discovery.download.failed", {
             "skill.url": url,
-            "skill.error": error instanceof Error ? error.message : String(error),
+            "skill.error": Log.fault(error),
           }).pipe(Effect.as(false)),
         ),
       )
@@ -111,7 +111,7 @@ export const layer = Layer.effect(
           Effect.catch((error) =>
             Log.event("skill.index.fetch.failed", {
               "skill.url": index,
-              "skill.error": error instanceof Error ? error.message : String(error),
+              "skill.error": Log.fault(error),
             }).pipe(Effect.as(undefined)),
           ),
         )
@@ -204,7 +204,7 @@ export const layer = Layer.effect(
                   Effect.catch((error) =>
                     Log.event("skill.discovery.refresh.failed", {
                       "skill.name": skill.name,
-                      "skill.error": error instanceof Error ? error.message : String(error),
+                      "skill.error": Log.fault(error),
                     }),
                   ),
                   Effect.ensuring(fs.remove(staging, { recursive: true, force: true }).pipe(Effect.ignore)),

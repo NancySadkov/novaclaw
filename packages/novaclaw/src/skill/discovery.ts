@@ -45,7 +45,7 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | Path.Path | Htt
         Effect.catch((err) =>
           Log.event("skill.discovery.download.failed", {
             "skill.url": url,
-            "skill.error": err instanceof Error ? err.message : String(err),
+            "skill.error": Log.fault(err),
           }).pipe(Effect.as(false)),
         ),
       )
@@ -65,7 +65,7 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | Path.Path | Htt
         Effect.catch((err) =>
           Log.event("skill.index.fetch.failed", {
             "skill.url": index,
-            "skill.error": err instanceof Error ? err.message : String(err),
+            "skill.error": Log.fault(err),
           }).pipe(Effect.as(null)),
         ),
       )
@@ -130,7 +130,7 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | Path.Path | Htt
                 Effect.catch((error) =>
                   Log.event("skill.discovery.refresh.failed", {
                     "skill.name": skill.name,
-                    "skill.error": error instanceof Error ? error.message : String(error),
+                    "skill.error": Log.fault(error),
                   }),
                 ),
                 Effect.ensuring(fs.remove(staging, { recursive: true, force: true }).pipe(Effect.ignore)),

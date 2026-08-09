@@ -32,7 +32,7 @@ export const layer = Layer.effect(
           .replace(location.directory, ToolCatalogue.rows(location.directory, sources))
           .pipe(
             Effect.catch((cause) =>
-              Log.event("tool.catalogue.index.unavailable", { "tool.cause": String(cause) }),
+              Log.event("tool.catalogue.index.unavailable", { "tool.cause": Log.fault(cause) }),
             ),
           )
         const available = ToolCatalogue.manifest(sources)

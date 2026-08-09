@@ -81,7 +81,7 @@ export const layer = Layer.effect(
           // reachable failure here is a malformed session id — a caller bug, not a fault of the
           // store. Name it and continue: a prompt missing its session recipes must not fail a turn.
           Effect.catch((cause) =>
-            Log.event("tool.adhoc.read.failed", { "session.id": sessionID, "tool.cause": String(cause) }).pipe(
+            Log.event("tool.adhoc.read.failed", { "session.id": sessionID, "tool.cause": Log.fault(cause) }).pipe(
               Effect.as([] as Recipe[]),
             ),
           ),

@@ -239,7 +239,7 @@ export const layer = Layer.effect(
           yield* events.publish(Event.Refreshed, {})
         }),
       ).pipe(
-        Effect.tapCause((cause) => Log.event("llm.catalog.fetch.failed", { "llm.cause": String(cause) })),
+        Effect.tapCause((cause) => Log.event("llm.catalog.fetch.failed", { "llm.cause": Log.fault(cause) })),
         Effect.ignore,
       )
     })

@@ -101,7 +101,7 @@ export const layer = Layer.effect(
                 Log.event("config.reference.materialize.failed", {
                   "config.reference": name,
                   "config.repository": source.repository,
-                  "config.cause": String(cause),
+                  "config.cause": Log.fault(cause),
                 }),
               ),
               Effect.forkIn(scope),

@@ -110,7 +110,7 @@ const add = Effect.fnUntraced(function* (state: State, match: string, events: Ev
         yield* events.publish(SessionRecordEvent.Error, { error: new NamedError.Unknown({ message }).toObject() })
         yield* Log.event("skill.file.load.failed", {
           "skill.file": match,
-          "skill.error": err instanceof Error ? err.message : String(err),
+          "skill.error": Log.fault(err),
         })
         return undefined
       }),
@@ -160,7 +160,7 @@ const scan = Effect.fnUntraced(function* (
       return Log.event("skill.scan.failed", {
         "skill.scope": opts.scope,
         "skill.directory": root,
-        "skill.error": error instanceof Error ? error.message : String(error),
+        "skill.error": Log.fault(error),
       }).pipe(Effect.as([] as string[]))
     }),
   )

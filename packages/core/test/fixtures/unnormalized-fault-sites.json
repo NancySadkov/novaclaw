@@ -1,9 +1,5 @@
 [
   {
-    "name": "packages/core/src/adhoc-tools/guidance.ts :: tool.adhoc.read.failed.tool.cause = String(…)",
-    "count": 1
-  },
-  {
     "name": "packages/core/src/config/plugin/external.ts :: plugin.external.load.failed.plugin.cause = Cause.pretty(…)",
     "count": 1
   },
@@ -20,10 +16,6 @@
     "count": 1
   },
   {
-    "name": "packages/core/src/filesystem/search.ts :: filesystem.search.init.failed.filesystem.error = String(…)",
-    "count": 2
-  },
-  {
     "name": "packages/core/src/kb-graph/memory.ts :: kb.memory.open.failed.kb.cause = String(…)",
     "count": 1
   },
@@ -36,10 +28,6 @@
     "count": 1
   },
   {
-    "name": "packages/core/src/models-dev.ts :: llm.catalog.fetch.failed.llm.cause = String(…)",
-    "count": 1
-  },
-  {
     "name": "packages/core/src/plugin/host.ts :: plugin.event.delivery.failed.plugin.cause = Cause.pretty(…)",
     "count": 1
   },
@@ -48,31 +36,11 @@
     "count": 1
   },
   {
-    "name": "packages/core/src/reference.ts :: config.reference.materialize.failed.config.cause = String(…)",
-    "count": 1
-  },
-  {
     "name": "packages/core/src/schedule/scheduler.ts :: instance.scheduler.tick.failed.instance.cause = Cause.pretty(…)",
     "count": 1
   },
   {
-    "name": "packages/core/src/skill/discovery.ts :: skill.discovery.download.failed.skill.error = error instanceof Error ? error.message : String(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/skill/discovery.ts :: skill.discovery.refresh.failed.skill.error = error instanceof Error ? error.message : String(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/skill/discovery.ts :: skill.index.fetch.failed.skill.error = error instanceof Error ? error.message : String(…)",
-    "count": 1
-  },
-  {
     "name": "packages/core/src/snapshot.ts :: snapshot.capture.failed.snapshot.cause = String(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/tool-catalogue-guidance.ts :: tool.catalogue.index.unavailable.tool.cause = String(…)",
     "count": 1
   },
   {
@@ -145,26 +113,6 @@
   },
   {
     "name": "packages/novaclaw/src/server/routes/instance/httpapi/middleware/schema-error.ts :: server.schema.rejection.server.reason = reason",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/skill/discovery.ts :: skill.discovery.download.failed.skill.error = err instanceof Error ? err.message : String(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/skill/discovery.ts :: skill.discovery.refresh.failed.skill.error = error instanceof Error ? error.message : String(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/skill/discovery.ts :: skill.index.fetch.failed.skill.error = err instanceof Error ? err.message : String(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/skill/index.ts :: skill.file.load.failed.skill.error = err instanceof Error ? err.message : String(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/skill/index.ts :: skill.scan.failed.skill.error = error instanceof Error ? error.message : String(…)",
     "count": 1
   },
   {

@@ -135,7 +135,7 @@ export const fffLayer = Layer.effect(
       Effect.catch((error) =>
         Log.event("filesystem.search.init.failed", {
           "filesystem.directory": location.directory,
-          "filesystem.error": String(error),
+          "filesystem.error": Log.fault(error),
         }).pipe(Effect.as(undefined)),
       ),
     )
@@ -143,7 +143,7 @@ export const fffLayer = Layer.effect(
       if (result)
         yield* Log.event("filesystem.search.init.failed", {
           "filesystem.directory": location.directory,
-          "filesystem.error": String(result.error),
+          "filesystem.error": Log.fault(result.error),
         })
       return Service.of({
         find: () => Effect.succeed([]),
