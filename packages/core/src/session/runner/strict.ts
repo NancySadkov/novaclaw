@@ -30,6 +30,7 @@ import type { ConfigStrict } from "../../config/strict"
 import { SessionInput } from "../input"
 import type { SessionMessage } from "../message"
 import { Quality } from "./quality"
+import { TaskConstraint } from "./task-constraint"
 
 export const WALL_DEFAULT_MIN = 45
 export const MAX_DEPTH = 5
@@ -833,6 +834,11 @@ export function runTask(args: RunArgs): Effect.Effect<StrictReport> {
         ...(args.host === undefined ? {} : { host: args.host }),
       }),
   })
+  // A sentence is not a constraint on the floor model. When the task explicitly says comments only
+  // or forbids logic changes, capture the executable JS/TS program and put a restoring veto around
+  // every model-authored atom. This is deliberately parser-backed and narrow: unsupported prose is
+  // not promoted into a fake guarantee.
+  const taskConstraint = TaskConstraint.capture(args.task, args.cwd)
   // The completion gate's commands, resolved once: they run through the SAME planned runner as every
   // other harness command, so `bun test` in a Strict run is jailed, secret-free and shell-consistent
   // exactly like a `run` atom (ruling 6 — there is one host-execution gate, not one per call site).
@@ -860,10 +866,10 @@ export function runTask(args: RunArgs): Effect.Effect<StrictReport> {
     // The THINK/DO split (notes/jh-think-stage.md): opt-in via a non-zero reasoning budget, and
     // scoped to the steps the wall actually goes to — decomposition and recovery, not every atom.
     ...(reasonTokens !== undefined ? { think: withFlush(reasonTokens), thinkOn: THINK_ON } : {}),
-    executor:
-      args.onAction === undefined
-        ? JhBasicTools.basicExecutor(runner)
-        : materializingExecutor(JhBasicTools.basicExecutor(runner), args.onAction),
+    executor: (() => {
+      const guarded = TaskConstraint.guardingExecutor(JhBasicTools.basicExecutor(runner), taskConstraint)
+      return args.onAction === undefined ? guarded : materializingExecutor(guarded, args.onAction)
+    })(),
     runner,
     artifacts: JhArtifact.memory(),
     fileExists: (rel, base) => fs.existsSync(path.isAbsolute(rel) ? rel : path.join(base, rel)),
