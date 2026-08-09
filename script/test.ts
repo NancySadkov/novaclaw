@@ -122,7 +122,7 @@ const IMPLAUSIBLE_PEAK_MB = MemoryPlan.IMPLAUSIBLE_PEAK_MB
  * real cost. This type stays exactly as it is: `discarded` was never a `core` special case, it is
  * what the reporting layer owes any reading it refuses.
  */
-type PeakStatus = "measured" | "discarded" | "unsampled"
+type PeakStatus = PeakSeries.PeakStatus
 
 /**
  * `packages/novaclaw/test/` subdirs promoted OUT of the `--full` tier into fast-tier run units of their
@@ -478,7 +478,9 @@ function planUnit(name: string, kind: Kind): MemoryPlan.Plan {
       `  sharded ${gb(MemoryPlan.MIN_VIABLE_BYTES)}  (one shard's floor — peak is nearly flat in file count,` +
       ` so splitting harder does not help)\n` +
       (consumers.length ? `  holding it: ${consumers.join(", ")}\n` : "") +
-      (fits.length ? `  still fits right now: bun run test --only=${fits[0]}${fits.length > 1 ? `  (+${fits.length - 1} more)` : ""}\n` : "") +
+      (fits.length
+        ? `  still fits right now: bun run test --only=${fits[0]}${fits.length > 1 ? `  (+${fits.length - 1} more)` : ""}\n`
+        : "") +
       `\n`,
   )
   process.exit(2)
@@ -666,13 +668,13 @@ function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs:
   // same unit. `treeMb` is maxed for the opposite reason — a peak is not additive across windows.
   const ownTicks = runs.reduce((a, r) => a + (r.ownTicks ?? 0), 0)
   const ticks = runs.reduce((a, r) => a + (r.ticks ?? 0), 0)
-  // A shard that measured beats one that did not, and a DISCARD beats silence — the ranking is by how
-  // much the reader learns, so a unit is only "unsampled" when no shard saw anything at all.
-  const peakStatus: PeakStatus = peaks.length
-    ? "measured"
-    : runs.some((r) => r.peakStatus === "discarded")
-      ? "discarded"
-      : "unsampled"
+  // A discard remains the strongest fact. Otherwise fewer than three owning ticks can establish only
+  // a lower bound, so withhold it even when a child happened to land in one or two heartbeats.
+  const peakStatus: PeakStatus = PeakSeries.classifyPeak(
+    ownTicks,
+    peaks.length > 0,
+    runs.some((r) => r.peakStatus === "discarded"),
+  )
 
   // Only a bun test run has a skip count or a parseable failure list. Reading tsgo's output with either
   // parser would invent numbers, so a typecheck unit reports neither and both ledgers below ignore it.
@@ -687,7 +689,7 @@ function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs:
       .join(" · "),
     skipped,
     failing: kind === "test" ? [...new Set(runs.flatMap((r) => readFailingNames(r.captured)))] : [],
-    ...(peaks.length ? { peakMb: Math.max(...peaks) } : {}),
+    ...(peakStatus === "measured" && peaks.length ? { peakMb: Math.max(...peaks) } : {}),
     ...(kind === "test" ? { peakStatus, ownTicks, ticks } : {}),
     ...(sampled.length ? { sampledMb: Math.max(...sampled) } : {}),
     ...(workingSets.length ? { workingSetMb: Math.max(...workingSets) } : {}),
@@ -940,11 +942,14 @@ if (unmeasured.length) {
         : // ⚠️ THREE nulls, not two. Attribution added the middle one, and it is the benign case that
           // used to be reported as a 43 MB measurement — so it must not now be reported as an
           // instrument failure either. Say which of the three this is.
-          (r.ticks ?? 0) > 0
-          ? `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  ${r.ticks} tick(s) landed here and this unit owned\n` +
-            `  ${" ".repeat(30)} none of them — its process fit between two 200 ms heartbeats. The\n` +
-            `  ${" ".repeat(30)} instrument is fine; the unit is too short to measure this way.\n`
-          : `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  no timeline row landed in this unit's window at all\n`,
+          (r.ownTicks ?? 0) > 0
+          ? `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  sampled ${r.sampledMb} MB across ${r.ownTicks} owning tick(s);\n` +
+            `  ${" ".repeat(30)} fewer than ${PeakSeries.MIN_RECORDED_OWN_TICKS} observations is a lower bound, not a peak, so the number was withheld.\n`
+          : (r.ticks ?? 0) > 0
+            ? `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  ${r.ticks} tick(s) landed here and this unit owned\n` +
+              `  ${" ".repeat(30)} none of them — its process fit between two 200 ms heartbeats. The\n` +
+              `  ${" ".repeat(30)} instrument is fine; the unit is too short to measure this way.\n`
+            : `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  no timeline row landed in this unit's window at all\n`,
     )
 }
 

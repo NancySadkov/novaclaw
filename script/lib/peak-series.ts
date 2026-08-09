@@ -47,7 +47,7 @@ export interface Observation {
   readonly kind: "test" | "typecheck"
   readonly ok: boolean
   readonly ms: number
-  /** Absent when the sampler caught nothing, or when the sample was discarded as implausible. */
+  /** Absent when nothing was sampled, the reading was discarded, or fewer than three owning ticks observed it. */
   readonly peakMb?: number
   /** Which of those two it was. Absent on rows built before the distinction existed. */
   readonly peakStatus?: PeakStatus
@@ -73,6 +73,15 @@ export interface Observation {
  * rejected* are opposite facts, and the second is the finding.
  */
 export type PeakStatus = "measured" | "discarded" | "unsampled"
+
+/** Fewer observations can only establish a lower bound, never the unit's peak. */
+export const MIN_RECORDED_OWN_TICKS = 3
+
+export function classifyPeak(ownTicks: number, hasMeasuredPeak: boolean, hasDiscardedSample: boolean): PeakStatus {
+  if (hasDiscardedSample) return "discarded"
+  if (ownTicks < MIN_RECORDED_OWN_TICKS) return "unsampled"
+  return hasMeasuredPeak ? "measured" : "unsampled"
+}
 
 export interface Row {
   /** The RUN stamp — identical across every row of one invocation, so a run is one `grep`. */
@@ -105,9 +114,9 @@ export interface Row {
   /**
    * How many 200 ms ticks actually saw one of this unit's processes. Null before attribution.
    *
-   * ⚠️ **`peakMb` with `ownTicks: 1` is a lower bound, not a peak** — the number the profile needs is
-   * a maximum over the unit's life, and one sample cannot be that. This is the column that would have
-   * exposed `schema: 43` as an artefact instead of a measurement.
+   * ⚠️ **Fewer than three owning ticks are a lower bound, not a peak.** Such rows retain the raw
+   * `sampledMb`, but `peakMb` is null so chance timing cannot masquerade as a measurement. This is the
+   * column that would have exposed `schema: 43` as an artefact instead of a measurement.
    */
   readonly ownTicks: number | null
   /** The hand-maintained profile figure, or null when this unit is not in it yet. */
@@ -142,17 +151,23 @@ export function buildRow(
   observation: Observation,
   profile: Readonly<Record<string, number>>,
 ): Row {
-  const peakMb = Number.isFinite(observation.peakMb) ? (observation.peakMb as number) : null
+  const observedPeakMb = Number.isFinite(observation.peakMb) ? (observation.peakMb as number) : null
+  const ownTicks = Number.isFinite(observation.ownTicks) ? (observation.ownTicks as number) : null
+  const thinSample = ownTicks !== null && ownTicks < MIN_RECORDED_OWN_TICKS && observation.peakStatus !== "discarded"
+  const peakMb = thinSample ? null : observedPeakMb
   const fromProfile = profile[observation.name]
   // A zero or negative profile entry is not a baseline, it is a typo — treat it as absent rather than
   // dividing by it. `readPeaks()` already filters these out; this holds if that ever stops being true.
-  const profileMb = typeof fromProfile === "number" && Number.isFinite(fromProfile) && fromProfile > 0 ? fromProfile : null
+  const profileMb =
+    typeof fromProfile === "number" && Number.isFinite(fromProfile) && fromProfile > 0 ? fromProfile : null
   const comparable = peakMb !== null && profileMb !== null
   const sampledMb = Number.isFinite(observation.sampledMb) ? (observation.sampledMb as number) : null
   // Derived, never guessed: a caller that predates the field still gets a row that is TRUE, because
   // "there is a peak" does imply it was measured. Only the two no-peak cases need telling apart, and
   // a caller who cannot tell them apart says `unsampled` — the weaker, non-alarming claim.
-  const peakStatus: PeakStatus = observation.peakStatus ?? (peakMb !== null ? "measured" : "unsampled")
+  const peakStatus: PeakStatus = thinSample
+    ? "unsampled"
+    : (observation.peakStatus ?? (peakMb !== null ? "measured" : "unsampled"))
   return {
     run,
     scope,
@@ -166,7 +181,7 @@ export function buildRow(
     sampledMb,
     workingSetMb: Number.isFinite(observation.workingSetMb) ? (observation.workingSetMb as number) : null,
     foreignMb: Number.isFinite(observation.foreignMb) ? (observation.foreignMb as number) : null,
-    ownTicks: Number.isFinite(observation.ownTicks) ? (observation.ownTicks as number) : null,
+    ownTicks,
     profileMb,
     deltaMb: comparable ? peakMb - profileMb : null,
     ratio: comparable ? round3(peakMb / profileMb) : null,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { buildRow, buildRows, format, scopeLabel, seriesPath, type Observation } from "./peak-series"
+import { buildRow, buildRows, classifyPeak, format, scopeLabel, seriesPath, type Observation } from "./peak-series"
 
 /**
  * The row SHAPE is what these pin, not the filesystem. Every claim below is about a value a later
@@ -63,6 +63,29 @@ describe("peak series rows", () => {
     expect(row.profileMb).toBe(1007)
     expect(row.deltaMb).toBeNull()
     expect(row.ok).toBe(false)
+  })
+
+  test("one or two owning ticks retain the sample but withhold the peak", () => {
+    for (const ownTicks of [1, 2]) {
+      const row = buildRow(
+        RUN,
+        "default",
+        unit({ peakMb: 700, sampledMb: 700, ownTicks, peakStatus: "measured" }),
+        PROFILE,
+      )
+      expect(row.peakStatus).toBe("unsampled")
+      expect(row.peakMb).toBeNull()
+      expect(row.sampledMb).toBe(700)
+      expect(row.deltaMb).toBeNull()
+      expect(row.ratio).toBeNull()
+      expect(row.regressed).toBeNull()
+    }
+  })
+
+  test("three owning ticks admit a peak, while a discard outranks thin sampling", () => {
+    expect(classifyPeak(3, true, false)).toBe("measured")
+    expect(classifyPeak(2, true, false)).toBe("unsampled")
+    expect(classifyPeak(1, false, true)).toBe("discarded")
   })
 
   test("🔴 comparability is all-or-nothing across the derived fields", () => {

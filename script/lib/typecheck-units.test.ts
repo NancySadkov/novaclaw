@@ -147,7 +147,7 @@ describe("typecheck run units", () => {
     const scripts = new Map(typecheckUnits(ROOT).map((unit) => [unit.dir, unit.script]))
     expect(scripts.get("packages/app")).toBe("tsgo -b")
     expect(scripts.get("packages/desktop")).toBe("tsgo -b && tsgo --noEmit -p tsconfig.test.json")
-    expect(scripts.get("packages/core")).toBe("tsgo --noEmit")
+    expect(scripts.get("packages/core")).toBe("tsgo -b && tsgo -p tsconfig.smoke.json")
   })
 })
 
