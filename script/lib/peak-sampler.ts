@@ -17,10 +17,12 @@
  *   · `hostCommitPct` — the machine's commit charge against its limit: what the BOX was doing, which
  *     is what tells a wall-clock kill caused by paging apart from a genuine hang.
  *
- * Commit charge, not working set: AGENTS.md → Known pitfalls #8 records a zombie holding 6.21 GB of
- * commit at `WorkingSet64 = 0`, and commit-vs-limit is the pair that predicted every crash we have
- * had. On POSIX there is no commit equivalent worth trusting, so RSS stands in and the host figure
- * comes from `MemAvailable`.
+ * Commit charge remains the planner's primary measurement: AGENTS.md → Known pitfalls #8 records a
+ * zombie holding 6.21 GB of commit at `WorkingSet64 = 0`, and commit-vs-limit is the pair that
+ * predicted every crash we have had. Resident working set now travels beside it because free RAM is
+ * a resident constraint, not a commit constraint; the two must not be compared crosswise. On POSIX
+ * there is no commit equivalent worth trusting, so RSS stands in for both and the host figure comes
+ * from `MemAvailable`.
  *
  * ─── ATTRIBUTION: by process BIRTH TIME, not by name and not by ancestry (2026-08-07) ───────────────
  *
@@ -71,6 +73,8 @@ export interface Sample {
    * window — see the attribution note in this file's header.
    */
   readonly treeMb?: number
+  /** Peak resident working set of those same attributed processes. Never feeds the commit planner. */
+  readonly workingSetMb?: number
   /** Peak host commit charge as a percentage of the limit in the window, or undefined. */
   readonly hostCommitPct?: number
   /**
@@ -116,7 +120,7 @@ const INERT: Sampler = { window: () => ({ ticks: 0, ownTicks: 0 }), stop: () => 
 const INTERVAL_MS = 200
 
 /**
- * One timeline row: `<tickMs> <hostCommitPct> [<pid>,<startMs>,<mb> ...]`
+ * One timeline row: `<tickMs> <hostCommitPct> [<pid>,<startMs>,<commitMb>,<workingSetMb> ...]`
  *
  * Per-PROCESS rather than a pre-summed total, because the sum is exactly the thing that cannot be
  * un-mixed later: once sixteen workers, a shim and a stray have been added together, no consumer can
@@ -144,7 +148,7 @@ const WINDOWS_LOOP = (file: string, rootPid: number) =>
     // this read). The parser treats -1 as FOREIGN: never claim a process we cannot date.
     "    $st = -1",
     "    try { $st = ([DateTimeOffset]$p.StartTime).ToUnixTimeMilliseconds() } catch { $st = -1 }",
-    "    $parts += ('{0},{1},{2}' -f $p.Id, $st, [int]($p.PagedMemorySize64 / 1MB))",
+    "    $parts += ('{0},{1},{2},{3}' -f $p.Id, $st, [int]($p.PagedMemorySize64 / 1MB), [int]($p.WorkingSet64 / 1MB))",
     "  }",
     "  Add-Content -Path $f -Value ('{0} {1} {2}' -f $ms, $hc, ($parts -join ' ')) -ErrorAction SilentlyContinue",
     `  Start-Sleep -Milliseconds ${INTERVAL_MS}`,
@@ -171,7 +175,9 @@ const POSIX_LOOP = (file: string, rootPid: number) =>
     "  if [ -r /proc/meminfo ]; then",
     "    hc=$(awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{ if (t>0) print int(100*(t-a)/t); else print 0 }' /proc/meminfo)",
     "  fi",
-    `  procs=$(ps -eo pid=,rss=,etimes=,comm= | awk -v root="$root" -v now="$now" '$4 ~ /(^|\\/)bun$/ && $1 != root { printf "%s,%s,%s ", $1, now - ((int($3)+1)*1000), int($2/1024) }')`,
+    // POSIX has no trustworthy commit-charge equivalent here; RSS remains the documented proxy, so
+    // both columns intentionally carry the same measured value on this arm.
+    `  procs=$(ps -eo pid=,rss=,etimes=,comm= | awk -v root="$root" -v now="$now" '$4 ~ /(^|\\/)bun$/ && $1 != root { printf "%s,%s,%s,%s ", $1, now - ((int($3)+1)*1000), int($2/1024), int($2/1024) }')`,
     `  printf '%s %s %s\\n' "$now" "\${hc:-0}" "$procs" >> "$f"`,
     `  sleep ${INTERVAL_MS / 1000}`,
     "done",
@@ -196,6 +202,7 @@ const num = (s: string | undefined): number | undefined => {
  */
 export function attribute(timeline: string, fromMs: number, toMs: number): Sample {
   let treeMb = 0
+  let workingSetMb = 0
   let foreignMb = 0
   let hostCommitPct = 0
   let ticks = 0
@@ -207,22 +214,26 @@ export function attribute(timeline: string, fromMs: number, toMs: number): Sampl
     ticks++
     hostCommitPct = Math.max(hostCommitPct, num(fields[1]) ?? 0)
     let own = 0
+    let ownWorkingSet = 0
     let foreign = 0
     let sawOwn = false
     for (const entry of fields.slice(2)) {
-      const [, startRaw, mbRaw] = entry.split(",")
+      const [, startRaw, mbRaw, workingSetRaw] = entry.split(",")
       const startMs = num(startRaw)
       const mb = num(mbRaw)
+      const resident = num(workingSetRaw)
       // An entry we cannot parse is not silently dropped into "ours" — it is not counted at all, the
       // same treatment an undateable process gets, for the same reason.
-      if (startMs === undefined || mb === undefined) continue
+      if (startMs === undefined || mb === undefined || resident === undefined) continue
       if (startMs >= 0 && startMs >= fromMs) {
         own += mb
+        ownWorkingSet += resident
         sawOwn = true
       } else foreign += mb
     }
     if (sawOwn) ownTicks++
     treeMb = Math.max(treeMb, own)
+    workingSetMb = Math.max(workingSetMb, ownWorkingSet)
     foreignMb = Math.max(foreignMb, foreign)
   }
   if (ticks === 0) return { ticks: 0, ownTicks: 0 }
@@ -230,6 +241,7 @@ export function attribute(timeline: string, fromMs: number, toMs: number): Sampl
     ticks,
     ownTicks,
     ...(treeMb > 0 ? { treeMb } : {}),
+    ...(workingSetMb > 0 ? { workingSetMb } : {}),
     ...(foreignMb > 0 ? { foreignMb } : {}),
     ...(hostCommitPct > 0 ? { hostCommitPct } : {}),
   }

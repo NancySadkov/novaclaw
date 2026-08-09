@@ -259,6 +259,8 @@ type Result = {
   peakStatus?: PeakStatus
   /** What the sampler actually read, INCLUDING a reading that `peakMb` refused. See `PeakStatus`. */
   sampledMb?: number
+  /** Resident working-set peak measured beside commit for the same attributed processes. */
+  workingSetMb?: number
   /**
    * Peak MB of the `bun` processes the sampler EXCLUDED from this unit because they predate it.
    *
@@ -564,6 +566,7 @@ function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], wallcl
     ownTicks: sample.ownTicks,
     ticks: sample.ticks,
     ...(sample.treeMb !== undefined ? { sampledMb: sample.treeMb } : {}),
+    ...(sample.workingSetMb !== undefined ? { workingSetMb: sample.workingSetMb } : {}),
     ...(sample.foreignMb !== undefined ? { foreignMb: sample.foreignMb } : {}),
     ...(peakStatus === "measured" ? { peakMb: sample.treeMb } : {}),
   }
@@ -639,6 +642,7 @@ function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs:
   const peaks = runs.map((r) => r.peakMb).filter((mb): mb is number => mb !== undefined)
   const sampled = runs.map((r) => r.sampledMb).filter((mb): mb is number => mb !== undefined)
   const foreign = runs.map((r) => r.foreignMb).filter((mb): mb is number => mb !== undefined)
+  const workingSets = runs.map((r) => r.workingSetMb).filter((mb): mb is number => mb !== undefined)
   // Summed, not maxed: each shard is a separate window, so its `ownTicks` are separate samples of the
   // same unit. `treeMb` is maxed for the opposite reason — a peak is not additive across windows.
   const ownTicks = runs.reduce((a, r) => a + (r.ownTicks ?? 0), 0)
@@ -667,6 +671,7 @@ function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs:
     ...(peaks.length ? { peakMb: Math.max(...peaks) } : {}),
     ...(kind === "test" ? { peakStatus, ownTicks, ticks } : {}),
     ...(sampled.length ? { sampledMb: Math.max(...sampled) } : {}),
+    ...(workingSets.length ? { workingSetMb: Math.max(...workingSets) } : {}),
     ...(foreign.length ? { foreignMb: Math.max(...foreign) } : {}),
     ...(sharded ? { shards: sharded } : {}),
   })
@@ -888,7 +893,8 @@ if (measured.length) {
     const thin = bound
       ? `  \x1b[2m(${r.ownTicks} sample${r.ownTicks === 1 ? "" : "s"} — a lower bound, not a peak)\x1b[0m`
       : ""
-    process.stdout.write(`  ${r.name.padEnd(30)} ${String(r.peakMb).padStart(5)}${drift}${from}${thin}\n`)
+    const resident = r.workingSetMb === undefined ? "" : `  resident ${r.workingSetMb} MB`
+    process.stdout.write(`  ${r.name.padEnd(30)} ${String(r.peakMb).padStart(5)}${resident}${drift}${from}${thin}\n`)
   }
 }
 

@@ -11,9 +11,9 @@ import { describe, expect, it } from "bun:test"
 
 import { attribute } from "./peak-sampler"
 
-/** `<tickMs> <hostPct> [<pid>,<startMs>,<mb> ...]` — the timeline row shape, built by name. */
-const tick = (ms: number, hostPct: number, procs: ReadonlyArray<readonly [number, number, number]>) =>
-  [ms, hostPct, ...procs.map(([pid, start, mb]) => `${pid},${start},${mb}`)].join(" ")
+/** `<tickMs> <hostPct> [<pid>,<startMs>,<commitMb>,<workingSetMb> ...]`. */
+const tick = (ms: number, hostPct: number, procs: ReadonlyArray<readonly [number, number, number, number?]>) =>
+  [ms, hostPct, ...procs.map(([pid, start, mb, workingSet = mb]) => `${pid},${start},${mb},${workingSet}`)].join(" ")
 
 const timeline = (...rows: string[]) => rows.join("\n") + "\n"
 
@@ -28,6 +28,7 @@ describe("attribute", () => {
       2_000,
     )
     expect(sample.treeMb).toBe(7_330 + 16 * 582)
+    expect(sample.workingSetMb).toBe(7_330 + 16 * 582)
     expect(sample.ticks).toBe(2)
     expect(sample.ownTicks).toBe(2)
     expect(sample.foreignMb).toBeUndefined()
@@ -115,6 +116,16 @@ describe("attribute", () => {
       5_000,
     )
     expect(sample.treeMb).toBe(700)
+  })
+
+  it("records resident working set beside commit without confusing the two", () => {
+    const sample = attribute(
+      timeline(tick(4_100, 40, [[500, 4_010, 1_000, 250]]), tick(4_300, 40, [[500, 4_010, 1_200, 300]])),
+      4_000,
+      5_000,
+    )
+    expect(sample.treeMb).toBe(1_200)
+    expect(sample.workingSetMb).toBe(300)
   })
 
   it("ignores ticks outside the window at both ends, inclusively bounded", () => {

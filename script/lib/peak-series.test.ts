@@ -25,13 +25,14 @@ const unit = (over: Partial<Observation> = {}): Observation => ({
 
 describe("peak series rows", () => {
   test("the delta is numeric in both forms, and both agree with the profile", () => {
-    const row = buildRow(RUN, "default", unit({ peakMb: 1500 }), PROFILE)
+    const row = buildRow(RUN, "default", unit({ peakMb: 1500, workingSetMb: 640 }), PROFILE)
     expect(row.profileMb).toBe(1007)
     expect(row.peakMb).toBe(1500)
     expect(row.deltaMb).toBe(493)
     expect(row.ratio).toBe(1.49)
     // The printed block's own threshold: 1500 is not > 1007 * 1.5 + 256 = 1766.5.
     expect(row.regressed).toBe(false)
+    expect(row.workingSetMb).toBe(640)
   })
 
   test("🔴 the recorded verdict is the one the run PRINTED — the `core 7755` case", () => {

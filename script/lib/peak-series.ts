@@ -53,6 +53,8 @@ export interface Observation {
   readonly peakStatus?: PeakStatus
   /** What the sampler read, including a reading `peakMb` refused. */
   readonly sampledMb?: number
+  /** Resident working-set peak measured beside commit. */
+  readonly workingSetMb?: number
   /** Peak MB the sampler EXCLUDED as not belonging to this unit (the shim, a stray, a dying child). */
   readonly foreignMb?: number
   /** Ticks that saw a process belonging to this unit. Absent on rows built before attribution. */
@@ -89,6 +91,8 @@ export interface Row {
   readonly peakStatus: PeakStatus
   /** The raw sampled figure, present even when it was rejected. Null when nothing was sampled. */
   readonly sampledMb: number | null
+  /** Resident working-set peak for the same attributed process set. */
+  readonly workingSetMb: number | null
   /**
    * What the window excluded as not this unit's, in MB. Null on a row built before attribution.
    *
@@ -160,6 +164,7 @@ export function buildRow(
     peakMb,
     peakStatus,
     sampledMb,
+    workingSetMb: Number.isFinite(observation.workingSetMb) ? (observation.workingSetMb as number) : null,
     foreignMb: Number.isFinite(observation.foreignMb) ? (observation.foreignMb as number) : null,
     ownTicks: Number.isFinite(observation.ownTicks) ? (observation.ownTicks as number) : null,
     profileMb,
