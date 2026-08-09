@@ -618,6 +618,54 @@ export function build(input: {
  */
 export const preview = build
 
+export interface Status {
+  /** The two independent live policy facts. */
+  readonly gate: Gate
+  /** Whether a real collector is configured. The URL itself is operational data and stays local. */
+  readonly endpointConfigured: boolean
+  /** Every live reason an actual report would be refused, in enforcement order. */
+  readonly refusals: ReadonlyArray<Refusal>
+  /** A synthetic crash lowered by `preview` — the exact envelope shape, with no real crash context. */
+  readonly payloadPreview?: Envelope
+  /** The field manifest that generated both the envelope and the human-readable disclosure. */
+  readonly disclosure: ReturnType<typeof disclosure>
+}
+
+/**
+ * The ordinary-user telemetry status surface.
+ *
+ * The live gates are reported separately from the payload preview: a machine with no collector must
+ * still be able to inspect what WOULD leave if one were configured. The preview therefore uses an
+ * explicitly synthetic error and an inert placeholder endpoint, but still passes through `preview`
+ * (which is `build` by reference). No real error, path, message, event or attribute enters this path.
+ */
+export function status(input: {
+  readonly config: unknown
+  readonly policy: { readonly enabled: boolean }
+  readonly endpoint: string | undefined
+  readonly host: Host
+}): Status {
+  const gate = resolveGate({ config: input.config, policy: input.policy })
+  const built = preview({
+    report: {
+      plane: "server",
+      kind: "TelemetryPreview",
+      stack: "TelemetryPreview\n    at status (telemetry-preview.ts:1:1)",
+      uptimeSeconds: 0,
+    },
+    gate: { consent: true, airgap: false },
+    endpoint: "https://telemetry-preview.invalid/intake",
+    host: input.host,
+  })
+  return {
+    gate,
+    endpointConfigured: endpointFromEnv({ NOVACLAW_TELEMETRY_ENDPOINT: input.endpoint }) !== undefined,
+    refusals: refusals(gate, input.endpoint),
+    ...(built.ok ? { payloadPreview: built.envelope } : {}),
+    disclosure: disclosure(),
+  }
+}
+
 /** The disclosure table: every field, its meaning and when it is collected. One source, no copies. */
 export function disclosure(): ReadonlyArray<{
   readonly field: CrashField

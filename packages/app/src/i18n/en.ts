@@ -1451,8 +1451,22 @@ export const dict = {
   "settings.general.row.shellBundle.reprovision": "Re-provision",
   "settings.general.row.shellBundle.provisioning": "Provisioning…",
   "settings.general.row.telemetry.title": "Telemetry",
-  "settings.general.row.telemetry.description":
-    "Consent for crash reporting. A crash report carries a fingerprint of the fault — the error's type, a hash of where it happened, your OS and release — and never your chats, code, file paths or error text. Nothing is uploaded today: no collector is configured, so every report is refused before it is even built.",
+  "settings.general.row.telemetry.statusUnavailable": "Crash-reporting status is temporarily unavailable.",
+  "settings.general.row.telemetry.statusAirgap": "Offline / airgap mode is keeping every crash report on this device.",
+  "settings.general.row.telemetry.statusConsentOff": "Crash reporting is turned off on this instance.",
+  "settings.general.row.telemetry.statusNoEndpoint":
+    "Crash reports stay on this device because no collector is configured.",
+  "settings.general.row.telemetry.statusReady":
+    "Crash reporting is ready. You can inspect the exact payload before anything leaves this device.",
+  "settings.general.row.telemetry.inspect": "See exactly what's shared",
+  "settings.general.row.telemetry.controlTitle": "Crash reporting",
+  "settings.general.row.telemetry.controlDescription":
+    "Let NovaClaw send scrubbed crash fingerprints so we can fix faults.",
+  "settings.telemetryStatus.title": "What a crash report shares",
+  "settings.telemetryStatus.description":
+    "This sample is made by the same code that builds a real report. Chats, code, file paths, error messages, hostnames and session IDs are never included.",
+  "settings.telemetryStatus.payload": "Exact payload preview",
+  "settings.telemetryStatus.fields": "Every possible field",
   // ⚠️ Ruling 2, and Kiro Crew's disclosure in spirit: when something else pins the switch off, the
   // switch says so instead of sitting there looking effective. Airgap is an INDEPENDENT veto — it
   // does not withdraw consent, it overrides it — so the copy states the override rather than

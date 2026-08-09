@@ -19763,6 +19763,181 @@
           }
         ]
       }
+    },
+    "/api/telemetry/status": {
+      "get": {
+        "tags": ["novaclaw HttpApi"],
+        "operationId": "v2.telemetry.status",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "gate": {
+                      "type": "object",
+                      "properties": {
+                        "consent": {
+                          "type": "boolean"
+                        },
+                        "airgap": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["consent", "airgap"],
+                      "additionalProperties": false
+                    },
+                    "endpointConfigured": {
+                      "type": "boolean"
+                    },
+                    "refusals": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "consent_off",
+                          "airgap",
+                          "no_endpoint",
+                          "content_bearing_event",
+                          "unknown_event",
+                          "empty_signature"
+                        ]
+                      }
+                    },
+                    "payloadPreview": {
+                      "type": "object",
+                      "properties": {
+                        "signature": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              },
+                              {
+                                "type": "boolean"
+                              }
+                            ]
+                          }
+                        },
+                        "attributes": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              },
+                              {
+                                "type": "boolean"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      "required": ["signature", "attributes"],
+                      "additionalProperties": false
+                    },
+                    "disclosure": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "class": {
+                            "type": "string"
+                          },
+                          "meaning": {
+                            "type": "string"
+                          },
+                          "condition": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["field", "class", "meaning", "condition"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["gate", "endpointConfigured", "refusals", "disclosure"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Show every live refusal, the exact synthetic payload the sender would produce, and its generated field disclosure.",
+        "summary": "Crash-reporting status",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.telemetry.status({\n  ...\n})"
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -44673,6 +44848,10 @@
     {
       "name": "log",
       "description": "The instance's own activity log, read-only."
+    },
+    {
+      "name": "novaclaw HttpApi",
+      "description": "Experimental HttpApi surface for selected instance routes."
     }
   ]
 }

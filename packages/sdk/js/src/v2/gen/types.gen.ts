@@ -15340,3 +15340,55 @@ export type V2LogReadResponses = {
 }
 
 export type V2LogReadResponse = V2LogReadResponses[keyof V2LogReadResponses]
+
+export type V2TelemetryStatusData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/telemetry/status"
+}
+
+export type V2TelemetryStatusErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2TelemetryStatusError = V2TelemetryStatusErrors[keyof V2TelemetryStatusErrors]
+
+export type V2TelemetryStatusResponses = {
+  /**
+   * Success
+   */
+  200: {
+    gate: {
+      consent: boolean
+      airgap: boolean
+    }
+    endpointConfigured: boolean
+    refusals: Array<
+      "consent_off" | "airgap" | "no_endpoint" | "content_bearing_event" | "unknown_event" | "empty_signature"
+    >
+    payloadPreview?: {
+      signature: {
+        [key: string]: string | number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | boolean
+      }
+      attributes: {
+        [key: string]: string | number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | boolean
+      }
+    }
+    disclosure: Array<{
+      field: string
+      class: string
+      meaning: string
+      condition: string
+    }>
+  }
+}
+
+export type V2TelemetryStatusResponse = V2TelemetryStatusResponses[keyof V2TelemetryStatusResponses]

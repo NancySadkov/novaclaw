@@ -18,6 +18,7 @@ import { MessengerLogin } from "@novaclaw/core/messenger/login"
 import { MessengerStore } from "@novaclaw/core/messenger/store"
 import { SessionExecutionLocal } from "@novaclaw/core/session/execution/local"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { HttpRouter, HttpServer } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { Layer, Option } from "effect"
@@ -32,6 +33,7 @@ import { sessionLocationLayer } from "./middleware/session-location"
 const applicationServices = LayerNode.group([
   Database.node,
   Database.maintenanceNode,
+  SettingsConfigStore.node,
   EventV2.node,
   httpClient,
   ToolOutputStore.cleanupNode,

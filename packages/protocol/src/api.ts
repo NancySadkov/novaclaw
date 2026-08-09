@@ -26,6 +26,7 @@ import { CalendarGroup } from "./groups/calendar"
 import { RecipeGroup } from "./groups/recipe"
 import { ConfigGroup } from "./groups/config"
 import { LogGroup } from "./groups/log"
+import { TelemetryGroup } from "./groups/telemetry"
 
 // Protocol owns middleware placement, while Server injects concrete keys so Core service identities stay downstream.
 const makeApiFromGroup = <
@@ -82,6 +83,8 @@ const makeApiFromGroup = <
     // Instance-wide for the same reason: the log directory is `Global.Path.log`, one per instance.
     // A location would be the wrong axis — there is one log, not one per workspace.
     .add(LogGroup)
+    // Ordinary-user maintenance-plane disclosure. Instance-wide and intentionally ungated by expertise.
+    .add(TelemetryGroup)
     .annotateMerge(
       OpenApi.annotations({
         title: "novaclaw HttpApi",

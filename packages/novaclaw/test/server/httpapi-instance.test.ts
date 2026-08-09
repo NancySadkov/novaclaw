@@ -7,6 +7,7 @@ import * as Socket from "effect/unstable/socket/Socket"
 import { WorkspaceV2 } from "@novaclaw/core/workspace"
 import { ControlPaths } from "../../src/server/routes/instance/httpapi/groups/control"
 import { InstancePaths } from "../../src/server/routes/instance/httpapi/groups/instance"
+import { TelemetryPaths } from "@novaclaw/protocol/groups/telemetry"
 import { QuestionID } from "../../src/question/schema"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { HEADER as FenceHeader } from "../../src/server/shared/fence"
@@ -242,6 +243,36 @@ describe("instance HttpApi", () => {
       expect(yield* diff.json).toContainEqual(
         expect.objectContaining({ file: "changed.txt", additions: 1, status: "added" }),
       )
+    }),
+  )
+
+  it.live("serves ordinary-user crash-reporting status from the sender's own preview path", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const response = yield* HttpClientRequest.get(TelemetryPaths.status).pipe(
+        directoryHeader(dir),
+        HttpClient.execute,
+      )
+
+      expect(response.status).toBe(200)
+      const body = (yield* response.json) as {
+        gate: { consent: boolean; airgap: boolean }
+        endpointConfigured: boolean
+        refusals: string[]
+        payloadPreview?: { signature: Record<string, unknown>; attributes: Record<string, unknown> }
+        disclosure: Array<{ field: string; meaning: string; condition: string }>
+      }
+      expect(body.gate).toEqual({ consent: true, airgap: false })
+      expect(body.endpointConfigured).toBe(false)
+      expect(body.refusals).toEqual(["no_endpoint"])
+      expect(body.payloadPreview?.signature).toMatchObject({
+        plane: "server",
+        kind: "TelemetryPreview",
+        uptime: 0,
+      })
+      expect(body.payloadPreview?.attributes).toEqual({})
+      expect(body.disclosure.length).toBeGreaterThanOrEqual(10)
+      expect(body.disclosure.every((row) => row.meaning.length > 0 && row.condition.length > 0)).toBe(true)
     }),
   )
 })

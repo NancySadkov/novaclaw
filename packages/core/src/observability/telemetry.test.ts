@@ -20,6 +20,7 @@ import {
   ID_SHAPE,
   normalizeFrames,
   preview,
+  status,
   refusals,
   releaseLine,
   report,
@@ -783,6 +784,29 @@ describe("the disclosure is built by the send path", () => {
     expect(undocumented).toEqual([])
     // and the emitted set is a real subset, not an empty one
     expect(Object.keys(built.envelope.signature).length).toBeGreaterThanOrEqual(10)
+  })
+
+  test("ordinary-user status names live gates and previews through the real builder even without an endpoint", () => {
+    const got = status({
+      config: { telemetry: { enabled: false } },
+      policy: { enabled: true },
+      endpoint: undefined,
+      host: HOST,
+    })
+    expect(got.gate).toEqual({ consent: false, airgap: true })
+    expect(got.endpointConfigured).toBe(false)
+    expect(got.refusals).toEqual(["consent_off", "airgap", "no_endpoint"])
+    expect(got.payloadPreview?.signature).toMatchObject({
+      plane: "server",
+      kind: "TelemetryPreview",
+      repeat: 1,
+      uptime: 0,
+    })
+    const documented = new Set(fields())
+    expect(Object.keys(got.payloadPreview?.signature ?? {}).every((field) => documented.has(field as CrashField))).toBe(
+      true,
+    )
+    expect(got.disclosure).toEqual(disclosure())
   })
 })
 

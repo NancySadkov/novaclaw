@@ -5426,6 +5426,20 @@ class ApiV2Log extends NovaClawApiClient {
   }
 }
 
+class ApiV2Telemetry extends NovaClawApiClient {
+  /**
+   * Crash-reporting status
+   *
+   * Show every live refusal, the exact synthetic payload the sender would produce, and its generated field disclosure.
+   */
+  public status<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<T.V2TelemetryStatusResponses, T.V2TelemetryStatusErrors, ThrowOnError>({
+      url: "/api/telemetry/status",
+      ...options,
+    })
+  }
+}
+
 class ApiV2 extends NovaClawApiClient {
   private _health?: ApiV2Health
   get health(): ApiV2Health {
@@ -5530,6 +5544,11 @@ class ApiV2 extends NovaClawApiClient {
   private _log?: ApiV2Log
   get log(): ApiV2Log {
     return (this._log ??= new ApiV2Log({ client: this.client }))
+  }
+
+  private _telemetry?: ApiV2Telemetry
+  get telemetry(): ApiV2Telemetry {
+    return (this._telemetry ??= new ApiV2Telemetry({ client: this.client }))
   }
 }
 

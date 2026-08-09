@@ -23,6 +23,7 @@ import { offlineStatus, shellProvision, shellStatus, type OfflineStatus, type Sh
 import { useUpdaterAction } from "../updater-action"
 import { Link } from "../link"
 import { DialogExpertise } from "./dialog-expertise"
+import { DialogTelemetryStatus, type TelemetryStatus } from "./dialog-telemetry-status"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 
@@ -159,6 +160,28 @@ export const SettingsGeneralV2: Component<{
       shellConn() && shellRouteDir() ? { conn: shellConn()!, d: shellRouteDir()!, on: offlineEnabled() } : undefined,
     ({ conn, d }) => offlineStatus(conn.http, { directory: d }).catch(() => undefined),
   )
+  const telemetryConsent = createMemo(
+    () => (serverSync().data.config as { telemetry?: { enabled?: boolean } }).telemetry?.enabled !== false,
+  )
+  const [telemetryStatus] = createResource(
+    () => {
+      const d = shellRouteDir()
+      return d ? { d, consent: telemetryConsent(), offline: offlineEnabled() } : undefined
+    },
+    () =>
+      serverSdk()
+        .client.v2.telemetry.status()
+        .then((response) => response.data)
+        .catch(() => undefined),
+  )
+  const telemetryStatusCopy = createMemo(() => {
+    const status = telemetryStatus.latest as TelemetryStatus | undefined
+    if (!status) return language.t("settings.general.row.telemetry.statusUnavailable")
+    if (status.gate.airgap) return language.t("settings.general.row.telemetry.statusAirgap")
+    if (!status.gate.consent) return language.t("settings.general.row.telemetry.statusConsentOff")
+    if (!status.endpointConfigured) return language.t("settings.general.row.telemetry.statusNoEndpoint")
+    return language.t("settings.general.row.telemetry.statusReady")
+  })
   const offlineLabel = createMemo(() => {
     const status = offline.latest as OfflineStatus | undefined
     if (!status) return ""
@@ -403,11 +426,25 @@ export const SettingsGeneralV2: Component<{
           </div>
         </SettingsRowV2>
 
+        {/* The disclosure is ordinary-user UI. It is deliberately a separate row from the
+          Developer-only switch below, because SettingsRowV2 hides its entire subtree at minLevel. */}
+        <SettingsRowV2 title={language.t("settings.general.row.telemetry.title")} description={telemetryStatusCopy()}>
+          <ButtonV2
+            variant="outline"
+            disabled={!telemetryStatus.latest}
+            onClick={() => {
+              const status = telemetryStatus.latest as TelemetryStatus | undefined
+              if (status) dialog.show(() => <DialogTelemetryStatus status={status} />)
+            }}
+          >
+            {language.t("settings.general.row.telemetry.inspect")}
+          </ButtonV2>
+        </SettingsRowV2>
+
         {/*
           The disable switch is Developer-gated by design (AGENTS.md design-principle 4: on by
           default, disableable only in Developer mode — a common user is maintained, not
-          surveilled). ⚠️ The DISCLOSURE must never inherit that gate: what a crash report contains
-          belongs in the description above, which every expertise level reads.
+          handed a pager).
 
           ⚠️ Airgap is shown as an OVERRIDE, not as the toggle's value. Rendering `checked={false}`
           while offline is on would tell the user they withdrew consent when they did not — the two
@@ -416,14 +453,14 @@ export const SettingsGeneralV2: Component<{
         */}
         <SettingsRowV2
           minLevel="developer"
-          title={language.t("settings.general.row.telemetry.title")}
-          description={`${language.t("settings.general.row.telemetry.description")}${
+          title={language.t("settings.general.row.telemetry.controlTitle")}
+          description={`${language.t("settings.general.row.telemetry.controlDescription")}${
             offlineEnabled() ? ` — ${language.t("settings.general.row.telemetry.forcedOff")}` : ""
           }`}
         >
           <div data-action="settings-telemetry">
             <Switch
-              checked={(serverSync().data.config as { telemetry?: { enabled?: boolean } }).telemetry?.enabled !== false}
+              checked={telemetryConsent()}
               disabled={offlineEnabled()}
               onChange={(checked) => void serverSync().updateConfig({ telemetry: { enabled: checked } } as never)}
             />
