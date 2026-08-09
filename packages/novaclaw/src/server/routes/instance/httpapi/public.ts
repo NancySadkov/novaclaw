@@ -519,7 +519,7 @@ function normalizeParameter(param: OpenApiParameter, route: string) {
   param.schema = stripOptionalNull(param.schema, param.required !== true)
 }
 
-export const PublicApi = NovaClawHttpApi.annotateMerge(
+export const PublicApi: typeof NovaClawHttpApi = NovaClawHttpApi.annotateMerge(
   OpenApi.annotations({
     title: "novaclaw",
     version: "1.0.0",

@@ -6,9 +6,26 @@
     "types": [],
     "noUncheckedIndexedAccess": false,
     "customConditions": ["browser"],
+    "composite": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "outDir": "../../.ts-dist/novaclaw",
     "paths": {
       "@/*": ["./src/*"],
       "@test/*": ["./test/*"]
     }
-  }
+  },
+  "include": ["src/**/*.ts", "script/**/*.ts", "package.json"],
+  "exclude": ["src/**/*.test.ts", "test/**/*.ts"],
+  "references": [
+    { "path": "../core" },
+    { "path": "../llm" },
+    { "path": "../plugin" },
+    { "path": "../protocol" },
+    { "path": "../schema" },
+    { "path": "../script" },
+    { "path": "../sdk/js" },
+    { "path": "../server" }
+  ]
 }

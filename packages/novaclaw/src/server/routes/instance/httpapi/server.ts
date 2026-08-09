@@ -78,7 +78,7 @@ import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@novaclaw/ser
 import { serveUIEffect } from "@/server/shared/ui"
 import { ServerAuth } from "@/server/auth"
 import { InstanceHttpApi, RootHttpApi } from "./api"
-import { Api } from "@novaclaw/server/api"
+import { runtimeApi } from "@novaclaw/server/api"
 import { PublicApi } from "./public"
 import { authorizationLayer, authorizationRouterMiddleware, serverAuthorizationLayer } from "./middleware/authorization"
 import { EventApi } from "./groups/event"
@@ -176,7 +176,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
 const instanceRoutes = instanceApiRoutes.pipe(
   Layer.provide([httpApiAuthLayer, workspaceRoutingLive, instanceContextLayer, schemaErrorLayer]),
 )
-const serverRoutes = HttpApiBuilder.layer(Api).pipe(
+const serverRoutes = HttpApiBuilder.layer(runtimeApi()).pipe(
   Layer.provide(handlers),
   // 🔴 `workspaceRoutingLive` — the line that was missing. `eventApiRoutes` and `instanceRoutes` both
   // had it; the NATIVE api did not, so no `/api/**` request was ever routed to the instance owning

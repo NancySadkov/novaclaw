@@ -5,7 +5,7 @@ import { InstanceRef, WorkspaceRef } from "./instance-ref"
 import { registerDisposer } from "./instance-registry"
 import { WorkspaceContext } from "@/control-plane/workspace-context"
 
-const TypeId = "~novaclaw/InstanceState"
+export const TypeId = "~novaclaw/InstanceState"
 
 /**
  * The context refs one cached entry was BUILT under.
@@ -16,16 +16,18 @@ const TypeId = "~novaclaw/InstanceState"
  * fan-outs (`rematerializeAll`, `forEachCached`) exist to serve an instance-wide config write, whose
  * fiber may be any instance's or none — so they re-provide the refs recorded here instead.
  */
-interface BuiltUnder {
+export interface BuiltUnder {
   readonly instance: InstanceContext
   readonly workspace: WorkspaceV2.ID | undefined
 }
 
-export interface InstanceState<A, E = never, R = never> {
+export interface State<A, E = never, R = never> {
   readonly [TypeId]: typeof TypeId
   readonly cache: ScopedCache.ScopedCache<string, A, E, R>
   readonly built: Map<string, BuiltUnder>
 }
+
+export type InstanceState<A, E = never, R = never> = State<A, E, R>
 
 /**
  * An `InstanceState` whose owner has DECLARED that re-running its initializer is safe.
@@ -39,7 +41,7 @@ export interface InstanceState<A, E = never, R = never> {
  * never be reachable from that function, and the type is what stops it: only
  * {@link makeRematerializable} produces this marker, and `mcp/index.ts` deliberately does not call it.
  */
-export interface Rematerializable<A, E = never, R = never> extends InstanceState<A, E, R> {
+export interface Rematerializable<A, E = never, R = never> extends State<A, E, R> {
   readonly rematerializable: true
 }
 

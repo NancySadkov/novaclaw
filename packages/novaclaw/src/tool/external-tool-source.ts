@@ -44,64 +44,67 @@ const NEVER_ABORT = new AbortController().signal
 // `ToolOutputStore.bound`, and `ask` is best-effort (the per-call
 // `PermissionV2.assert` gate is the real enforcement — 1J: a denial is the tool
 // result, never a halt). Zod args are validated for parity.
-export const makeDefinitionAdapter = Effect.gen(function* () {
-  const location = yield* Location.Service
-  const permission = yield* PermissionV2.Service
+export type DefinitionAdapter = (name: string, definition: ToolDefinition) => Tool.AnyTool
 
-  const fromDefinition = (name: string, def: ToolDefinition): Tool.AnyTool =>
-    Tool.makeExternal({
-      description: def.description,
-      inputSchema: pluginToolSchema(def).jsonSchema as unknown as JsonSchema.JsonSchema,
-      execute: (input, context) =>
-        Effect.gen(function* () {
-          yield* permission
-            .assert({
+export const makeDefinitionAdapter: Effect.Effect<DefinitionAdapter, never, Location.Service | PermissionV2.Service> =
+  Effect.gen(function* () {
+    const location = yield* Location.Service
+    const permission = yield* PermissionV2.Service
+
+    const fromDefinition = (name: string, def: ToolDefinition): Tool.AnyTool =>
+      Tool.makeExternal({
+        description: def.description,
+        inputSchema: pluginToolSchema(def).jsonSchema as unknown as JsonSchema.JsonSchema,
+        execute: (input, context) =>
+          Effect.gen(function* () {
+            yield* permission
+              .assert({
+                sessionID: context.sessionID,
+                action: name,
+                resources: ["*"],
+                save: ["*"],
+                source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                agent: context.agent,
+              })
+              .pipe(
+                Effect.mapError(
+                  (error) =>
+                    new Tool.Failure({
+                      message:
+                        PermissionV2.denialMessage(error) ??
+                        `Permission check failed for tool '${name}': ${String(error)}`,
+                    }),
+                ),
+              )
+            const { zodParams } = pluginToolSchema(def)
+            if (zodParams) {
+              const parsed = zodParams.safeParse(input)
+              if (!parsed.success)
+                return yield* Effect.fail(new Tool.Failure({ message: `Invalid tool input: ${parsed.error.message}` }))
+            }
+            const pluginCtx: PluginToolContext = {
               sessionID: context.sessionID,
-              action: name,
-              resources: ["*"],
-              save: ["*"],
-              source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+              messageID: context.assistantMessageID,
               agent: context.agent,
+              directory: location.directory,
+              worktree: location.directory,
+              abort: NEVER_ABORT,
+              metadata: () => {},
+              ask: async () => {},
+            }
+            const result = yield* Effect.tryPromise({
+              try: () => def.execute(input as Parameters<typeof def.execute>[0], pluginCtx),
+              catch: (error) => new Tool.Failure({ message: error instanceof Error ? error.message : String(error) }),
             })
-            .pipe(
-              Effect.mapError(
-                (error) =>
-                  new Tool.Failure({
-                    message:
-                      PermissionV2.denialMessage(error) ??
-                      `Permission check failed for tool '${name}': ${String(error)}`,
-                  }),
-              ),
-            )
-          const { zodParams } = pluginToolSchema(def)
-          if (zodParams) {
-            const parsed = zodParams.safeParse(input)
-            if (!parsed.success)
-              return yield* Effect.fail(new Tool.Failure({ message: `Invalid tool input: ${parsed.error.message}` }))
-          }
-          const pluginCtx: PluginToolContext = {
-            sessionID: context.sessionID,
-            messageID: context.assistantMessageID,
-            agent: context.agent,
-            directory: location.directory,
-            worktree: location.directory,
-            abort: NEVER_ABORT,
-            metadata: () => {},
-            ask: async () => {},
-          }
-          const result = yield* Effect.tryPromise({
-            try: () => def.execute(input as Parameters<typeof def.execute>[0], pluginCtx),
-            catch: (error) => new Tool.Failure({ message: error instanceof Error ? error.message : String(error) }),
-          })
-          const output = typeof result === "string" ? result : result.output
-          const title = typeof result === "string" ? "" : (result.title ?? "")
-          const metadata = typeof result === "string" ? {} : (result.metadata ?? {})
-          return { structured: { title, output, metadata }, content: [{ type: "text" as const, text: output }] }
-        }),
-    })
+            const output = typeof result === "string" ? result : result.output
+            const title = typeof result === "string" ? "" : (result.title ?? "")
+            const metadata = typeof result === "string" ? {} : (result.metadata ?? {})
+            return { structured: { title, output, metadata }, content: [{ type: "text" as const, text: output }] }
+          }),
+      })
 
-  return fromDefinition
-})
+    return fromDefinition
+  })
 
 // The glob the RETIRED config-dir tool loader used to import from. Kept only so the
 // warning below can name exactly what is being skipped.

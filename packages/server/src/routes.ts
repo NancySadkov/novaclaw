@@ -20,20 +20,15 @@ import { SessionExecutionLocal } from "@novaclaw/core/session/execution/local"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { HttpRouter, HttpServer } from "effect/unstable/http"
-import { HttpApi, HttpApiBuilder, HttpApiGroup } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { Layer, Option } from "effect"
-import { Api } from "./api"
+import { runtimeApi } from "./api"
 import { ServerAuth } from "./auth"
 import { handlers } from "./handlers"
 import { authorizationLayer } from "./middleware/authorization"
 import { schemaErrorLayer } from "./middleware/schema-error"
 import { layer as locationLayer } from "./location"
 import { sessionLocationLayer } from "./middleware/session-location"
-
-// Handler completeness is proved against exact group fragments in `handlers/`.
-// Route assembly only consumes the runtime API shape; keeping that view shallow
-// prevents declaration emit from recursively expanding every endpoint schema.
-const RuntimeApi: HttpApi.HttpApi<"server", HttpApiGroup.Any> = Api
 
 const applicationServices = LayerNode.group([
   Database.node,
@@ -71,7 +66,7 @@ export function createEmbeddedRoutes() {
 function makeRoutes<AuthError, AuthServices>(auth: Layer.Layer<ServerAuth.Config, AuthError, AuthServices>) {
   const serviceLayer = AppNodeBuilder.build(applicationServices, [[SessionExecution.node, SessionExecutionLocal.node]])
 
-  return HttpApiBuilder.layer(RuntimeApi, { openapiPath: "/openapi.json" }).pipe(
+  return HttpApiBuilder.layer(runtimeApi(), { openapiPath: "/openapi.json" }).pipe(
     Layer.provide(handlers),
     // Local-only: this package has no control plane to proxy to. `packages/novaclaw` builds its
     // own routes and supplies the proxying implementation instead.
