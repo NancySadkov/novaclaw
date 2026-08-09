@@ -60,6 +60,8 @@ import { MessengerPace } from "@novaclaw/core/messenger/pace"
 import { MessengerStore } from "@novaclaw/core/messenger/store"
 import { Offline } from "@novaclaw/core/offline"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
+import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { CapabilityRegistry } from "@novaclaw/core/effect/capability-registry"
 import { httpClient } from "@novaclaw/core/effect/app-node-platform"
 import { EventV2 } from "@novaclaw/core/event"
 import { ModelsDev } from "@novaclaw/core/models-dev"
@@ -85,6 +87,7 @@ import { configHandlers } from "./handlers/config"
 import { controlHandlers } from "./handlers/control"
 import { controlPlaneHandlers } from "./handlers/control-plane"
 import { adhocHandlers } from "./handlers/adhoc"
+import { capabilityHandlers } from "./handlers/capability"
 import { experimentalHandlers } from "./handlers/experimental"
 import { fileHandlers } from "./handlers/file"
 import { globalHandlers } from "./handlers/global"
@@ -154,6 +157,7 @@ const eventApiRoutes = HttpApiBuilder.layer(EventApi).pipe(
 const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
   Layer.provide([
     adhocHandlers,
+    capabilityHandlers,
     configHandlers,
     experimentalHandlers,
     fileHandlers,
@@ -238,6 +242,9 @@ const app = LayerNode.group([
   // (a second build would clobber the same on-disk snapshot). The capability handle is cheap at boot;
   // its client and consolidation fiber start only on the first memory operation.
   Memory.node,
+  // One registry derived from this server's declared graph. Reading it is observational: idle
+  // capabilities remain idle until a real consumer asks for them.
+  CapabilityRegistry.node,
   // The EEVDF scheduler — a per-instance singleton, listed here so the HTTP diagnostics handler and the
   // location-scoped runner share ONE ledger (two builds would report different worlds).
   SessionScheduler.node,
@@ -401,7 +408,7 @@ export function createRoutes(
 
     Layer.provideMerge(catalogSeedStartup),
     Layer.provideMerge(recipeSeedStartup),
-    Layer.provide(LayerNode.compile(app)),
+    Layer.provide(AppNodeBuilder.build(app)),
   )
 }
 

@@ -8,6 +8,7 @@ import { SkillV2 } from "@novaclaw/core/skill"
 import { InstanceDisposed } from "@/server/event"
 import { Question } from "@/question"
 import { AdhocApi } from "./groups/adhoc"
+import { CapabilityApi } from "./groups/capability"
 import { ConfigApi } from "./groups/config"
 import { ControlApi } from "./groups/control"
 import { ControlPlaneApi } from "./groups/control-plane"
@@ -62,6 +63,7 @@ export const RootHttpApi = HttpApi.make("novaclaw-root")
 
 export const InstanceHttpApi = HttpApi.make("novaclaw-instance")
   .addHttpApi(AdhocApi)
+  .addHttpApi(CapabilityApi)
   .addHttpApi(ConfigApi)
   .addHttpApi(ExperimentalApi)
   .addHttpApi(FileApi)

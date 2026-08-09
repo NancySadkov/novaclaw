@@ -8179,6 +8179,116 @@ export type AdhocPromoteResponses = {
 
 export type AdhocPromoteResponse = AdhocPromoteResponses[keyof AdhocPromoteResponses]
 
+export type CapabilityListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/capability"
+}
+
+export type CapabilityListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type CapabilityListError = CapabilityListErrors[keyof CapabilityListErrors]
+
+export type CapabilityListResponses = {
+  /**
+   * Every declared optional capability and its live state, without starting idle capabilities
+   */
+  200: Array<{
+    name: string
+    status:
+      | {
+          state: "idle"
+        }
+      | {
+          state: "starting"
+          since: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        }
+      | {
+          state: "ready"
+          since: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        }
+      | {
+          state: "unavailable"
+          reason: {
+            capability: string
+            kind: "failed" | "timeout" | "disabled" | "unsupported"
+            summary: string
+            detail?: string
+            repair?: Array<string>
+          }
+          at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          attempts: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        }
+  }>
+}
+
+export type CapabilityListResponse = CapabilityListResponses[keyof CapabilityListResponses]
+
+export type CapabilityRetryData = {
+  body?: never
+  path: {
+    name: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/capability/{name}/retry"
+}
+
+export type CapabilityRetryErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError | InvalidRequestError
+}
+
+export type CapabilityRetryError = CapabilityRetryErrors[keyof CapabilityRetryErrors]
+
+export type CapabilityRetryResponses = {
+  /**
+   * The capability's state after the retry attempt
+   */
+  200: {
+    name: string
+    status:
+      | {
+          state: "idle"
+        }
+      | {
+          state: "starting"
+          since: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        }
+      | {
+          state: "ready"
+          since: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        }
+      | {
+          state: "unavailable"
+          reason: {
+            capability: string
+            kind: "failed" | "timeout" | "disabled" | "unsupported"
+            summary: string
+            detail?: string
+            repair?: Array<string>
+          }
+          at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          attempts: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        }
+  }
+}
+
+export type CapabilityRetryResponse = CapabilityRetryResponses[keyof CapabilityRetryResponses]
+
 export type ConfigGetData = {
   body?: never
   path?: never

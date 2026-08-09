@@ -649,6 +649,51 @@ class ApiAdhoc extends NovaClawApiClient {
   }
 }
 
+class ApiCapability extends NovaClawApiClient {
+  /**
+   * List optional capabilities
+   *
+   * Inspect the live capability graph without waking capabilities that have not been used.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
+    return (options?.client ?? this.client).get<T.CapabilityListResponses, T.CapabilityListErrors, ThrowOnError>({
+      url: "/capability",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Retry an unavailable capability
+   *
+   * Re-arm one cached startup failure and attempt it once. Ready, starting, and idle capabilities are unchanged.
+   */
+  public retry<ThrowOnError extends boolean = false>(
+    parameters: {
+      name: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { name: parameters?.["name"] }
+    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
+    return (options?.client ?? this.client).post<T.CapabilityRetryResponses, T.CapabilityRetryErrors, ThrowOnError>({
+      url: "/capability/{name}/retry",
+      ...options,
+      path,
+      query,
+    })
+  }
+}
+
 class ApiConfig extends NovaClawApiClient {
   /**
    * Get configuration
@@ -5576,6 +5621,10 @@ export class NovaclawClient extends NovaClawApiClient {
   private _adhoc?: ApiAdhoc
   get adhoc(): ApiAdhoc {
     return (this._adhoc ??= new ApiAdhoc({ client: this.client }))
+  }
+  private _capability?: ApiCapability
+  get capability(): ApiCapability {
+    return (this._capability ??= new ApiCapability({ client: this.client }))
   }
   private _config?: ApiConfig
   get config(): ApiConfig {

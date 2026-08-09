@@ -54,6 +54,22 @@ const handlerContext = Context.empty() as Context.Context<unknown>
 const directoryHeader = (dir: string) => HttpClientRequest.setHeader("x-novaclaw-directory", dir)
 
 describe("instance HttpApi", () => {
+  it.live("observes optional capabilities without starting them and rejects unknown retries", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const list = yield* HttpClient.get(`/capability?directory=${encodeURIComponent(dir)}`)
+
+      expect(list.status).toBe(200)
+      expect(yield* list.json).toEqual(expect.arrayContaining([{ name: "memory", status: { state: "idle" } }]))
+
+      const retry = yield* HttpClientRequest.post(
+        `/capability/not-declared/retry?directory=${encodeURIComponent(dir)}`,
+      ).pipe(HttpClient.execute)
+      expect(retry.status).toBe(400)
+      expect(yield* retry.json).toMatchObject({ message: "Unknown capability: not-declared" })
+    }),
+  )
+
   it.live("serves the OpenAPI document", () =>
     Effect.gen(function* () {
       const response = yield* HttpClient.get("/doc")

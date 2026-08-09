@@ -10,14 +10,14 @@ import { sessionHref } from "@/utils/session-route"
 import { clearErrorLog, errorLogEntries } from "@/utils/error-log"
 import { showToast } from "@/utils/toast"
 import { schedulerSnapshot } from "@/utils/scheduler-api"
+import { capabilities, retryCapability } from "@/utils/capability-api"
 import { retrySessionExecution, sessionExecutions, stopSessionExecution } from "@/utils/session-execution-api"
 import { contextTurns, formatContextFinding, formatContextTokens } from "./debug-context"
 import { useSettingsDialog } from "@/components/settings-dialog"
 
-// The Debug app (dependability P5) — the Developer-mode diagnostic surface. Read-only panels,
-// all fed from state the client ALREADY holds (no new server routes in v0): connection status per
-// server, the client error ring buffer, a `ps`-lite over the cached sessions, and the config
-// snapshot. Strings stay untranslated on purpose — a Developer-only surface, like Registry.
+// The Debug app (dependability P5) — the Developer-mode diagnostic surface. Most panels are
+// observational; the capability panel has one explicit recovery action that retries a cached startup
+// failure. Strings stay untranslated on purpose — a Developer-only surface, like Registry.
 
 const STATUS_TONE: Record<ServerStreamStatus, string> = {
   connected: "text-v2-state-fg-success",
@@ -93,6 +93,27 @@ export function DebugPage() {
     },
     ({ conn, dir }) => schedulerSnapshot(conn.http, { directory: dir }).catch(() => undefined),
   )
+
+  const [capabilityTick, setCapabilityTick] = createSignal(0)
+  const [capabilityList] = createResource(
+    () => {
+      const conn = focused()
+      const dir = schedDirectory()
+      return conn && dir !== undefined ? { conn, dir, t: capabilityTick() } : undefined
+    },
+    ({ conn, dir }) => capabilities(conn.http, dir).catch(() => undefined),
+  )
+  const retryUnavailableCapability = async (name: string) => {
+    const conn = focused()
+    if (!conn) return
+    try {
+      await retryCapability(conn.http, name, schedDirectory() ?? "")
+      setCapabilityTick((value) => value + 1)
+      showToast({ title: `${name} checked again` })
+    } catch (error) {
+      showToast({ title: `Could not retry ${name}`, description: String(error), variant: "error" })
+    }
+  }
 
   const [executionTick, setExecutionTick] = createSignal(0)
   const [executions] = createResource(
@@ -325,7 +346,7 @@ export function DebugPage() {
       <div class="flex items-center gap-2 border-b border-v2-border-border-base px-4 py-3">
         <Icon name="console" size="normal" class="text-v2-icon-icon-muted" />
         <span class="text-[14px] font-semibold text-v2-text-text-base">Debug</span>
-        <span class="text-[12px] text-v2-text-text-faint">diagnostics — read-only</span>
+        <span class="text-[12px] text-v2-text-text-faint">diagnostics and recovery</span>
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto">
         {/* ── Connection ─────────────────────────────────────────────────────────────── */}
@@ -352,6 +373,79 @@ export function DebugPage() {
                   )
                 }}
               </For>
+            </Show>
+          </div>
+        </div>
+
+        {/* ── Optional capabilities ─────────────────────────────────────────────────── */}
+        <div class={section} data-panel="capabilities">
+          <div class={heading}>
+            <span class={title}>Optional capabilities</span>
+            <span class={hint}>live state — looking here does not start anything</span>
+            <button class={`${btn} ml-auto`} onClick={() => setCapabilityTick((value) => value + 1)}>
+              Refresh
+            </button>
+          </div>
+          <div class="px-4 pb-3">
+            <Show
+              when={capabilityList()}
+              fallback={
+                <div class={hint}>
+                  {capabilityList.loading ? "checking…" : "unavailable (older server, or no instance connected)"}
+                </div>
+              }
+            >
+              {(items) => (
+                <Show when={items().length > 0} fallback={<div class={hint}>no optional capabilities declared</div>}>
+                  <For each={items()}>
+                    {(item) => (
+                      <div class="border-t border-v2-border-border-base py-2 first:border-t-0 first:pt-0">
+                        <div class="flex items-center gap-2 text-[12px]">
+                          <span class="font-mono font-medium text-v2-text-text-base">{item.name}</span>
+                          <span
+                            classList={{
+                              "text-v2-state-fg-success": item.status.state === "ready",
+                              "text-v2-state-fg-warning": item.status.state === "starting",
+                              "text-v2-state-fg-danger": item.status.state === "unavailable",
+                              "text-v2-text-text-faint": item.status.state === "idle",
+                            }}
+                          >
+                            {item.status.state === "idle" ? "not used yet" : item.status.state}
+                          </span>
+                          <Show when={item.status.state === "unavailable"}>
+                            <button
+                              type="button"
+                              class={`${btn} ml-auto`}
+                              onClick={() => void retryUnavailableCapability(item.name)}
+                            >
+                              Try again
+                            </button>
+                          </Show>
+                        </div>
+                        <Show when={item.status.state === "unavailable" && item.status}>
+                          {(status) => {
+                            const unavailable = status() as Extract<typeof item.status, { state: "unavailable" }>
+                            return (
+                              <div class="mt-0.5 text-[11px] text-v2-text-text-muted">
+                                <div>{unavailable.reason.summary}</div>
+                                <Show when={unavailable.reason.repair?.length}>
+                                  <div class={hint}>repairable settings: {unavailable.reason.repair?.join(", ")}</div>
+                                </Show>
+                                <details class="mt-1">
+                                  <summary class="cursor-pointer text-v2-text-text-faint">Technical detail</summary>
+                                  <pre class="mt-1 whitespace-pre-wrap break-all font-mono text-v2-text-text-faint">
+                                    {unavailable.reason.detail ?? "No additional detail."}
+                                  </pre>
+                                </details>
+                              </div>
+                            )
+                          }}
+                        </Show>
+                      </div>
+                    )}
+                  </For>
+                </Show>
+              )}
             </Show>
           </div>
         </div>
@@ -591,12 +685,7 @@ export function DebugPage() {
               what the OS itself did — keyed, rotated, and read from the instance rather than from this UI
             </span>
             <span class="flex-1" />
-            <button
-              type="button"
-              class={btn}
-              onClick={copyServerLog}
-              disabled={(serverLogData()?.lines ?? 0) === 0}
-            >
+            <button type="button" class={btn} onClick={copyServerLog} disabled={(serverLogData()?.lines ?? 0) === 0}>
               <Icon name="copy" size="normal" class="mr-1 inline-block align-[-2px]" />
               Copy
             </button>
@@ -689,41 +778,41 @@ export function DebugPage() {
               }
             >
               <Show
-                  when={serverLogData()}
-                  fallback={
-                    <div class="text-[11px] text-v2-state-fg-danger" data-slot="server-log-error">
-                      {serverLogError()}
-                    </div>
-                  }
-                >
-                  {(data) => (
-                    <Show
-                      when={data().lines > 0}
-                      fallback={
-                        // Two different facts, and only one of them is about the instance:
-                        // `scanned === 0` means there is no log file to read yet.
-                        <div class={hint} data-slot="server-log-empty">
-                          {data().scanned === 0
-                            ? `no log file yet under ${serverLogPath() ?? "the instance's log directory"}`
-                            : `no line matches — ${data().scanned} examined`}
-                        </div>
-                      }
-                    >
-                      {/* ⭐ The server's string, displayed. Not parsed, not re-rendered, not
+                when={serverLogData()}
+                fallback={
+                  <div class="text-[11px] text-v2-state-fg-danger" data-slot="server-log-error">
+                    {serverLogError()}
+                  </div>
+                }
+              >
+                {(data) => (
+                  <Show
+                    when={data().lines > 0}
+                    fallback={
+                      // Two different facts, and only one of them is about the instance:
+                      // `scanned === 0` means there is no log file to read yet.
+                      <div class={hint} data-slot="server-log-empty">
+                        {data().scanned === 0
+                          ? `no log file yet under ${serverLogPath() ?? "the instance's log directory"}`
+                          : `no line matches — ${data().scanned} examined`}
+                      </div>
+                    }
+                  >
+                    {/* ⭐ The server's string, displayed. Not parsed, not re-rendered, not
                           re-coloured per column — there is one renderer of a log line and it ran
                           on the instance. */}
-                      <pre
-                        class="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-4 text-v2-text-text-muted"
-                        data-slot="server-log-text"
-                      >
-                        {data().text}
-                      </pre>
-                      <div class={hint} data-slot="server-log-status">
-                        {data().lines} line{data().lines === 1 ? "" : "s"} of {data().scanned} examined
-                        {data().truncated ? " · scan ceiling reached, older history not examined" : ""}
-                      </div>
-                    </Show>
-                  )}
+                    <pre
+                      class="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-4 text-v2-text-text-muted"
+                      data-slot="server-log-text"
+                    >
+                      {data().text}
+                    </pre>
+                    <div class={hint} data-slot="server-log-status">
+                      {data().lines} line{data().lines === 1 ? "" : "s"} of {data().scanned} examined
+                      {data().truncated ? " · scan ceiling reached, older history not examined" : ""}
+                    </div>
+                  </Show>
+                )}
               </Show>
             </Show>
           </div>
