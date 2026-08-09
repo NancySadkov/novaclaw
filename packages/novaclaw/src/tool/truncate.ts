@@ -1,6 +1,6 @@
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { NodePath } from "@effect/platform-node"
-import { Cause, Duration, Effect, Layer, Option, Schedule, Context } from "effect"
+import { Duration, Effect, Layer, Option, Schedule, Context } from "effect"
 import path from "path"
 import type { Agent } from "../agent/agent"
 import { FSUtil } from "@novaclaw/core/fs-util"
@@ -142,7 +142,7 @@ export const layer = Layer.effect(
     })
 
     yield* cleanup().pipe(
-      Effect.catchCause((cause) => Log.event("tool.truncation.cleanup.failed", { "tool.cause": Cause.pretty(cause) })),
+      Effect.catchCause((cause) => Log.event("tool.truncation.cleanup.failed", { "tool.cause": Log.fault(cause) })),
       Effect.repeat(Schedule.spaced(Duration.hours(1))),
       Effect.delay(Duration.minutes(1)),
       Effect.forkScoped,

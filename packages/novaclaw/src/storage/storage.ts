@@ -3,7 +3,7 @@ import path from "path"
 import { Global } from "@novaclaw/core/global"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import { Cause, Effect, Exit, Layer, Option, RcMap, Schema, Context, TxReentrantLock } from "effect"
+import { Effect, Exit, Layer, Option, RcMap, Schema, Context, TxReentrantLock } from "effect"
 import { NonNegativeInt } from "@novaclaw/core/schema"
 import { Log } from "@novaclaw/schema/log"
 import { Git } from "@/git"
@@ -252,7 +252,7 @@ export const layer = Layer.effect(
           if (Exit.isFailure(exit)) {
             yield* Log.event("storage.migration.run.failed", {
               "storage.index": i,
-              "storage.cause": Cause.pretty(exit.cause),
+              "storage.cause": Log.fault(exit.cause),
             })
             break
           }

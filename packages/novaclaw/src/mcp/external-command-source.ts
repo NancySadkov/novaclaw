@@ -1,6 +1,6 @@
 export * as McpExternalCommandSource from "./external-command-source"
 
-import { Cause, Effect, Layer } from "effect"
+import { Effect, Layer } from "effect"
 import { ExternalCommandSource } from "@novaclaw/core/command/external-command-source"
 import { makeLocationNode } from "@novaclaw/core/effect/app-node"
 import { Location } from "@novaclaw/core/location"
@@ -39,7 +39,7 @@ export const make = Effect.gen(function* () {
           Effect.catchCause((cause) =>
             Log.event("mcp.command.prompts.unavailable", {
               directory: location.directory,
-              "mcp.cause": Cause.pretty(cause),
+              "mcp.cause": Log.fault(cause),
             }).pipe(Effect.map(() => ({}) as Record<string, never>)),
           ),
         )
@@ -67,7 +67,7 @@ export const make = Effect.gen(function* () {
                 Effect.catchCause((cause) =>
                   Log.event("mcp.prompt.resolve.failed", {
                     "mcp.prompt": name,
-                    "mcp.cause": Cause.pretty(cause),
+                    "mcp.cause": Log.fault(cause),
                   }).pipe(Effect.as("")),
                 ),
               ),

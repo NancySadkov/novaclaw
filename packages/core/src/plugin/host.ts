@@ -57,7 +57,7 @@ const isolate = (type: string, event: PublicEvent, handler: (event: PublicEvent)
         Log.event("plugin.event.delivery.failed", {
           "plugin.event.type": type,
           "plugin.event.id": event.id,
-          "plugin.cause": Cause.pretty(cause),
+          "plugin.cause": Log.fault(cause),
         }),
     ),
   )
@@ -131,7 +131,7 @@ const subscribeEvents = Effect.fn("PluginHost.event.subscribe")(function* (
       (cause) =>
         Log.event("plugin.event.subscription.stopped", {
           "plugin.event.type": type,
-          "plugin.cause": Cause.pretty(cause),
+          "plugin.cause": Log.fault(cause),
         }),
     ),
     Effect.forkIn(scope),

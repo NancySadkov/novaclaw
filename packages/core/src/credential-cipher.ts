@@ -3,7 +3,7 @@ export * as CredentialCipher from "./credential-cipher"
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { Cause, Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { makeGlobalNode } from "./effect/app-node"
 import { Global } from "./global"
 import { Log } from "@novaclaw/schema/log"
@@ -151,7 +151,7 @@ export const layer = Layer.effect(
   }).pipe(
     Effect.catchCause((cause) => {
       const message = "Credential encryption is unavailable; credential reads and writes are disabled."
-      return Log.event("credential.cipher.load.failed", { "credential.cause": Cause.pretty(cause) }).pipe(
+      return Log.event("credential.cipher.load.failed", { "credential.cause": Log.fault(cause) }).pipe(
         Effect.as(unavailable(message)),
       )
     }),

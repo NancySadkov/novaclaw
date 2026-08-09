@@ -1,6 +1,6 @@
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { httpClient } from "@novaclaw/core/effect/app-node-platform"
-import { Cause, Context, Effect, FiberMap, Iterable, Layer, Schema, Stream } from "effect"
+import { Context, Effect, FiberMap, Iterable, Layer, Schema, Stream } from "effect"
 import { serviceUse } from "@novaclaw/core/effect/service-use"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientError, HttpClientRequest } from "effect/unstable/http"
 import { Database } from "@novaclaw/core/database/database"
@@ -419,7 +419,7 @@ export const layer = Layer.effect(
                   Effect.catchCause((error) =>
                     Log.event("workspace.event.replay.failed", {
                       "workspace.id": space.id,
-                      "workspace.cause": Cause.pretty(error),
+                      "workspace.cause": Log.fault(error),
                     }).pipe(Effect.as(true)),
                   ),
                 )
@@ -745,7 +745,7 @@ export const layer = Layer.effect(
             Effect.catchCause((error) =>
               Log.event("workspace.adapter.list.failed", {
                 "workspace.adapter": type,
-                "workspace.cause": Cause.pretty(error),
+                "workspace.cause": Log.fault(error),
               }).pipe(Effect.as([])),
             ),
           ),

@@ -8,7 +8,7 @@ export * as CalendarScheduler from "./scheduler"
 // replayed (no thundering herd). A launch failure is isolated (never wedges the loop), recorded as `error`,
 // and the schedule still advances.
 
-import { Cause, Clock, Duration, Effect, Layer, Schedule } from "effect"
+import { Clock, Duration, Effect, Layer, Schedule } from "effect"
 import { AgentV2 } from "../agent"
 import { Database } from "../database/database"
 import { Global } from "../global"
@@ -142,7 +142,7 @@ export const layer = Layer.effectDiscard(
       const now = yield* Clock.currentTimeMillis
       yield* tick(db, launch, now)
     }).pipe(
-      Effect.catchCause((cause) => Log.event("instance.scheduler.tick.failed", { "instance.cause": Cause.pretty(cause) })),
+      Effect.catchCause((cause) => Log.event("instance.scheduler.tick.failed", { "instance.cause": Log.fault(cause) })),
       Effect.repeat(Schedule.spaced(Duration.seconds(TICK_INTERVAL_SECONDS))),
       Effect.delay(Duration.seconds(5)),
       Effect.forkScoped,

@@ -5,7 +5,7 @@ import { WorkspaceContext } from "@/control-plane/workspace-context"
 import { InstanceRef } from "@/effect/instance-ref"
 import { disposeInstance as runDisposers } from "@/effect/instance-registry"
 import { FSUtil } from "@novaclaw/core/fs-util"
-import { Cause, Context, Deferred, Duration, Effect, Exit, Layer, Scope } from "effect"
+import { Context, Deferred, Duration, Effect, Exit, Layer, Scope } from "effect"
 import { type InstanceContext } from "./instance-context"
 import { InstanceBootstrap } from "./bootstrap-service"
 import { InstanceBootstrap as InstanceBootstrapGraph } from "./bootstrap"
@@ -168,7 +168,7 @@ export const layer: Layer.Layer<Service, never, ProjectV2.Service | InstanceBoot
             if (Exit.isFailure(exit)) {
               yield* Log.event("instance.store.dispose.failed", {
                 directory: item[0],
-                "instance.cause": Cause.pretty(exit.cause),
+                "instance.cause": Log.fault(exit.cause),
               })
               yield* removeEntry(item[0], item[1])
               return

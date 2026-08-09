@@ -1,6 +1,6 @@
 export * as StorageResourcePressureContext from "./resource-pressure-context"
 
-import { Cause, Effect, Layer } from "effect"
+import { Effect, Layer } from "effect"
 import { ResourcePressureContext } from "@novaclaw/core/resource-pressure-context"
 import { makeGlobalNode } from "@novaclaw/core/effect/app-node"
 import { Log } from "@novaclaw/schema/log"
@@ -114,7 +114,7 @@ export const layer = Layer.effect(
         measure.pipe(
           Effect.map(lines),
           Effect.catchCause((cause) =>
-            Log.event("resource.headroom.measure.failed", { "resource.cause": Cause.pretty(cause) }).pipe(
+            Log.event("resource.headroom.measure.failed", { "resource.cause": Log.fault(cause) }).pipe(
               Effect.as([]),
             ),
           ),
@@ -123,7 +123,7 @@ export const layer = Layer.effect(
         measure.pipe(
           Effect.map(details),
           Effect.catchCause((cause) =>
-            Log.event("resource.headroom.measure.failed", { "resource.cause": Cause.pretty(cause) }).pipe(
+            Log.event("resource.headroom.measure.failed", { "resource.cause": Log.fault(cause) }).pipe(
               Effect.as(["Resource headroom is unavailable because the host measurement failed."]),
             ),
           ),

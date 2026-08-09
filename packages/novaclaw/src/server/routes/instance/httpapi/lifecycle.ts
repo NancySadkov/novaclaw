@@ -6,7 +6,7 @@ import { InstanceStore } from "@/project/instance-store"
 import { Location } from "@novaclaw/core/location"
 import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { AbsolutePath } from "@novaclaw/core/schema"
-import { Cause, Effect, Layer } from "effect"
+import { Effect, Layer } from "effect"
 import { HttpEffect, HttpMiddleware, HttpServerRequest } from "effect/unstable/http"
 import { Log } from "@novaclaw/schema/log"
 
@@ -77,7 +77,7 @@ export const disposeMiddleware: HttpMiddleware.HttpMiddleware = (effect) =>
     if (!marked) return response
     disposeAfterResponse.delete(request.source)
     yield* Effect.uninterruptible(marked.bridge.run(marked.store.dispose(marked.ctx))).pipe(
-      Effect.catchCause((cause) => Log.event("instance.dispose.failed", { "instance.cause": Cause.pretty(cause) })),
+      Effect.catchCause((cause) => Log.event("instance.dispose.failed", { "instance.cause": Log.fault(cause) })),
     )
     return response
   })

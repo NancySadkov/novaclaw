@@ -1,6 +1,6 @@
 export * as McpExternalToolSource from "./external-tool-source"
 
-import { Cause, Effect, Layer, Ref } from "effect"
+import { Effect, Layer, Ref } from "effect"
 import { ExternalToolSource } from "@novaclaw/core/tool/external-tool-source"
 import { McpExternal } from "@novaclaw/core/tool/mcp-external"
 import { makeLocationNode } from "@novaclaw/core/effect/app-node"
@@ -77,7 +77,7 @@ export const make = Effect.gen(function* () {
           Effect.catchCause((cause) =>
             Log.event("mcp.tool.source.unavailable", {
               directory: location.directory,
-              "mcp.cause": Cause.pretty(cause),
+              "mcp.cause": Log.fault(cause),
             }).pipe(Effect.map(() => ({}) as Record<string, unknown>)),
           ),
         )

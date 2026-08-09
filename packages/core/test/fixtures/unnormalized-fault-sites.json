@@ -1,13 +1,5 @@
 [
   {
-    "name": "packages/core/src/config/plugin/external.ts :: plugin.external.load.failed.plugin.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/credential-cipher.ts :: credential.cipher.load.failed.credential.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
     "name": "packages/core/src/database/database.ts :: instance.database.refused.instance.cause = fault.detail",
     "count": 1
   },
@@ -24,22 +16,6 @@
     "count": 1
   },
   {
-    "name": "packages/core/src/messenger/store.ts :: messenger.store.read.failed.messenger.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/plugin/host.ts :: plugin.event.delivery.failed.plugin.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/plugin/host.ts :: plugin.event.subscription.stopped.plugin.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/schedule/scheduler.ts :: instance.scheduler.tick.failed.instance.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
     "name": "packages/core/src/snapshot.ts :: snapshot.capture.failed.snapshot.cause = String(…)",
     "count": 1
   },
@@ -49,14 +25,6 @@
   },
   {
     "name": "packages/novaclaw/src/config/config.ts :: config.global.load.failed.config.cause = String(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/control-plane/workspace.ts :: workspace.adapter.list.failed.workspace.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/control-plane/workspace.ts :: workspace.event.replay.failed.workspace.cause = Cause.pretty(…)",
     "count": 1
   },
   {
@@ -72,39 +40,7 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/mcp/external-command-source.ts :: mcp.command.prompts.unavailable.mcp.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/mcp/external-command-source.ts :: mcp.prompt.resolve.failed.mcp.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/mcp/external-tool-source.ts :: mcp.tool.source.unavailable.mcp.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/mcp/index.ts :: mcp.request.failed.mcp.error = error instanceof Error ? error.message : String(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/project/bootstrap.ts :: instance.bootstrap.service.failed.instance.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/project/instance-store.ts :: instance.store.dispose.failed.instance.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/server/global-lifecycle.ts :: instance.global.dispose.failed.instance.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/server/routes/instance/httpapi/lifecycle.ts :: instance.dispose.failed.instance.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/server/routes/instance/httpapi/middleware/error.ts :: server.request.fail.server.cause = Cause.pretty(…)",
     "count": 1
   },
   {
@@ -116,19 +52,7 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/storage/resource-pressure-context.ts :: resource.headroom.measure.failed.resource.cause = Cause.pretty(…)",
-    "count": 2
-  },
-  {
-    "name": "packages/novaclaw/src/storage/storage.ts :: storage.migration.run.failed.storage.cause = Cause.pretty(…)",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/tool/external-tool-source.ts :: tool.config.scan.failed.tool.error = String(…)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/tool/truncate.ts :: tool.truncation.cleanup.failed.tool.cause = Cause.pretty(…)",
     "count": 1
   },
   {

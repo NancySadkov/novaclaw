@@ -1,6 +1,6 @@
 import { GlobalBus } from "@/bus/global"
 import { InstanceStore } from "@/project/instance-store"
-import { Cause, Effect } from "effect"
+import { Effect } from "effect"
 import { Event } from "./event"
 import { Log } from "@novaclaw/schema/log"
 
@@ -23,7 +23,7 @@ export const disposeAllInstancesAndEmitGlobalDisposed = Effect.fn("Server.dispos
             .disposeAll()
             .pipe(
               Effect.catchCause((cause) =>
-                Log.event("instance.global.dispose.failed", { "instance.cause": Cause.pretty(cause) }),
+                Log.event("instance.global.dispose.failed", { "instance.cause": Log.fault(cause) }),
               ),
             )
         : store.disposeAll()

@@ -332,7 +332,7 @@ const nameTheFault = <A, E>(query: Effect.Effect<A, E>, what: string): Effect.Ef
         ? Effect.failCause(cause as Cause.Cause<never>)
         : Log.event("messenger.store.read.failed", {
             "messenger.operation": what,
-            "messenger.cause": Cause.pretty(cause),
+            "messenger.cause": Log.fault(cause),
           }).pipe(Effect.flatMap(() => Effect.fail(new UnavailableError({ read: what, detail: Cause.pretty(cause) })))),
     ),
   )

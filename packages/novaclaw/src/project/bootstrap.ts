@@ -3,7 +3,7 @@ import { Format } from "../format"
 import { Snapshot } from "../snapshot"
 import * as Vcs from "./vcs"
 import { InstanceState } from "@/effect/instance-state"
-import { Cause, Effect, Layer } from "effect"
+import { Effect, Layer } from "effect"
 import { Config } from "@/config/config"
 import { Service } from "./bootstrap-service"
 import { Log } from "@novaclaw/schema/log"
@@ -36,7 +36,7 @@ export const layer = Layer.effect(
             .init()
             .pipe(
               Effect.catchCause((cause) =>
-                Log.event("instance.bootstrap.service.failed", { "instance.cause": Cause.pretty(cause) }),
+                Log.event("instance.bootstrap.service.failed", { "instance.cause": Log.fault(cause) }),
               ),
             ),
         { concurrency: "unbounded", discard: true },

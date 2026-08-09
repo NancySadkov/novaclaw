@@ -3,7 +3,7 @@ export * as ConfigExternalPlugin from "./external"
 import type { Plugin as EffectPlugin } from "@novaclaw/plugin/v2/effect"
 import type { Plugin as PromisePlugin } from "@novaclaw/plugin/v2/promise"
 import { Log } from "@novaclaw/schema/log"
-import { Cause, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import path from "path"
 import { pathToFileURL } from "url"
 import { Config } from "../../config"
@@ -107,7 +107,7 @@ export const Plugin = define({
           Effect.tapCause((cause) =>
             Log.event("plugin.external.load.failed", {
               "plugin.package": ref.package,
-              "plugin.cause": Cause.pretty(cause),
+              "plugin.cause": Log.fault(cause),
             }),
           ),
           Effect.ignoreCause,
