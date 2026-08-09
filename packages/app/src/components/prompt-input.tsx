@@ -52,12 +52,12 @@ import { createEditorCore } from "./prompt-input/editor-core"
 import { createPromptAttachments } from "./prompt-input/attachments"
 import { ACCEPTED_FILE_TYPES, pickAttachmentFiles } from "./prompt-input/files"
 import {
-  canNavigateHistoryAtCursor,
   createPersistedPromptInputHistory,
   type PromptInputHistory,
   promptLength,
 } from "./prompt-input/history"
 import { createPromptInputHistoryController } from "./prompt-input/history-controller"
+import { createPromptInputKeyboardController } from "./prompt-input/keyboard-controller"
 import { createPromptSubmit, type FollowupDraft } from "./prompt-input/submit"
 import { PromptPopover, type AtOption, type SlashCommand } from "./prompt-input/slash-popover"
 import { promptPlaceholder, PROMPT_EXAMPLE_KEYS } from "./prompt-input/placeholder"
@@ -804,158 +804,43 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       onSubmit: props.onSubmit,
     })
 
-  const handleKeyDown = (event: KeyboardEvent) => {
-    if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "u") {
-      event.preventDefault()
-      if (store.mode !== "normal") return
-      pick()
-      return
-    }
+  const promptText = () =>
+    prompt
+      .current()
+      .map((part) => ("content" in part ? part.content : ""))
+      .join("")
 
-    if (event.key === "Backspace") {
-      editor.collapseBackspaceAtZeroWidth()
-    }
-
-    // uix.md §6.4: for a Normal user a leading "!" just types "!" — the accidental keystroke must not
-    // flip the friendly chat box into a terminal. Shell mode is an Advanced+ affordance.
-    if (event.key === "!" && store.mode === "normal" && expertise.atLeast("advanced")) {
-      const cursorPosition = getCursorPosition(editorRef)
-      if (cursorPosition === 0) {
-        setStore("mode", "shell")
-        setStore("popover", null)
-        event.preventDefault()
-        return
-      }
-    }
-
-    if (event.key === "Escape") {
-      if (store.popover) {
-        closePopover()
-        event.preventDefault()
-        event.stopPropagation()
-        return
-      }
-
-      if (store.mode === "shell") {
-        setStore("mode", "normal")
-        event.preventDefault()
-        event.stopPropagation()
-        return
-      }
-
-      if (working()) {
-        void abort()
-        event.preventDefault()
-        event.stopPropagation()
-        return
-      }
-
-      if (escBlur()) {
-        editorRef.blur()
-        event.preventDefault()
-        event.stopPropagation()
-        return
-      }
-    }
-
-    if (store.mode === "shell") {
-      const { collapsed, cursorPosition, textLength } = getCaretState()
-      if (event.key === "Backspace" && collapsed && cursorPosition === 0 && textLength === 0) {
-        setStore("mode", "normal")
-        event.preventDefault()
-        return
-      }
-    }
-
-    // Handle Shift+Enter BEFORE IME check - Shift+Enter is never used for IME input
-    // and should always insert a newline regardless of composition state
-    if (event.key === "Enter" && event.shiftKey) {
-      addPart({ type: "text", content: "\n", start: 0, end: 0 })
-      event.preventDefault()
-      return
-    }
-
-    if (event.key === "Enter" && isImeComposing(event)) {
-      return
-    }
-
-    const ctrl = event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
-
-    if (store.popover) {
-      if (event.key === "Tab") {
-        selectPopoverActive()
-        event.preventDefault()
-        return
-      }
-      const nav = event.key === "ArrowUp" || event.key === "ArrowDown" || event.key === "Enter"
-      const ctrlNav = ctrl && (event.key === "n" || event.key === "p")
-      if (nav || ctrlNav) {
-        if (store.popover === "at") {
-          atOnKeyDown(event)
-          event.preventDefault()
-          return
-        }
-        if (store.popover === "slash") {
-          slashOnKeyDown(event)
-          if (event.key === "ArrowUp" || event.key === "ArrowDown" || ctrlNav) {
-            scrollSlashActiveIntoView()
-          }
-        }
-        event.preventDefault()
-        return
-      }
-    }
-
-    if (ctrl && event.code === "KeyG") {
-      if (store.popover) {
-        closePopover()
-        event.preventDefault()
-        return
-      }
-      if (working()) {
-        void abort()
-        event.preventDefault()
-      }
-      return
-    }
-
-    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-      if (event.altKey || event.ctrlKey || event.metaKey) return
-      const { collapsed } = getCaretState()
-      if (!collapsed) return
-
-      const cursorPosition = getCursorPosition(editorRef)
-      const textContent = prompt
-        .current()
-        .map((part) => ("content" in part ? part.content : ""))
-        .join("")
-      const direction = event.key === "ArrowUp" ? "up" : "down"
-      if (!canNavigateHistoryAtCursor(direction, textContent, cursorPosition, store.historyIndex >= 0)) return
-      if (navigateHistory(direction)) {
-        event.preventDefault()
-      }
-      return
-    }
-
-    // Note: Shift+Enter is handled earlier, before IME check
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault()
-      if (event.repeat) return
-      if (
-        working() &&
-        prompt
-          .current()
-          .map((part) => ("content" in part ? part.content : ""))
-          .join("")
-          .trim().length === 0 &&
-        imageAttachments().length === 0 &&
-        commentCount() === 0
-      ) {
-        return
-      }
-      void handleSubmit(event)
-    }
-  }
+  const handleKeyDown = createPromptInputKeyboardController({
+    state: {
+      mode: () => store.mode,
+      popover: () => store.popover,
+      historyIndex: () => store.historyIndex,
+    },
+    editor: {
+      element: () => editorRef,
+      collapseBackspaceAtZeroWidth: editor.collapseBackspaceAtZeroWidth,
+      blur: () => editorRef.blur(),
+      caret: getCaretState,
+    },
+    advanced: () => expertise.atLeast("advanced"),
+    composing: isImeComposing,
+    working,
+    promptText,
+    attachmentCount: () => imageAttachments().length,
+    commentCount,
+    setMode: (mode) => setStore("mode", mode),
+    closePopover,
+    pickAttachment: pick,
+    abort,
+    blurOnEscape: escBlur,
+    addNewline: () => addPart({ type: "text", content: "\n", start: 0, end: 0 }),
+    selectPopoverActive,
+    atKeyDown: atOnKeyDown,
+    slashKeyDown: slashOnKeyDown,
+    scrollSlashActiveIntoView,
+    navigateHistory,
+    submit: handleSubmit,
+  })
 
   const providersLoading = () => props.controls.model.loading
   const providersShouldFadeIn = createMemo<boolean>((prev) => prev ?? providersLoading())
