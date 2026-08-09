@@ -185,6 +185,11 @@ export const SessionHistoryQuery = Schema.Struct({
   after: Schema.NumberFromString.pipe(Schema.decodeTo(NonNegativeInt), Schema.optional),
 })
 
+export class SessionHistoryResponse extends Schema.Class<SessionHistoryResponse>("SessionHistory")({
+  data: Schema.Array(SessionEvent.Durable),
+  hasMore: Schema.Boolean,
+}) {}
+
 const SessionsQueryCursor = SessionsCursor.annotate({
   description: "Opaque pagination cursor returned as cursor.previous or cursor.next in the previous response.",
 })
@@ -807,10 +812,7 @@ export const makeSessionGroup = <
       HttpApiEndpoint.get("session.history", "/api/session/:sessionID/history", {
         params: { sessionID: Session.ID },
         query: SessionHistoryQuery,
-        success: Schema.Struct({
-          data: Schema.Array(SessionEvent.Durable),
-          hasMore: Schema.Boolean,
-        }).annotate({ identifier: "SessionHistory" }),
+        success: SessionHistoryResponse,
         error: SessionNotFoundError,
       })
         .middleware(sessionLocationMiddleware)

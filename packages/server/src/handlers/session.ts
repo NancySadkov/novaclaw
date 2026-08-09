@@ -11,7 +11,7 @@ import { ProviderV2 } from "@novaclaw/core/provider"
 import { DateTime, Effect, Stream } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
-import { SessionsCursor } from "@novaclaw/protocol/groups/session"
+import { SessionHistoryResponse, SessionsCursor } from "@novaclaw/protocol/groups/session"
 import {
   ConflictError,
   InvalidCursorError,
@@ -787,10 +787,13 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 limit: ctx.query.limit ?? DefaultSessionHistoryLimit,
               })
               .pipe(
-                Effect.map((page) => ({
-                  data: page.events,
-                  hasMore: page.hasMore,
-                })),
+                Effect.map(
+                  (page) =>
+                    new SessionHistoryResponse({
+                      data: page.events,
+                      hasMore: page.hasMore,
+                    }),
+                ),
                 Effect.catchTag(
                   "Session.NotFoundError",
                   (error) =>
