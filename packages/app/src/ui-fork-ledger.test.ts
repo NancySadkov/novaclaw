@@ -152,7 +152,7 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  * `{viewBox, body}` pairs), which is why `icon` is the expensive half of the migration rather than a
  * rename.
  *
- * This list may only ever get SHORTER. Retired so far, newest first: `tabs`, `dialog`, `select`
+ * This list may only ever get SHORTER. Retired so far, newest first: `tooltip`, `tabs`, `dialog`, `select`
  * (all 2026-08-08), `toast`, `keybind`, `progress-circle`, `diff-changes`, `switch` (all
  * 2026-08-07), `text-shimmer` (2026-07-31), and the six v1-only components deleted alongside it.
  *
@@ -167,8 +167,10 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  * disappear and paid one extra `icon` pair as a composition dividend. The three names left really
  * are composed by other v1 components — see the second block of `V1_CALL_SITES`: v1 `collapsible`
  * and `icon-button` import v1 `icon`; `image-preview`, `list`, `popover` and `text-field` import v1
- * `icon-button`; `text-field` imports v1 `tooltip`. Those parents must retire before WIDTH can fall
- * again; external call-site migration alone now only thins DEPTH.
+ * `icon-button`. `text-field` used to import both v1 `icon-button` and v1 `tooltip`, but neither
+ * dependency was part of its public contract: moving its copy affordance to the v2 primitives retired
+ * `tooltip` without rewriting the wrapper's six consumers. The two names left are still composed by
+ * other v1 components; external call-site migration alone now only thins DEPTH.
  *
  * ⭐ **`select` was retired 2026-08-08, and the budget warning that stood here was RIGHT: it was a
  * contract decision, not an import swap.** The warning read that v1's four call sites pass `size`,
@@ -257,7 +259,7 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  * migrated, on the grounds that porting a v1 sheet settles a brand question by copying the v1 app
  * (AGENTS.md — the running app is not a visual reference).
  */
-export const FORKED_WIDGETS: readonly string[] = ["icon", "icon-button", "tooltip"]
+export const FORKED_WIDGETS: readonly string[] = ["icon", "icon-button"]
 
 /**
  * **Every file that imports the v1 side of a forked widget, pinned by name.**
@@ -353,7 +355,6 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "ui/src/components/image-preview.tsx": ["icon-button"],
   "ui/src/components/list.tsx": ["icon", "icon-button"],
   "ui/src/components/popover.tsx": ["icon-button"],
-  "ui/src/components/text-field.tsx": ["icon-button", "tooltip"],
 }
 
 /**
@@ -368,11 +369,11 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
  * read 38 while the tree held 37 — one component had been deleted without the pin following, so a
  * new v1 component could have been added for free. Lower it in the same commit as any deletion.
  */
-const V1_COMPONENT_CEILING = 28
+const V1_COMPONENT_CEILING = 27
 
 /** Measured totals, pinned so the ledger stays a measurement rather than an aspiration. */
-const V1_CALL_SITE_FILES = 55
-const V1_CALL_SITE_PAIRS = 57
+const V1_CALL_SITE_FILES = 54
+const V1_CALL_SITE_PAIRS = 55
 
 // ---------------------------------------------------------------------------------------------
 // The sweep. Pure functions first so the negative controls can drive them without touching disk.
@@ -548,11 +549,12 @@ describe("the sweep", () => {
     expect(SWEPT.files, "the file walk found almost nothing — check SKIP_DIRS").toBeGreaterThan(1_000)
     // ⚠️ **This floor counts BOTH sides, so a retired pair drops it by more than the migration did.**
     // `dialog` (2026-08-08) cost it 10 v1 pairs AND every v2 `dialog-v2` import at once, because a
-    // widget that is no longer forked stops being counted on either side; it reads 184 today, having
-    // been above 200 before that pair retired — this assertion is what caught the drop. Lower it with
+    // widget that is no longer forked stops being counted on either side. `tooltip` then took the
+    // measurement from 184 to 109 even though its v1 side had only one importer, because every v2
+    // tooltip import also stops counting when the pair retires. Lower this floor with
     // each retirement; it is a sanity floor against a broken sweep, never a target, and if it ever
     // has to go near zero the whole ledger should be retired instead (see the last test in this file).
-    expect(SWEPT.specifiers, "no forked-widget import found at all — SPECIFIER_PATTERNS is broken").toBeGreaterThan(120)
+    expect(SWEPT.specifiers, "no forked-widget import found at all — SPECIFIER_PATTERNS is broken").toBeGreaterThan(100)
     expect(SWEPT.v1.size, "the v1 half of the fork reads as empty").toBeGreaterThan(50)
     expect(SWEPT.v2.size, "the v2 half of the fork reads as empty").toBeGreaterThan(20)
   })
@@ -650,7 +652,7 @@ describe("the fork's DEPTH can only shrink", () => {
     expect(OBSERVED_PAIRS, "the observed (file, widget) pair count moved — reconcile V1_CALL_SITES").toBe(
       V1_CALL_SITE_PAIRS,
     )
-    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(3)
+    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(2)
   })
 
   test("both sides are genuinely live — this is a fork, not a finished migration", () => {
@@ -767,12 +769,22 @@ describe("retired v1 components stay deleted", () => {
   // The other half of this change: 1,164 lines with zero importers by every reference form the
   // sweep understands. Re-adding one is re-adding cruft todo.md's *we discard all the cruft* ruling
   // deleted, and `text-shimmer` in particular would re-widen the fork.
-  const DELETED = ["button", "text-shimmer", "card", "context-menu", "hover-card", "inline-input", "progress", "typewriter"]
+  const DELETED = [
+    "button",
+    "tooltip",
+    "text-shimmer",
+    "card",
+    "context-menu",
+    "hover-card",
+    "inline-input",
+    "progress",
+    "typewriter",
+  ]
 
   test("neither the component nor its stylesheet is back", () => {
     const present = readdirSync(V1_DIR)
     for (const name of DELETED) {
-      expect(present, `${name}.tsx is back — it had zero importers on 2026-07-31`).not.toContain(`${name}.tsx`)
+      expect(present, `${name}.tsx is back — this retired v1 component must stay deleted`).not.toContain(`${name}.tsx`)
       expect(present, `${name}.css is back`).not.toContain(`${name}.css`)
     }
   })

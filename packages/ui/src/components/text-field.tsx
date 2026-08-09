@@ -2,8 +2,9 @@ import { TextField as Kobalte } from "@kobalte/core/text-field"
 import { createSignal, Show, splitProps } from "solid-js"
 import type { ComponentProps } from "solid-js"
 import { useI18n } from "../context/i18n"
-import { IconButton } from "./icon-button"
-import { Tooltip } from "./tooltip"
+import { Icon } from "../v2/components/icon"
+import { IconButtonV2 } from "../v2/components/icon-button-v2"
+import { TooltipV2 } from "../v2/components/tooltip-v2"
 
 export interface TextFieldProps
   extends ComponentProps<typeof Kobalte.Input>,
@@ -106,17 +107,17 @@ export function TextField(props: TextFieldProps) {
           <Kobalte.TextArea {...others} autoResize data-slot="input-input" class={local.class} />
         </Show>
         <Show when={local.copyable}>
-          <Tooltip value={label()} placement="top" gutter={4} forceOpen={copied()} skipDelayDuration={0}>
-            <IconButton
+          <TooltipV2 value={label()} placement="top" gutter={4} forceOpen={copied()}>
+            <IconButtonV2
               type="button"
-              icon={icon()}
+              icon={<Icon name={icon()} />}
               variant="ghost"
               onClick={handleCopy}
               tabIndex={-1}
               data-slot="input-copy-button"
               aria-label={label()}
             />
-          </Tooltip>
+          </TooltipV2>
         </Show>
       </div>
       <Show when={local.description}>
