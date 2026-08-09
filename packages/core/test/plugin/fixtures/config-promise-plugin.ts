@@ -1,6 +1,6 @@
-import { define } from "@novaclaw/plugin/v2/promise"
+import { define, type Plugin } from "@novaclaw/plugin/v2/promise"
 
-export default define({
+const plugin: Plugin = define({
   id: "config-promise-plugin",
   setup: async (ctx) => {
     await ctx.agent.transform((agents) => {
@@ -11,3 +11,5 @@ export default define({
     })
   },
 })
+
+export default plugin

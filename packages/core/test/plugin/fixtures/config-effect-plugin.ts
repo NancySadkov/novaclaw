@@ -1,7 +1,7 @@
-import { define } from "@novaclaw/plugin/v2/effect"
+import { define, type Plugin } from "@novaclaw/plugin/v2/effect"
 import { Effect } from "effect"
 
-export default define({
+const plugin: Plugin = define({
   id: "config-effect-plugin",
   effect: (ctx) =>
     ctx.agent
@@ -13,3 +13,5 @@ export default define({
       })
       .pipe(Effect.asVoid),
 })
+
+export default plugin

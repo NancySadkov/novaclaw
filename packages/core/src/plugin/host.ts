@@ -152,7 +152,7 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: PluginV2.Int
   const skill = yield* SkillV2.Service
   const pluginTools = yield* PluginTools.Service
 
-  return {
+  const host: Interface = {
     options: {},
     agent: {
       reload: agents.reload,
@@ -323,5 +323,6 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: PluginV2.Int
     tool: {
       register: (name, definition) => pluginTools.register(name, definition),
     },
-  } satisfies Interface
+  }
+  return host
 })

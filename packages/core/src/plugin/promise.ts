@@ -1,6 +1,6 @@
 export * as PluginPromise from "./promise"
 
-import { define } from "@novaclaw/plugin/v2/effect"
+import { define, type Plugin as EffectPlugin } from "@novaclaw/plugin/v2/effect"
 import type { Plugin, PluginContext, Registration } from "@novaclaw/plugin/v2/promise"
 import { Effect, Scope } from "effect"
 
@@ -17,7 +17,7 @@ type HostRegistration = { readonly dispose: Effect.Effect<void> }
  * preserves boot-time batching, so Promise-plugin transforms still coalesce
  * into one reload per domain.
  */
-export function fromPromise(plugin: Plugin) {
+export function fromPromise(plugin: Plugin): EffectPlugin {
   return define({
     id: plugin.id,
     effect: (host) =>

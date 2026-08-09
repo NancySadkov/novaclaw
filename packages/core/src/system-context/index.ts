@@ -41,9 +41,12 @@ export interface Source<A> {
 const ContextTypeId: unique symbol = Symbol.for("@novaclaw/SystemContext")
 
 /** Opaque carrier for composable system context sources. */
-export interface SystemContext {
+export interface Context {
   readonly [ContextTypeId]: ReadonlyArray<PackedSource>
 }
+
+/** Public context type; the distinct declaration name keeps the module's `SystemContext` namespace portable. */
+export type SystemContext = Context
 
 /** Durable comparison state for one admitted source. */
 export const SourceSnapshot = Schema.Struct({
@@ -132,7 +135,7 @@ type Entry = AvailableEntry | UnavailableEntry
 export const empty = context([])
 
 /** Closes a typed source into a context that composes with differently typed sources. */
-export function make<A>(source: Source<A>): SystemContext {
+export function make<A>(source: Source<A>): Context {
   const decode = Schema.decodeUnknownOption(source.codec)
   const encode = Schema.encodeSync(source.codec)
   const equivalent = Schema.toEquivalence(source.codec)
@@ -173,13 +176,13 @@ export function make<A>(source: Source<A>): SystemContext {
 }
 
 /** Combines contexts in order and rejects duplicate source keys immediately. */
-export function combine(values: ReadonlyArray<SystemContext>): SystemContext {
+export function combine(values: ReadonlyArray<Context>): Context {
   const sources = values.flatMap((value) => value[ContextTypeId])
   assertUniqueKeys(sources)
   return context(sources)
 }
 
-const observe = (value: SystemContext) =>
+const observe = (value: Context) =>
   Effect.forEach(
     value[ContextTypeId],
     (source) =>
@@ -195,7 +198,7 @@ const observe = (value: SystemContext) =>
   )
 
 /** Creates the immutable baseline and durable snapshot for a new generation. */
-export function initialize(value: SystemContext): Effect.Effect<Generation, InitializationBlocked> {
+export function initialize(value: Context): Effect.Effect<Generation, InitializationBlocked> {
   return observe(value).pipe(
     Effect.flatMap((entries) => {
       const unavailable = entries.flatMap((entry) => (entry._tag === "Unavailable" ? [entry.key] : []))
@@ -215,7 +218,7 @@ function initializeObservation(entries: ReadonlyArray<Entry>): Generation {
 }
 
 /** Reconciles current source values with one active generation. */
-export function reconcile(value: SystemContext, previous: Snapshot): Effect.Effect<ReconcileResult> {
+export function reconcile(value: Context, previous: Snapshot): Effect.Effect<ReconcileResult> {
   return observe(value).pipe(
     Effect.map((entries): ReconcileResult => {
       const result = reconcileObservation(entries, previous)
@@ -280,7 +283,7 @@ function reconcileObservation(
 }
 
 /** Creates a complete replacement generation or blocks while admitted context is unavailable. */
-export function replace(value: SystemContext, previous: Snapshot): Effect.Effect<ReplacementResult> {
+export function replace(value: Context, previous: Snapshot): Effect.Effect<ReplacementResult> {
   return observe(value).pipe(Effect.map((entries) => replaceObservation(entries, previous)))
 }
 
@@ -290,7 +293,7 @@ function replaceObservation(entries: ReadonlyArray<Entry>, previous: Snapshot): 
   return { _tag: "ReplacementReady", generation: initializeObservation(entries) }
 }
 
-function context(sources: ReadonlyArray<PackedSource>): SystemContext {
+function context(sources: ReadonlyArray<PackedSource>): Context {
   return { [ContextTypeId]: sources }
 }
 

@@ -24,7 +24,7 @@ import { which } from "./util/which"
  * folder the user picks) and cooks there, so the recipe stays pristine and re-runnable.
  */
 
-export interface Recipe {
+export interface RecipeRecord {
   readonly slug: string
   readonly name: string
   readonly description?: string
@@ -36,6 +36,9 @@ export interface Recipe {
   readonly builtin: boolean
   readonly updatedAt: number
 }
+
+/** Public recipe record type; the distinct declaration name keeps the module's `Recipe` namespace portable. */
+export type Recipe = RecipeRecord
 
 export interface SaveInput {
   readonly slug?: string
@@ -423,7 +426,11 @@ export const unmetMessage = (recipeName: string, checks: readonly NeedCheck[]): 
 // Filesystem
 // =============================================================================
 
-const readOne = async (root: string, slug: string, builtinSlugs: ReadonlySet<string>): Promise<Recipe | undefined> => {
+const readOne = async (
+  root: string,
+  slug: string,
+  builtinSlugs: ReadonlySet<string>,
+): Promise<RecipeRecord | undefined> => {
   if (!isValidSlug(slug)) return undefined
   const dir = path.join(root, slug)
   const file = path.join(dir, RECIPE_FILE)
@@ -449,11 +456,11 @@ const readOne = async (root: string, slug: string, builtinSlugs: ReadonlySet<str
 }
 
 /** Every readable recipe, name-sorted. A torn or malformed folder is skipped, never fatal. */
-export async function list(options?: Options & { builtinSlugs?: ReadonlySet<string> }): Promise<Recipe[]> {
+export async function list(options?: Options & { builtinSlugs?: ReadonlySet<string> }): Promise<RecipeRecord[]> {
   const root = recipesRoot(options)
   const builtin = options?.builtinSlugs ?? new Set<string>()
   const names = await fs.readdir(root, { withFileTypes: true }).catch(() => [])
-  const out: Recipe[] = []
+  const out: RecipeRecord[] = []
   for (const entry of names) {
     if (!entry.isDirectory()) continue
     const recipe = await readOne(root, entry.name, builtin)
@@ -485,7 +492,7 @@ export async function needsOf(slug: string, options?: Options): Promise<string[]
 }
 
 /** Validate + write. Returns the persisted recipe; throws with a user-legible message on bad input. */
-export async function save(input: SaveInput, options?: Options): Promise<Recipe> {
+export async function save(input: SaveInput, options?: Options): Promise<RecipeRecord> {
   const slug = input.slug?.trim() || slugify(input.name)
   if (!isValidSlug(slug)) throw new Error(`Invalid recipe name "${input.name}": use letters, numbers, - or _`)
   if (!input.name.trim()) throw new Error("A recipe needs a name")
@@ -530,7 +537,7 @@ export async function remove(slug: string, options?: Options): Promise<boolean> 
  * Copy a recipe, assets and all — the "make it mine" move for a builtin the user wants to tweak. Picks a
  * free `<slug>-2`, `-3`, … so copying twice never silently overwrites the first copy.
  */
-export async function duplicate(slug: string, options?: Options): Promise<Recipe> {
+export async function duplicate(slug: string, options?: Options): Promise<RecipeRecord> {
   const root = recipesRoot(options)
   const source = await readOne(root, slug, new Set())
   if (!source) throw new Error(`No recipe named "${slug}"`)
