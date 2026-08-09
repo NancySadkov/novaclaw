@@ -8,22 +8,17 @@ import { ComputerProposal } from "./proposal"
 import { ComputerAccessibility } from "./accessibility"
 
 /**
- * Computer Use 2.1 / S3 — the two prompts the loop sends, and the one it must never send.
+ * Computer Use — every model role in the reducer's visual protocol.
  *
- * There are exactly two model calls per step and they are built here because the thing that makes
- * them safe is a property of the RENDERED STRING, not of the call site:
+ * They are built here because the thing that makes each separation safe is a property of the
+ * RENDERED STRING, not of the call site:
  *
  * | builder | sees | answers |
  * |---|---|---|
  * | {@link planner} | the goal, the append-only ledger, the newest frame | one proposal |
+ * | {@link grounder} | one visible label and one frame | one point; sampled three times |
+ * | {@link preActionCritic} | compact history, one target-local crop, the proposed point | approve / reject |
  * | {@link adjudicator} | one prediction sentence, one closed question, one frame | `observed` / `predicted` / `checkpoint` |
- *
- * ⚠️ **{@link grounder} is a THIRD builder and is deliberately not one of those two.** Nothing in
- * the loop calls it; it is the measured second stage of the split call (§7c's one untried lever,
- * priced 2026-08-08 at **25/25 against the shipped path's 7/25** on the acceptance battery's last
- * unreached checkpoint), landed the way `coordinates.ts` and `actions.ts` were — pure, unregistered,
- * ahead of the wiring — because what it carries is a *prompt string*, and a string nobody measured
- * is indistinguishable from one somebody did. **"exactly two model calls per step" is still true.**
  *
  * 🔴 **G5 — the adjudicator is BLIND, and that separation is the whole of rung 2.** A model shown
  * *"I clicked New Game"* and asked *"is the New Game screen showing?"* will ratify itself; a model
@@ -435,6 +430,68 @@ export function parseGrounding(text: string): GroundingResult {
     const msg = e instanceof Error ? e.message : String(e)
     return { ok: false, issue: msg.replace(/\s+/g, " ").trim().slice(0, 300) }
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The pre-action critic — C3's visually grounded safety gate
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Check one already-grounded point against a NEW crop before the harness touches the screen.
+ *
+ * Unlike the blind grounder, this reader needs the compact macro-action history: its job is not to
+ * find a point, but to catch a point that no longer names the intended control after the UI moved.
+ * It never sees the goal or the planner's prediction, so it cannot ratify either. The harness crops
+ * around the point mechanically and states its exact crop-local location. This is
+ * load-bearing: a full-frame probe showed Holo ignored the numeric coordinate and approved both the
+ * correct row (5/5) and a deliberately wrong row (5/5).
+ */
+export function preActionCritic(input: {
+  readonly action: string
+  readonly label: string
+  readonly point: ComputerProposal.PointDraft
+  readonly crop: { readonly width: number; readonly height: number; readonly x: number; readonly y: number }
+  readonly ledger: ComputerLedger.Ledger
+  readonly image?: Image
+}): Prompt {
+  const system = [
+    "You are the final safety check before a computer pointer action.",
+    "Inspect the CURRENT screenshot crop. The harness states the proposed pointer's exact location",
+    "inside that crop. Decide only whether that point is on the centre of the",
+    "visible control with the supplied label. Earlier actions are compact context, not evidence that",
+    "the target is still there. If the target is absent, covered, moved, or the point lands elsewhere,",
+    "reject. Reply with exactly one JSON object and nothing else:",
+    '  {"approve": true|false, "reason": "short visible reason"}',
+    "Judge the pixels at the stated crop-local point, not merely whether the target appears somewhere.",
+  ].join("\n")
+  const history = ComputerLedger.render(input.ledger)
+  const user = [
+    "COMPACT MACRO-ACTION HISTORY",
+    history === "" ? "(nothing yet)" : `${ComputerLedger.HEADER}\n${history}`,
+    "",
+    `PROPOSED ACTION: ${input.action}`,
+    `VISIBLE TARGET LABEL: ${input.label.trim()}`,
+    `POINT METADATA: x=${input.point.x}, y=${input.point.y} (original grounding space)`,
+    `POINT IN THIS ${input.crop.width}x${input.crop.height} CROP: x=${input.crop.x}, y=${input.crop.y}`,
+    "",
+    "Does the stated point in this crop land on the centre of that visible target?",
+  ].join("\n")
+  return input.image === undefined ? { system, user } : { system, user, image: input.image }
+}
+
+export type PreActionCritique =
+  | { readonly ok: true; readonly approve: boolean; readonly reason: string }
+  | { readonly ok: false; readonly issue: string }
+
+/** Unreadable is a refusal, never approval; the reducer decides whether to repair or stop. */
+export function parsePreActionCritique(text: string): PreActionCritique {
+  const extracted = JhExtract.extractJsonObject(text)
+  if (!extracted.ok) return { ok: false, issue: `${extracted.failure.reason}: ${extracted.failure.detail}` }
+  const value = extracted.value as Record<string, unknown>
+  if (typeof value.approve !== "boolean") return { ok: false, issue: "approve must be a boolean" }
+  if (typeof value.reason !== "string" || value.reason.trim() === "")
+    return { ok: false, issue: "reason must be a non-empty string" }
+  return { ok: true, approve: value.approve, reason: value.reason.replace(/\s+/g, " ").trim().slice(0, 240) }
 }
 
 // ---------------------------------------------------------------------------------------------

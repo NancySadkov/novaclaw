@@ -99,6 +99,19 @@ const drive = (task: LOOP.TaskSpec, events: ReadonlyArray<LOOP.Event>): Run => {
       commands.push(transition.command)
     }
   }
+  const answerPreaction = () => {
+    if (transition.command.kind === "capture" && transition.command.purpose === "preaction") {
+      transition = LOOP.next(transition.state, captured(`preaction-${transition.state.step}`))
+      commands.push(transition.command)
+    }
+    if (transition.command.kind === "ask-preaction-critic") {
+      transition = LOOP.next(transition.state, {
+        kind: "preaction-critiqued",
+        text: JSON.stringify({ approve: true, reason: "the point is centred on the visible target" }),
+      })
+      commands.push(transition.command)
+    }
+  }
   const answerGrounder = () => {
     while (transition.command.kind === "ask-grounder") {
       const match = transition.command.prompt.user.match(/target-(\d+)-(\d+)/)
@@ -106,6 +119,7 @@ const drive = (task: LOOP.TaskSpec, events: ReadonlyArray<LOOP.Event>): Run => {
       transition = LOOP.next(transition.state, { kind: "grounder-replied", text })
       commands.push(transition.command)
     }
+    answerPreaction()
   }
   for (const event of events) {
     if (transition.command.kind === "finish") break
@@ -188,7 +202,7 @@ describe("a clean 3-step run reaches Done — and only through the harness's own
     expect(run.outcome?.kind === "done" && run.outcome.detail).toContain("harness-captured frame")
   })
 
-  test("the command sequence is calibrate → (observe · plan · ground · act · adjudicate) × 3 → confirm → finish", () => {
+  test("the command sequence includes a fresh grounded critique before every pointer action", () => {
     expect(commandKinds(run)).toEqual([
       "capture",
       "ask-adjudicator",
@@ -198,6 +212,8 @@ describe("a clean 3-step run reaches Done — and only through the harness's own
       "ask-grounder",
       "ask-grounder",
       "ask-grounder",
+      "capture",
+      "ask-preaction-critic",
       "act",
       "ask-adjudicator",
       "capture",
@@ -206,6 +222,8 @@ describe("a clean 3-step run reaches Done — and only through the harness's own
       "ask-grounder",
       "ask-grounder",
       "ask-grounder",
+      "capture",
+      "ask-preaction-critic",
       "act",
       "ask-adjudicator",
       "capture",
@@ -214,6 +232,8 @@ describe("a clean 3-step run reaches Done — and only through the harness's own
       "ask-grounder",
       "ask-grounder",
       "ask-grounder",
+      "capture",
+      "ask-preaction-critic",
       "act",
       "ask-adjudicator",
       // The CONFIRMING re-ask, and it appears exactly once in a three-step run because only step 3
@@ -372,6 +392,14 @@ describe("the measured split grounding contract is the only pointer path", () =>
     })
   })
 
+  test("an edge point is described at its true crop-local position, never falsely as the centre", () => {
+    const run = drive(spec(), [...CALIBRATE, captured("edge"), proposeAt(0, 0)])
+    const critic = run.commands.find((command) => command.kind === "ask-preaction-critic")
+    if (critic?.kind !== "ask-preaction-critic") throw new Error("expected the pre-action critic")
+    expect(critic.prompt.user).toContain("POINT IN THIS 82x51 CROP: x=0, y=0")
+    expect(critic.prompt.user).not.toContain("exact centre")
+  })
+
   test("C2 draws three blind samples of the identical frame and label, then executes their spatial majority", () => {
     let transition = reachBlindGrounder()
     if (transition.command.kind !== "ask-grounder") throw new Error("expected the first grounding sample")
@@ -387,6 +415,13 @@ describe("the measured split grounding contract is the only pointer path", () =>
 
     expect(prompts[1]).toEqual(prompts[0])
     expect(prompts[2]).toEqual(prompts[0])
+    expect(transition.command).toMatchObject({ kind: "capture", purpose: "preaction" })
+    transition = LOOP.next(transition.state, captured("preaction-majority"))
+    expect(transition.command.kind).toBe("ask-preaction-critic")
+    transition = LOOP.next(transition.state, {
+      kind: "preaction-critiqued",
+      text: '{"approve":true,"reason":"the point is centred on the target"}',
+    })
     expect(transition.command.kind).toBe("act")
     if (transition.command.kind !== "act") return
     // The deterministic medoid is one model-emitted point, never an averaged coordinate.

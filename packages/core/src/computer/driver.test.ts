@@ -179,6 +179,8 @@ interface ModelOptions {
   readonly planner?: ReadonlyArray<string>
   /** Grounder replies, consumed in order. Omit to decode the fixture's target-x-y label. */
   readonly grounder?: ReadonlyArray<string>
+  /** Pre-action critic replies; defaults to approving the visibly grounded point. */
+  readonly critic?: ReadonlyArray<Record<string, unknown> | DRV.AskOutcome>
   /** Adjudicator replies, consumed in order; the last one repeats. Objects are JSON-encoded. */
   readonly adjudicator?: ReadonlyArray<Record<string, unknown> | DRV.AskOutcome>
   /** `usage.prompt_tokens` per call. `undefined` = the wire reported nothing. */
@@ -195,6 +197,7 @@ const model = (options: ModelOptions = {}): Model => {
   const counts = new Map<DRV.AskKind, number>()
   const planner = options.planner ?? [clickAt(464, 684)]
   const adjudicator = options.adjudicator ?? [{ observed: "a screen", checkpoint: "no" }]
+  const critic = options.critic ?? [{ approve: true, reason: "the point is centred on the visible target" }]
   const pick = <T>(list: ReadonlyArray<T>, n: number): T => list[Math.min(n - 1, list.length - 1)]
 
   return {
@@ -217,6 +220,15 @@ const model = (options: ModelOptions = {}): Model => {
                 : JSON.stringify({ x: Number(match[1]), y: Number(match[2]) })
               : pick(options.grounder, n)
           return { ok: true, text, ...(tokens === undefined ? {} : { promptTokens: tokens }) }
+        }
+        if (request.kind === "preaction-critic") {
+          const reply = pick(critic, n)
+          if (typeof reply === "object" && reply !== null && "ok" in reply) return reply as DRV.AskOutcome
+          return {
+            ok: true,
+            text: JSON.stringify(reply),
+            ...(tokens === undefined ? {} : { promptTokens: tokens }),
+          }
         }
         const reply = pick(adjudicator, n)
         if (typeof reply === "object" && reply !== null && "ok" in reply) return reply as DRV.AskOutcome
@@ -277,6 +289,26 @@ test("an unreadable blind-grounder reply never reaches the screen", async () => 
   // Three samples fail consensus, then the one allowed planner repair draws three more.
   expect(report.usage.filter((sample) => sample.call === "grounder")).toHaveLength(6)
   expect(ledgerVerdicts(report)).toContain("grounding consensus failed")
+})
+
+test("C3 refuses a point the current-screen critic rejects, before any input reaches the screen", async () => {
+  const screen = substrate()
+  const { report, llm } = await drive({
+    screen,
+    spec: spec({ budget: { maxSteps: 1, maxPromptTokens: 500_000 } }),
+    llm: model({
+      critic: [{ approve: false, reason: "the point is below the visible target" }],
+      adjudicator: CALIBRATED,
+    }),
+  })
+  expect(screen.acts).toHaveLength(0)
+  expect(report.usage.filter((sample) => sample.call === "preaction-critic")).toHaveLength(2)
+  expect(ledgerVerdicts(report)).toContain("refused: pre-action critique")
+  const prompts = llm.prompts.filter((sample) => sample.kind === "preaction-critic")
+  expect(prompts.every((sample) => sample.prompt.image !== undefined)).toBe(true)
+  expect(prompts[0]?.prompt.user).toContain("POINT METADATA: x=464, y=684")
+  const crop = screen.requests.find((request) => request.label === "preaction")
+  expect(crop).toMatchObject({ scope: "watch", region: { x: 553, y: 522, width: 82, height: 51 } })
 })
 
 test("P5 scans the current frame and invokes the exact advertised accessibility action", async () => {
@@ -530,6 +562,7 @@ describe("the act command is a whole four-capture protocol", () => {
     expect(screen.events).toEqual([
       "capture:calibrate",
       "capture:observe",
+      "capture:preaction",
       "capture:frame-idle-a",
       "capture:frame-idle-b",
       "capture:watch-idle-a",
@@ -552,8 +585,8 @@ describe("the act command is a whole four-capture protocol", () => {
 
   test("the watch captures carry the pixel region and the frame captures do not", async () => {
     const { screen } = await drive({ llm: model({ adjudicator: CALIBRATED }) })
-    const watch = screen.requests.filter((r) => r.label.startsWith("watch"))
-    const frames = screen.requests.filter((r) => !r.label.startsWith("watch"))
+    const watch = screen.requests.filter((r) => r.scope === "watch")
+    const frames = screen.requests.filter((r) => r.scope === "frame")
     expect(watch.length).toBeGreaterThan(2)
     for (const request of watch) {
       expect(request.scope).toBe("watch")
@@ -570,7 +603,7 @@ describe("the act command is a whole four-capture protocol", () => {
   test("only the frames the model is shown ask for bytes", async () => {
     const { screen } = await drive({ llm: model({ adjudicator: CALIBRATED }) })
     const wants = screen.requests.filter((r) => r.wantsImage).map((r) => r.label)
-    expect(new Set(wants)).toEqual(new Set(["calibrate", "observe", "frame-after"]))
+    expect(new Set(wants)).toEqual(new Set(["calibrate", "observe", "preaction", "frame-after"]))
   })
 
   test("the delayed settle capture is taken ONLY when the region looks unchanged", async () => {
@@ -728,6 +761,7 @@ describe("the RunReport carries the MEASURED prompt-token series", () => {
       "ground",
       "ground",
       "ground",
+      "preaction-critique",
       "adjudicate-step",
     ])
     expect(report.usage.map((u) => u.call)).toEqual([
@@ -736,9 +770,10 @@ describe("the RunReport carries the MEASURED prompt-token series", () => {
       "grounder",
       "grounder",
       "grounder",
+      "preaction-critic",
       "adjudicator",
     ])
-    expect(report.usage.map((u) => u.step)).toEqual([0, 1, 1, 1, 1, 1])
+    expect(report.usage.map((u) => u.step)).toEqual([0, 1, 1, 1, 1, 1, 1])
     expect(report.usage.every((u) => u.withImage)).toBe(true)
   })
 
@@ -851,6 +886,7 @@ describe("the RunReport", () => {
     expect(report.captures.map((c) => c.label)).toEqual([
       "calibrate",
       "observe",
+      "preaction",
       "frame-idle-a",
       "frame-idle-b",
       "watch-idle-a",

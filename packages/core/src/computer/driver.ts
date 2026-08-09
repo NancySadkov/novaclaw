@@ -137,7 +137,7 @@ export interface AccessibilityInvokeRequest {
 
 export type ActOutcome = { readonly ok: true } | { readonly ok: false; readonly reason: string }
 
-export type AskKind = "planner" | "grounder" | "adjudicator"
+export type AskKind = "planner" | "grounder" | "preaction-critic" | "adjudicator"
 
 export interface AskRequest {
   readonly kind: AskKind
@@ -224,8 +224,8 @@ export const FRESHNESS_TOLERANCE_MS = 2_000
 /**
  * The driver's own runaway stop, in commands per budgeted step.
  *
- * A clean pointer step is 5 commands (observe · planner · grounder · act · adjudicator); a repaired
- * one is 6–8. Non-pointer actions skip the grounder.
+ * A clean pointer step is 7 commands (observe · planner · grounder · fresh capture · critic · act ·
+ * adjudicator); a repaired one is 8–10. Non-pointer actions skip grounding and critique.
  * 12 is generous and still bounded — the thinking-budget RUNAWAY lesson is that every phase needs a
  * MECHANICAL hard stop that does not depend on the thing it is bounding being correct. If it trips,
  * the run is `Void(protocol)` (*do not score this*), never `Blocked` — a driver that cannot drive the
@@ -608,8 +608,9 @@ export function run(spec: ComputerLoop.TaskSpec, deps: Deps): Effect.Effect<RunR
           case "capture": {
             const taken = yield* freshCapture({
               step: state.step,
-              scope: "frame",
+              scope: command.scope,
               label: command.purpose,
+              ...(command.region === undefined ? {} : { region: command.region }),
               wantsImage: true,
             })
             return {
@@ -626,9 +627,16 @@ export function run(spec: ComputerLoop.TaskSpec, deps: Deps): Effect.Effect<RunR
           }
           case "ask-planner":
           case "ask-grounder":
+          case "ask-preaction-critic":
           case "ask-adjudicator": {
             const kind: AskKind =
-              command.kind === "ask-planner" ? "planner" : command.kind === "ask-grounder" ? "grounder" : "adjudicator"
+              command.kind === "ask-planner"
+                ? "planner"
+                : command.kind === "ask-grounder"
+                  ? "grounder"
+                  : command.kind === "ask-preaction-critic"
+                    ? "preaction-critic"
+                    : "adjudicator"
             // G14 — the calibration probe rides the SAME channel every later verdict uses. A probe
             // routed elsewhere would calibrate a channel the run does not use.
             if (state.phase === "calibrate-adjudicate") calibrationAsked = true
@@ -649,6 +657,8 @@ export function run(spec: ComputerLoop.TaskSpec, deps: Deps): Effect.Effect<RunR
               ? { kind: "planner-replied", text, ...tokens }
               : kind === "grounder"
                 ? { kind: "grounder-replied", text, ...tokens }
+                : kind === "preaction-critic"
+                  ? { kind: "preaction-critiqued", text, ...tokens }
                 : { kind: "adjudicated", text, ...tokens }
           }
           case "act":

@@ -253,7 +253,7 @@ export type Outcome =
 // Commands and events
 // ---------------------------------------------------------------------------------------------
 
-export type CapturePurpose = "calibrate" | "observe"
+export type CapturePurpose = "calibrate" | "observe" | "preaction"
 
 /**
  * What the driver must do next.
@@ -266,10 +266,16 @@ export type CapturePurpose = "calibrate" | "observe"
  * without any test noticing.
  */
 export type Command =
-  | { readonly kind: "capture"; readonly scope: "frame"; readonly purpose: CapturePurpose }
+  | {
+      readonly kind: "capture"
+      readonly scope: "frame" | "watch"
+      readonly purpose: CapturePurpose
+      readonly region?: ComputerActions.Region
+    }
   | { readonly kind: "scan-accessibility" }
   | { readonly kind: "ask-planner"; readonly prompt: ComputerPrompt.Prompt }
   | { readonly kind: "ask-grounder"; readonly prompt: ComputerPrompt.Prompt }
+  | { readonly kind: "ask-preaction-critic"; readonly prompt: ComputerPrompt.Prompt }
   | { readonly kind: "ask-adjudicator"; readonly prompt: ComputerPrompt.Prompt }
   | {
       readonly kind: "act"
@@ -302,6 +308,7 @@ export type Event =
   | { readonly kind: "planner-replied"; readonly text: string; readonly promptTokens?: number }
   | { readonly kind: "accessibility-scanned"; readonly candidates: ReadonlyArray<ComputerAccessibility.Candidate> }
   | { readonly kind: "grounder-replied"; readonly text: string; readonly promptTokens?: number }
+  | { readonly kind: "preaction-critiqued"; readonly text: string; readonly promptTokens?: number }
   | { readonly kind: "adjudicated"; readonly text: string; readonly promptTokens?: number }
   | { readonly kind: "acted"; readonly evidence: ComputerEvidence.Input; readonly image?: ComputerPrompt.Image }
   | { readonly kind: "act-failed"; readonly reason: string }
@@ -318,6 +325,8 @@ export type Phase =
   | "scan-accessibility"
   | "propose"
   | "ground"
+  | "preaction-capture"
+  | "preaction-critique"
   | "act"
   | "adjudicate-step"
   | "lookahead-checkpoint"
@@ -361,6 +370,13 @@ export interface State {
   readonly groundingReplies: number
   readonly groundingPoints: ReadonlyArray<ComputerProposal.PointDraft>
   readonly groundingIssues: ReadonlyArray<string>
+  /** Pointer action parked while C3 checks its grounded point against a newer frame. */
+  readonly preparedAction?: Extract<Command, { readonly kind: "act" }>
+  readonly preactionTarget?: {
+    readonly label: string
+    readonly point: ComputerProposal.PointDraft
+    readonly crop: { readonly width: number; readonly height: number; readonly x: number; readonly y: number }
+  }
   readonly repairs: number
   readonly consecutiveAbstains: number
   readonly consecutiveNoEffect: number
@@ -501,7 +517,7 @@ const record = (
 const ask = (
   state: State,
   prompt: ComputerPrompt.Prompt,
-  kind: "ask-planner" | "ask-grounder" | "ask-adjudicator",
+  kind: "ask-planner" | "ask-grounder" | "ask-preaction-critic" | "ask-adjudicator",
 ): Transition => {
   if (state.promptTokens >= state.spec.budget.maxPromptTokens) {
     return blocked(
@@ -628,6 +644,8 @@ const beginStep = (state: State): Transition => {
       groundingReplies: 0,
       groundingPoints: [],
       groundingIssues: [],
+      preparedAction: undefined,
+      preactionTarget: undefined,
       accessibility: [],
     },
     command: { kind: "capture", scope: "frame", purpose: "observe" },
@@ -933,6 +951,15 @@ const scheduleAction = (
         : repeatEscalationNote({ action: described.summary, steps: state.repeatEpisode + 1 })
     return reprompt(state, note, "refused: repeat", described, { action: described.summary })
   }
+  const command: Extract<Command, { kind: "act" }> = {
+    kind: "act",
+    action: build.action,
+    execution:
+      build.execution.kind === "argv"
+        ? { kind: "argv", argv: build.execution.built.argv, env: build.execution.built.env }
+        : build.execution,
+    ...(build.watch === undefined ? {} : { watch: build.watch }),
+  }
   const acting: State = {
     ...state,
     phase: "act",
@@ -941,18 +968,40 @@ const scheduleAction = (
     groundingDraft: undefined,
     pending: { ...described, signature, kind: build.action.kind },
   }
-  return {
-    state: acting,
-    command: {
-      kind: "act",
-      action: build.action,
-      execution:
-        build.execution.kind === "argv"
-          ? { kind: "argv", argv: build.execution.built.argv, env: build.execution.built.env }
-          : build.execution,
-      ...(build.watch === undefined ? {} : { watch: build.watch }),
-    },
+  // C3 applies to screenshot-grounded pointer actions only. Accessibility targets are revalidated
+  // by id/name immediately before invocation; key/type/scroll have no proposed coordinate to check.
+  const pixelPoint = "point" in build.action ? build.action.point : undefined
+  if (
+    grounded !== undefined &&
+    command.execution.kind === "argv" &&
+    build.watch !== undefined &&
+    pixelPoint !== undefined
+  ) {
+    return {
+      state: {
+        ...acting,
+        phase: "preaction-capture",
+        preparedAction: command,
+        preactionTarget: {
+          label: draft.action?.target?.trim() ?? "",
+          point: grounded,
+          crop: {
+            width: build.watch.width,
+            height: build.watch.height,
+            x: pixelPoint.x - build.watch.x,
+            y: pixelPoint.y - build.watch.y,
+          },
+        },
+      },
+      command: {
+        kind: "capture",
+        scope: "watch",
+        purpose: "preaction",
+        ...(build.watch === undefined ? {} : { region: build.watch }),
+      },
+    }
   }
+  return { state: acting, command }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1241,6 +1290,65 @@ export function next(state: State, event: Event): Transition {
         )
       }
       return scheduleAction(sampled, state.groundingDraft, state.pending, consensus.point)
+    }
+
+    // ── C3: observe the grounded point again, then ask a different closed question. ───────────
+    case "preaction-capture": {
+      if (event.kind !== "captured") return unexpected(state, event)
+      if (!event.capture.ok)
+        return blocked(state, "capture-failed", `the pre-action frame was not captured: ${event.capture.reason}`)
+      if (event.image === undefined)
+        return blocked(state, "capture-failed", "the pre-action capture produced no image for the grounded critic")
+      if (state.preactionTarget === undefined || state.preparedAction === undefined || state.pending === undefined)
+        return voided(state, "protocol", "the pre-action capture arrived without a parked pointer action")
+      const checking: State = { ...state, phase: "preaction-critique", image: event.image }
+      return ask(
+        checking,
+        ComputerPrompt.preActionCritic({
+          action: state.pending.summary,
+          label: state.preactionTarget.label,
+          point: state.preactionTarget.point,
+          crop: state.preactionTarget.crop,
+          ledger: state.ledger,
+          image: event.image,
+        }),
+        "ask-preaction-critic",
+      )
+    }
+
+    case "preaction-critique": {
+      if (event.kind !== "preaction-critiqued") return unexpected(state, event)
+      const spent = spend(state, event.promptTokens)
+      if (state.preparedAction === undefined || state.pending === undefined)
+        return voided(spent, "protocol", "the pre-action critic replied without a parked pointer action")
+      const critique = ComputerPrompt.parsePreActionCritique(event.text)
+      if (!critique.ok) {
+        return reprompt(
+          spent,
+          `The harness REFUSED to act because the grounded safety check was unreadable (${critique.issue}). ` +
+            "Re-ground from the current screen, choose a different target, or abstain.\n\nRe-emit the WHOLE proposal, corrected.",
+          "refused: unreadable pre-action critique",
+          state.pending,
+        )
+      }
+      if (!critique.approve) {
+        return reprompt(
+          spent,
+          `The harness REFUSED to act after checking the point against the current screen: ${critique.reason}. ` +
+            "Re-ground from this screen, choose a different target, or abstain.\n\nRe-emit the WHOLE proposal, corrected.",
+          "refused: pre-action critique",
+          state.pending,
+        )
+      }
+      return {
+        state: {
+          ...spent,
+          phase: "act",
+          preparedAction: undefined,
+          preactionTarget: undefined,
+        },
+        command: state.preparedAction,
+      }
     }
 
     // ── Act → Verify ──────────────────────────────────────────────────────────────────────────

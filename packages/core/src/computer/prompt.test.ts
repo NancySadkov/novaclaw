@@ -467,3 +467,46 @@ describe("the grounding reply is read with the same tolerance as a proposal", ()
     }
   })
 })
+
+describe("C3 — the pre-action critic is current, grounded, and history-aware", () => {
+  const critique = CP.preActionCritic({
+    action: 'click "DONE"',
+    label: "DONE",
+    point: { x: 864, y: 928 },
+    crop: { width: 82, height: 51, x: 41, y: 25 },
+    ledger: ledgerOf(2),
+    image: img("preaction"),
+  })
+
+  test("it sees one current image, the proposed point, and compact mechanical history", () => {
+    expect(critique.image).toEqual(img("preaction"))
+    expect(whole(critique)).toContain("x=864, y=928")
+    expect(whole(critique)).toContain("original grounding space")
+    expect(whole(critique)).toContain("POINT IN THIS 82x51 CROP: x=41, y=25")
+    expect(whole(critique)).toContain('click "DONE"')
+    expect(whole(critique)).toContain(ComputerLedger.HEADER)
+    expect(whole(critique)).toContain("no-visible-effect")
+  })
+
+  test("it cannot ratify the goal or prediction because neither reaches the builder", () => {
+    expect(whole(critique)).not.toContain(GOAL)
+    expect(whole(critique)).not.toContain(EXPECT)
+    expect(whole(critique)).not.toContain("SENTINEL_GOAL")
+  })
+
+  test("approval is explicit; malformed and reasonless replies are unreadable", () => {
+    expect(CP.parsePreActionCritique('{"approve":true,"reason":"point is centred"}')).toEqual({
+      ok: true,
+      approve: true,
+      reason: "point is centred",
+    })
+    expect(CP.parsePreActionCritique('{"approve":false,"reason":"target moved"}')).toEqual({
+      ok: true,
+      approve: false,
+      reason: "target moved",
+    })
+    for (const text of ["yes", '{"approve":"yes","reason":"looks fine"}', '{"approve":true}']) {
+      expect(CP.parsePreActionCritique(text).ok).toBe(false)
+    }
+  })
+})
