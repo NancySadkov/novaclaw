@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { isAtBottom, nextPinned } from "./native-scroll"
+import { isAtBottom, navigationTargetIndex, nextPinned } from "./native-scroll"
 
 test("isAtBottom is true at the exact bottom", () => {
   expect(isAtBottom({ scrollHeight: 1000, scrollTop: 400, clientHeight: 600 })).toBe(true)
@@ -25,4 +25,10 @@ test("nextPinned keeps the current pin on a zero-height (headless) layout", () =
   // scrollHeight huge, clientHeight 0 → isAtBottom would say false, but we must not unpin.
   expect(nextPinned(true, { scrollHeight: 166332, scrollTop: 0, clientHeight: 0 })).toBe(true)
   expect(nextPinned(false, { scrollHeight: 166332, scrollTop: 0, clientHeight: 0 })).toBe(false)
+})
+
+test("message navigation treats the position after the final row as the latest boundary", () => {
+  expect(navigationTargetIndex(3, 3, -1)).toBe(2)
+  expect(navigationTargetIndex(2, 3, 1)).toBe(3)
+  expect(navigationTargetIndex(0, 3, -1)).toBeUndefined()
 })

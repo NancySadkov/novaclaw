@@ -27,3 +27,9 @@ export function nextPinned(current: boolean, m: ScrollMetrics, threshold = 80): 
   if (m.clientHeight === 0) return current
   return isAtBottom(m, threshold)
 }
+
+export function navigationTargetIndex(current: number, count: number, offset: number): number | undefined {
+  const target = current + offset
+  if (target < 0 || target > count) return
+  return target
+}

@@ -7,7 +7,13 @@ import { useServer } from "@/context/server"
 import { selectVisibleMessages } from "@/pages/session/revert-view"
 import { fetchPendingPrompts, pendingPromptsKick, type PendingPrompt } from "@/utils/session-pending-api"
 import { useSettings } from "@/context/settings"
-import { nextPinned } from "./native-scroll"
+import { navigationTargetIndex, nextPinned } from "./native-scroll"
+
+export type NativeTimelineController = {
+  navigateUser: (offset: number) => void
+  scrollToUser: (messageID: string | undefined) => void
+  scrollToBottom: () => void
+}
 
 // Level-aware reasoning fold (UIX residue b / C4, uix.md §6 teach-don't-gatekeep): a non-expert
 // sees the answer with reasoning folded; Advanced watches it think then it tidies away; a
@@ -51,6 +57,7 @@ export function NativeTimeline(props: {
   revertMessageID?: string
   /** The session's working directory — needed for the directory-scoped pending-prompt fetch. */
   directory?: string
+  setController?: (controller: NativeTimelineController | undefined) => void
 }) {
   const serverSync = useServerSync()
   const server = useServer()
@@ -125,6 +132,49 @@ export function NativeTimeline(props: {
     if (scroller) scroller.scrollTop = scroller.scrollHeight
   }
 
+  const navigateUser = (offset: number) => {
+    const root = scroller
+    if (!root) return
+    const rows = [...root.querySelectorAll<HTMLElement>("[data-slot='native-user']:not([data-queued])")]
+    if (!rows.length) return
+    const box = root.getBoundingClientRect()
+    const line = box.top + 100
+    const hit = rows.findIndex((row) => {
+      const rect = row.getBoundingClientRect()
+      return rect.top <= line && rect.bottom >= line
+    })
+    const before = rows.findLastIndex((row) => row.getBoundingClientRect().top <= line)
+    const current = hit >= 0 ? hit : before >= 0 ? before : rows.length
+    const target = navigationTargetIndex(current, rows.length, offset)
+    if (target === undefined) return
+    if (target === rows.length) {
+      scrollToBottom()
+      return
+    }
+    const row = rows[target]
+    if (!row) return
+    setPinned(false)
+    const rect = row.getBoundingClientRect()
+    root.scrollTo({ top: Math.max(0, rect.top - box.top + root.scrollTop), behavior: "auto" })
+  }
+
+  const scrollToUser = (messageID: string | undefined) => {
+    if (!messageID) {
+      scrollToBottom()
+      return
+    }
+    const root = scroller
+    if (!root) return
+    const row = [...root.querySelectorAll<HTMLElement>("[data-message-id]")].find(
+      (item) => item.dataset.messageId === messageID,
+    )
+    if (!row) return
+    setPinned(false)
+    const box = root.getBoundingClientRect()
+    const rect = row.getBoundingClientRect()
+    root.scrollTo({ top: Math.max(0, rect.top - box.top + root.scrollTop), behavior: "auto" })
+  }
+
   // Own the load (message-timeline's load effect never runs while it is unmounted).
   createEffect(() => {
     const sid = props.sessionID
@@ -162,6 +212,8 @@ export function NativeTimeline(props: {
   })
 
   onMount(() => {
+    props.setController?.({ navigateUser, scrollToUser, scrollToBottom })
+    onCleanup(() => props.setController?.(undefined))
     if (!content) return
     // Streaming deltas + async markdown reflow grow the content without changing the
     // message-array length — a ResizeObserver catches those growth events.

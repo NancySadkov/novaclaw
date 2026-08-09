@@ -220,7 +220,7 @@ function UserMessage(props: { message: SessionMessageUser }) {
   // answers "where did it go?" while leaving "did it send?" open, which is the owner's "unread".
   const pending = () => isOptimistic(props.message)
   return (
-    <div data-slot="native-user" data-pending={pending() ? "" : undefined}>
+    <div data-slot="native-user" data-message-id={props.message.id} data-pending={pending() ? "" : undefined}>
       <div data-slot="native-user-bubble">
         <Show when={badge()}>
           {(b) => (

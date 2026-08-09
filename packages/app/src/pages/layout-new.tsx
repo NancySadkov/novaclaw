@@ -124,8 +124,7 @@ export default function NewLayout(props: ParentProps) {
             fallback, so the subtree has to be recreated per route for this to engage at all — but
             keying on `search` too (as the upstream PR did) remounts the page on any query-string
             change. `new-session.tsx` clears its deep-link `?prompt=` via setSearchParams while the
-            user is typing, and `use-session-hash-scroll` replace-navigates with the search string;
-            both would destroy the live page. Ported from
+            user is typing, which would destroy the live page. Ported from
             https://github.com/NancySadkov/novaclaw/pull/11 by @DassaultFalconKing. */}
         <Show when={location.pathname} keyed>
           <Suspense

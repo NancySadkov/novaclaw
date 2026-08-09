@@ -7,7 +7,6 @@ type Input = {
   dialogActive: () => boolean
   terminalOpen: () => boolean
   activeTerminal: () => string | undefined
-  markScrollGesture: () => void
 }
 
 const isEditableTarget = (target: EventTarget | null | undefined) => {
@@ -49,7 +48,6 @@ export function createSessionKeyboardController(input: Input) {
     }
 
     if (event.key === "PageUp" || event.key === "PageDown" || event.key === "Home" || event.key === "End") {
-      input.markScrollGesture()
       return
     }
 

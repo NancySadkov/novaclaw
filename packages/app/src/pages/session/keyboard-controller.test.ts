@@ -5,7 +5,6 @@ const setup = () => {
   const composer = document.createElement("div")
   composer.tabIndex = 0
   document.body.append(composer)
-  let scrollGestures = 0
   const handle = createSessionKeyboardController({
     composer: () => composer,
     composerBlocked: () => false,
@@ -13,9 +12,8 @@ const setup = () => {
     dialogActive: () => false,
     terminalOpen: () => false,
     activeTerminal: () => undefined,
-    markScrollGesture: () => scrollGestures++,
   })
-  return { composer, handle, scrollGestures: () => scrollGestures }
+  return { composer, handle }
 }
 
 test("a printable key focuses the composer when no protected surface owns focus", () => {
@@ -37,11 +35,10 @@ test("an editable control keeps focus instead of leaking the key into the compos
   value.composer.remove()
 })
 
-test("explicit page navigation keys mark a scroll gesture without focusing the composer", () => {
+test("explicit page navigation keys retain their native scrolling behavior without focusing the composer", () => {
   const value = setup()
   document.body.focus()
   value.handle(new KeyboardEvent("keydown", { key: "PageDown" }))
-  expect(value.scrollGestures()).toBe(1)
   expect(document.activeElement).not.toBe(value.composer)
   value.composer.remove()
 })

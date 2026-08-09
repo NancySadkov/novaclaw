@@ -15,19 +15,17 @@ import {
 } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createMediaQuery } from "@solid-primitives/media"
-import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { debounce } from "@solid-primitives/scheduled"
 import { useLocal } from "@/context/local"
 import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange } from "@/context/file"
 import { createStore } from "solid-js/store"
 import { ResizeHandle } from "@novaclaw/ui/resize-handle"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
-import { createAutoScroll } from "@novaclaw/ui/hooks"
 import { previewSelectedLines } from "@novaclaw/session-ui/pierre/selection-bridge"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { showToast } from "@/utils/toast"
 import { base64Encode } from "@novaclaw/core/util/encode"
-import { useLocation, useNavigate, useSearchParams } from "@solidjs/router"
+import { useNavigate, useSearchParams } from "@solidjs/router"
 import { NewSessionView, SessionHeader } from "@/components/session"
 import { useConfirm } from "@/components/dialog-confirm"
 import { useComments } from "@/context/comments"
@@ -56,7 +54,7 @@ import {
   createSizing,
 } from "@/pages/session/helpers"
 import { createSessionKeyboardController } from "@/pages/session/keyboard-controller"
-import { NativeTimeline } from "@/pages/session/timeline/native-timeline"
+import { NativeTimeline, type NativeTimelineController } from "@/pages/session/timeline/native-timeline"
 import { createTimelineModel } from "@/pages/session/timeline/model"
 import { createSessionRevertController } from "@/pages/session/revert-controller"
 import { createReviewNavigation } from "@/pages/session/review-navigation"
@@ -67,7 +65,6 @@ import { SessionSidePanel } from "@/pages/session/session-side-panel"
 import { TerminalPanel } from "@/pages/session/terminal-panel"
 import { useComposerCommands } from "@/pages/session/use-composer-commands"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
-import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
 import { Identifier } from "@/utils/id"
 import { diffs as list } from "@/utils/diffs"
 import { Persist, persisted } from "@/utils/persist"
@@ -79,7 +76,6 @@ import { visibleProviderRecovery } from "./session/composer/session-provider-rec
 type VcsMode = "git" | "branch"
 
 const sessionViewState = () => ({
-  messageId: undefined as string | undefined,
   mobileTab: "session" as "session" | "changes",
   changes: "git" as ChangeMode,
 })
@@ -102,7 +98,6 @@ export default function Page() {
   const comments = useComments()
   const terminal = useTerminal()
   const [searchParams, setSearchParams] = useSearchParams<{ prompt?: string }>()
-  const location = useLocation()
   const navigate = useNavigate()
   const { params, sessionKey, workspaceKey, tabs, view } = useSessionLayout()
   const sessionOwnership = createSessionOwnership(sessionKey)
@@ -119,14 +114,7 @@ export default function Page() {
   })
 
   const [ui, setUi] = createStore({
-    pendingMessage: undefined as string | undefined,
     reviewSnap: false,
-    scrollGesture: 0,
-    scroll: {
-      overflow: false,
-      bottom: true,
-      jump: false,
-    },
   })
 
   const composer = createSessionComposerController()
@@ -225,10 +213,6 @@ export default function Page() {
   const activeFileTab = tabState.activeFileTab
   const revertMessageID = createMemo(() => info()?.revert?.messageID)
   const timeline = createTimelineModel({ sessionID: () => params.id, revertMessageID })
-  const historyLoading = timeline.history.loading
-  const historyMore = timeline.history.more
-  const lastUserMessage = timeline.lastUserMessage
-  const messages = timeline.messages
   const messagesReady = timeline.ready
   const sessionSync = timeline.resource
   const userMessages = timeline.userMessages
@@ -404,87 +388,11 @@ export default function Page() {
     return "main"
   })
 
-  const setActiveMessage = (message: { id: string } | undefined) => {
-    messageMark = scrollMark
-    setStore("messageId", message?.id)
-  }
-
-  const anchor = (id: string) => `message-${id}`
-
-  const cursor = () => {
-    const root = scroller
-    if (!root) return store.messageId
-
-    const box = root.getBoundingClientRect()
-    const line = box.top + 100
-    const list = [...root.querySelectorAll<HTMLElement>("[data-message-id]")]
-      .map((el) => {
-        const id = el.dataset.messageId
-        if (!id) return
-
-        const rect = el.getBoundingClientRect()
-        return { id, top: rect.top, bottom: rect.bottom }
-      })
-      .filter((item): item is { id: string; top: number; bottom: number } => !!item)
-
-    const shown = list.filter((item) => item.bottom > box.top && item.top < box.bottom)
-    const hit = shown.find((item) => item.top <= line && item.bottom >= line)
-    if (hit) return hit.id
-
-    const near = [...shown].sort((a, b) => {
-      const da = Math.abs(a.top - line)
-      const db = Math.abs(b.top - line)
-      if (da !== db) return da - db
-      return a.top - b.top
-    })[0]
-    if (near) return near.id
-
-    return list.filter((item) => item.top <= line).at(-1)?.id ?? list[0]?.id ?? store.messageId
-  }
-
-  function navigateMessageByOffset(offset: number) {
-    const msgs = visibleUserMessages()
-    if (msgs.length === 0) return
-
-    const current = store.messageId && messageMark === scrollMark ? store.messageId : cursor()
-    const base = current ? msgs.findIndex((m) => m.id === current) : msgs.length
-    const currentIndex = base === -1 ? msgs.length : base
-    const targetIndex = currentIndex + offset
-    if (targetIndex < 0 || targetIndex > msgs.length) return
-
-    if (targetIndex === msgs.length) {
-      resumeScroll()
-      return
-    }
-
-    autoScroll.pause()
-    scrollToMessage(msgs[targetIndex], "auto")
-  }
-
   let inputRef!: HTMLDivElement
-  let promptDock: HTMLDivElement | undefined
-  let dockHeight = 0
-  let scroller: HTMLDivElement | undefined
-  let content: HTMLDivElement | undefined
-  let revealMessage = (_id: string) => {}
-  let scrollToEnd = () => {}
-  let scrollMark = 0
-  let messageMark = 0
-
-  const scrollGestureWindowMs = 250
-
-  const markScrollGesture = (target?: EventTarget | null) => {
-    const root = scroller
-    if (!root) return
-
-    const el = target instanceof Element ? target : undefined
-    const nested = el?.closest("[data-scrollable]")
-    if (nested && nested !== root) return
-
-    setUi("scrollGesture", Date.now())
-  }
-
-  const hasScrollGesture = () => Date.now() - ui.scrollGesture < scrollGestureWindowMs
+  let timelineController: NativeTimelineController | undefined
+  const navigateMessageByOffset = (offset: number) => timelineController?.navigateUser(offset)
+  const setActiveMessage = (message: { id: string } | undefined) => timelineController?.scrollToUser(message?.id)
+  const resumeScroll = () => timelineController?.scrollToBottom()
 
   createEffect(
     on(
@@ -523,22 +431,9 @@ export default function Page() {
 
   createEffect(
     on(
-      () => visibleUserMessages().at(-1)?.id,
-      (lastId, prevLastId) => {
-        if (lastId && prevLastId && lastId > prevLastId) {
-          setStore("messageId", undefined)
-        }
-      },
-      { defer: true },
-    ),
-  )
-
-  createEffect(
-    on(
       sessionKey,
       () => {
         setStore(sessionViewState())
-        setUi("pendingMessage", undefined)
       },
       { defer: true },
     ),
@@ -631,7 +526,6 @@ export default function Page() {
     dialogActive: () => !!dialog.active,
     terminalOpen: () => view().terminal.opened(),
     activeTerminal: terminal.active,
-    markScrollGesture,
   })
 
   createEffect(() => {
@@ -952,223 +846,6 @@ export default function Page() {
     ),
   )
 
-  const autoScroll = createAutoScroll({
-    working: () => true,
-    overflowAnchor: "none",
-  })
-  createEffect(
-    on(
-      () => params.id,
-      (id, previous) => {
-        if (!id || !previous || id === previous) return
-        if (location.hash || store.messageId || ui.pendingMessage) return
-        autoScroll.resume()
-      },
-    ),
-  )
-
-  let scrollStateFrame: number | undefined
-  let scrollStateTarget: HTMLDivElement | undefined
-  let fillFrame: number | undefined
-
-  const jumpThreshold = (el: HTMLDivElement) => Math.max(400, el.clientHeight)
-
-  const updateScrollState = (el: HTMLDivElement) => {
-    const max = el.scrollHeight - el.clientHeight
-    const distance = max - el.scrollTop
-    const overflow = max > 1
-    const bottom = !overflow || distance <= 2
-    const jump = overflow && distance > jumpThreshold(el)
-
-    if (ui.scroll.overflow === overflow && ui.scroll.bottom === bottom && ui.scroll.jump === jump) return
-    setUi("scroll", { overflow, bottom, jump })
-  }
-
-  const scheduleScrollState = (el: HTMLDivElement) => {
-    scrollStateTarget = el
-    if (scrollStateFrame !== undefined) return
-
-    scrollStateFrame = requestAnimationFrame(() => {
-      scrollStateFrame = undefined
-
-      const target = scrollStateTarget
-      scrollStateTarget = undefined
-      if (!target) return
-
-      updateScrollState(target)
-    })
-  }
-
-  const resumeScroll = () => {
-    setStore("messageId", undefined)
-    autoScroll.resume()
-    scrollToEnd()
-    clearMessageHash()
-
-    const el = scroller
-    if (el) scheduleScrollState(el)
-  }
-
-  // When the user returns to the bottom, treat the active message as "latest".
-  createEffect(
-    on(
-      autoScroll.userScrolled,
-      (scrolled) => {
-        if (scrolled) return
-        setStore("messageId", undefined)
-        clearMessageHash()
-      },
-      { defer: true },
-    ),
-  )
-
-  let fill = () => {}
-
-  const setScrollRef = (el: HTMLDivElement | undefined) => {
-    scroller = el
-    autoScroll.scrollRef(el)
-    if (!el) return
-    scheduleScrollState(el)
-    fill()
-  }
-
-  const markUserScroll = () => {
-    scrollMark += 1
-  }
-
-  createResizeObserver(
-    () => content,
-    () => {
-      const el = scroller
-      if (el) scheduleScrollState(el)
-      fill()
-    },
-  )
-
-  let captureHistoryAnchor = () => {}
-  let restoreHistoryAnchor = (_done: boolean) => {}
-  const historyRequests = new Set<string>()
-  let historyContinuationFrame: number | undefined
-  const loadOlder = async () => {
-    const owner = sessionOwnership.capture()
-    if (historyLoading() || historyRequests.has(owner.key)) return
-    historyRequests.add(owner.key)
-    const before = timeline.messages().length
-    try {
-      await timeline.history.loadOlder({
-        before: () => owner.run(captureHistoryAnchor),
-        after: (done) => owner.run(() => restoreHistoryAnchor(done)),
-      })
-    } finally {
-      historyRequests.delete(owner.key)
-    }
-    if (!owner.current() || timeline.messages().length <= before) return
-    if (!autoScroll.userScrolled() || !scroller || scroller.scrollTop >= 200 || !historyMore()) return
-    if (historyContinuationFrame !== undefined) cancelAnimationFrame(historyContinuationFrame)
-    historyContinuationFrame = requestAnimationFrame(() => {
-      historyContinuationFrame = undefined
-      owner.run(onHistoryScroll)
-    })
-  }
-  const onHistoryScroll = () => {
-    if (
-      historyRequests.has(sessionOwnership.key()) ||
-      historyLoading() ||
-      !autoScroll.userScrolled() ||
-      !scroller ||
-      scroller.scrollTop >= 200
-    )
-      return
-    void loadOlder()
-  }
-
-  onCleanup(() => {
-    if (historyContinuationFrame !== undefined) cancelAnimationFrame(historyContinuationFrame)
-  })
-
-  fill = () => {
-    if (fillFrame !== undefined) return
-
-    fillFrame = requestAnimationFrame(() => {
-      fillFrame = undefined
-
-      if (!params.id || !messagesReady()) return
-      if (autoScroll.userScrolled() || historyLoading()) return
-
-      const el = scroller
-      if (!el) return
-      if (el.scrollHeight > el.clientHeight + 1) return
-      if (!historyMore()) return
-
-      void loadOlder()
-    })
-  }
-
-  createEffect(
-    on(
-      () =>
-        [
-          params.id,
-          messagesReady(),
-          historyMore(),
-          historyLoading(),
-          autoScroll.userScrolled(),
-          visibleUserMessages().length,
-        ] as const,
-      ([id, ready, more, loading, scrolled]) => {
-        if (!id || !ready || loading || scrolled) return
-        if (!more) return
-        fill()
-      },
-      { defer: true },
-    ),
-  )
-
-  createResizeObserver(
-    () => promptDock,
-    ({ height }) => {
-      const next = Math.ceil(height)
-
-      if (next === dockHeight) return
-
-      const el = scroller
-      const delta = next - dockHeight
-      const stick = el
-        ? !autoScroll.userScrolled() || el.scrollHeight - el.clientHeight - el.scrollTop < 10 + Math.max(0, delta)
-        : false
-
-      dockHeight = next
-
-      if (stick) scrollToEnd()
-
-      if (el) scheduleScrollState(el)
-      fill()
-    },
-  )
-
-  const { clearMessageHash, scrollToMessage } = useSessionHashScroll({
-    sessionKey,
-    sessionID: () => params.id,
-    messagesReady,
-    visibleUserMessages,
-    currentMessageId: () => store.messageId,
-    pendingMessage: () => ui.pendingMessage,
-    setPendingMessage: (value) => setUi("pendingMessage", value),
-    setActiveMessage,
-    autoScroll: {
-      pause: autoScroll.pause,
-      forceScrollToBottom: () => {
-        autoScroll.resume()
-        scrollToEnd()
-      },
-    },
-    scroller: () => scroller,
-    anchor,
-    revealMessage: (id) => revealMessage(id),
-    scheduleScrollState,
-    consumePendingMessage: layout.pendingMessage.consume,
-  })
-
   createEffect(
     on(
       () => params.id,
@@ -1188,8 +865,6 @@ export default function Page() {
     if (todoTimer !== undefined) window.clearTimeout(todoTimer)
     if (diffFrame !== undefined) cancelAnimationFrame(diffFrame)
     if (diffTimer !== undefined) window.clearTimeout(diffTimer)
-    if (scrollStateFrame !== undefined) cancelAnimationFrame(scrollStateFrame)
-    if (fillFrame !== undefined) cancelAnimationFrame(fillFrame)
   })
 
   const composerRegion = () => {
@@ -1242,9 +917,7 @@ export default function Page() {
       setPromptRef: (el) => {
         inputRef = el
       },
-      setDockRef: (el) => {
-        promptDock = el
-      },
+      setDockRef: () => {},
     })
     return (
       <SessionComposerRegion
@@ -1321,6 +994,7 @@ export default function Page() {
                     {(_id) => (
                       <NativeTimeline
                         sessionID={_id}
+                        setController={(controller) => (timelineController = controller)}
                         directory={sdk().directory}
                         onRevert={revertToPrompt}
                         onRetry={retryFailedTurn}
