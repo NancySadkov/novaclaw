@@ -12,7 +12,7 @@ import {
   superviseDecision,
   FAST_CRASH_GIVEUP,
   LIVENESS_FAILURE_LIMIT,
-} from "./supervise-policy"
+} from "@novaclaw/script/supervise"
 
 export type HealthCheck = { wait: Promise<void> }
 

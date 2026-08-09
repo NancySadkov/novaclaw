@@ -1,9 +1,6 @@
-// The pure restart policy for supervised child processes — the backoff/giveup ladder, extracted so
-// it is unit-testable apart from process plumbing. Shared by two supervisors: `novaclaw serve`
-// (packages/novaclaw/src/cli/supervise.ts re-exports this) and the Ladybug memory sidecar
-// (packages/core/src/kb-graph/sidecar.ts). The desktop main bundle keeps a deliberate hand-copy
-// (packages/desktop/src/main/supervise-policy.ts) to avoid a package edge; supervise.test.ts pins
-// the twins against this canonical source.
+// Pure restart policy for supervised NovaClaw child processes. This dependency-free package is the
+// shared boundary between the headless server and Electron main process; one implementation keeps
+// their recovery behavior identical without either package reaching into the other's source tree.
 
 export const RESTART_BACKOFF_START_MS = 1_000
 export const RESTART_BACKOFF_CAP_MS = 30_000
