@@ -4,7 +4,7 @@ import { useSync } from "@/context/sync"
 import { useServerSync } from "@/context/server-sync"
 import { checksum } from "@novaclaw/core/util/encode"
 import { findLast } from "@novaclaw/core/util/array"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { Accordion } from "@novaclaw/ui/accordion"
 import { StickyAccordionHeader } from "@novaclaw/ui/sticky-accordion-header"
 import { File } from "@novaclaw/session-ui/file"
@@ -74,7 +74,7 @@ function RawMessage(props: {
             </div>
             <div class="flex items-center gap-3">
               <div class="shrink-0 text-12-regular text-text-weak">{props.time(props.message.time.created)}</div>
-              <Icon name="chevron-grabber-vertical" size="small" class="shrink-0 text-text-weak" />
+              <Icon name="chevron-grabber-vertical" size="normal" class="shrink-0 text-text-weak" />
             </div>
           </div>
         </Accordion.Trigger>

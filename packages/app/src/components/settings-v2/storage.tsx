@@ -1,7 +1,7 @@
 import { For, Show, createMemo, type Component } from "solid-js"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 // ⚠️ VALUE import, and it is safe because `log-bounds.ts` has no imports at all — the writer it
 // belongs to (`observability/log-file.ts`) pulls in `node:fs`/`node:zlib` at module scope and would
 // break this bundle. The alternative was retyping "30 days" and "256 MB" into a user-facing
@@ -301,7 +301,7 @@ const PathValue: Component<{
       aria-label={props.copyLabel}
       title={props.copyLabel}
     >
-      <Icon name="copy" size="small" />
+      <Icon name="copy" size="normal" />
     </ButtonV2>
     <Show when={props.onOpen}>
       {(onOpen) => (
@@ -312,7 +312,7 @@ const PathValue: Component<{
           aria-label={props.openLabel}
           title={props.openLabel}
         >
-          <Icon name="folder" size="small" />
+          <Icon name="folder" size="normal" />
         </ButtonV2>
       )}
     </Show>

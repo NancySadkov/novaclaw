@@ -2,7 +2,7 @@ import { Component, For, Show, createSignal, type ComponentProps } from "solid-j
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useExpertise } from "@/context/expertise"
@@ -92,7 +92,7 @@ export const DialogExpertise: Component = () => {
                       class="flex items-center justify-center size-11 shrink-0 rounded-[0.9rem] ring-1 ring-white/15"
                       style={{
                         "background-image": `linear-gradient(155deg, color-mix(in oklab, ${card.accent} 88%, white) -8%, ${card.accent} 42%, color-mix(in oklab, ${card.accent} 58%, black) 105%)`,
-                        "--icon-base": "rgba(255,255,255,0.96)",
+                        color: "rgba(255,255,255,0.96)",
                       }}
                     >
                       <Icon name={card.icon} size="large" />

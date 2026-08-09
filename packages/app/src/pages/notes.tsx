@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { useGlobal } from "@/context/global"
 import { useServer } from "@/context/server"
 import { useLanguage } from "@/context/language"
@@ -201,7 +201,7 @@ export function NotesPage() {
   return (
     <div class="flex min-h-0 flex-1 flex-col self-stretch m-2 rounded-[10px] overflow-hidden bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)] text-v2-text-text-base">
       <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5">
-        <Icon name="edit" size="normal" class="shrink-0 text-v2-text-text-muted" />
+        <Icon name="edit" size="large" class="shrink-0 text-v2-text-text-muted" />
         <span class="text-[15px] font-semibold">{language.t("notes.title")}</span>
         <span class="min-w-0 flex-1 truncate text-xs text-v2-text-text-faint">{language.t("notes.hint")}</span>
         <Show when={current()}>

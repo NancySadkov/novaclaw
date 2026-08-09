@@ -3,7 +3,7 @@ import { FileTree } from "@pierre/trees"
 import { Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
@@ -458,7 +458,7 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
               title="Ctrl+Shift+N"
               onClick={() => void operations.createFolder(root())}
             >
-              <Icon name="folder-add-left" size="small" />
+              <Icon name="folder-add-left" size="normal" />
               {language.t("files.newFolder")}
             </ButtonV2>
             <Show when={hostRoots().length > 1}>
@@ -484,7 +484,7 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
               >
                 <Icon
                   name="folder-add-left"
-                  size="small"
+                  size="normal"
                   class={rootPinned() ? "text-v2-icon-icon-accent" : undefined}
                 />
                 {language.t(rootPinned() ? "dialog.directory.pinnedShort" : "dialog.directory.pinShort")}
@@ -524,7 +524,7 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
                     onContextMenu={(event) => openRailContextMenu(event, pin)}
                   >
                     <button type="button" class="directory-picker-v2-rail-nav" onClick={() => void navigate(pin)}>
-                      <Icon name="folder" size="small" />
+                      <Icon name="folder" size="normal" />
                       <span>{baseName(pin)}</span>
                     </button>
                     <button
@@ -533,7 +533,7 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
                       aria-label={language.t("dialog.directory.unpin")}
                       onClick={() => removePin(pin)}
                     >
-                      <Icon name="close-small" size="small" />
+                      <Icon name="close-small" size="normal" />
                     </button>
                   </div>
                 )}
@@ -547,7 +547,7 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
               onContextMenu={(event) => openRailContextMenu(event, home())}
             >
               <button type="button" class="directory-picker-v2-rail-nav" onClick={() => void navigate(home())}>
-                <Icon name="folder" size="small" />
+                <Icon name="folder" size="normal" />
                 <span>{language.t("dialog.directory.homePlace")}</span>
               </button>
             </div>
@@ -560,7 +560,7 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
                   onContextMenu={(event) => openRailContextMenu(event, place.path)}
                 >
                   <button type="button" class="directory-picker-v2-rail-nav" onClick={() => void navigate(place.path)}>
-                    <Icon name="folder" size="small" />
+                    <Icon name="folder" size="normal" />
                     <span>{place.name}</span>
                   </button>
                 </div>
@@ -633,7 +633,7 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
                     setContextMenu(undefined)
                   }}
                 >
-                  <Icon name="folder-add-left" size="small" />
+                  <Icon name="folder-add-left" size="normal" />
                   {language.t(isPinned(menu().path) ? "dialog.directory.unpin" : "dialog.directory.pin")}
                 </button>
               </Show>
@@ -646,7 +646,7 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
                     void operations.createFolder(menu().path)
                   }}
                 >
-                  <Icon name="folder-add-left" size="small" />
+                  <Icon name="folder-add-left" size="normal" />
                   {language.t("files.newFolder")}
                   <span class="directory-picker-v2-context-menu-shortcut">Ctrl+Shift+N</span>
                 </button>
@@ -672,7 +672,7 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
                     void operations.trash({ path: menu().path, type: menu().type })
                   }}
                 >
-                  <Icon name="trash" size="small" />
+                  <Icon name="trash" size="normal" />
                   {language.t("files.delete")}
                   <span class="directory-picker-v2-context-menu-shortcut">Del</span>
                 </button>

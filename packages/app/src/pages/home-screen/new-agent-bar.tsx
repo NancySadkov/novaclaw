@@ -1,6 +1,6 @@
 import { createMemo, createSignal, Show, startTransition } from "solid-js"
 import { SessionTitle } from "@novaclaw/core/session/title"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { Spinner } from "@novaclaw/ui/spinner"
 import { ServerConnection, useServer } from "@/context/server"
 import { useGlobal } from "@/context/global"
@@ -157,7 +157,7 @@ export function NewAgentBar() {
       data-slot="home-new-agent"
       class="flex w-full items-center gap-2 rounded-[12px] bg-v2-background-bg-layer-01 px-3.5 py-3 ring-1 ring-v2-border-border-base transition-shadow focus-within:ring-2 focus-within:ring-[var(--v2-border-border-focus)]"
     >
-      <Icon name="edit" size="small" class="shrink-0 text-v2-icon-icon-muted" />
+      <Icon name="edit" size="normal" class="shrink-0 text-v2-icon-icon-muted" />
       <input
         data-slot="home-new-agent-input"
         type="text"
@@ -185,7 +185,7 @@ export function NewAgentBar() {
         title={language.t("home.newAgent.folder.pick")}
         onClick={pickFolder}
       >
-        <Icon name="folder" size="small" />
+        <Icon name="folder" size="normal" />
         {folderLabel()}
       </button>
       <Show when={targetFolder() !== undefined}>

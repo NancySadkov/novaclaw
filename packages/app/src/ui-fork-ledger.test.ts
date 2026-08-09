@@ -3,58 +3,22 @@ import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { dirname, join, normalize, relative, resolve } from "node:path"
 
 /**
- * **The v1→v2 design-system fork may only SHRINK.**
+ * **The retired v1→v2 design-system fork must stay absent.**
  *
  * todo.md ruling 13: *"One design system; one palette control in the lay tab. uix.md §2's law
  * verbatim — 'theme by remapping tokens, never by forking components.' The v1→v2 fork stops being a
  * standing contributor choice via a **ratchet test**."*
  *
- * `packages/ui` ships the same widget twice. `src/components/button.tsx` is v1;
- * `src/v2/components/button-v2.tsx` is v2; both are live, and several files import BOTH
- * (`pages/home.tsx` renders a v1 `Button` and a v2 `ButtonV2` on one screen). Reaching for `@novaclaw/ui/button` instead of `@novaclaw/ui/v2/button-v2`
- * is one import line that typechecks, renders, and reviews as consistent with its neighbours. That is
- * the defect class ruling 1 names — *an invariant whose violation compiles green ships with a
- * mechanical check, or the invariant does not exist* — so the choice is made red here instead.
+ * The last duplicated component, `icon`, was retired 2026-08-09. The active debt ledger that used to
+ * live here correctly failed when its v1 call-site count reached zero; leaving an empty ledger would
+ * make its sweep assertions tautologies. The permanent invariant is simpler and stronger: the v1 and
+ * v2 component-name sets must never intersect again. Adding `card-v2.tsx` beside a live `card.tsx`, or
+ * restoring any explicitly retired v1 component, fails here.
  *
- * **This file does not migrate anything.** It measures the fork and pins the measurement. Every
- * number below is an honest count of today's tree, not a target — and every number that a test does
- * NOT re-derive has been deleted from the prose, because three rounds running those were the wrong
- * ones (see `V1_CALL_SITES`).
- *
- * ## What is pinned, and what is deliberately NOT
- *
- * Three ledgers, each a ratchet that fails in BOTH directions — a new offender fails outright, and a
- * pinned entry that no longer applies fails with *delete the line*, so un-pinning is mandatory rather
- * than optional and no ledger can rot into a rubber stamp.
- *
- *   1. `FORKED_WIDGETS` — the fork's **WIDTH**: widget names that exist on both sides. Adding
- *      `card-v2.tsx` next to a live `card.tsx` re-widens the fork and fails here. This is the pin
- *      ruling 13 is really about, and nothing else in the tree checks it.
- *   2. `V1_CALL_SITES` — the fork's **DEPTH**: every file that imports the v1 side of a forked pair,
- *      pinned BY NAME with the exact widgets it takes. Migrating a file means deleting its line.
- *   3. `V1_COMPONENT_CEILING` — the v1 tree may not grow. A bound, not a name list (see below).
- *
- * **A count-only pin would have been the cheap option and it is the wrong one.** Ruling 13's own
- * wording — *"fails on the 32nd v1 Button import"* — describes an integer, and an integer cannot tell
- * a migration from a regression: migrate one file to v2, add a v1 import somewhere else, and the
- * count is unchanged while the fork stood still. Names cost ~90 lines and buy two things a number
- * cannot: a NEW v1 import fails *saying which file*, and every migration is forced to delete a line,
- * which is the ratchet clicking. `packages/sdk/js/test/legacy-path-ledger.test.ts` (ruling 11) made
- * the same trade for the same reason; this file follows it.
+ * `V1_COMPONENT_CEILING` remains a separate ratchet. A v1-only component is not a fork, but new design-
+ * system work still belongs in v2, so the old tree may shrink freely and may not grow accidentally.
  *
  * ⚠️ **NOT covered, stated so nobody records it as covered:**
- *  - **Which side a file *renders*.** This reads import graphs. A file could import v1 `Button` and
- *    never call it; a file could re-export a v1 widget under a v2-looking name. Both read as v1 here,
- *    which is the safe direction.
- *  - **`packages/ui`'s own internal composition is pinned but not migratable.** `ui/src/components/*`
- *    entries are v1 components importing other v1 components (v1 `Select` uses v1 `Button`).
- *    Rewriting those to v2 would be wrong — v1 `Select` must stay coherent. Those lines are only
- *    deletable when the v1 component itself dies, and that is exactly the accounting we want: they
- *    are fork debt whose retirement is a deletion, not a migration.
- *  - **Runtime string references other than `mock.module`.** A widget reached by a computed
- *    specifier would be missed. There is none today (the only two `import.meta.glob` calls in the
- *    renderer packages target `./themes/*.json` and `assets/audio/*.aac`), and the sweep asserts a
- *    floor so a stripping/pattern bug cannot silently empty it.
  *  - **A brand-new v1-only component is bounded, not named.** Ruling 13 pins the *fork*; a v1
  *    component with no v2 twin is the design system's only implementation of that widget, not a fork
  *    of anything, so a name ledger would forbid work no ruling forbids. `V1_COMPONENT_CEILING` still
@@ -69,16 +33,8 @@ import { dirname, join, normalize, relative, resolve } from "node:path"
  * `bun test src`, so a file under `packages/ui/test/` would never execute — a guard nobody runs is
  * the zombie code todo.md's *we discard all the cruft* ruling names.
  *
- * ⚠️ It is also NOT shaped like `packages/app/src/app-routes.test.ts`. That file cites ruling 13
- * verbatim and so looks like the precedent, but it is a binary must-be-absent guard for a deleted
- * flag. v1 `Button` still has live call sites; "this stays deleted" is the wrong shape and would only
- * fail.
- *
- * **Measured 2026-07-31**, in the same change that deleted seven fully dead v1 components
- * (`text-shimmer`, `card`, `context-menu`, `hover-card`, `inline-input`, `progress`, `typewriter` —
- * 1,164 lines, zero importers by every reference form below). `text-shimmer` was the one that shrank
- * the FORK: its `text-shimmer-v2` sibling has a live importer, so v1's copy was fully migrated and
- * the pair is gone. The other six were dead v1 code with no v2 twin.
+ * This file also owns the component stylesheet layer/order guards because those span app, ui and
+ * session-ui in the same way the former fork did.
  */
 
 /** `packages/app/src` → `packages/`. Every path in every ledger is relative to this. */
@@ -261,8 +217,6 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  * migrated, on the grounds that porting a v1 sheet settles a brand question by copying the v1 app
  * (AGENTS.md — the running app is not a visual reference).
  */
-export const FORKED_WIDGETS: readonly string[] = ["icon"]
-
 /**
  * **Every file that imports the v1 side of a forked widget, pinned by name.**
  *
@@ -300,62 +254,6 @@ export const FORKED_WIDGETS: readonly string[] = ["icon"]
  * so a move surfaces as one unpinned entry plus one stale pin. That is noisy but correct: it is the
  * only way a path-keyed ratchet can tell a move from a migration, and it costs one line.
  */
-export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
-  "app/src/apps/manifest-apps.ts": ["icon"],
-  "app/src/components/composer/features-control.tsx": ["icon"],
-  "app/src/components/composer/model-control.tsx": ["icon"],
-  "app/src/components/dialog-edit-project.tsx": ["icon"],
-  "app/src/components/dialog-select-directory-v2.tsx": ["icon"],
-  "app/src/components/dialog-select-file.tsx": ["icon"],
-  "app/src/components/dialog-select-server.tsx": ["icon"],
-  "app/src/components/dialog-session-info.tsx": ["icon"],
-  "app/src/components/file-tree.test.ts": ["icon"],
-  "app/src/components/file-tree.tsx": ["icon"],
-  "app/src/components/prompt-input.tsx": ["icon"],
-  "app/src/components/prompt-input/drag-overlay.tsx": ["icon"],
-  "app/src/components/prompt-input/image-attachments.tsx": ["icon"],
-  "app/src/components/prompt-input/slash-popover.tsx": ["icon"],
-  "app/src/components/prompt-project-selector.tsx": ["icon"],
-  "app/src/components/prompt-workspace-selector.tsx": ["icon"],
-  "app/src/components/session/session-context-tab.tsx": ["icon"],
-  "app/src/components/session/session-new-view.tsx": ["icon"],
-  "app/src/components/session/session-sortable-terminal-tab.tsx": ["icon"],
-  "app/src/components/settings-keybinds.tsx": ["icon"],
-  "app/src/components/settings-v2/dialog-expertise.tsx": ["icon"],
-  "app/src/components/settings-v2/dialog-model-tier.tsx": ["icon"],
-  "app/src/components/settings-v2/dialog-new-model.tsx": ["icon"],
-  "app/src/components/settings-v2/dialog-settings-v2.tsx": ["icon"],
-  "app/src/components/settings-v2/models.tsx": ["icon"],
-  "app/src/components/settings-v2/storage.tsx": ["icon"],
-  "app/src/components/status-popover-body.tsx": ["icon"],
-  "app/src/components/status-popover.tsx": ["icon"],
-  "app/src/pages/calendar.tsx": ["icon"],
-  "app/src/pages/debug.tsx": ["icon"],
-  "app/src/pages/error.tsx": ["icon"],
-  "app/src/pages/files.tsx": ["icon"],
-  "app/src/pages/home-screen/app-placeholder.tsx": ["icon"],
-  "app/src/pages/home-screen/app-tile.tsx": ["icon"],
-  "app/src/pages/home-screen/help-tour.tsx": ["icon"],
-  "app/src/pages/home-screen/new-agent-bar.tsx": ["icon"],
-  "app/src/pages/home-screen/social-panel.tsx": ["icon"],
-  "app/src/pages/home.tsx": ["icon"],
-  "app/src/pages/memory-graph.tsx": ["icon"],
-  "app/src/pages/notes.tsx": ["icon"],
-  "app/src/pages/recipes.tsx": ["icon"],
-  "app/src/pages/registry.tsx": ["icon"],
-  "app/src/pages/session/composer/session-permission-dock.tsx": ["icon"],
-  "app/src/pages/session/composer/session-question-dock.tsx": ["icon"],
-  "app/src/pages/trash.tsx": ["icon"],
-  "app/src/utils/toast.tsx": ["icon"],
-  "session-ui/src/components/file-search.tsx": ["icon"],
-  "session-ui/src/components/line-comment.tsx": ["icon"],
-  "session-ui/src/components/session-review.tsx": ["icon"],
-  // `packages/ui`'s own v1 components composing other v1 components. Not migratable — see the
-  // header. These lines retire by DELETING the component, which is how `card.tsx` left this list.
-  "ui/src/components/collapsible.tsx": ["icon"],
-  "ui/src/components/list.tsx": ["icon"],
-}
-
 /**
  * `ui/src/components/*.tsx` was 45, then 38 (2026-07-31), 36 (`switch.tsx`, 2026-08-07), 33
  * (`keybind.tsx`, `progress-circle.tsx`, `diff-changes.tsx`), 32 after `toast.tsx` (2026-08-07), and
@@ -368,11 +266,7 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
  * read 38 while the tree held 37 — one component had been deleted without the pin following, so a
  * new v1 component could have been added for free. Lower it in the same commit as any deletion.
  */
-const V1_COMPONENT_CEILING = 26
-
-/** Measured totals, pinned so the ledger stays a measurement rather than an aspiration. */
-const V1_CALL_SITE_FILES = 51
-const V1_CALL_SITE_PAIRS = 51
+const V1_COMPONENT_CEILING = 25
 
 // ---------------------------------------------------------------------------------------------
 // The sweep. Pure functions first so the negative controls can drive them without touching disk.
@@ -527,76 +421,17 @@ export function staleV1Pins(
 const V1_NAMES = componentNames(V1_DIR)
 const V2_NAMES = componentNames(V2_DIR)
 const OBSERVED_FORKED = forkedWidgets(V1_NAMES, V2_NAMES)
-const SWEPT = sweep(OBSERVED_FORKED)
-const OBSERVED_PAIRS = [...SWEPT.v1.values()].reduce((total, widgets) => total + widgets.size, 0)
-
-/** What a reader should DO about a failure, appended to the growth messages. */
-const REMEDY = [
-  "Import the v2 widget: `@novaclaw/ui/v2/<name>-v2` (todo.md ruling 13 — one design system;",
-  "uix.md §2: theme by remapping tokens, never by forking components). The v2 side is free to grow.",
-  "Only if the v2 widget genuinely does not exist yet: add the line to V1_CALL_SITES in this file,",
-  "raise the measured totals below, and expect to justify growing a set that may only shrink.",
-].join("\n  ")
-
-describe("the sweep", () => {
-  test("actually has both halves of the fork to look at", () => {
-    // Every real assertion below compares against something this sweep produced. If the sweep found
-    // nothing — a moved directory, a broken pattern, an over-eager comment strip — each one would
-    // become a tautology that passes forever. That is the failure mode this block makes impossible.
+describe("the retired design-system fork stays absent", () => {
+  test("no component name exists in both v1 and v2", () => {
     expect(V1_NAMES.length, "no v1 components found — has packages/ui/src/components moved?").toBeGreaterThan(20)
     expect(V2_NAMES.length, "no v2 components found — has packages/ui/src/v2/components moved?").toBeGreaterThan(10)
-    expect(SWEPT.files, "the file walk found almost nothing — check SKIP_DIRS").toBeGreaterThan(1_000)
-    // ⚠️ **This floor counts BOTH sides, so a retired pair drops it by more than the migration did.**
-    // `dialog` (2026-08-08) cost it 10 v1 pairs AND every v2 `dialog-v2` import at once, because a
-    // widget that is no longer forked stops being counted on either side. `tooltip` then took the
-    // measurement from 184 to 109 even though its v1 side had only one importer, because every v2
-    // tooltip import also stops counting when the pair retires; `icon-button` then took it to 84.
-    // Lower this floor with
-    // each retirement; it is a sanity floor against a broken sweep, never a target, and if it ever
-    // has to go near zero the whole ledger should be retired instead (see the last test in this file).
-    expect(SWEPT.specifiers, "no forked-widget import found at all — SPECIFIER_PATTERNS is broken").toBeGreaterThan(75)
-    expect(SWEPT.v1.size, "the v1 half of the fork reads as empty").toBeGreaterThan(50)
-    expect(SWEPT.v2.size, "the v2 half of the fork reads as empty").toBeGreaterThan(20)
-  })
-
-  test("does not read its own ledger as source code", () => {
-    // This file is inside the swept tree and its ledger is a wall of widget names and specifier
-    // literals. Anchored patterns + comment stripping are what stop it reporting itself; if either
-    // regressed, this file would appear as its own worst offender.
     expect(
-      [...SWEPT.v1.keys()],
-      "the ledger is matching its own literals — SPECIFIER_PATTERNS lost its ^ anchor",
-    ).not.toContain("app/src/ui-fork-ledger.test.ts")
-  })
-
-  test("the ledgers are real lists with no duplicate entries", () => {
-    expect(new Set(FORKED_WIDGETS).size, "FORKED_WIDGETS contains a duplicate").toBe(FORKED_WIDGETS.length)
-    for (const [file, widgets] of Object.entries(V1_CALL_SITES))
-      expect(new Set(widgets).size, `${file} lists a widget twice`).toBe(widgets.length)
-  })
-})
-
-describe("the fork's WIDTH can only shrink", () => {
-  test("no new v1/v2 duplicate pair — and a retired pair leaves the ledger", () => {
-    const appeared = OBSERVED_FORKED.filter((widget) => !FORKED_WIDGETS.includes(widget))
-    const vanished = FORKED_WIDGETS.filter((widget) => !OBSERVED_FORKED.includes(widget))
-    expect(
-      appeared,
+      OBSERVED_FORKED,
       [
-        "A widget now exists on BOTH sides of the design system — the fork got WIDER:",
-        `  ${appeared.join(", ")}`,
+        "A widget exists on BOTH sides of the design system — the retired fork came back:",
+        `  ${OBSERVED_FORKED.join(", ")}`,
         "",
-        "  Ruling 13 forbids forking a component to change it. Remap the tokens instead",
-        "  (uix.md §2), or delete the side you are replacing.",
-      ].join("\n"),
-    ).toEqual([])
-    expect(
-      vanished,
-      [
-        "A pinned pair is no longer forked — one side is gone. Un-pinning is MANDATORY:",
-        `  ${vanished.join(", ")}`,
-        "",
-        "  DELETE those names from FORKED_WIDGETS and lower the count pin below.",
+        "Ruling 13 forbids forking a component to change it. Remap tokens or delete the replaced side.",
       ].join("\n"),
     ).toEqual([])
   })
@@ -610,63 +445,6 @@ describe("the fork's WIDTH can only shrink", () => {
         "component that cannot live there, raise V1_COMPONENT_CEILING and write the reason beside it.",
       ].join("\n"),
     ).toBeLessThanOrEqual(V1_COMPONENT_CEILING)
-  })
-})
-
-describe("the fork's DEPTH can only shrink", () => {
-  test("a new v1 import of a forked widget fails HERE, by name, not in a review", () => {
-    const offenders = newV1Usage(SWEPT.v1, V1_CALL_SITES)
-    expect(
-      offenders,
-      [
-        "A file imports the v1 side of a widget that already exists in v2, and is not on the ledger:",
-        `  ${offenders.join("\n  ") || "(none)"}`,
-        "",
-        `  ${REMEDY}`,
-      ].join("\n"),
-    ).toEqual([])
-  })
-
-  test("a migrated file must be DELETED from the ledger", () => {
-    const stale = staleV1Pins(SWEPT.v1, V1_CALL_SITES)
-    expect(
-      stale,
-      [
-        "The ledger pins v1 usage the tree no longer has. Un-pinning is MANDATORY:",
-        `  ${stale.join("\n  ")}`,
-        "",
-        "  Delete those lines (or those widget names) from V1_CALL_SITES and lower the measured",
-        "  totals below. A ledger that keeps dead entries stops being a measurement of the real fork.",
-        "  If you MOVED a file rather than migrating it, move its line instead.",
-      ].join("\n"),
-    ).toEqual([])
-  })
-
-  test("the ledger is exactly today's measured fork", () => {
-    // Pinned as a MEASUREMENT, not a target. Migrating a call site is SUPPOSED to fail here — that
-    // failure is the ratchet clicking, and lowering these numbers is how the migration is recorded.
-    expect(Object.keys(V1_CALL_SITES).length, "the ledger's own length moved — recount this pin").toBe(
-      V1_CALL_SITE_FILES,
-    )
-    expect(SWEPT.v1.size, "the observed v1 call-site count moved — reconcile V1_CALL_SITES").toBe(V1_CALL_SITE_FILES)
-    expect(OBSERVED_PAIRS, "the observed (file, widget) pair count moved — reconcile V1_CALL_SITES").toBe(
-      V1_CALL_SITE_PAIRS,
-    )
-    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(1)
-  })
-
-  test("both sides are genuinely live — this is a fork, not a finished migration", () => {
-    // The premise the whole file rests on: both design systems are live and SOME SCREENS MIX THEM —
-    // 27 files imported both sides on 2026-07-31, `pages/home.tsx` among them. Deliberately a floor
-    // and not an exact pin: migrating a file already fails two assertions above, and a third failure
-    // for the same cause is noise. What this guards is the OTHER end — if the v1 half ever reaches
-    // zero, ruling 13 is satisfied and this whole ledger should be replaced by a must-be-absent
-    // guard in `app-routes.test.ts`'s shape, rather than left behind asserting nothing.
-    const mixed = [...SWEPT.v1.keys()].filter((file) => SWEPT.v2.has(file))
-    expect(
-      mixed.length,
-      "no file mixes the two design systems any more — the fork may be finished; retire this ledger",
-    ).toBeGreaterThan(0)
   })
 })
 
@@ -771,6 +549,7 @@ describe("retired v1 components stay deleted", () => {
   // deleted, and `text-shimmer` in particular would re-widen the fork.
   const DELETED = [
     "button",
+    "icon",
     "icon-button",
     "tooltip",
     "text-shimmer",

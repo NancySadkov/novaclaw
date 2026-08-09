@@ -1,6 +1,6 @@
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { showToast } from "@/utils/toast"
@@ -216,7 +216,7 @@ function ServerStatusList(props: { state: ServerStatusState }) {
                 >
                   <div class="flex-1" />
                   <Show when={item.active}>
-                    <Icon name="check" size="small" class="text-icon-weak shrink-0" />
+                    <Icon name="check" size="normal" class="text-icon-weak shrink-0" />
                   </Show>
                 </ServerRow>
               </button>

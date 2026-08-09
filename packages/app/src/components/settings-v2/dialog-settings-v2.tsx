@@ -2,7 +2,7 @@ import { Component, Show, createSignal } from "solid-js"
 import { Dialog as KobalteDialog } from "@kobalte/core/dialog"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
 import { ServerSDKProvider } from "@/context/server-sdk"
@@ -102,72 +102,72 @@ export const DialogSettings: Component<{
                         <TabsV2.SectionTitle>{language.t("settings.section.desktop")}</TabsV2.SectionTitle>
                         <div class="flex flex-col gap-1.5 w-full">
                           <TabsV2.Trigger value="general">
-                            <Icon name="sliders" />
+                            <Icon name="sliders" size="large" />
                             {language.t("settings.tab.general")}
                           </TabsV2.Trigger>
                           {/* Profile lives inside Memory: both are one lay "what Nova knows about me"
                         surface, with consent plus Export/Import/Clear. Normal level (everyone). */}
                           <TabsV2.Trigger value="memory">
-                            <Icon name="archive" />
+                            <Icon name="archive" size="large" />
                             {language.t("settings.memory.title")}
                           </TabsV2.Trigger>
                           {/* Models sits right under General — adding/configuring/importing models is the
                         high-value task while local hardware can't run the best model out of the box. */}
                           <TabsV2.Trigger value="models">
-                            <Icon name="cpu" />
+                            <Icon name="cpu" size="large" />
                             {language.t("settings.models.title")}
                           </TabsV2.Trigger>
                           <TabsV2.Trigger value="appearance">
-                            <Icon name="palette" />
+                            <Icon name="palette" size="large" />
                             {language.t("settings.tab.appearance")}
                           </TabsV2.Trigger>
                           <TabsV2.Trigger value="shortcuts">
-                            <Icon name="keyboard" />
+                            <Icon name="keyboard" size="large" />
                             {language.t("settings.tab.shortcuts")}
                           </TabsV2.Trigger>
                           <TabsV2.Trigger value="servers">
-                            <Icon name="share" />
+                            <Icon name="share" size="large" />
                             {language.t("settings.tab.instances")}
                           </TabsV2.Trigger>
                           {/* Messengers — a headline lay feature (messenger-plan §6.1): connect Telegram
                         & friends so the agent covers chats while you're away. Normal level. */}
                           <TabsV2.Trigger value="messengers">
-                            <Icon name="speech-bubble" />
+                            <Icon name="speech-bubble" size="large" />
                             {language.t("settings.messengers.title")}
                           </TabsV2.Trigger>
                           <Show when={tabVisible("system-prompt")}>
                             <TabsV2.Trigger value="system-prompt">
-                              <Icon name="prompt" />
+                              <Icon name="prompt" size="large" />
                               {language.t("settings.systemPrompt.title")}
                             </TabsV2.Trigger>
                           </Show>
                           <Show when={tabVisible("tunes")}>
                             <TabsV2.Trigger value="tunes">
-                              <Icon name="sliders" />
+                              <Icon name="sliders" size="large" />
                               {language.t("settings.tunes.title")}
                             </TabsV2.Trigger>
                           </Show>
                           <Show when={tabVisible("introspection")}>
                             <TabsV2.Trigger value="introspection">
-                              <Icon name="eye" />
+                              <Icon name="eye" size="large" />
                               {language.t("settings.introspection.title")}
                             </TabsV2.Trigger>
                           </Show>
                           <Show when={tabVisible("affective")}>
                             <TabsV2.Trigger value="affective">
-                              <Icon name="brain" />
+                              <Icon name="brain" size="large" />
                               {language.t("settings.affective.title")}
                             </TabsV2.Trigger>
                           </Show>
                           <Show when={tabVisible("strict")}>
                             <TabsV2.Trigger value="strict">
-                              <Icon name="shield" />
+                              <Icon name="shield" size="large" />
                               {language.t("settings.strict.title")}
                             </TabsV2.Trigger>
                           </Show>
                           <Show when={tabVisible("computer")}>
                             <TabsV2.Trigger value="computer">
-                              <Icon name="window-cursor" />
+                              <Icon name="window-cursor" size="large" />
                               {language.t("settings.computer.title")}
                             </TabsV2.Trigger>
                           </Show>
@@ -178,19 +178,19 @@ export const DialogSettings: Component<{
               </Show>
               <Show when={tabVisible("tools")}>
                             <TabsV2.Trigger value="tools">
-                              <Icon name="code-lines" />
+                              <Icon name="code-lines" size="large" />
                               {language.t("settings.tools.title")}
                             </TabsV2.Trigger>
                           </Show>
                           <Show when={tabVisible("web-search")}>
                             <TabsV2.Trigger value="web-search">
-                              <Icon name="magnifying-glass" />
+                              <Icon name="magnifying-glass" size="large" />
                               {language.t("settings.webSearch.title")}
                             </TabsV2.Trigger>
                           </Show>
                           <Show when={tabVisible("quality")}>
                             <TabsV2.Trigger value="quality">
-                              <Icon name="checklist" />
+                              <Icon name="checklist" size="large" />
                               {language.t("settings.quality.title")}
                             </TabsV2.Trigger>
                           </Show>
@@ -201,15 +201,15 @@ export const DialogSettings: Component<{
                         <TabsV2.SectionTitle>{language.t("settings.section.safety")}</TabsV2.SectionTitle>
                         <div class="flex flex-col gap-1.5 w-full">
                           <TabsV2.Trigger value="storage">
-                            <Icon name="folder" />
+                            <Icon name="folder" size="large" />
                             {language.t("settings.tab.storage")}
                           </TabsV2.Trigger>
                           <TabsV2.Trigger value="recovery">
-                            <Icon name="reset" />
+                            <Icon name="reset" size="large" />
                             {language.t("settings.tab.recovery")}
                           </TabsV2.Trigger>
                           <TabsV2.Trigger value="about">
-                            <Icon name="info" />
+                            <Icon name="info" size="large" />
                             {language.t("settings.tab.about")}
                           </TabsV2.Trigger>
                         </div>

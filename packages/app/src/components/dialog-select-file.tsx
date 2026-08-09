@@ -1,7 +1,7 @@
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { Dialog, DialogBody } from "@novaclaw/ui/v2/dialog-v2"
 import { FileIcon } from "@novaclaw/ui/file-icon"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { List } from "@novaclaw/ui/list"
 import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
 import { base64Encode } from "@novaclaw/core/util/encode"
@@ -470,7 +470,7 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
               <Match when={item.type === "session"}>
                 <div class="w-full flex items-center justify-between rounded-md pl-1">
                   <div class="flex items-center gap-x-3 grow min-w-0">
-                    <Icon name="bubble-5" size="small" class="shrink-0 text-icon-weak" />
+                    <Icon name="bubble-5" size="normal" class="shrink-0 text-icon-weak" />
                     <div class="flex items-center gap-2 min-w-0">
                       <span
                         class="text-14-regular text-text-strong truncate"

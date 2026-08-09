@@ -1,6 +1,6 @@
 import { createEffect, createMemo } from "solid-js"
 import { useNavigate } from "@solidjs/router"
-import { isIconName } from "@novaclaw/ui/icon"
+import { isIconName } from "@novaclaw/ui/v2/icon"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"

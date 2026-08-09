@@ -1,7 +1,7 @@
 import { Component, type ComponentProps, createSignal, For, Show } from "solid-js"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { publicAssetUrl } from "@/utils/public-asset"
@@ -53,13 +53,13 @@ export const HelpTour: Component = () => {
               class="flex items-center justify-center size-[4.5rem] rounded-[1.375rem] shadow-[var(--v2-elevation-floating)] ring-1 ring-white/15"
               style={{
                 "background-image": `linear-gradient(155deg, color-mix(in oklab, ${step().accent} 88%, white) -8%, ${step().accent} 42%, color-mix(in oklab, ${step().accent} 58%, black) 105%)`,
-                "--icon-base":
+                color:
                   step().glyphTone === "dark"
                     ? "color-mix(in srgb, var(--nc-ink, #1a1135) 92%, transparent)"
                     : "rgba(255,255,255,0.96)",
               }}
             >
-              <Icon name={step().icon as ComponentProps<typeof Icon>["name"]} size="2xl" />
+              <Icon name={step().icon as ComponentProps<typeof Icon>["name"]} class="size-10" />
             </div>
           }
         >

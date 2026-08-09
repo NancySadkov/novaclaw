@@ -3,7 +3,7 @@ import { createStore } from "solid-js/store"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { ProviderIcon } from "@novaclaw/ui/provider-icon"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useLanguage } from "@/context/language"
@@ -478,7 +478,7 @@ export const DialogNewModel: Component<{
         setStep(p.to)
       }}
     >
-      <Icon name="chevron-down" size="small" class="rotate-90" />
+      <Icon name="chevron-down" size="normal" class="rotate-90" />
       {t("settings.models.new.back")}
     </button>
   )
@@ -543,7 +543,7 @@ export const DialogNewModel: Component<{
                         onClick={() => adoptLocal(outcome)}
                       >
                         <span class="flex items-center gap-2">
-                          <Icon name="server" size="small" class="shrink-0 text-v2-icon-icon-accent" />
+                          <Icon name="server" size="normal" class="shrink-0 text-v2-icon-icon-accent" />
                           {/* The ADDRESS is what we verified, so the address is what the card claims.
                               Ruling 2: a `/v1/models` answer on :11434 does not prove that the program
                               answering is Ollama — that is a hint, and it reads as one. */}
@@ -581,7 +581,7 @@ export const DialogNewModel: Component<{
                 }}
               >
                 <span class="flex items-center gap-2">
-                  <Icon name="cpu" size="small" class="shrink-0 text-v2-icon-icon-accent" />
+                  <Icon name="cpu" size="normal" class="shrink-0 text-v2-icon-icon-accent" />
                   <span class="text-[13px] font-semibold text-v2-text-text-base">
                     {t("settings.models.new.managed.name")}
                   </span>
@@ -604,7 +604,7 @@ export const DialogNewModel: Component<{
                 onClick={chooseCustom}
               >
                 <span class="flex items-center gap-2">
-                  <Icon name="sliders" size="small" class="shrink-0 text-v2-icon-icon-accent" />
+                  <Icon name="sliders" size="normal" class="shrink-0 text-v2-icon-icon-accent" />
                   <span class="text-[13px] font-semibold text-v2-text-text-base">
                     {t("settings.models.new.custom.name")}
                   </span>
@@ -787,7 +787,7 @@ export const DialogNewModel: Component<{
                     class="flex items-center gap-1 self-start text-[12px] font-medium text-v2-text-text-accent hover:underline"
                   >
                     {t("settings.models.new.getKey")}
-                    <Icon name="share" size="small" />
+                    <Icon name="share" size="normal" />
                   </a>
                 )}
               </Show>
@@ -835,7 +835,7 @@ export const DialogNewModel: Component<{
                         )}
                       </Show>
                       <Show when={picked[id]}>
-                        <Icon name="check" size="small" class="shrink-0 text-v2-icon-icon-accent" />
+                        <Icon name="check" size="normal" class="shrink-0 text-v2-icon-icon-accent" />
                       </Show>
                     </span>
                   </button>

@@ -3,7 +3,7 @@ import { useLanguage } from "@/context/language"
 import { encodeFilePath } from "@/context/file/path"
 import { Collapsible } from "@novaclaw/ui/collapsible"
 import { FileIcon } from "@novaclaw/ui/file-icon"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import {
   createEffect,
   createMemo,
@@ -396,7 +396,7 @@ export default function FileTree(props: {
             class="mx-1 flex items-start gap-2 rounded-md border border-border-weak-base bg-surface-base px-2 py-2 text-12-regular"
             style={`margin-left: ${Math.max(4, 8 + level * 12)}px`}
           >
-            <Icon name="warning" size="small" class="mt-0.5 shrink-0 text-icon-warning-base" />
+            <Icon name="warning" size="normal" class="mt-0.5 shrink-0 text-icon-warning-base" />
             <div class="min-w-0 flex-1">
               <div class="text-text-strong">{language.t("fileTree.loadFailed")}</div>
               <div class="truncate text-text-weak" title={message}>
@@ -442,7 +442,7 @@ export default function FileTree(props: {
                       marks={marks()}
                     >
                       <div class="size-4 flex items-center justify-center text-icon-weak">
-                        <Icon name={expanded() ? "chevron-down" : "chevron-right"} size="small" />
+                        <Icon name={expanded() ? "chevron-down" : "chevron-right"} size="normal" />
                       </div>
                     </FileTreeNode>
                   </Collapsible.Trigger>

@@ -24,7 +24,7 @@ export interface HomeApp {
   readonly id: string
   /** Display text, already translated. NOT an i18n key — see the WORDS note above. */
   readonly title: string
-  readonly icon: string // sprite icon name (@novaclaw/ui/icon)
+  readonly icon: string // sprite icon name (@novaclaw/ui/v2/icon)
   readonly accent: string // CSS color for the tile gradient/glow
   readonly source: "builtin" | "plugin" | "agent"
   readonly open: () => void

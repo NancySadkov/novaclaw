@@ -2,7 +2,7 @@ import { useFilteredList } from "@novaclaw/ui/hooks"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { type Component, For, Show, createMemo, createResource, createSignal } from "solid-js"
 import { useGlobal } from "@/context/global"
@@ -335,7 +335,7 @@ export const SettingsModelsV2: Component = () => {
                           size="small"
                           variant="ghost-muted"
                           aria-label={language.t("settings.models.remove.confirm.action")}
-                          icon={<Icon name="trash" size="small" />}
+                          icon={<Icon name="trash" size="normal" />}
                           onClick={() => void removeModel(key, item.name)}
                         />
                       </div>

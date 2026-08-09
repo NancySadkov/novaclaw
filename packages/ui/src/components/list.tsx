@@ -3,7 +3,7 @@ import { createEffect, For, type JSX, on, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { useI18n } from "../context/i18n"
-import { Icon, type IconProps } from "./icon"
+import { Icon, type IconProps } from "../v2/components/icon"
 import { Icon as IconV2 } from "../v2/components/icon"
 import { IconButtonV2 } from "../v2/components/icon-button-v2"
 import { TextField } from "./text-field"
@@ -293,7 +293,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
           >
             <div data-slot="list-search-container">
               <Show when={!searchProps().hideIcon}>
-                <Icon name="magnifying-glass" />
+                <Icon name="magnifying-glass" size="large" />
               </Show>
               <TextField
                 autofocus={searchProps().autofocus}
@@ -372,13 +372,13 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
                             {props.children(item)}
                             <Show when={item === props.current}>
                               <span data-slot="list-item-selected-icon">
-                                <Icon name="check-small" />
+                                <Icon name="check-small" size="large" />
                               </span>
                             </Show>
                             <Show when={props.activeIcon}>
                               {(icon) => (
                                 <span data-slot="list-item-active-icon">
-                                  <Icon name={icon()} />
+                                  <Icon name={icon()} size="large" />
                                 </span>
                               )}
                             </Show>

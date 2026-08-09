@@ -21,7 +21,7 @@ import { useSync } from "@/context/sync"
 import { useServerSync } from "@/context/server-sync"
 import { useComments } from "@/context/comments"
 import { DockShellForm, DockTray } from "@novaclaw/ui/dock-surface"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
@@ -320,7 +320,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return (
       <div class="flex items-center gap-2">
         <span>{language.t("prompt.action.send")}</span>
-        <Icon name="enter" size="small" class="text-icon-base" />
+        <Icon name="enter" size="normal" class="text-icon-base" />
       </div>
     )
   }

@@ -1,5 +1,5 @@
 import { Component, Show, type ComponentProps } from "solid-js"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import type { HomeApp } from "@/apps/registry"
 
 // One home-screen app tile: a large rounded gradient icon square + a label. Tap → app.open().
@@ -13,7 +13,7 @@ import type { HomeApp } from "@/apps/registry"
 
 const tileStyle = (app: HomeApp) => ({
   "background-image": `linear-gradient(155deg, color-mix(in oklab, ${app.accent} 88%, white) -8%, ${app.accent} 42%, color-mix(in oklab, ${app.accent} 58%, black) 105%)`,
-  "--icon-base":
+  color:
     app.glyphTone === "dark" ? "color-mix(in srgb, var(--nc-ink, #1a1135) 92%, transparent)" : "rgba(255,255,255,0.96)",
   "--tile-glow": `color-mix(in oklab, ${app.accent} 55%, transparent)`,
 })
@@ -62,7 +62,7 @@ const RegularTile: Component<{ app: HomeApp; shouldSuppressOpen?: () => boolean 
       class="relative flex items-center justify-center w-full aspect-square rounded-[1.375rem] shadow-[var(--v2-elevation-floating)] ring-1 ring-white/15 transition-all duration-150 group-hover:-translate-y-1 group-hover:shadow-[0_10px_28px_var(--tile-glow),var(--v2-elevation-floating)] group-active:scale-95 group-focus-visible:ring-2 group-focus-visible:ring-[var(--v2-border-border-focus)] after:absolute after:inset-0 after:rounded-[inherit] after:bg-gradient-to-b after:from-white/20 after:via-white/0 after:to-black/10 after:pointer-events-none"
       style={tileStyle(props.app)}
     >
-      <Icon name={props.app.icon as ComponentProps<typeof Icon>["name"]} size="2xl" />
+      <Icon name={props.app.icon as ComponentProps<typeof Icon>["name"]} class="size-10" />
       <TileBadge app={props.app} />
     </div>
     <span class="text-[13px] font-medium leading-tight text-v2-text-text-base/90 truncate max-w-full text-center [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]">
@@ -84,7 +84,7 @@ const HeroTile: Component<{ app: HomeApp; shouldSuppressOpen?: () => boolean }> 
       class="relative flex flex-col items-start justify-between w-full h-full min-h-[11.5rem] rounded-[1.75rem] p-6 shadow-[var(--v2-elevation-floating)] ring-1 ring-white/20 transition-all duration-150 group-hover:-translate-y-1 group-hover:shadow-[0_14px_40px_var(--tile-glow),var(--v2-elevation-floating)] group-active:scale-[0.98] group-focus-visible:ring-2 group-focus-visible:ring-[var(--v2-border-border-focus)] after:absolute after:inset-0 after:rounded-[inherit] after:bg-gradient-to-b after:from-white/25 after:via-white/0 after:to-black/10 after:pointer-events-none"
       style={tileStyle(props.app)}
     >
-      <Icon name={props.app.icon as ComponentProps<typeof Icon>["name"]} size="3xl" />
+      <Icon name={props.app.icon as ComponentProps<typeof Icon>["name"]} class="size-14" />
       <TileBadge app={props.app} />
       <div
         class="flex flex-col items-start gap-1 text-left"

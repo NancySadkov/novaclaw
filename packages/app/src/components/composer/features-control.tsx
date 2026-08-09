@@ -1,7 +1,7 @@
 import { createSignal, For, Show, type JSX } from "solid-js"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { Switch as SwitchToggle } from "@novaclaw/ui/v2/switch-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { useLanguage } from "@/context/language"
@@ -185,7 +185,7 @@ function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
                 fallback={
                   <button type="button" data-action="remote-link" class={row} onClick={() => setStage("account")}>
                     <span class="text-[13px] text-v2-text-text-base">{language.t("prompt.remote.link")}</span>
-                    <Icon name="chevron-right" size="small" class="mt-0.5 shrink-0 text-v2-icon-icon-muted" />
+                    <Icon name="chevron-right" size="normal" class="mt-0.5 shrink-0 text-v2-icon-icon-muted" />
                   </button>
                 }
               >
@@ -471,7 +471,7 @@ function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: ()
                   </span>
                 </span>
                 {props.state.mode === mode && (
-                  <Icon name="check" size="small" class="mt-0.5 shrink-0 text-v2-icon-icon-accent" />
+                  <Icon name="check" size="normal" class="mt-0.5 shrink-0 text-v2-icon-icon-accent" />
                 )}
               </button>
             ))}

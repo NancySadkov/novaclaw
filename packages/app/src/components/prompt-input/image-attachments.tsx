@@ -1,5 +1,5 @@
 import { Component, For, Show } from "solid-js"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import type { ImageAttachmentPart } from "@/context/prompt"
 
@@ -29,7 +29,7 @@ export const PromptImageAttachments: Component<PromptImageAttachmentsProps> = (p
                   when={attachment.mime.startsWith("image/")}
                   fallback={
                     <div class={fallbackClass}>
-                      <Icon name="folder" class="size-6 text-text-weak" />
+                      <Icon name="folder" class="size-6 text-text-weak" size="large" />
                     </div>
                   }
                 >
@@ -46,7 +46,7 @@ export const PromptImageAttachments: Component<PromptImageAttachmentsProps> = (p
                   class={removeClass}
                   aria-label={props.removeLabel}
                 >
-                  <Icon name="close" class="size-3 text-text-weak" />
+                  <Icon name="close" class="size-3 text-text-weak" size="large" />
                 </button>
                 <div class={nameClass}>
                   <span class="text-10-regular text-white truncate block">{attachment.filename}</span>

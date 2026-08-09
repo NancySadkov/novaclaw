@@ -1,6 +1,6 @@
 import { Portal } from "solid-js/web"
 import { useI18n } from "@novaclaw/ui/context/i18n"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 
 export function FileSearchBar(props: {
   pos: () => { top: number; right: number }
@@ -26,7 +26,7 @@ export function FileSearchBar(props: {
         }}
         onPointerDown={(e) => e.stopPropagation()}
       >
-        <Icon name="magnifying-glass" size="small" class="text-text-weak shrink-0" />
+        <Icon name="magnifying-glass" size="normal" class="text-text-weak shrink-0" />
         <input
           ref={props.setInput}
           placeholder={i18n.t("ui.fileSearch.placeholder")}
@@ -46,7 +46,7 @@ export function FileSearchBar(props: {
             aria-label={i18n.t("ui.fileSearch.previousMatch")}
             onClick={props.onPrev}
           >
-            <Icon name="chevron-down" size="small" class="rotate-180" />
+            <Icon name="chevron-down" size="normal" class="rotate-180" />
           </button>
           <button
             type="button"
@@ -55,7 +55,7 @@ export function FileSearchBar(props: {
             aria-label={i18n.t("ui.fileSearch.nextMatch")}
             onClick={props.onNext}
           >
-            <Icon name="chevron-down" size="small" />
+            <Icon name="chevron-down" size="normal" />
           </button>
         </div>
         <button
@@ -64,7 +64,7 @@ export function FileSearchBar(props: {
           aria-label={i18n.t("ui.fileSearch.close")}
           onClick={props.onClose}
         >
-          <Icon name="close-small" size="small" />
+          <Icon name="close-small" size="normal" />
         </button>
       </div>
     </Portal>

@@ -1,6 +1,6 @@
 import { Component, For, Show } from "solid-js"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import type { ModelTier } from "@/context/models"
@@ -57,7 +57,7 @@ export const DialogModelTier: Component<{
                     {language.t(`settings.models.tier.${tier}.range`)}
                   </span>
                   <Show when={tier === props.current}>
-                    <Icon name="check" size="small" class="ml-auto text-v2-icon-icon-accent" />
+                    <Icon name="check" size="normal" class="ml-auto text-v2-icon-icon-accent" />
                   </Show>
                 </div>
                 <span class="text-[12px] text-v2-text-text-muted leading-snug">

@@ -1,6 +1,6 @@
 import { Component, For, Match, Show, Switch } from "solid-js"
 import { FileIcon } from "@novaclaw/ui/file-icon"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { Tag } from "@novaclaw/ui/v2/badge-v2"
 import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
 import { getDirectory, getFilename } from "@novaclaw/core/util/path"
@@ -83,7 +83,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                           onClick={() => props.onAtSelect(item)}
                           onPointerMove={() => props.setAtActive(key)}
                         >
-                          <Icon name="brain" size="small" class="text-icon-info-active shrink-0" />
+                          <Icon name="brain" size="normal" class="text-icon-info-active shrink-0" />
                           <span class={`whitespace-nowrap text-v2-text-text-base ${ROW_TEXT}`}>@{item.name}</span>
                         </button>
                       )

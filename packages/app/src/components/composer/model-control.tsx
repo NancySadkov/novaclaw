@@ -1,6 +1,6 @@
 import { Show, type JSX } from "solid-js"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { ModelSelectorPopover } from "@/components/dialog-select-model"
@@ -48,7 +48,7 @@ export function ComposerModelControl(props: { state: ComposerModelControlState }
         >
           <span class="truncate">{props.state.modelName}</span>
           <span class="-ml-1 shrink-0 flex size-fit">
-            <Icon name="chevron-down" size="small" class="text-v2-icon-icon-muted" />
+            <Icon name="chevron-down" size="normal" class="text-v2-icon-icon-muted" />
           </span>
         </ModelSelectorPopover>
       </TooltipV2>

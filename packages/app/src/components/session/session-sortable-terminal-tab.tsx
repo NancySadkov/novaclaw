@@ -6,7 +6,7 @@ import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { DropdownMenu } from "@novaclaw/ui/dropdown-menu"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { isDefaultTitle as isDefaultTerminalTitle } from "@/context/terminal-title"
 import { useTerminal, type LocalPTY } from "@/context/terminal"
 import { useLanguage } from "@/context/language"
@@ -179,11 +179,11 @@ export function SortableTerminalTab(props: { terminal: LocalPTY; onClose?: () =>
               }}
             >
               <DropdownMenu.Item onSelect={() => (editRequested = true)}>
-                <Icon name="edit" class="w-4 h-4 mr-2" />
+                <Icon name="edit" class="w-4 h-4 mr-2" size="large" />
                 {language.t("common.rename")}
               </DropdownMenu.Item>
               <DropdownMenu.Item onSelect={close}>
-                <Icon name="close" class="w-4 h-4 mr-2" />
+                <Icon name="close" class="w-4 h-4 mr-2" size="large" />
                 {language.t("common.close")}
               </DropdownMenu.Item>
             </DropdownMenu.Content>

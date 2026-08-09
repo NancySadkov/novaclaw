@@ -2,7 +2,7 @@ import { Component, For, Show, createMemo, lazy, onCleanup, onMount } from "soli
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { TextField } from "@novaclaw/ui/text-field"
 import { showToast } from "@/utils/toast"
 import fuzzysort from "fuzzysort"
@@ -495,7 +495,7 @@ export const SettingsKeybinds: Component<{ v2?: boolean }> = (props) => {
               </div>
 
               <div class="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface-base">
-                <Icon name="magnifying-glass" class="text-icon-weak-base flex-shrink-0" />
+                <Icon name="magnifying-glass" class="text-icon-weak-base flex-shrink-0" size="large" />
                 <TextField
                   variant="ghost"
                   type="text"

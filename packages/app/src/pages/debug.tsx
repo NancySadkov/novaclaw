@@ -1,7 +1,7 @@
 import { A } from "@solidjs/router"
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
 import type { LogReadResult } from "@novaclaw/sdk/v2/types"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { instanceFetch } from "@/utils/instance-fetch"
 import { useGlobal } from "@/context/global"
 import { useServer, ServerConnection } from "@/context/server"
@@ -323,7 +323,7 @@ export function DebugPage() {
   return (
     <div class="rounded-[10px] shadow-[var(--v2-elevation-raised)] m-2 min-h-0 overflow-hidden bg-v2-background-bg-base self-stretch flex-1 flex flex-col">
       <div class="flex items-center gap-2 border-b border-v2-border-border-base px-4 py-3">
-        <Icon name="console" size="small" class="text-v2-icon-icon-muted" />
+        <Icon name="console" size="normal" class="text-v2-icon-icon-muted" />
         <span class="text-[14px] font-semibold text-v2-text-text-base">Debug</span>
         <span class="text-[12px] text-v2-text-text-faint">diagnostics — read-only</span>
       </div>
@@ -491,7 +491,7 @@ export function DebugPage() {
             </span>
             <span class="flex-1" />
             <button type="button" class={btn} onClick={copyLog} disabled={filteredLog().length === 0}>
-              <Icon name="copy" size="small" class="mr-1 inline-block align-[-2px]" />
+              <Icon name="copy" size="normal" class="mr-1 inline-block align-[-2px]" />
               Copy
             </button>
             <button type="button" class={btn} onClick={clearErrorLog} disabled={errorLogEntries().length === 0}>
@@ -597,7 +597,7 @@ export function DebugPage() {
               onClick={copyServerLog}
               disabled={(serverLogData()?.lines ?? 0) === 0}
             >
-              <Icon name="copy" size="small" class="mr-1 inline-block align-[-2px]" />
+              <Icon name="copy" size="normal" class="mr-1 inline-block align-[-2px]" />
               Copy
             </button>
             <button type="button" class={btn} onClick={applyServerFilters}>

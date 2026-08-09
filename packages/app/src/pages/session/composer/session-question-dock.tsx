@@ -3,7 +3,7 @@ import { createStore } from "solid-js/store"
 import { useMutation } from "@tanstack/solid-query"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { DockPrompt } from "@novaclaw/session-ui/dock-prompt"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { showToast } from "@/utils/toast"
 import type { QuestionAnswer, QuestionRequest } from "@novaclaw/sdk/v2"
 import { useLanguage } from "@/context/language"
@@ -20,7 +20,7 @@ function Mark(props: { multi: boolean; picked: boolean; onClick?: (event: MouseE
     <span data-slot="question-option-check" aria-hidden="true" onClick={props.onClick}>
       <span data-slot="question-option-box" data-type={props.multi ? "checkbox" : "radio"} data-picked={props.picked}>
         <Show when={props.multi} fallback={<span data-slot="question-option-radio-dot" />}>
-          <Icon name="check-small" size="small" />
+          <Icon name="check-small" size="normal" />
         </Show>
       </span>
     </span>

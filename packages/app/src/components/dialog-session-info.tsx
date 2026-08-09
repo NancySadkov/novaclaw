@@ -2,7 +2,7 @@ import { Component, createMemo, createResource, createSignal, For, Show } from "
 import type { SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { RequiresLevel } from "@/context/expertise"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
@@ -132,7 +132,7 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
     <Dialog size="normal">
       <div class="flex w-full min-w-[22rem] max-w-[34rem] flex-col gap-1 p-4">
         <div class="flex items-center gap-2 border-b border-v2-border-border-base pb-2">
-          <Icon name="info" size="small" class="text-v2-icon-icon-muted" />
+          <Icon name="info" size="normal" class="text-v2-icon-icon-muted" />
           <span class="grow truncate text-[15px] font-semibold text-v2-text-text-base">
             {sessionTitle(props.session.title) || props.session.id}
           </span>

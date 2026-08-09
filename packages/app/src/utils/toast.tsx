@@ -1,4 +1,4 @@
-import { Icon, type IconProps } from "@novaclaw/ui/icon"
+import { Icon, type IconProps } from "@novaclaw/ui/v2/icon"
 import { ToastV2, showToastV2 } from "@novaclaw/ui/v2/toast-v2"
 
 /**
@@ -52,5 +52,5 @@ export function showToast(options: ToastOptions | string) {
 function resolveIcon(icon: IconProps["name"] | undefined, variant: ToastVariant | undefined) {
   const name = icon ?? (variant === "success" ? "check" : undefined)
   if (!name) return
-  return <Icon name={name} />
+  return <Icon name={name} size="large" />
 }

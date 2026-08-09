@@ -4,7 +4,7 @@ import { DropdownMenu } from "@novaclaw/ui/dropdown-menu"
 import { RadioGroup } from "@novaclaw/ui/radio-group"
 import { DiffChanges } from "@novaclaw/ui/v2/diff-changes-v2"
 import { FileIcon } from "@novaclaw/ui/file-icon"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { StickyAccordionHeader } from "@novaclaw/ui/sticky-accordion-header"
@@ -559,7 +559,7 @@ export const SessionReview = (props: SessionReviewProps) => {
                                           props.onViewFile?.(file)
                                         }}
                                       >
-                                        <Icon name="open-file" size="small" />
+                                        <Icon name="open-file" size="normal" />
                                       </button>
                                     </TooltipV2>
                                   </Show>
@@ -591,7 +591,7 @@ export const SessionReview = (props: SessionReviewProps) => {
                                 </Switch>
                                 <Show when={canExpand()}>
                                   <span data-slot="session-review-diff-chevron">
-                                    <Icon name="chevron-down" size="small" />
+                                    <Icon name="chevron-down" size="normal" />
                                   </span>
                                 </Show>
                               </div>

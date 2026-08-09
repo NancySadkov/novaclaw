@@ -2,7 +2,7 @@ import { For, Show, createSignal } from "solid-js"
 import type { PermissionV2Request } from "@novaclaw/sdk/v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { DockPrompt } from "@novaclaw/session-ui/dock-prompt"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { dynamicKey, useLanguage } from "@/context/language"
 import { permissionOtherResources, permissionTargets } from "./session-permission-dock-domain"
 
@@ -44,7 +44,7 @@ export function SessionPermissionDock(props: {
       header={
         <div data-slot="permission-row" data-variant="header">
           <span data-slot="permission-icon">
-            <Icon name="warning" size="normal" />
+            <Icon name="warning" size="large" />
           </span>
           <div data-slot="permission-header-title">{language.t("notification.permission.title")}</div>
           <Show when={props.onStop}>
@@ -56,7 +56,7 @@ export function SessionPermissionDock(props: {
                 data-action="permission-stop-run"
                 onClick={() => onStop()()}
               >
-                <Icon name="stop" size="small" />
+                <Icon name="stop" size="normal" />
                 {language.t("ui.permission.stopRun")}
               </ButtonV2>
             )}

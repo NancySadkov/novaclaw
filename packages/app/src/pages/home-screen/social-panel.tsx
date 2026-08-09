@@ -1,6 +1,6 @@
 import { For, type Component, type ComponentProps } from "solid-js"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { usePlatform } from "@/context/platform"
 import { DISCORD_INVITE_URL } from "@/constants/links"
 
@@ -63,16 +63,16 @@ export const SocialPanel: Component = () => {
                   class="flex size-9 shrink-0 items-center justify-center rounded-[0.75rem] ring-1 ring-white/15"
                   style={{
                     "background-image": `linear-gradient(155deg, color-mix(in oklab, ${place.accent} 88%, white) -8%, ${place.accent} 42%, color-mix(in oklab, ${place.accent} 58%, black) 105%)`,
-                    "--icon-base": "rgba(255,255,255,0.96)",
+                    color: "rgba(255,255,255,0.96)",
                   }}
                 >
-                  <Icon name={place.icon as ComponentProps<typeof Icon>["name"]} size="medium" />
+                  <Icon name={place.icon as ComponentProps<typeof Icon>["name"]} class="size-6" />
                 </span>
                 <span class="flex min-w-0 flex-col gap-0.5">
                   <span class="text-sm font-medium text-v2-text-text-base">{place.name}</span>
                   <span class="text-[12px] leading-snug text-v2-text-text-muted">{place.blurb}</span>
                 </span>
-                <Icon name="square-arrow-top-right" size="small" class="ml-auto shrink-0 text-v2-text-text-muted" />
+                <Icon name="square-arrow-top-right" size="normal" class="ml-auto shrink-0 text-v2-text-text-muted" />
               </button>
             )}
           </For>

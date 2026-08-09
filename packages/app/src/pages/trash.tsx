@@ -1,5 +1,5 @@
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { useGlobal } from "@/context/global"
 import { useServer } from "@/context/server"
 import { useLanguage, type Translator } from "@/context/language"
@@ -71,7 +71,7 @@ export function TrashPage() {
   return (
     <div class="flex min-h-0 flex-1 flex-col self-stretch m-2 rounded-[10px] overflow-hidden bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)] text-v2-text-text-base">
       <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5">
-        <Icon name="trash" size="normal" class="shrink-0 text-v2-text-text-muted" />
+        <Icon name="trash" size="large" class="shrink-0 text-v2-text-text-muted" />
         <span class="text-[15px] font-semibold">{language.t("trash.title")}</span>
         <span class="min-w-0 flex-1 truncate text-xs text-v2-text-text-faint">{language.t("trash.hint")}</span>
         <button type="button" class={btn} onClick={() => setTick((t) => t + 1)} disabled={!routeDir()}>
@@ -96,7 +96,7 @@ export function TrashPage() {
               {(entry) => (
                 <div class="flex items-center gap-2 px-4 py-1.5 text-sm hover:bg-v2-background-bg-layer-02">
                   <Show when={entry.type === "directory"} fallback={<span class="size-4 shrink-0" />}>
-                    <Icon name="folder" size="small" class="shrink-0 text-v2-text-text-muted" />
+                    <Icon name="folder" size="normal" class="shrink-0 text-v2-text-text-muted" />
                   </Show>
                   <span class="min-w-0 flex-1 truncate" title={entry.originalPath}>
                     {entry.originalPath}

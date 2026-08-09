@@ -1,5 +1,5 @@
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { Popover } from "@novaclaw/ui/popover"
@@ -44,7 +44,7 @@ export function StatusPopover() {
       trigger={
         <div class="relative size-4">
           <div class="badge-mask-tight size-4 flex items-center justify-center">
-            <Icon name={shown() ? "status-active" : "status"} size="small" />
+            <Icon name={shown() ? "status-active" : "status"} size="normal" />
           </div>
           <div
             classList={{

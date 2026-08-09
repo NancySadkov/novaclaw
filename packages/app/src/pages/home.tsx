@@ -28,7 +28,7 @@ import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { getProjectAvatarVariant, useLayout, type HomeProjectSelection, type LocalProject } from "@/context/layout"
 import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@novaclaw/core/util/encode"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { useNewAgentSpawn } from "@/pages/home-screen/new-agent-bar"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { usePlatform } from "@/context/platform"
@@ -829,7 +829,7 @@ export function NewHome() {
                   absolute classes on the Icon itself land on the inner svg, detaching it from
                   its size box (the giant-glyph bug, owner-hit 2026-07-22). */}
               <span class="pointer-events-none absolute left-2 top-1/2 z-10 flex -translate-y-1/2 items-center text-v2-icon-icon-muted">
-                <Icon name="magnifying-glass" size="small" />
+                <Icon name="magnifying-glass" size="normal" />
               </span>
               <TextInputV2
                 type="search"
@@ -902,7 +902,7 @@ export function NewHome() {
                 disabled={!newAgent.ready() || newAgent.spawning()}
                 onClick={() => void newAgent.spawn()}
               >
-                <Icon name="plus-small" size="small" />
+                <Icon name="plus-small" size="normal" />
                 {language.t("home.sessions.new")}
               </ButtonV2>
             </Show>
@@ -1107,7 +1107,7 @@ function ChatEntry(props: { onSubmit: (prompt: string) => void; disabled?: boole
               class="flex size-9 shrink-0 items-center justify-center rounded-[0.7rem] ring-1 ring-white/15"
               style={{
                 "background-image": "linear-gradient(155deg, #f4d06a -8%, #e7b62f 42%, #c99a2e 105%)",
-                "--icon-base": "color-mix(in srgb, var(--nc-ink, #1a1135) 92%, transparent)",
+                color: "color-mix(in srgb, var(--nc-ink, #1a1135) 92%, transparent)",
               }}
             >
               <IconV2 name="folder-add-left" />
@@ -1401,7 +1401,7 @@ function HomeSessionRow(props: {
               {/* Render the check ONLY when selected — sprite strokes don't inherit
                 text-transparent, so an always-mounted check read as "prefilled". */}
               <Show when={props.selected}>
-                <Icon name="check-small" size="small" />
+                <Icon name="check-small" size="normal" />
               </Show>
             </span>
           </Show>
@@ -1488,7 +1488,7 @@ function HomeSessionRow(props: {
                   reasoning: tokens().reasoning.toLocaleString(),
                 })}
               >
-                <Icon name="cpu" size="small" class="text-v2-icon-icon-muted" />
+                <Icon name="cpu" size="normal" class="text-v2-icon-icon-muted" />
                 {compactTokens(tokens().generated)}
               </span>
             </Show>
@@ -1511,7 +1511,7 @@ function HomeSessionRow(props: {
                   data-action="home-session-stop"
                   variant="ghost-muted"
                   size="large"
-                  icon={<Icon name="stop" size="small" />}
+                  icon={<Icon name="stop" size="normal" />}
                   aria-label={language.t("home.session.stop")}
                   onClick={(event) => {
                     event.preventDefault()
@@ -1526,7 +1526,7 @@ function HomeSessionRow(props: {
                 data-action="home-session-info"
                 variant="ghost-muted"
                 size="large"
-                icon={<Icon name="info" size="small" />}
+                icon={<Icon name="info" size="normal" />}
                 aria-label={language.t("home.session.info")}
                 onClick={(event) => {
                   event.preventDefault()
@@ -1542,7 +1542,7 @@ function HomeSessionRow(props: {
                 data-action="home-session-rename"
                 variant="ghost-muted"
                 size="large"
-                icon={<Icon name="edit" size="small" />}
+                icon={<Icon name="edit" size="normal" />}
                 aria-label={language.t("common.rename")}
                 onClick={(event) => {
                   event.preventDefault()
@@ -1556,7 +1556,7 @@ function HomeSessionRow(props: {
                 data-action="home-session-clone"
                 variant="ghost-muted"
                 size="large"
-                icon={<Icon name="fork" size="small" />}
+                icon={<Icon name="fork" size="normal" />}
                 aria-label={language.t("home.session.clone")}
                 onClick={(event) => {
                   event.preventDefault()
@@ -1570,7 +1570,7 @@ function HomeSessionRow(props: {
                 data-action="home-session-export"
                 variant="ghost-muted"
                 size="large"
-                icon={<Icon name="download" size="small" />}
+                icon={<Icon name="download" size="normal" />}
                 aria-label={language.t("home.session.export")}
                 onClick={(event) => {
                   event.preventDefault()
@@ -1584,7 +1584,7 @@ function HomeSessionRow(props: {
                 data-action="home-session-delete"
                 variant="ghost-muted"
                 size="large"
-                icon={<Icon name="trash" size="small" />}
+                icon={<Icon name="trash" size="normal" />}
                 aria-label={language.t("session.delete.title")}
                 onClick={(event) => {
                   event.preventDefault()

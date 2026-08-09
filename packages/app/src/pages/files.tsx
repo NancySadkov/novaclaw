@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, For, Match, Show, Switch } from "solid-js"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { useGlobal } from "@/context/global"
 import { ServerConnection, useServer } from "@/context/server"
 import { useTabs } from "@/context/tabs"
@@ -300,7 +300,7 @@ export function FilesPage() {
       }}
     >
       <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5">
-        <Icon name="folder-add-left" size="normal" class="shrink-0 text-v2-text-text-muted" />
+        <Icon name="folder-add-left" size="large" class="shrink-0 text-v2-text-text-muted" />
         <span class="text-[15px] font-semibold">{language.t("files.title")}</span>
         <button type="button" class={btn} onClick={up} disabled={!parentDir(dir())}>
           {language.t("files.up")}
@@ -379,7 +379,7 @@ export function FilesPage() {
                     class="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden px-1.5 py-1 text-left"
                     onClick={() => goTo(pin)}
                   >
-                    <Icon name="folder" size="small" class="shrink-0" />
+                    <Icon name="folder" size="normal" class="shrink-0" />
                     <span class="truncate">{baseName(pin)}</span>
                   </button>
                   <button
@@ -388,7 +388,7 @@ export function FilesPage() {
                     aria-label={language.t("dialog.directory.unpin")}
                     onClick={() => writeBookmarks(bookmarks().filter((entry) => pinKey(entry) !== pinKey(pin)))}
                   >
-                    <Icon name="close-small" size="small" />
+                    <Icon name="close-small" size="normal" />
                   </button>
                 </div>
               )}
@@ -405,7 +405,7 @@ export function FilesPage() {
               title={homeDir()}
               onClick={() => goTo(homeDir())}
             >
-              <Icon name="folder" size="small" class="shrink-0" />
+              <Icon name="folder" size="normal" class="shrink-0" />
               <span class="truncate">{language.t("dialog.directory.homePlace")}</span>
             </button>
           </Show>
@@ -420,7 +420,7 @@ export function FilesPage() {
                 title={place.path}
                 onClick={() => goTo(place.path)}
               >
-                <Icon name="folder" size="small" class="shrink-0" />
+                <Icon name="folder" size="normal" class="shrink-0" />
                 <span class="truncate">{place.name}</span>
               </button>
             )}
@@ -464,7 +464,7 @@ export function FilesPage() {
                       onFocus={() => setActive(entry)}
                     >
                       <Show when={entry.type === "directory"} fallback={<span class="size-4 shrink-0" />}>
-                        <Icon name="folder" size="small" class="shrink-0 text-v2-text-text-muted" />
+                        <Icon name="folder" size="normal" class="shrink-0 text-v2-text-text-muted" />
                       </Show>
                       <span class="truncate">{entry.name}</span>
                     </button>
@@ -476,7 +476,7 @@ export function FilesPage() {
                       aria-label={`${language.t("files.delete")} ${entry.name}`}
                       onClick={() => void operations.trash(operationTarget(entry))}
                     >
-                      <Icon name="trash" size="small" />
+                      <Icon name="trash" size="normal" />
                     </button>
                   </div>
                 )}
@@ -488,7 +488,7 @@ export function FilesPage() {
         <div class="flex w-1/2 min-w-0 flex-col">
           <Show when={showTrash()}>
             <div class="flex items-center gap-2 border-b border-v2-border-border-base px-4 py-2">
-              <Icon name="trash" size="small" class="shrink-0 text-v2-text-text-muted" />
+              <Icon name="trash" size="normal" class="shrink-0 text-v2-text-text-muted" />
               <span class="min-w-0 flex-1 truncate text-sm font-medium">{language.t("files.trash")}</span>
               <span class="text-xs text-v2-text-text-faint">{language.t("files.trashHint")}</span>
             </div>
@@ -511,7 +511,7 @@ export function FilesPage() {
                     {(entry) => (
                       <div class="flex items-center gap-2 px-4 py-1.5 text-sm hover:bg-v2-background-bg-layer-02">
                         <Show when={entry.type === "directory"} fallback={<span class="size-4 shrink-0" />}>
-                          <Icon name="folder" size="small" class="shrink-0 text-v2-text-text-muted" />
+                          <Icon name="folder" size="normal" class="shrink-0 text-v2-text-text-muted" />
                         </Show>
                         <span class="min-w-0 flex-1 truncate" title={entry.originalPath}>
                           {entry.originalPath}

@@ -1,6 +1,6 @@
 import { A } from "@solidjs/router"
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { useGlobal } from "@/context/global"
 import { useServer, ServerConnection } from "@/context/server"
 import { memoryGraph, type MemoryGraph, type MemoryRow } from "@/utils/memory-api"
@@ -157,11 +157,11 @@ export function MemoryGraphPage() {
     <div class="flex h-full w-full flex-col bg-v2-surface-bg-base text-v2-text-text-base">
       <header class="flex items-center gap-3 border-b border-v2-border-border-faint px-4 py-2.5">
         <A href="/" class="flex items-center gap-1.5 text-sm opacity-70 hover:opacity-100">
-          <Icon name="arrow-left" />
+          <Icon name="arrow-left" size="large" />
           Home
         </A>
         <div class="flex items-center gap-2">
-          <Icon name="branch" />
+          <Icon name="branch" size="large" />
           <h1 class="text-sm font-medium">Memory graph</h1>
         </div>
         <span class="text-xs opacity-50">
@@ -175,10 +175,10 @@ export function MemoryGraphPage() {
             <span class="inline-block h-2.5 w-2.5 rounded-full" style={{ background: SCOPE_SESSION }} /> Chat
           </span>
           <button class="opacity-70 hover:opacity-100" title="Reset view" onClick={resetView}>
-            <Icon name="expand" />
+            <Icon name="expand" size="large" />
           </button>
           <button class="opacity-70 hover:opacity-100" title="Refresh" onClick={() => setTick((t) => t + 1)}>
-            <Icon name="reset" />
+            <Icon name="reset" size="large" />
           </button>
         </div>
       </header>
@@ -275,7 +275,7 @@ export function MemoryGraphPage() {
                     {scopeLabel(sel().scope)}
                   </span>
                   <button class="opacity-60 hover:opacity-100" onClick={() => setSelected(undefined)}>
-                    <Icon name="close-small" />
+                    <Icon name="close-small" size="large" />
                   </button>
                 </div>
                 <p class="mb-1 leading-snug">{sel().text}</p>

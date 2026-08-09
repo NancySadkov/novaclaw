@@ -73,7 +73,7 @@
     min-height: 20px;
     color: var(--v2-icon-icon-base);
 
-    [data-component="icon"] {
+    [data-slot="icon-svg"] {
       color: var(--v2-icon-icon-base);
       width: 16px;
       height: 16px;

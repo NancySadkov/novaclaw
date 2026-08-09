@@ -1,7 +1,7 @@
 import { For, Show, splitProps, type Accessor, type ComponentProps } from "solid-js"
 import { createStore } from "solid-js/store"
 import { DropdownMenu } from "@novaclaw/ui/dropdown-menu"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { ProjectAvatar } from "@novaclaw/ui/v2/project-avatar-v2"
 import { getProjectAvatarVariant } from "@/context/layout"
@@ -266,7 +266,7 @@ export function PromptProjectSelector(props: {
         >
           <div class="flex flex-col p-0.5">
             <div class="flex h-7 items-center gap-2 rounded-sm pl-3 pr-2.5 text-v2-icon-icon-muted">
-              <Icon name="magnifying-glass" size="small" class="shrink-0" />
+              <Icon name="magnifying-glass" size="normal" class="shrink-0" />
               <input
                 ref={(el) => props.controller.setSearchRef(el)}
                 value={props.controller.search()}
@@ -318,7 +318,7 @@ export function PromptProjectSelector(props: {
                   onClick={() => props.controller.clearSearch()}
                   aria-label={props.controller.labels.clear()}
                 >
-                  <Icon name="close-small" size="small" />
+                  <Icon name="close-small" size="normal" />
                 </button>
               </Show>
             </div>
@@ -380,11 +380,11 @@ export function PromptProjectSelector(props: {
                   }}
                   onMouseEnter={() => props.controller.setActive(props.controller.actionKey())}
                 >
-                  <Icon name="plus" size="small" />
+                  <Icon name="plus" size="normal" />
                   <span data-slot="dropdown-menu-item-label" class="min-w-0 flex-1 truncate leading-5">
                     {props.controller.labels.add()}
                   </span>
-                  <Icon name="chevron-right" size="small" class="shrink-0 text-v2-icon-icon-muted" />
+                  <Icon name="chevron-right" size="normal" class="shrink-0 text-v2-icon-icon-muted" />
                 </DropdownMenu.SubTrigger>
                 <DropdownMenu.Portal>
                   <DropdownMenu.SubContent class="min-w-[180px] overflow-hidden rounded-md border-0 bg-v2-background-bg-layer-01 p-0.5 shadow-[var(--v2-elevation-floating)] focus:outline-none">
@@ -410,9 +410,9 @@ export function PromptProjectAddButton(props: { controller: PromptProjectControl
       class="flex h-7 min-w-0 max-w-[160px] items-center gap-1.5 rounded-sm px-2 text-[13px] font-[440] leading-5 tracking-[-0.04px] text-v2-text-text-faint transition-colors hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none"
       onClick={() => props.controller.add()}
     >
-      <Icon name="folder-add-left" size="small" class="shrink-0 text-v2-icon-icon-muted" />
+      <Icon name="folder-add-left" size="normal" class="shrink-0 text-v2-icon-icon-muted" />
       <span class="min-w-0 truncate leading-5">{props.controller.labels.new()}</span>
-      <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
+      <Icon name="chevron-down" size="normal" class="shrink-0 text-v2-icon-icon-muted" />
     </button>
   )
 }
@@ -444,7 +444,7 @@ function ProjectTrigger(props: ComponentProps<"button"> & { controller: PromptPr
     >
       <Show
         when={project()}
-        fallback={<Icon name="folder-add-left" size="small" class="shrink-0 text-v2-icon-icon-muted" />}
+        fallback={<Icon name="folder-add-left" size="normal" class="shrink-0 text-v2-icon-icon-muted" />}
       >
         {(item) => (
           <ProjectAvatar
@@ -457,7 +457,7 @@ function ProjectTrigger(props: ComponentProps<"button"> & { controller: PromptPr
       <span class="min-w-0 truncate leading-5">
         {project() ? displayName(project()!) : local.controller.labels.new()}
       </span>
-      <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
+      <Icon name="chevron-down" size="normal" class="shrink-0 text-v2-icon-icon-muted" />
     </button>
   )
 }
@@ -534,7 +534,7 @@ function ProjectAction(props: {
       }}
       onSelect={() => props.onSelect(props.server)}
     >
-      <Icon name="plus" size="small" />
+      <Icon name="plus" size="normal" />
       <DropdownMenu.ItemLabel class="min-w-0 truncate leading-5">
         {props.controller.labels.add()}
       </DropdownMenu.ItemLabel>

@@ -1,6 +1,6 @@
 import { useNavigate } from "@solidjs/router"
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useDirectoryPicker } from "@/components/directory-picker"
 import { useServer } from "@/context/server"
@@ -179,7 +179,7 @@ export function RecipesPage() {
   return (
     <div class="flex min-h-0 flex-1 flex-col self-stretch m-2 rounded-[10px] overflow-hidden bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)] text-v2-text-text-base">
       <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5">
-        <Icon name="checklist" size="normal" class="shrink-0 text-v2-text-text-muted" />
+        <Icon name="checklist" size="large" class="shrink-0 text-v2-text-text-muted" />
         <span class="text-[15px] font-semibold">Recipes</span>
         <span class="min-w-0 flex-1 truncate text-xs text-v2-text-text-faint">
           Ready-made prompts an agent cooks for you. Source code rots; a good recipe stays fresh.
@@ -274,7 +274,7 @@ export function RecipesPage() {
                         Copy
                       </button>
                       <button class={BTN} disabled={busy()} onClick={() => void remove(recipe())} title="Delete recipe">
-                        <Icon name="trash" size="small" />
+                        <Icon name="trash" size="normal" />
                       </button>
                     </>
                   )}

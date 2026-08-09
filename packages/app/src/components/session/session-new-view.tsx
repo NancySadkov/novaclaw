@@ -3,7 +3,7 @@ import { DateTime } from "luxon"
 import { useSync } from "@/context/sync"
 import { useSDK } from "@/context/sdk"
 import { useLanguage } from "@/context/language"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { NovaClawWordmark } from "@/components/brand"
 import { getDirectory, getFilename } from "@novaclaw/core/util/path"
 
@@ -61,7 +61,7 @@ export function NewSessionView(props: NewSessionViewProps) {
               </div>
             </div>
             <div class="flex items-start justify-center gap-1.5 min-h-5">
-              <Icon name="branch" size="small" class="mt-0.5 shrink-0" />
+              <Icon name="branch" size="normal" class="mt-0.5 shrink-0" />
               <div class="text-12-medium text-text-weak select-text leading-5 min-w-0 max-w-160 break-words text-center">
                 {label(current())}
               </div>

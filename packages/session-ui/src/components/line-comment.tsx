@@ -3,7 +3,7 @@ import { getDirectory, getFilename } from "@novaclaw/core/util/path"
 import { createSignal, For, onMount, Show, splitProps, type JSX } from "solid-js"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { FileIcon } from "@novaclaw/ui/file-icon"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { installLineCommentStyles } from "./line-comment-styles"
 import { useI18n } from "@novaclaw/ui/context/i18n"
 
@@ -89,7 +89,7 @@ export const LineCommentAnchor = (props: LineCommentAnchorProps) => {
             >
               <Show
                 when={props.inline}
-                fallback={<Icon name={icon() === "plus" ? "plus-small" : "comment"} size="small" />}
+                fallback={<Icon name={icon() === "plus" ? "plus-small" : "comment"} size="normal" />}
               >
                 <InlineGlyph icon={icon()} />
               </Show>

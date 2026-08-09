@@ -15,7 +15,6 @@
 @import "../components/file-icon.css" layer(components);
 @import "../components/provider-icon.css" layer(components);
 @import "../components/dock-surface.css" layer(components);
-@import "../components/icon.css" layer(components);
 @import "../components/image-preview.css" layer(components);
 @import "../components/text-field.css" layer(components);
 @import "../components/list.css" layer(components);

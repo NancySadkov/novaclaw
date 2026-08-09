@@ -5,7 +5,7 @@ import { Component, createSignal, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { usePlatform } from "@/context/platform"
 import { useLanguage } from "@/context/language"
-import { Icon } from "@novaclaw/ui/icon"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { errorDescriptionKey } from "./error-description"
 import { DISCORD_INVITE_URL } from "@/constants/links"
 
@@ -355,7 +355,7 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
               onClick={() => platform.openLink(DISCORD_INVITE_URL)}
             >
               <div>{language.t("error.page.report.discord")}</div>
-              <Icon name="discord" class="text-v2-text-text-accent" />
+              <Icon name="discord" class="text-v2-text-text-accent" size="large" />
             </button>
           </div>
           <Show when={platform.version}>
