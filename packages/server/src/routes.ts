@@ -47,8 +47,8 @@ const applicationServices = LayerNode.group([
   LocationServiceMap.node,
   MessengerStore.node,
   MessengerDrivers.node,
-  MessengerGateway.node,
-  MessengerLogin.node,
+  MessengerGateway.capabilityNode,
+  MessengerLogin.capabilityNode,
 ])
 
 export function createRoutes(password?: string) {

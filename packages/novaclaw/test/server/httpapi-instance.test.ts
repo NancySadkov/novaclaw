@@ -64,8 +64,14 @@ describe("instance HttpApi", () => {
         expect.arrayContaining([
           { name: "local-model", status: { state: "idle" } },
           { name: "memory", status: { state: "idle" } },
+          { name: "messenger-login", status: { state: "idle" } },
+          expect.objectContaining({ name: "messenger" }),
         ]),
       )
+
+      const accounts = yield* HttpClient.get("/api/messenger/account")
+      expect(accounts.status).toBe(200)
+      expect(yield* accounts.json).toEqual([])
 
       const retry = yield* HttpClientRequest.post(
         `/capability/not-declared/retry?directory=${encodeURIComponent(dir)}`,

@@ -10,7 +10,8 @@ import { SessionEvent } from "@novaclaw/schema/session-event"
 import { AbsolutePath } from "../schema"
 import { copySessionRecipes, storeRootIn } from "../adhoc-tools"
 import { Credential } from "../credential"
-import { makeGlobalNode } from "../effect/app-node"
+import { makeGlobalNode, tags } from "../effect/app-node"
+import { LayerNode } from "../effect/layer-node"
 import { EventV2 } from "../event"
 import { Global } from "../global"
 import { Offline } from "../offline"
@@ -1695,3 +1696,32 @@ export const nodeWith = (options: Options = {}) =>
   })
 
 export const node = nodeWith()
+
+// The production server already owns one instance-global Messenger base and Session runtime. Keep
+// those services as explicit requirements so deferring the gateway cannot compile private copies.
+export const sharedCapabilityServiceNodeWith = (options: Options = {}) =>
+  makeGlobalNode({
+    service: Service,
+    layer: layerWith(options),
+    deps: [
+      LayerNode.external(MessengerStore.Service, tags.values.global),
+      LayerNode.external(MessengerDrivers.Service, tags.values.global),
+      LayerNode.external(MessengerPace.Service, tags.values.global),
+      LayerNode.external(EventV2.Service, tags.values.global),
+      LayerNode.external(Offline.Service, tags.values.global),
+      LayerNode.external(Credential.Service, tags.values.global),
+      LayerNode.external(SessionV2.Service, tags.values.global),
+      LayerNode.external(Global.Service, tags.values.global),
+    ],
+  })
+
+export const capabilityNodeWith = (options: Options = {}) =>
+  LayerNode.capability(nodeWith(options), { name: "messenger", service: Service })
+
+export const capabilityNode = capabilityNodeWith()
+export const CapabilityService = capabilityNode.service
+
+export const sharedCapabilityNodeWith = (options: Options = {}) =>
+  LayerNode.capability(sharedCapabilityServiceNodeWith(options), { name: "messenger", service: Service })
+
+export const sharedCapabilityNode = sharedCapabilityNodeWith()

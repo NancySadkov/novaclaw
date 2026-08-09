@@ -54,6 +54,7 @@ const emptyCapabilities = Layer.succeed(
     inspect: () => Effect.succeed([]),
     lines: () => Effect.succeed([]),
     retry: (name) => Effect.fail(new CapabilityRegistry.NotFoundError({ name })),
+    register: () => Effect.void,
   }),
 )
 
@@ -489,6 +490,7 @@ describe("capability repair: retry the live refusal without restarting", () => {
             retried.push(name)
             return { state: "ready" as const, since: 123 }
           }),
+        register: () => Effect.void,
       }),
     )
     return withTool(
@@ -511,6 +513,7 @@ describe("capability repair: retry the live refusal without restarting", () => {
         inspect: () => Effect.succeed([{ name: "memory", status: { state: "idle" as const } }]),
         lines: () => Effect.succeed([]),
         retry: (name) => Effect.fail(new CapabilityRegistry.NotFoundError({ name })),
+        register: () => Effect.void,
       }),
     )
     return withTool(

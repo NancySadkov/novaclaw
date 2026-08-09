@@ -4,6 +4,7 @@ import { Messenger } from "@novaclaw/schema/messenger"
 import { Credential } from "@novaclaw/core/credential"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { CapabilityRegistry } from "@novaclaw/core/effect/capability-registry"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { MessengerDriver } from "@novaclaw/core/messenger/driver"
@@ -71,20 +72,53 @@ const makeLoginDriver = () => {
 
 const fake = makeLoginDriver()
 
+const driverReplacement = [
+  MessengerDrivers.node,
+  Layer.succeed(MessengerDrivers.Service, MessengerDrivers.Service.of(MessengerDrivers.make([fake.driver]))),
+] as const
+
 const graph = LayerNode.group([Database.node, EventV2.node, Credential.node, MessengerStore.node, MessengerLogin.node])
 
-const it = testEffect(
-  AppNodeBuilder.build(graph, [
-    [
-      MessengerDrivers.node,
-      Layer.succeed(MessengerDrivers.Service, MessengerDrivers.Service.of(MessengerDrivers.make([fake.driver]))),
-    ],
-  ]),
-)
+const it = testEffect(AppNodeBuilder.build(graph, [driverReplacement]))
 
 const createAccount = Effect.gen(function* () {
   const store = yield* MessengerStore.Service
   return yield* store.createAccount({ driverID: "fake-login", label: "mine", enabled: false, settings: {} })
+})
+
+describe("MessengerLogin capability", () => {
+  let builds = 0
+  const poisoned = Layer.effect(
+    MessengerLogin.Service,
+    Effect.sync(() => {
+      builds++
+      throw new Error("forced messenger-login constructor defect")
+    }),
+  )
+  const degraded = testEffect(
+    AppNodeBuilder.build(
+      LayerNode.group([CapabilityRegistry.node, MessengerLogin.capabilityNode, Database.node, MessengerStore.node]),
+      [driverReplacement, [MessengerLogin.node, poisoned]],
+    ),
+  )
+
+  degraded.live("keeps the core alive and caches one named refusal", () =>
+    Effect.gen(function* () {
+      builds = 0
+      const registry = yield* CapabilityRegistry.Service
+      const capability = yield* MessengerLogin.CapabilityService
+      expect(yield* registry.inspect()).toEqual([{ name: "messenger-login", status: { state: "idle" } }])
+      const first = yield* capability.get
+      const second = yield* capability.get
+      expect(first).toMatchObject({
+        ok: false,
+        error: { capability: "messenger-login", kind: "failed" },
+      })
+      expect(second).toEqual(first)
+      expect(builds).toBe(1)
+      expect(yield* MessengerStore.Service.pipe(Effect.flatMap((store) => store.listAccounts()))).toEqual([])
+    }),
+  )
 })
 
 describe("MessengerLogin", () => {

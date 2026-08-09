@@ -21,6 +21,8 @@ export interface Interface {
   readonly lines: () => Effect.Effect<ReadonlyArray<string>>
   /** Re-arm one cached refusal in the live instance. */
   readonly retry: (name: string) => Effect.Effect<Capability.Status, NotFoundError>
+  /** Register a capability composed outside the application graph (for shared-runtime services). */
+  readonly register: (name: string, capability: Capability.Capability<unknown>) => Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/CapabilityRegistry") {}
@@ -39,13 +41,17 @@ export const layer = (
     Service,
     Effect.gen(function* () {
       const context = yield* Effect.context<unknown>()
-      const entries = nodes
-        .map((node) => ({ name: node.capabilityName, capability: Context.get(context, node.service) }))
-        .toSorted((a, b) => a.name.localeCompare(b.name))
+      const entries = new Map(
+        nodes.map((node) => [
+          node.capabilityName,
+          Context.get(context, node.service) as Capability.Capability<unknown>,
+        ]),
+      )
 
       const inspect = Effect.fn("CapabilityRegistry.inspect")(function* () {
-        return yield* Effect.forEach(entries, (entry) =>
-          entry.capability.status.pipe(Effect.map((status) => ({ name: entry.name, status }))),
+        return yield* Effect.forEach(
+          [...entries.entries()].toSorted(([a], [b]) => a.localeCompare(b)),
+          ([name, capability]) => capability.status.pipe(Effect.map((status) => ({ name, status }))),
         )
       })
 
@@ -58,10 +64,18 @@ export const layer = (
           })
         }),
         retry: Effect.fn("CapabilityRegistry.retry")(function* (name) {
-          const entry = entries.find((candidate) => candidate.name === name)
-          if (entry === undefined) return yield* new NotFoundError({ name })
-          return yield* entry.capability.retry
+          const capability = entries.get(name)
+          if (capability === undefined) return yield* new NotFoundError({ name })
+          return yield* capability.retry
         }),
+        register: (name, capability) =>
+          Effect.sync(() => {
+            const existing = entries.get(name)
+            if (existing !== undefined && existing !== capability) {
+              throw new Error(`Conflicting capability registration: ${name}`)
+            }
+            entries.set(name, capability)
+          }),
       })
     }),
   )

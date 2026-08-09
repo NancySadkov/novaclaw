@@ -11,6 +11,7 @@ import { SessionEvent } from "@novaclaw/schema/session-event"
 import { SessionMessage } from "@novaclaw/schema/session-message"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { CapabilityRegistry } from "@novaclaw/core/effect/capability-registry"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { FSUtil } from "@novaclaw/core/fs-util"
@@ -250,6 +251,45 @@ const REPLACEMENTS = [
 ] satisfies LayerNode.Replacements
 
 const it = testEffect(AppNodeBuilder.build(graph, REPLACEMENTS))
+
+describe("MessengerGateway capability", () => {
+  let builds = 0
+  const poisoned = Layer.effect(
+    MessengerGateway.Service,
+    Effect.sync(() => {
+      builds++
+      throw new Error("forced messenger constructor defect")
+    }),
+  )
+  const degraded = testEffect(
+    AppNodeBuilder.build(
+      LayerNode.group([CapabilityRegistry.node, MessengerGateway.capabilityNode, Database.node, MessengerStore.node]),
+      [...REPLACEMENTS, [MessengerGateway.node, poisoned]],
+    ),
+  )
+
+  degraded.live("keeps the core alive, names one cached refusal, and remains observable", () =>
+    Effect.gen(function* () {
+      builds = 0
+      const registry = yield* CapabilityRegistry.Service
+      const capability = yield* MessengerGateway.CapabilityService
+      expect(yield* registry.inspect()).toEqual([{ name: "messenger", status: { state: "idle" } }])
+
+      const first = yield* capability.get
+      const second = yield* capability.get
+      expect(first).toMatchObject({
+        ok: false,
+        error: { capability: "messenger", kind: "failed" },
+      })
+      expect(second).toEqual(first)
+      expect(builds).toBe(1)
+      expect(yield* MessengerStore.Service.pipe(Effect.flatMap((store) => store.listAccounts()))).toEqual([])
+      expect(yield* registry.inspect()).toMatchObject([
+        { name: "messenger", status: { state: "unavailable", attempts: 1 } },
+      ])
+    }),
+  )
+})
 
 /**
  * The SAME graph, over a database FILE instead of the suite's per-connection `:memory:` — a whole

@@ -4,7 +4,8 @@ import { Clock, Context, Duration, Effect, Exit, Layer, Schedule, Schema, Scope,
 import { Integration } from "@novaclaw/schema/integration"
 import { Messenger } from "@novaclaw/schema/messenger"
 import { Credential } from "../credential"
-import { makeGlobalNode } from "../effect/app-node"
+import { makeGlobalNode, tags } from "../effect/app-node"
+import { LayerNode } from "../effect/layer-node"
 import type { LoginProgress } from "./driver"
 import { MessengerDrivers } from "./drivers"
 import { MessengerStore } from "./store"
@@ -292,4 +293,25 @@ export const node = makeGlobalNode({
   service: Service,
   layer,
   deps: [MessengerStore.node, MessengerDrivers.node, Credential.node],
+})
+
+export const sharedCapabilityServiceNode = makeGlobalNode({
+  service: Service,
+  layer,
+  deps: [
+    LayerNode.external(MessengerStore.Service, tags.values.global),
+    LayerNode.external(MessengerDrivers.Service, tags.values.global),
+    LayerNode.external(Credential.Service, tags.values.global),
+  ],
+})
+
+export const capabilityNode = LayerNode.capability(node, {
+  name: "messenger-login",
+  service: Service,
+})
+export const CapabilityService = capabilityNode.service
+
+export const sharedCapabilityNode = LayerNode.capability(sharedCapabilityServiceNode, {
+  name: "messenger-login",
+  service: Service,
 })

@@ -24,6 +24,23 @@ const loginError = (error: MessengerLogin.LoginError) =>
     kind: error.retryable ? "messenger_login_retry" : "messenger_login_failed",
   })
 
+const unavailableError = (summary: string, capability: string) =>
+  new InvalidRequestError({ message: summary, kind: `${capability}_unavailable` })
+
+export const acquireGateway = Effect.gen(function* () {
+  const capability = yield* MessengerGateway.CapabilityService
+  const result = yield* capability.get
+  if (!result.ok) return yield* Effect.fail(unavailableError(result.error.summary, "messenger"))
+  return result.value
+})
+
+export const acquireLogin = Effect.gen(function* () {
+  const capability = yield* MessengerLogin.CapabilityService
+  const result = yield* capability.get
+  if (!result.ok) return yield* Effect.fail(unavailableError(result.error.summary, "messenger_login"))
+  return result.value
+})
+
 const credentialIntegrationID = (driverID: string, accountID: Messenger.AccountID): Integration.ID =>
   `messenger.${driverID}.${accountID}` as Integration.ID
 
@@ -41,12 +58,7 @@ export const MessengerHandler = HttpApiBuilder.group(Api, "server.messenger", (h
         "messenger.account.list",
         Effect.fn(function* () {
           const store = yield* MessengerStore.Service
-          const gateway = yield* MessengerGateway.Service
-          // `orDie` here is byte-for-byte the behaviour this call already had — the store used to
-          // swallow the fault internally, which is precisely the defect that was fixed at the store.
-          // It stays a defect at THIS seam because `messenger.account.list` declares no error
-          // (`packages/protocol/src/groups/messenger.ts:33`), so naming the fault honestly on the
-          // wire means a protocol error plus an OpenAPI/SDK regen. Filed; not smuggled in here.
+          const gateway = yield* acquireGateway
           const accounts = yield* store.listAccounts().pipe(Effect.orDie)
           const status = yield* gateway.status()
           return accounts.map((account) => ({
@@ -62,7 +74,7 @@ export const MessengerHandler = HttpApiBuilder.group(Api, "server.messenger", (h
         Effect.fn(function* (ctx) {
           const drivers = yield* MessengerDrivers.Service
           const store = yield* MessengerStore.Service
-          const gateway = yield* MessengerGateway.Service
+          const gateway = yield* acquireGateway
           const credentials = yield* Credential.Service
           if (drivers.get(ctx.payload.driverID) === undefined)
             return yield* Effect.fail(
@@ -94,7 +106,7 @@ export const MessengerHandler = HttpApiBuilder.group(Api, "server.messenger", (h
         "messenger.account.update",
         Effect.fn(function* (ctx) {
           const store = yield* MessengerStore.Service
-          const gateway = yield* MessengerGateway.Service
+          const gateway = yield* acquireGateway
           const credentials = yield* Credential.Service
           const account = yield* store.getAccount(ctx.params.accountID)
           if (account === undefined)
@@ -128,7 +140,7 @@ export const MessengerHandler = HttpApiBuilder.group(Api, "server.messenger", (h
         "messenger.account.remove",
         Effect.fn(function* (ctx) {
           const store = yield* MessengerStore.Service
-          const gateway = yield* MessengerGateway.Service
+          const gateway = yield* acquireGateway
           const credentials = yield* Credential.Service
           const account = yield* store.getAccount(ctx.params.accountID)
           if (account?.credentialID !== undefined) yield* credentials.remove(account.credentialID as Credential.ID)
@@ -141,7 +153,7 @@ export const MessengerHandler = HttpApiBuilder.group(Api, "server.messenger", (h
         "messenger.account.pair",
         Effect.fn(function* (ctx) {
           const store = yield* MessengerStore.Service
-          const gateway = yield* MessengerGateway.Service
+          const gateway = yield* acquireGateway
           const account = yield* store.getAccount(ctx.params.accountID)
           if (account === undefined)
             return yield* Effect.fail(
@@ -153,7 +165,7 @@ export const MessengerHandler = HttpApiBuilder.group(Api, "server.messenger", (h
       .handle(
         "messenger.account.chats",
         Effect.fn(function* (ctx) {
-          const gateway = yield* MessengerGateway.Service
+          const gateway = yield* acquireGateway
           const outcome = yield* gateway.chats(ctx.params.accountID)
           return outcome.ok ? { ok: true, chats: outcome.chats } : { ok: false, chats: [], reason: outcome.reason }
         }),
@@ -243,7 +255,7 @@ export const MessengerHandler = HttpApiBuilder.group(Api, "server.messenger", (h
       .handle(
         "messenger.login.begin",
         Effect.fn(function* (ctx) {
-          const login = yield* MessengerLogin.Service
+          const login = yield* acquireLogin
           return yield* login
             .begin({ accountID: ctx.params.accountID, inputs: ctx.payload.inputs })
             .pipe(Effect.mapError(loginError))
@@ -252,15 +264,15 @@ export const MessengerHandler = HttpApiBuilder.group(Api, "server.messenger", (h
       .handle(
         "messenger.login.status",
         Effect.fn(function* (ctx) {
-          const login = yield* MessengerLogin.Service
+          const login = yield* acquireLogin
           return yield* login.status(ctx.params.attemptID).pipe(Effect.mapError(loginError))
         }),
       )
       .handle(
         "messenger.login.complete",
         Effect.fn(function* (ctx) {
-          const login = yield* MessengerLogin.Service
-          const gateway = yield* MessengerGateway.Service
+          const login = yield* acquireLogin
+          const gateway = yield* acquireGateway
           yield* login
             .complete({ attemptID: ctx.params.attemptID, code: ctx.payload.code })
             .pipe(Effect.mapError(loginError))
@@ -272,7 +284,7 @@ export const MessengerHandler = HttpApiBuilder.group(Api, "server.messenger", (h
       .handle(
         "messenger.login.cancel",
         Effect.fn(function* (ctx) {
-          const login = yield* MessengerLogin.Service
+          const login = yield* acquireLogin
           yield* login.cancel(ctx.params.attemptID)
           return HttpApiSchema.NoContent.make()
         }),

@@ -312,19 +312,26 @@ const messengerBase = Layer.mergeAll(
   MessengerDrivers.layer.pipe(Layer.provide(NovaclawExternalDriverSource.layer)),
   Credential.layer,
 )
-const messengerServices = Layer.mergeAll(
-  messengerBase,
-  // ⚠️ Offline is deliberately NOT provided here. It is left as a requirement — like Database,
-  // EventV2, SessionV2 and Global above — so the LATER `Layer.provide(LayerNode.compile(app))`
-  // satisfies it with the SAME instance every other consumer of the guard uses, and so this is the
-  // one place in the server that says where Offline comes from. It used to be handed a bare
-  // `Offline.layer` here; measured on effect@4.0.0-beta.83 that still produced a single build
-  // (Effect memoizes the shared module-level layer by reference through both wrappings), but the
-  // agreement was a coincidence of construction, not a wiring guarantee — `MessengerGateway`'s own
-  // `nodeWith` already lists `Offline.node`, so this was the last raw-Layer outlier.
-  MessengerGateway.layer.pipe(Layer.provide([messengerBase, MessengerPace.layer])),
-  MessengerLogin.layer.pipe(Layer.provide(messengerBase)),
+const messengerGatewayCapability = LayerNode.compile(MessengerGateway.sharedCapabilityNode).pipe(
+  Layer.provide([messengerBase, MessengerPace.layer]),
 )
+const messengerLoginCapability = LayerNode.compile(MessengerLogin.sharedCapabilityNode).pipe(
+  Layer.provide(messengerBase),
+)
+const messengerCapabilityHandles = Layer.mergeAll(messengerGatewayCapability, messengerLoginCapability)
+const messengerServices = Layer.mergeAll(messengerBase, messengerGatewayCapability, messengerLoginCapability)
+const messengerCapabilityStartup = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const registry = yield* CapabilityRegistry.Service
+    const gateway = yield* MessengerGateway.CapabilityService
+    const login = yield* MessengerLogin.CapabilityService
+    yield* registry.register("messenger", gateway)
+    yield* registry.register("messenger-login", login)
+    // Inbound transports must connect without waiting for the Messenger screen to be opened. Start
+    // the gateway asynchronously so a refusal is cached and reported without delaying or killing boot.
+    yield* Effect.forkScoped(gateway.get.pipe(Effect.asVoid))
+  }),
+).pipe(Layer.provide(messengerCapabilityHandles))
 
 // Settings → SQLite: run the ONE first-boot import pass (every per-subsystem store) at server
 // startup, BEFORE any location boots — so every dir (incl. the shared scratch dir) sees the
@@ -385,6 +392,7 @@ export function createRoutes(
     // Before the SessionV2/app provides so the messenger stack's own requirements (SessionV2,
     // EventV2, Database, Global) resolve to the SAME memoized instances the routes use.
     Layer.provide(messengerServices),
+    Layer.provideMerge(messengerCapabilityStartup),
     // Calendar scheduler poll loop — same requirement-leaving pattern as the messenger: it must reach the
     // SHARED SessionV2/Database/Global (never a second SessionV2), so it is provided BEFORE the SessionV2
     // provide. provideMerge (like catalogSeedStartup) guarantees the background fiber is built + started.
