@@ -152,7 +152,7 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  * `{viewBox, body}` pairs), which is why `icon` is the expensive half of the migration rather than a
  * rename.
  *
- * This list may only ever get SHORTER. Retired so far, newest first: `tooltip`, `tabs`, `dialog`, `select`
+ * This list may only ever get SHORTER. Retired so far, newest first: `icon-button`, `tooltip`, `tabs`, `dialog`, `select`
  * (all 2026-08-08), `toast`, `keybind`, `progress-circle`, `diff-changes`, `switch` (all
  * 2026-08-07), `text-shimmer` (2026-07-31), and the six v1-only components deleted alongside it.
  *
@@ -169,8 +169,10 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  * and `icon-button` import v1 `icon`; `image-preview`, `list`, `popover` and `text-field` import v1
  * `icon-button`. `text-field` used to import both v1 `icon-button` and v1 `tooltip`, but neither
  * dependency was part of its public contract: moving its copy affordance to the v2 primitives retired
- * `tooltip` without rewriting the wrapper's six consumers. The two names left are still composed by
- * other v1 components; external call-site migration alone now only thins DEPTH.
+ * `tooltip` without rewriting the wrapper's six consumers. The same parent-boundary move then retired
+ * `icon-button`: `image-preview`, `list` and `popover` moved their private affordances to v2, leaving
+ * no v1 importers. Only `icon` remains, composed internally by `collapsible` and `list` as well as by
+ * its external consumers.
  *
  * ⭐ **`select` was retired 2026-08-08, and the budget warning that stood here was RIGHT: it was a
  * contract decision, not an import swap.** The warning read that v1's four call sites pass `size`,
@@ -259,7 +261,7 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  * migrated, on the grounds that porting a v1 sheet settles a brand question by copying the v1 app
  * (AGENTS.md — the running app is not a visual reference).
  */
-export const FORKED_WIDGETS: readonly string[] = ["icon", "icon-button"]
+export const FORKED_WIDGETS: readonly string[] = ["icon"]
 
 /**
  * **Every file that imports the v1 side of a forked widget, pinned by name.**
@@ -351,10 +353,7 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   // `packages/ui`'s own v1 components composing other v1 components. Not migratable — see the
   // header. These lines retire by DELETING the component, which is how `card.tsx` left this list.
   "ui/src/components/collapsible.tsx": ["icon"],
-  "ui/src/components/icon-button.tsx": ["icon"],
-  "ui/src/components/image-preview.tsx": ["icon-button"],
-  "ui/src/components/list.tsx": ["icon", "icon-button"],
-  "ui/src/components/popover.tsx": ["icon-button"],
+  "ui/src/components/list.tsx": ["icon"],
 }
 
 /**
@@ -369,11 +368,11 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
  * read 38 while the tree held 37 — one component had been deleted without the pin following, so a
  * new v1 component could have been added for free. Lower it in the same commit as any deletion.
  */
-const V1_COMPONENT_CEILING = 27
+const V1_COMPONENT_CEILING = 26
 
 /** Measured totals, pinned so the ledger stays a measurement rather than an aspiration. */
-const V1_CALL_SITE_FILES = 54
-const V1_CALL_SITE_PAIRS = 55
+const V1_CALL_SITE_FILES = 51
+const V1_CALL_SITE_PAIRS = 51
 
 // ---------------------------------------------------------------------------------------------
 // The sweep. Pure functions first so the negative controls can drive them without touching disk.
@@ -551,10 +550,11 @@ describe("the sweep", () => {
     // `dialog` (2026-08-08) cost it 10 v1 pairs AND every v2 `dialog-v2` import at once, because a
     // widget that is no longer forked stops being counted on either side. `tooltip` then took the
     // measurement from 184 to 109 even though its v1 side had only one importer, because every v2
-    // tooltip import also stops counting when the pair retires. Lower this floor with
+    // tooltip import also stops counting when the pair retires; `icon-button` then took it to 84.
+    // Lower this floor with
     // each retirement; it is a sanity floor against a broken sweep, never a target, and if it ever
     // has to go near zero the whole ledger should be retired instead (see the last test in this file).
-    expect(SWEPT.specifiers, "no forked-widget import found at all — SPECIFIER_PATTERNS is broken").toBeGreaterThan(100)
+    expect(SWEPT.specifiers, "no forked-widget import found at all — SPECIFIER_PATTERNS is broken").toBeGreaterThan(75)
     expect(SWEPT.v1.size, "the v1 half of the fork reads as empty").toBeGreaterThan(50)
     expect(SWEPT.v2.size, "the v2 half of the fork reads as empty").toBeGreaterThan(20)
   })
@@ -652,7 +652,7 @@ describe("the fork's DEPTH can only shrink", () => {
     expect(OBSERVED_PAIRS, "the observed (file, widget) pair count moved — reconcile V1_CALL_SITES").toBe(
       V1_CALL_SITE_PAIRS,
     )
-    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(2)
+    expect(FORKED_WIDGETS.length, "the forked-pair count moved — reconcile FORKED_WIDGETS").toBe(1)
   })
 
   test("both sides are genuinely live — this is a fork, not a finished migration", () => {
@@ -771,6 +771,7 @@ describe("retired v1 components stay deleted", () => {
   // deleted, and `text-shimmer` in particular would re-widen the fork.
   const DELETED = [
     "button",
+    "icon-button",
     "tooltip",
     "text-shimmer",
     "card",
@@ -863,11 +864,10 @@ describe("retired v1 components stay deleted", () => {
 
   test("🔴 every v2 @import comes AFTER every v1 @import — same layer, so ORDER decides", () => {
     // ⚠️ **This became load-bearing the moment v2 stylesheets joined `layer(components)`, and it was
-    // invisible before.** FOUR v2 sheets target a `[data-component]` a v1 sheet also targets (six on
-    // 2026-08-06, five that afternoon): `badge-v2` → `tag`, `tabs-v2` → `icon-button`,
-    // `toast-v2` → `icon`. `switch-v2`/`switch.css`, then `diff-changes-v2`/`diff-changes.css`, then
-    // `dialog-v2`/`dialog.css` left the list when the v1 sheet was DELETED — the only way a
-    // collision goes away for good.
+    // invisible before.** The remaining known collisions are `badge-v2` → `tag` and `toast-v2` →
+    // `icon`. `switch-v2`/`switch.css`, `diff-changes-v2`/`diff-changes.css`,
+    // `dialog-v2`/`dialog.css`, and now `tabs-v2`/`icon-button.css` left the list when the v1 sheet
+    // was DELETED — the only way a collision goes away for good.
     //
     // While v2 was UNLAYERED it beat v1 unconditionally. Now both sit in `components`, equal
     // specificity, so the LATER declaration wins — i.e. the order of these `@import` lines is the only

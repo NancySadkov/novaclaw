@@ -77,10 +77,6 @@
   color: var(--v2-text-text-muted);
 }
 
-[data-component="tabs-v2"] [data-component="icon-button"] {
-  margin: 0;
-}
-
 [data-component="tabs-v2"] [data-slot="tabs-v2-trigger-wrapper"]:disabled {
   pointer-events: none;
   color: var(--v2-text-text-faint);

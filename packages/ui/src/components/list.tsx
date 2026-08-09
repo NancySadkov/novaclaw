@@ -4,7 +4,8 @@ import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { useI18n } from "../context/i18n"
 import { Icon, type IconProps } from "./icon"
-import { IconButton } from "./icon-button"
+import { Icon as IconV2 } from "../v2/components/icon"
+import { IconButtonV2 } from "../v2/components/icon-button-v2"
 import { TextField } from "./text-field"
 
 function findByKey(container: HTMLElement, key: string) {
@@ -313,9 +314,11 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
               />
             </div>
             <Show when={internalFilter()}>
-              <IconButton
-                icon="circle-x"
+              <IconButtonV2
+                icon={<IconV2 name="circle-x" />}
                 variant="ghost"
+                size="small"
+                data-slot="list-clear-filter"
                 onClick={() => {
                   setInternalFilter("")
                   queueMicrotask(() => inputRef?.focus())

@@ -373,51 +373,6 @@
   }
 }
 
-[data-component="bash-output"] {
-  width: 100%;
-  border: 0.5px solid var(--v2-border-border-base);
-  border-radius: 6px;
-  background: transparent;
-  position: relative;
-  overflow: hidden;
-
-  [data-slot="bash-copy"] {
-    position: absolute;
-    top: 4px;
-    right: 4px;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.15s ease;
-  }
-
-  &:hover [data-slot="bash-copy"],
-  &:focus-within [data-slot="bash-copy"] {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  [data-slot="bash-copy"] [data-component="icon-button"][data-variant="secondary"] {
-    box-shadow: none;
-    border: 0.5px solid var(--v2-border-border-base);
-  }
-
-  [data-slot="bash-copy"] [data-component="icon-button"][data-variant="secondary"] [data-slot="icon-svg"] {
-    color: var(--icon-base);
-  }
-
-  [data-slot="bash-scroll"] {
-    width: 100%;
-    overflow-y: auto;
-    overflow-x: hidden;
-    max-height: 240px;
-
-    scrollbar-width: none;
-    &::-webkit-scrollbar {
-      display: none;
-    }
-  }
-}
-
 [data-component="edit-trigger"],
 [data-component="write-trigger"] {
   display: flex;
@@ -675,7 +630,6 @@
 [data-component="text-part"],
 [data-component="reasoning-part"],
 [data-component="tool-output"],
-[data-component="bash-output"],
 [data-component="write-content"],
 [data-component="todos"],
 [data-component="diagnostics"],
@@ -1311,14 +1265,6 @@ body:not([data-new-layout]) {
     [data-component="markdown"],
     [data-component="markdown"] :is(strong, b) {
       color: var(--text-weak);
-    }
-  }
-
-  [data-component="bash-output"] {
-    border: 1px solid var(--border-weak-base);
-
-    [data-slot="bash-copy"] [data-component="icon-button"][data-variant="secondary"] {
-      border: 1px solid var(--border-weak-base);
     }
   }
 

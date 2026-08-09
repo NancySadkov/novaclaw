@@ -3,7 +3,8 @@ import { ComponentProps, JSXElement, ParentProps, Show, createEffect, splitProps
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { useI18n } from "../context/i18n"
-import { IconButton } from "./icon-button"
+import { Icon } from "../v2/components/icon"
+import { IconButtonV2 } from "../v2/components/icon-button-v2"
 
 export interface PopoverProps<T extends ValidComponent = "div">
   extends ParentProps,
@@ -121,8 +122,8 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
           <Kobalte.Title data-slot="popover-title">{local.title}</Kobalte.Title>
           <Kobalte.CloseButton
             data-slot="popover-close-button"
-            as={IconButton}
-            icon="close"
+            as={IconButtonV2}
+            icon={<Icon name="close" />}
             variant="ghost"
             aria-label={i18n.t("ui.common.close")}
           />
