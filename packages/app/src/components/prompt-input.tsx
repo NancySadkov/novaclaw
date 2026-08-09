@@ -13,7 +13,7 @@ import {
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { PermissionMode, useLocal } from "@/context/local"
-import { selectionFromLines, type SelectedLineRange, useFile } from "@/context/file"
+import { useFile } from "@/context/file"
 import { ContentPart, DEFAULT_PROMPT, isPromptEqual, Prompt, usePrompt, ImageAttachmentPart } from "@/context/prompt"
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
@@ -54,12 +54,10 @@ import { ACCEPTED_FILE_TYPES, pickAttachmentFiles } from "./prompt-input/files"
 import {
   canNavigateHistoryAtCursor,
   createPersistedPromptInputHistory,
-  navigatePromptHistory,
-  type PromptHistoryComment,
-  type PromptHistoryEntry,
   type PromptInputHistory,
   promptLength,
 } from "./prompt-input/history"
+import { createPromptInputHistoryController } from "./prompt-input/history-controller"
 import { createPromptSubmit, type FollowupDraft } from "./prompt-input/submit"
 import { PromptPopover, type AtOption, type SlashCommand } from "./prompt-input/slash-popover"
 import { promptPlaceholder, PROMPT_EXAMPLE_KEYS } from "./prompt-input/placeholder"
@@ -357,73 +355,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }),
   )
 
-  const historyComments = () => {
-    const byID = new Map(comments.all().map((item) => [`${item.file}\n${item.id}`, item] as const))
-    return prompt.context.items().flatMap((item) => {
-      if (item.type !== "file") return []
-      const comment = item.comment?.trim()
-      if (!comment) return []
-
-      const selection = item.commentID ? byID.get(`${item.path}\n${item.commentID}`)?.selection : undefined
-      const nextSelection =
-        selection ??
-        (item.selection
-          ? ({
-              start: item.selection.startLine,
-              end: item.selection.endLine,
-            } satisfies SelectedLineRange)
-          : undefined)
-      if (!nextSelection) return []
-
-      return [
-        {
-          id: item.commentID ?? item.key,
-          path: item.path,
-          selection: { ...nextSelection },
-          comment,
-          time: item.commentID ? (byID.get(`${item.path}\n${item.commentID}`)?.time ?? Date.now()) : Date.now(),
-          origin: item.commentOrigin,
-          preview: item.preview,
-        } satisfies PromptHistoryComment,
-      ]
-    })
-  }
-
-  const applyHistoryComments = (items: PromptHistoryComment[]) => {
-    comments.replace(
-      items.map((item) => ({
-        id: item.id,
-        file: item.path,
-        selection: { ...item.selection },
-        comment: item.comment,
-        time: item.time,
-      })),
-    )
-    prompt.context.replaceComments(
-      items.map((item) => ({
-        type: "file" as const,
-        path: item.path,
-        selection: selectionFromLines(item.selection),
-        comment: item.comment,
-        commentID: item.id,
-        commentOrigin: item.origin,
-        preview: item.preview,
-      })),
-    )
-  }
-
-  const applyHistoryPrompt = (entry: PromptHistoryEntry, position: "start" | "end") => {
-    const p = entry.prompt
-    const length = position === "start" ? 0 : promptLength(p)
-    setStore("applyingHistory", true)
-    applyHistoryComments(entry.comments)
-    prompt.set(p, length)
-    requestAnimationFrame(() => {
-      editor.focusAt(length)
-      setStore("applyingHistory", false)
-      queueScroll()
-    })
-  }
+  const historyController = createPromptInputHistoryController({
+    history,
+    comments,
+    prompt,
+    editor,
+    store,
+    setStore,
+    queueScroll,
+  })
+  const historyComments = historyController.comments
 
   const getCaretState = () => editor.caretState(promptLength(prompt.current()))
 
@@ -483,11 +424,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const closePopover = () => setStore("popover", null)
 
-  const resetHistoryNavigation = (force = false) => {
-    if (!force && (store.historyIndex < 0 || store.applyingHistory)) return
-    setStore("historyIndex", -1)
-    setStore("savedPrompt", null)
-  }
+  const resetHistoryNavigation = historyController.reset
 
   const focusEditorEnd = () => {
     requestAnimationFrame(() => editor.placeCursorAtEnd())
@@ -765,9 +702,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return true
   }
 
-  const addToHistory = (prompt: Prompt, mode: "normal" | "shell") => {
-    history.add(prompt, mode, mode === "shell" ? [] : historyComments())
-  }
+  const addToHistory = historyController.add
 
   createEffect(
     on(
@@ -807,21 +742,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     ),
   )
 
-  const navigateHistory = (direction: "up" | "down") => {
-    const result = navigatePromptHistory({
-      direction,
-      entries: history.entries(store.mode),
-      historyIndex: store.historyIndex,
-      currentPrompt: prompt.current(),
-      currentComments: historyComments(),
-      savedPrompt: store.savedPrompt,
-    })
-    if (!result.handled) return false
-    setStore("historyIndex", result.historyIndex)
-    setStore("savedPrompt", result.savedPrompt)
-    applyHistoryPrompt(result.entry, result.cursor)
-    return true
-  }
+  const navigateHistory = historyController.navigate
 
   const { addAttachment, addAttachments, removeAttachment, handlePaste } = createPromptAttachments({
     prompt,
