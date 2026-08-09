@@ -62,16 +62,11 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
     //
     // `Offline.reload()` rides the same chokepoint (A3), so the airgap applies immediately too.
     //
-    // ⚠️ What is NOT yet live, so nobody reads this as "everything applies": the novaclaw-side
-    // per-instance `InstanceState` caches (`Config`, `Agent`, `MCP`, `Skill`, `Format`) were also
-    // refreshed by that teardown and have no other invalidation — `Config.invalidate()` clears only
-    // the process-global store view, and there are ZERO callers of `InstanceState.invalidate` in the
-    // tree. The keys behind them (`mcp` via a config import, `formatter`, `snapshots`, `plugins`)
-    // still want a restart. They are tracked as B7 tier-3 rather than fixed here: their cure is a
-    // per-service refresh registry like the one above, NOT a blanket cache flush — a blanket flush is
-    // what shuts MCP children down and fails pending asks, i.e. this defect wearing a smaller
-    // footprint. `GET /config` is unaffected either way: it answers from `ConfigStoreWrite.overlay`,
-    // which reads the stores directly.
+    // Tier 3 now uses that same ordered reload registry for Config, Formatter and MCP; the latter
+    // reconciles connections instead of destroying every child. The shrink-only restart ledger has
+    // one explicit exception: `plugins`, because ESM cannot unload an in-process module and ruling 5
+    // schedules that loader for deletion rather than a hot-reload mechanism. `GET /config` always
+    // answers directly from `ConfigStoreWrite.overlay` regardless.
     const update = Effect.fn("ConfigHttpApi.update")(function* (ctx) {
       // Ruling 2, FIRST: an unknown top-level key never survives the payload decode
       // (`onExcessProperty: "ignore"`), so it would answer 200 for a write that never happened.

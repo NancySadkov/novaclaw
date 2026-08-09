@@ -496,8 +496,8 @@ export const layer = Layer.effect(
     const policy = yield* Policy.Service
 
     // Config→SQLite 8c: jsonc is NOT a runtime config source. The one config DOCUMENT is
-    // synthetic — the instance-wide settings store's snapshot (read once per location boot;
-    // the per-subsystem stores feed their own loaders directly). The directory walk-up
+    // synthetic — projected from the instance-wide settings store on each `entries()` call;
+    // the per-subsystem stores feed their own loaders directly. The directory walk-up
     // SURVIVES for Directory entries only: the D2 filesystem resources (markdown agents/
     // commands, `skill(s)/` dirs, plugin files) ride them. jsonc files are read exclusively
     // by the boot-time import seeds (isEmpty-gated, server startup) and the explicit Import

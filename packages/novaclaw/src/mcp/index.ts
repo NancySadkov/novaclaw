@@ -922,8 +922,10 @@ export const layer = Layer.effect(
       // server, then `createAndStore` below would connect it a second time and tear the first down.
       const s = yield* InstanceState.get(state)
       yield* persistServer(name, entry)
-      // The in-memory overlay stays: this process's `Config` is a boot-time snapshot, so `status()`,
-      // `getMcpConfig` and the tool surface would not see the server we just committed without it.
+      // The in-memory overlay stays because this self-write deliberately suppresses the ordinary MCP
+      // reconcile (see `persistServer`): this caller owns the matching live-state mutation below.
+      // Config itself is re-materialized by the same store write; this assignment is for the already
+      // materialized MCP connection set, not a workaround for a frozen Config document.
       s.config[name] = entry
       yield* createAndStore(name, entry)
       return { status: s.status }
