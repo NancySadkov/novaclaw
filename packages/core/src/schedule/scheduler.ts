@@ -8,9 +8,11 @@ export * as CalendarScheduler from "./scheduler"
 // replayed (no thundering herd). A launch failure is isolated (never wedges the loop), recorded as `error`,
 // and the schedule still advances.
 
-import { Clock, Duration, Effect, Layer, Schedule } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Schedule } from "effect"
 import { AgentV2 } from "../agent"
 import { Database } from "../database/database"
+import { makeGlobalNode, tags } from "../effect/app-node"
+import { LayerNode } from "../effect/layer-node"
 import { Global } from "../global"
 import { ModelV2 } from "../model"
 import { AbsolutePath } from "../schema"
@@ -126,13 +128,20 @@ export const makeLaunch =
 /** Seconds between poll ticks. Sub-minute so a schedule due "now" fires promptly; the scan is index-cheap. */
 export const TICK_INTERVAL_SECONDS = 30
 
+export interface Interface {
+  readonly running: true
+}
+
+export class Service extends Context.Service<Service, Interface>()("@novaclaw/CalendarScheduler") {}
+
 /**
  * The background poll loop (P3). Leaves Database + SessionV2 + Global as UNSATISFIED requirements so the
- * serve binds them to the SHARED singletons (mirror the messenger gateway): wire this as a plain layer merged
- * BEFORE the SessionV2 provide, never as a node in the app group — compiling a second SessionV2 would launch
- * scheduled sessions into a different instance than the routes/runner use.
+ * serve binds them to the SHARED singletons (mirror the messenger gateway). The production capability uses
+ * `sharedServiceNode` before the SessionV2 provide; `node` exists for closed graphs/tests. Never put that closed
+ * node in the production app group — compiling a second SessionV2 would launch into the wrong runtime.
  */
-export const layer = Layer.effectDiscard(
+export const layer = Layer.effect(
+  Service,
   Effect.gen(function* () {
     const { db } = yield* Database.Service
     const sessions = yield* SessionV2.Service
@@ -147,5 +156,29 @@ export const layer = Layer.effectDiscard(
       Effect.delay(Duration.seconds(5)),
       Effect.forkScoped,
     )
+    return Service.of({ running: true })
   }),
 )
+
+export const node = makeGlobalNode({
+  service: Service,
+  layer,
+  deps: [Database.node, SessionV2.node, Global.node],
+})
+
+export const sharedServiceNode = makeGlobalNode({
+  service: Service,
+  layer,
+  deps: [
+    LayerNode.external(Database.Service, tags.values.global),
+    LayerNode.external(SessionV2.Service, tags.values.global),
+    LayerNode.external(Global.Service, tags.values.global),
+  ],
+})
+
+export const capabilityNode = LayerNode.capability(node, { name: "calendar-scheduler", service: Service })
+export const CapabilityService = capabilityNode.service
+export const sharedCapabilityNode = LayerNode.capability(sharedServiceNode, {
+  name: "calendar-scheduler",
+  service: Service,
+})

@@ -332,6 +332,15 @@ const messengerCapabilityStartup = Layer.effectDiscard(
     yield* Effect.forkScoped(gateway.get.pipe(Effect.asVoid))
   }),
 ).pipe(Layer.provide(messengerCapabilityHandles))
+const calendarSchedulerCapability = LayerNode.compile(CalendarScheduler.sharedCapabilityNode)
+const calendarSchedulerStartup = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const registry = yield* CapabilityRegistry.Service
+    const scheduler = yield* CalendarScheduler.CapabilityService
+    yield* registry.register("calendar-scheduler", scheduler)
+    yield* Effect.forkScoped(scheduler.get.pipe(Effect.asVoid))
+  }),
+).pipe(Layer.provide(calendarSchedulerCapability))
 
 // Settings → SQLite: run the ONE first-boot import pass (every per-subsystem store) at server
 // startup, BEFORE any location boots — so every dir (incl. the shared scratch dir) sees the
@@ -393,10 +402,9 @@ export function createRoutes(
     // EventV2, Database, Global) resolve to the SAME memoized instances the routes use.
     Layer.provide(messengerServices),
     Layer.provideMerge(messengerCapabilityStartup),
-    // Calendar scheduler poll loop — same requirement-leaving pattern as the messenger: it must reach the
-    // SHARED SessionV2/Database/Global (never a second SessionV2), so it is provided BEFORE the SessionV2
-    // provide. provideMerge (like catalogSeedStartup) guarantees the background fiber is built + started.
-    Layer.provideMerge(CalendarScheduler.layer),
+    // The scheduler capability starts asynchronously and captures the shared SessionV2/Database/Global.
+    // A constructor refusal is registered as recovery data instead of killing the server layer.
+    Layer.provideMerge(calendarSchedulerStartup),
     Layer.provide(
       SessionV2.defaultLayer.pipe(
         // Every admitted server drain crosses a disposable worker process. The local executor is

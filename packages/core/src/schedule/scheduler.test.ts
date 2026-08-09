@@ -4,9 +4,12 @@
 import { describe, expect, test } from "bun:test"
 import { SqliteClient } from "@effect/sql-sqlite-bun"
 import { EffectDrizzleSqlite } from "@novaclaw/effect-drizzle-sqlite"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import type { Database } from "../database/database"
 import { DatabaseMigration } from "../database/migration"
+import { AppNodeBuilder } from "../effect/app-node-builder"
+import { CapabilityRegistry } from "../effect/capability-registry"
+import { LayerNode } from "../effect/layer-node"
 import { CalendarScheduler } from "./scheduler"
 import { CalendarStore } from "./store"
 import type { Recurrence } from "./recurrence"
@@ -37,6 +40,48 @@ const recorder = (id: string | null, fail = false) => {
   }
   return { launch, calls }
 }
+
+describe("CalendarScheduler capability", () => {
+  test("keeps the core alive, caches a refusal, and retries in place", async () => {
+    let refuse = true
+    let builds = 0
+    const constructor = Layer.effect(
+      CalendarScheduler.Service,
+      Effect.sync(() => {
+        builds++
+        if (refuse) throw new Error("forced calendar scheduler constructor defect")
+        return CalendarScheduler.Service.of({ running: true })
+      }),
+    )
+    const graph = AppNodeBuilder.build(LayerNode.group([CapabilityRegistry.node, CalendarScheduler.capabilityNode]), [
+      [CalendarScheduler.node, constructor],
+    ])
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const registry = yield* CapabilityRegistry.Service
+        const capability = yield* CalendarScheduler.CapabilityService
+        const before = yield* registry.inspect()
+        const first = yield* capability.get
+        const second = yield* capability.get
+        refuse = false
+        const retried = yield* registry.retry("calendar-scheduler")
+        const after = yield* capability.get
+        return { before, first, second, retried, after, core: "alive" }
+      }).pipe(Effect.provide(graph)),
+    )
+
+    expect(result.before).toEqual([{ name: "calendar-scheduler", status: { state: "idle" } }])
+    expect(result.first).toMatchObject({
+      ok: false,
+      error: { capability: "calendar-scheduler", kind: "failed" },
+    })
+    expect(result.second).toEqual(result.first)
+    expect(result.retried.state).toBe("ready")
+    expect(result.after).toEqual({ ok: true, value: { running: true } })
+    expect(result.core).toBe("alive")
+    expect(builds).toBe(2)
+  })
+})
 
 describe("CalendarScheduler.tick", () => {
   test("fires a due schedule once, records the session, advances next_fire_at", async () => {
