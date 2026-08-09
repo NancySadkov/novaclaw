@@ -108,6 +108,23 @@ describe("layer node", () => {
     expect(await Effect.runPromise(program)).toEqual({ ok: true, value: { value: "hello production" } })
   })
 
+  test("captures an externally supplied dependency without compiling a private copy", async () => {
+    const externalValue = LayerNode.external(Value, tags.values.app)
+    const inner = make({ service: Greeting, layer: greetingLayer, deps: [externalValue] })
+    const capability = LayerNode.capability(inner, { name: "test.external", service: Greeting })
+    const layer = LayerNode.compile(LayerNode.group([capability]))
+    const typecheck: Layer.Layer<LayerNode.Output<typeof capability>, never, Value> = layer
+    void typecheck
+
+    const supplied = Value.of({ value: "shared runtime" })
+    const program = Effect.gen(function* () {
+      const handle = yield* capability.service
+      return yield* handle.get
+    }).pipe(Effect.provide(layer), Effect.provideService(Value, supplied))
+
+    expect(await Effect.runPromise(program)).toEqual({ ok: true, value: { value: "hello shared runtime" } })
+  })
+
   test("turns defects and timeouts into cached unavailable values", async () => {
     const failed = make({
       service: Value,

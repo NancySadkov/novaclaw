@@ -1,12 +1,21 @@
 import { Brand, Context, Effect, Layer } from "effect"
 import { Capability } from "./capability"
 
-type AnyNode = Node<unknown, unknown, any>
+type AnyNode = Node<unknown, unknown, any, any>
 type RuntimeLayer = Layer.Layer<never, unknown, unknown>
 type NodeList<Item extends AnyNode = AnyNode> = readonly [] | readonly [Item, ...Item[]]
-export type Output<Item> = [Item] extends [never] ? never : Item extends Node<infer A, unknown, any> ? A : never
-export type Error<Item> = [Item] extends [never] ? never : Item extends Node<unknown, infer E, any> ? E : never
-type NodeTag<Item> = [Item] extends [never] ? undefined : Item extends Node<unknown, unknown, infer T> ? T : never
+export type Output<Item> = [Item] extends [never] ? never : Item extends Node<infer A, unknown, any, any> ? A : never
+export type Error<Item> = [Item] extends [never] ? never : Item extends Node<unknown, infer E, any, any> ? E : never
+export type Requirements<Item> = [Item] extends [never]
+  ? never
+  : Item extends Node<unknown, unknown, any, infer R>
+    ? R
+    : never
+type NodeTag<Item> = [Item] extends [never]
+  ? undefined
+  : Item extends Node<unknown, unknown, infer T, any>
+    ? T
+    : never
 type Missing<Required, Dependencies extends NodeList> = Exclude<Required, Output<Dependencies[number]>>
 type CheckDependencies<Implementation extends Layer.Any, Dependencies extends NodeList> = [
   Missing<Layer.Services<Implementation>, Dependencies>,
@@ -15,12 +24,13 @@ type CheckDependencies<Implementation extends Layer.Any, Dependencies extends No
   : { readonly "Missing dependencies": Missing<Layer.Services<Implementation>, Dependencies> }
 declare const $OutputType: unique symbol
 declare const $ErrorType: unique symbol
+declare const $RequirementsType: unique symbol
 
 export type Tag<Name extends string = string> = Name & Brand.Brand<"LayerNode.Tag">
 
 const makeTag = Brand.nominal<Tag>()
 
-export interface Node<A, E = never, T extends Tag | undefined = undefined> {
+export interface Node<A, E = never, T extends Tag | undefined = undefined, R = never> {
   readonly kind: "layer" | "unbound" | "group" | "capability"
   readonly name: string
   readonly service?: Context.Service.Any
@@ -29,12 +39,13 @@ export interface Node<A, E = never, T extends Tag | undefined = undefined> {
   readonly tag?: T
   readonly [$OutputType]?: () => A
   readonly [$ErrorType]?: () => E
+  readonly [$RequirementsType]?: () => R
 }
 
-export interface CapabilityNode<A, E = never, T extends Tag | undefined = undefined>
-  extends Node<Capability.Capability<A>, never, T> {
+export interface CapabilityNode<A, E = never, T extends Tag | undefined = undefined, R = never>
+  extends Node<Capability.Capability<A>, never, T, R> {
   readonly kind: "capability"
-  readonly inner: Node<unknown, E, T>
+  readonly inner: Node<unknown, E, T, R>
   readonly innerService: Context.Service.Any
   readonly service: Context.Service<Capability.Capability<A>, Capability.Capability<A>>
   readonly capabilityName: string
@@ -49,7 +60,7 @@ type DistributiveOmit<A, K extends PropertyKey> = A extends unknown ? Omit<A, K>
 
 export type TagConfig = Readonly<Record<string, readonly string[]>>
 type TagNames<Config extends TagConfig> = keyof Config & string
-type NodeInTags<Names extends string> = Node<unknown, unknown, Tag<Names> | undefined>
+type NodeInTags<Names extends string> = Node<unknown, unknown, Tag<Names> | undefined, any>
 type CheckTags<Items extends NodeList, Names extends string> = [Exclude<Items[number], NodeInTags<Names>>] extends [
   never,
 ]
@@ -63,7 +74,12 @@ export interface Tags<Config extends TagConfig> {
   ) => <const Implementation extends Layer.Any, const Items extends NodeList>(
     input: DistributiveOmit<MakeInput<Implementation, Items, Tag<Name>>, "tag"> &
       CheckTags<Items, Name | Extract<Config[Name][number], string>>,
-  ) => Node<Layer.Success<Implementation>, Layer.Error<Implementation> | Error<Items[number]>, Tag<Name>>
+  ) => Node<
+    Layer.Success<Implementation>,
+    Layer.Error<Implementation> | Error<Items[number]>,
+    Tag<Name>,
+    Requirements<Items[number]>
+  >
 }
 
 export function tags<const Config extends { readonly [Name in keyof Config]: readonly (keyof Config & string)[] }>(
@@ -96,7 +112,12 @@ export function make<
   const T extends Tag | undefined = undefined,
 >(
   input: MakeInput<Implementation, Items, T>,
-): Node<Layer.Success<Implementation>, Layer.Error<Implementation> | Error<Items[number]>, T> {
+): Node<
+  Layer.Success<Implementation>,
+  Layer.Error<Implementation> | Error<Items[number]>,
+  T,
+  Requirements<Items[number]>
+> {
   return {
     kind: "layer",
     name: input.service !== undefined ? input.service.key : input.name,
@@ -104,6 +125,21 @@ export function make<
     implementation: input.layer,
     dependencies: input.deps,
     tag: input.tag,
+  }
+}
+
+/** Declare a service that must be supplied by the layer which compiles this graph. */
+export function external<S extends Context.Service.Any, const T extends Tag | undefined = undefined>(
+  service: S,
+  tag?: T,
+): Node<Context.Service.Identifier<S>, never, T, Context.Service.Identifier<S>> {
+  return {
+    kind: "layer",
+    name: service.key,
+    service,
+    implementation: Layer.effect(service, Effect.service(service)),
+    dependencies: [],
+    tag,
   }
 }
 
@@ -119,20 +155,20 @@ export function unbound<R, Shape, const T extends Tag>(service: Context.Key<R, S
 
 export function group<const Items extends readonly AnyNode[]>(
   dependencies: Items,
-): Node<Output<Items[number]>, Error<Items[number]>, NodeTag<Items[number]>> {
+): Node<Output<Items[number]>, Error<Items[number]>, NodeTag<Items[number]>, Requirements<Items[number]>> {
   return { kind: "group", name: "group", dependencies }
 }
 
 /** Wrap one service node in a first-use, failure-as-data capability. */
-export function capability<S extends Context.Service.Any, E, T extends Tag | undefined>(
-  inner: Node<Context.Service.Identifier<S>, E, T>,
+export function capability<S extends Context.Service.Any, E, T extends Tag | undefined, R>(
+  inner: Node<Context.Service.Identifier<S>, E, T, R>,
   options: {
     readonly name: string
     readonly service: S
     readonly timeout?: import("effect").Duration.Input
     readonly repair?: readonly string[]
   },
-): CapabilityNode<Context.Service.Shape<S>, E, T> {
+): CapabilityNode<Context.Service.Shape<S>, E, T, R> {
   if (inner.kind !== "layer" || inner.service === undefined || inner.implementation === undefined) {
     throw new Error(`Capability ${options.name} must wrap one service layer`)
   }
@@ -196,8 +232,8 @@ type CheckReplacementErrors<SourceError, ReplacementError> = [Exclude<Replacemen
   ? unknown
   : { readonly "New replacement errors": Exclude<ReplacementError, SourceError> }
 
-type CheckReplacement<Item> = Item extends readonly [Node<infer A, infer E, infer T>, infer Replacement]
-  ? Replacement extends Node<NoInfer<A>, infer E2, T>
+type CheckReplacement<Item> = Item extends readonly [Node<infer A, infer E, infer T, any>, infer Replacement]
+  ? Replacement extends Node<NoInfer<A>, infer E2, T, any>
     ? CheckReplacementErrors<E, NoInfer<E2>>
     : Replacement extends Layer.Layer<NoInfer<A>, infer E2, never>
       ? CheckReplacementErrors<E, NoInfer<E2>>
@@ -309,13 +345,13 @@ function walk<Result>(
 // `rewriteReplacementDependencies` substitutes replacements and changes nothing else.
 // Pinned by `test/effect/layer-node/layer-node.test.ts` and, on the real graph,
 // `test/location-services-hoist-replacements.test.ts`.
-export function hoist<A, E, T extends Tag, const Items extends Replacements = readonly []>(
-  root: Node<A, E, any>,
+export function hoist<A, E, T extends Tag, R, const Items extends Replacements = readonly []>(
+  root: Node<A, E, any, R>,
   tag: T,
   replacements?: ValidReplacements<Items>,
 ): {
-  readonly node: Node<A, E>
-  readonly hoisted: Node<unknown, E>
+  readonly node: Node<A, E, undefined, R>
+  readonly hoisted: Node<unknown, E, undefined, R>
 } {
   const hoisted = new Map<string, AnyNode>()
   const replacementMap = replacementMapFrom(replacements)
@@ -350,15 +386,18 @@ export function hoist<A, E, T extends Tag, const Items extends Replacements = re
   )
 
   return {
-    node: node as Node<A, E>,
-    hoisted: group(hoistedNodes) as Node<unknown, E>,
+    // Conservatively retain external requirements on both independently compilable halves. A
+    // replacement may close one half at runtime, but erasing the requirement here would let a caller
+    // compile the other half without supplying the shared service.
+    node: node as Node<A, E, undefined, R>,
+    hoisted: group(hoistedNodes) as Node<unknown, E, undefined, R>,
   }
 }
 
-export function compile<A, E, const Items extends Replacements = readonly []>(
-  root: Node<A, E, any>,
+export function compile<A, E, R, const Items extends Replacements = readonly []>(
+  root: Node<A, E, any, R>,
   replacements?: ValidReplacements<Items>,
-): Layer.Layer<A, E> {
+): Layer.Layer<A, E, R> {
   const replacementMap = replacementMapFrom(replacements)
   // Per-invocation, so two `compile` calls over the same nodes produce different WRAPPER objects.
   // That is not the same as two instances: a node with `deps: []` is returned as its module-level
@@ -423,7 +462,7 @@ export function compile<A, E, const Items extends Replacements = readonly []>(
     )
   const layers = flatten(root).map((node) => compileNode(node))
   const layer = layers.reduce<RuntimeLayer>((result, layer) => layer.pipe(Layer.provideMerge(result)), Layer.empty)
-  return layer as Layer.Layer<A, E>
+  return layer as Layer.Layer<A, E, R>
 }
 
 function replacementMapFrom(replacements?: Replacements) {
@@ -480,7 +519,7 @@ function rewriteReplacementDependencies(
   return recur(root, true)
 }
 
-export function hasUnbound(root: Node<unknown, unknown, any>, source: AnyNode): boolean {
+export function hasUnbound(root: Node<unknown, unknown, any, any>, source: AnyNode): boolean {
   if (source.kind !== "unbound") throw new Error(`Cannot check non-unbound layer node: ${source.name}`)
   return walk<boolean>(root, (node, context) => {
     if (node === source) return true
@@ -490,7 +529,7 @@ export function hasUnbound(root: Node<unknown, unknown, any>, source: AnyNode): 
 
 /** Capability declarations reachable in this graph, after replacements, without building them. */
 export function capabilities(
-  root: Node<unknown, unknown, any>,
+  root: Node<unknown, unknown, any, any>,
   replacements?: Replacements,
 ): ReadonlyArray<CapabilityNode<unknown, unknown, any>> {
   const replacementMap = replacementMapFrom(replacements)
