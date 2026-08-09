@@ -7,7 +7,6 @@ import { Database } from "@novaclaw/core/database/database"
 import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 import { EventV2 } from "@novaclaw/core/event"
 import { Global } from "@novaclaw/core/global"
-import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { Location } from "@novaclaw/core/location"
 import { LocationServiceMap } from "@novaclaw/core/location-service-map"
@@ -19,7 +18,7 @@ import { tmpdir } from "./fixture/tmpdir"
 
 // WHY THIS FILE EXISTS (2026-07-28).
 //
-// `Database`, `Global`, `CredentialCipher`, `MemoryClient` and `SessionScheduler` must exist EXACTLY
+// `Database`, `Global`, `CredentialCipher`, the Memory capability and `SessionScheduler` must exist EXACTLY
 // ONCE per process.
 // A second `Database` means two SQLite connections to a store whose transaction safety rests on a
 // single-connection semaphore (`packages/effect-drizzle-sqlite`); a second `SessionScheduler` means
@@ -80,7 +79,7 @@ const observedGlobals = () => {
     database: probe(Database.Service.key),
     global: probe(Global.Service.key),
     cipher: probe(CredentialCipher.Service.key),
-    memory: probe(MemoryClient.Service.key),
+    memory: probe(Memory.node.service.key),
     scheduler: probe(SessionScheduler.Service.key),
   }
   const replacements = [
@@ -94,7 +93,7 @@ const observedGlobals = () => {
         deps: [Global.node],
       }),
     ],
-    [Memory.node, observe(MemoryClient.Service, Memory.node.implementation as never, probes.memory)],
+    [Memory.node, observe(Memory.node.service, Memory.node.implementation as never, probes.memory)],
     [
       SessionScheduler.node,
       observe(SessionScheduler.Service, SessionScheduler.node.implementation as never, probes.scheduler),
@@ -177,7 +176,7 @@ describe("location services global identity", () => {
     for (const key of [
       Database.Service.key,
       Global.Service.key,
-      MemoryClient.Service.key,
+      Memory.node.service.key,
       SessionScheduler.Service.key,
     ]) {
       // A node that stops being `global`-tagged would be rebuilt per location by construction, and
@@ -209,7 +208,7 @@ describe("location services global identity", () => {
       "@novaclaw/v2/storage/Database: expected exactly 1 build and 1 instance per process, got 4 builds and 4 distinct instances across 3 locations",
       "@novaclaw/Global: expected exactly 1 build and 1 instance per process, got 4 builds and 4 distinct instances across 3 locations",
       "@novaclaw/v2/CredentialCipher: expected exactly 1 build and 1 instance per process, got 4 builds and 4 distinct instances across 3 locations",
-      "@novaclaw/v2/MemoryClient: expected exactly 1 build and 1 instance per process, got 3 builds and 3 distinct instances across 3 locations",
+      "@novaclaw/capability/memory: expected exactly 1 build and 1 instance per process, got 3 builds and 3 distinct instances across 3 locations",
       "@novaclaw/v2/SessionScheduler: expected exactly 1 build and 1 instance per process, got 3 builds and 3 distinct instances across 3 locations",
     ])
   }, 20000)

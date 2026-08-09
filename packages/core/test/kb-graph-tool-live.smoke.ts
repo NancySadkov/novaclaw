@@ -33,16 +33,16 @@ const text = (r: { type: string; value: unknown }) => {
 }
 
 // Build a minimal tool graph backed by the REAL WASM engine at `dir` (dim 8, enabled). Memory.node is
-// a top-level member so the body can poll its readiness via MemoryClient.Service.health().
+// a top-level member so the body can poll its readiness through the capability-backed client.
 const graph = () =>
   AppNodeBuilder.build(LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, KbTool.node, Memory.node]), [
     [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
-    [Memory.node, Memory.layerFromConfig({ enabled: true, dim: 8, dbDir: join(dir, "graph") })],
+    [Memory.serviceNode, Memory.layerFromConfig({ enabled: true, dim: 8, dbDir: join(dir, "graph") })],
   ])
 
 const waitReady = Effect.gen(function* () {
   // Memory opens in a background fiber — wait for the engine to actually be live.
-  const mem = yield* MemoryClient.Service
+  const mem = Memory.client(yield* Memory.node.service)
   for (let i = 0; i < 200; i++) {
     if (yield* mem.health()) return
     yield* Effect.sleep("100 millis")

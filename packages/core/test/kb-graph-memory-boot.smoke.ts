@@ -1,5 +1,5 @@
 // Boot smoke — proves the graph DB starts AS PART OF THE INSTANCE, now via the in-process WASM engine
-// (§2.0). Builds the real boot layer (Memory.layerFromConfig, the same one Memory.node uses), which
+// (§2.0). Builds the real inner layer (`Memory.layerFromConfig`, used by `Memory.serviceNode`), which
 // resolves a lightweight MemoryClient.Service, then opens the engine on its first operation and
 // round-trips a memory. Asserts the safety properties: UNUSED INSTANCES STAY UNLOADED and an
 // unconfigured instance still boots (disabled client).

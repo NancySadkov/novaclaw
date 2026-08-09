@@ -3,6 +3,8 @@ export * as Memory from "./memory"
 import { join } from "node:path"
 import { Duration, Effect, Layer } from "effect"
 import { makeGlobalNode } from "../effect/app-node"
+import { Capability } from "../effect/capability"
+import { LayerNode } from "../effect/layer-node"
 import { Flag } from "../flag/flag"
 import { Global } from "../global"
 import { Log } from "@novaclaw/schema/log"
@@ -153,4 +155,42 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
 /** The production layer: reads the memory config from env flags. */
 export const layer = layerFromConfig(configFromFlags())
 
-export const node = makeGlobalNode({ service: MemoryClient.Service, layer, deps: [] })
+/** The real service node stays replaceable so forced-failure tests can poison only the deferred work. */
+export const serviceNode = makeGlobalNode({ service: MemoryClient.Service, layer, deps: [] })
+
+/**
+ * Memory is the first client of the generic lazy-capability graph seam. Building the instance now
+ * provides only this handle; the lightweight client (and its consolidation fiber) are constructed on
+ * the first memory operation. A defect or timeout becomes a disabled client with a named reason.
+ */
+export const node = LayerNode.capability(serviceNode, {
+  name: "memory",
+  service: MemoryClient.Service,
+  timeout: "30 seconds",
+  repair: ["runtime_flags.NOVACLAW_KB_MEMORY"],
+})
+
+/** Preserve the MemoryClient operation contract while deferring capability acquisition per call. */
+export const client = (capability: Capability.Capability<MemoryClient.Interface>): MemoryClient.Interface => {
+  const withClient = <A>(
+    run: (memory: MemoryClient.Interface) => Effect.Effect<A, MemoryClient.MemoryError>,
+  ): Effect.Effect<A, MemoryClient.MemoryError> =>
+    capability.get.pipe(
+      Effect.flatMap((result) => run(result.ok ? result.value : MemoryClient.disabled(result.error.summary))),
+    )
+  return {
+    health: () =>
+      capability.get.pipe(Effect.flatMap((result) => (result.ok ? result.value.health() : Effect.succeed(false)))),
+    addMemory: (input) => withClient((memory) => memory.addMemory(input)),
+    addEdge: (input) => withClient((memory) => memory.addEdge(input)),
+    search: (input) => withClient((memory) => memory.search(input)),
+    neighbors: (id, opts) => withClient((memory) => memory.neighbors(id, opts)),
+    path: (from, to, maxHops) => withClient((memory) => memory.path(from, to, maxHops)),
+    invalidate: (id, at) => withClient((memory) => memory.invalidate(id, at)),
+    purge: (id) => withClient((memory) => memory.purge(id)),
+    clearScope: (scope) => withClient((memory) => memory.clearScope(scope)),
+    stats: () => withClient((memory) => memory.stats()),
+    list: (input) => withClient((memory) => memory.list(input)),
+    graph: (input) => withClient((memory) => memory.graph(input)),
+  }
+}

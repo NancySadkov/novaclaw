@@ -132,8 +132,8 @@ export interface Interface {
 }
 
 // The Effect service tag — the memory tier the kb tool + auto-recall/extract hooks depend on. The
-// instance-boot layer (Memory.node) opens the in-process WASM engine and provides the live client via
-// `fromEngine`; tests provide a client via `stub`/`disabled` through `layerWith`.
+// deferred inner layer (Memory.serviceNode) provides the live client via `fromEngine`; tests provide
+// a client via `stub`/`disabled` through `layerWith`.
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/MemoryClient") {}
 
 /** The in-process engine surface the client adapts (WasmMemory satisfies this structurally). Keeps

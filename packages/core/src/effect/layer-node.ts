@@ -133,7 +133,9 @@ export function capability<S extends Context.Service.Any, E, T extends Tag | und
     readonly repair?: readonly string[]
   },
 ): CapabilityNode<Context.Service.Shape<S>, E, T> {
-  if (inner.service === undefined) throw new Error(`Capability ${options.name} must wrap one service node`)
+  if (inner.kind !== "layer" || inner.service === undefined || inner.implementation === undefined) {
+    throw new Error(`Capability ${options.name} must wrap one service layer`)
+  }
   if (inner.service.key !== options.service.key) {
     throw new Error(`Capability ${options.name} service does not match ${inner.name}`)
   }
@@ -144,6 +146,14 @@ export function capability<S extends Context.Service.Any, E, T extends Tag | und
     kind: "capability",
     name: service.key,
     service,
+    implementation: capabilityLayer({
+      capabilityName: options.name,
+      capabilityService: service,
+      innerService: options.service,
+      innerLayer: inner.implementation,
+      timeout: options.timeout ?? "30 seconds",
+      repair: options.repair,
+    }),
     dependencies: [inner],
     inner,
     innerService: options.service,
@@ -153,6 +163,31 @@ export function capability<S extends Context.Service.Any, E, T extends Tag | und
     ...(options.repair === undefined ? {} : { repair: options.repair }),
   }
 }
+
+const capabilityLayer = (input: {
+  readonly capabilityName: string
+  readonly capabilityService: Context.Service.Any
+  readonly innerService: Context.Service.Any
+  readonly innerLayer: Layer.Any
+  readonly timeout: import("effect").Duration.Input
+  readonly repair?: readonly string[]
+}): Layer.Any =>
+  Layer.effect(
+    input.capabilityService,
+    Effect.gen(function* () {
+      const environment = yield* Effect.context<unknown>()
+      const parentScope = yield* Effect.scope
+      return yield* Capability.make({
+        name: input.capabilityName,
+        service: input.innerService,
+        layer: input.innerLayer as Layer.Layer<unknown, unknown, unknown>,
+        environment,
+        parentScope,
+        timeout: input.timeout,
+        ...(input.repair === undefined ? {} : { repair: input.repair }),
+      })
+    }),
+  )
 
 export type Replacement = readonly [source: AnyNode, replacement: AnyNode | Layer.Any]
 export type Replacements = readonly Replacement[]
@@ -346,22 +381,22 @@ export function compile<A, E, const Items extends Replacements = readonly []>(
           }
           const dependencies = inner.dependencies.flatMap(flatten).map(context.visit)
           const implementation = inner.implementation! as RuntimeLayer
-          const wrapper = Layer.effect(
-            capabilityNode.service,
-            Effect.gen(function* () {
-              const environment = yield* Effect.context<unknown>()
-              const parentScope = yield* Effect.scope
-              return yield* Capability.make({
-                name: capabilityNode.capabilityName,
-                service: capabilityNode.innerService,
-                layer: implementation as Layer.Layer<unknown, unknown, unknown>,
-                environment,
-                parentScope,
-                timeout: capabilityNode.timeout,
-                ...(capabilityNode.repair === undefined ? {} : { repair: capabilityNode.repair }),
-              })
-            }),
-          ) as unknown as RuntimeLayer
+          // Preserve the module-level wrapper object on the ordinary path: the shared MemoMap keys on
+          // layer identity, so recreating this wrapper per location would create one capability latch
+          // per location. A rewritten dependency (replacement or boot instrumentation) deliberately
+          // gets a new wrapper around that rewritten inner layer.
+          const wrapper = (
+            inner === rawInner && rawInner === capabilityNode.inner
+              ? capabilityNode.implementation!
+              : capabilityLayer({
+                  capabilityName: capabilityNode.capabilityName,
+                  capabilityService: capabilityNode.service,
+                  innerService: capabilityNode.innerService,
+                  innerLayer: implementation,
+                  timeout: capabilityNode.timeout,
+                  repair: capabilityNode.repair,
+                })
+          ) as RuntimeLayer
           return dependencies.length === 0
             ? wrapper
             : wrapper.pipe(Layer.provide(dependencies as [RuntimeLayer, ...RuntimeLayer[]]))

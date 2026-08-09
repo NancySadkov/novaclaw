@@ -80,6 +80,23 @@ describe("layer node", () => {
     expect(closed).toBe(true)
   })
 
+  test("reuses one capability handle across compile calls sharing a memo map", async () => {
+    const inner = make({ service: Value, layer: valueLayer, deps: [] })
+    const capability = LayerNode.capability(inner, { name: "test.identity", service: Value })
+    const firstLayer = build(LayerNode.group([capability]))
+    const secondLayer = build(LayerNode.group([capability]))
+    const program = Effect.gen(function* () {
+      const scope = yield* Effect.scope
+      const memoMap = yield* Layer.makeMemoMap
+      const first = yield* Layer.buildWithMemoMap(firstLayer, memoMap, scope)
+      const second = yield* Layer.buildWithMemoMap(secondLayer, memoMap, scope)
+      return [Context.get(first, capability.service), Context.get(second, capability.service)] as const
+    }).pipe(Effect.scoped)
+
+    const [first, second] = await Effect.runPromise(program)
+    expect(second).toBe(first)
+  })
+
   test("provides the deferred service's declared dependencies", async () => {
     const inner = make({ service: Greeting, layer: greetingLayer, deps: [value] })
     const capability = LayerNode.capability(inner, { name: "test.dependencies", service: Greeting })

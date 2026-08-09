@@ -133,7 +133,7 @@ const scopesForSearch = (session: string, scope: "session" | "global" | "all" | 
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
-    const memory = yield* MemoryClient.Service
+    const memory = Memory.client(yield* Memory.node.service)
     const mutation = yield* LocationMutation.Service
     const permission = yield* PermissionV2.Service
 

@@ -78,11 +78,7 @@ import { ServerAuth } from "@/server/auth"
 import { InstanceHttpApi, RootHttpApi } from "./api"
 import { Api } from "@novaclaw/server/api"
 import { PublicApi } from "./public"
-import {
-  authorizationLayer,
-  authorizationRouterMiddleware,
-  serverAuthorizationLayer,
-} from "./middleware/authorization"
+import { authorizationLayer, authorizationRouterMiddleware, serverAuthorizationLayer } from "./middleware/authorization"
 import { EventApi } from "./groups/event"
 import { eventHandlers } from "./handlers/event"
 import { configHandlers } from "./handlers/config"
@@ -239,7 +235,8 @@ const app = LayerNode.group([
   CredentialCipher.node,
   // The graph-memory engine — a per-process (per-instance) singleton like the DB. Provided at the
   // server-global scope so the HTTP handlers AND the location-scoped runner/kb-tool share ONE engine
-  // (a second build would clobber the same on-disk snapshot). Opens only when NOVACLAW_KB_MEMORY is set.
+  // (a second build would clobber the same on-disk snapshot). The capability handle is cheap at boot;
+  // its client and consolidation fiber start only on the first memory operation.
   Memory.node,
   // The EEVDF scheduler — a per-instance singleton, listed here so the HTTP diagnostics handler and the
   // location-scoped runner share ONE ledger (two builds would report different worlds).

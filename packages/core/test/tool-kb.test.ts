@@ -55,7 +55,7 @@ const permissionLayer = Layer.succeed(
 const it = testEffect(
   AppNodeBuilder.build(LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, KbTool.node]), [
     [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
-    [Memory.node, MemoryClient.layerWith(stub)],
+    [Memory.serviceNode, MemoryClient.layerWith(stub)],
     [Location.node, locationLayer],
     [PermissionV2.node, permissionLayer],
   ]),

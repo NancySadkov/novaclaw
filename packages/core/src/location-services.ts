@@ -101,7 +101,7 @@ const canonicalRef = (ref: Location.Ref): Location.Ref =>
     : ({ directory: ref.directory, workspaceID: ref.workspaceID } as Location.Ref)
 
 // ⚠️ The GLOBAL half is hoisted and compiled again for EVERY location, and `Database`, `Global`,
-// `MemoryClient` and `SessionScheduler` still end up as exactly ONE instance per process. That is
+// the Memory capability and `SessionScheduler` still end up as exactly ONE instance per process. That is
 // load-bearing — a second `Database` is a second SQLite connection to a store whose transaction
 // safety rests on a single-connection semaphore, and a second `SessionScheduler` is a second EEVDF
 // ledger computing fair-share against a different total.
@@ -110,8 +110,9 @@ const canonicalRef = (ref: Location.Ref): Location.Ref =>
 // each, before and after. The roadmap item that opened this suspected a fresh `compile` cache would
 // cost extra builds; it does not, and the reason is not the one the filing gave. Three separate
 // behaviours produce the property, and a refactor can remove any of them:
-//   1. all four nodes declare `deps: []`, so `LayerNode.compile` returns the module-level layer
-//      OBJECT unchanged — the per-`compile()` cache never comes into play for them at all;
+//   1. the ordinary leaves declare `deps: []`, while the Memory capability compiler deliberately
+//      returns its module-level WRAPPER unchanged — the per-`compile()` cache never creates a fresh
+//      identity for any of them;
 //   2. `LayerMap.make` captures ONE memo map (`Layer.CurrentMemoMap.getOrCreate`) and builds every
 //      key with it, so all locations share it;
 //   3. `Layer.fresh` is `self.build(makeMemoMapUnsafe(), scope)` — a brand-new ROOT memo map — and it

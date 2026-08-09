@@ -1,4 +1,5 @@
 import { KbChunk } from "@novaclaw/core/kb-graph/chunk"
+import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { ascending } from "@novaclaw/schema/identifier"
 import { Effect } from "effect"
@@ -33,7 +34,7 @@ const asBadRequest = <A, R>(effect: Effect.Effect<A, MemoryClient.MemoryError, R
 
 export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (handlers) =>
   Effect.gen(function* () {
-    const memory = yield* MemoryClient.Service
+    const memory = Memory.client(yield* Memory.node.service)
 
     return handlers
       .handle(

@@ -90,7 +90,7 @@ export const layer = Layer.effect(
     const models = yield* SessionRunnerModel.Service
     const llm = yield* LLMClient.Service
     const snapshots = yield* Snapshot.Service
-    const memory = yield* MemoryClient.Service
+    const memory = Memory.client(yield* Memory.node.service)
 
     const getSession = Effect.fn("SessionMaintenance.getSession")(function* (sessionID: SessionSchema.ID) {
       const session = yield* store.get(sessionID)
@@ -381,9 +381,7 @@ export const layer = Layer.effect(
     ): Effect.Effect<void> =>
       effect.pipe(
         Effect.asVoid,
-        Effect.catchCause((cause) =>
-          Log.event(event, { "session.id": sessionID, "session.cause": Log.fault(cause) }),
-        ),
+        Effect.catchCause((cause) => Log.event(event, { "session.id": sessionID, "session.cause": Log.fault(cause) })),
       )
 
     return Service.of({
