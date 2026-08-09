@@ -1,7 +1,7 @@
 import semver from "semver"
 import path from "path"
 
-import { resolveChannel } from "../../../script/lib/channel"
+import { resolveChannel } from "./channel"
 
 const rootPkgPath = path.resolve(import.meta.dir, "../../../package.json")
 const rootPkg = await Bun.file(rootPkgPath).json()
@@ -26,7 +26,7 @@ const env = {
 // The channel is NOT discovered here. This used to be `env.NOVACLAW_CHANNEL ?? git branch
 // --show-current`, which threw in the published source zip (no .git) and otherwise baked a BRANCH
 // NAME into shipped binaries — and the channel becomes `InstallationChannel`, i.e. the instance data
-// dir and the DB filename, so two branches silently meant two databases. `script/lib/channel.ts` is
+// dir and the DB filename, so two branches silently meant two databases. `@novaclaw/script/channel` is
 // now the ONE resolver, shared with the desktop build scripts, electron-builder and electron-vite;
 // its doc comment carries the semantics (unset -> dev, "latest" -> prod, anything else throws).
 const CHANNEL = resolveChannel()

@@ -4,7 +4,7 @@
   "type": "module",
   "license": "SEE LICENSE IN LICENSE",
   "scripts": {
-    "typecheck": "tsgo --noEmit",
+    "typecheck": "tsgo -b",
     "build": "tsc"
   },
   "exports": {

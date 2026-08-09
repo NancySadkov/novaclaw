@@ -3,7 +3,7 @@
   "name": "@novaclaw/script",
   "license": "SEE LICENSE IN LICENSE",
   "scripts": {
-    "typecheck": "tsgo --noEmit"
+    "typecheck": "tsgo -b"
   },
   "dependencies": {
     "semver": "^7.6.3"
@@ -13,6 +13,7 @@
     "@types/semver": "^7.5.8"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./channel": "./src/channel.ts"
   }
 }

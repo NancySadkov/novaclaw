@@ -2,11 +2,11 @@ import { defineConfig } from "electron-vite"
 import appPlugin from "@novaclaw/app/vite"
 import { copyFile, mkdir, readdir } from "node:fs/promises"
 
-import { resolveChannel } from "../../script/lib/channel"
+import { resolveChannel } from "@novaclaw/script/channel"
 
 const NOVACLAW_SERVER_DIST = "../novaclaw/dist/node"
 
-// ONE resolver — see script/lib/channel.ts. The value below becomes the `NOVACLAW_CHANNEL` build
+// ONE resolver — see @novaclaw/script/channel. The value below becomes the `NOVACLAW_CHANNEL` build
 // define, i.e. `InstallationChannel`, i.e. the instance data dir and DB filename. It must agree with
 // electron-builder.config.ts's app id, and until this was shared it did not (the "latest" alias).
 const channel = resolveChannel()

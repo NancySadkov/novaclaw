@@ -148,6 +148,7 @@
       },
       "devDependencies": {
         "@novaclaw/app": "workspace:*",
+        "@novaclaw/script": "workspace:*",
         "@novaclaw/ui": "workspace:*",
         "@solid-primitives/i18n": "2.2.1",
         "@solid-primitives/storage": "catalog:",

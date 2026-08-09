@@ -5,7 +5,7 @@ import { promisify } from "node:util"
 
 import type { Configuration } from "electron-builder"
 
-import { resolveChannel } from "../../script/lib/channel"
+import { resolveChannel } from "@novaclaw/script/channel"
 
 const execFileAsync = promisify(execFile)
 const packageDir = path.dirname(fileURLToPath(import.meta.url))
@@ -23,7 +23,7 @@ async function signWindows(configuration: { path: string }) {
 }
 
 // ONE resolver, shared with electron-vite, the desktop build scripts and `Script.channel`
-// (`script/lib/channel.ts`). This used to be a local copy that did NOT understand the "latest"
+// (`@novaclaw/script/channel`). This used to be a local copy that did NOT understand the "latest"
 // alias, while electron.vite.config.ts DID — so `NOVACLAW_CHANNEL=latest` produced a binary whose
 // app id said `.dev` and whose compiled-in `InstallationChannel` said `prod`. The app id picks the
 // install location and the channel picks the DB filename, so the two halves of one build disagreed.

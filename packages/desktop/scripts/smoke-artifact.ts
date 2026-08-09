@@ -43,7 +43,7 @@ import os from "node:os"
 import path from "node:path"
 
 import { canonicalVersion, type Channel } from "./utils"
-import { channelConfigured, resolveChannel } from "../../../script/lib/channel"
+import { channelConfigured, resolveChannel } from "@novaclaw/script/channel"
 
 /** How long the app gets to boot, open a window and answer /global/health. */
 const READY_TIMEOUT_MS = 90_000
@@ -110,7 +110,7 @@ function resolveExe(explicit: string | undefined): string {
  * BUILD and the wrong one for reading an artifact off disk.
  */
 function expectedChannel(exe: string): Channel {
-  // `channelConfigured()` rather than reading the env var here: script/lib/channel.ts owns that
+  // `channelConfigured()` rather than reading the env var here: @novaclaw/script/channel owns that
   // variable outright, so this file asks "was one configured?" and lets the resolver say what it MEANS
   // (including the "latest" alias, and refusing a typo instead of silently calling it dev).
   if (channelConfigured()) return resolveChannel()

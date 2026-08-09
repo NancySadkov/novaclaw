@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 
-import { CHANNELS, resolveChannel } from "./channel"
+import { CHANNELS, resolveChannel } from "@novaclaw/script/channel"
 
 /**
  * The channel decides the app id, the instance data directory and the DATABASE FILENAME (it becomes
@@ -100,7 +100,7 @@ describe("one resolver — the ratchet", () => {
   /**
    * Files that legitimately name NOVACLAW_CHANNEL for a reason OTHER than resolving it: they declare
    * its type, consume the compiled-in define, or write the define. Everything else must obtain the
-   * channel from `script/lib/channel.ts`.
+   * channel from `@novaclaw/script/channel`.
    */
   const DEFINE_SIDE = [
     "packages/app/src/env.d.ts", // type declaration only
@@ -122,10 +122,10 @@ describe("one resolver — the ratchet", () => {
   ]
 
   test("every consumer imports the shared resolver", () => {
-    // Either straight from `script/lib/channel`, or via `./utils`, which re-exports it for the
-    // desktop build scripts that already imported from there.
+    // The package implementation uses its local module; external consumers use the public subpath,
+    // or `./utils`, which re-exports it for desktop build scripts that already imported from there.
     const importsResolver = (source: string) =>
-      /from "[^"]*lib\/channel"/.test(source) || /from "\.\/utils"/.test(source)
+      /from "(?:@novaclaw\/script\/channel|\.\/channel|\.\/utils)"/.test(source)
     expect(RESOLVER_CONSUMERS.filter((rel) => !importsResolver(read(rel)))).toEqual([])
   })
 
@@ -143,7 +143,7 @@ describe("one resolver — the ratchet", () => {
     const allowed = new Set([
       ...DEFINE_SIDE,
       ...RESOLVER_CONSUMERS,
-      "script/lib/channel.ts",
+      "packages/script/src/channel.ts",
       "script/lib/channel.test.ts",
     ])
     const offenders = filesMentioningChannel().filter(
@@ -159,8 +159,8 @@ describe("one resolver — the ratchet", () => {
     const mentions = filesMentioningChannel()
     expect(mentions.length).toBeGreaterThan(5)
     expect(mentions).toContain("packages/core/src/installation/version.ts")
-    expect(mentions).toContain("script/lib/channel.ts")
-    expect(/process\.env\["NOVACLAW_CHANNEL"\]/.test(read("script/lib/channel.ts"))).toBe(true)
+    expect(mentions).toContain("packages/script/src/channel.ts")
+    expect(/process\.env\["NOVACLAW_CHANNEL"\]/.test(read("packages/script/src/channel.ts"))).toBe(true)
     expect(RESOLVER_CONSUMERS.length).toBeGreaterThan(3)
   })
 })
