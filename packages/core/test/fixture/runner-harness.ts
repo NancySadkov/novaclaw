@@ -40,6 +40,7 @@ import { SystemContextRegistry } from "@novaclaw/core/system-context/registry"
 import { SkillGuidance } from "@novaclaw/core/skill/guidance"
 import { ReferenceGuidance } from "@novaclaw/core/reference/guidance"
 import { Location } from "@novaclaw/core/location"
+import { PluginV2 } from "@novaclaw/core/plugin"
 
 /**
  * A drain harness with NO shared state — the one property the old suite lacks.
@@ -640,6 +641,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       ReferenceGuidance.node,
       Config.node,
       Snapshot.node,
+      PluginV2.node,
       SessionRunnerLLM.node,
       SessionExecution.node,
       SessionV2.node,
@@ -674,7 +676,17 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
         .pipe(Effect.orDie)
     })
 
-  const seed = seedSession(HARNESS_SESSION)
+  const seed = Effect.gen(function* () {
+    // This fixture builds the PluginV2 service but deliberately omits PluginInternal: its synthetic
+    // world supplies the agent/model/tool state directly, so booting the product's built-in plugins
+    // would replace the state the claims are trying to control. PluginInternal is also the production
+    // owner of the initial-boot latch. Open that latch explicitly here so SessionRunner can enforce
+    // "permissions are materialized before the first turn" without making this intentionally partial
+    // graph wait for a boot component it does not contain.
+    const plugins = yield* PluginV2.Service
+    yield* plugins.markReady
+    yield* seedSession(HARNESS_SESSION)
+  })
 
   /**
    * The canonical prefix a compaction would replace: `{ prefixSeq, prefixHash }` for the session as it
