@@ -75,6 +75,13 @@ export interface Input<E, R> {
   readonly costTokens?: () => number | undefined
   /** One complete consumption of the provider stream. Reused only before output. */
   readonly attempt: Effect.Effect<void, E, R>
+  /** Server-owned timing hooks. Synchronous and optional so dispatch remains reusable in Strict. */
+  readonly timing?: {
+    readonly queued?: () => void
+    readonly admitted?: () => void
+    readonly attemptStarted?: (attempt: number) => void
+    readonly attemptSettled?: (attempt: number, outcome: "completed" | "failed" | "interrupted" | "retry") => void
+  }
 }
 
 export interface Restore {
@@ -92,16 +99,20 @@ const dispatch = <E, R, A, E2, R2>(
   input: Input<E, R>,
   settle: (result: Exit.Exit<void, E>, restore: Restore) => Effect.Effect<A, E2, R2>,
 ): Effect.Effect<A, E2, R | R2> =>
-  input.scheduler.admit(input.slot).pipe(
+  Effect.sync(() => input.timing?.queued?.()).pipe(
+    Effect.andThen(input.scheduler.admit(input.slot)),
+    Effect.tap(() => Effect.sync(() => input.timing?.admitted?.())),
     Effect.andThen(
       Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           let attempt = 1
+          input.timing?.attemptStarted?.(attempt)
           let result = yield* restore(input.attempt).pipe(Effect.exit)
           while (result._tag === "Failure" && !Cause.hasInterrupts(result.cause)) {
             if (input.hasOutput() || attempt >= input.maxAttempts) break
             const transient = Option.getOrUndefined(Cause.findErrorOption(result.cause))
             if (!ProviderRetry.isRetryableBeforeOutput(transient)) break
+            input.timing?.attemptSettled?.(attempt, "retry")
             const delay = ProviderRetry.retryDelayMs(attempt, transient.retryAfterMs)
             yield* Log.event("session.provider.attempt.retry", {
               "session.id": input.sessionID,
@@ -123,6 +134,7 @@ const dispatch = <E, R, A, E2, R2>(
               .pipe(Effect.ignore)
             yield* restore(Effect.sleep(Duration.millis(delay)))
             attempt++
+            input.timing?.attemptStarted?.(attempt)
             yield* input.events
               .publish(SessionStatusEvent.Status, {
                 sessionID: input.sessionID,
@@ -131,6 +143,10 @@ const dispatch = <E, R, A, E2, R2>(
               .pipe(Effect.ignore)
             result = yield* restore(input.attempt).pipe(Effect.exit)
           }
+          input.timing?.attemptSettled?.(
+            attempt,
+            result._tag === "Success" ? "completed" : Cause.hasInterrupts(result.cause) ? "interrupted" : "failed",
+          )
           const costTokens = result._tag === "Success" ? input.costTokens?.() : undefined
           if (costTokens !== undefined)
             yield* input.scheduler.report({

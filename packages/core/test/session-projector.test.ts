@@ -532,6 +532,12 @@ describe("SessionProjector", () => {
             },
           ],
         },
+        timing: {
+          startedAt: 10,
+          completedAt: 40,
+          phases: [{ phase: "provider-prefill", startedAt: 20, completedAt: 30 }],
+          providerAttempts: [{ attempt: 1, dispatchedAt: 20, firstTokenAt: 30, completedAt: 40, outcome: "completed" }],
+        },
       })
 
       const rows = yield* db
@@ -551,6 +557,11 @@ describe("SessionProjector", () => {
         context: {
           window: 32_000,
           findings: [{ kind: "duplicate-tool-output", target: "src/a.ts" }],
+        },
+        timing: {
+          startedAt: 10,
+          completedAt: 40,
+          providerAttempts: [{ attempt: 1, firstTokenAt: 30, outcome: "completed" }],
         },
         time: { completed: DateTime.makeUnsafe(1) },
       })

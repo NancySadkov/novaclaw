@@ -99,6 +99,7 @@ import { Introspection } from "./introspection"
 import { MAX_STEPS_PROMPT } from "./max-steps"
 import { ProviderRetry } from "./provider-retry"
 import { ProviderDispatch } from "./provider-dispatch"
+import { TurnTiming } from "./turn-timing"
 import { ProviderStreamLiveness } from "./provider-stream-liveness"
 import { Quality } from "./quality"
 import { QualityProvision } from "./quality-provision"
@@ -651,7 +652,9 @@ export const layer = Layer.effect(
       promotion: SessionInput.Delivery | undefined,
       step: number,
       recoverOverflow?: Harness["compaction"]["compactAfterOverflow"],
+      timing: TurnTiming.Recorder = TurnTiming.make(),
     ) {
+      timing.start("prepare")
       // Surface ANY pre-turn setup failure (config / agent / context-prep / model) IN THE CHAT, not just
       // the server log — these run before any assistant row exists, so `step.failed` (which carries its
       // error on an assistant message) can't convey them; the turn would otherwise fail silently. Emit a
@@ -761,6 +764,7 @@ export const layer = Layer.effect(
       // system prompt so the model "just remembers" — no kb-tool call needed. Best-effort: memory
       // off/unavailable → no block, the turn proceeds. Budgeted DOWN for weak models (the JH floor).
       const recallQuery = SessionRecall.recallQuery(context)
+      timing.end("prepare")
       let memoryRecall: string | undefined
       // Kept for the duration of this provider step so a failed `read` can correct the exact
       // remembered file claim that was actually put on the model's horizon.
@@ -769,12 +773,15 @@ export const layer = Layer.effect(
         // The VECTOR leg: one short embedding of the recall query lets the engine fuse vector KNN with
         // FTS (measured 85% vs 77% keyword-only). Bounded + degrading — no device, unreachable, or slow
         // ⇒ undefined ⇒ keyword-only recall. Never blocks the turn on a failure.
+        timing.start("memory-embed")
         const recallVector = yield* Effect.promise(() => KbEmbedder.embedOne(recallQuery))
+        timing.end("memory-embed")
         const budget = SessionRecall.recallBudget(tier)
         // P8 ordering: over-fetch candidates, then re-rank by recency × authority and keep `budget` of
         // them. What the model sees each turn is the SHORT list, so ordering matters most here — a
         // recent authoritative fact must beat an old passive musing that merely echoes the wording.
         // Bounded (ranking.ts) and a no-op when hits share provenance and age.
+        timing.start("memory-search")
         const recallCandidates = yield* memory
           .search({
             query: recallQuery,
@@ -783,6 +790,7 @@ export const layer = Layer.effect(
             ...(recallVector === undefined ? {} : { embedding: recallVector }),
           })
           .pipe(Effect.orElseSucceed(() => []))
+        timing.end("memory-search")
         // P8d: let the MODEL order what it will actually see. Metadata ordering can't read
         // authoritativeness out of the TEXT — a definitive older statement should outrank a newer
         // offhand musing (measured 4/4 vs 1/4 for metadata alone). One short call (~0.4s at 5
@@ -790,6 +798,7 @@ export const layer = Layer.effect(
         // deterministic ranker, so ordering degrades but the turn never breaks.
         let ordered: ReadonlyArray<MemoryClient.SearchHit> = MemoryRanking.rankHits(recallCandidates, Date.now())
         if (MemorySetting.rerankEnabled() && recallCandidates.length > 1) {
+          timing.start("memory-rerank")
           const prompt = MemoryRerank.buildRerankPrompt(recallQuery, recallCandidates, Date.now())
           const reply = yield* judgeCompletion(
             session.id,
@@ -798,6 +807,7 @@ export const layer = Layer.effect(
           ).pipe(Effect.orElseSucceed(() => ""))
           const order = MemoryRerank.parseRerankOrder(reply, recallCandidates.length)
           if (order) ordered = order.map((index) => recallCandidates[index]!)
+          timing.end("memory-rerank")
         }
         recalledMemories = ordered.slice(0, budget)
         memoryRecall = SessionRecall.formatRecall(recalledMemories)
@@ -808,6 +818,7 @@ export const layer = Layer.effect(
       // packer matches on this exact string to apply the `memory` category budget, so it — not the
       // bare `memoryRecall` — is what goes to `packRequest`.
       const recallMessage = memoryRecall === undefined ? undefined : SessionInput.applySteerProvenance(memoryRecall)
+      timing.start("prepare")
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
       const toolMaterialization = isLastStep
         ? undefined
@@ -896,12 +907,21 @@ export const layer = Layer.effect(
         toolChoice: isLastStep ? "none" : undefined,
         ...(affectiveGeneration === undefined ? {} : { generation: affectiveGeneration }),
       })
-      if (yield* harness.compaction.compactIfNeeded({ sessionID: session.id, entries, model, request: fullRequest }))
-        return yield* Effect.die(continueAfterCompaction(currentStep))
+      timing.end("prepare")
+      timing.start("compaction")
+      const compacted = yield* harness.compaction.compactIfNeeded({
+        sessionID: session.id,
+        entries,
+        model,
+        request: fullRequest,
+      })
+      timing.end("compaction")
+      if (compacted) return yield* Effect.die(continueAfterCompaction(currentStep))
       // 1M — the deterministic fail-safe under compaction: pack the outgoing request to the
       // server's HONORED window so an Ollama-class server never silently front-truncates the
       // system prompt away. Reached when compaction declined (window unknown, summary model
       // unavailable, or simply under ITS threshold) — history in the DB stays intact.
+      timing.start("prepare")
       const preparedDispatch = ProviderDispatch.prepare({
         request: fullRequest,
         promptCacheKey,
@@ -911,6 +931,7 @@ export const layer = Layer.effect(
           : undefined,
         memoryRecall: recallMessage,
       })
+      timing.end("prepare")
       const packed = preparedDispatch.packed
       if (packed.dropped > 0)
         yield* Log.event("session.context.pack.evicted", {
@@ -929,7 +950,10 @@ export const layer = Layer.effect(
           RequestFootprint.measure({ system: request.system, messages: request.messages, tools: request.tools }),
         ),
       })
+      timing.start("snapshot")
       const startSnapshot = yield* snapshots.capture()
+      timing.end("snapshot")
+      timing.start("provider-setup")
       const assistantMessageID = SessionMessage.ID.create()
       const attemptModelRef = {
         id: ModelV2.ID.make(model.id),
@@ -947,6 +971,7 @@ export const layer = Layer.effect(
         toolSideEffects: toolMaterialization?.sideEffects,
         toolDispatched: SessionExecutionAttempt.toolDispatchedCurrent,
         toolSettled: SessionExecutionAttempt.toolSettledCurrent,
+        onFirstOutput: timing.firstToken,
       })
       const withPublication = Semaphore.makeUnsafe(1).withPermit
       const publish = (event: LLMEvent, outputPaths: ReadonlyArray<string> = []) =>
@@ -1260,6 +1285,7 @@ export const layer = Layer.effect(
             )
           const stepSettlement = publisher.stepSettlement()
           if (stepSettlement && !publisher.hasProviderError()) {
+            timing.start("snapshot")
             const endSnapshot = yield* snapshots.capture()
             const files =
               startSnapshot && endSnapshot
@@ -1267,6 +1293,7 @@ export const layer = Layer.effect(
                     .files({ from: startSnapshot, to: endSnapshot })
                     .pipe(Effect.catch(() => Effect.succeed(undefined)))
                 : undefined
+            timing.end("snapshot")
             yield* withPublication(
               events.publish(SessionEvent.Step.Ended, {
                 sessionID: session.id,
@@ -1282,6 +1309,7 @@ export const layer = Layer.effect(
                   elidedOutputs: packed.elided,
                   findings: [...packed.findings],
                 },
+                timing: timing.snapshot(),
                 snapshot: endSnapshot,
                 files,
               }),
@@ -1353,6 +1381,7 @@ export const layer = Layer.effect(
         timestamp: startedAt,
         recovery: providerRecovery,
       })
+      timing.end("provider-setup")
       return yield* ProviderDispatch.runAndSettle(
         {
           events,
@@ -1367,6 +1396,12 @@ export const layer = Layer.effect(
             return settlement === undefined ? undefined : settlement.tokens.input + settlement.tokens.output
           },
           attempt: providerStream,
+          timing: {
+            queued: timing.queued,
+            admitted: timing.admitted,
+            attemptStarted: timing.attemptStarted,
+            attemptSettled: timing.attemptSettled,
+          },
         },
         generation,
       ).pipe(
@@ -1388,6 +1423,7 @@ export const layer = Layer.effect(
       harness: Harness,
       promotion: SessionInput.Delivery | undefined,
       step: number,
+      timing?: TurnTiming.Recorder,
     ) => Effect.Effect<
       {
         readonly needsContinuation: boolean
@@ -1404,29 +1440,48 @@ export const layer = Layer.effect(
     // and is retried over compacted history is still ONE turn — re-deriving mid-retry would let the
     // second attempt compose a different system prompt than the first, which is the within-turn
     // incoherence B7 is trying not to introduce. The next turn re-derives (see `run`).
-    const runAfterOverflowCompaction: RunTurn = Effect.fnUntraced(function* (sessionID, harness, promotion, step) {
-      return yield* runTurnAttempt(sessionID, harness, promotion, step).pipe(
+    const runAfterOverflowCompaction: RunTurn = Effect.fnUntraced(function* (
+      sessionID,
+      harness,
+      promotion,
+      step,
+      timing = TurnTiming.make(),
+    ) {
+      return yield* runTurnAttempt(sessionID, harness, promotion, step, undefined, timing).pipe(
         Effect.catchDefect(
           Effect.fnUntraced(function* (defect) {
             if (!(defect instanceof TurnTransitionError)) return yield* Effect.die(defect)
             if (defect.transition._tag === "ContinueAfterOverflowCompaction")
               return yield* Effect.die("Post-compaction provider attempt cannot recover another overflow")
             yield* Effect.yieldNow
-            return yield* runAfterOverflowCompaction(sessionID, harness, undefined, defect.transition.step)
+            return yield* runAfterOverflowCompaction(sessionID, harness, undefined, defect.transition.step, timing)
           }),
         ),
       )
     })
 
-    const runTurn: RunTurn = Effect.fnUntraced(function* (sessionID, harness, promotion, step) {
-      return yield* runTurnAttempt(sessionID, harness, promotion, step, harness.compaction.compactAfterOverflow).pipe(
+    const runTurn: RunTurn = Effect.fnUntraced(function* (
+      sessionID,
+      harness,
+      promotion,
+      step,
+      timing = TurnTiming.make(),
+    ) {
+      return yield* runTurnAttempt(
+        sessionID,
+        harness,
+        promotion,
+        step,
+        harness.compaction.compactAfterOverflow,
+        timing,
+      ).pipe(
         Effect.catchDefect(
           Effect.fnUntraced(function* (defect) {
             if (!(defect instanceof TurnTransitionError)) return yield* Effect.die(defect)
             yield* Effect.yieldNow
             if (defect.transition._tag === "ContinueAfterOverflowCompaction")
-              return yield* runAfterOverflowCompaction(sessionID, harness, undefined, defect.transition.step)
-            return yield* runTurn(sessionID, harness, undefined, defect.transition.step)
+              return yield* runAfterOverflowCompaction(sessionID, harness, undefined, defect.transition.step, timing)
+            return yield* runTurn(sessionID, harness, undefined, defect.transition.step, timing)
           }),
         ),
       )

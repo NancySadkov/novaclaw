@@ -262,6 +262,7 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
           draft.cost = event.data.cost
           draft.tokens = event.data.tokens
           draft.context = castDraft(event.data.context)
+          draft.timing = event.data.timing as unknown as typeof draft.timing
           if (event.data.snapshot || event.data.files)
             draft.snapshot = {
               ...draft.snapshot,

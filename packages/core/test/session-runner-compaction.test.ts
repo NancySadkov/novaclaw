@@ -176,6 +176,10 @@ describe("SessionRunnerLLM — compaction", () => {
     expect(userTexts(firstRound[1]!)[0]).toContain(`[User]: ${"Recent exact request ".repeat(180)}`)
     expect(contextAfterFirst.map((message) => message.type)).toEqual(["compaction", "assistant"])
     expect(contextAfterFirst[0]).toMatchObject({ type: "compaction", summary: "## Goal\n- Preserve the task" })
+    expect(contextAfterFirst[1]).toMatchObject({
+      type: "assistant",
+      timing: { phases: expect.arrayContaining([expect.objectContaining({ phase: "compaction" })]) },
+    })
 
     // Round two: the new summary prompt carries the OLD summary, so nothing established is lost.
     expect(secondRound).toHaveLength(2)
@@ -207,7 +211,11 @@ const primeForOverflow = Effect.fn("primeForOverflow")(function* (harness: Retur
   // boundary walk drives recentStart to 0, head is empty, and the overflow recovery has nothing to
   // summarise, so it silently does not recover at all.
   for (const text of ["Earlier question ", "Second question "]) {
-    yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: text.repeat(350) }), resume: false })
+    yield* session.prompt({
+      sessionID: HARNESS_SESSION,
+      prompt: Prompt.make({ text: text.repeat(350) }),
+      resume: false,
+    })
     yield* session.resume(HARNESS_SESSION)
   }
   harness.controls.currentModel = harness.makeModel("recovery", { context: 20_000, output: 1_000 })
@@ -257,9 +265,7 @@ describe("SessionRunnerLLM — overflow recovery", () => {
     // replayed messages take new seqs and the overlay's `prefix_seq`/`prefix_hash` no longer match the
     // prefix it was written against. Whether that is a product gap or a limitation of rebuilding a
     // projection out-of-band is an open question, and asserting either answer here would be guessing.
-    expect(replayed.length, "replay currently returns the uncompacted history — see the note above").toBeGreaterThan(
-      0,
-    )
+    expect(replayed.length, "replay currently returns the uncompacted history — see the note above").toBeGreaterThan(0)
   })
 
   test("persists a second context overflow after one recovery", async () => {

@@ -395,6 +395,8 @@ export namespace Step {
       snapshot: Schema.String.pipe(optional),
       files: Schema.Array(RelativePath).pipe(optional),
       context: SessionMessage.Context.pipe(optional),
+      // Lazy to keep the already-large durable event union below TypeScript's instantiation ceiling.
+      timing: Schema.suspend(() => SessionMessage.TurnTiming).pipe(optional),
     },
   })
   export type Ended = typeof Ended.Type

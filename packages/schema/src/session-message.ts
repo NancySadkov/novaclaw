@@ -282,6 +282,44 @@ export const Context = Schema.Struct({
   findings: Schema.Array(ContextFinding),
 }).annotate({ identifier: "Session.Message.Context" })
 
+export const TurnPhase = Schema.Literals([
+  "prepare",
+  "memory-embed",
+  "memory-search",
+  "memory-rerank",
+  "compaction",
+  "snapshot",
+  "scheduler-wait",
+  "provider-setup",
+  "provider-prefill",
+  "generation",
+])
+export type TurnPhase = typeof TurnPhase.Type
+
+export const TurnPhaseTiming = Schema.Struct({
+  phase: TurnPhase,
+  startedAt: NonNegativeInt,
+  completedAt: NonNegativeInt.pipe(optional),
+})
+export type TurnPhaseTiming = typeof TurnPhaseTiming.Type
+
+export const ProviderAttemptTiming = Schema.Struct({
+  attempt: PositiveInt,
+  dispatchedAt: NonNegativeInt,
+  firstTokenAt: NonNegativeInt.pipe(optional),
+  completedAt: NonNegativeInt.pipe(optional),
+  outcome: Schema.Literals(["running", "completed", "failed", "interrupted", "retry"]),
+})
+export type ProviderAttemptTiming = typeof ProviderAttemptTiming.Type
+
+export const TurnTiming = Schema.Struct({
+  startedAt: NonNegativeInt,
+  completedAt: NonNegativeInt.pipe(optional),
+  phases: Schema.Array(TurnPhaseTiming),
+  providerAttempts: Schema.Array(ProviderAttemptTiming),
+})
+export type TurnTiming = typeof TurnTiming.Type
+
 export interface Assistant extends Schema.Schema.Type<typeof Assistant> {}
 export const Assistant = Schema.Struct({
   ...Base,
@@ -303,6 +341,7 @@ export const Assistant = Schema.Struct({
     cache: Schema.Struct({ read: Schema.Finite, write: Schema.Finite }),
   }).pipe(optional),
   context: Context.pipe(optional),
+  timing: TurnTiming.pipe(optional),
   error: UnknownError.pipe(optional),
   time: Schema.Struct({
     created: DateTimeUtcFromMillis,

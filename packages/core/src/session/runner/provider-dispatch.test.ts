@@ -91,6 +91,7 @@ describe("ProviderDispatch", () => {
     const sessionID = "ses_dispatch" as SessionSchema.ID
     const calls: string[] = []
     let attempts = 0
+    const timing: string[] = []
     const scheduler = {
       admit: () => Effect.sync(() => calls.push("admit")),
       release: () => Effect.sync(() => calls.push("release")),
@@ -113,11 +114,18 @@ describe("ProviderDispatch", () => {
           attempts++
           return attempts === 1 ? Effect.fail(immediateTransient()) : Effect.void
         }),
+        timing: {
+          queued: () => timing.push("queued"),
+          admitted: () => timing.push("admitted"),
+          attemptStarted: (attempt) => timing.push(`start:${attempt}`),
+          attemptSettled: (attempt, outcome) => timing.push(`end:${attempt}:${outcome}`),
+        },
       }),
     )
     expect(result._tag).toBe("Success")
     expect(attempts).toBe(2)
     expect(calls).toEqual(["admit", "report:12", "release"])
+    expect(timing).toEqual(["queued", "admitted", "start:1", "end:1:retry", "start:2", "end:2:completed"])
   })
 
   test("never replays after output and still releases the slot", async () => {
