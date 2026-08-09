@@ -217,7 +217,7 @@ export const layer = Layer.effect(
         )
       }).pipe(
         Effect.catch((cause) =>
-          Log.event("snapshot.capture.failed", { "snapshot.cause": String(cause) }).pipe(Effect.as(undefined)),
+          Log.event("snapshot.capture.failed", { "snapshot.cause": Log.fault(cause) }).pipe(Effect.as(undefined)),
         ),
       )
     })

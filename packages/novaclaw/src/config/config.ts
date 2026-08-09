@@ -321,7 +321,7 @@ export const layer = Layer.effect(
 
     const [cachedGlobal, invalidateGlobal] = yield* Effect.cachedInvalidateWithTTL(
       loadStores().pipe(
-        Effect.tapError((error) => Log.event("config.global.load.failed", { "config.cause": String(error) })),
+        Effect.tapError((error) => Log.event("config.global.load.failed", { "config.cause": Log.fault(error) })),
         Effect.orElseSucceed((): Info => ({})),
       ),
       Duration.infinity,
@@ -486,7 +486,7 @@ export const layer = Layer.effect(
                   Exit.isFailure(exit)
                     ? Log.event("config.dependency.install.failed", {
                         "config.directory": dir,
-                        "config.cause": String(exit.cause),
+                        "config.cause": Log.fault(exit.cause),
                       })
                     : Effect.void,
                 ),

@@ -134,7 +134,7 @@ export const warnRetiredConfigDirTools = (scan: RetiredToolScanner = Glob.scanSy
         Effect.catch((error) =>
           Log.event("tool.config.scan.failed", {
             "tool.directory": dir,
-            "tool.error": String(error),
+            "tool.error": Log.fault(error),
           }).pipe(Effect.as([] as string[])),
         ),
       )

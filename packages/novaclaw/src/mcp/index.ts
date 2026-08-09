@@ -1060,7 +1060,7 @@ export const layer = Layer.effect(
             server: clientName,
             "mcp.operation": label,
             "mcp.target": target,
-            "mcp.error": error instanceof Error ? error.message : String(error),
+            "mcp.error": Log.fault(error),
           }),
         ),
         Effect.orElseSucceed(() => undefined),

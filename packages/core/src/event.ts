@@ -404,7 +404,7 @@ export const layerWith = (options?: LayerOptions) =>
               Log.event("instance.listener.notify.failed", {
                 "instance.event.id": event.id,
                 "instance.event.type": event.type,
-                "instance.cause": String(cause),
+                "instance.cause": Log.fault(cause),
               }),
           ),
         )

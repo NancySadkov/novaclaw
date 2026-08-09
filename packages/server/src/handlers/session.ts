@@ -668,7 +668,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                     "session.id": ctx.params.sessionID,
                     "session.ref": ref,
                     "snapshot.operation": error.operation,
-                    "snapshot.error": error.message,
+                    "snapshot.error": Log.fault(error),
                   }).pipe(
                     Effect.andThen(
                       Effect.fail(
@@ -705,7 +705,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                   "session.id": ctx.params.sessionID,
                   "session.ref": ref,
                   "snapshot.operation": error.operation,
-                  "snapshot.error": error.message,
+                  "snapshot.error": Log.fault(error),
                 }).pipe(
                   Effect.andThen(
                     Effect.fail(

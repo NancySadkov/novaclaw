@@ -105,7 +105,7 @@ export function fetch<T extends { name: string }>(
       Log.event("mcp.catalog.list.failed", {
         server: clientName,
         "mcp.catalog": label,
-        "mcp.error": error instanceof Error ? error.message : String(error),
+        "mcp.error": Log.fault(error),
       }),
     ),
     Effect.map((items) => {

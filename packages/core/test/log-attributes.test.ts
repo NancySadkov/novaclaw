@@ -114,7 +114,9 @@ const FAULT_SITES = SITES.filter((site) => classOf(site) === "fault")
  * is quietly a suggestion again. 1c learned this the expensive way and the note is kept verbatim.
  */
 const LEDGER_PATH = path.join(ROOT, "packages/core/test/fixtures/unnormalized-fault-sites.json")
-const LEDGER: readonly LedgerEntry[] = JSON.parse(fs.readFileSync(LEDGER_PATH, "utf8"))
+const LEDGER: readonly LedgerEntry[] = fs.existsSync(LEDGER_PATH)
+  ? JSON.parse(fs.readFileSync(LEDGER_PATH, "utf8"))
+  : []
 
 describe("the sweep reached something", () => {
   test("the scanner walked the real call sites, not an empty set", () => {
@@ -123,7 +125,6 @@ describe("the sweep reached something", () => {
     expect(SITES.length).toBeGreaterThan(300)
     expect(FAULT_SITES.length).toBeGreaterThan(50)
     expect(new Set(SITES.map((site) => site.file)).size).toBeGreaterThan(20)
-    expect(LEDGER.length).toBeGreaterThan(0)
   })
 
   test("every attribute a call site sets is DECLARED on that event", () => {
@@ -149,6 +150,12 @@ describe("seam 1 — a fault has ONE normalization", () => {
     // A converted site is stale until its allowance is removed in the SAME commit — which is what
     // makes the migration unable to be quietly abandoned half-done.
     expect(faults.stale).toEqual([])
+  })
+
+  test("zero debt means no allowance file, not an empty ledger", () => {
+    const remaining = unnormalized(FAULT_SITES)
+    expect(fs.existsSync(LEDGER_PATH)).toBe(remaining.length > 0)
+    if (remaining.length === 0) expect(LEDGER).toEqual([])
   })
 
   test("the shape key is stable under a rename and reacts to a change of NORMALIZATION", () => {

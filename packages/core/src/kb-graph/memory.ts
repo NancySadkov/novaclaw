@@ -82,7 +82,7 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
           })
           .catch((cause) => {
             currentRuntimeStatus = { stage: "error", detail: String(cause).slice(0, 300) }
-            Effect.runFork(Log.event("kb.memory.open.failed", { "kb.cause": String(cause) }))
+            Effect.runFork(Log.event("kb.memory.open.failed", { "kb.cause": Log.fault(cause) }))
             throw cause
           })
           .finally(() => {

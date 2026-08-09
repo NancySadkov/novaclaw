@@ -56,11 +56,11 @@ describe("MCP tool callout policy", () => {
       [
         { event: "mcp.catalog.list.failed" },
         "failed to get MCP catalog entries",
-        {
+        expect.objectContaining({
           server: "docs-server",
           "mcp.catalog": "resource templates",
-          "mcp.error": "catalog offline",
-        },
+          "mcp.error": expect.stringContaining("Error: catalog offline"),
+        }),
       ],
     ])
   })

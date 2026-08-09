@@ -37,7 +37,7 @@ export const errorLayer = HttpRouter.middleware<{ handles: unknown }>()((effect)
 
       return Log.event("server.request.fail", {
         ref,
-        "server.error": String(error),
+        "server.error": Log.fault(error),
         "server.cause": Log.fault(cause),
       }).pipe(
         Effect.as(

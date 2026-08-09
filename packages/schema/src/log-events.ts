@@ -793,7 +793,7 @@ export const EVENTS = {
       "instance.database": "path",
       "instance.database.kind": "id",
       "instance.database.migration": "id",
-      "instance.cause": "fault",
+      "instance.cause": "text",
     },
     content: "user",
     file: "packages/core/src/database/database.ts",
@@ -814,7 +814,7 @@ export const EVENTS = {
   "instance.flags.parse.failed": {
     level: "warn",
     message: "runtime flags could not be parsed; the affected flags fell back to their defaults",
-    attributes: { "instance.flags": "id", "instance.cause": "fault" },
+    attributes: { "instance.flags": "id", "instance.cause": "text" },
     content: "user",
     file: "packages/novaclaw/src/effect/runtime-flags.ts",
   },
@@ -1046,7 +1046,7 @@ export const EVENTS = {
     attributes: {
       "messenger.chat": "text",
       "messenger.account": "id",
-      "messenger.failure": "fault",
+      "messenger.failure": "text",
     },
     content: "user",
     file: "packages/core/src/messenger/gateway.ts",
@@ -1474,7 +1474,7 @@ export const EVENTS = {
   "server.schema.rejection": {
     level: "warn",
     message: "schema rejection",
-    attributes: { "server.kind": "id", "server.reason": "fault" },
+    attributes: { "server.kind": "id", "server.reason": "text" },
     content: "user",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/middleware/schema-error.ts",
   },

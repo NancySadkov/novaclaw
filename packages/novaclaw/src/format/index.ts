@@ -9,7 +9,6 @@ import path from "path"
 import { mergeDeep } from "remeda"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { errorMessage } from "@/util/error"
 import * as Formatter from "./formatter"
 import { Log } from "@novaclaw/schema/log"
 
@@ -120,7 +119,7 @@ export const layer = Layer.effect(
                       "format.file": filepath,
                       "format.command": cmd,
                       "format.environment": environmentList(item.environment),
-                      "format.cause": errorMessage(error.cause ?? error),
+                      "format.cause": Log.fault(error.cause ?? error),
                     }).pipe(Effect.as(undefined)),
                   ),
                 )
