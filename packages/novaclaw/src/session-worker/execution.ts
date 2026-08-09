@@ -41,8 +41,18 @@ const failure = (outcome: SessionWorkerSupervisor.Outcome) =>
       : `session worker ${outcome.type}${"detail" in outcome ? `: ${outcome.detail}` : ""}`
 
 const MIB = 1024 * 1024
+const GIB = 1024 * MIB
 export const defaultMemoryLimitBytes = (totalBytes = os.totalmem()) =>
-  Math.max(768 * MIB, Math.min(2_048 * MIB, Math.floor(totalBytes / 8)))
+  Math.max(768 * MIB, Math.min(2 * GIB, Math.floor(totalBytes / 8)))
+
+/** Source-mode Bun carries the TypeScript compiler/module graph in every worker. Its measured healthy
+ * RSS is 2.62 GB on Windows, above the 2 GiB packaged-Node containment cap before user work grows at
+ * all. Keep the production artifact bounded at the measured tier ceiling; give only the explicit `.ts`
+ * developer/test entrypoint enough room to boot and complete a turn. */
+export const workerMemoryLimitBytes = (workerPath: string, totalBytes = os.totalmem()) =>
+  workerPath.endsWith(".ts")
+    ? Math.max(defaultMemoryLimitBytes(totalBytes), 3 * GIB)
+    : defaultMemoryLimitBytes(totalBytes)
 
 export const pausedNotice = (reason: "outcome-unknown" | "repeated-failure", detail: string) => {
   const guidance =
@@ -170,7 +180,7 @@ export const layer = Layer.effect(
             directory: session.location.directory,
             workspaceID: session.location.workspaceID,
             force,
-            memoryLimitBytes: defaultMemoryLimitBytes(),
+            memoryLimitBytes: workerMemoryLimitBytes(command.workerPath),
             onHeartbeat: (message) =>
               Effect.runPromise(SessionWorkerExecutionBridge.heartbeat({ attempts, lease, message })),
             onPublishEvent: (message) =>

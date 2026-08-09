@@ -51,6 +51,7 @@ import { AgentJail } from "../../agent-jail"
 import { MessengerStore } from "../../messenger/store"
 import { Offline } from "../../offline"
 import { PermissionV2 } from "../../permission"
+import { PluginV2 } from "../../plugin"
 import { SessionScheduler } from "../scheduler"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
@@ -249,6 +250,7 @@ export const layer = Layer.effect(
     // Default OFF; failures steer the agent to fix and re-run (observation, never a halt).
     const appProcess = yield* AppProcess.Service
     const permission = yield* PermissionV2.Service
+    const plugins = yield* PluginV2.Service
     const runQualityCheck = Effect.fn("SessionRunner.qualityCheck")(function* (
       sessionID: SessionSchema.ID,
       shell: string,
@@ -585,6 +587,19 @@ export const layer = Layer.effect(
       // Not ours. The caller decides what that means — see the header.
       if (session.location.directory !== location.directory || session.location.workspaceID !== location.workspaceID)
         return undefined
+      // Agent, catalog, command and reference state are materialized by one deferred plugin boot
+      // batch. Selecting the agent before that latch opened made the FIRST worker turn miss global
+      // permission rules even though model resolution (later in this function) correctly waited.
+      // Permissions may never degrade to an unconfigured allow: a slow boot must wait, and a broken
+      // boot must refuse the turn by name instead of silently weakening policy. Thirty seconds keeps
+      // the failure bounded while accommodating source-mode/WSL module startup.
+      yield* plugins.ready.pipe(
+        Effect.timeoutOrElse({
+          duration: "30 seconds",
+          orElse: () =>
+            Effect.die(new Error("Initial plugin and permission policy boot did not finish within 30 seconds")),
+        }),
+      )
       // Agent-OS Phase 1 (architecture.md): resolve model + agent through the config-inheritance
       // walk, so a child session inherits its parent's unless overridden. Behavior-preserving at the
       // root (the chain is just [session] -> config.* === session.*). config.* carry the real branded
@@ -2007,6 +2022,7 @@ export const node = makeLocationNode({
     // The quality gate executes persisted (possibly model-supplied) commands through the agent
     // shell, so it asserts `bash` like every other execution surface — see `runQualityCheck`.
     PermissionV2.node,
+    PluginV2.node,
     SessionComponentRegistry.node,
   ],
 })

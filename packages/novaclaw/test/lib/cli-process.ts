@@ -66,11 +66,6 @@ function isolatedEnv(home: string, configJson: string): Record<string, string> {
     XDG_DATA_HOME: path.join(home, ".local/share"),
     XDG_STATE_HOME: path.join(home, ".local/state"),
     XDG_CACHE_HOME: path.join(home, ".cache"),
-    // The production runner executes each admitted turn in a child process. Inheriting the test
-    // preload's `:memory:` value gives the host and worker two unrelated databases: the host admits
-    // the prompt, the worker sees an empty queue, and `novaclaw run` exits 0 with no output. A file
-    // inside this fixture's disposable home exercises the real cross-process topology safely.
-    NOVACLAW_DB: path.join(home, "novaclaw-cli-test.db"),
     NOVACLAW_CONFIG_CONTENT: configJson,
     NOVACLAW_DISABLE_PROJECT_CONFIG: "1",
     NOVACLAW_PURE: "1",
@@ -136,7 +131,10 @@ export type ServeHandle = {
   /** Present only for a supervised serve. This is the bare server child, not the supervisor. */
   readonly childPID: number | undefined
   /** Wait until a replacement child has reached its listening sentinel. */
-  readonly waitForRestart: (previousPID: number, timeoutMs?: number) => Promise<{
+  readonly waitForRestart: (
+    previousPID: number,
+    timeoutMs?: number,
+  ) => Promise<{
     readonly pid: number
     readonly url: string
     readonly hostname: string
@@ -197,6 +195,17 @@ export function withCliFixture<A, E>(
 
     const configJson = JSON.stringify(testProviderConfig(llm.url))
     const env = isolatedEnv(home, configJson)
+    let databaseSequence = 0
+    // The production runner executes each admitted turn in a child process. `:memory:` gives the
+    // host and worker unrelated databases, while REUSING one file across separate CLI invocations
+    // defeats first-boot config seeding (a later invocation's config correctly does not overwrite
+    // the first one's store). One disposable file per top-level process gives every host/worker pair
+    // shared durable state and every independent invocation a genuinely fresh instance.
+    const processEnv = (overrides?: Record<string, string>) => ({
+      ...env,
+      NOVACLAW_DB: overrides?.NOVACLAW_DB ?? path.join(home, `novaclaw-cli-test-${++databaseSequence}.db`),
+      ...overrides,
+    })
 
     const spawn = Effect.fn("novaclaw.spawn")(function* (args: string[], opts?: SpawnOpts) {
       const start = Date.now()
@@ -207,7 +216,7 @@ export function withCliFixture<A, E>(
       // ignore; ChildProcess.make defaults to pipe, so we set it explicitly.
       const command = ChildProcess.make("bun", ["run", "--conditions=browser", cliEntry, ...args], {
         cwd: home,
-        env: { ...env, ...opts?.env },
+        env: processEnv(opts?.env),
         extendEnv: true,
         stdin: "ignore",
       })
@@ -281,7 +290,7 @@ export function withCliFixture<A, E>(
         Effect.sync(() =>
           Bun.spawn([process.execPath, "run", "--conditions=browser", cliEntry, ...runArgs(message, opts)], {
             cwd: home,
-            env: { ...process.env, ...env, ...options?.env },
+            env: { ...process.env, ...processEnv(options?.env) },
             // "held-open-pipe": a stdin pipe nobody writes to or closes (see RunOpts.stdin).
             stdin: opts?.stdin === "held-open-pipe" ? "pipe" : "ignore",
             stdout: "pipe",
@@ -328,7 +337,7 @@ export function withCliFixture<A, E>(
         Effect.sync(() =>
           Bun.spawn([process.execPath, "run", "--conditions=browser", cliEntry, ...argv], {
             cwd: home,
-            env: { ...process.env, ...env, ...opts?.env },
+            env: { ...process.env, ...processEnv(opts?.env) },
             stdout: "pipe",
             stderr: "pipe",
           }),

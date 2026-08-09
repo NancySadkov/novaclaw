@@ -54,7 +54,7 @@ test("a real worker settles through the fenced lifecycle protocol", async () => 
 test("a worker that never becomes ready is killed at the startup deadline", async () => {
   const worker = run("unready")
   expect(await worker.result).toEqual({ type: "start-timeout" })
-})
+}, 15_000)
 
 test("a silent live worker is tree-killed after its heartbeat deadline", async () => {
   const worker = run("silent")

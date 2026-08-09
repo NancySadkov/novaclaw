@@ -81,11 +81,10 @@ describe("novaclaw run (non-interactive subprocess)", () => {
     30_000,
   )
 
-  // The test provider's SSE error item is interpreted by the SDK as an unknown
-  // finish, not a fatal provider/session error. Lock that distinction in so it
-  // is not accidentally used as the failure compatibility oracle.
+  // The test provider's SSE error item is interpreted as a broken/unknown finish, so the runner
+  // keeps durable partial output and reconnects. The fixture's fallback reply is `ok`.
   cliIt.concurrent(
-    "unknown stream finish preserves partial output and exits 0",
+    "unknown stream finish preserves partial output, reconnects, and exits 0",
     ({ llm, novaclaw }) =>
       Effect.gen(function* () {
         yield* llm.push(
@@ -97,7 +96,7 @@ describe("novaclaw run (non-interactive subprocess)", () => {
         yield* llm.fail("upstream provider exploded mid-stream")
         const result = yield* novaclaw.run("trigger midstream error", { timeoutMs: 30_000 })
         expect(result.exitCode).toBe(0)
-        expect(result.stdout).toBe("partial response\n")
+        expect(result.stdout).toBe("partial response\nok\n")
         expect(result.stderr).not.toContain("upstream provider exploded mid-stream")
       }),
     60_000,
@@ -230,7 +229,7 @@ describe("novaclaw run (non-interactive subprocess)", () => {
   )
 
   cliIt.concurrent(
-    "--format json records partial output for an unknown stream finish",
+    "--format json records partial output and recovery for an unknown stream finish",
     ({ llm, novaclaw }) =>
       Effect.gen(function* () {
         yield* llm.push(
@@ -244,11 +243,19 @@ describe("novaclaw run (non-interactive subprocess)", () => {
 
         const events = novaclaw.parseJsonEvents(result.stdout)
         expect(result.exitCode).toBe(0)
-        // Native vocab: a continuation whose stream fails before producing content never
-        // starts a step, so no phantom step_start/step_finish pair follows the tool turn
-        // (V1 synthesized a second step with finish reason "unknown" here).
-        expect(events.map((event) => event.type)).toEqual(["step_start", "text", "tool_use", "step_finish"])
+        // The broken continuation reconnects as a real provider step. It is not a phantom finish:
+        // the fallback reply contributes durable text and therefore has a complete step pair.
+        expect(events.map((event) => event.type)).toEqual([
+          "step_start",
+          "text",
+          "tool_use",
+          "step_finish",
+          "step_start",
+          "text",
+          "step_finish",
+        ])
         expect(events[1]?.text).toBe("partial json")
+        expect(events[5]?.text).toBe("ok")
         expect(events.at(-1)?.step).toEqual(expect.objectContaining({ finish: expect.any(String) }))
       }),
     60_000,
@@ -261,25 +268,36 @@ describe("novaclaw run (non-interactive subprocess)", () => {
     "rejects requested permissions by default and allows them with the dangerous flag",
     ({ home, llm, novaclaw }) =>
       Effect.gen(function* () {
-        yield* llm.tool("bash", { command: "rm -f denied-file", description: "Remove a test file" })
+        // `define_tool` deliberately falls through to consent in Build mode. A configured `bash: ask`
+        // no longer does: the explicit Build posture's later bash allow wins by design; the separate
+        // ask-before-changes switch is how a user narrows that posture. Exercise the CLI reply loop
+        // with an action whose LIVE evaluator verdict is ask, not a stale pre-mode-overlay contract.
+        yield* llm.tool("define_tool", {
+          name: "denied-probe",
+          description: "Permission test probe",
+          manual: "No-op permission test recipe.",
+        })
         yield* llm.text("continued after rejection")
-        const denied = yield* novaclaw.run("request permission", { permission: { bash: "ask" } })
+        const denied = yield* novaclaw.run("request permission")
         novaclaw.expectExit(denied, 0)
-        expect(denied.stderr).toContain("permission requested: bash")
+        expect(denied.stderr).toContain("permission requested: define_tool")
         // Native 1J semantics: the rejection is the TOOL's result (denial as observation, never a
         // halt), so the turn continues and the model's follow-up text still prints. V1 aborted the
         // whole turn here (empty stdout) — that vocabulary retires with the engine.
         expect(denied.stdout).toContain("continued after rejection")
 
         yield* llm.reset
-        yield* llm.tool("bash", { command: "rm -f allowed-file", description: "Remove a test file" })
+        yield* llm.tool("define_tool", {
+          name: "allowed-probe",
+          description: "Permission test probe",
+          manual: "No-op permission test recipe.",
+        })
         yield* llm.text("continued after approval")
         const allowed = yield* novaclaw.run("request permission", {
-          permission: { bash: "ask" },
           extraArgs: ["--dangerously-skip-permissions"],
         })
         novaclaw.expectExit(allowed, 0)
-        expect(allowed.stderr).not.toContain("permission requested: bash")
+        expect(allowed.stderr).not.toContain("permission requested: define_tool")
         expect(allowed.stdout).toContain("continued after approval")
 
         yield* llm.reset

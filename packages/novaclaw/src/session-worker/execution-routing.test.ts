@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { defaultMemoryLimitBytes, folderSubstitutedNotice, pausedNotice } from "./execution"
+import { defaultMemoryLimitBytes, folderSubstitutedNotice, pausedNotice, workerMemoryLimitBytes } from "./execution"
 
 test("the production HTTP graph routes admitted drains through the worker executor", () => {
   const source = readFileSync(
@@ -18,6 +18,8 @@ test("worker memory ceiling scales by host tier and stays bounded", () => {
   expect(defaultMemoryLimitBytes(8 * gib)).toBe(1 * gib)
   expect(defaultMemoryLimitBytes(16 * gib)).toBe(2 * gib)
   expect(defaultMemoryLimitBytes(128 * gib)).toBe(2 * gib)
+  expect(workerMemoryLimitBytes("novaclaw-session-worker.js", 128 * gib)).toBe(2 * gib)
+  expect(workerMemoryLimitBytes("session-worker-node.ts", 8 * gib)).toBe(3 * gib)
 })
 
 test("paused sessions explain uncertainty and preserve selectable technical detail", () => {
