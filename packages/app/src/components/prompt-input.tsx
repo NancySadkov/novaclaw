@@ -1,4 +1,3 @@
-import { useFilteredList } from "@novaclaw/ui/hooks"
 import { useSpring } from "@novaclaw/ui/motion-spring"
 import {
   createEffect,
@@ -58,8 +57,10 @@ import {
 } from "./prompt-input/history"
 import { createPromptInputHistoryController } from "./prompt-input/history-controller"
 import { createPromptInputKeyboardController } from "./prompt-input/keyboard-controller"
+import { createPromptInputPopoverController } from "./prompt-input/popover-controller"
+import { atOptionKey } from "./prompt-input/popover-options"
 import { createPromptSubmit, type FollowupDraft } from "./prompt-input/submit"
-import { PromptPopover, type AtOption, type SlashCommand } from "./prompt-input/slash-popover"
+import { PromptPopover } from "./prompt-input/slash-popover"
 import { promptPlaceholder, PROMPT_EXAMPLE_KEYS } from "./prompt-input/placeholder"
 import { composerMounts } from "./prompt-input/mount-registry"
 import { createPromptInputTransientState } from "./prompt-input/transient-state"
@@ -468,148 +469,44 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     })
   }
 
-  const agentList = createMemo(() =>
-    props.controls.agents.available
-      .filter((agent) => !agent.hidden && agent.mode !== "primary")
-      .map((agent): AtOption => ({ type: "agent", name: agent.name, display: agent.name })),
-  )
-
-  const handleAtSelect = (option: AtOption | undefined) => {
-    if (!option) return
-    if (option.type === "agent") {
-      addPart({ type: "agent", name: option.name, content: "@" + option.name, start: 0, end: 0 })
-    } else {
-      addPart({ type: "file", path: option.path, content: "@" + option.path, start: 0, end: 0 })
-    }
-  }
-
-  const atKey = (x: AtOption | undefined) => {
-    if (!x) return ""
-    return x.type === "agent" ? `agent:${x.name}` : `file:${x.path}`
-  }
-
+  const popoverController = createPromptInputPopoverController({
+    agents: () => props.controls.agents.available,
+    recent,
+    searchFiles: files.searchFilesAndDirectories,
+    customCommands: () => sync().data.command,
+    builtinCommands: () => command.options,
+    triggerCommand: (id) => command.trigger(id, "slash"),
+    popover: () => store.popover,
+    slashPopover: () => slashPopoverRef,
+    imageAttachments,
+    addPart: (part) => addPart(part),
+    close: closePopover,
+    editor,
+    prompt,
+    focusEnd: focusEditorEnd,
+  })
   const {
-    flat: atFlat,
-    error: atError,
-    refetch: retryAt,
-    active: atActive,
-    setActive: setAtActive,
-    onInput: atOnInput,
-    onKeyDown: atOnKeyDown,
-  } = useFilteredList<AtOption>({
-    items: async (query) => {
-      const agents = agentList()
-      const open = recent()
-      const seen = new Set(open)
-      const pinned: AtOption[] = open.map((path) => ({ type: "file", path, display: path, recent: true }))
-      if (!query.trim()) return [...agents, ...pinned]
-      const paths = await files.searchFilesAndDirectories(query)
-      const fileOptions: AtOption[] = paths
-        .filter((path) => !seen.has(path))
-        .map((path) => ({ type: "file", path, display: path }))
-      return [...agents, ...pinned, ...fileOptions]
+    at: {
+      flat: atFlat,
+      error: atError,
+      refetch: retryAt,
+      active: atActive,
+      setActive: setAtActive,
+      onInput: atOnInput,
+      onKeyDown: atOnKeyDown,
     },
-    key: atKey,
-    filterKeys: ["display"],
-    skipFilter: (item) => item.type === "file" && !item.recent,
-    groupBy: (item) => {
-      if (item.type === "agent") return "agent"
-      if (item.recent) return "recent"
-      return "file"
+    slash: {
+      flat: slashFlat,
+      active: slashActive,
+      setActive: setSlashActive,
+      onInput: slashOnInput,
+      onKeyDown: slashOnKeyDown,
     },
-    sortGroupsBy: (a, b) => {
-      const rank = (category: string) => {
-        if (category === "agent") return 0
-        if (category === "recent") return 1
-        return 2
-      }
-      return rank(a.category) - rank(b.category)
-    },
-    onSelect: handleAtSelect,
-  })
-
-  const slashCommands = createMemo<SlashCommand[]>(() => {
-    const builtin = command.options
-      .filter((opt) => !opt.disabled && !opt.id.startsWith("suggested.") && opt.slash)
-      .map((opt) => ({
-        id: opt.id,
-        trigger: opt.slash!,
-        title: opt.title,
-        description: opt.description,
-        keybind: opt.keybind,
-        type: "builtin" as const,
-      }))
-
-    const custom = sync().data.command.map((cmd) => ({
-      id: `custom.${cmd.name}`,
-      trigger: cmd.name,
-      title: cmd.name,
-      description: cmd.description,
-      type: "custom" as const,
-      source: cmd.source,
-    }))
-
-    return [...custom, ...builtin]
-  })
-
-  const handleSlashSelect = (cmd: SlashCommand | undefined) => {
-    if (!cmd) return
-    closePopover()
-    const images = imageAttachments()
-
-    if (cmd.type === "custom") {
-      const text = `/${cmd.trigger} `
-      editor.setText(text)
-      prompt.set([{ type: "text", content: text, start: 0, end: text.length }, ...images], text.length)
-      focusEditorEnd()
-      return
-    }
-
-    editor.clear()
-    prompt.set([...DEFAULT_PROMPT, ...images], 0)
-    command.trigger(cmd.id, "slash")
-  }
-
-  const {
-    flat: slashFlat,
-    active: slashActive,
-    setActive: setSlashActive,
-    onInput: slashOnInput,
-    onKeyDown: slashOnKeyDown,
-  } = useFilteredList<SlashCommand>({
-    items: slashCommands,
-    key: (x) => x?.id,
-    filterKeys: ["trigger", "title"],
-    onSelect: handleSlashSelect,
-  })
-
-  const scrollSlashActiveIntoView = () => {
-    const activeId = slashActive()
-    if (!activeId || !slashPopoverRef) return
-
-    requestAnimationFrame(() => {
-      const element = slashPopoverRef.querySelector(`[data-slash-id="${activeId}"]`)
-      element?.scrollIntoView({ block: "nearest", behavior: "smooth" })
-    })
-  }
-  const selectPopoverActive = () => {
-    if (store.popover === "at") {
-      const items = atFlat()
-      if (items.length === 0) return
-      const active = atActive()
-      const item = items.find((entry) => atKey(entry) === active) ?? items[0]
-      handleAtSelect(item)
-      return
-    }
-
-    if (store.popover === "slash") {
-      const items = slashFlat()
-      if (items.length === 0) return
-      const active = slashActive()
-      const item = items.find((entry) => entry.id === active) ?? items[0]
-      handleSlashSelect(item)
-    }
-  }
+    selectAt: handleAtSelect,
+    selectSlash: handleSlashSelect,
+    selectActive: selectPopoverActive,
+    scrollSlashActiveIntoView,
+  } = popoverController
 
   const reconcile = (input: Prompt) => {
     if (mirror.input) {
@@ -953,7 +850,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         atError={atError()}
         onAtRetry={() => void retryAt()}
         atActive={atActive() ?? undefined}
-        atKey={atKey}
+        atKey={atOptionKey}
         setAtActive={setAtActive}
         onAtSelect={handleAtSelect}
         slashFlat={slashFlat()}
