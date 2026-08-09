@@ -351,6 +351,25 @@ describe("SessionV2.prompt", () => {
     }),
   )
 
+  it.effect("keeps admitted input readable while no runner has promoted it", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const { db } = yield* Database.Service
+      const session = yield* SessionV2.Service
+      yield* session.prompt({
+        id: messageID,
+        sessionID,
+        prompt: Prompt.make({ text: "Visible while paused" }),
+        resume: false,
+      })
+
+      expect(yield* session.messages({ sessionID })).toEqual([])
+      expect(yield* SessionInput.listPending(db, sessionID)).toMatchObject([
+        { id: messageID, prompt: { text: "Visible while paused" }, delivery: "steer" },
+      ])
+    }),
+  )
+
   it.effect("promotes one message once under concurrent promotion attempts", () =>
     Effect.gen(function* () {
       yield* setup

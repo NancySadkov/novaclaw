@@ -8,6 +8,7 @@ import { selectVisibleMessages } from "@/pages/session/revert-view"
 import { fetchPendingPrompts, pendingPromptsKick, type PendingPrompt } from "@/utils/session-pending-api"
 import { useSettings } from "@/context/settings"
 import { navigationTargetIndex, nextPinned } from "./native-scroll"
+import { keepEqualRows, startPendingPoll } from "./pending-poll"
 
 export type NativeTimelineController = {
   navigateUser: (offset: number) => void
@@ -80,10 +81,19 @@ export function NativeTimeline(props: {
   const messages = createMemo(() => selectVisibleMessages(stored(), props.revertMessageID))
 
   // Prompts the user sent that the agent has not read yet. They live in the durable input queue, not the
-  // transcript, so they are invisible to the message stream and have to be polled. Polling only while a
-  // turn is in flight keeps it to the window where a queue can exist at all; one trailing poll after the
-  // turn settles clears the last bubble the moment its input is promoted.
+  // transcript, so they are invisible to the message stream and have to be polled. Always make one read
+  // on mount: a worker can fail before promotion and leave a durable queued prompt while no assistant
+  // message says the session is working. Once found, keep polling; one trailing poll after a healthy turn
+  // settles clears the last bubble the moment its input is promoted.
   const [pending, setPending] = createSignal<readonly PendingPrompt[]>([])
+  const updatePending = (rows: readonly PendingPrompt[]) =>
+    setPending((current) =>
+      keepEqualRows(
+        current,
+        rows,
+        (a, b) => a.id === b.id && a.text === b.text && a.delivery === b.delivery && a.timeCreated === b.timeCreated,
+      ),
+    )
   const working = createMemo(() => {
     const list = stored()
     for (let i = list.length - 1; i >= 0; i -= 1) {
@@ -100,21 +110,18 @@ export function NativeTimeline(props: {
     // never change when the user presses Enter, so a mid-turn prompt stayed invisible for up to a
     // full 2 s tick — long enough to read as "it disappeared" and retype it.
     pendingPromptsKick()
-    if (!working() && pending().length === 0) return
-    let stop = false
-    const tick = async () => {
-      if (stop) return
-      const rows = await fetchPendingPrompts(conn.http, { directory, sessionID: props.sessionID }).catch(
-        () => [] as PendingPrompt[],
-      )
-      if (!stop) setPending(rows)
-    }
-    void tick()
-    const timer = setInterval(() => void tick(), 2000)
-    onCleanup(() => {
-      stop = true
-      clearInterval(timer)
-    })
+    const repeat = working() || pending().length > 0
+    onCleanup(
+      startPendingPoll({
+        repeat,
+        fetch: () =>
+          fetchPendingPrompts(conn.http, { directory, sessionID: props.sessionID }).catch(() => [] as PendingPrompt[]),
+        // Preserve the signal identity when a one-shot idle read returns the same rows. Otherwise
+        // an empty `[]` response would retrigger this effect forever and turn "read once" into a
+        // tight request loop.
+        update: updatePending,
+      }),
+    )
   })
 
   let scroller: HTMLDivElement | undefined
