@@ -304,6 +304,22 @@ describe("pack", () => {
     expect(result.messages.some((m) => m.role === "assistant")).toBe(true)
   })
 
+  test("zero-user transcript: never fabricates a task or renderable placeholder", () => {
+    // This is the exact boundary behind the packages/llm empty-conversation ruling. A lone
+    // reasoning assistant is legal on some wires and omitted on others; pack cannot know which.
+    // Its obligation is narrower and mechanical: preserve/evict real transcript messages only,
+    // never synthesize user speech to make the output appear renderable.
+    const only = Message.assistant([reasoning("private chain of thought")])
+    const input = [only]
+    const result = pack(input, 1)
+
+    expect(result.messages).toEqual([only])
+    expect(result.messages[0]).toBe(only)
+    expect(result.messages.every((message) => input.includes(message))).toBe(true)
+    expect(result.messages.some((message) => message.role === "user")).toBe(false)
+    expect(result.messages.some((message) => message.content.some((part) => part.type === "text"))).toBe(false)
+  })
+
   test("anchor: the FIRST real user message is re-prepended when packing would evict it", () => {
     const filler = "y".repeat(8000)
     const messages = [user("the original task"), assistantText(filler), assistantText("recent")]
@@ -385,7 +401,9 @@ describe("packRequest typed system shares", () => {
     expect(result.system.some((part) => part.text === memory)).toBe(false)
     // Present but TRIMMED: the full block is gone, a shorter prefix of it survives.
     const memoryTexts = result.messages.flatMap((message) =>
-      message.content.flatMap((part) => (part.type === "text" && part.text.startsWith("Remember these:") ? [part.text] : [])),
+      message.content.flatMap((part) =>
+        part.type === "text" && part.text.startsWith("Remember these:") ? [part.text] : [],
+      ),
     )
     expect(memoryTexts).toHaveLength(1)
     expect(memoryTexts[0]!.length).toBeLessThan(memory.length)

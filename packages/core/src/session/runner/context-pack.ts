@@ -729,6 +729,13 @@ export interface PackResult {
  * eviction emptied the window, and the FIRST real user message re-prepended when packing would
  * evict the sole user message — "the original task, the agent's anchor against drift" —
  * deliberately over budget.
+ *
+ * ⚠️ `pack` does NOT promise that its output says something on every provider wire. Renderability is
+ * wire-specific, while this function is deliberately wire-blind and does not see the request's
+ * system prompt. In particular, when the transcript has no real user message, this function must
+ * not invent one or fabricate a placeholder merely to make a kept set look non-empty. The protocol
+ * lowering owns the decidable invariant instead and refuses an actually empty wire conversation.
+ * Full ruling and the six-wire guard: `packages/llm/src/route/protocol.ts` (`guardConversation`).
  */
 export const pack = (
   messages: ReadonlyArray<Message>,
@@ -820,6 +827,7 @@ export const pack = (
   }
 
   // Original-task anchoring (pass 4): never let packing evict the sole real user message.
+  // If no such message exists, leave that fact alone — never manufacture a replacement task.
   if (!kept.some(isRealUserMessage)) {
     const anchor = working.find(isRealUserMessage)
     if (anchor !== undefined) kept = [anchor, ...kept]
@@ -890,7 +898,9 @@ const enforceMemoryBudget = (input: {
 } => {
   const messages = [...input.messages]
   const index =
-    input.memoryRecall === undefined ? -1 : messages.findIndex((message) => firstTextPart(message) === input.memoryRecall)
+    input.memoryRecall === undefined
+      ? -1
+      : messages.findIndex((message) => firstTextPart(message) === input.memoryRecall)
   if (index < 0) return { messages, changed: false, findings: [] }
 
   const memoryLimit = ContextBudget.cap(input.contextSize, input.profile.memory)
