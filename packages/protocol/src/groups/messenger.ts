@@ -32,6 +32,7 @@ export const MessengerGroup = HttpApiGroup.make("server.messenger")
   .add(
     HttpApiEndpoint.get("messenger.account.list", "/api/messenger/account", {
       success: Schema.Array(AccountWithStatus),
+      error: InvalidRequestError,
     }).annotateMerge(
       OpenApi.annotations({
         identifier: "v2.messenger.account.list",
@@ -83,6 +84,7 @@ export const MessengerGroup = HttpApiGroup.make("server.messenger")
     HttpApiEndpoint.delete("messenger.account.remove", "/api/messenger/account/:accountID", {
       params: { accountID: Messenger.AccountID },
       success: HttpApiSchema.NoContent,
+      error: InvalidRequestError,
     }).annotateMerge(
       OpenApi.annotations({
         identifier: "v2.messenger.account.remove",
@@ -114,6 +116,7 @@ export const MessengerGroup = HttpApiGroup.make("server.messenger")
         chats: Schema.Array(Messenger.ChatInfo),
         reason: Schema.optional(Schema.String),
       }),
+      error: InvalidRequestError,
     }).annotateMerge(
       OpenApi.annotations({
         identifier: "v2.messenger.account.chats",
@@ -221,6 +224,7 @@ export const MessengerGroup = HttpApiGroup.make("server.messenger")
     HttpApiEndpoint.delete("messenger.login.cancel", "/api/messenger/login/:attemptID", {
       params: { attemptID: Messenger.LoginAttemptID },
       success: HttpApiSchema.NoContent,
+      error: InvalidRequestError,
     }).annotateMerge(
       OpenApi.annotations({
         identifier: "v2.messenger.login.cancel",

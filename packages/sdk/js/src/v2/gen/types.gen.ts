@@ -13358,7 +13358,7 @@ export type V2MessengerAccountListErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError
+  400: InvalidRequestError | InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -13466,7 +13466,7 @@ export type V2MessengerAccountRemoveErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError
+  400: InvalidRequestError | InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -13534,7 +13534,7 @@ export type V2MessengerAccountChatsErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError
+  400: InvalidRequestError | InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -13735,7 +13735,7 @@ export type V2MessengerLoginCancelErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError
+  400: InvalidRequestError | InvalidRequestError
   /**
    * UnauthorizedError
    */
