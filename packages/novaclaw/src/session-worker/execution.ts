@@ -31,6 +31,7 @@ import * as SessionWorkerSupervisor from "./supervisor"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
 import { SessionJoin } from "@novaclaw/core/session/join"
 import { SessionLocationRecovery } from "@novaclaw/core/session/location-recovery"
+import { SessionWorkerLocation } from "./location"
 
 const failure = (outcome: SessionWorkerSupervisor.Outcome) =>
   outcome.type === "failed"
@@ -142,12 +143,13 @@ export const layer = Layer.effect(
         const session = effective === stored.location.directory ? stored : ((yield* store.get(sessionID)) ?? stored)
 
         const located = locations.get(session.location)
-        const location = new Location.Info({
-          directory: session.location.directory,
-          ...(session.location.workspaceID ? { workspaceID: session.location.workspaceID } : {}),
-          root: session.location.directory,
-          origin: "server",
-        })
+        // Location identity is DERIVED substrate state, including for the scratch fallback. Do not
+        // fabricate a second identity here: a non-repository scratch folder resolves to origin
+        // `global` and the path-root fallback, exactly like every other location. The old literal
+        // (`origin: "server"`, `root: directory`) disagreed with Location.layer and made the same
+        // session appear under two permission/event scopes depending on which side of the worker
+        // boundary observed it.
+        const location = yield* SessionWorkerLocation.resolve(located)
         const publishStatus = (status: SessionStatusEvent.Info) =>
           events.publish(SessionStatusEvent.Status, { sessionID, status }, { location }).pipe(Effect.ignore)
         yield* publishStatus({ type: "busy" })
