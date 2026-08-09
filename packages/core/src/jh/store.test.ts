@@ -115,7 +115,7 @@ describe("JhStore", () => {
     expect(result.b!.status).toBe("blocked")
   })
 
-  // ── the per-TASK plan id (runner/llm.ts) ───────────────────────────────────────────────────
+  // ── the per-TASK plan id (runner/strict-drain.ts) ──────────────────────────────────────────
   // The runner used to key a Strict plan `jh_<sessionID>`, so a session's SECOND task landed on
   // the FIRST task's row. Every destructive edge of this store then fired at once: the plan blob
   // is onConflictDoUpdate (B overwrites A's tree), the log is onConflictDoNothing on (planID, seq)
@@ -215,10 +215,10 @@ describe("JhStore", () => {
     expect(found.none).toBeUndefined()
   })
 
-  test("runner/llm.ts keys the Strict plan per TASK, not per session", () => {
-    // A source assertion: nothing in the fast suite executes `llm.ts`, and reverting the key format
+  test("runner/strict-drain.ts keys the Strict plan per TASK, not per session", () => {
+    // A source assertion: nothing in the fast suite executes `strict-drain.ts`, and reverting the key format
     // compiles green while silently restoring the destruction the tests above characterize.
-    const source = fs.readFileSync(path.join(import.meta.dir, "..", "session", "runner", "llm.ts"), "utf8")
+    const source = fs.readFileSync(path.join(import.meta.dir, "..", "session", "runner", "strict-drain.ts"), "utf8")
     expect(source).toContain("`jh_${sessionID}_${taskKey}`")
     expect(source).not.toContain("`jh_${sessionID}`")
     // …and the cascade in `removeSessionRecord` rebuilds that same key from `sessionPrefix`, so the
@@ -320,11 +320,11 @@ describe("JhStore", () => {
     expect(result.neighbour).toBeDefined()
   })
 
-  test("runner/llm.ts purges on the way into a Strict drain", () => {
+  test("runner/strict-drain.ts purges on the way into a Strict drain", () => {
     // The mechanical check for the retention decision: deleting the call compiles green and the
     // behavioural tests above keep passing, while the tables silently grow forever again. Nothing
-    // in the fast suite executes `llm.ts`, so this is the only place that can bite.
-    const source = fs.readFileSync(path.join(import.meta.dir, "..", "session", "runner", "llm.ts"), "utf8")
+    // in the fast suite executes `strict-drain.ts`, so this is the only place that can bite.
+    const source = fs.readFileSync(path.join(import.meta.dir, "..", "session", "runner", "strict-drain.ts"), "utf8")
     expect(source).toContain("JhStore.purgeExpired(db,")
     // …and it must NOT be hidden inside the read: `latest` runs on every Strict turn, and a read
     // never destroys (todo.md ruling 3).

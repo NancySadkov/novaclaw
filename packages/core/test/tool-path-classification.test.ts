@@ -71,12 +71,9 @@ const GATED = /HostExec\./
  * only SHRINK: an entry whose file no longer spawns — or has since been gated — fails the staleness
  * check below, so a fix forces the entry out. Adding a NEW ungated spawner fails outright.
  *
- * ⚠️ `residue` exists because a file can hold BOTH a gated call site and an ungated one. Since
- * `session/runner/llm.ts` started passing `HostExec.SessionHost` into the Strict runner, the
- * whole-file `GATED` test says "gated" while `runQualityCheck` still spawns with its own shell and
- * the inherited environment. Dropping the entry would have been a LIE, and keeping a plain entry
- * would have made the staleness check fire forever. So a residued entry stays ledgered while the
- * NAMED ungated spawn is still in the file, and is forced out the moment that exact spawn goes.
+ * `residue` remains available for a file that holds BOTH a gated and an ungated call site. The Strict
+ * drain extraction removed the only current example: `llm.ts` now owns the ungated quality check and
+ * `strict-drain.ts` owns the gated Strict execution path, so each file can be classified honestly.
  */
 interface Ungated {
   readonly reason: string
@@ -114,9 +111,7 @@ const UNGATED_LEDGER = new Map<string, Ungated>([
     {
       reason:
         "runQualityCheck spawns the configured quality commands with its own shell resolution and the " +
-        "inherited environment — same re-point as tool/quality-provision.ts. The Strict drain in the " +
-        "same file DOES go through the gate, hence the residue.",
-      residue: /ChildProcess\.make\(check\.command/,
+        "inherited environment — same re-point as tool/quality-provision.ts.",
     },
   ],
 ])
@@ -199,22 +194,22 @@ describe("host execution goes through ONE gate", () => {
     expect(stale).toEqual([])
   })
 
-  test("a residued entry is really a MIXED file — gated Strict, ungated quality check", () => {
-    // The negative control for the residue mechanism itself: without both halves being true of the
-    // real file, the relaxed staleness rule above would be hiding an ungated spawner rather than
-    // describing one. `session/runner/llm.ts` must show BOTH.
-    const file = sources.find((item) => item.name === "session/runner/llm.ts")
-    expect(file, "session/runner/llm.ts missing from the sweep").toBeDefined()
-    expect(file!.text, "the Strict drain no longer passes the host-exec context").toMatch(
-      /HostExec\.chainHasHostileBinding/,
+  test("the extracted ownership boundary separates gated Strict from ungated quality checks", () => {
+    const runner = sources.find((item) => item.name === "session/runner/llm.ts")
+    const strictDrain = sources.find((item) => item.name === "session/runner/strict-drain.ts")
+    expect(runner, "session/runner/llm.ts missing from the sweep").toBeDefined()
+    expect(strictDrain, "session/runner/strict-drain.ts missing from the sweep").toBeDefined()
+    expect(runner!.text, "runQualityCheck no longer spawns ungated — drop the ledger entry").toMatch(
+      /ChildProcess\.make\(check\.command/,
     )
-    expect(file!.text, "runQualityCheck no longer spawns ungated — drop the ledger entry").toMatch(
-      UNGATED_LEDGER.get("session/runner/llm.ts")!.residue!,
+    expect(runner!.text, "llm.ts unexpectedly owns a gated host-exec path again").not.toMatch(GATED)
+    expect(strictDrain!.text, "the Strict drain no longer passes the host-exec context").toMatch(
+      /HostExec\.chainHasHostileBinding/,
     )
   })
 
   test("tool/bash.ts and the Strict runner both consume the gate", () => {
-    for (const name of ["tool/bash.ts", "tool/js.ts", "session/runner/strict.ts"]) {
+    for (const name of ["tool/bash.ts", "tool/js.ts", "session/runner/strict.ts", "session/runner/strict-drain.ts"]) {
       const file = sources.find((item) => item.name === name)
       expect(file, `${name} missing from the sweep`).toBeDefined()
       expect(file!.text, `${name} no longer goes through host-exec.ts`).toMatch(GATED)

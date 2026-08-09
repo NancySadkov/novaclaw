@@ -258,7 +258,7 @@ const UNFILTERED_USER_ROLE_READS = new Map<string, string>([
     "runner/to-llm-message.ts",
     "DELIBERATE: lowering to the wire, not a read of what the user said — the model MUST see the steer",
   ],
-  // ⚠️ This entry is a CORRECTION to the guard's coverage, not a new gap. `runner/llm.ts` has had
+  // ⚠️ This entry is a CORRECTION to the guard's coverage, not a new gap. `runner/strict-drain.ts` owns
   // this read all along — `context.findLast(m => m.type === "user" && m.text.trim() === task)`,
   // re-finding by id the message `SessionStrict.lastUserText(context)` has ALREADY chosen. The
   // provenance question is answered upstream, in `lastUserText`, which picks the newest NON-STEER
@@ -272,7 +272,7 @@ const UNFILTERED_USER_ROLE_READS = new Map<string, string>([
   // file containing one vocabulary word covers every user-role read in it. A safe read and an unsafe
   // one in the same file are indistinguishable to it.
   [
-    "runner/llm.ts",
+    "runner/strict-drain.ts",
     "DELIBERATE: re-finds the id of the message `SessionStrict.lastUserText` already filtered — the provenance question is answered upstream, not here",
   ],
 ])

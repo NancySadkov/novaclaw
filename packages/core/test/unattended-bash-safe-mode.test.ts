@@ -259,6 +259,7 @@ describe("④ the WIRING — the half that compiles green when it goes missing",
 
   test("the runner composes the project-scope section from the RESOLVED mode", () => {
     const text = source("session/runner/llm.ts")
+    const strictDrain = source("session/runner/strict-drain.ts")
     expectSource(
       "session/runner/llm.ts",
       "never composes projectScope into the system prompt — the section would be inert",
@@ -267,9 +268,9 @@ describe("④ the WIRING — the half that compiles green when it goes missing",
     // …and the Strict runner gets the switch too, or safe mode would be honoured by `bash` and
     // silently ignored by every Strict command (ruling 6's whole point).
     expectSource(
-      "session/runner/llm.ts",
+      "session/runner/strict-drain.ts",
       "the Strict host no longer carries safeMode — the switch would govern bash and not Strict",
-      has(text, "safeMode: resolved.safeMode"),
+      has(strictDrain, "safeMode: resolved.safeMode"),
     )
     expectSource(
       "session/runner/strict.ts",
