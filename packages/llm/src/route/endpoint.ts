@@ -50,4 +50,5 @@ export const render = <Body>(endpoint: Endpoint<Body>, input: EndpointInput<Body
   return url
 }
 
-export * as Endpoint from "./endpoint"
+/** Runtime endpoint constructors. The type-level `Endpoint` interface shares this public name. */
+export const Endpoint = { path, merge, render } as const

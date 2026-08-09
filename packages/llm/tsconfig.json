@@ -2,6 +2,11 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "@tsconfig/bun/tsconfig.json",
   "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "outDir": "node_modules/.ts-dist",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "noUncheckedIndexedAccess": false,
     "plugins": [
@@ -11,5 +16,9 @@
         "namespaceImportPackages": ["effect", "@effect/*"]
       }
     ]
-  }
+  },
+  "references": [
+    { "path": "../http-recorder" },
+    { "path": "../schema" }
+  ]
 }

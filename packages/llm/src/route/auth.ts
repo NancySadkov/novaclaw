@@ -153,4 +153,22 @@ export const toEffect =
   (authInput: AuthInput): Effect.Effect<Headers.Headers, LLMError> =>
     input.apply(authInput).pipe(Effect.mapError(toLLMError))
 
-export * as Auth from "./auth"
+/** Runtime auth constructors. The type-level `Auth` interface shares this public name. */
+export const Auth = {
+  MissingCredentialError,
+  isAuth,
+  value,
+  optional,
+  config,
+  effect,
+  none,
+  headers,
+  remove,
+  custom,
+  passthrough,
+  bearer,
+  apiKey,
+  header,
+  bearerHeader,
+  toEffect,
+} as const
