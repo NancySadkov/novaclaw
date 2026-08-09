@@ -8,6 +8,7 @@ import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionRead } from "@novaclaw/core/session/read"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionLocationRecovery } from "@novaclaw/core/session/location-recovery"
 import { testEffect } from "./lib/effect"
 
 // T2 S4 (notes/entities.md): "a project's sessions" is the entity-free under-a-root query —
@@ -43,6 +44,21 @@ describe("SessionRead.list under", () => {
 
       const all = yield* SessionRead.list(db)
       expect(all).toHaveLength(5)
+    }),
+  )
+
+  it.effect("finds a recovered session by the missing folder it moved out of", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* seed(db, "ses_recovered", "C:\\scratch\\ses_recovered")
+      yield* seed(db, "ses_other", "D:\\other")
+      yield* SessionLocationRecovery.record(db, SessionV2.ID.make("ses_recovered"), AbsolutePath.make("C:\\vanished"))
+
+      const found = yield* SessionRead.list(db, { directory: AbsolutePath.make("C:\\vanished") })
+      expect(found.map((session) => String(session.id))).toEqual(["ses_recovered"])
+
+      yield* SessionLocationRecovery.clear(db, SessionV2.ID.make("ses_recovered"))
+      expect(yield* SessionRead.list(db, { directory: AbsolutePath.make("C:\\vanished") })).toEqual([])
     }),
   )
 })

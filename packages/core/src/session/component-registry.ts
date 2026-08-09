@@ -12,6 +12,7 @@ import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
 import { SessionComponentTable, SessionTable } from "./sql"
+import { SessionLocationRecovery } from "./location-recovery"
 
 export const LIFETIMES = ["entity", "attempt", "bounded"] as const
 export type Lifetime = (typeof LIFETIMES)[number]
@@ -28,6 +29,7 @@ export const KERNEL_KIND_NAMES = [
   "tuning",
   "permission_mode",
   "working_folder",
+  "missing_working_folder",
   "system_prompt_override",
   "device",
   "priority",
@@ -810,6 +812,22 @@ const compiledDefinitions = Effect.gen(function* () {
     GoalDefinition,
     PlanDefinition,
     ObservationDefinition,
+    kernelDefinition({
+      kind: "missing_working_folder",
+      description:
+        "The vanished working folder automatic recovery moved this session out of. It remains readable so the original folder can still find the chat, and clears when the session is deliberately moved.",
+      cardinality: "singleton",
+      lifetime: "entity",
+      version: 1,
+      codec: AbsolutePath,
+      removable: false,
+      validateWrite: ({ system }) =>
+        system ? Effect.void : Effect.fail(new Error("missing_working_folder is maintained by recovery")),
+      projection: {
+        get: (sessionID) => SessionLocationRecovery.get(db, sessionID),
+        put: (sessionID, value) => SessionLocationRecovery.record(db, sessionID, value),
+      },
+    }),
     kernelDefinition({
       kind: "working_folder",
       description:

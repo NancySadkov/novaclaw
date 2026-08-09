@@ -12,6 +12,7 @@ import { Project } from "@novaclaw/core/project"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionProjector } from "@novaclaw/core/session/projector"
+import { SessionLocationRecovery } from "@novaclaw/core/session/location-recovery"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { git, gitText, repo } from "./fixture/git"
@@ -74,6 +75,7 @@ describe("MoveSession", () => {
         })
         .run()
         .pipe(Effect.orDie)
+      yield* SessionLocationRecovery.record(db, sessionID, abs(path.join(source, "vanished")))
 
       yield* MoveSession.Service.use((service) =>
         service.moveSession({ sessionID, destination: { directory: moved }, moveChanges: true }),
@@ -90,6 +92,7 @@ describe("MoveSession", () => {
           .where(eq(SessionTable.id, sessionID))
           .get(),
       ).toEqual({ directory: moved, path: "" })
+      expect(yield* SessionLocationRecovery.get(db, sessionID)).toBeUndefined()
     }),
   )
 

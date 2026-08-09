@@ -13,6 +13,7 @@ import type { SessionV2 } from "../session"
 import { fromRow } from "./info"
 import { SessionSchema } from "./schema"
 import { SessionTable } from "./sql"
+import { SessionLocationRecovery } from "./location-recovery"
 
 type Db = Database.Interface["db"]
 
@@ -23,7 +24,7 @@ export const list = (db: Db, input: SessionV2.ListInput = {}): Effect.Effect<Ses
     const order = direction === "previous" ? (requestedOrder === "asc" ? "desc" : "asc") : requestedOrder
     const sortColumn = SessionTable.time_created
     const conditions: SQL[] = []
-    if ("directory" in input) conditions.push(eq(SessionTable.directory, input.directory))
+    if ("directory" in input) conditions.push(SessionLocationRecovery.matchesDirectory(input.directory))
     if (input.workspaceID) conditions.push(eq(SessionTable.workspace_id, input.workspaceID))
     // "Under a root": the directory IS the root, or sits below it with an explicit separator
     // boundary (never the sibling `C:\repo2` when under=`C:\repo`) — both separator styles.

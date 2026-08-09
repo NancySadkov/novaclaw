@@ -17,6 +17,7 @@ import { SessionContextEpoch } from "./context-epoch"
 import { SessionCompactionTable, SessionInputTable, SessionMessageTable, SessionTable } from "./sql"
 import { SessionSchema } from "./schema"
 import { SessionConfigColumns } from "./config-columns"
+import { SessionLocationRecovery } from "./location-recovery"
 
 type DatabaseService = Database.Interface["db"]
 
@@ -266,6 +267,7 @@ export const layer = Layer.effectDiscard(
           .where(eq(SessionTable.id, event.data.sessionID))
           .run()
           .pipe(Effect.orDie)
+        yield* SessionLocationRecovery.clear(db, event.data.sessionID)
         yield* SessionContextEpoch.reset(db, event.data.sessionID)
       }),
     )

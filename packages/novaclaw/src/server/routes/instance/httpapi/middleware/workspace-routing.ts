@@ -52,7 +52,6 @@ const InvalidWorkspaceID = Symbol("InvalidWorkspaceID")
 // because it needs `Workspace.Service`, the control plane and an HttpClient. See that file.
 export { WorkspaceRouteContext, WorkspaceRoutingMiddleware }
 
-
 function requestURL(request: HttpServerRequest.HttpServerRequest): URL {
   return new URL(request.url, "http://localhost")
 }
@@ -210,7 +209,8 @@ function planRequest(
       // Decoded — see `requestedDirectory`. Testing `existsSync` on the SDK's percent-encoded header
       // never matched, so this guard rejected every legitimate client-supplied directory.
       const requested = requestedDirectory(request, url)
-      if (requested && !(yield* Effect.sync(() => existsSync(requested)))) {
+      const deadFolderSessionList = request.method === "GET" && url.pathname === "/api/session"
+      if (requested && !deadFolderSessionList && !(yield* Effect.sync(() => existsSync(requested)))) {
         return RequestPlan.InvalidDirectory({ directory: requested })
       }
     }

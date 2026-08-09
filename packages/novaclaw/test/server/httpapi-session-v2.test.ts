@@ -274,6 +274,14 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
           // It must be REAL — a path the worker can actually start in. Returning a plausible-looking
           // string that does not exist would move the failure rather than fix it.
           expect(fsSync.existsSync(moved)).toBe(true)
+
+          // The launcher still asks by the folder it knew. A deleted path must not be rejected by
+          // routing, and the list must follow the recovery alias to the session now in scratch.
+          const listed = yield* Effect.promise(() => sdk.v2.session.list({ directory }))
+          expect(listed.response.status).toBe(200)
+          const payload = record(listed.data).data
+          const sessions: unknown[] = Array.isArray(payload) ? payload : []
+          expect(sessions.some((item) => String(record(item).id) === sessionID)).toBe(true)
         }),
       ),
     30_000,

@@ -30,6 +30,7 @@ import { SessionWorkerInteractionBridge } from "./interaction-bridge"
 import * as SessionWorkerSupervisor from "./supervisor"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
 import { SessionJoin } from "@novaclaw/core/session/join"
+import { SessionLocationRecovery } from "@novaclaw/core/session/location-recovery"
 
 const failure = (outcome: SessionWorkerSupervisor.Outcome) =>
   outcome.type === "failed"
@@ -125,13 +126,18 @@ export const layer = Layer.effect(
               text: folderSubstitutedNotice(stored.location.directory, effective),
             })
             .pipe(Effect.ignore)
-          yield* SessionPatch.patchSessionRecord({ db: database.db, events }, sessionID, (info: SessionSchema.Info) => ({
-            ...info,
-            location: Location.Ref.make({
-              directory: effective,
-              ...(info.location.workspaceID ? { workspaceID: info.location.workspaceID } : {}),
+          yield* SessionLocationRecovery.record(database.db, sessionID, stored.location.directory)
+          yield* SessionPatch.patchSessionRecord(
+            { db: database.db, events },
+            sessionID,
+            (info: SessionSchema.Info) => ({
+              ...info,
+              location: Location.Ref.make({
+                directory: effective,
+                ...(info.location.workspaceID ? { workspaceID: info.location.workspaceID } : {}),
+              }),
             }),
-          }))
+          )
         }
         const session = effective === stored.location.directory ? stored : ((yield* store.get(sessionID)) ?? stored)
 
