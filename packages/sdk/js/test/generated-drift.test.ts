@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test"
+import { createHash } from "node:crypto"
 import path from "path"
+
+import { schemaTypeNames } from "../script/emitter"
 
 // The SDK's two committed artifacts are GENERATED, and until 2026-07-28 nothing asserted they still
 // matched their source. They silently went five days stale: `packages/sdk/openapi.json` was last
@@ -11,19 +14,17 @@ import path from "path"
 // The chain has two hops and they are checked differently, because they cost differently:
 //
 //   packages/protocol  --(bun dev generate)-->  packages/sdk/openapi.json     hop 1 — 3.5 s, byte-exact
-//   packages/sdk/openapi.json  --(@hey-api)-->  src/v2/gen/**                 hop 2 — minutes, structural here
+//   packages/sdk/openapi.json  --(owned emitter)-->  src/v2/gen/**              hop 2 — structural here
 //
 // Hop 1 is re-run for real on every gate run: `bun dev generate` is a pure in-process read of
 // `Server.openapi()` (no network, no database write), it is deterministic, and it is redirected to a
 // TEMP file so a test run never mutates the working tree.
 //
-// Hop 2 cannot be re-run for real in the default tier: `script/build.ts` sets `output.clean: true`,
-// so the generator EMPTIES `src/v2/gen` before writing, and it then runs prettier and `tsc`. A test
-// that wipes sixteen tracked files mid-run and costs minutes does not belong in a tier the owner has
-// capped at five minutes. `bun run --cwd packages/sdk/js check:generated` is the byte-exact version,
-// for a human before a release. What runs here instead is the structural half that needs no
-// generator: every route the spec declares must be reachable from the typed client, and the typed
-// client must expose no route the spec does not declare.
+// Hop 2's emitter itself is unit-tested with synthetic contracts and deterministic twin outputs.
+// This file keeps the production contract check structural so the ordinary test tier never rewrites
+// tracked artifacts. `bun run --cwd packages/sdk/js check:generated` is the byte-exact release check.
+// Every route the spec declares must be reachable from the typed client, and the typed client must
+// expose no route the spec does not declare.
 //
 // Whoever fixes a failure here: `bun run --cwd packages/sdk/js regen` and
 // `bun script/generate.ts` now reach the same root-aware pipeline. It refreshes the committed spec
@@ -137,6 +138,12 @@ function exportedType(source: string, name: string): string | undefined {
  */
 const GENERATE_TIMEOUT_MS = 60_000
 
+// This pins the COMPLETE source-name -> TypeScript-name table, including the non-identifier names,
+// acronym normalization and collision suffixes that the structural schema test below deliberately
+// cannot predict. A protocol schema addition changes it legitimately; update the fingerprint only
+// after reviewing the readable mapping diff printed by the failure.
+const SCHEMA_NAME_FINGERPRINT = "c76743163faf437d1a9ff023310c704afb6506ad6e393e59c6ffc229e4e75a00"
+
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {
   const lines: string[] = []
@@ -163,6 +170,20 @@ function describeDrift(committed: Document, fresh: Document): string {
 }
 
 describe("the SDK's generated artifacts", () => {
+  test("the public schema naming table changes only deliberately", async () => {
+    const document = (await Bun.file(specPath).json()) as Document
+    const mapping = [...schemaTypeNames(document as any)].map(([source, emitted]) => `${source} -> ${emitted}`)
+    const fingerprint = createHash("sha256").update(mapping.join("\n")).digest("hex")
+    expect(
+      fingerprint,
+      [
+        "The owned emitter's public schema naming table changed.",
+        "Review this mapping before updating SCHEMA_NAME_FINGERPRINT:",
+        ...mapping.map((line) => `  ${line}`),
+      ].join("\n"),
+    ).toBe(SCHEMA_NAME_FINGERPRINT)
+  })
+
   test(
     "openapi.json is what packages/protocol generates today",
     async () => {
@@ -208,7 +229,7 @@ describe("the SDK's generated artifacts", () => {
     const document = (await Bun.file(specPath).json()) as Document
     const sdk = await Bun.file(path.join(genDir, "sdk.gen.ts")).text()
 
-    // @hey-api emits every operation as `.<method><generics>({ url: "<path>", ... })`, with the path
+    // The owned emitter writes every operation as `.<method><generics>({ url: "<path>", ... })`, with the path
     // VERBATIM — no name transformation, which is what makes this assertion sound. Operation *ids*
     // are not usable for this: all 212 are rewritten into container/method names.
     const emitted = new Set<string>()
@@ -315,7 +336,7 @@ describe("the SDK's generated artifacts", () => {
     // Hop 2's route check is blind to schemas: on 2026-07-31 the committed spec carried three schemas
     // the committed client had never been regenerated for, and both existing checks were green.
     //
-    // @hey-api rewrites 30 of 447 schema names — dots, dashes and underscores are collapsed
+    // The emitter rewrites non-identifier schema names — dots, dashes and underscores are collapsed
     // (`session.status`, `Models-devRefreshed`, `effect_HttpApiError_BadRequest`) in ways this test
     // would have to reimplement to predict. It does not try: it checks only the 434 names that are
     // already plain identifiers, and compares case-insensitively because acronym case IS normalized
