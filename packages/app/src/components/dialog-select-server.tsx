@@ -3,7 +3,8 @@ import { useDialog } from "@novaclaw/ui/context/dialog"
 import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
 import { DropdownMenu } from "@novaclaw/ui/dropdown-menu"
 import { Icon } from "@novaclaw/ui/icon"
-import { IconButton } from "@novaclaw/ui/icon-button"
+import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
+import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { List } from "@novaclaw/ui/list"
 import { TextField } from "@novaclaw/ui/text-field"
 import { useMutation } from "@tanstack/solid-query"
@@ -498,7 +499,12 @@ export function useServerManagementController(options: { onSelect?: () => void; 
     if (!isFormMode()) return language.t("dialog.server.title")
     return (
       <div class="flex items-center gap-2 -ml-2">
-        <IconButton icon="arrow-left" variant="ghost" onClick={resetForm} aria-label={language.t("common.goBack")} />
+        <IconButtonV2
+          icon={<IconV2 name="arrow-left" />}
+          variant="ghost-muted"
+          onClick={resetForm}
+          aria-label={language.t("common.goBack")}
+        />
         <span>{isAddMode() ? language.t("dialog.server.add.title") : language.t("dialog.server.edit.title")}</span>
       </div>
     )
@@ -594,9 +600,9 @@ export function ServerConnectionList(props: { controller: ReturnType<typeof useS
                 <Show when={i.type === "http"}>
                   <DropdownMenu>
                     <DropdownMenu.Trigger
-                      as={IconButton}
-                      icon="dot-grid"
-                      variant="ghost"
+                      as={IconButtonV2}
+                      icon={<IconV2 name="dot-grid" />}
+                      variant="ghost-muted"
                       class="shrink-0 size-8 hover:bg-surface-base-hover data-[expanded]:bg-surface-base-active"
                       onClick={(e: MouseEvent) => e.stopPropagation()}
                       onPointerDown={(e: PointerEvent) => e.stopPropagation()}

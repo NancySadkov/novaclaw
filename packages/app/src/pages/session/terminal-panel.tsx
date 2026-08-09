@@ -3,7 +3,8 @@ import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { ResizeHandle } from "@novaclaw/ui/resize-handle"
-import { IconButton } from "@novaclaw/ui/icon-button"
+import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
+import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { TooltipKeybindV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, closestCenter } from "@thisbeyond/solid-dnd"
 import type { DragEvent } from "@thisbeyond/solid-dnd"
@@ -288,10 +289,9 @@ export function TerminalPanel() {
                       keys={command.keybindParts("terminal.new")}
                       class="flex items-center"
                     >
-                      <IconButton
-                        icon="plus-small"
-                        variant="ghost"
-                        iconSize="large"
+                      <IconButtonV2
+                        icon={<IconV2 name="plus-small" size="large" />}
+                        variant="ghost-muted"
                         onClick={terminal.new}
                         aria-label={language.t("command.terminal.new")}
                       />

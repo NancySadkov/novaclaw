@@ -3,7 +3,6 @@ import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { Button } from "@novaclaw/ui/button"
 import { Icon } from "@novaclaw/ui/icon"
-import { IconButton } from "@novaclaw/ui/icon-button"
 import { TextField } from "@novaclaw/ui/text-field"
 import { showToast } from "@/utils/toast"
 import fuzzysort from "fuzzysort"
@@ -511,7 +510,11 @@ export const SettingsKeybinds: Component<{ v2?: boolean }> = (props) => {
                   class="flex-1"
                 />
                 <Show when={store.filter}>
-                  <IconButton icon="circle-x" variant="ghost" onClick={() => setStore("filter", "")} />
+                  <IconButtonV2
+                    icon={<IconV2 name="circle-x" />}
+                    variant="ghost-muted"
+                    onClick={() => setStore("filter", "")}
+                  />
                 </Show>
               </div>
             </div>

@@ -2,7 +2,8 @@ import { createMemo, Show } from "solid-js"
 import type { JSX } from "solid-js"
 import { createSortable } from "@thisbeyond/solid-dnd"
 import { FileIcon } from "@novaclaw/ui/file-icon"
-import { IconButton } from "@novaclaw/ui/icon-button"
+import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
+import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { TooltipKeybindV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { getFilename } from "@novaclaw/core/util/path"
@@ -50,9 +51,9 @@ export function SortableTab(props: { tab: string; onTabClose: (tab: string) => v
               placement="bottom"
               gutter={10}
             >
-              <IconButton
-                icon="close-small"
-                variant="ghost"
+              <IconButtonV2
+                icon={<IconV2 name="close-small" />}
+                variant="ghost-muted"
                 class="h-5 w-5"
                 onClick={() => props.onTabClose(props.tab)}
                 aria-label={language.t("common.closeTab")}

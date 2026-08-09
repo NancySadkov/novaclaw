@@ -147,3 +147,22 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-component="icon-button-v2"] [data-slot="icon-svg"] use[href="#novaclaw-v2-icon-stop"] {
+    transform-origin: center;
+    transform-box: fill-box;
+    animation: stop-pulse-v2 1.8s ease-in-out infinite;
+  }
+}
+
+@keyframes stop-pulse-v2 {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(0.8);
+  }
+}

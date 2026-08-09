@@ -6,7 +6,8 @@ import { useServer, type ServerConnection } from "@/context/server"
 import { providerProbe, type ProbeResult } from "@/utils/fs-api"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { Button } from "@novaclaw/ui/button"
-import { IconButton } from "@novaclaw/ui/icon-button"
+import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
+import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { Tag } from "@novaclaw/ui/tag"
 import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
 import { List } from "@novaclaw/ui/list"
@@ -295,20 +296,18 @@ export function ModelSelectorPopover(props: {
             action={
               <div class="flex items-center gap-1">
                 <TooltipV2 placement="top" value={language.t("command.provider.connect")}>
-                  <IconButton
-                    icon="plus-small"
-                    variant="ghost"
-                    iconSize="normal"
+                  <IconButtonV2
+                    icon={<IconV2 name="plus-small" size="large" />}
+                    variant="ghost-muted"
                     class="size-6"
                     aria-label={language.t("command.provider.connect")}
                     onClick={handleConnectProvider}
                   />
                 </TooltipV2>
                 <TooltipV2 placement="top" value={language.t("dialog.model.manage")}>
-                  <IconButton
-                    icon="sliders"
-                    variant="ghost"
-                    iconSize="normal"
+                  <IconButtonV2
+                    icon={<IconV2 name="sliders" size="large" />}
+                    variant="ghost-muted"
                     class="size-6"
                     aria-label={language.t("dialog.model.manage")}
                     onClick={handleManage}

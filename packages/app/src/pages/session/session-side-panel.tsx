@@ -2,7 +2,8 @@ import { For, Match, Show, Switch, createEffect, createMemo, onCleanup, type JSX
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
-import { IconButton } from "@novaclaw/ui/icon-button"
+import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
+import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { TooltipKeybindV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { ResizeHandle } from "@novaclaw/ui/resize-handle"
 import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, closestCenter } from "@thisbeyond/solid-dnd"
@@ -260,9 +261,9 @@ export function SessionSidePanel(props: {
                                 placement="bottom"
                                 gutter={10}
                               >
-                                <IconButton
-                                  icon="close-small"
-                                  variant="ghost"
+                                <IconButtonV2
+                                  icon={<IconV2 name="close-small" />}
+                                  variant="ghost-muted"
                                   class="h-5 w-5"
                                   onClick={() => tabs().close("context")}
                                   aria-label={language.t("common.closeTab")}
@@ -286,10 +287,9 @@ export function SessionSidePanel(props: {
                             keys={command.keybindParts("file.open")}
                             class="flex items-center"
                           >
-                            <IconButton
-                              icon="plus-small"
-                              variant="ghost"
-                              iconSize="large"
+                            <IconButtonV2
+                              icon={<IconV2 name="plus-small" size="large" />}
+                              variant="ghost-muted"
                               class="!rounded-md"
                               onClick={() => {
                                 void import("@/components/dialog-select-file").then((x) => {

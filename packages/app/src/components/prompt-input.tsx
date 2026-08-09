@@ -25,7 +25,8 @@ import { DockShellForm, DockTray } from "@novaclaw/ui/dock-surface"
 import { Icon } from "@novaclaw/ui/icon"
 import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
-import { IconButton } from "@novaclaw/ui/icon-button"
+import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
+import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { useCommand } from "@/context/command"
@@ -1209,13 +1210,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 on narrow / phone widths. */}
             <div class="shrink-0 self-end p-2">
               <TooltipV2 placement="top" inactive={!working() && blank()} value={tip()}>
-                <IconButton
+                <IconButtonV2
                   data-action="prompt-submit"
                   type="submit"
                   disabled={!working() && blank()}
                   tabIndex={store.mode === "normal" ? undefined : -1}
-                  icon={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
-                  variant="primary"
+                  icon={
+                    <IconV2 name={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"} />
+                  }
+                  variant="contrast"
                   class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted shadow-[var(--v2-elevation-button-contrast)] disabled:opacity-50"
                   style={{
                     "background-image":
@@ -1240,11 +1243,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 </>
               }
             >
-              <IconButton
+              <IconButtonV2
                 data-action="prompt-attach"
                 type="button"
-                icon="plus"
-                variant="ghost"
+                icon={<IconV2 name="plus" />}
+                variant="ghost-muted"
                 class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted"
                 style={buttons()}
                 onClick={pick}

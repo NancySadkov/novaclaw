@@ -2,7 +2,8 @@ import type { Todo } from "@novaclaw/sdk/v2"
 import { AnimatedNumber } from "@novaclaw/ui/animated-number"
 import { Checkbox } from "@novaclaw/ui/checkbox"
 import { DockTray } from "@novaclaw/ui/dock-surface"
-import { IconButton } from "@novaclaw/ui/icon-button"
+import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
+import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { useSpring } from "@novaclaw/ui/motion-spring"
 import { TextReveal } from "@novaclaw/ui/text-reveal"
 import { TextStrikethrough } from "@novaclaw/ui/text-strikethrough"
@@ -157,10 +158,10 @@ export function SessionTodoDock(props: {
             />
           </div>
           <div class="ml-auto">
-            <IconButton
+            <IconButtonV2
               data-action="session-todo-toggle-button"
               data-collapsed={props.collapsed ? "true" : "false"}
-              icon="chevron-down"
+              icon={<IconV2 name="chevron-down" />}
               size="normal"
               variant="ghost"
               style={{ transform: `rotate(${turn() * 180}deg)` }}

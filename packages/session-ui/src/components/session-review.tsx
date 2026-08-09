@@ -5,7 +5,8 @@ import { RadioGroup } from "@novaclaw/ui/radio-group"
 import { DiffChanges } from "@novaclaw/ui/v2/diff-changes-v2"
 import { FileIcon } from "@novaclaw/ui/file-icon"
 import { Icon } from "@novaclaw/ui/icon"
-import { IconButton } from "@novaclaw/ui/icon-button"
+import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
+import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { StickyAccordionHeader } from "@novaclaw/ui/sticky-accordion-header"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { ScrollView } from "@novaclaw/ui/scroll-view"
@@ -142,9 +143,9 @@ function ReviewCommentMenu(props: {
     <div onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
       <DropdownMenu gutter={4} placement="bottom-end">
         <DropdownMenu.Trigger
-          as={IconButton}
-          icon="dot-grid"
-          variant="ghost"
+          as={IconButtonV2}
+          icon={<IconV2 name="dot-grid" />}
+          variant="ghost-muted"
           size="small"
           class="size-6 rounded-md"
           aria-label={props.labels.moreLabel}

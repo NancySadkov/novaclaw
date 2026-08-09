@@ -1,6 +1,7 @@
 import { Component, For, Show } from "solid-js"
 import { FileIcon } from "@novaclaw/ui/file-icon"
-import { IconButton } from "@novaclaw/ui/icon-button"
+import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
+import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { getDirectory, getFilename, getFilenameTruncated } from "@novaclaw/core/util/path"
 import type { ContextItem } from "@/context/prompt"
@@ -63,10 +64,10 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
                         )}
                       </Show>
                     </div>
-                    <IconButton
+                    <IconButtonV2
                       type="button"
-                      icon="close-small"
-                      variant="ghost"
+                      icon={<IconV2 name="close-small" />}
+                      variant="ghost-muted"
                       class="ml-auto size-3.5 text-text-weak hover:text-text-strong transition-all"
                       onClick={(e) => {
                         e.stopPropagation()

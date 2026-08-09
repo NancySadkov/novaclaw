@@ -2,7 +2,8 @@ import { For, Show, createEffect, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@novaclaw/ui/button"
 import { DockTray } from "@novaclaw/ui/dock-surface"
-import { IconButton } from "@novaclaw/ui/icon-button"
+import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
+import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { useLanguage } from "@/context/language"
 
 export function SessionRevertDock(props: {
@@ -50,9 +51,9 @@ export function SessionRevertDock(props: {
           <span class="min-w-0 flex-1 truncate text-14-regular text-text-base cursor-default">{preview()}</span>
         </Show>
         <div class="ml-auto shrink-0">
-          <IconButton
+          <IconButtonV2
             data-collapsed={store.collapsed ? "true" : "false"}
-            icon="chevron-down"
+            icon={<IconV2 name="chevron-down" />}
             size="normal"
             variant="ghost"
             style={{ transform: `rotate(${store.collapsed ? 180 : 0}deg)` }}

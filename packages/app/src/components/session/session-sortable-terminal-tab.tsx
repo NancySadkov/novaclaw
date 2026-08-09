@@ -2,7 +2,8 @@ import type { JSX } from "solid-js"
 import { Show, createEffect, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSortable } from "@thisbeyond/solid-dnd"
-import { IconButton } from "@novaclaw/ui/icon-button"
+import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
+import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { DropdownMenu } from "@novaclaw/ui/dropdown-menu"
 import { Icon } from "@novaclaw/ui/icon"
@@ -133,9 +134,9 @@ export function SortableTerminalTab(props: { terminal: LocalPTY; onClose?: () =>
           onContextMenu={menu}
           class="!shadow-none"
           closeButton={
-            <IconButton
-              icon="close"
-              variant="ghost"
+            <IconButtonV2
+              icon={<IconV2 name="close" />}
+              variant="ghost-muted"
               onClick={(e) => {
                 e.stopPropagation()
                 close()

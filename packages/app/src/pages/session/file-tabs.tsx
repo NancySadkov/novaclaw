@@ -8,7 +8,8 @@ import { cloneSelectedLineRange, previewSelectedLines } from "@novaclaw/session-
 import { createLineCommentController } from "@novaclaw/session-ui/line-comment-annotations"
 import { sampledChecksum } from "@novaclaw/core/util/encode"
 import { DropdownMenu } from "@novaclaw/ui/dropdown-menu"
-import { IconButton } from "@novaclaw/ui/icon-button"
+import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
+import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { ScrollView } from "@novaclaw/ui/scroll-view"
 import { showToast } from "@/utils/toast"
@@ -31,9 +32,9 @@ function FileCommentMenu(props: {
     <div onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
       <DropdownMenu gutter={4} placement="bottom-end">
         <DropdownMenu.Trigger
-          as={IconButton}
-          icon="dot-grid"
-          variant="ghost"
+          as={IconButtonV2}
+          icon={<IconV2 name="dot-grid" />}
+          variant="ghost-muted"
           size="small"
           class="size-6 rounded-md"
           aria-label={props.moreLabel}
