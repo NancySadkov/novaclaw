@@ -795,6 +795,55 @@ describe("the RunReport carries the MEASURED prompt-token series", () => {
 // The rest of the report
 // ================================================================================================
 
+describe("C4 — checkpoint verifier integration", () => {
+  const verifiedSpec = spec({
+    checkpoints: [{ ...CP9, verifier: { id: "dosbox-state" } }],
+    budget: { maxSteps: 1, maxPromptTokens: 500_000 },
+  })
+  const answers = [
+    { observed: "the start frame", checkpoint: "no" },
+    { observed: "the spell dialog", predicted: "yes", checkpoint: "yes" },
+  ]
+
+  test("records a passing executable-state check and completes", async () => {
+    const seen: DRV.CheckpointVerifyRequest[] = []
+    const { report } = await drive({
+      spec: verifiedSpec,
+      llm: model({ adjudicator: answers }),
+      deps: {
+        verifyCheckpoint: (request) =>
+          Effect.sync(() => {
+            seen.push(request)
+            return { result: "pass" as const, evidence: "turn counter advanced to 2" }
+          }),
+      },
+    })
+    expect(report.outcome).toMatchObject({ kind: "done", checkpointsSatisfied: 1 })
+    expect(seen).toHaveLength(1)
+    expect(report.checkpointVerifications).toEqual([
+      {
+        verifierID: "dosbox-state",
+        checkpoint: verifiedSpec.checkpoints[0],
+        step: 1,
+        result: "pass",
+        evidence: "turn counter advanced to 2",
+      },
+    ])
+  })
+
+  test("a declared verifier with no resolver blocks explicitly and records the absence", async () => {
+    const { report } = await drive({ spec: verifiedSpec, llm: model({ adjudicator: answers }) })
+    expect(report.outcome).toMatchObject({ kind: "blocked", reason: "checkpoint-verifier-unavailable" })
+    expect(report.checkpointVerifications).toEqual([
+      expect.objectContaining({
+        verifierID: "dosbox-state",
+        result: "unavailable",
+        evidence: "no resolver is installed for dosbox-state",
+      }),
+    ])
+  })
+})
+
 describe("the RunReport", () => {
   test("a Done run carries the ledger, the verdicts and the checkpoint score", async () => {
     const { report } = await drive({

@@ -871,6 +871,63 @@ describe("🔴 a checkpoint award is CONFIRMED before it counts", () => {
   })
 })
 
+describe("C4 — executable state may veto a visual checkpoint, never originate one", () => {
+  const verified = spec({
+    checkpoints: [{ ...CP9, verifier: { id: "dosbox-state" } }],
+    noProgressLimit: 99,
+  })
+
+  const visuallyConfirmed = (result: "pass" | "fail" | "unavailable") =>
+    drive(verified, [
+      ...CALIBRATE,
+      ...step(proposeAt(464, 684), moved(), { predicted: "yes", checkpoint: "yes" }, "s1"),
+      { kind: "checkpoint-verified", result, evidence: `state reader: ${result}` },
+    ])
+
+  test("a passing verifier confirms an already-visual award", () => {
+    const run = visuallyConfirmed("pass")
+    expect(run.outcome).toMatchObject({ kind: "done", checkpointsSatisfied: 1 })
+    expect(commandKinds(run)).toContain("verify-checkpoint")
+  })
+
+  test("a failing verifier vetoes the visual opinion", () => {
+    const run = visuallyConfirmed("fail")
+    expect(run.state.checkpointIndex).toBe(0)
+    expect(run.state.ledger.at(-1)?.checkpoint).toBe("0/1?")
+  })
+
+  test("a visual refusal never calls the verifier and awards nothing", () => {
+    const run = drive(verified, [
+      ...CALIBRATE,
+      ...step(proposeAt(464, 684), moved(), { predicted: "yes", checkpoint: "no" }, "s1"),
+    ])
+    expect(commandKinds(run)).not.toContain("verify-checkpoint")
+    expect(run.state.checkpointIndex).toBe(0)
+  })
+
+  test("an unavailable declared verifier blocks by name", () => {
+    const run = visuallyConfirmed("unavailable")
+    expect(run.outcome).toMatchObject({ kind: "blocked", reason: "checkpoint-verifier-unavailable" })
+    expect(run.outcome?.detail).toContain("state reader: unavailable")
+  })
+
+  test("a model claim cannot bypass the executable veto", () => {
+    const run = drive(verified, [
+      ...CALIBRATE,
+      captured("s1"),
+      {
+        kind: "planner-replied",
+        text: JSON.stringify({ claim_done: true, evidence: "the turn appears complete" }),
+      },
+      adjudged({ checkpoint: "yes" }),
+      { kind: "checkpoint-verified", result: "fail", evidence: "turn counter is still 1" },
+    ])
+    expect(run.outcome).toBeUndefined()
+    expect(run.state.checkpointIndex).toBe(0)
+    expect(run.state.ledger.at(-1)?.verdict).toBe("claim verifier REJECTED")
+  })
+})
+
 // ------------------------------------------------------------------------------------------------
 // CHECKPOINT_LOOKAHEAD — the battery is a progress marker, not a stopwatch
 // ------------------------------------------------------------------------------------------------

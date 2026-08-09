@@ -137,6 +137,16 @@ export interface AccessibilityInvokeRequest {
 
 export type ActOutcome = { readonly ok: true } | { readonly ok: false; readonly reason: string }
 
+export interface CheckpointVerifyRequest {
+  readonly verifierID: string
+  readonly checkpoint: ComputerLoop.Checkpoint
+  readonly step: number
+}
+
+export type CheckpointVerifyOutcome =
+  | { readonly result: "pass" | "fail"; readonly evidence: string }
+  | { readonly result: "unavailable"; readonly evidence: string }
+
 export type AskKind = "planner" | "grounder" | "preaction-critic" | "adjudicator"
 
 export interface AskRequest {
@@ -165,6 +175,8 @@ export interface Deps {
   /** Required only when a selected candidate advertised an invokable semantic action. */
   readonly invokeAccessibility?: (request: AccessibilityInvokeRequest) => Effect.Effect<ActOutcome>
   readonly ask: (request: AskRequest) => Effect.Effect<AskOutcome>
+  /** A positive executable-state result can confirm a visual award, never create one. */
+  readonly verifyCheckpoint?: (request: CheckpointVerifyRequest) => Effect.Effect<CheckpointVerifyOutcome>
   /**
    * Directory the per-capture files go in — a path on the machine the DISPLAY lives on, so it is
    * joined with `/` and never with `node:path`.
@@ -310,6 +322,11 @@ export interface CheckpointScore {
   readonly satisfiedAtStep?: number
 }
 
+export interface CheckpointVerificationRecord extends CheckpointVerifyRequest {
+  readonly result: CheckpointVerifyOutcome["result"]
+  readonly evidence: string
+}
+
 /**
  * G14's answer, derived from the reducer's own ruling rather than re-parsed here.
  *
@@ -345,6 +362,8 @@ export interface RunReport {
   readonly verdicts: ReadonlyArray<VerdictRecord>
   readonly checkpoints: ReadonlyArray<CheckpointScore>
   readonly checkpointsSatisfied: number
+  /** Every executable-state veto, including explicit resolver absence. */
+  readonly checkpointVerifications: ReadonlyArray<CheckpointVerificationRecord>
   readonly calibration: Calibration
   /** The per-call `usage.prompt_tokens` series — the number §4 asked to have measured. */
   readonly usage: ReadonlyArray<UsageSample>
@@ -417,6 +436,7 @@ export function run(spec: ComputerLoop.TaskSpec, deps: Deps): Effect.Effect<RunR
     const usage: UsageSample[] = []
     const verdicts: VerdictRecord[] = []
     const satisfiedAt = new Map<string, number>()
+    const checkpointVerifications: CheckpointVerificationRecord[] = []
     const usedPaths = new Set<string>()
     let seq = 0
     let acted = 0
@@ -661,6 +681,22 @@ export function run(spec: ComputerLoop.TaskSpec, deps: Deps): Effect.Effect<RunR
                   ? { kind: "preaction-critiqued", text, ...tokens }
                 : { kind: "adjudicated", text, ...tokens }
           }
+          case "verify-checkpoint": {
+            const request: CheckpointVerifyRequest = {
+              verifierID: command.verifierID,
+              checkpoint: command.checkpoint,
+              step: state.step,
+            }
+            const outcome: CheckpointVerifyOutcome =
+              deps.verifyCheckpoint === undefined
+                ? {
+                    result: "unavailable",
+                    evidence: `no resolver is installed for ${command.verifierID}`,
+                  }
+                : yield* deps.verifyCheckpoint(request)
+            checkpointVerifications.push({ ...request, ...outcome })
+            return { kind: "checkpoint-verified", ...outcome }
+          }
           case "act":
             return yield* performAct(command, state)
           case "finish":
@@ -754,6 +790,7 @@ export function run(spec: ComputerLoop.TaskSpec, deps: Deps): Effect.Effect<RunR
         ...(satisfiedAt.has(checkpoint.id) ? { satisfiedAtStep: satisfiedAt.get(checkpoint.id)! } : {}),
       })),
       checkpointsSatisfied: finalState.checkpointIndex,
+      checkpointVerifications,
       calibration,
       usage,
       promptTokens,

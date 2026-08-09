@@ -73,6 +73,11 @@ import { ComputerProposal } from "./proposal"
 export interface Checkpoint {
   readonly id: string
   readonly question: string
+  /**
+   * Optional executable-state verifier. A positive result may only CONFIRM a visual award; it can
+   * never create one. The opaque id is resolved by the driver/system, never executed in-process.
+   */
+  readonly verifier?: { readonly id: string }
 }
 
 export interface Budget {
@@ -234,6 +239,7 @@ export type BlockedReason =
   | "no-progress"
   | "cannot-see"
   | "capture-failed"
+  | "checkpoint-verifier-unavailable"
   | "done-unverifiable"
 
 export type VoidReason =
@@ -278,6 +284,11 @@ export type Command =
   | { readonly kind: "ask-preaction-critic"; readonly prompt: ComputerPrompt.Prompt }
   | { readonly kind: "ask-adjudicator"; readonly prompt: ComputerPrompt.Prompt }
   | {
+      readonly kind: "verify-checkpoint"
+      readonly verifierID: string
+      readonly checkpoint: Checkpoint
+    }
+  | {
       readonly kind: "act"
       readonly action: ComputerActions.Action
       readonly execution:
@@ -310,6 +321,11 @@ export type Event =
   | { readonly kind: "grounder-replied"; readonly text: string; readonly promptTokens?: number }
   | { readonly kind: "preaction-critiqued"; readonly text: string; readonly promptTokens?: number }
   | { readonly kind: "adjudicated"; readonly text: string; readonly promptTokens?: number }
+  | {
+      readonly kind: "checkpoint-verified"
+      readonly result: "pass" | "fail" | "unavailable"
+      readonly evidence: string
+    }
   | { readonly kind: "acted"; readonly evidence: ComputerEvidence.Input; readonly image?: ComputerPrompt.Image }
   | { readonly kind: "act-failed"; readonly reason: string }
 
@@ -331,6 +347,7 @@ export type Phase =
   | "adjudicate-step"
   | "lookahead-checkpoint"
   | "confirm-checkpoint"
+  | "verify-checkpoint"
   | "adjudicate-claim"
   | "terminal"
 
@@ -429,6 +446,10 @@ export interface State {
    * `confirming` so the confirmation phase never has to re-derive which question it is confirming.
    */
   readonly awarding?: number
+  /** Parked continuation while a declared executable verifier checks a visual award. */
+  readonly verification?:
+    | { readonly kind: "step"; readonly measured: Measured; readonly awarding: number }
+    | { readonly kind: "claim" }
   readonly outcome?: Outcome
 }
 
@@ -1035,9 +1056,33 @@ const settleMeasured = (state: State, measured: Measured, advance: number, uncon
     noProgress: advanced || measured.attributed ? 0 : state.noProgress + 1,
     confirming: undefined,
     awarding: undefined,
+    verification: undefined,
   }
   const logged = record(advancedState, { verdict: measured.verdict, unconfirmed, lookahead: advance > 1 })
   return settle({ ...logged, pending: undefined })
+}
+
+const confirmClaim = (state: State): Transition => {
+  const done: State = { ...state, checkpointIndex: state.spec.checkpoints.length, verification: undefined }
+  return settle(record(done, { verdict: "claim confirmed" }))
+}
+
+/**
+ * A programmatic verifier is a VETO over an already-visual award, never a source of an award.
+ * Absence preserves today's visual protocol byte-for-byte. Presence emits a reducer-owned command
+ * so the callback, its evidence, and every failure remain visible to the run report.
+ */
+const verifyOrContinue = (
+  state: State,
+  checkpoint: Checkpoint,
+  verification: NonNullable<State["verification"]>,
+  otherwise: Transition,
+): Transition => {
+  if (checkpoint.verifier === undefined) return otherwise
+  return {
+    state: { ...state, phase: "verify-checkpoint", verification },
+    command: { kind: "verify-checkpoint", verifierID: checkpoint.verifier.id, checkpoint },
+  }
 }
 
 export function next(state: State, event: Event): Transition {
@@ -1401,8 +1446,10 @@ export function next(state: State, event: Event): Transition {
       // TERMINAL checkpoint. An unreadable reply, a `no`, or an answer the reader never gave all leave
       // the run exactly where it was — the model's say-so moves nothing.
       if (parsed.ok && parsed.reply.checkpoint === "yes") {
-        const done: State = { ...spent, checkpointIndex: spent.spec.checkpoints.length }
-        return settle(record(done, { verdict: "claim confirmed" }))
+        const checkpoint = terminalCheckpoint(spent.spec)
+        if (checkpoint === undefined)
+          return voided(spent, "protocol", "a claim was adjudicated without a terminal checkpoint")
+        return verifyOrContinue(spent, checkpoint, { kind: "claim" }, confirmClaim(spent))
       }
       const rejected = record(spent, {
         verdict: parsed.ok ? "claim REJECTED" : "claim unreadable",
@@ -1518,7 +1565,40 @@ export function next(state: State, event: Event): Transition {
       // victory on a screen nobody looked at — and it binds here with more force, because this
       // question exists precisely to be the second opinion.
       const confirmed = parsed.ok && parsed.reply.checkpoint === "yes"
-      return settleMeasured(spent, measured, confirmed ? (state.awarding ?? 1) : 0, !confirmed)
+      if (!confirmed) return settleMeasured(spent, measured, 0, true)
+      const awarding = state.awarding ?? 1
+      const checkpoint = spent.spec.checkpoints[spent.checkpointIndex + awarding - 1]
+      if (checkpoint === undefined)
+        return voided(spent, "protocol", `checkpoint award ${awarding} has no target checkpoint`)
+      return verifyOrContinue(
+        spent,
+        checkpoint,
+        { kind: "step", measured, awarding },
+        settleMeasured(spent, measured, awarding),
+      )
+    }
+
+    // ── C4: executable state may veto, but never originate, a visual award. ───────────────────
+    case "verify-checkpoint": {
+      if (event.kind !== "checkpoint-verified") return unexpected(state, event)
+      const continuation = state.verification
+      if (continuation === undefined)
+        return voided(state, "protocol", "a programmatic checkpoint verdict arrived without a continuation")
+      if (event.result === "unavailable") {
+        return blocked(
+          state,
+          "checkpoint-verifier-unavailable",
+          `the declared checkpoint verifier is unavailable: ${event.evidence}`,
+        )
+      }
+      if (continuation.kind === "claim") {
+        if (event.result === "pass") return confirmClaim(state)
+        const rejected = record({ ...state, verification: undefined }, { verdict: "claim verifier REJECTED" })
+        return settle({ ...rejected, noProgress: rejected.noProgress + 1, pending: undefined })
+      }
+      return event.result === "pass"
+        ? settleMeasured({ ...state, verification: undefined }, continuation.measured, continuation.awarding)
+        : settleMeasured({ ...state, verification: undefined }, continuation.measured, 0, true)
     }
   }
 }
