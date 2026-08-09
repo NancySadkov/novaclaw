@@ -718,6 +718,9 @@ const NO_EXTERNAL = [
   // process measured about the machine it is running on; no party other than the user is involved.
   "resource-status.ts",
   "revert.ts",
+  // Pure parser over the command text already supplied to `bash`; it fetches no bytes and returns
+  // only structural approval metadata (segments and redirect targets).
+  "shell-approval.ts",
   "skill.ts",
   "spawn.ts",
   "todowrite.ts",

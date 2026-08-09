@@ -312,6 +312,53 @@ export const layer = Layer.effectDiscard(
                     : {}),
                 })
 
+              if (approval.status === "parsed")
+                for (const redirect of approval.redirects) {
+                  const redirectPath = path.isAbsolute(redirect.target)
+                    ? redirect.target
+                    : path.resolve(target.canonical, redirect.target)
+                  const redirectTarget = yield* mutation.resolve({ path: redirectPath, kind: "file" })
+                  if (redirectTarget.externalDirectory)
+                    yield* permission.assert({
+                      ...LocationMutation.externalDirectoryPermission(redirectTarget.externalDirectory, "write"),
+                      sessionID: context.sessionID,
+                      agent: context.agent,
+                      source,
+                    })
+                  const existed = yield* fs
+                    .stat(redirectTarget.canonical)
+                    .pipe(
+                      Effect.as(true),
+                      Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(false)),
+                    )
+                  yield* permission.assert({
+                    action: existed ? "write" : "create",
+                    resources: [redirectTarget.resource],
+                    targets: [{ resource: redirectTarget.resource, canonical: redirectTarget.canonical }],
+                    attachmentPaths: [...(context.attachmentPaths ?? [])],
+                    save: ["*"],
+                    sessionID: context.sessionID,
+                    agent: context.agent,
+                    source,
+                    metadata: { shellRedirect: true, append: redirect.append },
+                    ...(existed ? { minimumEffect: "ask" as const } : {}),
+                  })
+                  if (!existed) {
+                    const appeared = yield* fs
+                      .stat(redirectTarget.canonical)
+                      .pipe(
+                        Effect.as(true),
+                        Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(false)),
+                      )
+                    if (appeared)
+                      return yield* Effect.fail(
+                        new ToolFailure({
+                          message: `Redirect target appeared after approval: ${redirectTarget.resource}. Review it before running the command.`,
+                        }),
+                      )
+                  }
+                }
+
               if ((yield* fs.stat(target.canonical)).type !== "Directory")
                 return yield* Effect.fail(new Error(`Working directory is not a directory: ${target.canonical}`))
 

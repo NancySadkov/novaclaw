@@ -39,6 +39,7 @@ const runs: Array<{
   readonly env?: Record<string, string | undefined>
 }> = []
 let denyAction: string | undefined
+let denyResource: string | undefined
 let result: AppProcess.RunResult = {
   command: "mock",
   exitCode: 0,
@@ -59,7 +60,9 @@ const permission = Layer.succeed(
       Effect.sync(() => assertions.push(input)).pipe(
         Effect.andThen(Effect.suspend(() => afterPermission(input))),
         Effect.andThen(
-          input.action === denyAction ? Effect.fail(new PermissionV2.DeniedError({ rules: [] })) : Effect.void,
+          input.action === denyAction || input.resources.includes(denyResource ?? "\0")
+            ? Effect.fail(new PermissionV2.DeniedError({ rules: [] }))
+            : Effect.void,
         ),
       ),
     ask: () => Effect.die("unused"),
@@ -114,6 +117,7 @@ const reset = () => {
   assertions.length = 0
   runs.length = 0
   denyAction = undefined
+  denyResource = undefined
   hang = false
   afterPermission = () => Effect.void
   result = {
@@ -315,21 +319,143 @@ describe("BashTool", () => {
     ),
   )
 
-  it.live("forces ambiguous shell syntax to ask instead of guessing", () =>
+  it.live("a denied tail segment prevents the whole chain from starting", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
       (tmp) => {
         reset()
-        return withTool(tmp.path, (registry) => executeTool(registry, call({ command: "echo $(whoami)" }))).pipe(
+        denyResource = "rm -rf /"
+        return withTool(tmp.path, (registry) =>
+          executeTool(registry, call({ command: "ls && rm -rf /" })),
+        ).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              expect(assertions.map((item) => item.resources)).toEqual([["ls"], ["rm -rf /"]])
+              expect(runs).toEqual([])
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("judges nested shell substitutions as their own segments", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) =>
+          executeTool(registry, call({ command: "echo $(git status && rm -rf build)" })),
+        ).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              expect(assertions.map((item) => item.resources)).toEqual([
+                ["echo $(git status && rm -rf build)"],
+                ["git status"],
+                ["rm -rf build"],
+              ])
+              expect(runs).toHaveLength(1)
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("forces dynamic redirect syntax to ask instead of guessing", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) => executeTool(registry, call({ command: "echo hi > $TARGET" }))).pipe(
           Effect.andThen(
             Effect.sync(() => {
               expect(assertions).toHaveLength(1)
               expect(assertions[0]).toMatchObject({
                 action: "bash",
-                resources: ["echo $(whoami)"],
+                resources: ["echo hi > $TARGET"],
                 minimumEffect: "ask",
-                metadata: { approvalReduction: "structured-shell-syntax" },
+                metadata: { approvalReduction: "dynamic-redirect-target" },
               })
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("routes an existing redirect target through an exact write ask", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return Effect.promise(() => fs.writeFile(path.join(tmp.path, "result.txt"), "before")).pipe(
+          Effect.andThen(
+            withTool(tmp.path, (registry) => executeTool(registry, call({ command: "echo after > result.txt" }))),
+          ),
+          Effect.andThen(
+            Effect.sync(() => {
+              expect(assertions.map((item) => item.action)).toEqual(["bash", "write"])
+              expect(assertions[1]).toMatchObject({
+                resources: ["result.txt"],
+                minimumEffect: "ask",
+                metadata: { shellRedirect: true, append: false },
+              })
+              expect(runs).toHaveLength(1)
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("routes an external redirect through directory approval and the exact write ask", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => Promise.all([tmpdir(), tmpdir()])),
+      ([active, outside]) => {
+        reset()
+        const target = path.join(outside.path, "result.txt")
+        return Effect.promise(() => fs.writeFile(target, "before")).pipe(
+          Effect.andThen(
+            withTool(active.path, (registry) =>
+              executeTool(registry, call({ command: `echo after > "${target}"` })),
+            ),
+          ),
+          Effect.andThen(
+            Effect.sync(() => {
+              expect(assertions.map((item) => item.action)).toEqual(["bash", "external_directory_write", "write"])
+              expect(assertions[2]?.resources).toEqual([realpathSync(target).replaceAll("\\", "/")])
+              expect(runs).toHaveLength(1)
+            }),
+          ),
+        )
+      },
+      ([active, outside]) =>
+        Effect.promise(() =>
+          Promise.all([active[Symbol.asyncDispose](), outside[Symbol.asyncDispose]()]).then(() => undefined),
+        ),
+    ),
+  )
+
+  it.live("refuses when a new redirect target appears during approval", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        const target = path.join(tmp.path, "appeared.txt")
+        afterPermission = (input) =>
+          input.action === "create" ? Effect.promise(() => fs.writeFile(target, "raced")).pipe(Effect.orDie) : Effect.void
+        return withTool(tmp.path, (registry) =>
+          executeTool(registry, call({ command: "echo after > appeared.txt" })),
+        ).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              expect(assertions.map((item) => item.action)).toEqual(["bash", "create"])
+              expect(runs).toEqual([])
             }),
           ),
         )

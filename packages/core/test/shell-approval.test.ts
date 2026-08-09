@@ -6,6 +6,7 @@ describe("shell approval reduction", () => {
     expect(ShellApproval.analyze(`printf 'a && b' && git status | wc -l & notify`, "/bin/bash")).toEqual({
       status: "parsed",
       segments: [`printf 'a && b'`, "git status", "wc -l", "notify"],
+      redirects: [],
     })
   })
 
@@ -13,14 +14,60 @@ describe("shell approval reduction", () => {
     expect(ShellApproval.analyze('Write-Output "a;b"; Remove-Item x', "pwsh.exe")).toEqual({
       status: "parsed",
       segments: ['Write-Output "a;b"', "Remove-Item x"],
+      redirects: [],
     })
     expect(ShellApproval.analyze("echo a ^& b && del x", "cmd.exe")).toEqual({
       status: "parsed",
       segments: ["echo a ^& b", "del x"],
+      redirects: [],
     })
   })
 
-  test.each(["echo $(whoami)", "echo `whoami`", "echo hi > existing.txt", "echo 'unterminated"])(
+  test("attributes nested substitutions and output redirects", () => {
+    expect(ShellApproval.analyze("echo $(git status && rm -rf build) > 'result file.txt'", "/bin/bash")).toEqual({
+      status: "parsed",
+      segments: ["echo $(git status && rm -rf build) > 'result file.txt'", "git status", "rm -rf build"],
+      redirects: [{ target: "result file.txt", append: false }],
+    })
+    expect(ShellApproval.analyze("echo `whoami` &>> trace.log", "/bin/bash")).toEqual({
+      status: "parsed",
+      segments: ["echo `whoami` &>> trace.log", "whoami"],
+      redirects: [{ target: "trace.log", append: true }],
+    })
+  })
+
+  test("attributes tee, dd, and PowerShell content writers", () => {
+    expect(ShellApproval.analyze("make | tee -a 'build log.txt'; dd if=in.bin of=out.bin", "/bin/bash")).toEqual({
+      status: "parsed",
+      segments: ["make", "tee -a 'build log.txt'", "dd if=in.bin of=out.bin"],
+      redirects: [
+        { target: "build log.txt", append: true },
+        { target: "out.bin", append: false },
+      ],
+    })
+    expect(ShellApproval.analyze("Get-Date | Out-File -FilePath result.txt", "pwsh")).toEqual({
+      status: "parsed",
+      segments: ["Get-Date", "Out-File -FilePath result.txt"],
+      redirects: [{ target: "result.txt", append: false }],
+    })
+  })
+
+  test("ignores shell-native output sinks and descriptor duplication", () => {
+    expect(ShellApproval.analyze("probe 2>/dev/null >&2", "/bin/bash")).toMatchObject({
+      status: "parsed",
+      redirects: [],
+    })
+    expect(ShellApproval.analyze("Write-Output hi > $null", "pwsh")).toMatchObject({
+      status: "parsed",
+      redirects: [],
+    })
+    expect(ShellApproval.analyze("echo hi > NUL", "cmd.exe")).toMatchObject({
+      status: "parsed",
+      redirects: [],
+    })
+  })
+
+  test.each(["echo hi > $TARGET", "cat <<EOF", "echo 'unterminated"])(
     "fails ambiguous syntax closed: %s",
     (command) => expect(ShellApproval.analyze(command, "/bin/bash").status).toBe("unparseable"),
   )
