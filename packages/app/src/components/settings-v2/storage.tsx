@@ -1,5 +1,6 @@
-import { For, Show, type Component } from "solid-js"
+import { For, Show, createMemo, type Component } from "solid-js"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
+import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { Icon } from "@novaclaw/ui/icon"
 // ⚠️ VALUE import, and it is safe because `log-bounds.ts` has no imports at all — the writer it
 // belongs to (`observability/log-file.ts`) pulls in `node:fs`/`node:zlib` at module scope and would
@@ -8,13 +9,16 @@ import { Icon } from "@novaclaw/ui/icon"
 // when the writer's bound moves, the product starts telling people something false and no test is
 // about it. See that module's header.
 import { LogBounds } from "@novaclaw/core/observability/log-bounds"
+import { LogSettings } from "@novaclaw/core/observability/log-settings"
 import { useLanguage } from "@/context/language"
+import { useExpertise } from "@/context/expertise"
 import { usePlatform } from "@/context/platform"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { InstanceResources } from "./instance-resources"
+import { STORAGE_ENTRIES, type PathInfo } from "./storage-entries"
 
 // The Storage tab — what this instance costs in RAM/on disk, and WHERE it keeps things.
 //
@@ -30,56 +34,47 @@ import { InstanceResources } from "./instance-resources"
 // instance has open. The tab tells you where things are and hands you the path; relocating is a launch
 // decision, which the instance-home row explains.
 
-interface PathInfo {
-  home?: string
-  state?: string
-  config?: string
-  data?: string
-  cache?: string
-  tmp?: string
-  log?: string
-  db?: string
-  scratchDir?: string
-  instanceHome?: string
+type LogLevel = "debug" | "info" | "warn" | "error"
+interface LogConfig {
+  level?: LogLevel
+  retention_days?: number
+  subsystems?: Record<string, LogLevel | undefined>
 }
-
-/**
- * One displayed location. `level` omitted means Normal; `"developer"` hides the
- * row below Developer.
- *
- * Exported as pure data so the Normal-vs-Developer split is unit-testable — the split is the part
- * that is easy to get silently wrong, and asserting it here is more durable than driving the dialog.
- * `i18n` is the suffix under `settings.storage.*`, kept explicit because it does not always match `key`
- * (`scratchDir` → `scratch`).
- */
-export interface StorageEntry {
-  key: keyof PathInfo
-  /** ⚠️ A union, not `string`: it is interpolated into `settings.storage.<i18n>` and the app's
-   *  translator is key-typed, so widening this would silently switch that check off. */
-  i18n: "config" | "data" | "db" | "scratch" | "log" | "state" | "cache" | "tmp"
-  level?: "developer"
-}
-
-export const STORAGE_ENTRIES: StorageEntry[] = [
-  { key: "config", i18n: "config" },
-  { key: "data", i18n: "data" },
-  { key: "db", i18n: "db" },
-  { key: "scratchDir", i18n: "scratch" },
-  { key: "log", i18n: "log" },
-  // Internal plumbing: real, but nothing a power user needs to see to back up or move an instance.
-  { key: "state", i18n: "state", level: "developer" },
-  { key: "cache", i18n: "cache", level: "developer" },
-  { key: "tmp", i18n: "tmp", level: "developer" },
-]
 
 export const SettingsStorageV2: Component = () => {
   const language = useLanguage()
   const platform = usePlatform()
   const sync = useServerSync()
+  const expertise = useExpertise()
 
   // The SDK's generated PathInfo type lags the fields the server sends (same cast the new-agent bar
   // uses for scratchDir); regenerating the client for a read-only display is not worth the churn.
   const paths = (): PathInfo => (sync().data.path ?? {}) as PathInfo
+  const logConfig = createMemo(() => ((sync().data.config as { log?: LogConfig } | undefined)?.log ?? {}) as LogConfig)
+  const levelOptions = createMemo(() =>
+    (["debug", "info", "warn", "error"] as const).map((value) => ({
+      id: value,
+      value,
+      label: language.t(`settings.storage.logs.level.${value}`),
+    })),
+  )
+  const retentionOptions = createMemo(() =>
+    [7, 30, 90, 180, 365].map((value) => ({
+      id: String(value),
+      value,
+      label: language.t("settings.storage.logs.retention.days", { days: value }),
+    })),
+  )
+  const saveLog = async (next: LogConfig) => {
+    try {
+      await sync().updateConfig({ log: next } as never)
+    } catch (error) {
+      showToast({
+        title: language.t("settings.storage.logs.saveFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
 
   const copy = (value: string) => {
     void navigator.clipboard
@@ -156,7 +151,7 @@ export const SettingsStorageV2: Component = () => {
         </For>
       </SettingsListV2>
 
-      {/* ── Activity log (todo/logging.md 3a) ────────────────────────────────────────────────────
+      {/* ── Activity log (todo/logging.md 3a–3e) ─────────────────────────────────────────────────
           3a says to put log retention BESIDE storage rather than in a new tab, and this is that row.
 
           ⚠️ **Which knob this is, and which it deliberately is not.** This is the LOCAL log: it never
@@ -168,10 +163,8 @@ export const SettingsStorageV2: Component = () => {
           different plane (AGENTS.md principle 4), is Developer-gated on purpose, and the description
           below names so nobody hunts for it here.
 
-          Read-only, like every other row on this tab and for the tab's own stated reason: the bounds
-          are compiled into the writer, which opens before any settings store exists. A control here
-          would need `Config.Info` + `SETTINGS_KEYS` + a read-through into the live writer (3d/3e) —
-          filed in todo/logging.md, not faked with a field that cannot move anything. */}
+          The controls write the active instance through PATCH /config. Core projects that SQLite row
+          into a synchronous hot-path policy, so the already-open writer changes immediately. */}
       <div>
         <h3 class="settings-v2-section-title">{language.t("settings.storage.logs.title")}</h3>
         <p class="settings-v2-tab-description">{language.t("settings.storage.logs.description")}</p>
@@ -180,13 +173,67 @@ export const SettingsStorageV2: Component = () => {
       <SettingsListV2>
         <SettingsRowV2
           title={language.t("settings.storage.logs.retention")}
-          description={language.t("settings.storage.logs.retention.description", RETENTION)}
+          description={language.t("settings.storage.logs.retention.description", {
+            days: logConfig().retention_days ?? RETENTION.days,
+            size: RETENTION.size,
+          })}
+          minLevel="advanced"
         >
-          <span class="text-[12px] text-v2-text-text-muted" data-slot="settings-v2-log-retention">
-            {language.t("settings.storage.logs.retention.value", RETENTION)}
-          </span>
+          <SelectV2
+            appearance="inline"
+            data-action="settings-log-retention"
+            options={retentionOptions()}
+            current={
+              retentionOptions().find((option) => option.value === (logConfig().retention_days ?? RETENTION.days)) ??
+              retentionOptions()[1]
+            }
+            value={(option) => option.id}
+            label={(option) => option.label}
+            onSelect={(option) => {
+              if (!option || option.value === (logConfig().retention_days ?? RETENTION.days)) return
+              void saveLog({ ...logConfig(), retention_days: option.value })
+            }}
+          />
+        </SettingsRowV2>
+        <SettingsRowV2
+          title={language.t("settings.storage.logs.level")}
+          description={language.t("settings.storage.logs.level.description")}
+          minLevel="advanced"
+        >
+          <LogLevelSelect
+            options={levelOptions()}
+            current={logConfig().level ?? "info"}
+            action="settings-log-level"
+            onChange={(level) => saveLog({ ...logConfig(), level })}
+          />
         </SettingsRowV2>
       </SettingsListV2>
+
+      <Show when={expertise.atLeast("developer")}>
+        <div>
+          <h3 class="settings-v2-section-title">{language.t("settings.storage.logs.subsystems.title")}</h3>
+          <p class="settings-v2-tab-description">{language.t("settings.storage.logs.subsystems.description")}</p>
+        </div>
+        <SettingsListV2>
+          <For each={Object.entries(LogSettings.subsystems)}>
+            {([subsystem, label]) => (
+              <SettingsRowV2 title={label} description={subsystem}>
+                <LogLevelSelect
+                  options={levelOptions()}
+                  current={logConfig().subsystems?.[subsystem] ?? logConfig().level ?? "info"}
+                  action={`settings-log-subsystem-${subsystem}`}
+                  onChange={(level) =>
+                    saveLog({
+                      ...logConfig(),
+                      subsystems: { ...logConfig().subsystems, [subsystem]: level },
+                    })
+                  }
+                />
+              </SettingsRowV2>
+            )}
+          </For>
+        </SettingsListV2>
+      </Show>
     </>
   )
 }
@@ -194,16 +241,40 @@ export const SettingsStorageV2: Component = () => {
 /**
  * The retention sentence's two numbers, read from the writer's own constants rather than typed here.
  *
- * ⚠️ `days` says *"at least"* in the copy, and that word is a measurement rather than a hedge: the
- * sweep deletes a segment once the segment was CLOSED long enough ago, and never touches the segment
- * currently being written — so on a quiet instance (measured: two real log directories on this
- * machine, neither of which has ever rotated) the history kept is considerably longer than the
- * limit. The byte ceiling has no such caveat, which is why it reads *"never more than"*.
+ * `days` is deliberately approximate: age rotation seals a quiet active segment at that age and
+ * age deletion happens one window later, while the independent byte ceiling may delete old segments
+ * sooner under heavy traffic. The byte figure alone is a hard ceiling.
  */
 const RETENTION = {
   days: LogBounds.MAX_AGE_DAYS,
   size: `${Math.round(LogBounds.TOTAL_BYTES / (1024 * 1024))} MB`,
 }
+
+interface LevelOption {
+  id: LogLevel
+  value: LogLevel
+  label: string
+}
+
+const LogLevelSelect: Component<{
+  options: LevelOption[]
+  current: LogLevel
+  action: string
+  onChange: (level: LogLevel) => void | Promise<void>
+}> = (props) => (
+  <SelectV2
+    appearance="inline"
+    data-action={props.action}
+    options={props.options}
+    current={props.options.find((option) => option.value === props.current) ?? props.options[1]}
+    value={(option) => option.id}
+    label={(option) => option.label}
+    onSelect={(option) => {
+      if (!option || option.value === props.current) return
+      void props.onChange(option.value)
+    }}
+  />
+)
 
 /** The path itself, selectable, plus Copy and (on desktop) Open. */
 const PathValue: Component<{

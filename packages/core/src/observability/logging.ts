@@ -4,6 +4,7 @@ import { Log } from "@novaclaw/schema/log"
 import { Global } from "../global"
 import { LogFile } from "./log-file"
 import { LogRead } from "./log-read"
+import { LogSettings } from "./log-settings"
 import { runID } from "./shared"
 
 /**
@@ -67,9 +68,10 @@ export const defaultLogFile = () => path.join(Global.Path.log, "novaclaw.log")
  * exact object: `Logger.layer` collects its loggers into a `Set`, so returning the same instance is
  * what stops `NOVACLAW_PRINT_LOGS=1` printing every line twice when the file leg has degraded.
  */
-export const stderrLogger = Logger.make<unknown, void>((options) => {
+const stderrSink = Logger.make<unknown, void>((options) => {
   process.stderr.write(formatter().log(options) + "\n")
 })
+export const stderrLogger = LogSettings.filter(stderrSink)
 
 /** Whether this run already prints every line to stderr, so a fallback must not double it. */
 const mirrored = () => process.env.NOVACLAW_PRINT_LOGS === "1"
@@ -116,10 +118,12 @@ export function writer(file = defaultLogFile(), options: Partial<LogFile.Options
  */
 export function sink(open: LogFile.Writer, id: string = runID) {
   const format = formatter(id)
-  return Logger.make<unknown, void>((options) => {
-    const line = format.log(options) + "\n"
-    if (!open.write(line, IMMEDIATE.has(options.logLevel)) && !mirrored()) process.stderr.write(line)
-  })
+  return LogSettings.filter(
+    Logger.make<unknown, void>((options) => {
+      const line = format.log(options) + "\n"
+      if (!open.write(line, IMMEDIATE.has(options.logLevel)) && !mirrored()) process.stderr.write(line)
+    }),
+  )
 }
 
 /**
@@ -187,14 +191,9 @@ export function reportUsage(file = defaultLogFile()) {
 }
 
 export function minimumLogLevel() {
-  const value = process.env.NOVACLAW_LOG_LEVEL?.toUpperCase()
-  const levels = {
-    DEBUG: "Debug",
-    INFO: "Info",
-    WARN: "Warn",
-    ERROR: "Error",
-  } as const satisfies Record<string, LogLevel.LogLevel>
-  return value && value in levels ? levels[value as keyof typeof levels] : levels.INFO
+  // The live policy sits in each sink. The Effect reference must admit Debug or a later config
+  // change from Info→Debug would be discarded before the dynamic filter ever sees the record.
+  return "Debug" as const satisfies LogLevel.LogLevel
 }
 
 export function loggers() {

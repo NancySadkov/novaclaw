@@ -3464,6 +3464,40 @@ export type ConfigV2Attachments = {
   image?: ConfigV2AttachmentsImage
 }
 
+export type ConfigV2Log = {
+  level?: "debug" | "info" | "warn" | "error"
+  retention_days?: number
+  subsystems?: {
+    client?: "debug" | "info" | "warn" | "error"
+    config?: "debug" | "info" | "warn" | "error"
+    credential?: "debug" | "info" | "warn" | "error"
+    filesystem?: "debug" | "info" | "warn" | "error"
+    format?: "debug" | "info" | "warn" | "error"
+    git?: "debug" | "info" | "warn" | "error"
+    instance?: "debug" | "info" | "warn" | "error"
+    kb?: "debug" | "info" | "warn" | "error"
+    location?: "debug" | "info" | "warn" | "error"
+    llm?: "debug" | "info" | "warn" | "error"
+    log?: "debug" | "info" | "warn" | "error"
+    messenger?: "debug" | "info" | "warn" | "error"
+    mcp?: "debug" | "info" | "warn" | "error"
+    offline?: "debug" | "info" | "warn" | "error"
+    patch?: "debug" | "info" | "warn" | "error"
+    plugin?: "debug" | "info" | "warn" | "error"
+    pty?: "debug" | "info" | "warn" | "error"
+    question?: "debug" | "info" | "warn" | "error"
+    resource?: "debug" | "info" | "warn" | "error"
+    server?: "debug" | "info" | "warn" | "error"
+    session?: "debug" | "info" | "warn" | "error"
+    skill?: "debug" | "info" | "warn" | "error"
+    snapshot?: "debug" | "info" | "warn" | "error"
+    storage?: "debug" | "info" | "warn" | "error"
+    tool?: "debug" | "info" | "warn" | "error"
+    worktree?: "debug" | "info" | "warn" | "error"
+    workspace?: "debug" | "info" | "warn" | "error"
+  }
+}
+
 export type ConfigV2ToolOutput = {
   max_lines?: number
   max_bytes?: number
@@ -3831,6 +3865,7 @@ export type ConfigInfo = {
         [key: string]: ConfigV2FormatterEntry
       }
   attachments?: ConfigV2Attachments
+  log?: ConfigV2Log
   tool_output?: ConfigV2ToolOutput
   tool_routing?: ConfigV2ToolRouting
   resource_pressure?: ResourcePressure

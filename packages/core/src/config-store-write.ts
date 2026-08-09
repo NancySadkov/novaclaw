@@ -884,6 +884,10 @@ export const apply = (patch: Config.Info) =>
   Effect.gen(function* () {
     const { db } = yield* Database.Service
     const consumed = yield* db.transaction(() => applyToStores(patch)).pipe(Effect.orDie)
+    // Logging's hot path is synchronous, so its Config read-through is a tiny in-memory projection.
+    // Refresh only AFTER commit: doing it in SettingsConfigStore.set would let a later router fault
+    // roll SQLite back while the live logger kept the rejected value.
+    if (consumed.has("log")) yield* (yield* SettingsConfigStore.Service).all()
     if (consumed.has("offline") || consumed.has("providers") || consumed.has("models")) {
       const before = Offline.currentPolicy()
       const policy = yield* Effect.sync(() => Offline.reload())
@@ -1195,6 +1199,7 @@ export const remove = (
     if (outcome instanceof ConfigRemoveRefused) return yield* Effect.fail(outcome)
 
     const { consumed, cleared } = outcome
+    if (consumed.has("log")) yield* (yield* SettingsConfigStore.Service).all()
     if (consumed.has("offline") || consumed.has("providers") || consumed.has("models")) {
       const before = Offline.currentPolicy()
       const policy = yield* Effect.sync(() => Offline.reload())

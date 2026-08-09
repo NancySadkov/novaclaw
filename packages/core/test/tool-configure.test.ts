@@ -166,6 +166,7 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       // which makes turns queue behind one another — a throughput loss undone by deleting the entry.
       "devices",
       "folder_bookmarks",
+      "log",
       "provider_connection",
       "tool_output",
     ])

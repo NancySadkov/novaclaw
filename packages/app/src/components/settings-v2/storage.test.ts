@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 
-import { STORAGE_ENTRIES } from "./storage"
+import { STORAGE_ENTRIES } from "./storage-entries"
 import { dict as en } from "@/i18n/en"
 
 const storageSource = fs.readFileSync(new URL("./storage.tsx", import.meta.url), "utf8")
@@ -70,5 +70,15 @@ describe("Storage tab entries", () => {
     expect(dialogSource).not.toContain('storage: "advanced"')
     expect(storageSource).toContain("<InstanceResources />")
     expect(serversSource).not.toContain("<InstanceResources />")
+  })
+
+  test("activity-log controls are instance-owned, live, and expertise-gated", () => {
+    expect(storageSource).toContain("sync().updateConfig({ log: next }")
+    expect(storageSource).not.toContain("useSettings")
+    expect(storageSource).toContain('minLevel="advanced"')
+    expect(storageSource).toContain('expertise.atLeast("developer")')
+    expect(storageSource).toContain("LogSettings.subsystems")
+    expect(storageSource).toContain('action="settings-log-level"')
+    expect(storageSource).toContain('data-action="settings-log-retention"')
   })
 })

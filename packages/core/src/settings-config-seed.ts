@@ -49,6 +49,7 @@ export const SETTINGS_KEYS = [
   "computer",
   "formatter",
   "attachments",
+  "log",
   "tool_output",
   "tool_routing",
   "resource_pressure",

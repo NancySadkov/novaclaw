@@ -23,6 +23,7 @@ import { ConfigAdhocTools } from "./config/adhoc-tools"
 import { ConfigAffective } from "./config/affective"
 import { ConfigIntrospection } from "./config/introspection"
 import { ConfigLocalModelCatalog } from "./config/local-model-catalog"
+import { ConfigLog } from "./config/log"
 import { ConfigMCP } from "./config/mcp"
 import { ConfigPersona } from "./config/persona"
 import { ConfigPlugin } from "./config/plugin"
@@ -102,6 +103,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   attachments: ConfigAttachments.Info.pipe(Schema.optional).annotate({
     description: "Attachment processing configuration",
+  }),
+  log: ConfigLog.Info.pipe(Schema.optional).annotate({
+    description: "Runtime-editable, instance-owned local activity-log settings",
   }),
   tool_output: ConfigToolOutput.Info.pipe(Schema.optional).annotate({
     description: "Tool output truncation thresholds",

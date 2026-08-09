@@ -1,9 +1,10 @@
-import { Duration, Layer } from "effect"
+import { Duration, Effect, Layer } from "effect"
 import { OtlpLogger } from "effect/unstable/observability"
 import { Flag } from "../flag/flag"
 import { InstallationChannel, InstallationVersion } from "../installation/version"
 import { runID } from "./shared"
 import { CalloutPolicy } from "../callout-policy"
+import { LogSettings } from "./log-settings"
 
 const endpoint = Flag.OTEL_EXPORTER_OTLP_ENDPOINT
 
@@ -57,7 +58,7 @@ export function loggers() {
       headers,
       maxBatchSize: CalloutPolicy.telemetryLogs.queueLimit,
       shutdownTimeout: Duration.millis(CalloutPolicy.telemetryLogs.timeoutMs),
-    }),
+    }).pipe(Effect.map(LogSettings.filter)),
   ]
 }
 

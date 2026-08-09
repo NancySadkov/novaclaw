@@ -12,6 +12,7 @@ import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
+import { LogSettings } from "@novaclaw/core/observability/log-settings"
 import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { testEffect } from "./lib/effect"
 
@@ -49,6 +50,32 @@ describe("ConfigStoreWrite.mergePatch", () => {
 })
 
 describe("ConfigStoreWrite.apply", () => {
+  it.effect("routes log settings and updates the already-running hot-path projection", () =>
+    Effect.gen(function* () {
+      const settings = yield* SettingsConfigStore.Service
+      yield* ConfigStoreWrite.apply(
+        decodeInfo({ log: { level: "warn", retention_days: 90, subsystems: { mcp: "debug" } } }),
+      )
+      expect((yield* settings.all()).log).toEqual({
+        level: "warn",
+        retention_days: 90,
+        subsystems: { mcp: "debug" },
+      })
+      expect(LogSettings.level()).toBe("warn")
+      expect(LogSettings.maxAgeMs()).toBe(90 * 24 * 60 * 60 * 1000)
+
+      // A partial PATCH keeps siblings, while the live projection changes with the same write.
+      yield* ConfigStoreWrite.apply(decodeInfo({ log: { level: "error" } }))
+      expect((yield* settings.all()).log).toEqual({
+        level: "error",
+        retention_days: 90,
+        subsystems: { mcp: "debug" },
+      })
+      expect(LogSettings.level()).toBe("error")
+      yield* settings.remove("log")
+    }),
+  )
+
   it.effect("routes settings keys with merge-in-place and reports consumed keys", () =>
     Effect.gen(function* () {
       const settings = yield* SettingsConfigStore.Service
@@ -229,6 +256,8 @@ describe("ConfigStoreWrite.apply", () => {
       const settings = yield* SettingsConfigStore.Service
       yield* skills.addSource("/survives/skills")
       yield* settings.set("shell", "before-the-failed-write")
+      yield* settings.set("log", { level: "info" })
+      yield* settings.all() // hydrate the synchronous log projection from the committed baseline
       const skillsBefore = yield* skills.sources()
 
       // Plugins routes LAST, so failing it lands after every other store has written — including
@@ -243,6 +272,7 @@ describe("ConfigStoreWrite.apply", () => {
       const exit = yield* ConfigStoreWrite.apply(
         decodeInfo({
           shell: "after-the-failed-write",
+          log: { level: "error" },
           skills: ["/replacement/skills"],
           plugins: ["some-plugin"],
         }),
@@ -253,6 +283,7 @@ describe("ConfigStoreWrite.apply", () => {
       // not the skills DELETE that ran before the failure.
       expect(yield* skills.sources()).toEqual(skillsBefore)
       expect((yield* settings.all()).shell).toBe("before-the-failed-write")
+      expect(LogSettings.level()).toBe("info")
     }),
   )
 

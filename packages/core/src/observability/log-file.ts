@@ -100,6 +100,7 @@ export const SEGMENT_BYTES = 8 * 1024 * 1024
  */
 export { TOTAL_BYTES, MAX_AGE_MS } from "./log-bounds"
 import { MAX_AGE_MS, TOTAL_BYTES } from "./log-bounds"
+import { LogSettings } from "./log-settings"
 /** Effect's own default. ⚠️ Do not lower it toward 0 — that burns idle CPU (§0.5). */
 export const FLUSH_MS = 1000
 /** Flush early when the buffer gets big, so a burst cannot hold a megabyte of lines hostage. */
@@ -222,7 +223,7 @@ export interface Options {
   readonly file: string
   readonly segmentBytes?: number
   readonly totalBytes?: number
-  readonly maxAgeMs?: number
+  readonly maxAgeMs?: number | (() => number)
   readonly flushMs?: number
   readonly now?: () => Date
   /** Test seam AND the fault injector for a failing compression. */
@@ -283,7 +284,7 @@ export class Writer {
   private readonly options: Options
   private readonly segmentBytes: number
   private readonly totalBytes: number
-  private readonly maxAgeMs: number
+  private readonly maxAgeMs: () => number
   private readonly flushMs: number
   private readonly now: () => Date
 
@@ -324,7 +325,11 @@ export class Writer {
     this.name = path.basename(options.file).replace(/\.log$/, "")
     this.segmentBytes = options.segmentBytes ?? SEGMENT_BYTES
     this.totalBytes = options.totalBytes ?? TOTAL_BYTES
-    this.maxAgeMs = options.maxAgeMs ?? MAX_AGE_MS
+    const configuredMaxAge = options.maxAgeMs
+    this.maxAgeMs =
+      typeof configuredMaxAge === "function"
+        ? configuredMaxAge
+        : () => configuredMaxAge ?? LogSettings.maxAgeMs()
     this.flushMs = options.flushMs ?? FLUSH_MS
     this.now = options.now ?? (() => new Date())
     this.open()
@@ -388,7 +393,7 @@ export class Writer {
 
   /** True when the active segment has been open longer than the retention age. */
   private tooOld(): boolean {
-    return this.activeSince !== undefined && this.now().getTime() - this.activeSince >= this.maxAgeMs
+    return this.activeSince !== undefined && this.now().getTime() - this.activeSince >= this.maxAgeMs()
   }
 
   /**
@@ -649,7 +654,7 @@ export class Writer {
   sweep(reclaimBytes = 0): number {
     let freed = 0
     try {
-      const cutoff = this.now().getTime() - this.maxAgeMs
+      const cutoff = this.now().getTime() - this.maxAgeMs()
       const segments = segmentsIn(this.directory, this.name)
       let total = segments.reduce((sum, segment) => sum + segment.bytes, 0) + sizeOf(this.file)
       for (const segment of segments) {

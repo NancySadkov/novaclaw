@@ -30854,6 +30854,135 @@
         },
         "additionalProperties": false
       },
+      "ConfigV2Log": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": ["debug", "info", "warn", "error"]
+          },
+          "retention_days": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365
+          },
+          "subsystems": {
+            "type": "object",
+            "properties": {
+              "client": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "config": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "credential": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "filesystem": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "format": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "git": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "instance": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "kb": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "location": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "llm": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "log": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "messenger": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "mcp": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "offline": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "patch": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "plugin": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "pty": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "question": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "resource": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "server": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "session": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "skill": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "snapshot": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "storage": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "tool": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "worktree": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
+              "workspace": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
       "ConfigV2ToolOutput": {
         "type": "object",
         "properties": {
@@ -31863,6 +31992,9 @@
           },
           "attachments": {
             "$ref": "#/components/schemas/ConfigV2Attachments"
+          },
+          "log": {
+            "$ref": "#/components/schemas/ConfigV2Log"
           },
           "tool_output": {
             "$ref": "#/components/schemas/ConfigV2ToolOutput"

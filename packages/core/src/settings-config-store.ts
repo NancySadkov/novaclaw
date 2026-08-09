@@ -6,6 +6,7 @@ import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
 import { RuntimeSettingTable } from "./settings-config/sql"
 import { CredentialCipher } from "./credential-cipher"
+import { LogSettings } from "./observability/log-settings"
 
 // Config→SQLite step 6: the instance-wide, SQLite-backed source of truth for runtime settings.
 // Global so every directory — including the shared scratch dir — resolves the same settings.
@@ -89,7 +90,7 @@ export const layer = Layer.effect(
       return { value, legacy: false }
     })
 
-    return Service.of({
+    const service = Service.of({
       all: Effect.fn("SettingsConfigStore.all")(function* () {
         const stored = yield* settings.all()
         const result: Record<string, unknown> = {}
@@ -98,6 +99,7 @@ export const layer = Layer.effect(
           result[key] = opened.value
           if (opened.legacy) yield* settings.set(key, protect(key, opened.value))
         }
+        LogSettings.apply(result.log)
         return result
       }),
       set: Effect.fn("SettingsConfigStore.set")(function* (key, value) {
@@ -110,6 +112,11 @@ export const layer = Layer.effect(
         return yield* settings.isEmpty()
       }),
     })
+    // Hydrate synchronous consumers (currently the logger hot path) as soon as the instance store
+    // exists. Observability opens before SQLite by design, so this is the earliest safe point at
+    // which a persisted level can replace the environment/default policy.
+    yield* service.all()
+    return service
   }),
 )
 

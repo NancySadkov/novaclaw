@@ -20,10 +20,10 @@ export * as LogBounds from "./log-bounds"
  *
  * ── ⚠️ what these numbers actually promise, MEASURED 2026-08-08 ─────────────────────────────────
  *
- * {@link MAX_AGE_MS} is a retention **floor, not a deadline**: `sweep()` deletes a rotated segment
- * once its *stamp* — the instant it was SEALED — is older than the cutoff, and it never considers
- * the segment currently being written. So *"nothing newer than 30 days is deleted"* is true and is
- * what a surface may promise; *"nothing older than 30 days is kept"* is not.
+ * {@link MAX_AGE_MS} is an approximate history window, not a deadline or an unconditional floor:
+ * age deletion only considers sealed segments, so quiet history can survive for roughly twice the
+ * window; the independent byte ceiling may remove even a newer sealed segment under heavy traffic.
+ * A surface may promise only *"about 30 days when space allows"* plus the hard byte ceiling.
  *
  * 🔴 **And until 2026-08-08 there was no ceiling at all, which the measurement found.**
  * `LogRead.usage` over this machine's two real log directories: **83 KB/day** (3 089 922 B / 872.8 h)
@@ -44,7 +44,7 @@ export const TOTAL_BYTES = 256 * 1024 * 1024
 
 /**
  * How long history is kept. ⚠️ A FLOOR — see this module's header. Matches Trash's decided
- * retention, so the product tells the user ONE number.
+ * retention, so the product tells the user ONE number. Approximate window; see the header.
  */
 export const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
 

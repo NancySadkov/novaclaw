@@ -1319,16 +1319,27 @@ export const dict = {
   "settings.storage.log": "Logs",
   "settings.storage.log.description": "Diagnostic logs. Handy when reporting a problem.",
   // The activity-log retention row (todo/logging.md 3a). Anti-obscurantist wording is mandatory
-  // here: "Keep about 30 days of activity logs", never "retention: 30". And "at least" is not
-  // hedging — it is the measurement: the sweep only deletes segments that have been closed, so the
-  // limit is a floor rather than a deadline (packages/core/src/observability/log-bounds.ts).
+  // here: "Keep about 30 days of activity logs", never "retention: 30". "About" is exact: age
+  // deletion only sees closed segments, while the independent byte ceiling may reclaim them sooner.
   "settings.storage.logs.title": "Activity log",
   "settings.storage.logs.description":
     "NovaClaw writes down what it does, so a problem can be explained instead of guessed at. This log stays on your computer — it is not the crash reporting you can switch off in Developer settings.",
   "settings.storage.logs.retention": "How much is kept",
   "settings.storage.logs.retention.description":
-    "At least {{days}} days of activity, and never more than {{size}} in total. Older entries are compressed, and the oldest are removed first when that limit is reached.",
+    "Keeps about {{days}} days of activity when space allows, and never more than {{size}} in total. Older entries are compressed, and the oldest are removed first.",
   "settings.storage.logs.retention.value": "{{days}} days · up to {{size}}",
+  "settings.storage.logs.retention.days": "Keep about {{days}} days",
+  "settings.storage.logs.level": "How much detail to write",
+  "settings.storage.logs.level.description":
+    "Info is the calm everyday record. Choose Debug while investigating a problem; Warn or Error keeps only increasingly serious events.",
+  "settings.storage.logs.level.debug": "Debug · everything",
+  "settings.storage.logs.level.info": "Info · everyday activity",
+  "settings.storage.logs.level.warn": "Warn · problems only",
+  "settings.storage.logs.level.error": "Error · failures only",
+  "settings.storage.logs.subsystems.title": "Per-area detail",
+  "settings.storage.logs.subsystems.description":
+    "Developer controls for making one part of the instance more or less chatty without changing the rest. These changes take effect immediately.",
+  "settings.storage.logs.saveFailed": "Could not change activity-log settings",
   "settings.storage.state": "State",
   "settings.storage.state.description": "Window layout and other small bits of local state.",
   "settings.storage.cache": "Cache",

@@ -221,6 +221,27 @@ describe("retention — one bound, enforced over the directory", () => {
     expect(fsSync.existsSync(fresh)).toBe(true)
   })
 
+  test("an already-open writer reads a changed retention window at the sweep point", async () => {
+    await using dir = await tmpdir()
+    const file = path.join(dir.path, "novaclaw.log")
+    const now = Date.parse("2026-08-07T00:00:00.000Z")
+    const segment = plant(dir.path, "novaclaw", now - 10 * DAY, 10)
+    let retention = 30 * DAY
+    const writer = LogFile.open({
+      file,
+      totalBytes: 1024 * 1024,
+      maxAgeMs: () => retention,
+      now: () => new Date(now),
+    })
+
+    expect(writer.sweep()).toBe(0)
+    expect(fsSync.existsSync(segment)).toBe(true)
+    retention = 7 * DAY
+    expect(writer.sweep()).toBe(10)
+    expect(fsSync.existsSync(segment)).toBe(false)
+    writer.close()
+  })
+
   test("nothing is swept when the directory is inside both limits (negative control)", async () => {
     await using dir = await tmpdir()
     const file = path.join(dir.path, "novaclaw.log")

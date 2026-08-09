@@ -133,6 +133,9 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // `dialog-select-directory-v2.tsx` and `pages/files.tsx` — presentation, granting no access, and
   // `config.ts` already documents the key as agent-editable for self-healing.
   folder_bookmarks: "operational",
+  // Visibility and bounded retention for NovaClaw's own derived diagnostic data. It cannot disable
+  // logging, name an endpoint, carry text, or touch user-authored data.
+  log: "operational",
   // The agent's own truncation budget. Raising it spends the agent's own context and nothing else.
   tool_output: "operational",
   // The DEVICE registry: endpoint origins grouped into one backend, for the scheduler's admission
