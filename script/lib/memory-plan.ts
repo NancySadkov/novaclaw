@@ -36,25 +36,27 @@
  * flat; the rest is the sixteen workers it spawns itself). Each re-derivation is stated where the
  * constant is declared, so a dead premise cannot sit next to a corrected number again.
  *
- * ─── ⛔ the yardstick does not match the measurement, and at core's scale that DECIDES ───────────
+ * ─── two measurements, two walls ─────────────────────────────────────────────────────────────────
  *
- * A peak here is **commit charge** on Windows. `headroomBytes()` (heavy-guard.ts) returns
- * `min(os.freemem(), commitFree)` — and `os.freemem()` can never exceed physical RAM. On the
- * development laptop that is **15.72 GB**, while the commit limit is **~46 GB**. So:
- *
- *   requiredBytes(peak) ≤ 15.72 GB  ⟺  peak ≤ ~11 989 MB
- *
- * **Any unit whose commit peak exceeds ~12 GB can never plan `whole` on this machine, at any load,
- * however idle the box is.** `core` at 16.7–18.0 GB is past that line by construction — against
- * commit headroom alone (~25.7 GB free of 46) it plans `whole` comfortably. This is a comparison of
- * two different quantities that was invisible while every peak was ~1 GB and is the dominant term
- * now. It is recorded, NOT silently repaired: narrowing the ladder to the commit wall would weaken
- * the arm that guards against thrashing, and that wants its own evidence (a resident-set peak
- * beside the commit peak) rather than a convenient edit. Filed in todo/test-speed.md.
+ * App `b2b591b83` measured `core` at **16,552 MB commit / 4,616 MB resident** across 907 attributed
+ * ticks. Comparing the first number to free physical RAM made `core` permanently sharded even on an
+ * otherwise empty laptop. The planner now keeps both dimensions: commit demand meets Windows commit
+ * headroom; resident demand meets immediately available RAM. Neither safety arm was removed — the
+ * category error between them was.
  */
 
-/** A unit's recorded peak, in MB of commit charge (Windows) or RSS (elsewhere). */
+/** A unit's recorded peak, in MB. */
 export type PeakProfile = Readonly<Record<string, number>>
+
+export interface Demand {
+  readonly commitPeakMb: number
+  readonly residentPeakMb: number
+}
+
+export interface Headroom {
+  readonly commitBytes: number
+  readonly residentBytes: number
+}
 
 const MB = 1024 ** 2
 
@@ -93,6 +95,8 @@ export const MIN_VIABLE_BYTES = 1200 * MB
 
 /** What a unit is assumed to need when nothing has measured it yet. Deliberately generous. */
 export const UNPROFILED_PEAK_MB = 1200
+/** Resident default for a unit whose working-set peak has not been measured yet. */
+export const UNPROFILED_RESIDENT_MB = 1200
 
 /** Never split a unit into more shards than this — past it, per-process startup dominates. */
 export const MAX_SHARDS = 8
@@ -124,15 +128,20 @@ export const MAX_SHARDS = 8
 export const IMPLAUSIBLE_PEAK_MB = 32_768
 
 export type Plan =
-  | { readonly mode: "whole"; readonly requiredBytes: number }
+  | { readonly mode: "whole"; readonly commitRequiredBytes: number; readonly residentRequiredBytes: number }
   /**
    * ⚠️ **A WEAKER RESULT, and it must be reported as one.** Splitting a unit changes which files
    * share a process, and that changes behaviour: measured 2026-08-05, eight green batches over
    * `core` concealed a wedge that only exists when the unit runs whole, and `--shard=1/2` wedged
    * where the whole unit did not. A sharded pass is most of the signal, not the gate.
    */
-  | { readonly mode: "sharded"; readonly shards: number; readonly requiredBytes: number }
-  | { readonly mode: "refuse"; readonly requiredBytes: number }
+  | {
+      readonly mode: "sharded"
+      readonly shards: number
+      readonly commitRequiredBytes: number
+      readonly residentRequiredBytes: number
+    }
+  | { readonly mode: "refuse"; readonly commitRequiredBytes: number; readonly residentRequiredBytes: number }
 
 /** Bytes a unit with this peak needs free to run whole. */
 export const requiredBytes = (peakMb: number): number => Math.round(peakMb * MB * WHOLE_HEADROOM_FACTOR) + SLACK_BYTES
@@ -140,15 +149,19 @@ export const requiredBytes = (peakMb: number): number => Math.round(peakMb * MB 
 /**
  * Pick the rung.
  *
- * `headroomBytes` is the SMALLER of free RAM and commit headroom — a machine can have free RAM and
- * no commit left, and on Windows commit-vs-limit is the pair that predicts the crash (AGENTS.md →
- * Known pitfalls #8).
+ * Both walls must clear independently. A machine can have free RAM and no commit left, or commit
+ * headroom and no RAM; collapsing them through `min()` compares at least one demand to the wrong unit.
  */
-export function planFor(peakMb: number, headroomBytes: number): Plan {
-  const required = requiredBytes(peakMb)
-  if (!Number.isFinite(headroomBytes)) return { mode: "whole", requiredBytes: required }
-  if (headroomBytes >= required) return { mode: "whole", requiredBytes: required }
-  if (headroomBytes < MIN_VIABLE_BYTES) return { mode: "refuse", requiredBytes: required }
+export function planFor(demand: Demand, headroom: Headroom): Plan {
+  const commitRequiredBytes = requiredBytes(demand.commitPeakMb)
+  const residentRequiredBytes = requiredBytes(demand.residentPeakMb)
+  const result = { commitRequiredBytes, residentRequiredBytes }
+  if (!Number.isFinite(headroom.commitBytes) || !Number.isFinite(headroom.residentBytes))
+    return { mode: "whole", ...result }
+  if (headroom.commitBytes >= commitRequiredBytes && headroom.residentBytes >= residentRequiredBytes)
+    return { mode: "whole", ...result }
+  if (headroom.commitBytes < MIN_VIABLE_BYTES || headroom.residentBytes < MIN_VIABLE_BYTES)
+    return { mode: "refuse", ...result }
   // Shards do not divide the requirement: the split buys the GC and fixture churn of a shorter-lived
   // process, not a proportionally smaller heap. Scale gently and cap, because a shard count derived
   // as `required/headroom` would promise a reduction that is not there.
@@ -170,12 +183,22 @@ export function planFor(peakMb: number, headroomBytes: number): Plan {
   // changing the thing measured) or the commit-vs-free-RAM yardstick described in this file's
   // header. Both are filed in todo/test-speed.md. What must not happen is this comment claiming a
   // reduction the data says is absent.
-  const shards = Math.min(MAX_SHARDS, Math.max(2, Math.ceil(required / headroomBytes)))
-  return { mode: "sharded", shards, requiredBytes: required }
+  const pressure = Math.max(
+    commitRequiredBytes / headroom.commitBytes,
+    residentRequiredBytes / headroom.residentBytes,
+  )
+  const shards = Math.min(MAX_SHARDS, Math.max(2, Math.ceil(pressure)))
+  return { mode: "sharded", shards, ...result }
 }
 
 /** The peak to plan with: what was measured for this unit, or the generous default. */
 export const peakFor = (profile: PeakProfile, unit: string): number => profile[unit] ?? UNPROFILED_PEAK_MB
+
+/** The dual demand for a unit; an absent resident observation stays an explicit conservative guess. */
+export const demandFor = (commit: PeakProfile, resident: PeakProfile, unit: string): Demand => ({
+  commitPeakMb: peakFor(commit, unit),
+  residentPeakMb: resident[unit] ?? UNPROFILED_RESIDENT_MB,
+})
 
 /**
  * Units that would fit in the headroom we have — the actionable half of a refusal.
@@ -183,8 +206,13 @@ export const peakFor = (profile: PeakProfile, unit: string): number => profile[u
  * A refusal that names only what is missing tells the user nothing they can do right now. This turns
  * it into "these still fit", which is a working command rather than a wait.
  */
-export function unitsThatFit(profile: PeakProfile, units: readonly string[], headroomBytes: number): string[] {
-  return units.filter((unit) => planFor(peakFor(profile, unit), headroomBytes).mode === "whole")
+export function unitsThatFit(
+  commit: PeakProfile,
+  resident: PeakProfile,
+  units: readonly string[],
+  headroom: Headroom,
+): string[] {
+  return units.filter((unit) => planFor(demandFor(commit, resident, unit), headroom).mode === "whole")
 }
 
 /**

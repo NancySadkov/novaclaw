@@ -58,22 +58,23 @@ export function bypassesGuard(
   )
 }
 
-/**
- * Usable headroom: the SMALLER of free RAM and commit headroom.
- *
- * Both, because a machine can have free RAM and no commit left (the 2026-07-27 shape, where Windows
- * grew the pagefile rather than refusing) or commit headroom and no RAM (the ordinary desktop with a
- * browser open). Planning against one alone plans against the wrong wall. `undefined` means the host
- * could not be measured at all, which callers must treat as "do not guess".
- */
-export function headroomBytes(): number | undefined {
+export interface MemoryHeadroom {
+  /** Immediately available physical memory — the wall a resident working set consumes. */
+  readonly residentBytes: number
+  /** Remaining Windows commit capacity. Equals residentBytes where RSS is the only honest measure. */
+  readonly commitBytes: number
+}
+
+/** Measure the two independent memory walls without collapsing unlike quantities through `min()`. */
+export function memoryHeadroom(): MemoryHeadroom | undefined {
   const free = os.freemem()
-  if (process.platform !== "win32") return Number.isFinite(free) && free > 0 ? free : undefined
+  if (process.platform !== "win32")
+    return Number.isFinite(free) && free > 0 ? { residentBytes: free, commitBytes: free } : undefined
   const commit = windowsCommit()
   if (!commit) return undefined
   const commitFree = (commit.limitGb - commit.usedGb) * 1024 ** 3
-  if (!Number.isFinite(free) || free <= 0) return commitFree > 0 ? commitFree : undefined
-  return Math.max(0, Math.min(free, commitFree))
+  if (!Number.isFinite(free) || free <= 0 || !Number.isFinite(commitFree)) return undefined
+  return { residentBytes: Math.max(0, free), commitBytes: Math.max(0, commitFree) }
 }
 
 /**

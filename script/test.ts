@@ -61,7 +61,7 @@ import { spawnSync } from "node:child_process"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 
-import { enforce, headroomBytes, topConsumers } from "./lib/heavy-guard"
+import { enforce, memoryHeadroom, topConsumers } from "./lib/heavy-guard"
 import * as LedgerDrift from "./lib/ledger-drift"
 import * as MemoryPlan from "./lib/memory-plan"
 import * as PeakSampler from "./lib/peak-sampler"
@@ -75,14 +75,16 @@ import { typecheckUnits } from "./lib/typecheck-units"
  * commit charge is already near its limit. No override, and a real measurement is required: tests
  * are evidence, so knowingly running one in conditions that can fabricate a timeout is never useful.
  *
- * ⚠️ `minimumFreeBytes: 0` DISARMS the guard's flat free-RAM floor here, deliberately, and this file
- * takes that decision over instead (see `planUnit`). The flat 6 GB floor was ~6× the measured need of
- * the heaviest unit and made the gate unrunnable on an ordinary desktop; builds keep it, because a
- * build genuinely does cost that much. The other two arms — concurrency and the commit ceiling — are
- * unchanged and still absolute, because they are about the MACHINE rather than about one unit.
+ * The incident-derived 6 GB floor is replaced by the planner's measured one-runtime floor. This arm
+ * remains absolute: below it no shard can start without sustained paging. Per-unit resident demand is
+ * judged separately in `planUnit`; builds retain the conservative 6 GB default.
  */
 const enforceTestMemory = (label: string) =>
-  enforce(label, process.argv, { allowOverride: false, requireMeasurement: true, minimumFreeBytes: 0 })
+  enforce(label, process.argv, {
+    allowOverride: false,
+    requireMeasurement: true,
+    minimumFreeBytes: MemoryPlan.MIN_VIABLE_BYTES,
+  })
 enforceTestMemory("the test suite")
 
 const FULL = process.argv.includes("--full")
@@ -409,18 +411,20 @@ function reapOrphans(pid: number | undefined, label: string) {
  * before the first unit runs while the ledgers are only read at the end. An unreadable or absent
  * profile is the unprofiled state, not a fault: every unit then plans with the generous default.
  */
-function readPeaks(): MemoryPlan.PeakProfile {
+function readPeaks(): { commit: MemoryPlan.PeakProfile; resident: MemoryPlan.PeakProfile } {
   try {
     const parsed = JSON.parse(readFileSync(join(import.meta.dir, "test-baseline.json"), "utf8")) as {
       peaks?: Record<string, number>
+      workingSets?: Record<string, number>
     }
-    const peaks = parsed.peaks ?? {}
-    return Object.fromEntries(Object.entries(peaks).filter(([, mb]) => Number.isFinite(mb) && mb > 0))
+    const valid = (values: Record<string, number> | undefined) =>
+      Object.fromEntries(Object.entries(values ?? {}).filter(([, mb]) => Number.isFinite(mb) && mb > 0))
+    return { commit: valid(parsed.peaks), resident: valid(parsed.workingSets) }
   } catch {
-    return {}
+    return { commit: {}, resident: {} }
   }
 }
-const peakProfile = readPeaks()
+const peakProfiles = readPeaks()
 
 /** Every unit name this invocation could run — the candidate list for "what would still fit". */
 const allUnitNames = () => PACKAGES.map((p) => p.name)
@@ -434,8 +438,11 @@ const allUnitNames = () => PACKAGES.map((p) => p.name)
 function planUnit(name: string, kind: Kind): MemoryPlan.Plan {
   // A typecheck is a different beast — `tsgo --noEmit` on `packages/novaclaw` peaks ~3.8 GB and
   // cannot be sharded at all — so it keeps the conservative floor rather than this ladder.
-  const peakMb = kind === "typecheck" ? 4096 : MemoryPlan.peakFor(peakProfile, name)
-  const headroom = headroomBytes()
+  const demand =
+    kind === "typecheck"
+      ? { commitPeakMb: 4096, residentPeakMb: 4096 }
+      : MemoryPlan.demandFor(peakProfiles.commit, peakProfiles.resident, name)
+  const headroom = memoryHeadroom()
   if (headroom === undefined) {
     // Fail closed, exactly as `requireMeasurement` does: an unmeasurable host is not a safe one.
     process.stderr.write(
@@ -445,19 +452,20 @@ function planUnit(name: string, kind: Kind): MemoryPlan.Plan {
     )
     process.exit(2)
   }
-  const plan = MemoryPlan.planFor(peakMb, headroom)
+  const plan = MemoryPlan.planFor(demand, headroom)
   if (plan.mode !== "refuse") return plan
 
   const gb = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(1)} GB`
-  const fits = MemoryPlan.unitsThatFit(peakProfile, allUnitNames(), headroom)
+  const fits = MemoryPlan.unitsThatFit(peakProfiles.commit, peakProfiles.resident, allUnitNames(), headroom)
   const consumers = topConsumers()
   process.stderr.write(
     `\n\x1b[31mRefusing to start ${kind} unit ${name}: the machine cannot fit it, even split.\x1b[0m\n` +
-      `  needs   ${gb(plan.requiredBytes)}  (measured peak ${peakMb} MB × ${MemoryPlan.WHOLE_HEADROOM_FACTOR}` +
-      ` + ${gb(MemoryPlan.SLACK_BYTES)} slack)\n` +
+      `  commit  ${gb(plan.commitRequiredBytes)} needed / ${gb(headroom.commitBytes)} available` +
+      `  (peak ${demand.commitPeakMb} MB)\n` +
+      `  resident ${gb(plan.residentRequiredBytes)} needed / ${gb(headroom.residentBytes)} available` +
+      `  (peak ${demand.residentPeakMb} MB)\n` +
       `  sharded ${gb(MemoryPlan.MIN_VIABLE_BYTES)}  (one shard's floor — peak is nearly flat in file count,` +
       ` so splitting harder does not help)\n` +
-      `  have    ${gb(headroom)}  (the smaller of free RAM and commit headroom)\n` +
       (consumers.length ? `  holding it: ${consumers.join(", ")}\n` : "") +
       (fits.length ? `  still fits right now: bun run test --only=${fits[0]}${fits.length > 1 ? `  (+${fits.length - 1} more)` : ""}\n` : "") +
       `\n`,
@@ -866,7 +874,7 @@ if (measured.length) {
       `${excluded > 0 ? ` (peak excluded this run: ${excluded} MB, normally the \`bun run test\` shim)` : ""}\x1b[0m\n`,
   )
   for (const r of measured) {
-    const was = peakProfile[r.name]
+    const was = peakProfiles.commit[r.name]
     // ⚠️ A SHARDED run's peak is recorded too, and that is sound rather than sloppy: measurement
     // shows peak is nearly FLAT in file count (784 MB for 27 files, ~1 GB for 321) because it is
     // dominated by a per-process baseline. It is also what closes the bootstrap — an unprofiled unit
@@ -915,7 +923,7 @@ if (unmeasured.length) {
       r.peakStatus === "discarded"
         ? `  ${r.name.padEnd(30)} \x1b[33mDISCARDED\x1b[0m  sampled ${r.sampledMb} MB, over the ` +
             `${IMPLAUSIBLE_PEAK_MB} MB ceiling` +
-            `${peakProfile[r.name] === undefined ? "" : ` (profile ${peakProfile[r.name]})`}\n` +
+            `${peakProfiles.commit[r.name] === undefined ? "" : ` (profile ${peakProfiles.commit[r.name]})`}\n` +
             `  ${" ".repeat(30)} the sampler WORKED — this is a reading, not an absence, and it is now\n` +
             `  ${" ".repeat(30)} attributed: only processes this unit itself created are in it.\n`
         : // ⚠️ THREE nulls, not two. Attribution added the middle one, and it is the benign case that
@@ -945,7 +953,7 @@ if (unmeasured.length) {
  */
 const series = PeakSeries.append(
   PeakSeries.seriesPath(REPO_ROOT),
-  PeakSeries.buildRows(RUN_STAMP, PeakSeries.scopeLabel(FULL, ONLY), results, peakProfile),
+  PeakSeries.buildRows(RUN_STAMP, PeakSeries.scopeLabel(FULL, ONLY), results, peakProfiles.commit),
 )
 // Self-describing, because the block header above only prints when something was MEASURED while a row
 // is appended for every test unit that ran — the two can legitimately disagree.

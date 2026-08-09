@@ -7,7 +7,7 @@ import {
   MIN_VIABLE_BYTES,
   peakFor,
   peakRegressed,
-  planFor,
+  planFor as planForDemand,
   requiredBytes,
   SLACK_BYTES,
   UNPROFILED_PEAK_MB,
@@ -47,10 +47,15 @@ const MEASURED = { core: 17_958, schema: 1236, "novaclaw:server": 2237, ui: 425 
 /** The dead entry, kept by name so a case about the defect cannot be mistaken for a current figure. */
 const DEAD_CORE_ENTRY = 1007
 
-/** Physical RAM on the development laptop — the hard cap on `headroomBytes()`. Measured 2026-08-07. */
-const LAPTOP_PHYSICAL_BYTES = 15.72 * GB
 /** Commit headroom on the same box at the same moment: ~25.7 GB free of a ~46 GB limit. */
 const LAPTOP_COMMIT_FREE_BYTES = 25.72 * GB
+
+/** Single-wall shorthand for the generic rung tests; dual-wall behavior has its own cases below. */
+const planFor = (peakMb: number, headroomBytes: number) =>
+  planForDemand(
+    { commitPeakMb: peakMb, residentPeakMb: peakMb },
+    { commitBytes: headroomBytes, residentBytes: headroomBytes },
+  )
 
 describe("requiredBytes — a unit's own peak, not a constant", () => {
   test("scales with the measurement and adds fixed slack", () => {
@@ -128,24 +133,35 @@ describe("planFor — the rungs", () => {
  * on the machine we develop on, and a reader who does not know that will read a permanent `sharded`
  * as a transient low-memory condition.
  */
-describe("core after the re-baseline — the consequence, stated as assertions", () => {
-  test("`headroomBytes()` is capped by physical RAM, so a peak over ~11 988 MB can NEVER plan whole here", () => {
-    // The arithmetic, not a preference: headroomBytes() is min(free RAM, commit headroom), and free
-    // RAM cannot exceed os.totalmem(). Solve requiredBytes(p) <= 15.72 GB for p.
-    const largestEverWhole = (LAPTOP_PHYSICAL_BYTES - SLACK_BYTES) / WHOLE_HEADROOM_FACTOR / MB
-    expect(Math.floor(largestEverWhole)).toBe(11_988)
-    expect(requiredBytes(11_988)).toBeLessThanOrEqual(LAPTOP_PHYSICAL_BYTES)
-    expect(requiredBytes(11_989)).toBeGreaterThan(LAPTOP_PHYSICAL_BYTES)
-    expect(MEASURED.core).toBeGreaterThan(largestEverWhole)
-    // Not "on a busy box" — with EVERY byte of physical RAM free.
-    expect(planFor(MEASURED.core, LAPTOP_PHYSICAL_BYTES).mode).toBe("sharded")
+describe("core after the resident measurement — each demand meets its own wall", () => {
+  const CORE_RESIDENT_MB = 4616
+
+  test("core can plan whole when both independent walls clear their matching measurement", () => {
+    const plan = planForDemand(
+      { commitPeakMb: MEASURED.core, residentPeakMb: CORE_RESIDENT_MB },
+      { commitBytes: LAPTOP_COMMIT_FREE_BYTES, residentBytes: 8 * GB },
+    )
+    expect(plan.mode).toBe("whole")
   })
 
-  test("against COMMIT headroom alone the same unit plans whole — so the yardstick is the difference", () => {
-    // ⚠️ This pair is the finding. The peak is commit charge; the wall it is compared against is
-    // min(free RAM, commit headroom). Same unit, same box, same instant, opposite verdicts.
-    expect(planFor(MEASURED.core, LAPTOP_COMMIT_FREE_BYTES).mode).toBe("whole")
-    expect(planFor(MEASURED.core, LAPTOP_PHYSICAL_BYTES).mode).not.toBe("whole")
+  test("NEGATIVE CONTROL — swapping the walls recreates the permanent false sharding", () => {
+    const correct = planForDemand(
+      { commitPeakMb: MEASURED.core, residentPeakMb: CORE_RESIDENT_MB },
+      { commitBytes: LAPTOP_COMMIT_FREE_BYTES, residentBytes: 8 * GB },
+    )
+    const crossed = planForDemand(
+      { commitPeakMb: MEASURED.core, residentPeakMb: CORE_RESIDENT_MB },
+      { commitBytes: 8 * GB, residentBytes: LAPTOP_COMMIT_FREE_BYTES },
+    )
+    expect(correct.mode).toBe("whole")
+    expect(crossed.mode).toBe("sharded")
+  })
+
+  test("either real wall can independently force degradation", () => {
+    const demand = { commitPeakMb: MEASURED.core, residentPeakMb: CORE_RESIDENT_MB }
+    expect(planForDemand(demand, { commitBytes: 25 * GB, residentBytes: 4 * GB }).mode).toBe("sharded")
+    expect(planForDemand(demand, { commitBytes: 25 * GB, residentBytes: 8 * GB }).mode).toBe("whole")
+    expect(planForDemand(demand, { commitBytes: 15 * GB, residentBytes: 8 * GB }).mode).toBe("sharded")
   })
 
   test("the dead entry would have run core whole on a nearly empty box — the hazard, kept as a case", () => {
@@ -209,12 +225,14 @@ describe("unitsThatFit — the actionable half of a refusal", () => {
   test("names the units that would still run right now", () => {
     // A refusal that only says what is missing gives the reader nothing to do. This is the sentence
     // that turns it into a command they can run.
-    const fits = unitsThatFit(MEASURED, ["core", "ui", "novaclaw:server"], 1.2 * GB)
+    const headroom = { commitBytes: 2.2 * GB, residentBytes: 2.2 * GB }
+    const fits = unitsThatFit(MEASURED, {}, ["core", "ui", "novaclaw:server"], headroom)
     expect(fits).toEqual(["ui"])
   })
 
   test("returns nothing when nothing fits, rather than a misleading suggestion", () => {
-    expect(unitsThatFit(MEASURED, ["core", "ui"], 100 * MB)).toEqual([])
+    const headroom = { commitBytes: 100 * MB, residentBytes: 100 * MB }
+    expect(unitsThatFit(MEASURED, {}, ["core", "ui"], headroom)).toEqual([])
   })
 })
 
