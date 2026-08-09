@@ -274,8 +274,9 @@ test("an unreadable blind-grounder reply never reaches the screen", async () => 
     llm: model({ grounder: ["not a point"], adjudicator: CALIBRATED }),
   })
   expect(screen.acts).toHaveLength(0)
-  expect(report.usage.filter((sample) => sample.call === "grounder")).toHaveLength(2)
-  expect(ledgerVerdicts(report)).toContain("grounding unreadable")
+  // Three samples fail consensus, then the one allowed planner repair draws three more.
+  expect(report.usage.filter((sample) => sample.call === "grounder")).toHaveLength(6)
+  expect(ledgerVerdicts(report)).toContain("grounding consensus failed")
 })
 
 test("P5 scans the current frame and invokes the exact advertised accessibility action", async () => {
@@ -721,9 +722,23 @@ describe("the RunReport carries the MEASURED prompt-token series", () => {
       spec: spec({ budget: { maxSteps: 1, maxPromptTokens: 500_000 } }),
       llm: model({ adjudicator: CALIBRATED }),
     })
-    expect(report.usage.map((u) => u.purpose)).toEqual(["calibrate-adjudicate", "propose", "ground", "adjudicate-step"])
-    expect(report.usage.map((u) => u.call)).toEqual(["adjudicator", "planner", "grounder", "adjudicator"])
-    expect(report.usage.map((u) => u.step)).toEqual([0, 1, 1, 1])
+    expect(report.usage.map((u) => u.purpose)).toEqual([
+      "calibrate-adjudicate",
+      "propose",
+      "ground",
+      "ground",
+      "ground",
+      "adjudicate-step",
+    ])
+    expect(report.usage.map((u) => u.call)).toEqual([
+      "adjudicator",
+      "planner",
+      "grounder",
+      "grounder",
+      "grounder",
+      "adjudicator",
+    ])
+    expect(report.usage.map((u) => u.step)).toEqual([0, 1, 1, 1, 1, 1])
     expect(report.usage.every((u) => u.withImage)).toBe(true)
   })
 
@@ -787,7 +802,7 @@ describe("the RunReport", () => {
     })
     expect(screen.acts).toEqual([])
     expect(report.acted).toBe(0)
-    expect(ledgerVerdicts(report).join(" ")).toContain("refused")
+    expect(ledgerVerdicts(report).join(" ")).toContain("grounding consensus failed")
   })
 
   test("✅ positive control — the identical script in range does execute", async () => {

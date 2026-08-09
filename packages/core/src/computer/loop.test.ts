@@ -196,17 +196,23 @@ describe("a clean 3-step run reaches Done — and only through the harness's own
       "scan-accessibility",
       "ask-planner",
       "ask-grounder",
-      "act",
-      "ask-adjudicator",
-      "capture",
-      "scan-accessibility",
-      "ask-planner",
+      "ask-grounder",
       "ask-grounder",
       "act",
       "ask-adjudicator",
       "capture",
       "scan-accessibility",
       "ask-planner",
+      "ask-grounder",
+      "ask-grounder",
+      "ask-grounder",
+      "act",
+      "ask-adjudicator",
+      "capture",
+      "scan-accessibility",
+      "ask-planner",
+      "ask-grounder",
+      "ask-grounder",
       "ask-grounder",
       "act",
       "ask-adjudicator",
@@ -317,6 +323,17 @@ describe("P5 — each pointer target chooses exactly one fresh source", () => {
 })
 
 describe("the measured split grounding contract is the only pointer path", () => {
+  const reachBlindGrounder = () => {
+    let transition = LOOP.start(spec())
+    transition = LOOP.next(transition.state, captured("start"))
+    transition = LOOP.next(transition.state, adjudged({ checkpoint: "no" }))
+    transition = LOOP.next(transition.state, captured("s1"))
+    transition = LOOP.next(transition.state, { kind: "accessibility-scanned", candidates: [] })
+    transition = LOOP.next(transition.state, proposeAt(500, 500))
+    expect(transition.command.kind).toBe("ask-grounder")
+    return transition
+  }
+
   test("the wired grounder sees one label and image, never the goal, ledger, or prediction", () => {
     const run = drive(spec(), [...CALIBRATE, captured("s1"), proposeAt(464, 684)])
     const command = run.commands.find((item) => item.kind === "ask-grounder")
@@ -353,6 +370,42 @@ describe("the measured split grounding contract is the only pointer path", () =>
       width: 82,
       height: 51,
     })
+  })
+
+  test("C2 draws three blind samples of the identical frame and label, then executes their spatial majority", () => {
+    let transition = reachBlindGrounder()
+    if (transition.command.kind !== "ask-grounder") throw new Error("expected the first grounding sample")
+    const prompts = [transition.command.prompt]
+
+    transition = LOOP.next(transition.state, { kind: "grounder-replied", text: '{"x":500,"y":500}' })
+    if (transition.command.kind !== "ask-grounder") throw new Error("expected the second grounding sample")
+    prompts.push(transition.command.prompt)
+    transition = LOOP.next(transition.state, { kind: "grounder-replied", text: '{"x":506,"y":504}' })
+    if (transition.command.kind !== "ask-grounder") throw new Error("expected the third grounding sample")
+    prompts.push(transition.command.prompt)
+    transition = LOOP.next(transition.state, { kind: "grounder-replied", text: '{"x":900,"y":900}' })
+
+    expect(prompts[1]).toEqual(prompts[0])
+    expect(prompts[2]).toEqual(prompts[0])
+    expect(transition.command.kind).toBe("act")
+    if (transition.command.kind !== "act") return
+    // The deterministic medoid is one model-emitted point, never an averaged coordinate.
+    expect(transition.command.action).toEqual({ kind: "click", button: "left", point: { x: 640, y: 400 } })
+  })
+
+  test("C2 abstains when three valid samples have no spatial majority", () => {
+    let transition = reachBlindGrounder()
+    for (const point of [
+      { x: 100, y: 100 },
+      { x: 500, y: 500 },
+      { x: 900, y: 900 },
+    ]) {
+      transition = LOOP.next(transition.state, { kind: "grounder-replied", text: JSON.stringify(point) })
+    }
+    expect(transition.command.kind).toBe("ask-planner")
+    if (transition.command.kind !== "ask-planner") return
+    expect(transition.command.prompt.user).toContain("did not reach spatial consensus")
+    expect(transition.command.prompt.user).toContain("Choose a different visible label or abstain")
   })
 })
 

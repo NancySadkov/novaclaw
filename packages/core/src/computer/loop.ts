@@ -4,6 +4,7 @@ import { ComputerActions } from "./actions"
 import { ComputerAccessibility } from "./accessibility"
 import { ComputerCoordinates } from "./coordinates"
 import { ComputerEvidence } from "./evidence"
+import { ComputerGroundingConsensus } from "./grounding-consensus"
 import { ComputerLedger } from "./ledger"
 import { ComputerPrompt } from "./prompt"
 import { ComputerProposal } from "./proposal"
@@ -356,6 +357,10 @@ export interface State {
   readonly pending?: Pending
   /** The planner's accepted pointer proposal while the blind grounder supplies only its point. */
   readonly groundingDraft?: ComputerProposal.ProposalDraft
+  /** C2: replies already drawn for the current frame/label; cleared before every new step. */
+  readonly groundingReplies: number
+  readonly groundingPoints: ReadonlyArray<ComputerProposal.PointDraft>
+  readonly groundingIssues: ReadonlyArray<string>
   readonly repairs: number
   readonly consecutiveAbstains: number
   readonly consecutiveNoEffect: number
@@ -427,6 +432,9 @@ export const initial = (spec: TaskSpec): State => ({
   ledger: ComputerLedger.empty,
   checkpointIndex: 0,
   accessibility: [],
+  groundingReplies: 0,
+  groundingPoints: [],
+  groundingIssues: [],
   repairs: 0,
   consecutiveAbstains: 0,
   consecutiveNoEffect: 0,
@@ -617,6 +625,9 @@ const beginStep = (state: State): Transition => {
       repairs: 0,
       pending: undefined,
       groundingDraft: undefined,
+      groundingReplies: 0,
+      groundingPoints: [],
+      groundingIssues: [],
       accessibility: [],
     },
     command: { kind: "capture", scope: "frame", purpose: "observe" },
@@ -869,7 +880,15 @@ const reprompt = (
     return settle(spent)
   }
   return ask(
-    { ...state, phase: "propose", repairs: state.repairs + 1, groundingDraft: undefined },
+    {
+      ...state,
+      phase: "propose",
+      repairs: state.repairs + 1,
+      groundingDraft: undefined,
+      groundingReplies: 0,
+      groundingPoints: [],
+      groundingIssues: [],
+    },
     ComputerPrompt.planner({
       goal: state.spec.goal,
       ledger: state.ledger,
@@ -1164,7 +1183,15 @@ export function next(state: State, event: Event): Transition {
             described,
           )
         }
-        const grounding: State = { ...spent, phase: "ground", pending: described, groundingDraft: draft }
+        const grounding: State = {
+          ...spent,
+          phase: "ground",
+          pending: described,
+          groundingDraft: draft,
+          groundingReplies: 0,
+          groundingPoints: [],
+          groundingIssues: [],
+        }
         return ask(grounding, ComputerPrompt.grounder({ label: target, image: spent.image }), "ask-grounder")
       }
       return scheduleAction(spent, draft, described)
@@ -1175,18 +1202,45 @@ export function next(state: State, event: Event): Transition {
       if (event.kind !== "grounder-replied") return unexpected(state, event)
       const spent = spend(state, event.promptTokens)
       const grounded = ComputerPrompt.parseGrounding(event.text)
-      if (!grounded.ok) {
+      if (state.groundingDraft === undefined || state.pending === undefined)
+        return voided(spent, "protocol", "the grounder replied without a pending planner proposal")
+      const converted = grounded.ok
+        ? ComputerCoordinates.toPixels(grounded.point, state.spec.space, state.spec.viewport)
+        : undefined
+      const sampled: State = {
+        ...spent,
+        groundingReplies: state.groundingReplies + 1,
+        groundingPoints:
+          grounded.ok && converted?.ok ? [...state.groundingPoints, grounded.point] : state.groundingPoints,
+        groundingIssues: !grounded.ok
+          ? [...state.groundingIssues, grounded.issue]
+          : converted !== undefined && !converted.ok
+            ? [...state.groundingIssues, describeConversion(converted.error, "grounded point")]
+            : state.groundingIssues,
+      }
+      if (sampled.groundingReplies < ComputerGroundingConsensus.SAMPLE_COUNT) {
+        const label = state.groundingDraft.action?.target?.trim() ?? ""
+        return ask(sampled, ComputerPrompt.grounder({ label, image: state.image }), "ask-grounder")
+      }
+      const consensus = ComputerGroundingConsensus.vote({
+        points: sampled.groundingPoints,
+        requested: sampled.groundingReplies,
+        space: state.spec.space,
+        viewport: state.spec.viewport,
+      })
+      if (!consensus.ok) {
+        const issues = sampled.groundingIssues.length
+          ? ` Grounding issues: ${[...new Set(sampled.groundingIssues)].join("; ")}.`
+          : ""
         return reprompt(
-          spent,
-          `The blind grounder could not locate that label (${grounded.issue}). Choose a different visible ` +
-            "label or abstain.\n\nRe-emit the WHOLE proposal, corrected.",
-          "grounding unreadable",
+          sampled,
+          `The blind grounder did not reach spatial consensus (${consensus.reason}).${issues} ` +
+            "Choose a different visible label or abstain.\n\nRe-emit the WHOLE proposal, corrected.",
+          "grounding consensus failed",
           state.pending,
         )
       }
-      if (state.groundingDraft === undefined || state.pending === undefined)
-        return voided(spent, "protocol", "the grounder replied without a pending planner proposal")
-      return scheduleAction(spent, state.groundingDraft, state.pending, grounded.point)
+      return scheduleAction(sampled, state.groundingDraft, state.pending, consensus.point)
     }
 
     // ── Act → Verify ──────────────────────────────────────────────────────────────────────────

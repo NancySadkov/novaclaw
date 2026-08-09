@@ -64,6 +64,7 @@ describe("the directory-sweeping guards cover every module, including the new on
     "coordinates.ts",
     "driver.ts",
     "evidence.ts",
+    "grounding-consensus.ts",
     "ledger.ts",
     "loop.ts",
     "prompt.ts",
@@ -204,6 +205,16 @@ describe("G8 — a `toPixels` error is SURFACED, never clamped", () => {
         action: { kind: "click", button: "left", target: "Button" },
         expect: "the dialog opens",
       }),
+    })
+    expect(transition.command.kind).toBe("ask-grounder")
+    transition = ComputerLoop.next(transition.state, {
+      kind: "grounder-replied",
+      text: JSON.stringify({ x: 1200, y: 500 }),
+    })
+    expect(transition.command.kind).toBe("ask-grounder")
+    transition = ComputerLoop.next(transition.state, {
+      kind: "grounder-replied",
+      text: JSON.stringify({ x: 1200, y: 500 }),
     })
     expect(transition.command.kind).toBe("ask-grounder")
     transition = ComputerLoop.next(transition.state, {
