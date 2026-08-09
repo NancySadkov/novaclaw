@@ -22,15 +22,19 @@ import { SessionExecutionAttempt } from "../execution-attempt"
 import { SessionInput } from "../input"
 import { SessionMessage } from "../message"
 import { SessionPlan } from "../plan"
+import { SessionScheduler } from "../scheduler"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
+import { ContextBudget } from "./context-budget"
 import { HarnessConfig } from "./harness-config"
 import { SessionMaintenance } from "./maintenance"
 import { SessionRunnerModel } from "./model"
 import { createLLMEventPublisher } from "./publish-llm-event"
+import { ProviderDispatch } from "./provider-dispatch"
+import { ProviderRetry } from "./provider-retry"
 import { SessionStrict } from "./strict"
 
-type Harness = Pick<HarnessConfig.Derived, "configuredShell" | "quality" | "strict">
+type Harness = Pick<HarnessConfig.Derived, "configuredShell" | "context" | "quality" | "strict">
 
 export interface Dependencies {
   readonly events: EventV2.Interface
@@ -42,6 +46,7 @@ export interface Dependencies {
   readonly messengerStore: MessengerStore.Interface
   readonly offline: Offline.Interface
   readonly maintenance: SessionMaintenance.Interface
+  readonly scheduler: SessionScheduler.Interface
   readonly db: Database.Interface["db"]
 }
 
@@ -53,7 +58,8 @@ export interface Dependencies {
  * behind the runner seam instead of a second engine hidden in llm.ts's closure.
  */
 export const make = (dependencies: Dependencies) => {
-  const { events, llm, models, store, location, snapshots, messengerStore, offline, maintenance, db } = dependencies
+  const { events, llm, models, store, location, snapshots, messengerStore, offline, maintenance, scheduler, db } =
+    dependencies
   const getSession = Effect.fn("StrictDrain.getSession")(function* (sessionID: SessionSchema.ID) {
     const session = yield* store.get(sessionID)
     if (!session) return yield* Effect.die(`Session not found: ${sessionID}`)
@@ -90,8 +96,9 @@ export const make = (dependencies: Dependencies) => {
         })
       }).pipe(Effect.ignore)
     const session = yield* getSession(sessionID)
+    const modelSession = { ...session, model: resolved.model as typeof session.model }
     const model = yield* models
-      .resolve({ ...session, model: resolved.model as typeof session.model })
+      .resolve(modelSession)
       .pipe(
         Effect.catch((error: unknown) =>
           notice(
@@ -100,6 +107,17 @@ export const make = (dependencies: Dependencies) => {
         ),
       )
     if (model === undefined) return "handled" as const
+    const maxProviderAttempts = ProviderRetry.maxAttempts(yield* models.retryAttempts(modelSession))
+    const deviceKey = (yield* models.device(modelSession)) ?? `${model.provider}/${model.id}`
+    const dispatchSlot = {
+      sessionID: session.id as string,
+      deviceKey,
+      sessionClass: SessionScheduler.classForSessionType(resolved.type),
+      ...(resolved.priority > 0 ? { priority: resolved.priority } : {}),
+    }
+    const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
+    const thinkingBudget = model.route.defaults.limits?.thinkingBudget ?? 0
+    const budgetEnforced = resolved.thinkingBudget ?? true
     // The engine's one-shot completion (the judgeCompletion idiom). The budget is per-CALL and comes
     // from ConfigStrict: execution steps need a whole non-trivial source file of headroom (jh.md §3
     // "Measured": a C program is ~13-15k tokens; truncation is fatal), and reasoning steps need room
@@ -109,23 +127,54 @@ export const make = (dependencies: Dependencies) => {
       Effect.gen(function* () {
         const text: string[] = []
         const reasoning: string[] = []
-        yield* llm
-          .stream(
-            LLM.request({
-              model,
-              system: [SystemPart.make(system)],
-              messages: [Message.user(user)],
-              tools: [],
-              generation: { maxTokens },
-            }),
-          )
-          .pipe(
-            Stream.runForEach((event) => {
-              if (LLMEvent.is.textDelta(event)) text.push(event.text)
-              else if (event.type === "reasoning-delta") reasoning.push(event.text)
-              return Effect.void
-            }),
-          )
+        let costTokens: number | undefined
+        const prepared = ProviderDispatch.prepare({
+          request: LLM.request({
+            model,
+            system: [SystemPart.make(system)],
+            messages: [Message.user(user)],
+            tools: [],
+            generation: { maxTokens },
+          }),
+          promptCacheKey,
+          contextSize: model.route.defaults.limits?.context,
+          profile: ContextBudget.enabled(harness.context, resolved.contextBudget)
+            ? ContextBudget.resolve(harness.context, resolved.type)
+            : undefined,
+        })
+        if (prepared.packed.dropped > 0)
+          yield* Log.event("session.context.pack.evicted", {
+            "session.id": session.id,
+            "session.dropped": prepared.packed.dropped,
+            "session.kept.tokens": prepared.packed.estimatedTokens,
+            "session.context.size": prepared.packed.contextSize,
+          })
+        const attempt = ProviderDispatch.stream({
+          llm,
+          request: prepared.request,
+          enabled: budgetEnforced,
+          budget: thinkingBudget,
+        }).pipe(
+          Stream.runForEach((event) => {
+            if (LLMEvent.is.textDelta(event)) text.push(event.text)
+            else if (event.type === "reasoning-delta") reasoning.push(event.text)
+            else if (event.type === "step-finish" && event.usage !== undefined)
+              costTokens =
+                (event.usage.nonCachedInputTokens ?? event.usage.inputTokens ?? 0) + (event.usage.outputTokens ?? 0)
+            return Effect.void
+          }),
+        )
+        const result = yield* ProviderDispatch.run({
+          events,
+          scheduler,
+          sessionID: session.id,
+          slot: dispatchSlot,
+          maxAttempts: maxProviderAttempts,
+          hasOutput: () => text.length > 0 || reasoning.length > 0,
+          costTokens: () => costTokens,
+          attempt,
+        })
+        if (result._tag === "Failure") return yield* Effect.failCause(result.cause)
         // A1: a reasoning model can put the whole reply in the think channel — fall back rather
         // than hand the engine an empty introspection.
         return text.join("").trim() || reasoning.join("")
@@ -481,17 +530,47 @@ export const make = (dependencies: Dependencies) => {
           // The summary streams onto the SAME run message that carries the tool parts (single =
           // live actions; racing = the replayed winner's actions) — one message = the whole run.
           const publisher = runPublisher
-          yield* llm
-            .stream(
-              LLM.request({
-                model,
-                system: [SystemPart.make(prompts.system)],
-                messages: [Message.user(prompts.user)],
-                tools: [],
-                generation: { maxTokens: SessionStrict.SUMMARY_TOKENS },
-              }),
-            )
-            .pipe(Stream.runForEach((event) => publisher.publish(event)))
+          const prepared = ProviderDispatch.prepare({
+            request: LLM.request({
+              model,
+              system: [SystemPart.make(prompts.system)],
+              messages: [Message.user(prompts.user)],
+              tools: [],
+              generation: { maxTokens: SessionStrict.SUMMARY_TOKENS },
+            }),
+            promptCacheKey,
+            contextSize: model.route.defaults.limits?.context,
+            profile: ContextBudget.enabled(harness.context, resolved.contextBudget)
+              ? ContextBudget.resolve(harness.context, resolved.type)
+              : undefined,
+          })
+          let summaryOutput = false
+          const attempt = ProviderDispatch.stream({
+            llm,
+            request: prepared.request,
+            enabled: budgetEnforced,
+            budget: thinkingBudget,
+          }).pipe(
+            Stream.runForEach((event) => {
+              if (LLMEvent.is.textDelta(event) || LLMEvent.is.reasoningDelta(event)) summaryOutput = true
+              return publisher.publish(event)
+            }),
+          )
+          const dispatched = yield* ProviderDispatch.run({
+            events,
+            scheduler,
+            sessionID: session.id,
+            slot: dispatchSlot,
+            maxAttempts: maxProviderAttempts,
+            hasOutput: () => summaryOutput,
+            costTokens: () => {
+              if (publisher.hasProviderError()) return undefined
+              const settlement = publisher.stepSettlement()
+              return settlement === undefined ? undefined : settlement.tokens.input + settlement.tokens.output
+            },
+            attempt,
+          })
+          if (dispatched._tag === "Failure") yield* Effect.failCause(dispatched.cause)
           const settlement = publisher.stepSettlement()
           if (settlement !== undefined && !publisher.hasProviderError()) {
             const boundary = yield* captureEndBoundary()

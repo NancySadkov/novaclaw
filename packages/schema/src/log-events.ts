@@ -1838,7 +1838,7 @@ export const EVENTS = {
       "session.provider.message": "text",
     },
     content: "user",
-    file: "packages/core/src/session/runner/llm.ts",
+    file: "packages/core/src/session/runner/provider-dispatch.ts",
   },
   "session.provider.response.broken": {
     level: "warn",

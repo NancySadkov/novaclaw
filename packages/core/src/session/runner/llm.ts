@@ -9,10 +9,9 @@ import {
   SystemPart,
   isContextOverflowFailure,
   type FinishReason,
-  type LLMRequest,
   type ProviderErrorEvent,
 } from "@novaclaw/llm"
-import { Cause, DateTime, Duration, Effect, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
+import { Cause, DateTime, Duration, Effect, Exit, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
 import path from "path"
 import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
@@ -39,7 +38,6 @@ import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
 import { SessionInput } from "../input"
 import { SessionMessage } from "../message"
-import { Prompt } from "../prompt"
 import { SessionPatch } from "../patch"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
@@ -48,12 +46,7 @@ import { SessionComponentRegistry } from "../component-registry"
 import { Log } from "@novaclaw/schema/log"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 
-import {
-  resolveSessionConfig,
-  rootSessionType,
-  EFFECTIVE_CONFIG_DEFAULTS,
-  type EffectiveConfig,
-} from "../config-resolve"
+import { resolveSessionConfig, rootSessionType, EFFECTIVE_CONFIG_DEFAULTS } from "../config-resolve"
 import { AgentJail } from "../../agent-jail"
 import { MessengerStore } from "../../messenger/store"
 import { Offline } from "../../offline"
@@ -103,8 +96,8 @@ import {
 import { TextualCall } from "./textual-call"
 import { Introspection } from "./introspection"
 import { MAX_STEPS_PROMPT } from "./max-steps"
-import { ReasoningBudget } from "./reasoning-budget"
 import { ProviderRetry } from "./provider-retry"
+import { ProviderDispatch } from "./provider-dispatch"
 import { ProviderStreamLiveness } from "./provider-stream-liveness"
 import { Quality } from "./quality"
 import { QualityProvision } from "./quality-provision"
@@ -140,7 +133,7 @@ import { CalloutPolicy } from "../../callout-policy"
  *   - [x] Translate every projected V2 Session message variant into canonical
  *     `@novaclaw/llm` messages.
  *   - [ ] Resolve policy-filtered built-in, MCP, plugin, and structured-output tool definitions.
- *   - [x] Stream exactly one `llm.stream(request)` provider turn.
+ *   - [x] Stream each provider turn through the shared provider-dispatch bracket.
  *   - [x] Persist assistant text and usage events incrementally as they arrive.
  *   - [ ] Persist snapshots, patches, and retry notices incrementally as they arrive.
  *   - [x] Persist reasoning, provider errors, and tool-call events incrementally as they arrive.
@@ -163,7 +156,7 @@ import { CalloutPolicy } from "../../callout-policy"
  *     grounds the user and the model across compactions, generated while the user reads).
  *   - [ ] Update summaries, compaction state, and cleanup in bounded background work.
  *
- * Use `llm.stream(request)` for each provider turn. Keep tool execution and continuation here.
+ * Use `ProviderDispatch` for each provider turn. Keep tool execution and continuation here.
  * Durable continuation recovery remains a separate future slice with an explicit retry policy.
  *
  * The current slice loads V2 history, translates it, resolves a model through a core service, and persists one
@@ -491,14 +484,6 @@ export const layer = Layer.effect(
     // model toward its tiny answer. Its final mechanical backstop remains the best-effort
     // `chat_template_kwargs` switch for providers that support it. The other utility passes still use
     // that direct switch and should migrate through the same controller independently.
-    // True unless the turn explicitly disabled reasoning via a `chat_template_kwargs` overlay (what
-    // `maintenance.ts`'s utility passes send) — the thinking-budget controller only engages when the
-    // model is actually allowed to reason.
-    const thinkingEnabled = (req: LLMRequest): boolean => {
-      const body = req.http?.body as { chat_template_kwargs?: { enable_thinking?: boolean } } | undefined
-      return body?.chat_template_kwargs?.enable_thinking !== false
-    }
-
     const failInterruptedTools = Effect.fn("SessionRunner.failInterruptedTools")(function* (
       sessionID: SessionSchema.ID,
       faultMessage = "Tool execution interrupted",
@@ -863,7 +848,6 @@ export const layer = Layer.effect(
       }
       const fullRequest = LLM.request({
         model,
-        providerOptions: { openai: { promptCacheKey } },
         // Order + placement of the per-model pre-prompt live in system-compose.ts (a pure, tested
         // unit): the pre-prompt sits directly after the persona baseline; every other part keeps its
         // position, so an absent pre-prompt yields a byte-identical prompt to before the feature.
@@ -903,14 +887,16 @@ export const layer = Layer.effect(
       // server's HONORED window so an Ollama-class server never silently front-truncates the
       // system prompt away. Reached when compaction declined (window unknown, summary model
       // unavailable, or simply under ITS threshold) — history in the DB stays intact.
-      const packed = ContextPack.packRequest({
+      const preparedDispatch = ProviderDispatch.prepare({
         request: fullRequest,
+        promptCacheKey,
         contextSize: model.route.defaults.limits?.context,
         profile: ContextBudget.enabled(harness.context, config.contextBudget)
           ? ContextBudget.resolve(harness.context, config.type)
           : undefined,
         memoryRecall: recallMessage,
       })
+      const packed = preparedDispatch.packed
       if (packed.dropped > 0)
         yield* Log.event("session.context.pack.evicted", {
           "session.id": session.id,
@@ -918,9 +904,7 @@ export const layer = Layer.effect(
           "session.kept.tokens": packed.estimatedTokens,
           "session.context.size": packed.contextSize,
         })
-      const request = packed.changed
-        ? LLM.request({ ...LLM.requestInput(fullRequest), system: packed.system, messages: packed.messages })
-        : fullRequest
+      const request = preparedDispatch.request
       // Measured AFTER packing, because packing is what actually goes out — reading `fullRequest`
       // would report a request that was never sent and hide eviction entirely. Numbers only, at
       // `debug`: this fires every turn, and the value is the series rather than any one line.
@@ -968,14 +952,12 @@ export const layer = Layer.effect(
       // the model reasons to its own stop, which is what makes a budget change A/B-able in one chat without
       // editing the instance default. Absent = inherit the chain, then the model's own budget.
       const budgetEnforced = config.thinkingBudget ?? true
-      const budgetedSource =
-        budgetEnforced && thinkingBudget > 0 && !isLastStep && thinkingEnabled(request)
-          ? ReasoningBudget.stream({
-              request,
-              stream: (next) => llm.stream(next),
-              budget: thinkingBudget,
-            })
-          : llm.stream(request)
+      const budgetedSource = ProviderDispatch.stream({
+        llm,
+        request,
+        enabled: budgetEnforced && !isLastStep,
+        budget: thinkingBudget,
+      })
       // STEER INTERRUPT (owner 2026-07-26). Reasoning and the answer can be cut safely — the only thing that
       // must not be interrupted is a TOOL, because a half-written file or a half-sent message is real damage.
       // So a durable steer arriving mid-generation stops the stream at the next event and the following step
@@ -1091,39 +1073,9 @@ export const layer = Layer.effect(
         Effect.ensuring(withPublication(publisher.flush())),
       )
 
-      // Scheduler admission (notes/scheduler.md): interactive dispatches immediately;
-      // batch-class sessions wait for idle device cycles. The slot covers GENERATION
-      // only — released right after the provider stream settles, BEFORE tool
-      // settlement, so a parent blocking on `wait` never holds the device against
-      // its own child.
-      // ⚠️ The in-band release below is NOT reached on an interrupt. The retry sleep is the
-      // one await in this block that is not wrapped in `Effect.exit`, so a Stop landing in
-      // the backoff window propagates straight out of the generator — and idempotency does
-      // not help when `release` is never CALLED at all. A leaked INTERACTIVE entry
-      // permanently zeroes `batchCapacity` for that device (scheduler.ts: capacity requires
-      // `inFlightInteractive.size === 0`), so every batch session on it blocks forever; a
-      // leaked batch entry burns one of MAX_BATCH slots.
-      //
-      // The `Effect.ensuring` net below is the CHOSEN and COMPLETE remedy — this is not a
-      // known gap awaiting a follow-up. The obvious alternative, wrapping the retry sleep in
-      // `Effect.exit` like its two neighbours, is strictly WORSE, and measurably so: an
-      // `Effect.exit` turns the interrupt into a VALUE, so the Stop no longer leaves at the
-      // sleep — it falls through this entire post-generation tail (measured 2026-07-28 on a
-      // model of this exact composition: unwrapped stops at the sleep; wrapped runs
-      // second-attempt → release → tool-await → every publish → end). It does not HANG: the
-      // tail's own `restore(...)`+`Effect.exit` boundaries re-raise the pending interrupt at
-      // once rather than waiting on tool settlement. What it costs is a redundant provider
-      // attempt, `failUnsettledTools`/`failAssistant` publishes and a `patchSessionRecord`
-      // write on the one path that must stay prompt and quiet — plus it drives an
-      // already-interrupted fiber through the `recoverOverflow` restore below, which is NOT
-      // exit-wrapped and is safe here only by short-circuit. All of that to reach the same
-      // final interrupt exit, for a leak `ensuring` already closes with ZERO change to
-      // interrupt timing. So: do not wrap the sleep.
-      //
-      // The net is composed so the finalizer is installed BEFORE `admit` runs — that also
-      // covers the window between admission and the mask. `admit` itself stays INTERRUPTIBLE
-      // on purpose: a queued batch turn must remain stoppable, and its own `onInterrupt`
-      // drops the waiter (releasing a slot that was never held is a no-op).
+      // `ProviderDispatch.run` owns scheduler admission, bounded pre-output retry, fairness
+      // accounting and unconditional release for BOTH engines. Its slot covers generation only;
+      // tool settlement below therefore cannot deadlock a parent against its own child.
       // ⚠️ A DEVICE IS A BACKEND, NOT A MODEL. This was `${model.provider}/${model.id}`, so two
       // models served by ONE vLLM process were two devices with independent `MAX_BATCH` capacity
       // and separate fairness ledgers — a claim about the hardware that is false, and one that
@@ -1139,48 +1091,8 @@ export const layer = Layer.effect(
         sessionClass: SessionScheduler.classForSessionType(config.type),
         ...(config.priority > 0 ? { priority: config.priority } : {}),
       }
-      const generation = Effect.uninterruptibleMask((restore) =>
+      const generation = (stream: Exit.Exit<void, LLMError>, restore: ProviderDispatch.Restore) =>
         Effect.gen(function* () {
-          // 1D — transient failures and malformed replies which produced no durable assistant
-          // output reconnect in-place. A malformed tail AFTER output is accepted below as a
-          // `broken` turn and continued as a new request, so tool side effects are never replayed.
-          let attempt = 1
-          let stream = yield* restore(providerStream).pipe(Effect.exit)
-          while (stream._tag === "Failure" && !Cause.hasInterrupts(stream.cause)) {
-            if (publisher.hasAssistantStarted() || attempt >= maxProviderAttempts) break
-            const transient = Option.getOrUndefined(Cause.findErrorOption(stream.cause))
-            if (!ProviderRetry.isRetryableBeforeOutput(transient)) break
-            const delay = ProviderRetry.retryDelayMs(attempt, transient.retryAfterMs)
-            yield* Log.event("session.provider.attempt.retry", {
-              "session.id": session.id,
-              attempt,
-              "session.attempts.max": maxProviderAttempts,
-              "session.provider.reason": transient.reason._tag,
-              "session.provider.message": transient.message,
-            })
-            // Retry state is durable UI feedback, not a debug log. It is published before the sleep
-            // so even a pre-stream failure (no assistant row yet) tells the user what Nova is doing.
-            yield* events
-              .publish(SessionStatusEvent.Status, {
-                sessionID: session.id,
-                status: {
-                  type: "retry",
-                  attempt: attempt + 1,
-                  message: ProviderRetry.statusMessage(transient),
-                  next: Date.now() + delay,
-                },
-              })
-              .pipe(Effect.ignore)
-            yield* restore(Effect.sleep(Duration.millis(delay)))
-            attempt++
-            yield* events
-              .publish(SessionStatusEvent.Status, { sessionID: session.id, status: { type: "busy" } })
-              .pipe(Effect.ignore)
-            stream = yield* restore(providerStream).pipe(Effect.exit)
-          }
-          // Generation is over (success or not): free the device slot before tool
-          // settlement and everything after.
-          yield* scheduler.release(dispatchSlot)
           const failure =
             stream._tag === "Failure" ? Option.getOrUndefined(Cause.findErrorOption(stream.cause)) : undefined
           if (
@@ -1357,12 +1269,6 @@ export const layer = Layer.effect(
                 files,
               }),
             )
-            // Scheduler fairness accounting: charge the turn's measured compute to the
-            // EEVDF ledger (uncached input + output — cache reads are nearly free).
-            yield* scheduler.report({
-              ...dispatchSlot,
-              costTokens: stepSettlement.tokens.input + stepSettlement.tokens.output,
-            })
             // ps freshness (owner 2026-07-22): Step.Ended's projection just folded this step's
             // tokens into the session row (applyUsage), but nothing published the record — task
             // managers kept a stale token count until reload. Re-publish the full record so the
@@ -1414,8 +1320,7 @@ export const layer = Layer.effect(
             maxProviderAttempts,
             offeredTools: toolMaterialization?.definitions.map((definition) => definition.name) ?? [],
           }
-        }),
-      )
+        })
       const attemptID = EventV2.ID.create()
       const startedAt = yield* DateTime.now
       const providerRecovery = {
@@ -1431,9 +1336,23 @@ export const layer = Layer.effect(
         timestamp: startedAt,
         recovery: providerRecovery,
       })
-      return yield* scheduler.admit(dispatchSlot).pipe(
-        Effect.andThen(generation),
-        Effect.ensuring(scheduler.release(dispatchSlot)),
+      return yield* ProviderDispatch.runAndSettle(
+        {
+          events,
+          scheduler,
+          sessionID: session.id,
+          slot: dispatchSlot,
+          maxAttempts: maxProviderAttempts,
+          hasOutput: publisher.hasAssistantStarted,
+          costTokens: () => {
+            if (publisher.hasProviderError()) return undefined
+            const settlement = publisher.stepSettlement()
+            return settlement === undefined ? undefined : settlement.tokens.input + settlement.tokens.output
+          },
+          attempt: providerStream,
+        },
+        generation,
+      ).pipe(
         Effect.onExit((exit) =>
           events
             .publish(SessionEvent.ProviderAttempt.Settled, {
@@ -1540,6 +1459,7 @@ export const layer = Layer.effect(
       messengerStore,
       offline,
       maintenance,
+      scheduler,
       db,
     })
 

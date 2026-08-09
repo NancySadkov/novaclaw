@@ -258,7 +258,7 @@ describe("ledger retention: bounded by the forgiveness TTL, not by session lifet
   })
 })
 
-// ── the dispatch-slot leak (runner/llm.ts) ────────────────────────────────────────────────────
+// ── the dispatch-slot leak (runner/provider-dispatch.ts) ──────────────────────────────────────
 //
 // `runTurnAttempt` admits, then runs the provider stream inside an `uninterruptibleMask` with a
 // backoff sleep between retries. The two stream runs are wrapped in `Effect.exit`, so an interrupt
@@ -277,9 +277,9 @@ describe("ledger retention: bounded by the forgiveness TTL, not by session lifet
 // drives an interrupted fiber through `recoverOverflow`'s non-exit-wrapped restore. The net fixes
 // the leak with ZERO change to interrupt timing; the sleep stays bare on purpose.
 //
-// This models that exact composition against the real gate. It cannot execute `llm.ts` (the fast
-// suite never does), so the source assertion below pins the invariant in the file itself.
-describe("dispatch-slot release on interrupt (runner/llm.ts composition)", () => {
+// This models that exact composition against the real gate. The source assertion below pins the
+// invariant in the one shared provider-dispatch bracket both engines consume.
+describe("dispatch-slot release on interrupt (shared provider-dispatch composition)", () => {
   const turn = (gate: ReturnType<typeof make>, slot: { sessionID: string; deviceKey: string }, guarded: boolean) => {
     const generation = Effect.uninterruptibleMask((restore) =>
       Effect.gen(function* () {
@@ -332,12 +332,12 @@ describe("dispatch-slot release on interrupt (runner/llm.ts composition)", () =>
     await run(Fiber.interrupt(blocked))
   })
 
-  test("runner/llm.ts guards the dispatch slot with Effect.ensuring — and leaves the sleep bare", () => {
+  test("provider-dispatch.ts guards the slot with Effect.ensuring — and leaves the sleep bare", () => {
     // A source assertion, deliberately: removing the net compiles green, and nothing in the fast
-    // suite executes `llm.ts` (session-runner.test.ts is win32-skipped and wedges from source), so
-    // the behavioural tests above would keep passing against their local copy of the shape.
-    const source = fs.readFileSync(path.join(import.meta.dir, "runner", "llm.ts"), "utf8")
-    expect(source).toContain("Effect.ensuring(scheduler.release(dispatchSlot))")
+    // engine contract observes this exact interrupt window, so the behavioural tests
+    // above would keep passing against their local copy of the shape.
+    const source = fs.readFileSync(path.join(import.meta.dir, "runner", "provider-dispatch.ts"), "utf8")
+    expect(source).toContain("Effect.ensuring(input.scheduler.release(input.slot))")
     // The other half of the decision: the retry sleep must stay un-exit-wrapped, so a Stop still
     // exits AT the sleep instead of falling through the post-generation tail. `Effect.exit` on it
     // would look like a tightening and would silently lengthen the Stop path.

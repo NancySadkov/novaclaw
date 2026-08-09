@@ -58,6 +58,9 @@ describe("SessionRunnerLLM — Strict dispatch contract", () => {
     expect(route!.generation?.maxTokens, "the router keeps its bounded classification budget").toBe(
       SessionStrict.ROUTE_TOKENS,
     )
+    expect(route!.providerOptions?.openai, "Strict shares the session prompt-cache identity").toMatchObject({
+      promptCacheKey: HARNESS_SESSION,
+    })
     expect(userTexts(route!), "Strict receives the exact pending task").toEqual(["Hello Strict"])
     expect(normal!.tools.length, "CHAT falls through to the tool-capable shared dispatch").toBeGreaterThan(0)
 
@@ -69,7 +72,9 @@ describe("SessionRunnerLLM — Strict dispatch contract", () => {
         content: [{ type: "text", text: "Hello from the normal drain." }],
       },
     ])
-    expect(JSON.stringify(context), "the internal CHAT verdict is never shown as the answer").not.toContain('"text":"CHAT"')
+    expect(JSON.stringify(context), "the internal CHAT verdict is never shown as the answer").not.toContain(
+      '"text":"CHAT"',
+    )
   }, 60_000)
 
   test("a TASK materializes its action and settles one restorable snapshot boundary", async () => {
@@ -126,6 +131,12 @@ describe("SessionRunnerLLM — Strict dispatch contract", () => {
     )
 
     expect(harness.requests, "route + root retry + root plan + leaf + goal check + summary").toHaveLength(6)
+    for (const request of harness.requests)
+      expect(request.providerOptions?.openai, "every Strict completion shares the prompt-cache identity").toMatchObject(
+        {
+          promptCacheKey: HARNESS_SESSION,
+        },
+      )
     expect(harness.snapshotCaptures.map(String), "one boundary before and one after the engine").toEqual([
       "snapshot_1",
       "snapshot_2",
