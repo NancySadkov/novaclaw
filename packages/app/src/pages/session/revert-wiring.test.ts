@@ -22,6 +22,7 @@ import { join } from "node:path"
 const read = (...segments: string[]) => readFileSync(join(import.meta.dir, ...segments), "utf8")
 
 const commands = read("use-session-commands.tsx")
+const controller = read("revert-controller.ts")
 const page = read("..", "session.tsx")
 const timeline = read("timeline", "native-timeline.tsx")
 const model = read("timeline", "model.ts")
@@ -59,7 +60,10 @@ describe("revert wiring", () => {
   test("both revert mutations refetch the session record after staging", () => {
     // The server projector writes the boundary to SessionTable directly and publishes no
     // `session.updated`, so this refetch is the only thing that puts it in the client record.
-    const staging = page.slice(page.indexOf("const revertMutation"), page.indexOf("const reverting"))
+    const staging = controller.slice(
+      controller.indexOf("const revertMutation"),
+      controller.indexOf("const reverting"),
+    )
     expect(staging.match(/client\.v2\.session\.get\(/g)?.length).toBe(2)
   })
 
@@ -83,22 +87,20 @@ describe("revert wiring", () => {
 
   test("every commit boundary is computed over the FULL message list", () => {
     for (const name of ["discardRolled", "revertToPrompt"]) {
-      const body = fn(page, name)
-      expect(body).toContain("commitBoundaryID(serverSync().nativeMessages.messages(sessionID) ?? [], ")
+      const body = fn(controller, name)
+      expect(body).toContain("commitBoundaryID(input.serverSync().nativeMessages.messages(sessionID) ?? [], ")
       // `userMessages()` here anchors on the previous PROMPT and takes the intervening reply with it.
       expect(body).not.toContain("userMessages()")
     }
   })
 
   test("the dock's Discard still routes through the one commit sequence", () => {
-    expect(fn(page, "discardRolled")).toContain("commitRevertTo(sessionID, boundaryID)")
-    expect(fn(page, "revertToPrompt")).toContain("commitRevertTo(sessionID, boundaryID)")
+    expect(fn(controller, "discardRolled")).toContain("commitRevertTo(sessionID, boundaryID)")
+    expect(fn(controller, "revertToPrompt")).toContain("commitRevertTo(sessionID, boundaryID)")
     // Reversible until Discard: staging alone must never reach `revert.commit`.
-    const commit = page.indexOf("client.v2.session.revert.commit(")
+    const commit = controller.indexOf("client.v2.session.revert.commit(")
     expect(commit).toBeGreaterThan(-1)
-    expect(page.slice(page.indexOf("const commitRevertTo"), page.indexOf("Discard the rolled-back"))).toContain(
-      "client.v2.session.revert.commit(",
-    )
-    expect(page.match(/client\.v2\.session\.revert\.commit\(/g)?.length).toBe(1)
+    expect(fn(controller, "commitRevertTo")).toContain("client.v2.session.revert.commit(")
+    expect(controller.match(/client\.v2\.session\.revert\.commit\(/g)?.length).toBe(1)
   })
 })

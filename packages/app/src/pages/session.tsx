@@ -1,8 +1,6 @@
-import type { SessionMessageUser, V2Event } from "@novaclaw/sdk/v2/client"
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import { createQuery, skipToken, useMutation, useQueryClient } from "@tanstack/solid-query"
+import { createQuery, skipToken, useQueryClient } from "@tanstack/solid-query"
 import {
-  batch,
   onCleanup,
   Show,
   Match,
@@ -36,7 +34,7 @@ import { useComments } from "@/context/comments"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
-import { usePrompt, DEFAULT_PROMPT } from "@/context/prompt"
+import { usePrompt } from "@/context/prompt"
 import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
 import { useServerSDK } from "@/context/server-sdk"
@@ -61,7 +59,7 @@ import {
 } from "@/pages/session/helpers"
 import { NativeTimeline } from "@/pages/session/timeline/native-timeline"
 import { createTimelineModel } from "@/pages/session/timeline/model"
-import { commitBoundaryID, nextMessageID, selectRolledMessages } from "@/pages/session/revert-view"
+import { createSessionRevertController } from "@/pages/session/revert-controller"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
@@ -73,8 +71,6 @@ import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
 import { Identifier } from "@/utils/id"
 import { diffs as list } from "@/utils/diffs"
 import { Persist, persisted } from "@/utils/persist"
-import { promptFromUserMessage } from "@/utils/prompt"
-import { formatServerError } from "@/utils/server-errors"
 import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/session-route"
 import { createSessionOwnership } from "./session/session-ownership"
 import { createReviewController, resolveReviewSource, type ChangeMode } from "./session/review-source"
@@ -87,29 +83,6 @@ const sessionViewState = () => ({
   mobileTab: "session" as "session" | "changes",
   changes: "git" as ChangeMode,
 })
-
-async function runPromptRollbackMutation<T, R>(input: {
-  capturePrompt: () => { current: () => T[]; set: (value: T[]) => void; reset: () => void }
-  optimistic: (prompt: { set: (value: T[]) => void; reset: () => void }) => void
-  request: () => Promise<R>
-  complete: (result: R) => void
-  rollback: () => void
-  fail: (error: unknown) => void
-}) {
-  const prompt = input.capturePrompt()
-  const previous = prompt.current().slice()
-  batch(() => input.optimistic(prompt))
-  await input
-    .request()
-    .then(input.complete)
-    .catch((error) => {
-      batch(() => {
-        input.rollback()
-        prompt.set(previous)
-      })
-      input.fail(error)
-    })
-}
 
 export default function Page() {
   const serverSync = useServerSync()
@@ -757,6 +730,30 @@ export default function Page() {
     inputRef?.focus()
   }
 
+  const revertController = createSessionRevertController({
+    sessionID: () => params.id,
+    revertMessageID,
+    userMessages,
+    sdk,
+    serverSync,
+    sync,
+    prompt,
+    language,
+    confirm,
+  })
+  const {
+    busy,
+    chooseAnotherModel,
+    discardRolled,
+    restore,
+    restoring,
+    retryFailedTurn,
+    revert,
+    reverting,
+    revertToPrompt,
+    rolled,
+  } = revertController
+
   useComposerCommands()
   useSessionCommands({
     navigateMessageByOffset,
@@ -766,9 +763,6 @@ export default function Page() {
     // `/undo` and `/redo` route through the SAME two mutations as the revert dock. They used to
     // call `client.v2.session.revert.stage` directly and skipped the record refetch, so the client
     // never learned a revert was staged: no dock, no hidden messages, no error toast on failure.
-    // ⚠️ These thunks are declared before `revert`/`restore` are initialised further down this
-    // component body; that is fine because the binding is only READ when a command fires, long
-    // after the body has run. Do not inline `revert` itself here.
     stageRevert: (messageID) => (params.id ? revert({ sessionID: params.id, messageID }) : undefined),
     restoreRevert: (messageID) => restore(messageID),
   })
@@ -1241,300 +1235,6 @@ export default function Page() {
       { defer: true },
     ),
   )
-
-  // F1e S5: reconstruct a user turn's composer prompt from the native SessionMessage
-  // store (undo/rollback restore). The user message lives in the open session (params.id).
-  const nativeUser = (id: string) => {
-    const sid = params.id
-    if (!sid) return undefined
-    return (serverSync().nativeMessages.messages(sid) ?? []).find(
-      (m): m is SessionMessageUser => m.type === "user" && m.id === id,
-    )
-  }
-
-  const draft = (id: string) => {
-    const msg = nativeUser(id)
-    if (!msg) return DEFAULT_PROMPT
-    return promptFromUserMessage(msg, {
-      directory: sdk().directory,
-      attachmentName: language.t("common.attachment"),
-    })
-  }
-
-  const line = (id: string) => {
-    const text = draft(id)
-      .map((part) => (part.type === "image" ? `[image:${part.filename}]` : part.content))
-      .join("")
-      .replace(/\s+/g, " ")
-      .trim()
-    if (text) return text
-    return `[${language.t("common.attachment")}]`
-  }
-
-  const fail = (err: unknown) => {
-    showToast({
-      variant: "error",
-      title: language.t("common.requestFailed"),
-      description: formatServerError(err, language.t),
-    })
-  }
-
-  const retryFailedTurn = async (_messageID: string) => {
-    const sessionID = params.id
-    if (!sessionID) return
-    try {
-      await sdk().client.v2.session.prompt({
-        sessionID,
-        prompt: {
-          text: "Retry the failed turn. First inspect the conversation and workspace state, then continue without repeating any action that already completed.",
-        },
-      })
-    } catch (error) {
-      fail(error)
-      throw error
-    }
-  }
-
-  const chooseAnotherModel = () => {
-    const trigger = document.querySelector<HTMLButtonElement>('[data-action="prompt-model"]')
-    if (!trigger) return
-    trigger.click()
-    trigger.focus()
-  }
-
-  const merge = (next: NonNullable<ReturnType<typeof info>>, target = sync()) => target.session.remember(next)
-
-  const roll = (sessionID: string, next: NonNullable<ReturnType<typeof info>>["revert"], target = sync()) => {
-    const session = target.session.get(sessionID)
-    if (!session) return
-    target.session.remember({ ...session, revert: next })
-  }
-
-  const busy = (sessionID: string) => sync().data.session_working(sessionID)
-
-  const halt = (sessionID: string) =>
-    busy(sessionID)
-      ? sdk()
-          .client.v2.session.interrupt({ sessionID })
-          .catch(() => {})
-      : Promise.resolve()
-
-  const revertMutation = useMutation(() => ({
-    mutationFn: async (input: { sessionID: string; messageID: string }) => {
-      const client = sdk().client
-      const target = sync()
-      const last = target.session.get(input.sessionID)?.revert
-      const value = draft(input.messageID)
-      await runPromptRollbackMutation({
-        capturePrompt: prompt.capture,
-        optimistic: (prompt) => {
-          roll(input.sessionID, { messageID: input.messageID }, target)
-          prompt.set(value)
-        },
-        // ⚠️ This refetch is the ONLY thing that puts the staged boundary into the client record —
-        // it is not an eager optimisation. `revert.stage` publishes `session.next.revert.staged`,
-        // which the server PROJECTOR writes straight to `SessionTable`; no `patchSessionRecord`
-        // runs, so no `session.updated` is ever published and nothing on the client converges on
-        // its own. A caller that stages without coming through here leaves the record blank, the
-        // dock unrendered and the reverted turn still drawn (owner-reported twice; the earlier
-        // comment here claimed the opposite and is why `/undo` shipped broken).
-        request: () =>
-          halt(input.sessionID)
-            .then(() => client.v2.session.revert.stage(input))
-            .then(() => client.v2.session.get({ sessionID: input.sessionID })),
-        complete: (result) => {
-          const info = result.data?.data
-          if (info) merge(info, target)
-        },
-        rollback: () => roll(input.sessionID, last, target),
-        fail,
-      })
-    },
-  }))
-
-  /**
-   * Move the boundary FORWARD one prompt, or clear it when there is nothing left to put back. This
-   * is both the dock's Restore and the `/redo` command — one implementation, because the two
-   * hand-written copies of it are what let `/undo` and the Revert button diverge.
-   */
-  const restoreMutation = useMutation(() => ({
-    mutationFn: async (id: string) => {
-      const sessionID = params.id
-      if (!sessionID) return
-
-      const client = sdk().client
-      const target = sync()
-      const next = nextMessageID(userMessages(), id)
-      const last = target.session.get(sessionID)?.revert
-
-      await runPromptRollbackMutation({
-        capturePrompt: prompt.capture,
-        optimistic: (promptSession) => {
-          roll(sessionID, next ? { messageID: next } : undefined, target)
-          if (next) {
-            promptSession.set(draft(next))
-            return
-          }
-          promptSession.reset()
-        },
-        request: () =>
-          (!next
-            ? halt(sessionID).then(() => client.v2.session.revert.clear({ sessionID }))
-            : halt(sessionID).then(() => client.v2.session.revert.stage({ sessionID, messageID: next }))
-          ).then(() => client.v2.session.get({ sessionID })),
-        complete: (result) => {
-          const info = result.data?.data
-          if (info) merge(info, target)
-        },
-        rollback: () => roll(sessionID, last, target),
-        fail,
-      })
-    },
-  }))
-
-  const reverting = createMemo(() => revertMutation.isPending || restoreMutation.isPending)
-  const restoring = createMemo(() => (restoreMutation.isPending ? restoreMutation.variables : undefined))
-
-  const revert = (input: { sessionID: string; messageID: string }) => {
-    if (reverting()) return
-    return revertMutation.mutateAsync(input)
-  }
-
-  const restore = (id: string) => {
-    if (!params.id || reverting()) return
-    return restoreMutation.mutateAsync(id)
-  }
-
-  // What the dock names: the exact complement of what the transcript still draws. Both sides read
-  // `session/revert-view.ts` so they cannot drift apart again.
-  const rolled = createMemo(() =>
-    selectRolledMessages(userMessages(), revertMessageID()).map((item) => ({ id: item.id, text: line(item.id) })),
-  )
-
-  /**
-   * Make a revert PERMANENT at `boundaryID`, and converge the client. The one place in the app where
-   * a staged revert stops being reversible — `revertToPrompt` and the dock's Discard both go through
-   * here rather than each assembling the sequence, because the middle step is a workaround that is
-   * easy to omit and invisible when omitted.
-   *
-   * ⚠️ `commit` deletes everything strictly AFTER its boundary, so the caller must pass the message
-   * BEFORE the first one it wants gone (or the `msg_` sentinel for "everything").
-   *
-   * ⚠️ The `nativeMessages.apply` is not belt-and-braces: the commit deletes server-side, but the
-   * native store MERGES on load and never drops server-deleted rows, so without driving the prune
-   * directly the transcript keeps showing what the server no longer has. Idempotent with the SSE
-   * `revert.committed` event that follows.
-   */
-  const commitRevertTo = async (sessionID: string, boundaryID: string) => {
-    const client = sdk().client
-    await client.v2.session.revert.stage({ sessionID, messageID: boundaryID })
-    await client.v2.session.revert.commit({ sessionID })
-    serverSync().nativeMessages.apply({
-      type: "session.next.revert.committed",
-      data: { sessionID, messageID: boundaryID },
-    } as unknown as V2Event)
-    const rec = await client.v2.session.get({ sessionID })
-    if (rec.data?.data) merge(rec.data.data)
-  }
-
-  /**
-   * Discard the rolled-back messages for good — the second exit from a staged revert.
-   *
-   * A staged revert has exactly two resolutions: put it back (`restore`) or make it permanent. The
-   * dock offered only the first, and the per-message DELETE endpoint that V1 had was retired in the
-   * native-transcript migration with no successor, so there was no route to the second at all —
-   * messages sat visible-but-unactionable in the dock forever
-   * ([issue #13](https://github.com/NancySadkov/novaclaw/issues/13)).
-   *
-   * ⚠️ The boundary is the message BEFORE the staged one, not the staged one. `rolled()` includes the
-   * boundary message itself while the transcript hides from it onward, so committing the staged
-   * boundary directly would delete everything after it and then RESURRECT the first message the user
-   * asked to discard. `commitBoundaryID` owns that step-back for `revertToPrompt` too.
-   *
-   * ⚠️ And it steps back over the FULL message list, not the user messages. This used to read
-   * `userMessages()`, so the anchor landed on the PREVIOUS PROMPT and `commit` (which deletes every
-   * row with `seq > boundary.seq`) also destroyed the assistant reply sitting between the two — one
-   * turn more than the user asked to discard, unrecoverable, and invisible until after the confirm.
-   *
-   * Confirm-gated because it converts a deliberately reversible command into a terminal one. Without
-   * that, `/undo` would stop being safe to explore with — which is most of why it exists.
-   */
-  const discardRolled = async () => {
-    const sessionID = params.id
-    const staged = revertMessageID()
-    if (!sessionID || !staged || reverting()) return
-    const boundaryID = commitBoundaryID(serverSync().nativeMessages.messages(sessionID) ?? [], staged)
-    if (!boundaryID) return
-    const proceed = await confirm({
-      title: language.t("session.revertDock.discard.confirm.title"),
-      description: language.t("session.revertDock.discard.confirm.description", { count: rolled().length }),
-      confirmLabel: language.t("session.revertDock.discard.confirm.action"),
-      destructive: true,
-    })
-    if (!proceed) return
-    try {
-      await halt(sessionID)
-      await commitRevertTo(sessionID, boundaryID)
-    } catch (error) {
-      console.error("discard rolled-back messages failed", { sessionID, boundaryID, error })
-      showToast({
-        variant: "error",
-        title: language.t("common.requestFailed"),
-        description: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }
-
-  // Per-user-prompt "revert to this prompt" button (native transcript). A confirmed, decisive
-  // rewind to the state *before* this prompt: restore the working files to that point (stage) and
-  // permanently delete this prompt and everything after it (commit), then drop the prompt's text
-  // into the composer to edit and resend. The commit boundary is the message BEFORE the prompt —
-  // `commit` deletes everything AFTER its boundary, so anchoring on the previous message removes the
-  // prompt itself too (leaving a clean, non-dangling transcript). Unlike the staged `/undo`, it
-  // leaves NO revert boundary, so continuing the chat behaves normally. Gated behind a confirm so an
-  // accidental click never discards a run (uix.md §3.4 — destructive actions confirm first).
-  let revertingPrompt = false
-  const revertToPrompt = async (messageID: string) => {
-    const sessionID = params.id
-    if (!sessionID || revertingPrompt || reverting()) return
-    // The commit boundary is the message immediately before this prompt: the revert KEEPS the boundary
-    // and drops everything after, so keeping the predecessor deletes this prompt and its turn. When
-    // this is the FIRST visible prompt, rewind to the empty session via the "before everything"
-    // sentinel (`msg_` — sorts before every real id) so the prompt itself is dropped too. The native
-    // list does contain initial agent/model setup markers before that prompt; `commitBoundaryID`
-    // deliberately collapses an all-setup prefix to the sentinel, or the last marker survives as a
-    // phantom chat row (owner-hit again 2026-08-03).
-    const boundaryID = commitBoundaryID(serverSync().nativeMessages.messages(sessionID) ?? [], messageID)
-    if (!boundaryID) return
-    const proceed = await confirm({
-      title: language.t("session.revert.confirm.title"),
-      description: language.t("session.revert.confirm.description"),
-      confirmLabel: language.t("session.revert.confirm.action"),
-      destructive: true,
-    })
-    if (!proceed) return
-    // Capture the prompt's composer draft before it is pruned from the store.
-    const draftValue = draft(messageID)
-    revertingPrompt = true
-    const client = sdk().client
-    const promptSession = prompt.capture()
-    try {
-      await halt(sessionID)
-      // The stage → commit → prune → refetch sequence lives in ONE place; see `commitRevertTo`.
-      await commitRevertTo(sessionID, boundaryID)
-      // Load the reverted prompt into the composer so it can be edited and resent.
-      promptSession.set(draftValue)
-    } catch (error) {
-      console.error("revert to prompt failed", { sessionID, messageID, error })
-      showToast({
-        variant: "error",
-        title: language.t("session.revert.error.title"),
-        description: language.t("session.revert.error.description"),
-      })
-    } finally {
-      revertingPrompt = false
-    }
-  }
 
   createResizeObserver(
     () => promptDock,
