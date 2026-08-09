@@ -7,6 +7,7 @@ import { Config } from "@novaclaw/core/config"
 import { ConfigProjection } from "@novaclaw/core/config-projection"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { CapabilityRegistry } from "@novaclaw/core/effect/capability-registry"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { SessionV2 } from "@novaclaw/core/session"
@@ -46,6 +47,15 @@ const outputStore = Layer.mock(ToolOutputStore.Service, {
 })
 
 const configStub = Layer.succeed(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) }))
+
+const emptyCapabilities = Layer.succeed(
+  CapabilityRegistry.Service,
+  CapabilityRegistry.Service.of({
+    inspect: () => Effect.succeed([]),
+    lines: () => Effect.succeed([]),
+    retry: (name) => Effect.fail(new CapabilityRegistry.NotFoundError({ name })),
+  }),
+)
 
 /** Every `permission.assert` the tool made, in order — the subject of the ruling-4 suite. */
 type Asserted = {
@@ -89,6 +99,7 @@ const withTool = <A, E, R>(
     settings: SettingsConfigStore.Interface
     catalog: CatalogStore.Interface
   }) => Effect.Effect<A, E, R>,
+  capabilityLayer: Layer.Layer<CapabilityRegistry.Service> = emptyCapabilities,
 ) =>
   Effect.gen(function* () {
     return yield* body({
@@ -111,6 +122,7 @@ const withTool = <A, E, R>(
           [ToolOutputStore.node, outputStore],
           [PermissionV2.node, permission],
           [Config.node, configStub],
+          [CapabilityRegistry.node, capabilityLayer],
         ],
       ),
     ),
@@ -460,6 +472,57 @@ describe("the tool reaches EVERY store the router writes to", () => {
           "skills",
         ])
       }),
+    )
+  })
+})
+
+describe("capability repair: retry the live refusal without restarting", () => {
+  it.live("delegates to the registry and reports the state returned by the new attempt", () => {
+    const retried: string[] = []
+    const capabilityLayer = Layer.succeed(
+      CapabilityRegistry.Service,
+      CapabilityRegistry.Service.of({
+        inspect: () => Effect.succeed([{ name: "memory", status: { state: "idle" as const } }]),
+        lines: () => Effect.succeed([]),
+        retry: (name) =>
+          Effect.sync(() => {
+            retried.push(name)
+            return { state: "ready" as const, since: 123 }
+          }),
+      }),
+    )
+    return withTool(
+      recording([]),
+      ({ registry }) =>
+        Effect.gen(function* () {
+          const result = yield* call(registry, { op: "retry", capability: "memory" })
+          expect(result.type).toBe("text")
+          expect(textOf(result)).toBe('Capability "memory" is ready after retry.')
+          expect(retried).toEqual(["memory"])
+        }),
+      capabilityLayer,
+    )
+  })
+
+  it.live("names an unknown target and lists the capabilities this graph actually declares", () => {
+    const capabilityLayer = Layer.succeed(
+      CapabilityRegistry.Service,
+      CapabilityRegistry.Service.of({
+        inspect: () => Effect.succeed([{ name: "memory", status: { state: "idle" as const } }]),
+        lines: () => Effect.succeed([]),
+        retry: (name) => Effect.fail(new CapabilityRegistry.NotFoundError({ name })),
+      }),
+    )
+    return withTool(
+      recording([]),
+      ({ registry }) =>
+        Effect.gen(function* () {
+          const result = yield* call(registry, { op: "retry", capability: "not-real" })
+          expect(result.type).toBe("error")
+          expect(textOf(result)).toContain('no capability named "not-real"')
+          expect(textOf(result)).toContain("Available capabilities: memory")
+        }),
+      capabilityLayer,
     )
   })
 })
@@ -974,7 +1037,9 @@ describe("a repair the schema op describes actually lands", () => {
           op: "set",
           config: {
             providers: {
-              drill: { models: { "holo3.1": { request: { body: { chat_template_kwargs: { enable_thinking: false } } } } } },
+              drill: {
+                models: { "holo3.1": { request: { body: { chat_template_kwargs: { enable_thinking: false } } } } },
+              },
             },
           },
         })
@@ -1143,7 +1208,8 @@ describe("configure remove — the agent's half of the deletion verb", () => {
         const stored = (yield* settings.all()).mcp as { servers: Record<string, unknown> }
         expect(Object.keys(stored.servers)).toEqual(["filesystem"])
       }),
-    ))
+    ),
+  )
 
   it.live("an unknown top-level key is refused by name, before any card is raised", () => {
     const asserted: Asserted[] = []
@@ -1159,12 +1225,11 @@ describe("configure remove — the agent's half of the deletion verb", () => {
   })
 
   it.live("an empty path list is refused rather than reported as a successful no-op", () =>
-    withTool(
-      recording([]),
-      ({ registry }) =>
-        Effect.gen(function* () {
-          const result = yield* call(registry, { op: "remove", paths: [] })
-          expect(textOf(result)).toContain("Nothing was removed")
-        }),
-    ))
+    withTool(recording([]), ({ registry }) =>
+      Effect.gen(function* () {
+        const result = yield* call(registry, { op: "remove", paths: [] })
+        expect(textOf(result)).toContain("Nothing was removed")
+      }),
+    ),
+  )
 })

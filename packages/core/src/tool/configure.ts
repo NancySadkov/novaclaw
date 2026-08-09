@@ -130,6 +130,7 @@ import { ConfigStoreWrite } from "../config-store-write"
 import { KEY_TIERS, REDACTED, TIER_ACTION, TIERS, tierOf, type Tier } from "../config-tier"
 import { Database } from "../database/database"
 import { makeLocationNode } from "../effect/app-node"
+import { CapabilityRegistry } from "../effect/capability-registry"
 import { PermissionV2 } from "../permission"
 import { PluginConfigStore } from "../plugin-config-store"
 import { ReferenceConfigStore } from "../reference-config-store"
@@ -290,11 +291,13 @@ export const schemaDepth = (requested: number | undefined): number =>
 
 const SchemaOp = Schema.Struct({
   op: Schema.Literal("schema"),
-  keys: Schema.Array(Schema.String).pipe(Schema.optional).annotate({
-    description:
-      'Configuration keys to describe in full, e.g. ["providers","mcp"]. Omit to survey every key, one ' +
-      "line each.",
-  }),
+  keys: Schema.Array(Schema.String)
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        'Configuration keys to describe in full, e.g. ["providers","mcp"]. Omit to survey every key, one ' +
+        "line each.",
+    }),
   depth: Schema.Number.pipe(Schema.optional).annotate({
     description:
       "How many levels of nested fields to expand under each requested key. Default 1, maximum 4; a " +
@@ -343,10 +346,19 @@ const RemoveOp = Schema.Struct({
   }),
 })
 
-export const Input = Schema.Union([SchemaOp, ReadOp, SetOp, RemoveOp])
+const RetryOp = Schema.Struct({
+  op: Schema.Literal("retry"),
+  capability: Schema.String.annotate({
+    description:
+      'The exact capability name from its unavailable notice, e.g. "memory" or "local-model". ' +
+      "Retries one cached startup failure after its repair; it does not restart the instance.",
+  }),
+})
+
+export const Input = Schema.Union([SchemaOp, ReadOp, SetOp, RemoveOp, RetryOp])
 
 export const Output = Schema.Struct({
-  op: Schema.Literals(["schema", "read", "set", "remove"]),
+  op: Schema.Literals(["schema", "read", "set", "remove", "retry"]),
   message: Schema.String,
 })
 export type Output = typeof Output.Type
@@ -368,6 +380,7 @@ export const description =
   '{"op":"read","keys":["providers"]} — one key\'s current value in full · ' +
   '{"op":"set","config":{"models":{"qwen":{"url":"http://192.168.1.5:8000/v1"}}}} — write · ' +
   '{"op":"remove","paths":[["mcp","servers","filesystem"]]} — DELETE. ' +
+  '{"op":"retry","capability":"memory"} — retry one cached capability failure after repairing it. ' +
   "ASK FOR THE SCHEMA BEFORE YOU WRITE A KEY YOU HAVE NOT WRITTEN BEFORE: `read` shows a VALUE and " +
   "shows nothing at all for a key that was never set, while `schema` always names the fields, says " +
   "which are required, and says whether a fragment is enough — some keys refuse a partial patch " +
@@ -460,6 +473,7 @@ export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
     const permission = yield* PermissionV2.Service
+    const capabilities = yield* CapabilityRegistry.Service
     // The stores `ConfigStoreWrite.apply`/`overlay` resolve at call time. Captured once here rather
     // than threaded per call, because `Tool.make`'s `execute` must have `R = never` — the same
     // capture `filesystem/watcher.ts` and `pty.ts` use for their callbacks. Listing the union
@@ -551,11 +565,57 @@ export const layer = Layer.effectDiscard(
                   }
                 }
 
+                if (input.op === "retry") {
+                  const capability = input.capability.trim()
+                  if (capability.length === 0)
+                    return yield* failure(
+                      "Nothing was retried: `capability` was blank. Copy the exact name from the unavailable notice.",
+                    )
+                  const status = yield* capabilities
+                    .retry(capability)
+                    .pipe(
+                      Effect.catchTag("CapabilityRegistry.NotFoundError", () =>
+                        capabilities
+                          .inspect()
+                          .pipe(
+                            Effect.flatMap((declared) =>
+                              Effect.fail(
+                                failure(
+                                  `Nothing was retried: this instance has no capability named "${capability}". ` +
+                                    (declared.length === 0
+                                      ? "This graph declares no optional capabilities."
+                                      : `Available capabilities: ${declared.map((entry) => entry.name).join(", ")}.`),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ),
+                    )
+                  if (status.state === "unavailable")
+                    return {
+                      op: "retry" as const,
+                      message:
+                        `Capability "${capability}" is still unavailable after retry: ${status.reason.summary}` +
+                        (status.reason.repair?.length
+                          ? ` Repairable settings: ${status.reason.repair.join(", ")}.`
+                          : ""),
+                    }
+                  if (status.state === "idle")
+                    return {
+                      op: "retry" as const,
+                      message: `Capability "${capability}" has no cached failure to retry and remains idle.`,
+                    }
+                  return {
+                    op: "retry" as const,
+                    message: `Capability "${capability}" is ${status.state} after retry.`,
+                  }
+                }
+
                 if (input.op === "remove") {
                   const paths = input.paths.filter((path) => path.length > 0)
                   if (paths.length === 0)
                     return yield* failure(
-                      'Nothing was removed: `paths` was empty. Name at least one location, e.g. ' +
+                      "Nothing was removed: `paths` was empty. Name at least one location, e.g. " +
                         '{"op":"remove","paths":[["mcp","servers","filesystem"]]}.',
                     )
                   // The first segment is the config key, so a removal is priced exactly like a write
@@ -682,6 +742,7 @@ export const layer = Layer.effectDiscard(
                     read: "Nothing was read.",
                     set: "Nothing was written.",
                     remove: "Nothing was removed.",
+                    retry: "Nothing was retried.",
                   }[input.op]
                   // A denial keeps its identity — including the unattended deny-fast wording, which is
                   // the one an unattended repair run actually needs to read.
@@ -711,5 +772,6 @@ export const node = makeLocationNode({
     ReferenceConfigStore.node,
     SkillConfigStore.node,
     PluginConfigStore.node,
+    CapabilityRegistry.node,
   ],
 })
