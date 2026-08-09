@@ -30,7 +30,9 @@ beforeAll(async () => {
   }))
   mock.module("@novaclaw/ui/file-icon", () => ({ FileIcon: () => null }))
   mock.module("@novaclaw/ui/icon", () => ({ Icon: () => null }))
-  mock.module("@novaclaw/ui/tooltip", () => ({ Tooltip: (props: { children?: unknown }) => props.children }))
+  mock.module("@novaclaw/ui/v2/tooltip-v2", () => ({
+    TooltipV2: (props: { children?: unknown }) => props.children,
+  }))
   const mod = await import("./file-tree")
   shouldListRoot = mod.shouldListRoot
   shouldListExpanded = mod.shouldListExpanded

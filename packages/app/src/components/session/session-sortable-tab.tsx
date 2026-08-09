@@ -3,7 +3,7 @@ import type { JSX } from "solid-js"
 import { createSortable } from "@thisbeyond/solid-dnd"
 import { FileIcon } from "@novaclaw/ui/file-icon"
 import { IconButton } from "@novaclaw/ui/icon-button"
-import { TooltipKeybind } from "@novaclaw/ui/tooltip"
+import { TooltipKeybindV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { getFilename } from "@novaclaw/core/util/path"
 import { useFile } from "@/context/file"
@@ -44,9 +44,9 @@ export function SortableTab(props: { tab: string; onTabClose: (tab: string) => v
         <TabsV2.Trigger
           value={props.tab}
           closeButton={
-            <TooltipKeybind
+            <TooltipKeybindV2
               title={language.t("common.closeTab")}
-              keybind={command.keybind("tab.close")}
+              keys={command.keybindParts("tab.close")}
               placement="bottom"
               gutter={10}
             >
@@ -57,7 +57,7 @@ export function SortableTab(props: { tab: string; onTabClose: (tab: string) => v
                 onClick={() => props.onTabClose(props.tab)}
                 aria-label={language.t("common.closeTab")}
               />
-            </TooltipKeybind>
+            </TooltipKeybindV2>
           }
           onMiddleClick={() => props.onTabClose(props.tab)}
         >

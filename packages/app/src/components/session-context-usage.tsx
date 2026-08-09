@@ -1,5 +1,5 @@
 import { Match, Show, Switch, createMemo } from "solid-js"
-import { Tooltip, type TooltipProps } from "@novaclaw/ui/tooltip"
+import { TooltipV2, type TooltipV2Props } from "@novaclaw/ui/v2/tooltip-v2"
 import { ProgressCircleV2 } from "@novaclaw/ui/v2/progress-circle-v2"
 import { Button } from "@novaclaw/ui/button"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
@@ -18,7 +18,7 @@ import { createSessionTabs } from "@/pages/session/helpers"
 interface SessionContextUsageProps {
   variant?: "button" | "indicator"
   buttonAppearance?: "default" | "v2"
-  placement?: TooltipProps["placement"]
+  placement?: TooltipV2Props["placement"]
 }
 
 function openSessionContext(args: {
@@ -141,7 +141,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
 
   return (
     <Show when={params.id}>
-      <Tooltip value={tooltipValue()} placement={props.placement ?? "top"}>
+      <TooltipV2 value={tooltipValue()} placement={props.placement ?? "top"}>
         <Switch>
           <Match when={variant() === "indicator"}>{circle()}</Match>
           <Match when={buttonAppearance() === "v2"}>
@@ -166,7 +166,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
             </Button>
           </Match>
         </Switch>
-      </Tooltip>
+      </TooltipV2>
     </Show>
   )
 }

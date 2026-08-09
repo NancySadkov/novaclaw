@@ -1,7 +1,7 @@
 import { Component, For, Show } from "solid-js"
 import { FileIcon } from "@novaclaw/ui/file-icon"
 import { IconButton } from "@novaclaw/ui/icon-button"
-import { Tooltip } from "@novaclaw/ui/tooltip"
+import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { getDirectory, getFilename, getFilenameTruncated } from "@novaclaw/core/util/path"
 import type { ContextItem } from "@/context/prompt"
 import type { Translator } from "@/context/language"
@@ -28,7 +28,7 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
             const selected = props.active(item)
 
             return (
-              <Tooltip
+              <TooltipV2
                 value={
                   <span class="flex max-w-[300px]">
                     <span class="text-text-invert-base truncate-start [unicode-bidi:plaintext] min-w-0">
@@ -79,7 +79,7 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
                     {(comment) => <div class="text-12-regular text-text-strong ml-5 pr-1 truncate">{comment()}</div>}
                   </Show>
                 </div>
-              </Tooltip>
+              </TooltipV2>
             )
           }}
         </For>

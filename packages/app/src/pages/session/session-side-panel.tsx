@@ -3,7 +3,7 @@ import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { IconButton } from "@novaclaw/ui/icon-button"
-import { TooltipKeybind } from "@novaclaw/ui/tooltip"
+import { TooltipKeybindV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { ResizeHandle } from "@novaclaw/ui/resize-handle"
 import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, closestCenter } from "@thisbeyond/solid-dnd"
 import type { DragEvent } from "@thisbeyond/solid-dnd"
@@ -254,9 +254,9 @@ export function SessionSidePanel(props: {
                           <TabsV2.Trigger
                             value="context"
                             closeButton={
-                              <TooltipKeybind
+                              <TooltipKeybindV2
                                 title={language.t("common.closeTab")}
-                                keybind={command.keybind("tab.close")}
+                                keys={command.keybindParts("tab.close")}
                                 placement="bottom"
                                 gutter={10}
                               >
@@ -267,7 +267,7 @@ export function SessionSidePanel(props: {
                                   onClick={() => tabs().close("context")}
                                   aria-label={language.t("common.closeTab")}
                                 />
-                              </TooltipKeybind>
+                              </TooltipKeybindV2>
                             }
                             onMiddleClick={() => tabs().close("context")}
                           >
@@ -281,9 +281,9 @@ export function SessionSidePanel(props: {
                           <For each={openedTabs()}>{(tab) => <SortableTab tab={tab} onTabClose={tabs().close} />}</For>
                         </SortableProvider>
                         <div class="bg-background-stronger h-full shrink-0 sticky right-0 z-10 flex items-center justify-center pr-3">
-                          <TooltipKeybind
+                          <TooltipKeybindV2
                             title={language.t("command.file.open")}
-                            keybind={command.keybind("file.open")}
+                            keys={command.keybindParts("file.open")}
                             class="flex items-center"
                           >
                             <IconButton
@@ -298,7 +298,7 @@ export function SessionSidePanel(props: {
                               }}
                               aria-label={language.t("command.file.open")}
                             />
-                          </TooltipKeybind>
+                          </TooltipKeybindV2>
                         </div>
                       </TabsV2.List>
                     </div>

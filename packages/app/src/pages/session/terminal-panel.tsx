@@ -4,7 +4,7 @@ import { makeEventListener } from "@solid-primitives/event-listener"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { ResizeHandle } from "@novaclaw/ui/resize-handle"
 import { IconButton } from "@novaclaw/ui/icon-button"
-import { TooltipKeybind } from "@novaclaw/ui/tooltip"
+import { TooltipKeybindV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, closestCenter } from "@thisbeyond/solid-dnd"
 import type { DragEvent } from "@thisbeyond/solid-dnd"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
@@ -283,9 +283,9 @@ export function TerminalPanel() {
                     <For each={all()}>{(pty) => <SortableTerminalTab terminal={pty} onClose={close} />}</For>
                   </SortableProvider>
                   <div class="h-full flex items-center justify-center">
-                    <TooltipKeybind
+                    <TooltipKeybindV2
                       title={language.t("command.terminal.new")}
-                      keybind={command.keybind("terminal.new")}
+                      keys={command.keybindParts("terminal.new")}
                       class="flex items-center"
                     >
                       <IconButton
@@ -295,7 +295,7 @@ export function TerminalPanel() {
                         onClick={terminal.new}
                         aria-label={language.t("command.terminal.new")}
                       />
-                    </TooltipKeybind>
+                    </TooltipKeybindV2>
                   </div>
                 </TabsV2.List>
               </TabsV2>

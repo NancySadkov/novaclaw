@@ -10,7 +10,7 @@ import { IconButton } from "@novaclaw/ui/icon-button"
 import { Tag } from "@novaclaw/ui/tag"
 import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
 import { List } from "@novaclaw/ui/list"
-import { Tooltip } from "@novaclaw/ui/tooltip"
+import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { ModelTooltip } from "./model-tooltip"
 import { useLanguage } from "@/context/language"
 import { decode64 } from "@/utils/base64"
@@ -124,7 +124,7 @@ const ModelList: Component<{
           return honored === undefined ? item : { ...item, limit: { ...item.limit, context: honored } }
         }
         return (
-          <Tooltip
+          <TooltipV2
             class="w-full"
             placement="right-start"
             gutter={12}
@@ -139,7 +139,7 @@ const ModelList: Component<{
             }
           >
             {node}
-          </Tooltip>
+          </TooltipV2>
         )
       }}
       onSelect={(x) => {
@@ -294,7 +294,7 @@ export function ModelSelectorPopover(props: {
             class="p-1"
             action={
               <div class="flex items-center gap-1">
-                <Tooltip placement="top" value={language.t("command.provider.connect")}>
+                <TooltipV2 placement="top" value={language.t("command.provider.connect")}>
                   <IconButton
                     icon="plus-small"
                     variant="ghost"
@@ -303,8 +303,8 @@ export function ModelSelectorPopover(props: {
                     aria-label={language.t("command.provider.connect")}
                     onClick={handleConnectProvider}
                   />
-                </Tooltip>
-                <Tooltip placement="top" value={language.t("dialog.model.manage")}>
+                </TooltipV2>
+                <TooltipV2 placement="top" value={language.t("dialog.model.manage")}>
                   <IconButton
                     icon="sliders"
                     variant="ghost"
@@ -313,7 +313,7 @@ export function ModelSelectorPopover(props: {
                     aria-label={language.t("dialog.model.manage")}
                     onClick={handleManage}
                   />
-                </Tooltip>
+                </TooltipV2>
               </div>
             }
           />

@@ -301,29 +301,26 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/components/composer/features-control.tsx": ["icon"],
   "app/src/components/composer/model-control.tsx": ["button", "icon"],
   "app/src/components/composer/strict-control.tsx": ["button"],
-  "app/src/components/debug-bar.tsx": ["tooltip"],
   "app/src/components/dialog-edit-project.tsx": ["button", "icon"],
   "app/src/components/dialog-release-notes.tsx": ["button"],
   "app/src/components/dialog-select-directory-v2.tsx": ["icon"],
   "app/src/components/dialog-select-file.tsx": ["icon"],
-  "app/src/components/dialog-select-model.tsx": ["button", "icon-button", "tooltip"],
+  "app/src/components/dialog-select-model.tsx": ["button", "icon-button"],
   "app/src/components/dialog-select-server.tsx": ["button", "icon", "icon-button"],
   "app/src/components/dialog-session-info.tsx": ["button", "icon"],
-  "app/src/components/file-tree.test.ts": ["icon", "tooltip"],
+  "app/src/components/file-tree.test.ts": ["icon"],
   "app/src/components/file-tree.tsx": ["icon"],
-  "app/src/components/prompt-input.tsx": ["button", "icon", "icon-button", "tooltip"],
-  "app/src/components/prompt-input/context-items.tsx": ["icon-button", "tooltip"],
+  "app/src/components/prompt-input.tsx": ["button", "icon", "icon-button"],
+  "app/src/components/prompt-input/context-items.tsx": ["icon-button"],
   "app/src/components/prompt-input/drag-overlay.tsx": ["icon"],
-  "app/src/components/prompt-input/image-attachments.tsx": ["icon", "tooltip"],
+  "app/src/components/prompt-input/image-attachments.tsx": ["icon"],
   "app/src/components/prompt-input/slash-popover.tsx": ["icon"],
   "app/src/components/prompt-project-selector.tsx": ["icon"],
   "app/src/components/prompt-workspace-selector.tsx": ["icon"],
-  "app/src/components/server/server-row.tsx": ["tooltip"],
-  "app/src/components/session-context-usage.tsx": ["button", "tooltip"],
+  "app/src/components/session-context-usage.tsx": ["button"],
   "app/src/components/session/session-context-tab.tsx": ["icon"],
-  "app/src/components/session/session-header.tsx": ["tooltip"],
   "app/src/components/session/session-new-view.tsx": ["icon"],
-  "app/src/components/session/session-sortable-tab.tsx": ["icon-button", "tooltip"],
+  "app/src/components/session/session-sortable-tab.tsx": ["icon-button"],
   "app/src/components/session/session-sortable-terminal-tab.tsx": ["icon", "icon-button"],
   "app/src/components/settings-keybinds.tsx": ["button", "icon", "icon-button"],
   "app/src/components/settings-v2/dialog-expertise.tsx": ["icon"],
@@ -355,14 +352,14 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
   "app/src/pages/session/composer/session-revert-dock.tsx": ["button", "icon-button"],
   "app/src/pages/session/composer/session-todo-dock.tsx": ["icon-button"],
   "app/src/pages/session/file-tabs.tsx": ["icon-button"],
-  "app/src/pages/session/session-side-panel.tsx": ["icon-button", "tooltip"],
-  "app/src/pages/session/terminal-panel.tsx": ["icon-button", "tooltip"],
+  "app/src/pages/session/session-side-panel.tsx": ["icon-button"],
+  "app/src/pages/session/terminal-panel.tsx": ["icon-button"],
   "app/src/pages/trash.tsx": ["icon"],
   "app/src/utils/toast.tsx": ["icon"],
   "app/src/wsl/dialog-add-server.tsx": ["button"],
   "session-ui/src/components/file-search.tsx": ["icon"],
   "session-ui/src/components/line-comment.tsx": ["button", "icon"],
-  "session-ui/src/components/session-review.tsx": ["button", "icon", "icon-button", "tooltip"],
+  "session-ui/src/components/session-review.tsx": ["button", "icon", "icon-button"],
   // `packages/ui`'s own v1 components composing other v1 components. Not migratable — see the
   // header. These lines retire by DELETING the component, which is how `card.tsx` left this list.
   "ui/src/components/button.tsx": ["icon"],
@@ -389,8 +386,8 @@ export const V1_CALL_SITES: Readonly<Record<string, readonly string[]>> = {
 const V1_COMPONENT_CEILING = 29
 
 /** Measured totals, pinned so the ledger stays a measurement rather than an aspiration. */
-const V1_CALL_SITE_FILES = 73
-const V1_CALL_SITE_PAIRS = 106
+const V1_CALL_SITE_FILES = 70
+const V1_CALL_SITE_PAIRS = 93
 
 // ---------------------------------------------------------------------------------------------
 // The sweep. Pure functions first so the negative controls can drive them without touching disk.

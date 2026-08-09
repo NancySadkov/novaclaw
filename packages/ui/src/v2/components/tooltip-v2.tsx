@@ -2,6 +2,7 @@ import { Tooltip as KobalteTooltip } from "@kobalte/core/tooltip"
 import { createEffect, Match, onCleanup, splitProps, Switch, type JSX } from "solid-js"
 import type { ComponentProps } from "solid-js"
 import { createStore } from "solid-js/store"
+import { KeybindV2 } from "./keybind-v2"
 
 export interface TooltipV2Props extends ComponentProps<typeof KobalteTooltip> {
   value: JSX.Element
@@ -10,6 +11,26 @@ export interface TooltipV2Props extends ComponentProps<typeof KobalteTooltip> {
   contentStyle?: JSX.CSSProperties
   inactive?: boolean
   forceOpen?: boolean
+}
+
+export interface TooltipKeybindV2Props extends Omit<TooltipV2Props, "value"> {
+  title: string
+  keys: string[]
+}
+
+export function TooltipKeybindV2(props: TooltipKeybindV2Props) {
+  const [local, others] = splitProps(props, ["title", "keys"])
+  return (
+    <TooltipV2
+      {...others}
+      value={
+        <>
+          <span>{local.title}</span>
+          <KeybindV2 keys={local.keys} variant="neutral" />
+        </>
+      }
+    />
+  )
 }
 
 export function TooltipV2(props: TooltipV2Props) {

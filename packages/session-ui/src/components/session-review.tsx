@@ -7,7 +7,7 @@ import { FileIcon } from "@novaclaw/ui/file-icon"
 import { Icon } from "@novaclaw/ui/icon"
 import { IconButton } from "@novaclaw/ui/icon-button"
 import { StickyAccordionHeader } from "@novaclaw/ui/sticky-accordion-header"
-import { Tooltip } from "@novaclaw/ui/tooltip"
+import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { ScrollView } from "@novaclaw/ui/scroll-view"
 import { useFileComponent } from "@novaclaw/ui/context/file"
 import { useI18n } from "@novaclaw/ui/context/i18n"
@@ -548,7 +548,7 @@ export const SessionReview = (props: SessionReviewProps) => {
                                   </Show>
                                   <span data-slot="session-review-filename">{getFilename(file)}</span>
                                   <Show when={props.onViewFile}>
-                                    <Tooltip value={openFileLabel()} placement="top" gutter={4}>
+                                    <TooltipV2 value={openFileLabel()} placement="top" gutter={4}>
                                       <button
                                         data-slot="session-review-view-button"
                                         type="button"
@@ -560,7 +560,7 @@ export const SessionReview = (props: SessionReviewProps) => {
                                       >
                                         <Icon name="open-file" size="small" />
                                       </button>
-                                    </Tooltip>
+                                    </TooltipV2>
                                   </Show>
                                 </div>
                               </div>

@@ -1,5 +1,4 @@
 import { showToast } from "@/utils/toast"
-import { Tooltip } from "@novaclaw/ui/tooltip"
 import { getFilename } from "@novaclaw/core/util/path"
 import { createEffect, createMemo, createSignal, For, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -339,9 +338,9 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
 
   return (
     <div class="flex items-center gap-2">
-      <Tooltip placement="bottom" value={props.state.statusLabel}>
+      <TooltipV2 placement="bottom" value={props.state.statusLabel}>
         <StatusPopoverV2 />
-      </Tooltip>
+      </TooltipV2>
       <Show when={props.state.reviewVisible}>
         <TooltipV2
           placement="bottom"
