@@ -19792,6 +19792,9 @@
             "$ref": "#/components/schemas/EventSessionNextModeSwitched"
           },
           {
+            "$ref": "#/components/schemas/EventSessionNextPermissionChanged"
+          },
+          {
             "$ref": "#/components/schemas/EventSessionNextStrictSwitched"
           },
           {
@@ -20815,6 +20818,68 @@
                       }
                     },
                     "required": ["timestamp", "sessionID", "messageID", "permissionMode"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["session.next.permission.changed"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "timestamp": {
+                        "type": "number"
+                      },
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "messageID": {
+                        "type": "string",
+                        "pattern": "^msg_"
+                      },
+                      "op": {
+                        "type": "string",
+                        "enum": ["raise", "lower"]
+                      },
+                      "previous": {
+                        "type": "string",
+                        "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+                      },
+                      "mode": {
+                        "type": "string",
+                        "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+                      },
+                      "ceiling": {
+                        "type": "string",
+                        "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+                      },
+                      "justification": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "timestamp",
+                      "sessionID",
+                      "messageID",
+                      "op",
+                      "previous",
+                      "mode",
+                      "ceiling",
+                      "justification"
+                    ],
                     "additionalProperties": false
                   }
                 },
@@ -23842,6 +23907,9 @@
                 "$ref": "#/components/schemas/SyncEventSessionNextModeSwitched"
               },
               {
+                "$ref": "#/components/schemas/SyncEventSessionNextPermissionChanged"
+              },
+              {
                 "$ref": "#/components/schemas/SyncEventSessionNextStrictSwitched"
               },
               {
@@ -25302,6 +25370,9 @@
             "$ref": "#/components/schemas/SessionNextModeSwitched"
           },
           {
+            "$ref": "#/components/schemas/SessionNextPermissionChanged"
+          },
+          {
             "$ref": "#/components/schemas/SessionNextStrictSwitched"
           },
           {
@@ -25787,6 +25858,9 @@
           },
           {
             "$ref": "#/components/schemas/SessionNextModeSwitched"
+          },
+          {
+            "$ref": "#/components/schemas/SessionNextPermissionChanged"
           },
           {
             "$ref": "#/components/schemas/SessionNextStrictSwitched"
@@ -26779,6 +26853,54 @@
         "required": ["id", "time", "type", "model"],
         "additionalProperties": false
       },
+      "SessionMessagePermissionChanged": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^msg_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "time": {
+            "type": "object",
+            "properties": {
+              "created": {
+                "type": "number"
+              }
+            },
+            "required": ["created"],
+            "additionalProperties": false
+          },
+          "type": {
+            "type": "string",
+            "enum": ["permission-changed"]
+          },
+          "op": {
+            "type": "string",
+            "enum": ["raise", "lower"]
+          },
+          "previous": {
+            "type": "string",
+            "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+          },
+          "ceiling": {
+            "type": "string",
+            "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+          },
+          "justification": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["id", "time", "type", "op", "previous", "mode", "ceiling", "justification"],
+        "additionalProperties": false
+      },
       "SessionMessageUser": {
         "type": "object",
         "properties": {
@@ -27506,6 +27628,9 @@
             "$ref": "#/components/schemas/SessionMessageModelSwitched"
           },
           {
+            "$ref": "#/components/schemas/SessionMessagePermissionChanged"
+          },
+          {
             "$ref": "#/components/schemas/SessionMessageUser"
           },
           {
@@ -28176,6 +28301,89 @@
                   }
                 },
                 "required": ["timestamp", "sessionID", "messageID", "permissionMode"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "id", "seq", "aggregateID", "data"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["type", "id", "syncEvent"],
+        "additionalProperties": false
+      },
+      "SyncEventSessionNextPermissionChanged": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["sync"]
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "syncEvent": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["session.next.permission.changed.1"]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "seq": {
+                "type": "number"
+              },
+              "aggregateID": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "sessionID": {
+                    "type": "string",
+                    "pattern": "^ses"
+                  },
+                  "messageID": {
+                    "type": "string",
+                    "pattern": "^msg_"
+                  },
+                  "op": {
+                    "type": "string",
+                    "enum": ["raise", "lower"]
+                  },
+                  "previous": {
+                    "type": "string",
+                    "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+                  },
+                  "ceiling": {
+                    "type": "string",
+                    "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+                  },
+                  "justification": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "timestamp",
+                  "sessionID",
+                  "messageID",
+                  "op",
+                  "previous",
+                  "mode",
+                  "ceiling",
+                  "justification"
+                ],
                 "additionalProperties": false
               }
             },
@@ -33492,6 +33700,81 @@
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "permissionMode"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "SessionNextPermissionChanged": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.permission.changed"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "messageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "op": {
+                "type": "string",
+                "enum": ["raise", "lower"]
+              },
+              "previous": {
+                "type": "string",
+                "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+              },
+              "mode": {
+                "type": "string",
+                "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+              },
+              "ceiling": {
+                "type": "string",
+                "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+              },
+              "justification": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": ["timestamp", "sessionID", "messageID", "op", "previous", "mode", "ceiling", "justification"],
             "additionalProperties": false
           }
         },
@@ -41061,6 +41344,59 @@
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "permissionMode"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventSessionNextPermissionChanged": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.permission.changed"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "messageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "op": {
+                "type": "string",
+                "enum": ["raise", "lower"]
+              },
+              "previous": {
+                "type": "string",
+                "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+              },
+              "mode": {
+                "type": "string",
+                "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+              },
+              "ceiling": {
+                "type": "string",
+                "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+              },
+              "justification": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": ["timestamp", "sessionID", "messageID", "op", "previous", "mode", "ceiling", "justification"],
             "additionalProperties": false
           }
         },

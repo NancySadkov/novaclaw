@@ -105,6 +105,21 @@ export const ModelSwitched = Schema.Struct({
   model: Model.Ref,
 }).annotate({ identifier: "Session.Message.ModelSwitched" })
 
+export const PermissionMode = Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"])
+export type PermissionMode = typeof PermissionMode.Type
+
+/** A model-authored permission move, rendered as a first-class audit card rather than a tool blob. */
+export interface PermissionChanged extends Schema.Schema.Type<typeof PermissionChanged> {}
+export const PermissionChanged = Schema.Struct({
+  ...Base,
+  type: Schema.Literal("permission-changed"),
+  op: Schema.Literals(["raise", "lower"]),
+  previous: PermissionMode,
+  mode: PermissionMode,
+  ceiling: PermissionMode,
+  justification: Schema.NonEmptyString,
+}).annotate({ identifier: "Session.Message.PermissionChanged" })
+
 export interface User extends Schema.Schema.Type<typeof User> {}
 export const User = Schema.Struct({
   ...Base,
@@ -307,6 +322,7 @@ export const Compaction = Schema.Struct({
 export const Message = Schema.Union([
   AgentSwitched,
   ModelSwitched,
+  PermissionChanged,
   User,
   Synthetic,
   System,
@@ -316,5 +332,14 @@ export const Message = Schema.Union([
 ])
   .pipe(Schema.toTaggedUnion("type"))
   .annotate({ identifier: "Session.Message" })
-export type Message = AgentSwitched | ModelSwitched | User | Synthetic | System | Shell | Assistant | Compaction
+export type Message =
+  | AgentSwitched
+  | ModelSwitched
+  | PermissionChanged
+  | User
+  | Synthetic
+  | System
+  | Shell
+  | Assistant
+  | Compaction
 export type Type = Message["type"]

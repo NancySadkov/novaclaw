@@ -79,6 +79,34 @@ describe("applySessionNextEvent", () => {
     }
   })
 
+  test("permission.changed → first-class permission card message", () => {
+    const messages = fold(
+      [],
+      ev("session.next.permission.changed", {
+        timestamp: 3,
+        sessionID: "s",
+        messageID: "msg_permission",
+        op: "lower",
+        previous: "bypass",
+        mode: "plan",
+        ceiling: "bypass",
+        justification: "reading the codebase first; changing nothing yet",
+      }),
+    )
+    expect(messages).toEqual([
+      {
+        id: "msg_permission",
+        type: "permission-changed",
+        op: "lower",
+        previous: "bypass",
+        mode: "plan",
+        ceiling: "bypass",
+        justification: "reading the codebase first; changing nothing yet",
+        time: { created: 3 },
+      },
+    ])
+  })
+
   test("builds an assistant turn: step → text stream → tool → step.ended", () => {
     const messages = fold(
       [],

@@ -17,6 +17,7 @@ export type Event =
   | EventSessionNextModelSwitched
   | EventSessionNextResponderSwitched
   | EventSessionNextModeSwitched
+  | EventSessionNextPermissionChanged
   | EventSessionNextStrictSwitched
   | EventSessionNextFeatureSwitched
   | EventSessionNextTypeSwitched
@@ -362,6 +363,20 @@ export type GlobalEvent = {
           sessionID: string
           messageID: string
           permissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+        }
+      }
+    | {
+        id: string
+        type: "session.next.permission.changed"
+        properties: {
+          timestamp: number
+          sessionID: string
+          messageID: string
+          op: "raise" | "lower"
+          previous: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+          mode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+          ceiling: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+          justification: string
         }
       }
     | {
@@ -1215,6 +1230,7 @@ export type GlobalEvent = {
     | SyncEventSessionNextModelSwitched
     | SyncEventSessionNextResponderSwitched
     | SyncEventSessionNextModeSwitched
+    | SyncEventSessionNextPermissionChanged
     | SyncEventSessionNextStrictSwitched
     | SyncEventSessionNextFeatureSwitched
     | SyncEventSessionNextTypeSwitched
@@ -1678,6 +1694,7 @@ export type SessionDurableEvent =
   | SessionNextModelSwitched
   | SessionNextResponderSwitched
   | SessionNextModeSwitched
+  | SessionNextPermissionChanged
   | SessionNextStrictSwitched
   | SessionNextFeatureSwitched
   | SessionNextTypeSwitched
@@ -1837,6 +1854,7 @@ export type V2Event =
   | SessionNextModelSwitched
   | SessionNextResponderSwitched
   | SessionNextModeSwitched
+  | SessionNextPermissionChanged
   | SessionNextStrictSwitched
   | SessionNextFeatureSwitched
   | SessionNextTypeSwitched
@@ -2193,6 +2211,22 @@ export type SessionMessageModelSwitched = {
   model: ModelRef
 }
 
+export type SessionMessagePermissionChanged = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+  }
+  type: "permission-changed"
+  op: "raise" | "lower"
+  previous: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+  mode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+  ceiling: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+  justification: string
+}
+
 export type SessionMessageUser = {
   id: string
   metadata?: {
@@ -2441,6 +2475,7 @@ export type SessionMessageCompaction = {
 export type SessionMessage =
   | SessionMessageAgentSwitched
   | SessionMessageModelSwitched
+  | SessionMessagePermissionChanged
   | SessionMessageUser
   | SessionMessageSynthetic
   | SessionMessageSystem
@@ -2660,6 +2695,27 @@ export type SyncEventSessionNextModeSwitched = {
       sessionID: string
       messageID: string
       permissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+    }
+  }
+}
+
+export type SyncEventSessionNextPermissionChanged = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.permission.changed.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      messageID: string
+      op: "raise" | "lower"
+      previous: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+      mode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+      ceiling: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+      justification: string
     }
   }
 }
@@ -4289,6 +4345,30 @@ export type SessionNextModeSwitched = {
     sessionID: string
     messageID: string
     permissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+  }
+}
+
+export type SessionNextPermissionChanged = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.permission.changed"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    op: "raise" | "lower"
+    previous: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+    mode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+    ceiling: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+    justification: string
   }
 }
 
@@ -6574,6 +6654,21 @@ export type EventSessionNextModeSwitched = {
     sessionID: string
     messageID: string
     permissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+  }
+}
+
+export type EventSessionNextPermissionChanged = {
+  id: string
+  type: "session.next.permission.changed"
+  properties: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    op: "raise" | "lower"
+    previous: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+    mode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+    ceiling: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+    justification: string
   }
 }
 

@@ -141,6 +141,20 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
       "session.next.responder.switched": () => Effect.void,
       // 1K: mode switch is likewise a control signal (the projector writes the column).
       "session.next.mode.switched": () => Effect.void,
+      "session.next.permission.changed": (event) =>
+        adapter.appendMessage(
+          SessionMessage.PermissionChanged.make({
+            id: event.data.messageID,
+            type: "permission-changed",
+            metadata: event.metadata,
+            op: event.data.op,
+            previous: event.data.previous,
+            mode: event.data.mode,
+            ceiling: event.data.ceiling,
+            justification: event.data.justification,
+            time: { created: event.data.timestamp },
+          }),
+        ),
       // The per-session Strict override is likewise a control signal (the projector writes the column).
       "session.next.strict.switched": () => Effect.void,
       // Per-session feature toggles are likewise control signals (the projector writes the column).

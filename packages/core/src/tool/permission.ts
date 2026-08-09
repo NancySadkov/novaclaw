@@ -67,9 +67,12 @@
 export * as PermissionTool from "./permission"
 
 import { ToolFailure } from "@novaclaw/llm"
-import { Effect, Layer, Schema } from "effect"
+import { DateTime, Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
+import { EventV2 } from "../event"
 import { PermissionV2 } from "../permission"
+import { SessionEvent } from "../session/event"
+import { SessionMessage } from "../session/message"
 import {
   attendedRoot,
   autoCeiling,
@@ -260,9 +263,8 @@ export const grantedMessage = (input: {
       `. Sessions you spawn from here can never out-rank you.`,
     // Ruling 2, in the direction that costs us something: never let the model believe it made a
     // durable change it did not make.
-    `This level holds for this chat while the instance is running. It is NOT written to the chat's ` +
-      `saved permission mode — if the instance restarts, the chat returns to ${named(input.state.resolvedMode)}, ` +
-      `the mode the user picked.`,
+    `This self-chosen level is saved for this chat and survives an instance restart. It does NOT change ` +
+      `the user-owned ceiling (${named(input.state.resolvedMode)}).`,
   ].join(" ")
 
 // ── the tool ──────────────────────────────────────────────────────────────────────────────────
@@ -316,6 +318,7 @@ export const layer = Layer.effectDiscard(
     const permission = yield* PermissionV2.Service
     const sessions = yield* SessionStore.Service
     const autoGrants = yield* SessionAutoGrant.Service
+    const events = yield* EventV2.Service
     const get = (id: string) => sessions.get(id as SessionSchema.ID)
 
     yield* tools
@@ -411,12 +414,32 @@ export const layer = Layer.effectDiscard(
                     },
                   })
 
-                // Only now — a refused card must leave the level exactly as it was.
-                yield* autoGrants.set(sessionID, {
-                  mode: input.mode,
-                  justification: input.justification.trim(),
-                  at: Date.now(),
-                })
+                // Only now — a refused consent card must leave the level exactly as it was. The
+                // durable audit card and the grant row share EventV2's transaction, so neither fact
+                // can exist without the other.
+                const timestamp = yield* DateTime.now
+                const justification = input.justification.trim()
+                yield* events.publish(
+                  SessionEvent.PermissionChanged,
+                  {
+                    sessionID: context.sessionID,
+                    timestamp,
+                    messageID: SessionMessage.ID.create(),
+                    op: input.op,
+                    previous: state.current,
+                    mode: input.mode,
+                    ceiling: state.ceiling,
+                    justification,
+                  },
+                  {
+                    commit: () =>
+                      autoGrants.set(sessionID, {
+                        mode: input.mode,
+                        justification,
+                        at: DateTime.toEpochMillis(timestamp),
+                      }),
+                  },
+                )
                 return {
                   changed: true,
                   mode: input.mode,
@@ -455,5 +478,5 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/permission",
   layer,
-  deps: [ToolRegistry.node, PermissionV2.node, SessionStore.node, SessionAutoGrant.node],
+  deps: [ToolRegistry.node, PermissionV2.node, SessionStore.node, SessionAutoGrant.node, EventV2.node],
 })

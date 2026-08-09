@@ -318,6 +318,16 @@ describe("SessionProjector", () => {
         timestamp: created,
         text: "synthetic context",
       })
+      yield* events.publish(SessionEvent.PermissionChanged, {
+        sessionID,
+        messageID: SessionMessage.ID.create(),
+        timestamp: created,
+        op: "lower",
+        previous: "bypass",
+        mode: "plan",
+        ceiling: "bypass",
+        justification: "reading the codebase first; changing nothing yet",
+      })
       yield* events.publish(SessionEvent.Shell.Started, {
         sessionID,
         messageID: SessionMessage.ID.create(),
@@ -386,8 +396,15 @@ describe("SessionProjector", () => {
         "agent-switched",
         "model-switched",
         "synthetic",
+        "permission-changed",
         "shell",
       ])
+      expect(messages.find((message) => message.type === "permission-changed")).toMatchObject({
+        previous: "bypass",
+        mode: "plan",
+        ceiling: "bypass",
+        justification: "reading the codebase first; changing nothing yet",
+      })
       expect(messages.find((message) => message.type === "shell")).toMatchObject({
         output: "/project",
         time: { completed: DateTime.makeUnsafe(1) },

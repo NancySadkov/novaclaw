@@ -6,6 +6,7 @@ import type {
   SessionMessageAssistantReasoning,
   SessionMessageAssistantTool,
   SessionMessageCompaction,
+  SessionMessagePermissionChanged,
   SessionMessageShell,
   SessionMessageSynthetic,
   SessionMessageSystem,
@@ -174,6 +175,9 @@ function NativeMessage(props: { message: SessionMessage }) {
       </Match>
       <Match when={props.message.type === "compaction" && props.message}>
         {(m) => <CompactionMessage message={m()} />}
+      </Match>
+      <Match when={props.message.type === "permission-changed" && props.message}>
+        {(m) => <PermissionChangedMessage message={m() as SessionMessagePermissionChanged} />}
       </Match>
       {/* agent-switched / model-switched are internal state events — not shown to the user (they read
           as debug noise like "Switched to agent build"). The events stay in the durable log. */}
@@ -681,6 +685,35 @@ function NoticeMessage(props: { kind: "system" | "synthetic"; text: string }) {
         <Markdown text={props.text} />
       </div>
     </details>
+  )
+}
+
+const PERMISSION_LABEL = {
+  plan: "Analyze",
+  ask: "Ask",
+  surgical: "Surgical",
+  bypass: "Build",
+  yolo: "YOLO",
+} as const
+
+function PermissionChangedMessage(props: { message: SessionMessagePermissionChanged }) {
+  const raised = () => props.message.op === "raise"
+  return (
+    <section data-slot="native-permission-card" data-direction={props.message.op} aria-label="Permission level changed">
+      <div data-slot="native-permission-card-icon" aria-hidden="true">
+        {raised() ? "↑" : "↓"}
+      </div>
+      <div data-slot="native-permission-card-body">
+        <div data-slot="native-permission-card-title">Permissions {raised() ? "raised" : "lowered"}</div>
+        <div data-slot="native-permission-card-levels">
+          {PERMISSION_LABEL[props.message.previous]} → {PERMISSION_LABEL[props.message.mode]}
+        </div>
+        <blockquote data-slot="native-permission-card-reason">{props.message.justification}</blockquote>
+        <div data-slot="native-permission-card-ceiling">
+          Self-managed · user-owned ceiling: {PERMISSION_LABEL[props.message.ceiling]}
+        </div>
+      </div>
+    </section>
   )
 }
 

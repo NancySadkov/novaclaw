@@ -1,11 +1,14 @@
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
+import { eq } from "drizzle-orm"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
+import { EventTable } from "@novaclaw/core/event/sql"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionEvent } from "@novaclaw/core/session/event"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SessionAutoGrant } from "@novaclaw/core/session/auto-grant"
@@ -90,6 +93,21 @@ const setup = Effect.gen(function* () {
 })
 
 const grant = (sessionID: string) => Effect.flatMap(SessionAutoGrant.Service, (store) => store.get(sessionID))
+const cardEvents = (sessionID: string) =>
+  Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    return yield* db
+      .select({ data: EventTable.data })
+      .from(EventTable)
+      .where(
+        eq(
+          EventTable.type,
+          EventV2.versionedType(SessionEvent.PermissionChanged.type, SessionEvent.PermissionChanged.durable!.version),
+        ),
+      )
+      .all()
+      .pipe(Effect.orDie, Effect.map((rows) => rows.filter((row) => row.data.sessionID === sessionID)))
+  })
 
 const REASON = "the plan is agreed and I now need to edit src/ to apply it"
 
@@ -140,6 +158,17 @@ describe("the `permission` tool (Auto mode)", () => {
       // "Lowering is always permitted and never asks."
       expect(assertions).toEqual([])
       expect((yield* grant("ses_tool_lower"))?.mode).toBe("plan")
+      expect(yield* cardEvents("ses_tool_lower")).toMatchObject([
+        {
+          data: {
+            op: "lower",
+            previous: "bypass",
+            mode: "plan",
+            ceiling: "bypass",
+            justification: "reading first; changing nothing yet",
+          },
+        },
+      ])
     }),
   )
 
@@ -172,6 +201,7 @@ describe("the `permission` tool (Auto mode)", () => {
       expect(result.value).toContain("the user set this chat to")
       expect(assertions).toEqual([])
       expect(yield* grant("ses_tool_ceiling")).toBeUndefined()
+      expect(yield* cardEvents("ses_tool_ceiling")).toEqual([])
     }),
   )
 

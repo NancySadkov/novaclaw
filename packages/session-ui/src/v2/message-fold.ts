@@ -171,6 +171,18 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
         time: { created: event.data.timestamp },
       })
       break
+    case "session.next.permission.changed":
+      appendMessage(messages, {
+        id: event.data.messageID,
+        type: "permission-changed",
+        op: event.data.op,
+        previous: event.data.previous,
+        mode: event.data.mode,
+        ceiling: event.data.ceiling,
+        justification: event.data.justification,
+        time: { created: event.data.timestamp },
+      })
+      break
     case "session.next.shell.started":
       appendMessage(messages, {
         id: event.data.messageID,

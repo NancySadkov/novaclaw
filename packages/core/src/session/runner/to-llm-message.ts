@@ -494,6 +494,7 @@ function toLLMMessage(
   switch (message.type) {
     case "agent-switched":
     case "model-switched":
+    case "permission-changed":
       return []
     case "user":
       return [

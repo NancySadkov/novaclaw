@@ -102,6 +102,17 @@ const switched: SessionMessage.AgentSwitched = {
   time: { created },
 }
 
+const permissionChanged: SessionMessage.PermissionChanged = {
+  id: SessionMessage.ID.make("msg_permission"),
+  type: "permission-changed",
+  op: "raise",
+  previous: "ask",
+  mode: "bypass",
+  ceiling: "bypass",
+  justification: "I need to edit the secret launch plan",
+  time: { created },
+}
+
 describe("export sanitizeMessage", () => {
   test("redacts every user-content string and keeps structure", () => {
     const out = sanitizeMessage(user) as SessionMessage.User
@@ -149,7 +160,7 @@ describe("export sanitizeMessage", () => {
     expect(out.model).toEqual(assistant.model)
   })
 
-  test("redacts shell + compaction; leaves switch markers intact", () => {
+  test("redacts shell, compaction, and permission reasons; leaves switch markers intact", () => {
     const shellOut = sanitizeMessage(shell) as SessionMessage.Shell
     expect(shellOut.command).toBe("[redacted:shell-command:msg_shell]")
     expect(shellOut.output).toBe("[redacted:shell-output:msg_shell]")
@@ -158,11 +169,16 @@ describe("export sanitizeMessage", () => {
     expect(compactionOut.recent).toBe("[redacted:compaction-recent:msg_compaction]")
     const switchedOut = sanitizeMessage(switched) as SessionMessage.AgentSwitched
     expect(switchedOut.agent).toBe("plan")
+    const permissionOut = sanitizeMessage(permissionChanged) as SessionMessage.PermissionChanged
+    expect(permissionOut.mode).toBe("bypass")
+    expect(permissionOut.justification).toBe("[redacted:permission-justification:msg_permission]")
   })
 
   test("sanitized output still encodes through the wire schema", () => {
-    const encoded = encodeMessages([user, assistant, shell, compaction, switched].map(sanitizeMessage))
-    expect(encoded).toHaveLength(5)
+    const encoded = encodeMessages(
+      [user, assistant, shell, compaction, switched, permissionChanged].map(sanitizeMessage),
+    )
+    expect(encoded).toHaveLength(6)
     // The wire shape carries millis timestamps and drops undefined optionals.
     expect((encoded[0] as { time: { created: number } }).time.created).toBe(0)
     expect(JSON.stringify(encoded)).not.toContain("secret")

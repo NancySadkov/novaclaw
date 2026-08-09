@@ -112,6 +112,23 @@ export const ModeSwitched = Event.define({
 })
 export type ModeSwitched = typeof ModeSwitched.Type
 
+// Auto mode's model-authored move. Unlike ModeSwitched this does not change the user's ceiling;
+// its event is projected into a transcript card while the atomic commit writes session_auto_grant.
+export const PermissionChanged = Event.define({
+  type: "session.next.permission.changed",
+  ...options,
+  schema: {
+    ...Base,
+    messageID: SessionMessage.ID,
+    op: Schema.Literals(["raise", "lower"]),
+    previous: SessionMessage.PermissionMode,
+    mode: SessionMessage.PermissionMode,
+    ceiling: SessionMessage.PermissionMode,
+    justification: Schema.NonEmptyString,
+  },
+})
+export type PermissionChanged = typeof PermissionChanged.Type
+
 // The per-session Strict-harness override switch (the composer's Strict toggle — jh.md). Like
 // ModeSwitched, the runner reads the projected column fresh each turn. `strict: null` clears the
 // override back to inherit (parent chain, then global config).
@@ -685,6 +702,7 @@ export const DurableDefinitions = Event.inventory(
   ModelSwitched,
   ResponderSwitched,
   ModeSwitched,
+  PermissionChanged,
   StrictSwitched,
   FeatureSwitched,
   TypeSwitched,
@@ -732,6 +750,7 @@ export const Definitions = Event.inventory(
   ModelSwitched,
   ResponderSwitched,
   ModeSwitched,
+  PermissionChanged,
   StrictSwitched,
   FeatureSwitched,
   TypeSwitched,

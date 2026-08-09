@@ -11,10 +11,12 @@ describe("public event manifest", () => {
   test("owns the complete public event surface", () => {
     // 2026-08-02: six durable recovery events joined the manifest: three provider-attempt lifecycle
     // events and three storage-linear stream checkpoints. 2026-08-08: device, priority and control-
-    // binding switches joined as durable session-component projections. Keep the exact counts pinned
-    // so adding a public wire event always requires an explicit contract review here.
-    expect(EventManifest.ServerDefinitions.length).toBe(74)
-    expect(EventManifest.Definitions.length).toBe(95)
+    // binding switches joined as durable session-component projections. 2026-08-09: the Auto-mode
+    // permission card joined as a durable audit event: no user-ceiling write, no model-context replay,
+    // and one transcript projection. Keep the exact counts pinned so adding a public wire event always
+    // requires an explicit contract review here.
+    expect(EventManifest.ServerDefinitions.length).toBe(75)
+    expect(EventManifest.Definitions.length).toBe(96)
     // V1-nuke slice D: the record lifecycle events are native (Session.Info payloads, durable
     // v2); session.diff + command.executed died with the V1 wire schemas (no publishers).
     expect(SessionRecordEvent.Definitions).toEqual([
@@ -23,8 +25,8 @@ describe("public event manifest", () => {
       SessionRecordEvent.Deleted,
       SessionRecordEvent.Error,
     ])
-    expect(EventManifest.Latest.size).toBe(95)
-    expect(EventManifest.Durable.size).toBe(47)
+    expect(EventManifest.Latest.size).toBe(96)
+    expect(EventManifest.Durable.size).toBe(48)
     // A retired durable type must stay retired: rows keyed `session.next.retried.1` still exist in
     // shipped databases and are skipped (never decoded) because both read paths filter to this manifest.
     expect(EventManifest.Durable.has("session.next.retried.1")).toBe(false)
@@ -46,6 +48,7 @@ describe("public event manifest", () => {
     expect(EventManifest.Definitions).toContain(SessionRecordEvent.Error)
     expect(EventManifest.Latest.get("session.next.message.recorded")).toBe(SessionEvent.MessageRecorded)
     expect(EventManifest.Durable.get("session.next.message.recorded.1")).toBe(SessionEvent.MessageRecorded)
+    expect(EventManifest.Durable.get("session.next.permission.changed.1")).toBe(SessionEvent.PermissionChanged)
     expect(EventManifest.Durable.has("session.next.step.ended.1")).toBe(false)
     expect(EventManifest.Durable.get("session.next.step.ended.2")).toBe(SessionEvent.Step.Ended)
   })

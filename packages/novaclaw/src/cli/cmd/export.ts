@@ -150,6 +150,12 @@ export function sanitizeMessage(msg: SessionMessage.Message): SessionMessage.Mes
     case "agent-switched":
     case "model-switched":
       return { ...msg, metadata }
+    case "permission-changed":
+      return {
+        ...msg,
+        metadata,
+        justification: redact("permission-justification", msg.id, msg.justification),
+      }
   }
 }
 

@@ -309,6 +309,7 @@ export const layer = Layer.effectDiscard(
         .run()
         .pipe(Effect.orDie, Effect.andThen(run(db, event))),
     )
+    yield* events.project(SessionEvent.PermissionChanged, (event) => run(db, event))
     // The per-session Strict-harness override switch — the runner reads the column fresh each turn.
     yield* events.project(SessionEvent.StrictSwitched, (event) =>
       db
