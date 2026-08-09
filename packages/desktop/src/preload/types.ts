@@ -97,7 +97,7 @@ export type ElectronAPI = {
   onZoomFactorChanged: (cb: (factor: number) => void) => () => void
   setTitlebar: (theme: TitlebarTheme) => Promise<void>
   setBackgroundColor: (color: string) => Promise<void>
-  exportDebugLogs: () => Promise<string>
+  exportDebugLogs: (serverLogDirectory?: string) => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>
   writeFile: (filePath: string, content: string) => Promise<void>
   readFile: (filePath: string) => Promise<string>

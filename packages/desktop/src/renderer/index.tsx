@@ -165,7 +165,7 @@ const createPlatform = (): Platform => {
       install: () => window.api.updater.install(),
     },
 
-    exportDebugLogs: () => window.api.exportDebugLogs(),
+    exportDebugLogs: (serverLogDirectory) => window.api.exportDebugLogs(serverLogDirectory),
 
     recordFatalRendererError: (error) => window.api.recordFatalRendererError(error),
 

@@ -316,7 +316,7 @@ const main = Effect.gen(function* () {
     resolveAppPath: async (appName) => resolveAppPath(appName),
     updater,
     setBackgroundColor: (color) => setBackgroundColor(color),
-    exportDebugLogs: () => exportDebugLogs(),
+    exportDebugLogs: (serverLogDirectory) => exportDebugLogs(serverLogDirectory),
     recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
   })
   registerWslIpcHandlers(wslServers)

@@ -107,7 +107,7 @@ type PlatformBase = {
   writeClipboardText?(text: string): Promise<void>
 
   /** Export collected diagnostic logs (desktop only) */
-  exportDebugLogs?(): Promise<string>
+  exportDebugLogs?(serverLogDirectory?: string): Promise<string>
 
   /** Record a fatal renderer error in platform logs (desktop only) */
   recordFatalRendererError?(error: FatalRendererErrorLog): Promise<void>

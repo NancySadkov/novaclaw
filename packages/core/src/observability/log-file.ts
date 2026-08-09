@@ -96,7 +96,8 @@ export const SEGMENT_BYTES = 8 * 1024 * 1024
 /**
  * The two bounds a product surface may name, declared in a leaf module with no Node imports so a
  * Settings panel can say the number instead of retyping it. See `log-bounds.ts` for what each one
- * actually promises — {@link MAX_AGE_MS} is a FLOOR and the header of `sweep` below says why.
+ * actually promises — age and bytes are independent ceilings, so heavy traffic may evict a segment
+ * before the age window while quiet traffic may keep the active segment longer.
  */
 export { TOTAL_BYTES, MAX_AGE_MS } from "./log-bounds"
 import { MAX_AGE_MS, TOTAL_BYTES } from "./log-bounds"

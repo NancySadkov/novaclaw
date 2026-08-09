@@ -1,16 +1,16 @@
 import { MainLogger } from "electron-log"
 import log from "electron-log/main.js"
 import { app, crashReporter, netLog, shell } from "electron"
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { ZipWriter, BlobWriter, BlobReader } from "@zip.js/zip.js"
 import { dirname, join } from "node:path"
-import { homedir, tmpdir } from "node:os"
+import { tmpdir } from "node:os"
 import { describeLogDirectory, resolveLogDirectory, type LogDirectory } from "./log-directory"
+import { collectRecentFiles, type DebugExportEntry } from "./debug-export"
 
 const MAX_LOG_AGE_DAYS = 7
 const TAIL_LINES = 1000
 const EXPORT_WINDOW = 24 * 60 * 60 * 1000
-const MAX_EXPORT_FILE_SIZE = 50 * 1024 * 1024
 const NET_LOG_SIZE = 20 * 1024 * 1024
 
 let root = ""
@@ -79,7 +79,7 @@ export async function startNetLog() {
   write("network", "net log started", { path: netLogPath })
 }
 
-export async function exportDebugLogs() {
+export async function exportDebugLogs(serverLogDirectory?: string) {
   const restartNetLog = netLog.currentlyLogging
   if (restartNetLog) {
     await netLog.stopLogging().catch((error) => write("network", "failed to stop net log", { error }))
@@ -89,10 +89,10 @@ export async function exportDebugLogs() {
   try {
     write("main", "exporting debug logs", { output })
     await writeZip(output, [
-      { name: "manifest.json", data: Buffer.from(JSON.stringify(manifest(), null, 2)) },
-      ...collect(root, "desktop"),
-      ...serverLogRoots().flatMap((dir, i) => collect(dir, `server-${i + 1}`)),
-      ...collect(app.getPath("crashDumps"), "crashpad"),
+      { name: "manifest.json", data: Buffer.from(JSON.stringify(manifest(serverLogDirectory), null, 2)) },
+      ...collectRecentFiles(root, "desktop", EXPORT_WINDOW),
+      ...(serverLogDirectory ? collectRecentFiles(serverLogDirectory, "server", EXPORT_WINDOW) : []),
+      ...collectRecentFiles(app.getPath("crashDumps"), "crashpad", EXPORT_WINDOW),
     ])
     shell.showItemInFolder(output)
     return output
@@ -186,7 +186,7 @@ function cleanup() {
   }
 }
 
-function manifest() {
+function manifest(serverLogDirectory?: string) {
   return {
     generated: new Date().toISOString(),
     version: app.getVersion(),
@@ -200,41 +200,12 @@ function manifest() {
     logs: root,
     currentRun: run,
     crashDumps: app.getPath("crashDumps"),
-    serverLogs: serverLogRoots(),
+    serverLog: serverLogDirectory,
     netLog: netLogPath,
   }
 }
 
-function serverLogRoots() {
-  const xdgData = process.env.XDG_DATA_HOME || join(homedir(), ".local", "share")
-  return [...new Set([join(xdgData, "novaclaw", "log"), join(app.getPath("userData"), "novaclaw", "log")])]
-}
-
-type Entry = { name: string; path?: string; data?: Buffer }
-
-function collect(dir: string, prefix: string): Entry[] {
-  if (!existsSync(dir)) return []
-  const cutoff = Date.now() - EXPORT_WINDOW
-  const result: Entry[] = []
-  const walk = (current: string) => {
-    for (const entry of readdirSync(current)) {
-      const file = join(current, entry)
-      const info = statSync(file)
-      if (info.isDirectory()) {
-        walk(file)
-        continue
-      }
-      if (info.mtimeMs < cutoff) continue
-      if (info.size > MAX_EXPORT_FILE_SIZE) continue
-      if (file.endsWith(".heapsnapshot")) continue
-      result.push({ name: join(prefix, file.slice(dir.length + 1)).replace(/\\/g, "/"), path: file })
-    }
-  }
-  walk(dir)
-  return result
-}
-
-async function writeZip(output: string, entries: Entry[]) {
+async function writeZip(output: string, entries: DebugExportEntry[]) {
   const writer = new ZipWriter(new BlobWriter("application/zip"))
   for (const entry of entries) {
     const data = entry.data ?? readFileSync(entry.path!)

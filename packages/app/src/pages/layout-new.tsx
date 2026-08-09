@@ -10,6 +10,7 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
+import { useServerSync } from "@/context/server-sync"
 import { useTabs } from "@/context/tabs"
 import { setNavigate } from "@/utils/notification-click"
 import { ToastRegion } from "@/utils/toast"
@@ -28,6 +29,7 @@ export default function NewLayout(props: ParentProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const server = useServer()
+  const sync = useServerSync()
   const tabs = useTabs()
   setNavigate(navigate)
 
@@ -84,7 +86,10 @@ export default function NewLayout(props: ParentProps) {
             title: "Export logs",
             category: language.t("command.category.settings"),
             onSelect: () => {
-              void platform.exportDebugLogs?.()
+              // The active instance already answered GET /instance during sync. Carry its declared
+              // log directory across IPC; the desktop must never guess XDG/AppData roots because a
+              // remote or explicitly homed instance may live somewhere entirely different.
+              void platform.exportDebugLogs?.(sync().data.path?.log)
             },
           },
         ]
