@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { Config } from "@novaclaw/core/config"
-import { Schema } from "effect"
+import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { CapabilityRegistry } from "@novaclaw/core/effect/capability-registry"
+import { LayerNode } from "@novaclaw/core/effect/layer-node"
+import { LocalModelManager } from "@novaclaw/core/local-model-manager"
+import { Effect, Layer, Schema } from "effect"
 import fs from "node:fs"
 import {
   effective,
@@ -12,7 +16,7 @@ import {
   RUNTIME_ARTIFACT,
   supportedContext,
 } from "@/local-model/catalog"
-import { isManagedEndpoint } from "@/local-model/runtime"
+import { LocalModelRuntime, isManagedEndpoint } from "@/local-model/runtime"
 
 const GIB = 1024 ** 3
 
@@ -69,6 +73,69 @@ describe("managed local-model lifecycle", () => {
     expect(source).not.toContain("forkScoped(install)")
     expect(source).toContain('stage: "installed"')
     expect(source).toContain("It will load when you send it a prompt")
+  })
+
+  test("a constructor defect degrades, stays cached, and retries without waking for a remote model", async () => {
+    let refuse = true
+    let builds = 0
+    const ready = {
+      supported: true,
+      platform: "test",
+      profiles: [],
+      stage: "ready" as const,
+      recommendedContext: 65_536,
+    }
+    const inner = Layer.effect(
+      LocalModelRuntime.RuntimeService,
+      Effect.sync(() => {
+        builds++
+        if (refuse) throw new Error("forced local-model constructor defect")
+        return LocalModelRuntime.RuntimeService.of({
+          status: () => Effect.succeed(ready),
+          install: () => Effect.succeed(ready),
+          ensure: () => Effect.void,
+          stop: () => Effect.succeed(ready),
+        })
+      }),
+    )
+    const graph = AppNodeBuilder.build(LayerNode.group([LocalModelRuntime.managerNode, CapabilityRegistry.node]), [
+      [LocalModelRuntime.serviceNode, inner],
+    ])
+    const program = Effect.gen(function* () {
+      const manager = yield* LocalModelManager.Service
+      const registry = yield* CapabilityRegistry.Service
+
+      expect(yield* registry.inspect()).toEqual([{ name: "local-model", status: { state: "idle" } }])
+      expect(builds).toBe(0)
+
+      yield* manager.ensure({
+        providerID: "spark",
+        modelID: "holo3.1",
+        apiModelID: "holo3.1",
+        baseURL: "http://192.168.178.40:8010/v1",
+      })
+      expect(builds).toBe(0)
+      expect(yield* registry.inspect()).toEqual([{ name: "local-model", status: { state: "idle" } }])
+
+      const degraded = yield* manager.status()
+      expect(degraded.stage).toBe("error")
+      expect(degraded.message).toContain("local-model is unavailable")
+      expect(degraded.detail).not.toContain("forced local-model constructor defect")
+      expect(yield* registry.inspect()).toMatchObject([
+        { name: "local-model", status: { state: "unavailable", attempts: 1 } },
+      ])
+      expect(builds).toBe(1)
+
+      expect((yield* manager.status()).stage).toBe("error")
+      expect(builds).toBe(1)
+
+      refuse = false
+      expect(yield* registry.retry("local-model")).toMatchObject({ state: "ready" })
+      expect((yield* manager.status()).stage).toBe("ready")
+      expect(builds).toBe(2)
+    }).pipe(Effect.provide(graph))
+
+    await Effect.runPromise(program)
   })
 })
 

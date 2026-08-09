@@ -1,7 +1,7 @@
 import path from "node:path"
 import fs from "node:fs/promises"
 import os from "node:os"
-import { Cause, Effect, Fiber, Layer } from "effect"
+import { Cause, Context, Effect, Fiber, Layer } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import extract from "extract-zip"
 import type { ConfigLocalModelCatalog } from "@novaclaw/core/config/local-model-catalog"
@@ -10,6 +10,8 @@ import { FSUtil } from "@novaclaw/core/fs-util"
 import { Global } from "@novaclaw/core/global"
 import { LocalModelManager } from "@novaclaw/core/local-model-manager"
 import { makeGlobalNode } from "@novaclaw/core/effect/app-node"
+import { Capability } from "@novaclaw/core/effect/capability"
+import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { httpClient } from "@novaclaw/core/effect/app-node-platform"
 import { Pressure } from "@/storage/pressure"
 import { Process } from "@/util/process"
@@ -60,6 +62,11 @@ export interface Status {
   readonly preflight?: Preflight
   readonly recommendedContext: number
 }
+
+/** Private runtime identity, distinct from core's public manager seam so the adapter cannot replace itself. */
+export class RuntimeService extends Context.Service<RuntimeService, LocalModelManager.Interface>()(
+  "@novaclaw/LocalModelRuntime",
+) {}
 
 interface Paths {
   readonly root: string
@@ -155,7 +162,7 @@ async function waitUntilReady(child: Process.Child, expectedModel: string, timeo
 }
 
 export const layer = Layer.effect(
-  LocalModelManager.Service,
+  RuntimeService,
   Effect.gen(function* () {
     const global = yield* Global.Service
     const paths = localPaths(global)
@@ -593,14 +600,78 @@ export const layer = Layer.effect(
       }
     }
 
-    return LocalModelManager.Service.of({ status, install: installModel, ensure, stop })
+    return RuntimeService.of({ status, install: installModel, ensure, stop })
   }),
 )
 
-export const node = makeGlobalNode({
-  service: LocalModelManager.Service,
+/** The real runtime stays independently replaceable so a test can poison only deferred startup. */
+export const serviceNode = makeGlobalNode({
+  service: RuntimeService,
   layer,
   deps: [Global.node, FSUtil.node, httpClient],
+})
+
+export const node = LayerNode.capability(serviceNode, {
+  name: "local-model",
+  service: RuntimeService,
+  timeout: "30 seconds",
+  repair: ["local_model_catalog"],
+})
+
+const unavailableStatus = (error: Capability.Unavailable): Status => ({
+  ...baseStatus(effective().profile),
+  stage: "error",
+  message: error.summary,
+  // Capability.detail may contain a stack and is Developer-mode-only. The ordinary Models surface
+  // names the outage and points to Debug without copying internals into a normal user's UI.
+  detail: "Open Developer mode → Debug → Optional capabilities for technical details and recovery.",
+})
+
+/** Preserve the manager contract while making acquisition failure explicit at every operation. */
+export const client = (
+  capability: Capability.Capability<LocalModelManager.Interface>,
+): LocalModelManager.Interface => ({
+  status: (overrides) =>
+    capability.get.pipe(
+      Effect.flatMap((result) =>
+        result.ok ? result.value.status(overrides) : Effect.succeed(unavailableStatus(result.error)),
+      ),
+    ),
+  install: (profileID, context, overrides) =>
+    capability.get.pipe(
+      Effect.flatMap((result) =>
+        result.ok
+          ? result.value.install(profileID, context, overrides)
+          : Effect.succeed(unavailableStatus(result.error)),
+      ),
+    ),
+  ensure: (request, overrides) => {
+    // Every provider turn crosses this hook. A remote model must not wake the managed-local runtime.
+    if (!isManagedEndpoint(request.baseURL) || request.apiModelID !== QWEN_PROFILE.modelID) return Effect.void
+    return capability.get.pipe(
+      Effect.flatMap((result) =>
+        result.ok
+          ? result.value.ensure(request, overrides)
+          : Effect.fail(new LocalModelManager.UnavailableError({ message: result.error.summary })),
+      ),
+    )
+  },
+  stop: () =>
+    capability.get.pipe(
+      Effect.flatMap((result) => (result.ok ? result.value.stop() : Effect.succeed(unavailableStatus(result.error)))),
+    ),
+})
+
+/** The core graph consumes the ordinary manager service; this adapter is its capability-aware source. */
+export const managerNode = makeGlobalNode({
+  service: LocalModelManager.Service,
+  layer: Layer.effect(
+    LocalModelManager.Service,
+    Effect.gen(function* () {
+      return LocalModelManager.Service.of(client(yield* node.service))
+    }),
+  ),
+  deps: [node],
 })
 
 export * as LocalModelRuntime from "./runtime"

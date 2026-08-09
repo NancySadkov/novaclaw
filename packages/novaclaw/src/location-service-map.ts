@@ -38,7 +38,7 @@ export const replacements: LayerNode.Replacements = [
   // `test/location-service-map-replacements.test.ts`, because "a guard's SITE is invisible to
   // behaviour" is how this project has shipped an inert gate before.
   [McpHealthContext.node, McpHealthReport.node],
-  [LocalModelManager.node, LocalModelRuntime.node],
+  [LocalModelManager.node, LocalModelRuntime.managerNode],
 ]
 
 export const layer: Layer.Layer<LocationServiceMap.Service> = buildLocationServiceMap(replacements)

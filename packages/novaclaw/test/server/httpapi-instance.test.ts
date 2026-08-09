@@ -60,7 +60,12 @@ describe("instance HttpApi", () => {
       const list = yield* HttpClient.get(`/capability?directory=${encodeURIComponent(dir)}`)
 
       expect(list.status).toBe(200)
-      expect(yield* list.json).toEqual(expect.arrayContaining([{ name: "memory", status: { state: "idle" } }]))
+      expect(yield* list.json).toEqual(
+        expect.arrayContaining([
+          { name: "local-model", status: { state: "idle" } },
+          { name: "memory", status: { state: "idle" } },
+        ]),
+      )
 
       const retry = yield* HttpClientRequest.post(
         `/capability/not-declared/retry?directory=${encodeURIComponent(dir)}`,
