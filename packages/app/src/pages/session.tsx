@@ -26,7 +26,7 @@ import { createAutoScroll } from "@novaclaw/ui/hooks"
 import { previewSelectedLines } from "@novaclaw/session-ui/pierre/selection-bridge"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { showToast } from "@/utils/toast"
-import { base64Encode, checksum } from "@novaclaw/core/util/encode"
+import { base64Encode } from "@novaclaw/core/util/encode"
 import { useLocation, useNavigate, useSearchParams } from "@solidjs/router"
 import { NewSessionView, SessionHeader } from "@/components/session"
 import { useConfirm } from "@/components/dialog-confirm"
@@ -60,6 +60,7 @@ import {
 import { NativeTimeline } from "@/pages/session/timeline/native-timeline"
 import { createTimelineModel } from "@/pages/session/timeline/model"
 import { createSessionRevertController } from "@/pages/session/revert-controller"
+import { createReviewNavigation } from "@/pages/session/review-navigation"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
@@ -918,86 +919,17 @@ export default function Page() {
     ),
   )
 
-  const reviewDiffId = (path: string) => {
-    const sum = checksum(path)
-    if (!sum) return
-    return `session-review-diff-${sum}`
-  }
-
-  const reviewDiffTop = (path: string) => {
-    const root = tree.reviewScroll
-    if (!root) return
-
-    const id = reviewDiffId(path)
-    if (!id) return
-
-    const el = document.getElementById(id)
-    if (!(el instanceof HTMLElement)) return
-    if (!root.contains(el)) return
-
-    const a = el.getBoundingClientRect()
-    const b = root.getBoundingClientRect()
-    return a.top - b.top + root.scrollTop
-  }
-
-  const scrollToReviewDiff = (path: string) => {
-    const root = tree.reviewScroll
-    if (!root) return false
-
-    const top = reviewDiffTop(path)
-    if (top === undefined) return false
-
-    view().setScroll("review", { x: root.scrollLeft, y: top })
-    root.scrollTo({ top, behavior: "auto" })
-    return true
-  }
-
-  const focusReviewDiff = (path: string) => {
-    openReviewPanel()
-    view().review.openPath(path)
-    setTree({ activeDiff: path, pendingDiff: path })
-  }
-
-  createEffect(() => {
-    const pending = tree.pendingDiff
-    if (!pending) return
-    if (!tree.reviewScroll) return
-    if (!reviewReady()) return
-
-    const attempt = (count: number) => {
-      if (tree.pendingDiff !== pending) return
-      if (count > 60) {
-        setTree("pendingDiff", undefined)
-        return
-      }
-
-      const root = tree.reviewScroll
-      if (!root) {
-        requestAnimationFrame(() => attempt(count + 1))
-        return
-      }
-
-      if (!scrollToReviewDiff(pending)) {
-        requestAnimationFrame(() => attempt(count + 1))
-        return
-      }
-
-      const top = reviewDiffTop(pending)
-      if (top === undefined) {
-        requestAnimationFrame(() => attempt(count + 1))
-        return
-      }
-
-      if (Math.abs(root.scrollTop - top) <= 1) {
-        setTree("pendingDiff", undefined)
-        return
-      }
-
-      requestAnimationFrame(() => attempt(count + 1))
-    }
-
-    requestAnimationFrame(() => attempt(0))
+  const reviewNavigation = createReviewNavigation({
+    root: () => tree.reviewScroll,
+    pending: () => tree.pendingDiff,
+    ready: reviewReady,
+    setPending: (path) => setTree("pendingDiff", path),
+    setFocused: (path) => setTree("activeDiff", path),
+    openPanel: openReviewPanel,
+    openPath: (path) => view().review.openPath(path),
+    saveScroll: (position) => view().setScroll("review", position),
   })
+  const focusReviewDiff = reviewNavigation.focus
 
   createEffect(() => {
     const id = params.id
