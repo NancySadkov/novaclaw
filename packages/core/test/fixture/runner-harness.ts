@@ -293,6 +293,12 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
      */
     compactionBuffer: 3_000,
     compactionKeepTokens: 1_000,
+    /**
+     * Enable the real Strict router at drain entry. Off by default so the 77 normal-drain claims keep
+     * describing that drain; the Strict contract test turns it on explicitly and therefore cannot
+     * accidentally make the whole suite exercise a different engine.
+     */
+    strictEnabled: false,
   }
   /**
    * Live tool-execution accounting. `maxActive` is the interesting one: it is the only way to assert
@@ -548,6 +554,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
                 buffer: controls.compactionBuffer,
                 keep: new ConfigCompaction.Keep({ tokens: controls.compactionKeepTokens }),
               }),
+              ...(controls.strictEnabled ? { strict: { enabled: true } } : {}),
             }),
           }),
         ]),
