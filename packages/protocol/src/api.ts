@@ -95,7 +95,72 @@ const makeApiFromGroup = <
     .middleware(Authorization)
     .middleware(SchemaErrorMiddleware)
 
-export const makeApi = <
+type ApiFromGroup<
+  Group extends HttpApiGroup.Any,
+  LocationId extends HttpApiMiddleware.AnyId,
+  LocationService,
+  SessionLocationId extends HttpApiMiddleware.AnyId,
+  SessionLocationService,
+  WorkspaceRoutingId extends HttpApiMiddleware.AnyId,
+  WorkspaceRoutingService,
+> = HttpApi.HttpApi<
+  "server",
+  HttpApiGroup.AddMiddleware<
+    HttpApiGroup.AddMiddleware<
+      | typeof HealthGroup
+      | HttpApiGroup.AddMiddleware<typeof LocationGroup, LocationId>
+      | HttpApiGroup.AddMiddleware<typeof AgentGroup, LocationId>
+      | ReturnType<
+          typeof makeSessionGroup<
+            LocationId,
+            LocationService,
+            SessionLocationId,
+            SessionLocationService,
+            WorkspaceRoutingId,
+            WorkspaceRoutingService
+          >
+        >
+      | HttpApiGroup.AddMiddleware<
+          HttpApiGroup.AddMiddleware<typeof MessageGroup, SessionLocationId>,
+          WorkspaceRoutingId
+        >
+      | HttpApiGroup.AddMiddleware<typeof ModelGroup, LocationId>
+      | HttpApiGroup.AddMiddleware<typeof ProviderGroup, LocationId>
+      | HttpApiGroup.AddMiddleware<typeof IntegrationGroup, LocationId>
+      | HttpApiGroup.AddMiddleware<typeof CredentialGroup, LocationId>
+      | typeof MessengerGroup
+      | typeof CalendarGroup
+      | typeof RecipeGroup
+      | HttpApiGroup.AddMiddleware<
+          ReturnType<
+            typeof makePermissionGroup<LocationId, LocationService, SessionLocationId, SessionLocationService>
+          >,
+          WorkspaceRoutingId
+        >
+      | HttpApiGroup.AddMiddleware<typeof FileSystemGroup, LocationId>
+      | HttpApiGroup.AddMiddleware<typeof CommandGroup, LocationId>
+      | HttpApiGroup.AddMiddleware<typeof SkillGroup, LocationId>
+      | Group
+      | HttpApiGroup.AddMiddleware<typeof PtyGroup, LocationId>
+      | typeof PtyInstanceGroup
+      | HttpApiGroup.AddMiddleware<
+          ReturnType<
+            typeof makeQuestionGroup<LocationId, LocationService, SessionLocationId, SessionLocationService>
+          >,
+          WorkspaceRoutingId
+        >
+      | HttpApiGroup.AddMiddleware<typeof ReferenceGroup, LocationId>
+      | typeof ConfigGroup
+      | typeof LogGroup
+      | typeof TelemetryGroup,
+      Authorization
+    >,
+    SchemaErrorMiddleware
+  >
+>
+
+export function makeApi<
+  const Definitions extends ReadonlyArray<Definition>,
   LocationId extends HttpApiMiddleware.AnyId,
   LocationService,
   SessionLocationId extends HttpApiMiddleware.AnyId,
@@ -103,19 +168,28 @@ export const makeApi = <
   WorkspaceRoutingId extends HttpApiMiddleware.AnyId,
   WorkspaceRoutingService,
 >(options: {
-  readonly definitions: ReadonlyArray<Definition>
+  readonly definitions: Definitions
   readonly locationMiddleware: Context.Key<LocationId, LocationService>
   readonly sessionLocationMiddleware: Context.Key<SessionLocationId, SessionLocationService>
   readonly workspaceRoutingMiddleware: Context.Key<WorkspaceRoutingId, WorkspaceRoutingService>
-}) =>
-  makeApiFromGroup(
+}): ApiFromGroup<
+  ReturnType<typeof makeEventGroup<Definitions>>,
+  LocationId,
+  LocationService,
+  SessionLocationId,
+  SessionLocationService,
+  WorkspaceRoutingId,
+  WorkspaceRoutingService
+> {
+  return makeApiFromGroup(
     makeEventGroup(options.definitions),
     options.locationMiddleware,
     options.sessionLocationMiddleware,
     options.workspaceRoutingMiddleware,
   )
+}
 
-export const makeDefaultApi = <
+export function makeDefaultApi<
   LocationId extends HttpApiMiddleware.AnyId,
   LocationService,
   SessionLocationId extends HttpApiMiddleware.AnyId,
@@ -126,10 +200,19 @@ export const makeDefaultApi = <
   readonly locationMiddleware: Context.Key<LocationId, LocationService>
   readonly sessionLocationMiddleware: Context.Key<SessionLocationId, SessionLocationService>
   readonly workspaceRoutingMiddleware: Context.Key<WorkspaceRoutingId, WorkspaceRoutingService>
-}) =>
-  makeApiFromGroup(
+}): ApiFromGroup<
+  typeof EventGroup,
+  LocationId,
+  LocationService,
+  SessionLocationId,
+  SessionLocationService,
+  WorkspaceRoutingId,
+  WorkspaceRoutingService
+> {
+  return makeApiFromGroup(
     EventGroup,
     options.locationMiddleware,
     options.sessionLocationMiddleware,
     options.workspaceRoutingMiddleware,
   )
+}
