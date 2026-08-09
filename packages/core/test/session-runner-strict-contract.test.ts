@@ -1,8 +1,12 @@
-import { describe, expect, test } from "bun:test"
+import { afterAll, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionStrict } from "@novaclaw/core/session/runner/strict"
+import { AbsolutePath } from "@novaclaw/core/schema"
 import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, userTexts } from "./fixture/runner-harness"
 
 /**
@@ -19,6 +23,14 @@ import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, userTexts } fr
  * not a source assertion, so extracting the closure has to preserve observable behavior.
  */
 describe("SessionRunnerLLM — Strict dispatch contract", () => {
+  const roots: string[] = []
+  afterAll(() => {
+    for (const root of roots)
+      try {
+        fs.rmSync(root, { recursive: true, force: true })
+      } catch {}
+  })
+
   test("a CHAT verdict routes once, then the shared drain answers and settles the turn", async () => {
     const harness = makeRunnerHarness({
       turns: [completeTurn("route", "CHAT"), completeTurn("answer", "Hello from the normal drain.")],
@@ -58,5 +70,78 @@ describe("SessionRunnerLLM — Strict dispatch contract", () => {
       },
     ])
     expect(JSON.stringify(context), "the internal CHAT verdict is never shown as the answer").not.toContain('"text":"CHAT"')
+  }, 60_000)
+
+  test("a TASK materializes its action and settles one restorable snapshot boundary", async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "novaclaw-strict-contract-"))
+    roots.push(directory)
+    // The whole-task goal check is evidence-gated: the quote it accepts must exist in the workspace,
+    // not merely in another model reply. This control keeps the scripted success honest.
+    fs.writeFileSync(path.join(directory, "proof.txt"), "RESULT PROOF-42 done")
+
+    const leaf = {
+      size: "atomic",
+      tool: "run",
+      args: { command: "echo PROOF-42" },
+      success: "the command prints the proof marker",
+      check: { type: "output_equals", command: "echo PROOF-42", expected: "PROOF-42" },
+      produces: [],
+    }
+    const rootAtomic = JSON.stringify({ goal: "run the proof check", ...leaf })
+    const rootPlan = JSON.stringify({
+      goal: "run the proof check",
+      size: "needs_decomposition",
+      success: "the proof check passes",
+      substeps: [{ goal: "execute the proof command", ...leaf }],
+    })
+    const leafPlan = JSON.stringify({ goal: "execute the proof command", ...leaf })
+    const achieved = JSON.stringify({ achieved: true, missing: "", evidence: "PROOF-42" })
+    const harness = makeRunnerHarness({
+      directory: AbsolutePath.make(directory),
+      snapshotFiles: ["proof.txt"],
+      turns: [
+        completeTurn("route-task", "TASK"),
+        completeTurn("root-atomic", rootAtomic),
+        completeTurn("root-plan", rootPlan),
+        completeTurn("leaf-plan", leafPlan),
+        completeTurn("goal-check", achieved),
+        completeTurn("summary", "The Strict task completed and verified the proof command."),
+      ],
+    })
+    harness.controls.strictEnabled = true
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Run the proof check" }),
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+        return yield* session.context(HARNESS_SESSION)
+      }),
+      "Strict contract — TASK materialization and settlement",
+    )
+
+    expect(harness.requests, "route + root retry + root plan + leaf + goal check + summary").toHaveLength(6)
+    expect(harness.snapshotCaptures.map(String), "one boundary before and one after the engine").toEqual([
+      "snapshot_1",
+      "snapshot_2",
+    ])
+    const assistants = context.filter((message) => message.type === "assistant")
+    expect(assistants, "one assistant message owns the whole Strict run").toHaveLength(1)
+    expect(assistants[0]).toMatchObject({
+      finish: "stop",
+      snapshot: { start: "snapshot_1", end: "snapshot_2", files: ["proof.txt"] },
+      content: [
+        { type: "tool", id: "jh_a1", name: "run", state: { status: "completed" } },
+        { type: "text", text: "The Strict task completed and verified the proof command." },
+      ],
+    })
+    expect(JSON.stringify(context), "the internal TASK verdict and plan JSON stay out of chat").not.toContain(
+      '"text":"TASK"',
+    )
   }, 60_000)
 })

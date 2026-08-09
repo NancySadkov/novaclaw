@@ -12,7 +12,7 @@ import { EventV2 } from "@novaclaw/core/event"
 import { EventTable } from "@novaclaw/core/event/sql"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { QuestionV2 } from "@novaclaw/core/question"
-import { AbsolutePath } from "@novaclaw/core/schema"
+import { AbsolutePath, RelativePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Snapshot } from "@novaclaw/core/snapshot"
 import { SessionProjector } from "@novaclaw/core/session/projector"
@@ -104,6 +104,13 @@ export interface RunnerScript {
   maintenanceTurns?: LLMEvent[][]
   /** Events the system-prompt-less utility passes get. Default: an empty stream. */
   utilityTurns?: LLMEvent[][]
+  /** A real OS-temp workspace for claims that execute Strict host actions. Default stays `/project`. */
+  directory?: AbsolutePath
+  /**
+   * Enable a deterministic snapshot service and return these files at the start/end boundary.
+   * Absent keeps the historical noop snapshot layer used by every normal-drain claim.
+   */
+  snapshotFiles?: readonly string[]
 }
 
 /**
@@ -212,6 +219,7 @@ function assertIsolationHolds() {
  */
 export function makeRunnerHarness(script: RunnerScript = {}) {
   assertIsolationHolds()
+  const directory = script.directory ?? AbsolutePath.make("/project")
   const requests: LLMRequest[] = []
   const titleRequests: LLMRequest[] = []
   const maintenanceRequests: LLMRequest[] = []
@@ -530,6 +538,31 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
   })
   const referenceGuidance = Layer.mock(ReferenceGuidance.Service, { load: () => Effect.succeed(SystemContext.empty) })
 
+  const snapshotCaptures: Snapshot.ID[] = []
+  const snapshotFiles = script.snapshotFiles?.map((file) => RelativePath.make(file))
+  const snapshotLayer =
+    snapshotFiles === undefined
+      ? Snapshot.noopLayer
+      : Layer.succeed(
+          Snapshot.Service,
+          Snapshot.Service.of({
+            capture: () =>
+              Effect.sync(() => {
+                const id = Snapshot.ID.make(`snapshot_${snapshotCaptures.length + 1}`)
+                snapshotCaptures.push(id)
+                return id
+              }),
+            files: () => Effect.succeed(snapshotFiles),
+            // Post-run maintenance reads the same boundary to refresh the Changes summary. Empty is
+            // enough here: this fake owns boundary propagation, not Git's diff implementation.
+            diff: () => Effect.succeed([]),
+            read: () => Effect.die("runner-harness snapshot.read is unused"),
+            preview: () => Effect.die("runner-harness snapshot.preview is unused"),
+            restore: () => Effect.die("runner-harness snapshot.restore is unused"),
+            checkout: () => Effect.die("runner-harness snapshot.checkout is unused"),
+          }),
+        )
+
   const permission = Layer.succeed(
     PermissionV2.Service,
     PermissionV2.Service.of({
@@ -562,11 +595,11 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
   )
 
   const runnerLayer = AppNodeBuilder.build(SessionRunnerLLM.node, [
-    [Snapshot.node, Snapshot.noopLayer],
+    [Snapshot.node, snapshotLayer],
     [LayerNodePlatform.llmClient, clientLayer],
     [SessionRunnerModel.node, models],
     [SystemContextRegistry.node, systemContext],
-    [Location.node, Location.boundNode({ directory: AbsolutePath.make("/project") })],
+    [Location.node, Location.boundNode({ directory })],
     [SkillGuidance.node, skillGuidance],
     [ReferenceGuidance.node, referenceGuidance],
     [PermissionV2.node, permission],
@@ -616,10 +649,10 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       [PermissionV2.node, permission],
       [SessionRunnerModel.node, models],
       [SystemContextRegistry.node, systemContext],
-      [Location.node, Location.boundNode({ directory: AbsolutePath.make("/project") })],
+      [Location.node, Location.boundNode({ directory })],
       [SkillGuidance.node, skillGuidance],
       [ReferenceGuidance.node, referenceGuidance],
-      [Snapshot.node, Snapshot.noopLayer],
+      [Snapshot.node, snapshotLayer],
       [SessionExecution.node, execution],
       [Config.node, config],
     ],
@@ -635,7 +668,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       const { db } = yield* Database.Service
       yield* db
         .insert(SessionTable)
-        .values({ id, slug: id, directory: "/project", title: "test", version: "test" })
+        .values({ id, slug: id, directory, title: "test", version: "test" })
         .onConflictDoNothing()
         .run()
         .pipe(Effect.orDie)
@@ -714,6 +747,8 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     maintenanceRequests,
     /** Utility passes that carry NO system prompt. The class a marker list cannot recognise. */
     utilityRequests,
+    /** Snapshot ids minted in capture order; empty unless `snapshotFiles` enabled the fake service. */
+    snapshotCaptures,
     /** Text the echo tool was asked to echo, in call order. */
     executions,
     /** Every context the echo tool was invoked with — the authorisation trail. */
