@@ -160,6 +160,8 @@ type Pkg = {
   perSubdir?: boolean
   /** Override the hang backstop for a package whose HONEST runtime is close to the default. */
   wallclockMs?: number
+  /** Per-subdirectory override for an isolated full-only unit with a measured honest runtime. */
+  subdirWallclockMs?: Readonly<Record<string, number>>
   /**
    * Override the PER-TEST timeout for a package with a legitimately slow single test.
    *
@@ -233,7 +235,16 @@ const PACKAGES: Pkg[] = [
     args: [`test/${sub}/`],
     ...(PROMOTED_WALLCLOCK_MS[sub] === undefined ? {} : { wallclockMs: PROMOTED_WALLCLOCK_MS[sub] }),
   })),
-  { name: "novaclaw", dir: "packages/novaclaw", args: [], fullOnly: true, perSubdir: true },
+  {
+    name: "novaclaw",
+    dir: "packages/novaclaw",
+    args: [],
+    fullOnly: true,
+    perSubdir: true,
+    // Measured isolated at 201.2 s; two exact full gates killed it at the generic 150 s
+    // ceiling with host commit peaking at only 81%. Keep a hang backstop, with honest margin.
+    subdirWallclockMs: { "test/cli/": 300_000 },
+  },
 ]
 
 /**
@@ -749,7 +760,7 @@ for (const pkg of PACKAGES) {
   const argv = (args: string[]) => ["test", ...args, `--timeout=${perTest}`]
   if (pkg.perSubdir) {
     for (const unit of subUnits(pkg.dir, promotedSubdirs))
-      run(`${pkg.name} ${unit}`, "test", pkg.dir, argv([unit]), wallclock)
+      run(`${pkg.name} ${unit}`, "test", pkg.dir, argv([unit]), pkg.subdirWallclockMs?.[unit] ?? wallclock)
   } else {
     run(pkg.name, "test", pkg.dir, argv(pkg.args), wallclock)
   }
