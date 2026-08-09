@@ -127,10 +127,12 @@ const service = MCP.Service as unknown as Effect.Effect<MCPNS.Interface, never, 
 
 const config = (name: string, headers?: Record<string, string>) => ({
   mcp: {
-    [name]: {
-      type: "remote" as const,
-      url: "https://example.com/mcp",
-      headers,
+    servers: {
+      [name]: {
+        type: "remote" as const,
+        url: "https://example.com/mcp",
+        headers,
+      },
     },
   },
 })

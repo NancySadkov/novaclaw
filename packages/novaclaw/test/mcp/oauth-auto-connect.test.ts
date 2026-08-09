@@ -160,9 +160,11 @@ const mcpTest = testEffect(Layer.mergeAll(MCP.defaultLayer, EventV2Bridge.defaul
 
 const config = (name: string) => ({
   mcp: {
-    [name]: {
-      type: "remote" as const,
-      url: "https://example.com/mcp",
+    servers: {
+      [name]: {
+        type: "remote" as const,
+        url: "https://example.com/mcp",
+      },
     },
   },
 })

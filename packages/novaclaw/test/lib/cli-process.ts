@@ -66,6 +66,11 @@ function isolatedEnv(home: string, configJson: string): Record<string, string> {
     XDG_DATA_HOME: path.join(home, ".local/share"),
     XDG_STATE_HOME: path.join(home, ".local/state"),
     XDG_CACHE_HOME: path.join(home, ".cache"),
+    // The production runner executes each admitted turn in a child process. Inheriting the test
+    // preload's `:memory:` value gives the host and worker two unrelated databases: the host admits
+    // the prompt, the worker sees an empty queue, and `novaclaw run` exits 0 with no output. A file
+    // inside this fixture's disposable home exercises the real cross-process topology safely.
+    NOVACLAW_DB: path.join(home, "novaclaw-cli-test.db"),
     NOVACLAW_CONFIG_CONTENT: configJson,
     NOVACLAW_DISABLE_PROJECT_CONFIG: "1",
     NOVACLAW_PURE: "1",
