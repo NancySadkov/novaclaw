@@ -75,6 +75,10 @@ export const AssertInput = Schema.Struct({
    * cannot be misaligned.
    */
   targets: Schema.Array(Schema.Struct({ resource: Schema.String, canonical: Schema.String })).pipe(Schema.optional),
+  /** Require at least this verdict even when ordinary policy would be more permissive. */
+  minimumEffect: Permission.Effect.pipe(Schema.optional),
+  /** Additional resource identities that may deny this request but can never grant it. */
+  denyAliases: Schema.Array(Schema.String).pipe(Schema.optional),
 }).annotate({ identifier: "PermissionV2.AssertInput" })
 export type AssertInput = typeof AssertInput.Type
 
@@ -602,7 +606,9 @@ export const layer = Layer.effect(
     })
 
     function denied(input: AssertInput, rules: Permission.Ruleset) {
-      return input.resources.some((resource) => evaluate(input.action, resource, rules).effect === "deny")
+      return [...input.resources, ...(input.denyAliases ?? [])].some(
+        (resource) => evaluate(input.action, resource, rules).effect === "deny",
+      )
     }
 
     function relevant(input: AssertInput, rules: Permission.Ruleset) {
@@ -778,7 +784,16 @@ export const layer = Layer.effect(
         : []
       const all = [...rules, ...saved, ...attachmentRules]
       const effects = input.resources.map((resource) => evaluate(input.action, resource, all).effect)
-      const effect: Permission.Effect = effects.includes("deny") ? "deny" : effects.includes("ask") ? "ask" : "allow"
+      const aliasDenied = (input.denyAliases ?? []).some(
+        (resource) => evaluate(input.action, resource, all).effect === "deny",
+      )
+      const evaluated: Permission.Effect = effects.includes("deny") ? "deny" : effects.includes("ask") ? "ask" : "allow"
+      const effect: Permission.Effect =
+        aliasDenied || evaluated === "deny" || input.minimumEffect === "deny"
+          ? "deny"
+          : evaluated === "ask" || input.minimumEffect === "ask"
+            ? "ask"
+            : "allow"
       // ── AN ASK NOBODY CAN ANSWER IS A HANG, NOT A GATE — the B4c follow-up ────────────────────
       //
       // This is the LAST arm on purpose: everything that could legitimately answer for the action

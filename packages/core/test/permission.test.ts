@@ -155,6 +155,82 @@ describe("PermissionV2", () => {
     }),
   )
 
+  it.effect("honours a caller's minimum verdict without softening a denial", () =>
+    Effect.gen(function* () {
+      yield* setup([{ action: "bash", resource: "*", effect: "allow" }])
+      const service = yield* PermissionV2.Service
+      expect(
+        yield* service.ask(
+          assertion({ action: "bash", resources: ["echo $(whoami)"], minimumEffect: "ask" }),
+        ),
+      ).toMatchObject({ effect: "ask" })
+      yield* setRules([{ action: "bash", resource: "*", effect: "deny" }])
+      expect(
+        yield* service.ask(
+          assertion({
+            id: PermissionV2.ID.create("per_minimum_deny"),
+            action: "bash",
+            resources: ["echo $(whoami)"],
+            minimumEffect: "ask",
+          }),
+        ),
+      ).toMatchObject({ effect: "deny" })
+    }),
+  )
+
+  it.effect("turns an unanswerable minimum ask into an unattended denial", () =>
+    Effect.gen(function* () {
+      yield* setup([{ action: "bash", resource: "*", effect: "allow" }])
+      const sessionID = SessionV2.ID.make("ses_unparseable_shell")
+      yield* insertSession({ id: sessionID, type: "goal-oriented", permissionMode: "bypass" })
+      expect(
+        yield* (yield* PermissionV2.Service).ask(
+          assertion({
+            id: PermissionV2.ID.create("per_unparseable_shell"),
+            sessionID,
+            action: "bash",
+            resources: ["echo $(whoami)"],
+            minimumEffect: "ask",
+          }),
+        ),
+      ).toMatchObject({ effect: "deny" })
+    }),
+  )
+
+  it.effect("lets a whole-command alias deny a segment but never grant it", () =>
+    Effect.gen(function* () {
+      const service = yield* PermissionV2.Service
+      yield* setup([
+        { action: "chain-probe", resource: "git status && rm -rf build", effect: "deny" },
+        { action: "chain-probe", resource: "git status", effect: "allow" },
+      ])
+      expect(
+        yield* service.ask(
+          assertion({
+            action: "chain-probe",
+            resources: ["git status"],
+            denyAliases: ["git status && rm -rf build"],
+          }),
+        ),
+      ).toMatchObject({ effect: "deny" })
+
+      yield* setRules([
+        { action: "chain-probe", resource: "git status && rm -rf build", effect: "allow" },
+        { action: "chain-probe", resource: "git status", effect: "ask" },
+      ])
+      expect(
+        yield* service.ask(
+          assertion({
+            id: PermissionV2.ID.create("per_alias_allow"),
+            action: "chain-probe",
+            resources: ["git status"],
+            denyAliases: ["git status && rm -rf build"],
+          }),
+        ),
+      ).toMatchObject({ effect: "ask" })
+    }),
+  )
+
   it.effect("evaluates against an explicit provider-turn agent", () =>
     Effect.gen(function* () {
       yield* setup([{ action: "read", resource: "*", effect: "allow" }])

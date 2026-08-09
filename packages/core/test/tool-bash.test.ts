@@ -295,6 +295,49 @@ describe("BashTool", () => {
     )
   }
 
+  it.live("judges every parsed chain segment before starting one process", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) =>
+          executeTool(registry, call({ command: "git status && rm -rf build" })),
+        ).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              expect(assertions.map((item) => item.resources)).toEqual([["git status"], ["rm -rf build"]])
+              expect(runs).toHaveLength(1)
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("forces ambiguous shell syntax to ask instead of guessing", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) => executeTool(registry, call({ command: "echo $(whoami)" }))).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              expect(assertions).toHaveLength(1)
+              expect(assertions[0]).toMatchObject({
+                action: "bash",
+                resources: ["echo $(whoami)"],
+                minimumEffect: "ask",
+                metadata: { approvalReduction: "structured-shell-syntax" },
+              })
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
   it.live("approves an explicit external workdir before bash execution", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => Promise.all([tmpdir(), tmpdir()])),
@@ -553,7 +596,6 @@ describe("BashTool", () => {
 test("keeps locked deferred parity TODOs visible", async () => {
   const source = await fs.readFile(new URL("../src/tool/bash.ts", import.meta.url), "utf8")
   for (const todo of [
-    "Port tree-sitter bash / PowerShell parser-based approval reduction.",
     // The old wording was "Port BashArity reusable command-prefix approvals." — it named
     // `novaclaw/src/permission/arity.ts`, an LLM-generated 137-entry command→arity table with no
     // importer, deleted 2026-07-29 with the rest of the §5 list. The CAPABILITY survives the table:

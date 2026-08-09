@@ -2,6 +2,7 @@ export * as BashTool from "./bash"
 
 import path from "path"
 import { ToolFailure } from "@novaclaw/llm"
+import { ShellApproval } from "./shell-approval"
 import { Duration, Effect, Layer, Schema } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { HostExec } from "../host-exec"
@@ -101,7 +102,6 @@ const jobSnapshotOutput = (job: BashJobs.Snapshot): Output => ({
  * Minimal V2 core shell boundary. Keep parity debt visible without pulling the
  * legacy shell runtime into core.
  */
-// TODO: Port tree-sitter bash / PowerShell parser-based approval reduction.
 // TODO: Reusable command-prefix approvals — approve `git commit` once, not each full command string.
 // TODO: Replace token-based command-argument external-directory advisories with parser-based detection.
 // TODO: Restore PowerShell and cmd-specific invocation/path handling on Windows.
@@ -289,26 +289,35 @@ export const layer = Layer.effectDiscard(
                 (directory) =>
                   `Command argument references external directory ${path.join(directory, "*").replaceAll("\\", "/")}. Bash runs with host-user filesystem, process, and network authority; this scan is advisory only.`,
               )
-              yield* permission.assert({
-                action: name,
-                resources: [commandText],
-                save: [commandText],
-                sessionID: context.sessionID,
-                agent: context.agent,
-                source,
-              })
-
-              if ((yield* fs.stat(target.canonical)).type !== "Directory")
-                return yield* Effect.fail(new Error(`Working directory is not a directory: ${target.canonical}`))
 
               const entries = yield* config.entries()
               const mergedConfig = Object.assign(
                 {},
                 ...entries.flatMap((entry) => (entry.type === "document" ? [entry.info] : [])),
               ) as { shell?: string }
-              // B11: agents default to bash (bundled PortableGit or system git-bash on Windows;
-              // system bash on POSIX); `config.shell` wins when the operator set one.
               const shell = HostExec.resolveShell(mergedConfig.shell)
+              const approval = ShellApproval.analyze(commandText, shell)
+              const approvalSegments = approval.status === "parsed" ? approval.segments : [commandText]
+              for (const segment of approvalSegments)
+                yield* permission.assert({
+                  action: name,
+                  resources: [segment],
+                  save: [segment],
+                  denyAliases: [commandText],
+                  sessionID: context.sessionID,
+                  agent: context.agent,
+                  source,
+                  ...(approval.status === "unparseable"
+                    ? { minimumEffect: "ask" as const, metadata: { approvalReduction: approval.reason } }
+                    : {}),
+                })
+
+              if ((yield* fs.stat(target.canonical)).type !== "Directory")
+                return yield* Effect.fail(new Error(`Working directory is not a directory: ${target.canonical}`))
+
+              // B11: agents default to bash (bundled PortableGit or system git-bash on Windows;
+              // system bash on POSIX); `config.shell` wins when the operator set one. Resolved above
+              // the approval reduction so parsing and execution use the exact same shell.
               // `bash -c` is not a login shell: prepend the bash's own userland to PATH
               // so git + coreutils resolve even on a machine with neither installed
               // (no-op for non-MSYS shells — bundleOverlay returns undefined for them).
