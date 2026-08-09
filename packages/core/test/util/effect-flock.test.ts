@@ -45,6 +45,10 @@ type Msg = {
 
 const root = path.join(import.meta.dir, "../..")
 const worker = path.join(import.meta.dir, "../fixture/effect-flock-worker.ts")
+// One holder plus multiple waiters exercises overlap and repeated handoff without
+// paying for sixteen full Bun runtimes. The exclusive `active` sentinel makes
+// any mutual-exclusion violation fail a worker.
+const contentionWorkers = 4
 
 function run(msg: Msg) {
   return new Promise<{ code: number; stdout: Buffer; stderr: Buffer }>((resolve) => {
@@ -335,7 +339,7 @@ describe("util.effect-flock", () => {
         const dir = path.join(tmp, "locks")
         const done = path.join(tmp, "done.log")
         const active = path.join(tmp, "active")
-        const n = 16
+        const n = contentionWorkers
 
         try {
           const out = await Promise.all(

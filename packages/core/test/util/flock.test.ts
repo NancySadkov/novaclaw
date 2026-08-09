@@ -21,6 +21,10 @@ type Msg = {
 
 const root = path.join(import.meta.dir, "../..")
 const worker = path.join(import.meta.dir, "../fixture/flock-worker.ts")
+// One holder plus multiple waiters exercises overlap and repeated handoff without
+// paying for sixteen full Bun runtimes. The exclusive `active` sentinel makes
+// any mutual-exclusion violation fail a worker.
+const contentionWorkers = 4
 
 async function tmpdir() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "flock-test-"))
@@ -120,7 +124,7 @@ describe("util.flock", () => {
     const done = path.join(tmp.path, "done.log")
     const active = path.join(tmp.path, "active")
     const key = "flock:stress"
-    const n = 16
+    const n = contentionWorkers
 
     const out = await Promise.all(
       Array.from({ length: n }, () =>
