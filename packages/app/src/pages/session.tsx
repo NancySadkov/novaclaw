@@ -54,9 +54,8 @@ import {
   createOpenReviewFile,
   createSessionTabs,
   createSizing,
-  focusTerminalById,
-  shouldFocusTerminalOnKeyDown,
 } from "@/pages/session/helpers"
+import { createSessionKeyboardController } from "@/pages/session/keyboard-controller"
 import { NativeTimeline } from "@/pages/session/timeline/native-timeline"
 import { createTimelineModel } from "@/pages/session/timeline/model"
 import { createSessionRevertController } from "@/pages/session/revert-controller"
@@ -625,58 +624,15 @@ export default function Page() {
     saveLabel: language.t("common.save"),
   }))
 
-  const isEditableTarget = (target: EventTarget | null | undefined) => {
-    if (!(target instanceof HTMLElement)) return false
-    return /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(target.tagName) || target.isContentEditable
-  }
-
-  const deepActiveElement = () => {
-    let current: Element | null = document.activeElement
-    while (current instanceof HTMLElement && current.shadowRoot?.activeElement) {
-      current = current.shadowRoot.activeElement
-    }
-    return current instanceof HTMLElement ? current : undefined
-  }
-
-  const handleKeyDown = (event: KeyboardEvent) => {
-    const path = event.composedPath()
-    const target = path.find((item): item is HTMLElement => item instanceof HTMLElement)
-    const activeElement = deepActiveElement()
-
-    const protectedTarget = path.some(
-      (item) => item instanceof HTMLElement && item.closest("[data-prevent-autofocus]") !== null,
-    )
-    if (protectedTarget || isEditableTarget(target)) return
-
-    if (activeElement) {
-      const isProtected = activeElement.closest("[data-prevent-autofocus]")
-      const isInput = isEditableTarget(activeElement)
-      if (isProtected || isInput) return
-    }
-    if (dialog.active) return
-
-    if (activeElement === inputRef) {
-      if (event.key === "Escape") inputRef?.blur()
-      return
-    }
-
-    // Prefer the open terminal over the composer when it can take focus
-    if (view().terminal.opened()) {
-      const id = terminal.active()
-      if (id && shouldFocusTerminalOnKeyDown(event) && focusTerminalById(id)) return
-    }
-
-    // Only treat explicit scroll keys as potential "user scroll" gestures.
-    if (event.key === "PageUp" || event.key === "PageDown" || event.key === "Home" || event.key === "End") {
-      markScrollGesture()
-      return
-    }
-
-    if (event.key.length === 1 && event.key !== "Unidentified" && !(event.ctrlKey || event.metaKey)) {
-      if (composer.blocked() || isChildSession()) return
-      inputRef?.focus()
-    }
-  }
+  const handleKeyDown = createSessionKeyboardController({
+    composer: () => inputRef,
+    composerBlocked: composer.blocked,
+    childSession: isChildSession,
+    dialogActive: () => !!dialog.active,
+    terminalOpen: () => view().terminal.opened(),
+    activeTerminal: terminal.active,
+    markScrollGesture,
+  })
 
   createEffect(() => {
     if (!sync().data.vcs) return
