@@ -68,6 +68,7 @@ const resourcePressureNode = makeGlobalNode({
     ResourcePressureContext.Service.of({
       lines: () => Effect.sync(() => resourceLines),
       inspect: () => Effect.succeed(["Resource pressure: ok."]),
+      capacity: () => Effect.succeed(undefined),
     }),
   ),
   deps: [],

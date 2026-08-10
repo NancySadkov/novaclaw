@@ -1,9 +1,9 @@
 export * as CapabilityServiceRegistry from "./capability-service-registry"
 
-import { Context, Effect, Layer } from "effect"
-import { Config } from "./config"
-import type { ConfigCapabilityService } from "./config/capability-service"
-import { makeLocationNode } from "./effect/app-node"
+import { Context, Effect, Layer, Schema } from "effect"
+import { ConfigCapabilityService } from "./config/capability-service"
+import { makeGlobalNode } from "./effect/app-node"
+import { SettingsConfigStore } from "./settings-config-store"
 
 export interface Entry {
   readonly id: string
@@ -20,15 +20,18 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/CapabilityServiceRegistry") {}
 
-/** Live read-through view of the runtime-editable capability_services config key. */
+const decode = Schema.decodeUnknownOption(Schema.Record(Schema.String, ConfigCapabilityService.Info))
+
+/** Live, process-global read-through view of the runtime-editable capability_services store key. */
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const config = yield* Config.Service
+    const settings = yield* SettingsConfigStore.Service
     let signature: string | undefined
     let entries: ReadonlyArray<Entry> = []
     const refresh = Effect.fnUntraced(function* () {
-      const configured = Config.latest(yield* config.entries(), "capability_services")
+      const decoded = decode((yield* settings.all()).capability_services)
+      const configured = decoded._tag === "Some" ? decoded.value : undefined
       const next = configured === undefined ? "" : JSON.stringify(configured)
       if (next === signature) return
       signature = next
@@ -54,4 +57,4 @@ export const layer = Layer.effect(
   }),
 )
 
-export const node = makeLocationNode({ service: Service, layer, deps: [Config.node] })
+export const node = makeGlobalNode({ service: Service, layer, deps: [SettingsConfigStore.node] })

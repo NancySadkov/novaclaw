@@ -1,8 +1,8 @@
 import { describe, expect } from "bun:test"
 import { Effect, Layer, Schema } from "effect"
 import { CapabilityServiceRegistry } from "@novaclaw/core/capability-service-registry"
-import { Config } from "@novaclaw/core/config"
 import { ConfigCapabilityService } from "@novaclaw/core/config/capability-service"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { it } from "./lib/effect"
 
 type Declarations = Record<string, ConfigCapabilityService.Info>
@@ -24,21 +24,19 @@ const http = (capabilities: string[], disabled = false) =>
     disabled,
   })
 
-const configOf = (value: () => Declarations | undefined) =>
+const settingsOf = (value: () => Declarations | undefined) =>
   Layer.succeed(
-    Config.Service,
-    Config.Service.of({
-      entries: () =>
-        Effect.sync(() => {
-          const current = value()
-          return current === undefined
-            ? []
-            : [new Config.Document({ type: "document", info: new Config.Info({ capability_services: current }) })]
-        }),
+    SettingsConfigStore.Service,
+    SettingsConfigStore.Service.of({
+      all: () => Effect.sync(() => ({ capability_services: value() })),
+      set: () => Effect.void,
+      remove: () => Effect.void,
+      isEmpty: () => Effect.succeed(false),
     }),
   )
 
-const registryIn = (config: Layer.Layer<Config.Service>) => CapabilityServiceRegistry.layer.pipe(Layer.provide(config))
+const registryIn = (settings: Layer.Layer<SettingsConfigStore.Service>) =>
+  CapabilityServiceRegistry.layer.pipe(Layer.provide(settings))
 
 describe("capability service declaration", () => {
   it.effect("closes transport variants and resource limits", () =>
@@ -83,7 +81,7 @@ describe("CapabilityServiceRegistry", () => {
     }).pipe(
       Effect.provide(
         registryIn(
-          configOf(() => ({
+          settingsOf(() => ({
             zulu: http(["document.parse.native"], true),
             alpha: http(["document.parse.native", "document.parse.layout"]),
           })),
@@ -99,7 +97,7 @@ describe("CapabilityServiceRegistry", () => {
         Effect.gen(function* () {
           return yield* CapabilityServiceRegistry.Service
         }),
-        registryIn(configOf(() => declarations)),
+        registryIn(settingsOf(() => declarations)),
       )
       expect((yield* registry.candidates("document.parse.layout")).length).toBe(0)
       declarations = { parser: http(["document.parse.native", "document.parse.layout"]) }

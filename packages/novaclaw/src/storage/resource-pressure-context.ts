@@ -104,6 +104,16 @@ export function lines(report: Pressure.Report): ReadonlyArray<string> {
   return result
 }
 
+/** The exact report fields the capability governor needs; unknown stays unknown and fails closed. */
+export function capacity(report: Pressure.Report): ResourcePressureContext.CommitCapacity | undefined {
+  if (!report.memory.known) return undefined
+  return {
+    limitBytes: report.memory.limitBytes,
+    usedBytes: report.memory.usedBytes,
+    floorUsedFraction: report.thresholds.floor.memoryUsedFraction,
+  }
+}
+
 export const layer = Layer.effect(
   ResourcePressureContext.Service,
   Effect.gen(function* () {
@@ -125,6 +135,15 @@ export const layer = Layer.effect(
           Effect.catchCause((cause) =>
             Log.event("resource.headroom.measure.failed", { "resource.cause": Log.fault(cause) }).pipe(
               Effect.as(["Resource headroom is unavailable because the host measurement failed."]),
+            ),
+          ),
+        ),
+      capacity: () =>
+        measure.pipe(
+          Effect.map(capacity),
+          Effect.catchCause((cause) =>
+            Log.event("resource.headroom.measure.failed", { "resource.cause": Log.fault(cause) }).pipe(
+              Effect.as(undefined),
             ),
           ),
         ),

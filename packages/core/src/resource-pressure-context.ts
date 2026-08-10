@@ -16,6 +16,14 @@ export interface Interface {
   readonly lines: () => Effect.Effect<ReadonlyArray<string>>
   /** Full live detail for the on-demand resource_status tool, including a healthy answer. */
   readonly inspect: () => Effect.Effect<ReadonlyArray<string>>
+  /** Structured Windows-commit/host-memory capacity for mechanical admission. Unknown is explicit. */
+  readonly capacity: () => Effect.Effect<CommitCapacity | undefined>
+}
+
+export interface CommitCapacity {
+  readonly limitBytes: number
+  readonly usedBytes: number
+  readonly floorUsedFraction: number
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/ResourcePressureContext") {}
@@ -24,7 +32,11 @@ export const unavailable = ["Resource headroom is unavailable in this runtime."]
 
 export const layer = Layer.succeed(
   Service,
-  Service.of({ lines: () => Effect.succeed([]), inspect: () => Effect.succeed(unavailable) }),
+  Service.of({
+    lines: () => Effect.succeed([]),
+    inspect: () => Effect.succeed(unavailable),
+    capacity: () => Effect.succeed(undefined),
+  }),
 )
 
 export const node = makeGlobalNode({ service: Service, layer, deps: [] })

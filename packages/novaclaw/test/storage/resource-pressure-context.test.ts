@@ -27,6 +27,11 @@ describe("StorageResourcePressureContext", () => {
     }
 
     expect(StorageResourcePressureContext.lines(report)).toEqual([])
+    expect(StorageResourcePressureContext.capacity(report)).toEqual({
+      limitBytes: 40 * GIB,
+      usedBytes: 10 * GIB,
+      floorUsedFraction: thresholds.floor.memoryUsedFraction,
+    })
     expect(StorageResourcePressureContext.details(report)).toEqual([
       "Resource pressure: ok.",
       "Memory headroom: 30.0 GiB free of 40.0 GiB commit.",
@@ -125,6 +130,7 @@ describe("StorageResourcePressureContext", () => {
     }
 
     expect(StorageResourcePressureContext.lines(report)).toEqual([])
+    expect(StorageResourcePressureContext.capacity(report)).toBeUndefined()
     const rendered = StorageResourcePressureContext.details(report)
     expect(rendered).toEqual([
       "Resource pressure: unknown.",
