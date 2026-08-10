@@ -489,17 +489,29 @@ export const layer = Layer.effect(
       ignores?: Repository
       maximumUntrackedFileBytes?: number
     }) {
-      const list = (args: string[]) =>
-        repositoryOperation("refresh", input.repository, args).pipe(
-          Effect.map((result) => result.text.split("\0").filter(Boolean)),
-        )
-      const [tracked, untracked] = yield* Effect.all(
-        [
-          list(["diff-files", "--name-only", "-z", "--", input.scope]),
-          list(["ls-files", "--others", "--exclude-standard", "-z", "--", input.scope]),
-        ],
-        { concurrency: 2 },
-      )
+      // One porcelain scan supplies both tracked changes and untracked files. This used to launch
+      // diff-files and ls-files concurrently, but process startup is a material part of snapshot
+      // latency on Windows. Disabling rename detection keeps every NUL-delimited record in the
+      // stable `XY path` shape, so no second pathname record needs special handling.
+      const status = yield* repositoryOperation("refresh", input.repository, [
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+        "--no-renames",
+        "--",
+        input.scope,
+      ])
+      const tracked: string[] = []
+      const untracked: string[] = []
+      for (const record of status.text.split("\0")) {
+        if (!record) continue
+        const target = record.slice(3)
+        if (record.startsWith("?? ")) untracked.push(target)
+        // The first column is the shadow index versus HEAD. Captures intentionally accumulate
+        // there, so only the second (worktree-versus-index) column corresponds to diff-files.
+        else if (record[1] !== " ") tracked.push(target)
+      }
       const candidates = Array.from(new Set([...tracked, ...untracked]))
       if (!candidates.length) return { skipped: [] }
       const ignored = input.ignores
