@@ -787,6 +787,14 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/effect/capability.ts",
   },
+  /** A queued-service admission tick failed; the process-scoped pump retries on its next interval. */
+  "instance.capability.pump.failed": {
+    level: "error",
+    message: "capability service queue pump failed",
+    attributes: { "instance.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/capability-service-runtime.ts",
+  },
   /**
    * The instance database could not be opened, upgraded, or recognised, so the boot STOPPED. The
    * one fault on this list that is deliberately not survivable: coming up on an unusable or

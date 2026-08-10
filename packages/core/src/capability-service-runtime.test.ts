@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Deferred, Effect, Fiber, Layer } from "effect"
 import { CapabilityServiceRegistry } from "./capability-service-registry"
 import { CapabilityServiceRuntime } from "./capability-service-runtime"
 import { CapabilityServiceWorker } from "./capability-service-worker"
@@ -7,163 +7,314 @@ import { ConfigCapabilityService } from "./config/capability-service"
 import { ResourcePressureContext } from "./resource-pressure-context"
 import { SettingsConfigStore } from "./settings-config-store"
 
-const declaration = new ConfigCapabilityService.Info({
-  capabilities: ["document.parse.native"],
-  transport: new ConfigCapabilityService.HttpTransport({
-    type: "streamable-http",
-    url: "http://127.0.0.1:9010/mcp",
-  }),
-  locality: "local",
-  resources: new ConfigCapabilityService.Resources({
-    estimated_resident_bytes: 100,
-    estimated_peak_bytes: 200,
-  }),
-})
+const declaration = (inputBytes?: number) =>
+  new ConfigCapabilityService.Info({
+    capabilities: ["document.parse.native"],
+    transport: new ConfigCapabilityService.HttpTransport({
+      type: "streamable-http",
+      url: "http://127.0.0.1:9010/mcp",
+    }),
+    locality: "local",
+    resources: new ConfigCapabilityService.Resources({
+      estimated_resident_bytes: 100,
+      estimated_peak_bytes: 200,
+    }),
+    ...(inputBytes === undefined
+      ? {}
+      : { limits: new ConfigCapabilityService.Limits({ input_bytes: inputBytes }) }),
+  })
 
-const acceptingWorker = Layer.succeed(
-  CapabilityServiceWorker.Service,
-  CapabilityServiceWorker.Service.of({
-    start: () => Effect.void,
-    run: () => Effect.succeed(undefined),
-    stop: () => Effect.void,
-    health: () => Effect.succeed(true),
-  }),
-)
+const graph = (input: {
+  readonly info?: ConfigCapabilityService.Info
+  readonly services?: Readonly<Record<string, ConfigCapabilityService.Info>>
+  readonly capacity: () => ResourcePressureContext.CommitCapacity | undefined
+  readonly worker: CapabilityServiceWorker.Interface
+}) => {
+  const settings = Layer.succeed(
+    SettingsConfigStore.Service,
+    SettingsConfigStore.Service.of({
+      all: () =>
+        Effect.succeed({ capability_services: input.services ?? { parser: input.info ?? declaration() } }),
+      set: () => Effect.void,
+      remove: () => Effect.void,
+      isEmpty: () => Effect.succeed(false),
+    }),
+  )
+  const pressure = Layer.succeed(
+    ResourcePressureContext.Service,
+    ResourcePressureContext.Service.of({
+      lines: () => Effect.succeed([]),
+      inspect: () => Effect.succeed([]),
+      capacity: () => Effect.sync(input.capacity),
+    }),
+  )
+  return CapabilityServiceRuntime.layer.pipe(
+    Layer.provide(CapabilityServiceRegistry.layer.pipe(Layer.provide(settings))),
+    Layer.provide(pressure),
+    Layer.provide(Layer.succeed(CapabilityServiceWorker.Service, CapabilityServiceWorker.Service.of(input.worker))),
+  )
+}
+
+const waitUntil = (predicate: () => boolean, attempts = 100): Effect.Effect<void, Error> =>
+  Effect.suspend(() =>
+    predicate()
+      ? Effect.void
+      : attempts <= 0
+        ? Effect.fail(new Error("condition did not become true"))
+        : Effect.sleep(10).pipe(Effect.andThen(waitUntil(predicate, attempts - 1))),
+  )
+
+const waitForQueued = (
+  runtime: CapabilityServiceRuntime.Interface,
+  requestID: string,
+  attempts = 100,
+): Effect.Effect<void, Error> =>
+  Effect.gen(function* () {
+    const queued = (yield* runtime.snapshot()).some((state) => state.queuedRequestIDs.includes(requestID))
+    if (queued) return
+    if (attempts <= 0) return yield* Effect.fail(new Error(`request ${requestID} was not queued`))
+    yield* Effect.sleep(10)
+    return yield* waitForQueued(runtime, requestID, attempts - 1)
+  })
 
 describe("CapabilityServiceRuntime", () => {
-  test("re-admits queued work from the same live Storage capacity seam", async () => {
-    let capacity: ResourcePressureContext.CommitCapacity | undefined = {
+  test("retains an immutable queued payload and dispatches it after live pressure recovery", async () => {
+    let capacity: ResourcePressureContext.CommitCapacity = {
       limitBytes: 1_000,
       usedBytes: 700,
       floorUsedFraction: 0.8,
     }
-    const settings = Layer.succeed(
-      SettingsConfigStore.Service,
-      SettingsConfigStore.Service.of({
-        all: () => Effect.succeed({ capability_services: { parser: declaration } }),
-        set: () => Effect.void,
-        remove: () => Effect.void,
-        isEmpty: () => Effect.succeed(false),
-      }),
-    )
-    const pressure = Layer.succeed(
-      ResourcePressureContext.Service,
-      ResourcePressureContext.Service.of({
-        lines: () => Effect.succeed([]),
-        inspect: () => Effect.succeed([]),
-        capacity: () => Effect.sync(() => capacity),
-      }),
-    )
-    const layer = CapabilityServiceRuntime.layer.pipe(
-      Layer.provide(CapabilityServiceRegistry.layer.pipe(Layer.provide(settings))),
-      Layer.provide(pressure),
-      Layer.provide(acceptingWorker),
-    )
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const runtime = yield* CapabilityServiceRuntime.Service
-        expect(yield* runtime.request({ serviceID: "parser", requestID: "r1", nowMs: 0 })).toEqual({
-          kind: "queued",
-          position: 1,
-          unload: [],
-        })
-        capacity = { limitBytes: 1_000, usedBytes: 100, floorUsedFraction: 0.8 }
-        expect(yield* runtime.poll({ serviceID: "parser", nowMs: 1 })).toEqual({ kind: "run", requestID: "r1" })
-      }).pipe(Effect.provide(layer)),
-    )
-  })
-
-  test("unknown capacity fails closed through the fallback adapter", async () => {
-    const settings = Layer.succeed(
-      SettingsConfigStore.Service,
-      SettingsConfigStore.Service.of({
-        all: () => Effect.succeed({ capability_services: { parser: declaration } }),
-        set: () => Effect.void,
-        remove: () => Effect.void,
-        isEmpty: () => Effect.succeed(false),
-      }),
-    )
-    const layer = CapabilityServiceRuntime.layer.pipe(
-      Layer.provide(CapabilityServiceRegistry.layer.pipe(Layer.provide(settings))),
-      Layer.provide(ResourcePressureContext.layer),
-      Layer.provide(acceptingWorker),
-    )
-    const decision = await Effect.runPromise(
-      Effect.gen(function* () {
-        const runtime = yield* CapabilityServiceRuntime.Service
-        return yield* runtime.request({
-          serviceID: "parser",
-          requestID: "r1",
-          nowMs: 0,
-        })
-      }).pipe(Effect.provide(layer)),
-    )
-    expect(decision.kind).toBe("queued")
-  })
-
-  test("starts, runs, completes, and stops a governed worker", async () => {
-    const calls: string[] = []
-    const settings = Layer.succeed(
-      SettingsConfigStore.Service,
-      SettingsConfigStore.Service.of({
-        all: () => Effect.succeed({ capability_services: { parser: declaration } }),
-        set: () => Effect.void,
-        remove: () => Effect.void,
-        isEmpty: () => Effect.succeed(false),
-      }),
-    )
-    const pressure = Layer.succeed(
-      ResourcePressureContext.Service,
-      ResourcePressureContext.Service.of({
-        lines: () => Effect.succeed([]),
-        inspect: () => Effect.succeed([]),
-        capacity: () => Effect.succeed({ limitBytes: 1_000, usedBytes: 100, floorUsedFraction: 0.8 }),
-      }),
-    )
-    const worker = Layer.succeed(
-      CapabilityServiceWorker.Service,
-      CapabilityServiceWorker.Service.of({
-        start: (id) => Effect.sync(() => calls.push(`start:${id}`)).pipe(Effect.asVoid),
-        run: (input) => Effect.sync(() => (calls.push(`run:${input.capability}`), { ok: true })),
-        stop: (id) => Effect.sync(() => calls.push(`stop:${id}`)).pipe(Effect.asVoid),
+    const calls: Array<Readonly<Record<string, unknown>>> = []
+    const input = { handle: "file:1" }
+    const layer = graph({
+      capacity: () => capacity,
+      worker: {
+        start: () => Effect.void,
+        run: (request) => Effect.sync(() => (calls.push(request.arguments), { content: request.arguments })),
+        stop: () => Effect.void,
         health: () => Effect.succeed(true),
-      }),
-    )
-    const layer = CapabilityServiceRuntime.layer.pipe(
-      Layer.provide(CapabilityServiceRegistry.layer.pipe(Layer.provide(settings))),
-      Layer.provide(pressure),
-      Layer.provide(worker),
-    )
-    await Effect.runPromise(
+      },
+    })
+
+    const result = await Effect.runPromise(
       Effect.gen(function* () {
         const runtime = yield* CapabilityServiceRuntime.Service
-        expect(yield* runtime.request({ serviceID: "parser", requestID: "r1", nowMs: 0 })).toEqual({
-          kind: "run",
-          requestID: "r1",
-        })
-        expect(
-          yield* runtime.run({
+        const fiber = yield* Effect.forkScoped(
+          runtime.execute({
             serviceID: "parser",
             requestID: "r1",
             capability: "document.parse.native",
-            arguments: { handle: "file:1" },
-            nowMs: 10,
+            arguments: input,
           }),
-        ).toEqual({ ok: true })
-        expect(
-          yield* Effect.flip(
-            runtime.run({
-              serviceID: "parser",
-              requestID: "r2",
-              capability: "document.parse.native",
-              arguments: {},
-              nowMs: 11,
-            }),
-          ),
-        ).toBeInstanceOf(Error)
-        expect(yield* runtime.sweep(20)).toEqual([])
-      }).pipe(Effect.provide(layer)),
+        )
+        yield* waitForQueued(runtime, "r1")
+        expect((yield* runtime.snapshot())[0]?.queuedRequestIDs).toEqual(["r1"])
+        input.handle = "mutated-after-enqueue"
+        capacity = { limitBytes: 1_000, usedBytes: 100, floorUsedFraction: 0.8 }
+        return yield* Fiber.join(fiber)
+      }).pipe(Effect.provide(layer), Effect.scoped),
     )
-    expect(calls).toEqual(["start:parser", "run:document.parse.native"])
+
+    expect(result).toEqual({ content: { handle: "file:1" } })
+    expect(calls).toEqual([{ handle: "file:1" }])
+  })
+
+  test("serializes queued calls and dispatches the successor after completion", async () => {
+    const firstGate = Deferred.makeUnsafe<void>()
+    const calls: number[] = []
+    const layer = graph({
+      capacity: () => ({ limitBytes: 1_000, usedBytes: 100, floorUsedFraction: 0.8 }),
+      worker: {
+        start: () => Effect.void,
+        run: (request) => {
+          const sequence = request.arguments.sequence as number
+          calls.push(sequence)
+          return sequence === 1 ? Deferred.await(firstGate).pipe(Effect.as(sequence)) : Effect.succeed(sequence)
+        },
+        stop: () => Effect.void,
+        health: () => Effect.succeed(true),
+      },
+    })
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const runtime = yield* CapabilityServiceRuntime.Service
+        const first = yield* Effect.forkScoped(
+          runtime.execute({
+            serviceID: "parser",
+            requestID: "r1",
+            capability: "document.parse.native",
+            arguments: { sequence: 1 },
+          }),
+        )
+        yield* waitUntil(() => calls.length === 1)
+        const second = yield* Effect.forkScoped(
+          runtime.execute({
+            serviceID: "parser",
+            requestID: "r2",
+            capability: "document.parse.native",
+            arguments: { sequence: 2 },
+          }),
+        )
+        yield* Effect.sleep(25)
+        expect(calls).toEqual([1])
+        yield* Deferred.succeed(firstGate, undefined)
+        expect(yield* Fiber.join(first)).toBe(1)
+        expect(yield* Fiber.join(second)).toBe(2)
+      }).pipe(Effect.provide(layer), Effect.scoped),
+    )
+    expect(calls).toEqual([1, 2])
+  })
+
+  test("unloads an idle victim and dispatches the retained target payload", async () => {
+    let usedBytes = 100
+    const calls: string[] = []
+    const layer = graph({
+      services: { idle: declaration(), target: declaration() },
+      capacity: () => ({ limitBytes: 1_000, usedBytes, floorUsedFraction: 0.8 }),
+      worker: {
+        start: (serviceID) => Effect.sync(() => calls.push(`start:${serviceID}`)).pipe(Effect.asVoid),
+        run: (request) =>
+          Effect.sync(() => (calls.push(`run:${request.serviceID}`), { service: request.serviceID })),
+        stop: (serviceID) =>
+          Effect.sync(() => {
+            calls.push(`stop:${serviceID}`)
+            usedBytes -= 100
+          }),
+        health: () => Effect.succeed(true),
+      },
+    })
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const runtime = yield* CapabilityServiceRuntime.Service
+        expect(
+          yield* runtime.execute({
+            serviceID: "idle",
+            requestID: "warm",
+            capability: "document.parse.native",
+            arguments: {},
+          }),
+        ).toEqual({ service: "idle" })
+        usedBytes = 700
+        expect(
+          yield* runtime.execute({
+            serviceID: "target",
+            requestID: "r1",
+            capability: "document.parse.native",
+            arguments: { handle: "file:1" },
+          }),
+        ).toEqual({ service: "target" })
+      }).pipe(Effect.provide(layer), Effect.scoped),
+    )
+    expect(calls).toEqual(["start:idle", "run:idle", "stop:idle", "start:target", "run:target"])
+  })
+
+  test("cancellation settles the waiter and reclaims an active worker", async () => {
+    const runGate = Deferred.makeUnsafe<void>()
+    const calls: string[] = []
+    const layer = graph({
+      capacity: () => ({ limitBytes: 1_000, usedBytes: 100, floorUsedFraction: 0.8 }),
+      worker: {
+        start: () => Effect.sync(() => calls.push("start")).pipe(Effect.asVoid),
+        run: () => Deferred.await(runGate),
+        stop: () => Effect.sync(() => calls.push("stop")).pipe(Effect.asVoid),
+        health: () => Effect.succeed(true),
+      },
+    })
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const runtime = yield* CapabilityServiceRuntime.Service
+        const fiber = yield* Effect.forkScoped(
+          runtime.execute({
+            serviceID: "parser",
+            requestID: "r1",
+            capability: "document.parse.native",
+            arguments: {},
+          }),
+        )
+        yield* waitUntil(() => calls.includes("start"))
+        expect(yield* runtime.cancel("parser", "r1")).toBe(true)
+        expect((yield* Effect.exit(Fiber.join(fiber)))._tag).toBe("Failure")
+      }).pipe(Effect.provide(layer), Effect.scoped),
+    )
+    expect(calls).toEqual(["start", "stop"])
+  })
+
+  test("a worker crash fails the active request and every queued waiter", async () => {
+    const crashGate = Deferred.makeUnsafe<void>()
+    const calls: string[] = []
+    const layer = graph({
+      capacity: () => ({ limitBytes: 1_000, usedBytes: 100, floorUsedFraction: 0.8 }),
+      worker: {
+        start: () => Effect.void,
+        run: () =>
+          Effect.sync(() => calls.push("run")).pipe(
+            Effect.andThen(Deferred.await(crashGate)),
+            Effect.andThen(Effect.fail(new Error("worker crashed"))),
+          ),
+        stop: () => Effect.sync(() => calls.push("stop")).pipe(Effect.asVoid),
+        health: () => Effect.succeed(true),
+      },
+    })
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const runtime = yield* CapabilityServiceRuntime.Service
+        const first = yield* Effect.forkScoped(
+          runtime.execute({
+            serviceID: "parser",
+            requestID: "r1",
+            capability: "document.parse.native",
+            arguments: {},
+          }),
+        )
+        yield* waitUntil(() => calls.includes("run"))
+        const second = yield* Effect.forkScoped(
+          runtime.execute({
+            serviceID: "parser",
+            requestID: "r2",
+            capability: "document.parse.native",
+            arguments: {},
+          }),
+        )
+        yield* waitForQueued(runtime, "r2")
+        yield* Deferred.succeed(crashGate, undefined)
+        expect((yield* Effect.exit(Fiber.join(first)))._tag).toBe("Failure")
+        expect((yield* Effect.exit(Fiber.join(second)))._tag).toBe("Failure")
+        expect((yield* runtime.snapshot())[0]?.phase).toBe("unavailable")
+      }).pipe(Effect.provide(layer), Effect.scoped),
+    )
+    expect(calls).toEqual(["run", "stop"])
+  })
+
+  test("rejects an oversized payload before it reaches admission or a worker", async () => {
+    const calls: string[] = []
+    const layer = graph({
+      info: declaration(10),
+      capacity: () => ({ limitBytes: 1_000, usedBytes: 100, floorUsedFraction: 0.8 }),
+      worker: {
+        start: () => Effect.sync(() => calls.push("start")).pipe(Effect.asVoid),
+        run: () => Effect.succeed(undefined),
+        stop: () => Effect.void,
+        health: () => Effect.succeed(true),
+      },
+    })
+    const error = await Effect.runPromise(
+      Effect.gen(function* () {
+        const runtime = yield* CapabilityServiceRuntime.Service
+        return yield* Effect.flip(
+          runtime.execute({
+            serviceID: "parser",
+            requestID: "r1",
+            capability: "document.parse.native",
+            arguments: { content: "this is too large" },
+          }),
+        )
+      }).pipe(Effect.provide(layer), Effect.scoped),
+    )
+    expect(error.message).toContain("input limit is 10")
+    expect(calls).toEqual([])
   })
 })
