@@ -261,6 +261,7 @@ for (const item of targets) {
       NOVACLAW_MODELS_DEV: generated.modelsData,
       NOVACLAW_CHANNEL: `'${Script.channel}'`,
       NOVACLAW_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "",
+      NOVACLAW_STANDALONE_BINARY: "true",
     },
   })
 

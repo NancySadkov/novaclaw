@@ -30,6 +30,14 @@ BootProfile.mark("cli:modules-loaded")
 
 const args = hideBin(process.argv)
 
+// A standalone executable has no sibling JS worker to spawn. Re-enter the same compiled graph in a
+// private worker mode so the supervisor still gets a real process boundary and its stdin/stdout
+// protocol. Keep this before yargs: its help/logo output would corrupt that protocol.
+if (args[0] === "__session-worker") {
+  await import("./session-worker-node")
+  process.exit(0)
+}
+
 function show(out: string) {
   const text = out.trimStart()
   if (!text.startsWith("nova-cli ")) {

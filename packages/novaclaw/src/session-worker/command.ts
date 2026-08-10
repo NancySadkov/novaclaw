@@ -3,6 +3,8 @@ export * as SessionWorkerCommand from "./command"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
+declare const NOVACLAW_STANDALONE_BINARY: boolean | undefined
+
 export interface Command {
   readonly command: readonly string[]
   readonly env?: Readonly<Record<string, string>>
@@ -15,11 +17,14 @@ export function make(input: {
   readonly moduleURL: string
   readonly execPath: string
   readonly electron: boolean
+  readonly standalone?: boolean
 }): Command {
   const serverPath = fileURLToPath(input.moduleURL)
   const basename = path.basename(serverPath)
   const workerPath =
-    basename === "novaclaw-server.js"
+    input.standalone
+      ? "__session-worker"
+      : basename === "novaclaw-server.js"
       ? path.join(path.dirname(serverPath), "novaclaw-session-worker.js")
       : basename === "command.ts"
         ? // Source-mode CLI: command.ts is one directory below the actual Bun entrypoint. Treating
@@ -34,4 +39,9 @@ export function make(input: {
 }
 
 export const current = () =>
-  make({ moduleURL: import.meta.url, execPath: process.execPath, electron: process.versions.electron !== undefined })
+  make({
+    moduleURL: import.meta.url,
+    execPath: process.execPath,
+    electron: process.versions.electron !== undefined,
+    standalone: typeof NOVACLAW_STANDALONE_BINARY === "boolean" && NOVACLAW_STANDALONE_BINARY,
+  })

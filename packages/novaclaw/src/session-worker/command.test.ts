@@ -34,3 +34,14 @@ test("runs the source-mode worker from its real parent-directory entrypoint", ()
   expect(command.workerPath.replaceAll("\\", "/")).toEndWith("/src/session-worker-node.ts")
   expect(command.command).toEqual(["C:/bun.exe", command.workerPath])
 })
+
+test("runs the standalone compiled worker through the same executable", () => {
+  const command = SessionWorkerCommand.make({
+    moduleURL: pathToFileURL("C:/bunfs/root/command.ts").href,
+    execPath: "C:/Nova/novaclaw.exe",
+    electron: false,
+    standalone: true,
+  })
+  expect(command.workerPath).toBe("__session-worker")
+  expect(command.command).toEqual(["C:/Nova/novaclaw.exe", "__session-worker"])
+})

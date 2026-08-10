@@ -69,6 +69,8 @@ export type Action =
   | { readonly kind: "type_submit"; readonly text: string }
   /** Press a key combination, e.g. `ctrl+s`, `Return`, `alt+Tab`. */
   | { readonly kind: "key"; readonly keys: string }
+  /** Select all and copy text from the exact approved foreground application. Windows only. */
+  | { readonly kind: "copy_text" }
   | { readonly kind: "scroll"; readonly direction: ScrollDirection; readonly amount: number }
   /** Where the pointer is. Useful as a cheap liveness probe on the substrate. */
   | { readonly kind: "cursor" }
@@ -151,6 +153,8 @@ export const build = (action: Action, options: Options): Built => {
   const windowArgs = options.windowID === undefined ? [] : ["--window", options.windowID]
 
   switch (action.kind) {
+    case "copy_text":
+      return { ok: false, reason: "copy_text is available only for an exact native Windows application binding" }
     case "screenshot": {
       const validateRegion = (r: Region): Invalid | undefined => {
         for (const [name, value] of [

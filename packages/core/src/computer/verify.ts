@@ -70,6 +70,7 @@ export const expectationFor = (kind: ComputerActions.Action["kind"]): Expectatio
     case "cursor":
       return "must-not-change"
     case "move":
+    case "copy_text":
       return "may-change"
     case "click":
     case "double_click":

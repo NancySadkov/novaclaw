@@ -1,21 +1,28 @@
 export * as ConfigComputer from "./computer"
 
 import { Schema } from "effect"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import { ConfigAnnotation } from "@novaclaw/schema/config-annotation"
 import { optional } from "@novaclaw/schema/schema"
 
 /** The default capture path when none is configured. Declared above `Info` because the schema's own
  *  `default` annotation names this binding rather than repeating its value. */
-export const DEFAULT_SCREENSHOT_PATH = "/tmp/novaclaw-computer.png"
+// JPEG keeps full-window browser observations small enough for a long native Computer Use loop.
+// A measured 1435x1000 Chrome PNG was 1.05 MiB and its base64 projection alone was estimated at
+// 148k context tokens; the worker then crossed its containment boundary during the next capture.
+// Screens are observations, not archival assets, so bounded lossy encoding is the correct default.
+export const DEFAULT_SCREENSHOT_PATH = path.join(tmpdir(), "novaclaw-computer.jpg")
 
 /**
  * Where the `computer` tool sends its input, and where it captures from.
  *
  * ⚠️ **A display is CONFIGURED here or the tool declines — it is never inherited from the process
  * environment.** On a headless server an inherited `DISPLAY` fails; on a Linux desktop it succeeds and
- * silently drives the operator's REAL screen, which is P6 and human-gated (`todo/computer-use.md`,
+ * silently drives the operator's REAL X11 screen, which is P6 and human-gated (`todo/computer-use.md`,
  * build order). The second failure is much worse than the first, and only an explicit setting
- * distinguishes "I have a sandbox" from "I happen to be sitting at a monitor".
+ * distinguishes "I have an X11 sandbox" from "I happen to be sitting at a monitor". Windows real
+ * desktop control never reads this field; it uses a session's approved HWND/PID/executable binding.
  *
  * **This is the whole substrate binding.** Ruled 2026-08-06: the tool drives a display THIS instance
  * can reach, never a remote one — a transport to a box that runs commands for us is the client/server

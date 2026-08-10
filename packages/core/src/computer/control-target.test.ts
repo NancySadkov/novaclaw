@@ -2,6 +2,23 @@ import { describe, expect, test } from "bun:test"
 import { ComputerControlTarget } from "./control-target"
 
 describe("P6 real-desktop control targets", () => {
+  test("a native Windows HWND/PID/executable grant round-trips", () => {
+    const encoded = ComputerControlTarget.encodeWindowsWindow({
+      windowHandle: "1844674407370955",
+      processID: 980,
+      executable: "chrome.exe",
+    })
+    expect(ComputerControlTarget.parse(encoded)).toEqual({
+      ok: true,
+      target: {
+        kind: "windows-window",
+        windowHandle: "1844674407370955",
+        processID: 980,
+        executable: "chrome.exe",
+      },
+    })
+    expect(ComputerControlTarget.parse("windows-window:12:980:C%3A%5Cchrome.exe").ok).toBe(false)
+  })
   const source = { display: ":0", windowID: "8388611", processID: 83, wmClass: "Chromium / Stable" }
 
   test("the human grant round-trips without delimiter ambiguity", () => {

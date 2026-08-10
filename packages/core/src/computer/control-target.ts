@@ -17,7 +17,17 @@ export interface X11Window {
   readonly wmClass: string
 }
 
-export type Target = Sandbox | X11Window
+/** One approved, visible top-level window on the active Windows desktop. */
+export interface WindowsWindow {
+  readonly kind: "windows-window"
+  /** Decimal HWND, retained as text because a 64-bit handle may exceed JS's exact integer range. */
+  readonly windowHandle: string
+  readonly processID: number
+  /** Executable basename, the same stable app id Windows Codex allowlists (for example dosbox-x.exe). */
+  readonly executable: string
+}
+
+export type Target = Sandbox | X11Window | WindowsWindow
 export type Parsed = { readonly ok: true; readonly target: Target } | { readonly ok: false; readonly reason: string }
 
 const NON_EMPTY = /\S/
@@ -41,6 +51,9 @@ export const encodeWindow = (target: Omit<X11Window, "kind">): string =>
     encodeURIComponent(target.wmClass),
   ].join(":")
 
+export const encodeWindowsWindow = (target: Omit<WindowsWindow, "kind">): string =>
+  ["windows-window", target.windowHandle, String(target.processID), encodeURIComponent(target.executable)].join(":")
+
 export const parse = (value: string): Parsed => {
   const parts = value.split(":")
   if (parts.length === 2 && parts[0] === "x11-sandbox") {
@@ -54,13 +67,31 @@ export const parse = (value: string): Parsed => {
       ? { ok: true, target: sandbox(display) }
       : { ok: false, reason: "The sandbox binding has no display." }
   }
+  if (parts.length === 4 && parts[0] === "windows-window") {
+    const windowHandle = parts[1]!
+    if (!/^[1-9][0-9]*$/.test(windowHandle))
+      return { ok: false, reason: "The Windows real-desktop window handle is invalid." }
+    const processID = Number(parts[2])
+    if (!Number.isSafeInteger(processID) || processID < 1)
+      return { ok: false, reason: "The Windows real-desktop process id is invalid." }
+    let executable: string
+    try {
+      executable = decodeURIComponent(parts[3]!)
+    } catch {
+      return { ok: false, reason: "The Windows real-desktop grant contains invalid percent encoding." }
+    }
+    if (!/^[^\\/:*?"<>|]+\.exe$/i.test(executable))
+      return { ok: false, reason: "The Windows real-desktop executable is not a .exe basename." }
+    return { ok: true, target: { kind: "windows-window", windowHandle, processID, executable } }
+  }
   if (parts.length !== 5 || parts[0] !== "x11-window")
     return {
       ok: false,
       reason:
         "The control_binding is not a human-scoped real-desktop grant. Expected " +
         "`x11-window:<encoded-display>:<window-id>:<pid>:<encoded-WM_CLASS>` or " +
-        "`x11-sandbox:<encoded-display>`; a plain display is never accepted.",
+        "`windows-window:<handle>:<pid>:<encoded-executable>` or `x11-sandbox:<encoded-display>`; " +
+        "a plain display is never accepted.",
     }
   let display: string
   let wmClass: string
@@ -169,7 +200,9 @@ export const verifyWindowIdentity = (
 export const permissionResource = (target: Target, action: string): string =>
   target.kind === "sandbox-x11"
     ? action
-    : `x11-window/${encodeURIComponent(target.wmClass)}/${target.processID}/${target.windowID}/${action}`
+    : target.kind === "x11-window"
+      ? `x11-window/${encodeURIComponent(target.wmClass)}/${target.processID}/${target.windowID}/${action}`
+      : `windows-window/${encodeURIComponent(target.executable)}/${target.processID}/${target.windowHandle}/${action}`
 
 /** P6's OFF-C rule: the sandbox remains usable, while a real desktop is unavailable by design. */
 export const offlineRealDesktopRefusal = (offlineEnabled: boolean): string | undefined =>

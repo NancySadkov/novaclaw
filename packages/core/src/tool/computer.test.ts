@@ -1,13 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import path from "node:path"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Schema } from "effect"
 import { Model, type ToolContent } from "@novaclaw/llm"
 import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
 import { ComputerTool } from "./computer"
 import { Tool } from "./tool"
 import { ComputerActions } from "../computer/actions"
 import { ComputerControlTarget } from "../computer/control-target"
+import { ConfigComputer } from "../config/computer"
 import { ModelV2 } from "../model"
 import { ProviderV2 } from "../provider"
 import { SessionMessage } from "../session/message"
@@ -18,6 +19,10 @@ import { toLLMMessages, type InputCapabilities } from "../session/runner/to-llm-
 
 const input = (over: Partial<ComputerTool.Input>): ComputerTool.Input =>
   ({ action: "screenshot", ...over }) as ComputerTool.Input
+
+test("the default capture is a bounded browser-loop format", () => {
+  expect(path.extname(ConfigComputer.DEFAULT_SCREENSHOT_PATH)).toBe(".jpg")
+})
 
 // The tool's schema is FLAT (action + optional x/y/text/keys/…) while the action layer takes a
 // discriminated union. A flat object is what a model fills reliably; this translation is the price,
@@ -49,8 +54,55 @@ describe("flat input becomes an action, or an honest refusal", () => {
     expect(ComputerTool.toAction(input({ action: "type", text: "hi" }))).toEqual({ kind: "type", text: "hi" })
   })
 
+  test("normalizes the computer-use keyboard dialects observed from Holo", () => {
+    expect(ComputerTool.toAction(input({ action: "keypress", keys: ["CTRL", "O"] }))).toEqual({
+      kind: "key",
+      keys: "CTRL+O",
+    })
+    expect(ComputerTool.toAction(input({ action: "keyDown", buttons: ["ctrl", "o"] }))).toEqual({
+      kind: "key",
+      keys: "ctrl+o",
+    })
+    expect(ComputerTool.toAction(input({ action: "key", button: "ctrl o" }))).toEqual({
+      kind: "key",
+      keys: "ctrl+o",
+    })
+    expect(ComputerTool.toAction(input({ action: "click", button: "ctrl o" }))).toEqual({
+      error: "click button must be left, middle, or right — got ctrl o",
+    })
+    expect(ComputerTool.toAction(input({ action: "mouse_move", x: 0.15, y: 0.55 }))).toEqual({
+      kind: "move",
+      point: { x: 0.15, y: 0.55 },
+    })
+    expect(ComputerTool.toAction(input({ action: "press_key", key: "enter" }))).toEqual({
+      kind: "key",
+      keys: "enter",
+    })
+    expect(ComputerTool.toAction(input({ action: "left_click", x: 10, y: 20 }))).toEqual({
+      kind: "click",
+      button: "left",
+      point: { x: 10, y: 20 },
+    })
+    expect(ComputerTool.toAction(input({ action: "click", double: true, x: 540, y: 445 }))).toEqual({
+      kind: "double_click",
+      point: { x: 540, y: 445 },
+    })
+  })
+
+  test("decodes Holo's numeric-string coordinates but not invented null spellings", () => {
+    const decoded = Schema.decodeUnknownSync(ComputerTool.Input)({ action: "click", x: "280", y: "0.48" })
+    expect(ComputerTool.toAction(decoded)).toEqual({
+      kind: "click",
+      button: "left",
+      point: { x: 280, y: 0.48 },
+    })
+    expect(() => Schema.decodeUnknownSync(ComputerTool.Input)({ action: "click", x: "None", y: "480" })).toThrow()
+  })
+
   test("scroll needs a direction but defaults its amount", () => {
-    expect(ComputerTool.toAction(input({ action: "scroll" }))).toEqual({ error: "scroll needs a direction" })
+    expect(ComputerTool.toAction(input({ action: "scroll" }))).toEqual({
+      error: "scroll needs a direction or non-zero delta_y",
+    })
     expect(ComputerTool.toAction(input({ action: "scroll", direction: "down" }))).toEqual({
       kind: "scroll",
       direction: "down",
@@ -58,8 +110,54 @@ describe("flat input becomes an action, or an honest refusal", () => {
     })
   })
 
+  test("normalizes Holo's measured pixel-style scroll dialects", () => {
+    expect(ComputerTool.toAction(input({ action: "scroll", direction: "down", height: 800 }))).toEqual({
+      kind: "scroll",
+      direction: "down",
+      amount: 7,
+    })
+    expect(ComputerTool.toAction(input({ action: "scroll", delta_y: -200 }))).toEqual({
+      kind: "scroll",
+      direction: "down",
+      amount: 2,
+    })
+    expect(ComputerTool.toAction(input({ action: "scroll", direction: "down", amount: "800" as any }))).toEqual({
+      kind: "scroll",
+      direction: "down",
+      amount: 7,
+    })
+    expect(ComputerTool.toAction(input({ action: "scroll", direction: -800 as any, height: 800 }))).toEqual({
+      kind: "scroll",
+      direction: "down",
+      amount: 7,
+    })
+    expect(ComputerTool.toAction(input({ action: "scroll_down", speed: -500 }))).toEqual({
+      kind: "scroll",
+      direction: "down",
+      amount: 4,
+    })
+    expect(ComputerTool.toAction(input({ action: "click_element", x: 20, y: 30 }))).toEqual({
+      kind: "click",
+      button: "left",
+      point: { x: 20, y: 30 },
+    })
+    expect(ComputerTool.toAction(input({ action: "key", keys: '["enter"]' }))).toEqual({
+      kind: "key",
+      keys: "enter",
+    })
+    expect(ComputerTool.toAction(input({ action: "type_submit", text: "https://example.test" }))).toEqual({
+      kind: "type_submit",
+      text: "https://example.test",
+    })
+    expect(ComputerTool.toAction(input({ action: "type", text: "https://example.test", submit: true }))).toEqual({
+      kind: "type_submit",
+      text: "https://example.test",
+    })
+    expect(ComputerTool.toAction(input({ action: "copy_text" }))).toEqual({ kind: "copy_text" })
+  })
+
   test("every declared action maps to something — no silent hole in the switch", () => {
-    for (const action of ["screenshot", "move", "click", "double_click", "type", "key", "scroll", "cursor"] as const) {
+    for (const action of ["screenshot", "move", "mouse_move", "click", "left_click", "right_click", "double_click", "doubleClick", "type", "key", "keypress", "keyDown", "press_key", "press", "key_sequence", "scroll", "cursor"] as const) {
       const result = ComputerTool.toAction(input({ action, x: 1, y: 2, text: "t", keys: "Return", direction: "up" }))
       expect("error" in result).toBe(false)
     }

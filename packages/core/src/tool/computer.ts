@@ -11,6 +11,7 @@ import { ConfigComputer } from "../config/computer"
 import { ComputerActions } from "../computer/actions"
 import { ComputerCoordinates } from "../computer/coordinates"
 import { ComputerControlTarget } from "../computer/control-target"
+import { WindowsComputer } from "../computer/windows-native"
 import { HostExec } from "../host-exec"
 import { Image } from "../image"
 import { Location } from "../location"
@@ -28,15 +29,19 @@ import { Tools } from "./tools"
 
 export const name = "computer"
 
-export const description = `Observe and control a graphical desktop: bind, screenshot, move, click, type, key, scroll.
+export const description = `Observe and control a graphical desktop: bind, screenshot, move, click, type, key, scroll, copy text.
+
+Preferred keyboard call: {"action":"key","keys":"ctrl+o"}. Nova also normalizes the common Computer Use forms {"action":"keypress","keys":["CTRL","O"]} and {"action":"keyDown","buttons":["ctrl","o"]}.
 
 For tasks with no API and no text interface — a native app, a game, a site that will not work headlessly. Prefer a dedicated tool when one exists; this is the slow fallback.
 
-\`bind\` is the ONLY real-desktop entry: after approval it gives the human 60 seconds to click one application window on the controlled X11 display. Later calls can see and address only that exact WM_CLASS/PID/window tuple. The \`display\` field belongs only to \`bind\` (usually \`:0\`); ordinary actions use the durable grant.
+\`bind\` is the ONLY real-desktop entry. On Windows, give the approved executable basename in \`app\` (for example \`dosbox-x.exe\`); Nova finds exactly one visible top-level window and binds its HWND/PID/executable identity. On X11, approval gives the human 60 seconds to click one window on \`display\`. Later calls can see and address only that exact application window; ordinary actions use the durable grant.
 
 \`screenshot\` returns the captured image in its own result — look at it directly; do not call \`read\` on the path.
 
-Coordinates are screenshot pixels from the top-left (window-local under a real-desktop grant). Screenshot first and read the target off it; never reuse a position from before an action, because what you clicked may have moved it.
+On Windows, x/y use the vision model's 0–1000 logical grid from top-left to bottom-right, independent of window size (0–1 fractions are accepted too). X11 uses screenshot pixels. Screenshot first and read the target off it; never reuse a position from before an action, because what you clicked may have moved it.
+
+On an approved Windows application, \`copy_text\` atomically selects all, copies, and returns text from that exact foreground window. It never reads old clipboard contents. Use it for a long browser article after a screenshot proves the correct page is open.
 
 ⚠️ Verify by looking: a click that lands on nothing still reports success, so the only evidence it worked is the screen changing.`
 
@@ -45,30 +50,77 @@ export const Input = Schema.Struct({
     "bind",
     "screenshot",
     "move",
+    "mouse_move",
     "click",
+    "click_element",
+    "left_click",
+    "right_click",
     "double_click",
+    "doubleClick",
     "type",
+    "type_submit",
     "key",
+    "keypress",
+    "keyDown",
+    "press_key",
+    "press",
+    "key_sequence",
     "scroll",
+    "scroll_down",
+    "copy_text",
     "cursor",
   ]).annotate({ description: "What to do." }),
   display: Schema.String.pipe(Schema.optional).annotate({
     description:
       'X11 display used only by `bind`, e.g. ":0". Approval plus the user clicking a window creates the scoped grant.',
   }),
-  x: Schema.Number.pipe(Schema.optional).annotate({ description: "Target X in screen pixels (move/click)." }),
-  y: Schema.Number.pipe(Schema.optional).annotate({ description: "Target Y in screen pixels (move/click)." }),
-  button: Schema.Literals(["left", "middle", "right"]).pipe(Schema.optional).annotate({
-    description: "Mouse button for `click`. Defaults to left.",
+  app: Schema.String.pipe(Schema.optional).annotate({
+    description: 'Windows executable basename used only by `bind`, e.g. "dosbox-x.exe" or "chrome.exe".',
+  }),
+  x: Schema.Union([Schema.Finite, Schema.FiniteFromString]).pipe(Schema.optional).annotate({
+    description: "Target X (Windows: 0–1000 grid; X11: pixels). Numeric strings are tolerated.",
+  }),
+  y: Schema.Union([Schema.Finite, Schema.FiniteFromString]).pipe(Schema.optional).annotate({
+    description: "Target Y (Windows: 0–1000 grid; X11: pixels). Numeric strings are tolerated.",
+  }),
+  button: Schema.String.pipe(Schema.optional).annotate({
+    description: 'Mouse button for `click` ("left", "middle", or "right"). Defaults to left.',
+  }),
+  double: Schema.Boolean.pipe(Schema.optional).annotate({
+    description: "Compatibility flag: `click` with true is a double-click; prefer action `double_click`.",
   }),
   text: Schema.String.pipe(Schema.optional).annotate({ description: "Literal text for `type`." }),
-  keys: Schema.String.pipe(Schema.optional).annotate({
-    description: 'Key combination for `key`, e.g. "Return", "ctrl+s", "alt+Tab".',
+  submit: Schema.Boolean.pipe(Schema.optional).annotate({
+    description: "Compatibility flag: type text, then press Enter; prefer action type_submit.",
   }),
-  direction: Schema.Literals(["up", "down", "left", "right"]).pipe(Schema.optional).annotate({
+  keys: Schema.Union([Schema.String, Schema.Array(Schema.String)]).pipe(Schema.optional).annotate({
+    description: 'Key combination for `key`: preferably "ctrl+s"; ["CTRL","S"] is also accepted.',
+  }),
+  buttons: Schema.Array(Schema.String).pipe(Schema.optional).annotate({
+    description: "Compatibility alias for a keyboard key array; prefer `keys`.",
+  }),
+  key: Schema.String.pipe(Schema.optional).annotate({
+    description: "Compatibility alias for one keyboard key; prefer `keys`.",
+  }),
+  direction: Schema.Union([
+    Schema.Literals(["up", "down", "left", "right"]),
+    Schema.Finite,
+    Schema.FiniteFromString,
+  ]).pipe(Schema.optional).annotate({
     description: "Scroll direction.",
   }),
-  amount: Schema.Number.pipe(Schema.optional).annotate({ description: "Scroll clicks (1-25)." }),
+  amount: Schema.Union([Schema.Finite, Schema.FiniteFromString]).pipe(Schema.optional).annotate({
+    description: "Scroll clicks (1-25); larger pixel-style values are normalized safely.",
+  }),
+  height: Schema.Union([Schema.Finite, Schema.FiniteFromString]).pipe(Schema.optional).annotate({
+    description: "Compatibility alias for a pixel-style scroll distance; prefer amount.",
+  }),
+  delta_y: Schema.Union([Schema.Finite, Schema.FiniteFromString]).pipe(Schema.optional).annotate({
+    description: "Compatibility vertical wheel delta; Holo's measured negative value means down.",
+  }),
+  speed: Schema.Union([Schema.Finite, Schema.FiniteFromString]).pipe(Schema.optional).annotate({
+    description: "Compatibility alias for vertical wheel delta; prefer direction plus amount.",
+  }),
   /**
    * ⚠️ **One string, not four numbers and not a nested object — and the reason is MEASURED.**
    *
@@ -230,26 +282,79 @@ export const toAction = (input: Input): ComputerActions.Action | { readonly erro
     }
     case "cursor":
       return { kind: "cursor" }
-    case "move": {
+    case "copy_text":
+      return { kind: "copy_text" }
+    case "move":
+    case "mouse_move": {
       const p = point()
       return p ? { kind: "move", point: p } : { error: "move needs both x and y" }
     }
-    case "click": {
+    case "click":
+    case "click_element":
+    case "left_click":
+    case "right_click": {
       const p = point()
-      return { kind: "click", button: input.button ?? "left", ...(p ? { point: p } : {}) }
+      const button = input.action === "right_click" ? "right" : (input.button ?? "left")
+      if (button !== "left" && button !== "middle" && button !== "right")
+        return { error: `click button must be left, middle, or right — got ${button}` }
+      if (input.double === true) {
+        if (button !== "left") return { error: "double-click supports only the left button" }
+        return { kind: "double_click", ...(p ? { point: p } : {}) }
+      }
+      return { kind: "click", button, ...(p ? { point: p } : {}) }
     }
-    case "double_click": {
+    case "double_click":
+    case "doubleClick": {
       const p = point()
       return { kind: "double_click", ...(p ? { point: p } : {}) }
     }
     case "type":
-      return input.text === undefined ? { error: "type needs text" } : { kind: "type", text: input.text }
+    case "type_submit":
+      return input.text === undefined
+        ? { error: `${input.action} needs text` }
+        : input.action === "type_submit" || input.submit === true
+          ? { kind: "type_submit", text: input.text }
+          : { kind: "type", text: input.text }
     case "key":
-      return input.keys === undefined ? { error: "key needs keys" } : { kind: "key", keys: input.keys }
+    case "keypress":
+    case "keyDown":
+    case "press_key":
+    case "press":
+    case "key_sequence": {
+      const raw = input.keys ?? input.buttons ?? input.key ?? input.button
+      if (raw === undefined) return { error: "key needs keys" }
+      let normalized = raw
+      if (typeof raw === "string" && /^\s*\[/.test(raw)) {
+        try {
+          const parsed: unknown = JSON.parse(raw)
+          if (Array.isArray(parsed) && parsed.every((part) => typeof part === "string")) normalized = parsed
+        } catch {}
+      }
+      const keys = typeof normalized === "string" ? normalized.trim().replace(/\s+/g, "+") : normalized.join("+")
+      return keys === "" ? { error: "key needs keys" } : { kind: "key", keys }
+    }
     case "scroll":
-      return input.direction === undefined
-        ? { error: "scroll needs a direction" }
-        : { kind: "scroll", direction: input.direction, amount: input.amount ?? 3 }
+    case "scroll_down": {
+      const delta =
+        typeof input.direction === "number" ? input.direction : (input.delta_y ?? input.speed)
+      const direction =
+        input.action === "scroll_down"
+          ? "down"
+          : typeof input.direction === "string"
+            ? input.direction
+            : delta === undefined || delta === 0
+              ? undefined
+              : delta < 0
+                ? "down"
+                : "up"
+      if (direction === undefined) return { error: "scroll needs a direction or non-zero delta_y" }
+      const raw = Math.abs(input.amount ?? input.height ?? delta ?? 3)
+      // Holo emitted amount/height=800 and delta_y=-200 for an ordinary page scroll. Treating those
+      // as wheel-click counts either trips the safety bound or would fling the page; they are pixel
+      // dialects, so normalize at roughly one wheel notch per 120 px and retain the hard 25-click cap.
+      const amount = raw > 25 ? Math.min(25, Math.max(1, Math.round(raw / 120))) : Math.round(raw)
+      return { kind: "scroll", direction, amount }
+    }
   }
 }
 
@@ -292,8 +397,8 @@ export const resolveControlTarget = <E, R>(
  *
  * `scrot` picks its output format from the extension, so the extension is the only fact we have —
  * and it is a real one, not a guess: the path is the operator's own `computer.screenshotPath`, and
- * the same string is what `scrot` was handed. PNG is the default because
- * `ConfigComputer.DEFAULT_SCREENSHOT_PATH` is a `.png`, and because a wrong MIME here is not
+ * the same string is what `scrot` was handed. JPEG is the default because full-window browser
+ * observations otherwise turn into very large durable base64 payloads, and because a wrong MIME here is not
  * cosmetic — `attachmentModality` maps it onto the model's declared input modalities, so an
  * unrecognised type would make the capability gate answer `unknown` instead of `image`.
  */
@@ -468,13 +573,17 @@ export const layer = Layer.effectDiscard(
             toModelOutput: ({ output }) => toModelContent(output),
             execute: (input, context) =>
               Effect.gen(function* () {
-                const runArgv = (display: string, argv: ReadonlyArray<string>, interactive = false) => {
+                const runArgv = (
+                  argv: ReadonlyArray<string>,
+                  overlay: Readonly<Record<string, string>> = {},
+                  interactive = false,
+                ) => {
                   const plan = HostExec.plan({
                     shape: { kind: "argv", argv },
                     cwd: location.directory,
                     worktree: location.directory,
                     consent: "none",
-                    overlay: { DISPLAY: display },
+                    overlay,
                   })
                   if (plan.via === "none") return Effect.fail(new ToolFailure({ message: plan.message }))
                   if (plan.via !== "exec")
@@ -501,6 +610,48 @@ export const layer = Layer.effectDiscard(
                         message: `computer: ${offlineRefusal}`,
                       }),
                     )
+                  if (process.platform === "win32") {
+                    const executable = input.app?.trim()
+                    if (!executable || !/^[^\\/:*?"<>|]+\.exe$/i.test(executable))
+                      return yield* Effect.fail(
+                        new ToolFailure({
+                          message: 'computer: Windows bind needs an executable basename in `app`, for example "dosbox-x.exe"',
+                        }),
+                      )
+                    const resource = `bind-windows-app/${encodeURIComponent(executable.toLowerCase())}`
+                    yield* permission.assert({
+                      action: name,
+                      resources: [resource],
+                      save: [resource],
+                      metadata: { action: input.action, app: executable },
+                      sessionID: context.sessionID,
+                      source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                    })
+                    const helper = yield* Effect.tryPromise({
+                      try: () => WindowsComputer.ensureHelper(),
+                      catch: (error) =>
+                        new ToolFailure({ message: `computer: cannot prepare Windows helper — ${String(error)}` }),
+                    })
+                    const result = yield* runArgv(WindowsComputer.bindArgv(helper, executable), {}, true)
+                    const selected = WindowsComputer.parseInspection(result.stdout.toString())
+                    if (!selected)
+                      return yield* Effect.fail(
+                        new ToolFailure({ message: "computer: Windows returned no valid approved-window identity" }),
+                      )
+                    const binding = ComputerControlTarget.encodeWindowsWindow({
+                      windowHandle: selected.handle,
+                      processID: selected.processID,
+                      executable: selected.executable,
+                    })
+                    yield* components.put({ sessionID: context.sessionID, kind: "control_binding", value: binding })
+                    return {
+                      action: input.action,
+                      ok: true,
+                      detail:
+                        `Connected this session to the visible ${selected.executable} window only ` +
+                        `(pid ${selected.processID}, HWND ${selected.handle}). Other applications and the ambient desktop remain outside scope.`,
+                    }
+                  }
                   const display = input.display?.trim()
                   if (!display)
                     return yield* Effect.fail(
@@ -517,7 +668,7 @@ export const layer = Layer.effectDiscard(
                     sessionID: context.sessionID,
                     source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
                   })
-                  const selection = yield* runArgv(display, ["xdotool", "selectwindow"], true)
+                  const selection = yield* runArgv(["xdotool", "selectwindow"], { DISPLAY: display }, true)
                   const selectedWindowID = ComputerControlTarget.parseWindowID(selection.stdout.toString())
                   if (!selectedWindowID)
                     return yield* Effect.fail(
@@ -527,14 +678,12 @@ export const layer = Layer.effectDiscard(
                   // the human clicked. Descend the authoritative X tree and accept exactly one
                   // PID+WM_CLASS client; zero or ambiguity fails closed.
                   const selectedArg = ComputerControlTarget.xWindowArg(selectedWindowID)
-                  const tree = yield* runArgv(display, ["xwininfo", "-id", selectedArg, "-tree"])
+                  const tree = yield* runArgv(["xwininfo", "-id", selectedArg, "-tree"], { DISPLAY: display })
                   const treeText = tree.stdout.toString()
-                  const clientList = yield* runArgv(display, [
-                    "xprop",
-                    "-root",
-                    "_NET_CLIENT_LIST_STACKING",
-                    "_NET_CLIENT_LIST",
-                  ])
+                  const clientList = yield* runArgv(
+                    ["xprop", "-root", "_NET_CLIENT_LIST_STACKING", "_NET_CLIENT_LIST"],
+                    { DISPLAY: display },
+                  )
                   const resolvedClient = ComputerControlTarget.resolveSelectedClient(
                     selectedWindowID,
                     treeText,
@@ -549,8 +698,8 @@ export const layer = Layer.effectDiscard(
                   const windowID = resolvedClient.windowID
                   const windowArg = ComputerControlTarget.xWindowArg(windowID)
                   const [pidResult, classResult] = yield* Effect.all([
-                    runArgv(display, ["xdotool", "getwindowpid", windowArg]),
-                    runArgv(display, ["xprop", "-id", windowArg, "WM_CLASS"]),
+                    runArgv(["xdotool", "getwindowpid", windowArg], { DISPLAY: display }),
+                    runArgv(["xprop", "-id", windowArg, "WM_CLASS"], { DISPLAY: display }),
                   ])
                   const processID = ComputerControlTarget.parseWindowPID(pidResult.stdout.toString())
                   const wmClass = ComputerControlTarget.parseWmClass(classResult.stdout.toString())
@@ -581,7 +730,7 @@ export const layer = Layer.effectDiscard(
                   return yield* Effect.fail(new ToolFailure({ message: `computer: ${resolvedTarget.reason}` }))
                 const target = resolvedTarget.target
                 const offlineRefusal =
-                  target.kind === "x11-window"
+                  target.kind !== "sandbox-x11"
                     ? ComputerControlTarget.offlineRealDesktopRefusal(offline.policy.enabled)
                     : undefined
                 if (offlineRefusal)
@@ -590,7 +739,6 @@ export const layer = Layer.effectDiscard(
                       message: `computer: ${offlineRefusal}`,
                     }),
                   )
-                const display = target.display
                 const screenshotPath = settings?.screenshotPath ?? ConfigComputer.DEFAULT_SCREENSHOT_PATH
 
                 const action = toAction(input)
@@ -607,8 +755,8 @@ export const layer = Layer.effectDiscard(
                 if (target.kind === "x11-window") {
                   windowArg = ComputerControlTarget.xWindowArg(target.windowID)
                   const [pidResult, classResult] = yield* Effect.all([
-                    runArgv(display, ["xdotool", "getwindowpid", windowArg]),
-                    runArgv(display, ["xprop", "-id", windowArg, "WM_CLASS"]),
+                    runArgv(["xdotool", "getwindowpid", windowArg], { DISPLAY: target.display }),
+                    runArgv(["xprop", "-id", windowArg, "WM_CLASS"], { DISPLAY: target.display }),
                   ])
                   const identity = ComputerControlTarget.verifyWindowIdentity(
                     target,
@@ -628,11 +776,40 @@ export const layer = Layer.effectDiscard(
                     )
                 }
 
-                const built = ComputerActions.build(action, {
-                  display,
-                  screenshotPath,
-                  ...(windowArg === undefined ? {} : { windowID: windowArg }),
-                })
+                let windowsHelper: string | undefined
+                let windowsInspection: WindowsComputer.Inspection | undefined
+                if (target.kind === "windows-window") {
+                  windowsHelper = yield* Effect.tryPromise({
+                    try: () => WindowsComputer.ensureHelper(),
+                    catch: (error) =>
+                      new ToolFailure({ message: `computer: cannot prepare Windows helper — ${String(error)}` }),
+                  })
+                  const inspected = yield* runArgv(WindowsComputer.inspectArgv(windowsHelper, target.windowHandle))
+                  const inspection = WindowsComputer.parseInspection(inspected.stdout.toString())
+                  if (!inspection)
+                    return yield* Effect.fail(
+                      new ToolFailure({ message: "computer: the approved Windows application identity is unreadable" }),
+                    )
+                  const identity = WindowsComputer.verifyIdentity(target, inspection)
+                  if (!identity.ok)
+                    return yield* Effect.fail(
+                      new ToolFailure({
+                        message:
+                          `computer: the approved ${target.executable} window is unavailable (${identity.reason}). ` +
+                          "Bring that window to the front or bind it again; Nova will not redirect input to another application.",
+                      }),
+                    )
+                  windowsInspection = inspection
+                }
+
+                const built =
+                  target.kind === "windows-window"
+                    ? WindowsComputer.build(action, target, windowsInspection!, windowsHelper!, screenshotPath)
+                    : ComputerActions.build(action, {
+                        display: target.display,
+                        screenshotPath,
+                        ...(windowArg === undefined ? {} : { windowID: windowArg }),
+                      })
                 if (!built.ok) return yield* Effect.fail(new ToolFailure({ message: built.reason }))
 
                 // One assert for the whole tool: the resource is the ACTION, not a coordinate — a
@@ -652,7 +829,7 @@ export const layer = Layer.effectDiscard(
                 // screen. `overlay` is the functional, non-secret channel the display rides.
                 const outputs: string[] = []
                 for (const argv of built.argv) {
-                  const result = yield* runArgv(display, argv)
+                  const result = yield* runArgv(argv, built.env)
                   const text = result.stdout.toString().trim()
                   if (text) outputs.push(text)
                 }
@@ -681,8 +858,8 @@ export const layer = Layer.effectDiscard(
                       // `-a 1200,760,400,400` on a 1280x800 display wrote an 80x40 file with no error.
                       // The origin survives clipping, so it stays exact; asserting the requested size
                       // would be describing the file as something it is not.
-                      (target.kind === "x11-window"
-                        ? `Only the human-granted ${target.wmClass} application window is attached; ` +
+                      (target.kind !== "sandbox-x11"
+                        ? `Only the approved ${target.kind === "x11-window" ? target.wmClass : target.executable} application window is attached; ` +
                           "coordinates are relative to that window. "
                         : "") +
                       (action.region
