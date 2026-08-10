@@ -9,6 +9,7 @@ import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js"
 import { Effect, Layer } from "effect"
 import { fileURLToPath } from "node:url"
 import { McpCapabilityServiceWorker } from "@/mcp/capability-service-worker"
+import { McpAuth } from "@/mcp/auth"
 
 const graph = (fixture: string) => {
   const info = new ConfigCapabilityService.Info({
@@ -43,7 +44,25 @@ const graph = (fixture: string) => {
         Effect.succeed({ limitBytes: 1_000, usedBytes: 100, floorUsedFraction: 0.8 }),
     }),
   )
+  const auth = Layer.succeed(
+    McpAuth.Service,
+    McpAuth.Service.of({
+      all: () => Effect.succeed({}),
+      get: () => Effect.succeed(undefined),
+      getForUrl: () => Effect.succeed(undefined),
+      set: () => Effect.void,
+      remove: () => Effect.void,
+      updateTokens: () => Effect.void,
+      updateClientInfo: () => Effect.void,
+      updateCodeVerifier: () => Effect.void,
+      clearCodeVerifier: () => Effect.void,
+      updateOAuthState: () => Effect.void,
+      getOAuthState: () => Effect.succeed(undefined),
+      clearOAuthState: () => Effect.void,
+    }),
+  )
   const worker = McpCapabilityServiceWorker.layer.pipe(
+    Layer.provide(auth),
     Layer.provide(Global.layerWith({ data: process.cwd(), config: process.cwd() })),
   )
   return CapabilityServiceRuntime.layer.pipe(

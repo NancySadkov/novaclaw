@@ -6,11 +6,33 @@ import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js"
 import { Effect, Layer } from "effect"
 import { fileURLToPath } from "node:url"
 import { McpCapabilityServiceWorker } from "@/mcp/capability-service-worker"
+import { McpAuth } from "@/mcp/auth"
 
 const servers: Bun.Server<unknown>[] = []
 afterEach(() => {
   for (const server of servers.splice(0)) server.stop(true)
 })
+
+const authLayer = (lookup?: (audience: string, url: string) => McpAuth.Entry | undefined) =>
+  Layer.succeed(
+    McpAuth.Service,
+    McpAuth.Service.of({
+      all: () => Effect.succeed({}),
+      get: () => Effect.succeed(undefined),
+      getForUrl: (audience, url) => Effect.succeed(lookup?.(audience, url)),
+      set: () => Effect.void,
+      remove: () => Effect.void,
+      updateTokens: () => Effect.void,
+      updateClientInfo: () => Effect.void,
+      updateCodeVerifier: () => Effect.void,
+      clearCodeVerifier: () => Effect.void,
+      updateOAuthState: () => Effect.void,
+      getOAuthState: () => Effect.succeed(undefined),
+      clearOAuthState: () => Effect.void,
+    }),
+  )
+
+const workerLayer = (auth = authLayer()) => McpCapabilityServiceWorker.layer.pipe(Layer.provide(auth))
 
 describe("McpCapabilityServiceWorker", () => {
   test("connects, invokes only declared tools, checks health, and closes the transport", async () => {
@@ -75,7 +97,7 @@ describe("McpCapabilityServiceWorker", () => {
       }),
     })
     const global = Global.layerWith({ data: process.cwd(), config: process.cwd() })
-    const layer = McpCapabilityServiceWorker.layer.pipe(Layer.provide(global))
+    const layer = workerLayer().pipe(Layer.provide(global))
 
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -120,7 +142,7 @@ describe("McpCapabilityServiceWorker", () => {
         estimated_peak_bytes: 1,
       }),
     })
-    const layer = McpCapabilityServiceWorker.layer.pipe(
+    const layer = workerLayer().pipe(
       Layer.provide(Global.layerWith({ data: process.cwd(), config: process.cwd() })),
     )
 
@@ -201,7 +223,7 @@ describe("McpCapabilityServiceWorker", () => {
       })
     const firstInfo = declaration(first.url.toString())
     const secondInfo = declaration(second.url.toString())
-    const layer = McpCapabilityServiceWorker.layer.pipe(
+    const layer = workerLayer().pipe(
       Layer.provide(Global.layerWith({ data: process.cwd(), config: process.cwd() })),
     )
 
@@ -272,7 +294,7 @@ describe("McpCapabilityServiceWorker", () => {
         const worker = yield* CapabilityServiceWorker.Service
         return yield* Effect.flip(worker.start("revision", declaration(wrongRevision.url.toString(), "1900-01-01")))
       }).pipe(
-        Effect.provide(McpCapabilityServiceWorker.layer),
+        Effect.provide(workerLayer()),
         Effect.provide(Global.layerWith({ data: process.cwd(), config: process.cwd() })),
         Effect.scoped,
       ),
@@ -287,7 +309,7 @@ describe("McpCapabilityServiceWorker", () => {
           worker.start("schema", declaration(missingTool.url.toString(), LATEST_PROTOCOL_VERSION)),
         )
       }).pipe(
-        Effect.provide(McpCapabilityServiceWorker.layer),
+        Effect.provide(workerLayer()),
         Effect.provide(Global.layerWith({ data: process.cwd(), config: process.cwd() })),
         Effect.scoped,
       ),
@@ -304,7 +326,7 @@ describe("McpCapabilityServiceWorker", () => {
           worker.start("schema-shape", declaration(malformedSchema.url.toString(), LATEST_PROTOCOL_VERSION)),
         )
       }).pipe(
-        Effect.provide(McpCapabilityServiceWorker.layer),
+        Effect.provide(workerLayer()),
         Effect.provide(Global.layerWith({ data: process.cwd(), config: process.cwd() })),
         Effect.scoped,
       ),
@@ -312,7 +334,136 @@ describe("McpCapabilityServiceWorker", () => {
     expect(schemaShapeError.message).toContain('"inputSchema"')
   })
 
-  test("fails closed instead of sending an audience-bound HTTP request without a broker", async () => {
+  test("brokers an audience-bound token only for its exact service URL", async () => {
+    const authorizations: Array<string | null> = []
+    const server = Bun.serve({
+      port: 0,
+      async fetch(request) {
+        if (request.method === "GET") return new Response(null, { status: 405 })
+        if (request.method === "DELETE") return new Response(null, { status: 200 })
+        authorizations.push(request.headers.get("authorization"))
+        const message = (await request.json()) as { id?: number; method: string }
+        if (message.method === "initialize")
+          return Response.json({
+            jsonrpc: "2.0",
+            id: message.id,
+            result: {
+              protocolVersion: LATEST_PROTOCOL_VERSION,
+              capabilities: { tools: {} },
+              serverInfo: { name: "authorized-fixture", version: "1" },
+            },
+          })
+        if (message.method === "notifications/initialized") return new Response(null, { status: 202 })
+        if (message.method === "tools/list")
+          return Response.json({
+            jsonrpc: "2.0",
+            id: message.id,
+            result: {
+              tools: [{ name: "document.parse.native", inputSchema: { type: "object", properties: {} } }],
+            },
+          })
+        if (message.method === "tools/call")
+          return Response.json({
+            jsonrpc: "2.0",
+            id: message.id,
+            result: { content: [{ type: "text", text: "authorized" }] },
+          })
+        return Response.json({ jsonrpc: "2.0", id: message.id, result: {} })
+      },
+    })
+    servers.push(server)
+    const lookups: Array<readonly [string, string]> = []
+    const auth = authLayer((audience, url) => {
+      lookups.push([audience, url])
+      return url === server.url.toString()
+        ? { tokens: { accessToken: "service-secret" }, serverUrl: url }
+        : undefined
+    })
+    const info = new ConfigCapabilityService.Info({
+      capabilities: ["document.parse.native"],
+      transport: new ConfigCapabilityService.HttpTransport({
+        type: "streamable-http",
+        url: server.url.toString(),
+        audience: "native-documents",
+      }),
+      locality: "lan",
+      resources: new ConfigCapabilityService.Resources({
+        estimated_resident_bytes: 1,
+        estimated_peak_bytes: 1,
+      }),
+    })
+    const layer = workerLayer(auth).pipe(
+      Layer.provide(Global.layerWith({ data: process.cwd(), config: process.cwd() })),
+    )
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const worker = yield* CapabilityServiceWorker.Service
+        yield* worker.start("authorized", info)
+        return yield* worker.run({
+          serviceID: "authorized",
+          capability: "document.parse.native",
+          arguments: {},
+        })
+      }).pipe(Effect.provide(layer), Effect.scoped),
+    )
+
+    expect(result).toMatchObject({ content: [{ type: "text", text: "authorized" }] })
+    expect(lookups).toEqual([["native-documents", server.url.toString()]])
+    expect(authorizations.length).toBeGreaterThan(0)
+    expect(authorizations.every((value) => value === "Bearer service-secret")).toBe(true)
+  })
+
+  test("never follows a redirect with an audience-bound token", async () => {
+    let sinkRequests = 0
+    const sink = Bun.serve({
+      port: 0,
+      fetch() {
+        sinkRequests += 1
+        return new Response(null, { status: 500 })
+      },
+    })
+    servers.push(sink)
+    const redirect = Bun.serve({
+      port: 0,
+      fetch() {
+        return new Response(null, { status: 307, headers: { Location: sink.url.toString() } })
+      },
+    })
+    servers.push(redirect)
+    const auth = authLayer((_audience, url) => ({
+      tokens: { accessToken: "must-not-redirect" },
+      serverUrl: url,
+    }))
+    const info = new ConfigCapabilityService.Info({
+      capabilities: ["document.parse.native"],
+      transport: new ConfigCapabilityService.HttpTransport({
+        type: "streamable-http",
+        url: redirect.url.toString(),
+        audience: "redirect-guard",
+      }),
+      locality: "lan",
+      resources: new ConfigCapabilityService.Resources({
+        estimated_resident_bytes: 1,
+        estimated_peak_bytes: 1,
+      }),
+    })
+    const layer = workerLayer(auth).pipe(
+      Layer.provide(Global.layerWith({ data: process.cwd(), config: process.cwd() })),
+    )
+
+    const error = await Effect.runPromise(
+      Effect.gen(function* () {
+        const worker = yield* CapabilityServiceWorker.Service
+        return yield* Effect.flip(worker.start("redirect", info))
+      }).pipe(Effect.provide(layer), Effect.scoped),
+    )
+
+    expect(error).toBeInstanceOf(Error)
+    expect(sinkRequests).toBe(0)
+  })
+
+  test("fails closed instead of sending an audience-bound request without a current credential", async () => {
     const info = new ConfigCapabilityService.Info({
       capabilities: ["document.parse.native"],
       transport: new ConfigCapabilityService.HttpTransport({
@@ -326,13 +477,13 @@ describe("McpCapabilityServiceWorker", () => {
         estimated_peak_bytes: 1,
       }),
     })
-    const layer = McpCapabilityServiceWorker.layer.pipe(Layer.provide(Global.layerWith({ data: process.cwd() })))
+    const layer = workerLayer().pipe(Layer.provide(Global.layerWith({ data: process.cwd() })))
     const error = await Effect.runPromise(
       Effect.gen(function* () {
         const worker = yield* CapabilityServiceWorker.Service
         return yield* Effect.flip(worker.start("parser", info))
       }).pipe(Effect.provide(layer)),
     )
-    expect(error.message).toContain("audience-bound authorization")
+    expect(error.message).toContain('no current credential bound to audience "parser"')
   })
 })

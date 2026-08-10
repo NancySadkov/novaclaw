@@ -12,6 +12,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { Effect, Exit, Layer } from "effect"
 import { withTimeout } from "@/util/timeout"
 import { createClient, shutdownClient, shutdownTransport } from "."
+import { McpAuth } from "./auth"
 
 type Live = { readonly client: Client; readonly info: ConfigCapabilityService.Info; readonly declaration: string }
 
@@ -66,6 +67,7 @@ export const layer = Layer.effect(
   CapabilityServiceWorker.Service,
   Effect.gen(function* () {
     const global = yield* Global.Service
+    const auth = yield* McpAuth.Service
     const live = new Map<string, Live>()
 
     const stop = Effect.fn("McpCapabilityServiceWorker.stop")(function* (serviceID: string) {
@@ -97,17 +99,34 @@ export const layer = Layer.effect(
           transport = new StdioClientTransport({ command, args, cwd: global.data, env, stderr: "pipe" })
         } else {
           const http = info.transport
-          if (http.audience !== undefined)
-            return yield* Effect.fail(
-              new Error(`Capability service "${serviceID}" requires audience-bound authorization, which is not available`),
-            )
           const url = yield* Effect.try({
             try: () => new URL(http.url),
             catch: () => new Error(`Capability service "${serviceID}" has an invalid URL`),
           })
           const verdict = Offline.checkUrl(url.toString(), Offline.loadPolicy({ configDir: global.config }))
           if (!verdict.allowed) return yield* Effect.fail(new Error(verdict.message))
-          transport = new StreamableHTTPClientTransport(url)
+          let requestInit: RequestInit | undefined
+          if (http.audience !== undefined) {
+            const entry = yield* auth.getForUrl(http.audience, url.toString())
+            const tokens = entry?.tokens
+            if (
+              tokens === undefined ||
+              tokens.accessToken.length === 0 ||
+              (tokens.expiresAt !== undefined && tokens.expiresAt <= Date.now() / 1000)
+            )
+              return yield* Effect.fail(
+                new Error(
+                  `Capability service "${serviceID}" has no current credential bound to audience "${http.audience}" and ${url.origin}`,
+                ),
+              )
+            requestInit = {
+              headers: { Authorization: `Bearer ${tokens.accessToken}` },
+              // The credential is bound to this exact configured resource URL. Never let fetch
+              // carry it to a redirect target with a different audience.
+              redirect: "error",
+            }
+          }
+          transport = new StreamableHTTPClientTransport(url, requestInit === undefined ? undefined : { requestInit })
         }
         const client = createClient(global.data)
         const timeout = info.warmup_timeout_ms ?? 30_000
@@ -156,5 +175,5 @@ export const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: CapabilityServiceWorker.Service,
   layer,
-  deps: [Global.node],
+  deps: [Global.node, McpAuth.node],
 })
