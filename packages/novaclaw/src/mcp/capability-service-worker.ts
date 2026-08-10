@@ -13,7 +13,9 @@ import { Effect, Exit, Layer } from "effect"
 import { withTimeout } from "@/util/timeout"
 import { createClient, shutdownClient, shutdownTransport } from "."
 
-type Live = { readonly client: Client; readonly info: ConfigCapabilityService.Info }
+type Live = { readonly client: Client; readonly info: ConfigCapabilityService.Info; readonly declaration: string }
+
+const declarationKey = (info: ConfigCapabilityService.Info) => JSON.stringify(info)
 
 const observeProtocol = (transport: Transport) => {
   let negotiated: string | undefined
@@ -77,7 +79,10 @@ export const layer = Layer.effect(
 
     return CapabilityServiceWorker.Service.of({
       start: Effect.fn("McpCapabilityServiceWorker.start")(function* (serviceID, info) {
-        if (live.has(serviceID)) return
+        const declaration = declarationKey(info)
+        const current = live.get(serviceID)
+        if (current?.declaration === declaration) return
+        if (current !== undefined) yield* stop(serviceID)
         let transport: StdioClientTransport | StreamableHTTPClientTransport
         if (info.transport.type === "stdio") {
           const [command, ...args] = info.transport.command
@@ -120,7 +125,7 @@ export const layer = Layer.effect(
             }),
           (owned, exit) => (Exit.isFailure(exit) ? shutdownTransport(owned) : Effect.void),
         )
-        live.set(serviceID, { client, info })
+        live.set(serviceID, { client, info, declaration })
       }),
       run: Effect.fn("McpCapabilityServiceWorker.run")(function* (input) {
         const found = live.get(input.serviceID)

@@ -34,7 +34,9 @@ const declaration = (inputBytes?: number, healthIntervalMs?: number) =>
 
 const graph = (input: {
   readonly info?: ConfigCapabilityService.Info
-  readonly services?: Readonly<Record<string, ConfigCapabilityService.Info>>
+  readonly services?:
+    | Readonly<Record<string, ConfigCapabilityService.Info>>
+    | (() => Readonly<Record<string, ConfigCapabilityService.Info>>)
   readonly onSettingsRead?: () => void
   readonly capacity: () => ResourcePressureContext.CommitCapacity | undefined
   readonly worker: CapabilityServiceWorker.Interface
@@ -45,7 +47,8 @@ const graph = (input: {
       all: () =>
         Effect.sync(() => {
           input.onSettingsRead?.()
-          return { capability_services: input.services ?? { parser: input.info ?? declaration() } }
+          const configured = typeof input.services === "function" ? input.services() : input.services
+          return { capability_services: configured ?? { parser: input.info ?? declaration() } }
         }),
       set: () => Effect.void,
       remove: () => Effect.void,
@@ -157,6 +160,113 @@ describe("CapabilityServiceRuntime", () => {
       "start:capability-run",
       "end:capability-run",
     ])
+  })
+
+  test("reloads a live worker from the current declaration before the next request", async () => {
+    const at = (url: string) =>
+      new ConfigCapabilityService.Info({
+        capabilities: ["document.parse.native"],
+        transport: new ConfigCapabilityService.HttpTransport({ type: "streamable-http", url }),
+        locality: "local",
+        resources: new ConfigCapabilityService.Resources({
+          estimated_resident_bytes: 100,
+          estimated_peak_bytes: 200,
+        }),
+      })
+    let current = at("http://127.0.0.1:9010/mcp")
+    const starts: string[] = []
+    const layer = graph({
+      services: () => ({ parser: current }),
+      capacity: () => ({ limitBytes: 1_000, usedBytes: 100, floorUsedFraction: 0.8 }),
+      worker: {
+        start: (_serviceID, info) =>
+          Effect.sync(() => starts.push(info.transport.type === "streamable-http" ? info.transport.url : "stdio")).pipe(
+            Effect.asVoid,
+          ),
+        run: ({ arguments: input }) => Effect.succeed(input),
+        stop: () => Effect.void,
+        health: () => Effect.succeed(true),
+      },
+    })
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const runtime = yield* CapabilityServiceRuntime.Service
+        expect(
+          yield* runtime.execute({
+            serviceID: "parser",
+            requestID: "before-repair",
+            capability: "document.parse.native",
+            arguments: { generation: 1 },
+          }),
+        ).toEqual({ generation: 1 })
+        current = at("http://127.0.0.1:9020/mcp")
+        expect(
+          yield* runtime.execute({
+            serviceID: "parser",
+            requestID: "after-repair",
+            capability: "document.parse.native",
+            arguments: { generation: 2 },
+          }),
+        ).toEqual({ generation: 2 })
+      }).pipe(Effect.provide(layer), Effect.scoped),
+    )
+
+    expect(starts).toEqual(["http://127.0.0.1:9010/mcp", "http://127.0.0.1:9020/mcp"])
+  })
+
+  test("a changed declaration re-arms an unavailable service without a process restart", async () => {
+    const at = (url: string) =>
+      new ConfigCapabilityService.Info({
+        capabilities: ["document.parse.native"],
+        transport: new ConfigCapabilityService.HttpTransport({ type: "streamable-http", url }),
+        locality: "local",
+        resources: new ConfigCapabilityService.Resources({
+          estimated_resident_bytes: 100,
+          estimated_peak_bytes: 200,
+        }),
+      })
+    let current = at("http://127.0.0.1:9010/mcp")
+    const layer = graph({
+      services: () => ({ parser: current }),
+      capacity: () => ({ limitBytes: 1_000, usedBytes: 100, floorUsedFraction: 0.8 }),
+      worker: {
+        start: (_serviceID, info) =>
+          info.transport.type === "streamable-http" && info.transport.url.includes(":9010/")
+            ? Effect.fail(new Error("old endpoint is down"))
+            : Effect.void,
+        run: () => Effect.succeed("repaired"),
+        stop: () => Effect.void,
+        health: () => Effect.succeed(true),
+      },
+    })
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const runtime = yield* CapabilityServiceRuntime.Service
+        expect(
+          (yield* Effect.exit(
+            runtime.execute({
+              serviceID: "parser",
+              requestID: "broken",
+              capability: "document.parse.native",
+              arguments: {},
+            }),
+          ))._tag,
+        ).toBe("Failure")
+        expect((yield* runtime.snapshot())[0]?.phase).toBe("unavailable")
+
+        current = at("http://127.0.0.1:9020/mcp")
+        expect(
+          yield* runtime.execute({
+            serviceID: "parser",
+            requestID: "repaired",
+            capability: "document.parse.native",
+            arguments: {},
+          }),
+        ).toBe("repaired")
+      }).pipe(Effect.provide(layer), Effect.scoped),
+    )
   })
 
   test("serializes queued calls and dispatches the successor after completion", async () => {

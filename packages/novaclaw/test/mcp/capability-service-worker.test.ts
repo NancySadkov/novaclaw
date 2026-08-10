@@ -139,6 +139,90 @@ describe("McpCapabilityServiceWorker", () => {
     expect(result).toMatchObject({ content: [{ type: "text", text: "file:stdio" }] })
   })
 
+  test("reconnects a live service when its runtime declaration changes", async () => {
+    const initialized: string[] = []
+    const serve = (name: string) => {
+      const server = Bun.serve({
+        port: 0,
+        async fetch(request) {
+          if (request.method === "GET") return new Response(null, { status: 405 })
+          if (request.method === "DELETE") {
+            return new Response(null, { status: 200 })
+          }
+          const message = (await request.json()) as { id?: number; method: string }
+          if (message.method === "initialize") {
+            initialized.push(name)
+            return Response.json(
+              {
+                jsonrpc: "2.0",
+                id: message.id,
+                result: {
+                  protocolVersion: LATEST_PROTOCOL_VERSION,
+                  capabilities: { tools: {} },
+                  serverInfo: { name, version: "1" },
+                },
+              },
+              { headers: { "Mcp-Session-Id": name } },
+            )
+          }
+          if (message.method === "notifications/initialized") return new Response(null, { status: 202 })
+          if (message.method === "tools/list")
+            return Response.json({
+              jsonrpc: "2.0",
+              id: message.id,
+              result: {
+                tools: [{ name: "document.parse.native", inputSchema: { type: "object", properties: {} } }],
+              },
+            })
+          if (message.method === "tools/call")
+            return Response.json({
+              jsonrpc: "2.0",
+              id: message.id,
+              result: { content: [{ type: "text", text: name }] },
+            })
+          return Response.json({ jsonrpc: "2.0", id: message.id, result: {} })
+        },
+      })
+      servers.push(server)
+      return server
+    }
+    const first = serve("first")
+    const second = serve("second")
+    const declaration = (url: string) =>
+      new ConfigCapabilityService.Info({
+        capabilities: ["document.parse.native"],
+        transport: new ConfigCapabilityService.HttpTransport({ type: "streamable-http", url }),
+        locality: "local",
+        protocol_revision: LATEST_PROTOCOL_VERSION,
+        resources: new ConfigCapabilityService.Resources({
+          estimated_resident_bytes: 1,
+          estimated_peak_bytes: 1,
+        }),
+      })
+    const firstInfo = declaration(first.url.toString())
+    const secondInfo = declaration(second.url.toString())
+    const layer = McpCapabilityServiceWorker.layer.pipe(
+      Layer.provide(Global.layerWith({ data: process.cwd(), config: process.cwd() })),
+    )
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const worker = yield* CapabilityServiceWorker.Service
+        yield* worker.start("parser", firstInfo)
+        yield* worker.start("parser", firstInfo)
+        yield* worker.start("parser", secondInfo)
+        return yield* worker.run({
+          serviceID: "parser",
+          capability: "document.parse.native",
+          arguments: {},
+        })
+      }).pipe(Effect.provide(layer), Effect.scoped),
+    )
+
+    expect(result).toMatchObject({ content: [{ type: "text", text: "second" }] })
+    expect(initialized).toEqual(["first", "second"])
+  })
+
   test("rejects protocol and declared-tool contract mismatches before becoming live", async () => {
     const serve = (revision: string, tools: ReadonlyArray<Record<string, unknown>>) => {
       const server = Bun.serve({

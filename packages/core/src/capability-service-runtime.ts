@@ -44,6 +44,7 @@ export interface Interface {
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/CapabilityServiceRuntime") {}
 
 const keyOf = (serviceID: string, requestID: string) => `${serviceID}\u0000${requestID}`
+const declarationKey = (info: ConfigCapabilityService.Info) => JSON.stringify(info)
 const requestError = (serviceID: string, requestID: string, message: string) =>
   new Error(`Capability request "${requestID}" for service "${serviceID}" ${message}`)
 
@@ -63,6 +64,8 @@ export const layer = Layer.effect(
     const pending = new Map<string, Pending>()
     const nextHealthMs = new Map<string, number>()
     const healthInFlight = new Map<string, Deferred.Deferred<void>>()
+    const loadedDeclarations = new Map<string, string>()
+    const attemptedDeclarations = new Map<string, string>()
 
     const services = Effect.fn("CapabilityServiceRuntime.services")(function* () {
       return Object.fromEntries((yield* registry.inspect()).map((entry) => [entry.id, entry.info])) as Readonly<
@@ -104,6 +107,7 @@ export const layer = Layer.effect(
       reason: string,
     ) {
       nextHealthMs.delete(serviceID)
+      loadedDeclarations.delete(serviceID)
       yield* worker.stop(serviceID).pipe(Effect.ignore)
       const affected = governor.failed(serviceID, reason)
       yield* settle(affected, serviceID, new Error(reason))
@@ -114,6 +118,7 @@ export const layer = Layer.effect(
       const health = healthInFlight.get(serviceID)
       if (health !== undefined) yield* Deferred.await(health)
       nextHealthMs.delete(serviceID)
+      loadedDeclarations.delete(serviceID)
       yield* worker.stop(serviceID)
       governor.stopped(serviceID)
     })
@@ -143,8 +148,10 @@ export const layer = Layer.effect(
       const info = (yield* services())[serviceID]
       if (info === undefined) return { kind: "refused", reason: "disabled" } as const
       if (entry !== undefined) yield* stageBegin(entry, "capability-load")
+      attemptedDeclarations.set(serviceID, declarationKey(info))
       return yield* worker.start(serviceID, info).pipe(
         Effect.map(() => {
+          loadedDeclarations.set(serviceID, declarationKey(info))
           nextHealthMs.set(serviceID, Date.now() + (info.health?.interval_ms ?? DEFAULT_HEALTH_INTERVAL_MS))
           const transition = governor.loaded(serviceID)
           return transition.kind === "run" ? transition : ({ kind: "idle" } as const)
@@ -168,6 +175,28 @@ export const layer = Layer.effect(
         .snapshot()
         .find((state) => state.serviceID === entry.serviceID && state.activeRequestID === entry.requestID)
       if (pending.get(key) !== entry || admitted?.phase !== "busy") return
+      const info = (yield* services())[entry.serviceID]
+      if (info === undefined || info.disabled === true) {
+        yield* failService(entry.serviceID, "Capability service was disabled while its request was waiting")
+        return
+      }
+      if (loadedDeclarations.get(entry.serviceID) !== declarationKey(info)) {
+        yield* stageBegin(entry, "capability-load")
+        attemptedDeclarations.set(entry.serviceID, declarationKey(info))
+        const refreshed = yield* worker.start(entry.serviceID, info).pipe(
+          Effect.map(() => {
+            loadedDeclarations.set(entry.serviceID, declarationKey(info))
+            nextHealthMs.set(
+              entry.serviceID,
+              Date.now() + (info.health?.interval_ms ?? DEFAULT_HEALTH_INTERVAL_MS),
+            )
+            return true
+          }),
+          Effect.catch((error) => failService(entry.serviceID, error.message).pipe(Effect.as(false))),
+          Effect.ensuring(stageEnd(entry, "capability-load")),
+        )
+        if (!refreshed) return
+      }
       yield* stageBegin(entry, "capability-run")
       yield* worker
         .run({ serviceID: entry.serviceID, capability: entry.capability, arguments: entry.arguments })
@@ -352,6 +381,9 @@ export const layer = Layer.effect(
         const info = (yield* services())[input.serviceID]
         if (info === undefined || info.disabled === true)
           return yield* Effect.fail(requestError(input.serviceID, input.requestID, "is disabled"))
+        const declaration = declarationKey(info)
+        const attempted = attemptedDeclarations.get(input.serviceID)
+        if (attempted !== undefined && attempted !== declaration) governor.retry(input.serviceID)
         const serialized = yield* Effect.try({
           try: () => JSON.stringify(input.arguments),
           catch: () => requestError(input.serviceID, input.requestID, "has non-serializable arguments"),
