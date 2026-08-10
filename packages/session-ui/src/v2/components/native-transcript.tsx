@@ -1,4 +1,16 @@
-import { createContext, createMemo, createSignal, For, Show, Switch, Match, useContext, type Accessor } from "solid-js"
+import {
+  createContext,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Show,
+  Switch,
+  Match,
+  onCleanup,
+  useContext,
+  type Accessor,
+} from "solid-js"
 import type {
   LlmToolContent,
   SessionMessage,
@@ -28,6 +40,15 @@ import {
 } from "@novaclaw/core/session/session-error"
 import { useI18n } from "@novaclaw/ui/context/i18n"
 import { selectTranscriptMessages } from "../transcript-view"
+import {
+  attemptLabel,
+  currentPhase,
+  detailLabel,
+  elapsedMs,
+  phaseLabel,
+  seconds,
+  type TurnTiming,
+} from "./turn-receipt"
 
 // Level-aware fold modes (UIX residue b / C4). Reasoning and tool cards carry SEPARATE modes so
 // the user's explicit Settings prefs (feedReasoningDisplay/feedToolDisplay) can override each
@@ -89,6 +110,8 @@ export function NativeTranscript(props: {
   class?: string
   reasoningFold?: ReasoningFoldMode
   toolFold?: ReasoningFoldMode
+  /** Developer expertise reveals exact snapshot internals inside the otherwise friendly receipt. */
+  developer?: boolean
   /** Wire a per-user-message "revert to this prompt" action; omit to hide the button. */
   onRevert?: (messageID: string) => void
   onRetry?: (messageID: string) => void | Promise<void>
@@ -131,7 +154,7 @@ export function NativeTranscript(props: {
         })}
       >
         <div data-component="native-transcript" class={props.class}>
-          <For each={visible()}>{(message) => <NativeMessage message={message} />}</For>
+          <For each={visible()}>{(message) => <NativeMessage message={message} developer={props.developer} />}</For>
           <For each={props.pending ?? []}>{(item) => <QueuedMessage text={item.text} />}</For>
           <Show when={props.status?.type === "busy" && !hasOpenAssistant()}>
             <div data-slot="native-provider-status" role="status" aria-live="polite">
@@ -153,7 +176,7 @@ export function NativeTranscript(props: {
   )
 }
 
-function NativeMessage(props: { message: SessionMessage }) {
+function NativeMessage(props: { message: SessionMessage; developer?: boolean }) {
   return (
     <Switch>
       <Match when={props.message.type === "user" && props.message}>
@@ -164,7 +187,7 @@ function NativeMessage(props: { message: SessionMessage }) {
         )}
       </Match>
       <Match when={props.message.type === "assistant" && props.message}>
-        {(m) => <AssistantMessage message={m()} />}
+        {(m) => <AssistantMessage message={m()} developer={props.developer} />}
       </Match>
       <Match when={props.message.type === "shell" && props.message}>{(m) => <ShellMessage message={m()} />}</Match>
       <Match when={props.message.type === "system" && props.message}>
@@ -280,7 +303,7 @@ function SteerMessage(props: { text: string }) {
 
 // ── assistant ────────────────────────────────────────────────────────────────────
 
-function AssistantMessage(props: { message: SessionMessageAssistant }) {
+function AssistantMessage(props: { message: SessionMessageAssistant; developer?: boolean }) {
   // While the turn is in flight but nothing has streamed yet (the model is thinking before
   // its first token), show a "working" indicator — otherwise a slow turn reads as a blank.
   const working = () =>
@@ -332,11 +355,8 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
           </Switch>
         )}
       </For>
-      <Show when={working()}>
-        <div data-slot="native-working" aria-live="polite">
-          <span data-slot="native-working-dot" />
-          <span>Working…</span>
-        </div>
+      <Show when={working() || props.message.timing}>
+        <TurnReceipt message={props.message} live={working()} developer={props.developer} />
       </Show>
       {/* The per-turn "N files changed" strip is deliberately NOT rendered. It repeated what the tool
           rows above it already say, and it re-listed build output on every rebuild (`pi.exe` after each
@@ -383,6 +403,95 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
         </div>
       </Show>
     </div>
+  )
+}
+
+function ElapsedTime(props: { startedAt: number; completedAt?: number }) {
+  const [now, setNow] = createSignal(Date.now())
+  let timer: ReturnType<typeof setInterval> | undefined
+  createEffect(() => {
+    if (props.completedAt !== undefined) {
+      if (timer) clearInterval(timer)
+      timer = undefined
+      return
+    }
+    if (!timer) timer = setInterval(() => setNow(Date.now()), 250)
+  })
+  onCleanup(() => {
+    if (timer) clearInterval(timer)
+  })
+  return <span data-slot="native-turn-elapsed">{seconds(elapsedMs(props.startedAt, props.completedAt, now()))}</span>
+}
+
+function TurnReceipt(props: { message: SessionMessageAssistant; live: boolean; developer?: boolean }) {
+  const timing = () => props.message.timing
+  const liveLabel = () => {
+    const value = timing()
+    const phase = value ? currentPhase(value) : undefined
+    return phase ? `${phaseLabel(phase.phase)}…` : "Working…"
+  }
+  const attempts = (value: TurnTiming) =>
+    value.providerAttempts.filter((attempt) => attempt.outcome !== "completed" || value.providerAttempts.length > 1)
+  return (
+    <Show
+      when={timing()}
+      fallback={
+        <Show when={props.live}>
+          <div data-slot="native-working" aria-live="polite">
+            <span data-slot="native-working-dot" />
+            <span>Working…</span>
+          </div>
+        </Show>
+      }
+    >
+      {(value) => (
+        <details data-slot="native-turn-receipt" data-live={props.live ? "" : undefined}>
+          <summary aria-live={props.live ? "polite" : undefined}>
+            <span data-slot="native-turn-summary">
+              <Show when={props.live}>
+                <span data-slot="native-working-dot" aria-hidden="true" />
+              </Show>
+              <span>{props.live ? liveLabel() : "Work details"}</span>
+              <ElapsedTime startedAt={value().startedAt} completedAt={value().completedAt} />
+            </span>
+          </summary>
+          <ol data-slot="native-turn-phases">
+            <For each={value().phases}>
+              {(phase) => (
+                <li data-current={phase.completedAt === undefined ? "" : undefined}>
+                  <div data-slot="native-turn-phase">
+                    <span>{phaseLabel(phase.phase)}</span>
+                    <ElapsedTime startedAt={phase.startedAt} completedAt={phase.completedAt} />
+                  </div>
+                  <Show when={props.developer && phase.details?.length}>
+                    <ul data-slot="native-turn-details">
+                      <For each={phase.details}>
+                        {(detail) => (
+                          <li>
+                            <span>{detailLabel(detail.phase)}</span>
+                            <ElapsedTime startedAt={detail.startedAt} completedAt={detail.completedAt} />
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </Show>
+                </li>
+              )}
+            </For>
+            <For each={attempts(value())}>
+              {(attempt) => (
+                <li data-kind={attempt.outcome === "retry" ? "retry" : "attempt"}>
+                  <div data-slot="native-turn-phase">
+                    <span>{attemptLabel(attempt)}</span>
+                    <ElapsedTime startedAt={attempt.dispatchedAt} completedAt={attempt.completedAt} />
+                  </div>
+                </li>
+              )}
+            </For>
+          </ol>
+        </details>
+      )}
+    </Show>
   )
 }
 

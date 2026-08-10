@@ -123,6 +123,59 @@
   background: var(--v2-text-text-muted);
   animation: native-working-pulse 1s ease-in-out infinite;
 }
+
+[data-slot="native-turn-receipt"] {
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+}
+[data-slot="native-turn-receipt"] > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--v2-text-text-faint);
+  user-select: none;
+}
+[data-slot="native-turn-summary"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: 0.25rem;
+}
+[data-slot="native-turn-receipt"][data-live] > summary {
+  color: var(--v2-text-text-muted);
+}
+[data-slot="native-turn-elapsed"] {
+  color: var(--v2-text-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+[data-slot="native-turn-phases"] {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.5rem 0 0 0.625rem;
+  padding-left: 1.125rem;
+  border-left: 1px solid var(--v2-border-border-muted);
+}
+[data-slot="native-turn-phases"] > li::marker {
+  color: var(--v2-text-text-faint);
+}
+[data-slot="native-turn-phases"] > li[data-current]::marker,
+[data-slot="native-turn-phases"] > li[data-kind="retry"]::marker {
+  color: var(--v2-state-fg-warning);
+}
+[data-slot="native-turn-phase"],
+[data-slot="native-turn-details"] > li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 25rem;
+}
+[data-slot="native-turn-details"] {
+  display: grid;
+  gap: 0.125rem;
+  margin-top: 0.25rem;
+  padding-left: 0.75rem;
+  color: var(--v2-text-text-faint);
+  list-style: none;
+}
 @keyframes native-working-pulse {
   0%,
   100% {

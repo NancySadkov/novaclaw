@@ -244,6 +244,7 @@ export function NativeTimeline(props: {
             messages={messages()}
             reasoningFold={reasoningFold()}
             toolFold={toolFold()}
+            developer={expertise.level() === "developer"}
             pending={pending()}
             onRevert={props.onRevert}
             onRetry={props.onRetry}
