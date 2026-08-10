@@ -4,6 +4,7 @@ import { AgentV2 } from "./agent"
 import { Catalog } from "./catalog"
 import { CapabilityServiceRegistry } from "./capability-service-registry"
 import { CapabilityServiceRuntime } from "./capability-service-runtime"
+import { CapabilityServiceWorker } from "./capability-service-worker"
 import { CommandV2 } from "./command"
 import { ExternalCommandSource } from "./command/external-command-source"
 import { Config } from "./config"
@@ -53,6 +54,7 @@ export const locationServices = LayerNode.group([
   Policy.node,
   Config.node,
   CapabilityServiceRegistry.node,
+  CapabilityServiceWorker.node,
   CapabilityServiceRuntime.node,
   AgentV2.node,
   CommandV2.node,

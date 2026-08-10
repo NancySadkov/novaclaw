@@ -13,6 +13,8 @@ import { McpHealthContext } from "@novaclaw/core/mcp-health-context"
 import { McpHealthReport } from "@/mcp/health-context"
 import { LocalModelManager } from "@novaclaw/core/local-model-manager"
 import { LocalModelRuntime } from "@/local-model/runtime"
+import { CapabilityServiceWorker } from "@novaclaw/core/capability-service-worker"
+import { McpCapabilityServiceWorker } from "@/mcp/capability-service-worker"
 
 // THE process-wide LocationServiceMap for the novaclaw server, with the MCP-backed
 // ExternalToolSource injected so MCP tools (searxng et al.) appear on the V2 registry,
@@ -31,6 +33,7 @@ export const replacements: LayerNode.Replacements = [
   [ExternalToolSource.node, AggregateExternalToolSource.node],
   [ExternalCommandSource.node, McpExternalCommandSource.node],
   [ResourcePressureContext.node, StorageResourcePressureContext.node],
+  [CapabilityServiceWorker.node, McpCapabilityServiceWorker.node],
   // ⚠️ WITHOUT THIS ROW THE SEAM SHIPS INERT. Core's default `McpHealthContext` answers `[]` for
   // every server set, so a missing replacement looks exactly like a healthy instance: the `<env>`
   // block is byte-identical, every core test still passes, and a broken MCP server goes back to

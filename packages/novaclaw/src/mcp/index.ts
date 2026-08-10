@@ -80,7 +80,7 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("MCP
   name: Schema.String,
 }) {}
 
-type MCPClient = Client
+export type MCPClient = Client
 
 /**
  * Relay a foreign server's record under one of OUR event keys and one of OUR severities.
@@ -96,7 +96,7 @@ export function serverLog(name: string, params: LoggingMessageNotification["para
   })
 }
 
-function createClient(directory: string) {
+export function createClient(directory: string) {
   const client = new Client({ name: "novaclaw", version: InstallationVersion }, CLIENT_OPTIONS)
   client.setRequestHandler(ListRootsRequestSchema, () =>
     Promise.resolve({ roots: [{ uri: pathToFileURL(directory).href }] }),
@@ -147,7 +147,7 @@ const killTransportTree = (source: unknown) => {
  *
  * Never fails: teardown must not be able to abort a finalizer.
  */
-const shutdownClient = (client: MCPClient) =>
+export const shutdownClient = (client: MCPClient) =>
   Effect.gen(function* () {
     yield* killTransportTree(client)
     yield* Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
@@ -158,7 +158,7 @@ const shutdownClient = (client: MCPClient) =>
  * during `initialize` (or blew the connect timeout) has a live child, and `transport.close()` alone
  * would orphan its descendants.
  */
-const shutdownTransport = (transport: { close: () => Promise<void> }) =>
+export const shutdownTransport = (transport: { close: () => Promise<void> }) =>
   Effect.gen(function* () {
     yield* killTransportTree(transport)
     yield* Effect.tryPromise(() => transport.close()).pipe(Effect.ignore)

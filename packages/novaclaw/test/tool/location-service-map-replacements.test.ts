@@ -5,6 +5,7 @@ import { ExternalToolSource } from "@novaclaw/core/tool/external-tool-source"
 import { LocalModelManager } from "@novaclaw/core/local-model-manager"
 import { McpHealthContext } from "@novaclaw/core/mcp-health-context"
 import { ResourcePressureContext } from "@novaclaw/core/resource-pressure-context"
+import { CapabilityServiceWorker } from "@novaclaw/core/capability-service-worker"
 
 // 🔴 THE INERT-SEAM CHECK (ruling 1).
 //
@@ -31,6 +32,7 @@ describe("ServerLocationServiceMap.replacements", () => {
     ["ExternalToolSource (MCP + plugin tools)", ExternalToolSource.node],
     ["ExternalCommandSource (MCP prompts as slash commands)", ExternalCommandSource.node],
     ["ResourcePressureContext (host headroom in <env>)", ResourcePressureContext.node],
+    ["CapabilityServiceWorker (governed MCP lifecycle)", CapabilityServiceWorker.node],
     ["LocalModelManager (the local model runtime)", LocalModelManager.node],
   ])("%s is wired", (_label, node) => {
     expect(source(node)).toBe(true)
