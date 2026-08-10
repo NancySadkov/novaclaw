@@ -71,10 +71,12 @@ describe("SessionExtract durable-memory origin policy", () => {
 
   test("the provider runner gates recall before embedding, search, or reranking", () => {
     const source = readFileSync(path.join(import.meta.dir, "../src/session/runner/llm.ts"), "utf8")
-    const gate = source.indexOf(
-      "recallQuery !== undefined && config.memory !== false && MemorySetting.memoryEnabled()",
-    )
+    const gate = source.indexOf("recallQuery !== undefined &&")
+    const shortChatGate = source.indexOf("!ShortChat.enabled(config.shortChat)", gate)
+    const memoryGate = source.indexOf("config.memory !== false", gate)
     expect(gate).toBeGreaterThan(0)
+    expect(shortChatGate).toBeGreaterThan(gate)
+    expect(memoryGate).toBeGreaterThan(shortChatGate)
     expect(gate).toBeLessThan(source.indexOf("KbEmbedder.embedOne(recallQuery)", gate))
     expect(gate).toBeLessThan(source.indexOf(".search({", gate))
     expect(gate).toBeLessThan(source.indexOf("MemoryRerank.buildRerankPrompt", gate))

@@ -28,6 +28,7 @@ import { SessionAutoGrant } from "./session/auto-grant"
 import { PermissionSaved } from "./permission/saved"
 import { Database } from "./database/database"
 import { PermissionPendingTable } from "./permission/sql"
+import { ShortChat } from "./session/runner/short-chat"
 
 /** Where an Analyze-mode session may still write its report: the app's own temp dir, which the agent
  *  baseline already whitelists for external read/write. Slashed to match `LocationMutation.resolve`. */
@@ -719,6 +720,7 @@ export const layer = Layer.effect(
       // it, so they sit after the mode overlay and are included in the deny-fast arm below. Both default
       // OFF (no global `{ enabled }` block to inherit from), which is why absent means "do not apply".
       const featureRules: Permission.Ruleset = [
+        ...ShortChat.permissionRules(resolved.shortChat),
         // "Edits instead of overwriting": a full-file `write` is refused; `edit`/`create` still work.
         ...(resolved.surgicalEdits === true ? [{ action: "write", resource: "*", effect: "deny" as const }] : []),
         // "Ask before every change": the old `ask` mode's overlay, now composable with Analyze or Build.

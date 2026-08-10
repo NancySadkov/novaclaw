@@ -181,7 +181,7 @@ export const layer = Layer.effect(
         store.get(id as SessionSchema.ID),
       )
       if (!SessionExtract.allowsDurableMemory(config.type)) return
-      if (config.memory === false || !MemorySetting.memoryEnabled()) return // this chat or the instance turned memory off
+      if (config.shortChat === true || config.memory === false || !MemorySetting.memoryEnabled()) return
       if (!(yield* memory.health())) return
       const exchange = SessionExtract.buildExchange(yield* getContext(sessionID))
       if (!exchange) return

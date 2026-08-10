@@ -79,6 +79,7 @@ import { UtilityCap } from "./utility-cap"
 import { ContextPack } from "./context-pack"
 import { RequestFootprint } from "./footprint"
 import { ContextBudget } from "./context-budget"
+import { ShortChat } from "./short-chat"
 import {
   detectDoomLoop,
   redirectMessage,
@@ -538,8 +539,10 @@ export const layer = Layer.effect(
     const continueAfterOverflowCompaction = (step: number) =>
       new TurnTransitionError({ _tag: "ContinueAfterOverflowCompaction", step })
 
-    const loadSystemContext = (agent: AgentV2.Selection, sessionID: SessionSchema.ID) =>
-      Effect.all(
+    const loadSystemContext = (agent: AgentV2.Selection, sessionID: SessionSchema.ID, shortChat = false) =>
+      shortChat
+        ? Effect.succeed(SystemContext.empty)
+        : Effect.all(
         [
           systemContext.load(),
           skillGuidance.load(agent),
@@ -548,7 +551,7 @@ export const layer = Layer.effect(
           toolCatalogueGuidance.load(),
         ],
         { concurrency: "unbounded" },
-      ).pipe(Effect.map(SystemContext.combine))
+          ).pipe(Effect.map(SystemContext.combine))
 
     /**
      * The pre-turn assembly, shared by `runTurnAttempt` and `runManualCompaction`.
@@ -609,7 +612,11 @@ export const layer = Layer.effect(
         resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, session.id, (id) => store.get(id as SessionSchema.ID)),
       )
       const agent = yield* tap(agents.select(config.agent as typeof session.agent))
-      const initialized = yield* SessionContextEpoch.initialize(db, loadSystemContext(agent, session.id), session.id)
+      const initialized = yield* SessionContextEpoch.initialize(
+        db,
+        loadSystemContext(agent, session.id, ShortChat.enabled(config.shortChat)),
+        session.id,
+      )
       let promoted = 0
       if (options.promotion) {
         const cutoff = yield* EventV2.latestSequence(db, session.id)
@@ -622,10 +629,15 @@ export const layer = Layer.effect(
       const system =
         initialized ??
         (yield* tap(
-          SessionContextEpoch.prepare(db, events, loadSystemContext(agent, session.id), session.id, (update) =>
-            SessionExecutionAttempt.contextUpdatedCurrent({ ...update.data, snapshot: update.snapshot }, () =>
-              SessionContextEpoch.publishUpdate(db, events, update.data, update.snapshot),
-            ),
+          SessionContextEpoch.prepare(
+            db,
+            events,
+            loadSystemContext(agent, session.id, ShortChat.enabled(config.shortChat)),
+            session.id,
+            (update) =>
+              SessionExecutionAttempt.contextUpdatedCurrent({ ...update.data, snapshot: update.snapshot }, () =>
+                SessionContextEpoch.publishUpdate(db, events, update.data, update.snapshot),
+              ),
           ),
         ))
       // The RESOLVED config overlaid on the row, so every `models.*` read downstream sees what the
@@ -780,7 +792,12 @@ export const layer = Layer.effect(
       // Kept for the duration of this provider step so a failed `read` can correct the exact
       // remembered file claim that was actually put on the model's horizon.
       let recalledMemories: ReadonlyArray<MemoryClient.SearchHit> = []
-      if (recallQuery !== undefined && config.memory !== false && MemorySetting.memoryEnabled()) {
+      if (
+        recallQuery !== undefined &&
+        !ShortChat.enabled(config.shortChat) &&
+        config.memory !== false &&
+        MemorySetting.memoryEnabled()
+      ) {
         // The VECTOR leg: one short embedding of the recall query lets the engine fuse vector KNN with
         // FTS (measured 85% vs 77% keyword-only). Bounded + degrading — no device, unreachable, or slow
         // ⇒ undefined ⇒ keyword-only recall. Never blocks the turn on a failure.
@@ -835,11 +852,13 @@ export const layer = Layer.effect(
         ? undefined
         : yield* tools.materialize(
             agent.info?.permissions,
-            ConfigToolRouting.offered(harness.toolRouting, {
-              mode: config.permissionMode,
-              providerID: modelRef?.providerID ?? model.provider,
-              modelID: modelRef?.id ?? model.id,
-            }),
+            (name) =>
+              ShortChat.offered(config.shortChat, name) &&
+              ConfigToolRouting.offered(harness.toolRouting, {
+                mode: config.permissionMode,
+                providerID: modelRef?.providerID ?? model.provider,
+                modelID: modelRef?.id ?? model.id,
+              })(name),
             discoveredTools,
           )
       const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
@@ -849,7 +868,7 @@ export const layer = Layer.effect(
       // decay naturally re-arms it). The per-session stance (the composer's Tuning toggle,
       // resolved through the config walk) wins; no stance = the global config decides.
       let affectiveGeneration: ReturnType<typeof Affective.toSampling> | undefined
-      if (config.affective ?? harness.affective?.enabled === true) {
+      if (!ShortChat.enabled(config.shortChat) && (config.affective ?? harness.affective?.enabled === true)) {
         const previous = moods.get(session.id) ?? Affective.calmMood
         const mood = Affective.appraise(previous, context)
         rememberMood(session.id, mood)
@@ -890,16 +909,18 @@ export const layer = Layer.effect(
         // position, so an absent pre-prompt yields a byte-identical prompt to before the feature.
         // `projectScope` is the guidance half of the owner's 2026-07-30 directive — present in every
         // mode but `yolo`, from the RESOLVED (already-narrowed) mode. See system-compose.ts.
-        system: SystemCompose.composeSystemParts({
-          persona: harness.persona,
-          modelPrePrompt,
-          expertiseHint: harness.expertiseHint,
-          tierHint,
-          systemPromptOverride: config.systemPromptOverride,
-          agentSystem: agent.info?.system,
-          projectScope: SystemCompose.projectScopeSection(config.permissionMode),
-          base: system.baseline,
-        }).map(SystemPart.make),
+        system: (ShortChat.enabled(config.shortChat)
+          ? ShortChat.systemParts(harness.persona)
+          : SystemCompose.composeSystemParts({
+              persona: harness.persona,
+              modelPrePrompt,
+              expertiseHint: harness.expertiseHint,
+              tierHint,
+              systemPromptOverride: config.systemPromptOverride,
+              agentSystem: agent.info?.system,
+              projectScope: SystemCompose.projectScopeSection(config.permissionMode),
+              base: system.baseline,
+            })).map(SystemPart.make),
         messages: [
           ...toLLMMessages(context, model, modelCapabilities),
           // Derived provider context only — never a transcript row. The provenance prefix makes
@@ -961,9 +982,14 @@ export const layer = Layer.effect(
           RequestFootprint.measure({ system: request.system, messages: request.messages, tools: request.tools }),
         ),
       })
-      yield* timingStart("snapshot")
-      const startSnapshot = yield* snapshots.capture({ timing: { start: timing.detailStart, end: timing.detailEnd } })
-      yield* timingEnd("snapshot")
+      const startSnapshot = ShortChat.enabled(config.shortChat)
+        ? undefined
+        : yield* Effect.gen(function* () {
+            yield* timingStart("snapshot")
+            const captured = yield* snapshots.capture({ timing: { start: timing.detailStart, end: timing.detailEnd } })
+            yield* timingEnd("snapshot")
+            return captured
+          })
       yield* timingStart("provider-setup")
       const assistantMessageID = SessionMessage.ID.create()
       const attemptModelRef = {
@@ -1296,17 +1322,22 @@ export const layer = Layer.effect(
             )
           const stepSettlement = publisher.stepSettlement()
           if (stepSettlement && !publisher.hasProviderError()) {
-            yield* timingStart("snapshot")
-            const endSnapshot = yield* snapshots.capture({
-              timing: { start: timing.detailStart, end: timing.detailEnd },
-            })
+            const endSnapshot = ShortChat.enabled(config.shortChat)
+              ? undefined
+              : yield* Effect.gen(function* () {
+                  yield* timingStart("snapshot")
+                  const captured = yield* snapshots.capture({
+                    timing: { start: timing.detailStart, end: timing.detailEnd },
+                  })
+                  yield* timingEnd("snapshot")
+                  return captured
+                })
             const files =
               startSnapshot && endSnapshot
                 ? yield* snapshots
                     .files({ from: startSnapshot, to: endSnapshot })
                     .pipe(Effect.catch(() => Effect.succeed(undefined)))
                 : undefined
-            yield* timingEnd("snapshot")
             yield* withPublication(
               events.publish(SessionEvent.Step.Ended, {
                 sessionID: session.id,
@@ -1716,8 +1747,9 @@ export const layer = Layer.effect(
           // per location boot) is what made "restart to apply" the honest answer. The T1 per-session
           // stances ride along: an explicit true/false on the config chain wins, no stance = global.
           const harness = yield* harnessConfig()
-          const qualityOn = handoff.quality ?? harness.quality.enabled
-          const introspectionOn = handoff.introspection ?? harness.introspection.enabled
+          const qualityOn = !ShortChat.enabled(handoff.shortChat) && (handoff.quality ?? harness.quality.enabled)
+          const introspectionOn =
+            !ShortChat.enabled(handoff.shortChat) && (handoff.introspection ?? harness.introspection.enabled)
           const result = yield* runTurn(input.sessionID, harness, promotion, step)
           needsContinuation = result.needsContinuation
           step = result.step + 1
@@ -1979,6 +2011,10 @@ export const layer = Layer.effect(
         shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
         promotion = shouldRun ? "queue" : undefined
         if (!shouldRun) {
+          const driveConfig = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, input.sessionID, (id) =>
+            store.get(id as SessionSchema.ID),
+          )
+          if (ShortChat.enabled(driveConfig.shortChat)) break
           // The auto-prompt SELF-DRIVE (architecture.md "run until exit()"): an auto-prompting /
           // goal-oriented session whose queue ran dry keeps working — the harness injects the next
           // prompt as a provenance-prefixed steer — until `exit(result)` lands on the session row
