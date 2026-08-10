@@ -18,8 +18,12 @@ server.setRequestHandler(ListToolsRequestSchema, () => ({
   ],
 }))
 
-server.setRequestHandler(CallToolRequestSchema, (request) => ({
-  content: [{ type: "text", text: String(request.params.arguments?.handle ?? "") }],
-}))
+server.setRequestHandler(CallToolRequestSchema, (request) => {
+  if (request.params.arguments?.crash === true) {
+    setTimeout(() => process.exit(23), 0)
+    return new Promise<never>(() => {})
+  }
+  return { content: [{ type: "text", text: String(request.params.arguments?.handle ?? "") }] }
+})
 
 await server.connect(new StdioServerTransport())
