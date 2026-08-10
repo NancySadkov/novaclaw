@@ -207,6 +207,7 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "adhoc_tools",
       "agents",
       "autoupdate",
+      "capability_services",
       "commands",
       "computer",
       "default_agent",

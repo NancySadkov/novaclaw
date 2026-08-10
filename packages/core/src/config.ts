@@ -16,6 +16,7 @@ import { ConfigAttachments } from "./config/attachments"
 import { ConfigCompaction } from "./config/compaction"
 import { ConfigContext } from "./config/context"
 import { ConfigCommand } from "./config/command"
+import { ConfigCapabilityService } from "./config/capability-service"
 import { ConfigDevice } from "./config/device"
 import { ConfigExperimental } from "./config/experimental"
 import { ConfigFormatter } from "./config/formatter"
@@ -427,6 +428,18 @@ export class Info extends Schema.Class<Info>("Config.Info")({
         "ledger instead of handing out the batch cap twice for capacity that exists once. Unlisted " +
         "endpoints keep a per-origin device of their own. Purely a scheduling grouping: nothing here " +
         "is ever called, executed or put in a prompt.",
+    }),
+  // External service declarations are PRIVILEGED: HTTP entries choose an egress destination and
+  // stdio entries choose executable bytes. Static outage facts live here; observed state belongs to
+  // the resource governor and is never written back into operator intent.
+  capability_services: Schema.Record(Schema.String, ConfigCapabilityService.Info)
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        "External capability services keyed by id. Each declaration names capabilities, MCP transport, " +
+        "locality, supported types, protocol revision, limits, memory estimates, warmup/idle policy and " +
+        "health timing. Live load/health state is observed by the governor, not stored here. PRIVILEGED: " +
+        "HTTP URLs choose an egress destination and stdio commands choose executable bytes.",
     }),
   // ⚠️ Ruling 4: PRIVILEGED, and the reason is not the URL alone. Each nested model carries a
   // `prePrompt` that `config/provider.ts` describes as "prepended to the system context" — so this key

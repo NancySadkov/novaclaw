@@ -181,6 +181,8 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   watcher: "consequential",
 
   // ── privileged: one card each, never pre-grantable with a single `configure` rule ────────────
+  // HTTP declarations choose a destination for user data; stdio declarations choose executable bytes.
+  capability_services: "privileged",
   // Manuals the model pulls into its context on demand — ruling 4 names this key by itself.
   adhoc_tools: "privileged",
   // Markdown that BECOMES a system prompt, plus each agent's own permission ruleset and tool list.
