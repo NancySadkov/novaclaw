@@ -50,6 +50,7 @@ describe("capability service declaration", () => {
           transport: { type: "stdio", command: ["anydoc-mcp"], credential_env: ["ANYDOC_TOKEN"] },
           locality: "local",
           limits: { input_bytes: 1024 },
+          resources: { estimated_resident_bytes: 100, estimated_peak_bytes: 200 },
         }).transport.type,
       ).toBe("stdio")
       expect(() =>
@@ -57,6 +58,7 @@ describe("capability service declaration", () => {
           capabilities: ["document.parse.native"],
           transport: { type: "unknown", url: "http://example.test" },
           locality: "local",
+          resources: { estimated_resident_bytes: 100, estimated_peak_bytes: 200 },
         }),
       ).toThrow()
       expect(() =>
@@ -64,7 +66,7 @@ describe("capability service declaration", () => {
           capabilities: ["document.parse.native"],
           transport: { type: "streamable-http", url: "http://example.test" },
           locality: "local",
-          resources: { estimated_peak_bytes: -1 },
+          resources: { estimated_resident_bytes: 100, estimated_peak_bytes: -1 },
         }),
       ).toThrow()
     }),

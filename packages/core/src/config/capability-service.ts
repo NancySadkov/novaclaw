@@ -30,8 +30,8 @@ export class Limits extends Schema.Class<Limits>("ConfigV2.CapabilityService.Lim
 }) {}
 
 export class Resources extends Schema.Class<Resources>("ConfigV2.CapabilityService.Resources")({
-  estimated_resident_bytes: NonNegativeInt.pipe(Schema.optional),
-  estimated_peak_bytes: NonNegativeInt.pipe(Schema.optional),
+  estimated_resident_bytes: NonNegativeInt,
+  estimated_peak_bytes: NonNegativeInt,
 }) {}
 
 export class Health extends Schema.Class<Health>("ConfigV2.CapabilityService.Health")({
@@ -52,7 +52,9 @@ export class Info extends Schema.Class<Info>("ConfigV2.CapabilityService")({
   types: Schema.Array(Schema.String).pipe(Schema.optional),
   protocol_revision: Schema.String.pipe(Schema.optional),
   limits: Limits.pipe(Schema.optional),
-  resources: Resources.pipe(Schema.optional),
+  resources: Resources,
+  /** Maximum waiting requests for this service. Defaults to the governor's conservative bound. */
+  queue_limit: PositiveInt.pipe(Schema.optional),
   warmup_timeout_ms: PositiveInt.pipe(Schema.optional),
   idle_timeout_ms: PositiveInt.pipe(Schema.optional),
   health: Health.pipe(Schema.optional),
