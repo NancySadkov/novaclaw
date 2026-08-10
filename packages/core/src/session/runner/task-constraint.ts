@@ -2,18 +2,21 @@ export * as TaskConstraint from "./task-constraint"
 
 import { Effect } from "effect"
 import fs from "node:fs"
+import { createRequire } from "node:module"
 import path from "node:path"
 import type { JhBasicTools } from "../../jh/tools-basic"
 
-const LOADERS = new Map<string, Bun.Transpiler>([
-  [".js", new Bun.Transpiler({ loader: "js" })],
-  [".mjs", new Bun.Transpiler({ loader: "js" })],
-  [".cjs", new Bun.Transpiler({ loader: "js" })],
-  [".jsx", new Bun.Transpiler({ loader: "jsx" })],
-  [".ts", new Bun.Transpiler({ loader: "ts" })],
-  [".mts", new Bun.Transpiler({ loader: "ts" })],
-  [".cts", new Bun.Transpiler({ loader: "ts" })],
-  [".tsx", new Bun.Transpiler({ loader: "tsx" })],
+type Loader = "js" | "jsx" | "ts" | "tsx"
+
+const LOADERS = new Map<string, Loader>([
+  [".js", "js"],
+  [".mjs", "js"],
+  [".cjs", "js"],
+  [".jsx", "jsx"],
+  [".ts", "ts"],
+  [".mts", "ts"],
+  [".cts", "ts"],
+  [".tsx", "tsx"],
 ])
 
 const WRITE_TOOLS = new Set(["write_file", "append_file", "edit_file", "replace_lines"])
@@ -36,10 +39,19 @@ export function requestsCommentOnly(task: string): boolean {
  * or `/*` cannot fool it.
  */
 export function executableSignature(filename: string, source: string): string | undefined {
-  const transpiler = LOADERS.get(path.extname(filename).toLowerCase())
-  if (transpiler === undefined) return undefined
+  const loader = LOADERS.get(path.extname(filename).toLowerCase())
+  if (loader === undefined) return undefined
   try {
-    return transpiler.transformSync(source)
+    if (typeof Bun !== "undefined") return new Bun.Transpiler({ loader }).transformSync(source)
+
+    // The packaged Electron sidecar is plain Node, where touching Bun at module initialisation used
+    // to crash the whole app before it could report healthy. Node 24's own TypeScript transformer
+    // provides the same useful property here: comments and types disappear while executable tokens
+    // remain. Load it only on the Node branch because Bun 1.3.14 does not expose this named export.
+    const nodeModule = createRequire(import.meta.url)("node:module") as {
+      stripTypeScriptTypes(input: string, options: { mode: "transform" }): string
+    }
+    return nodeModule.stripTypeScriptTypes(source, { mode: "transform" })
   } catch {
     return undefined
   }
