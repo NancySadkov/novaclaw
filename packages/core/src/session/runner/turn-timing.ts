@@ -19,12 +19,26 @@ export const make = (now: () => number = Date.now) => {
   const openSnapshotDetails = new Map<SnapshotPhase, Array<{ phase: number; detail: number }>>()
   let firstTokenRecorded = false
 
-  const start = (phase: Phase) => {
+  const begin = (phase: Phase) => {
     const at = now()
     phases.push({ phase, startedAt: at })
+    const index = phases.length - 1
     const indexes = open.get(phase) ?? []
-    indexes.push(phases.length - 1)
+    indexes.push(index)
     open.set(phase, indexes)
+    let closed = false
+    return () => {
+      if (closed) return
+      closed = true
+      phases[index] = { ...phases[index]!, completedAt: now() }
+      const current = open.get(phase)
+      const position = current?.indexOf(index) ?? -1
+      if (position >= 0) current!.splice(position, 1)
+      if (current?.length === 0) open.delete(phase)
+    }
+  }
+  const start = (phase: Phase) => {
+    begin(phase)
   }
   const end = (phase: Phase) => {
     const indexes = open.get(phase)
@@ -87,6 +101,7 @@ export const make = (now: () => number = Date.now) => {
 
   return {
     start,
+    begin,
     end,
     detailStart,
     detailEnd,

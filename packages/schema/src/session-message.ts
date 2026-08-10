@@ -293,6 +293,9 @@ export const TurnPhase = Schema.Literals([
   "provider-setup",
   "provider-prefill",
   "generation",
+  "capability-queue",
+  "capability-load",
+  "capability-run",
 ])
 export type TurnPhase = typeof TurnPhase.Type
 

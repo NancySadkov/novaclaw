@@ -234,6 +234,9 @@ export type SessionStatus =
             | "provider-setup"
             | "provider-prefill"
             | "generation"
+            | "capability-queue"
+            | "capability-load"
+            | "capability-run"
           startedAt: number
           completedAt?: number
           details?: Array<{
@@ -650,6 +653,9 @@ export type GlobalEvent = {
                 | "provider-setup"
                 | "provider-prefill"
                 | "generation"
+                | "capability-queue"
+                | "capability-load"
+                | "capability-run"
               startedAt: number
               completedAt?: number
               details?: Array<{
@@ -2536,6 +2542,9 @@ export type SessionMessageAssistant = {
         | "provider-setup"
         | "provider-prefill"
         | "generation"
+        | "capability-queue"
+        | "capability-load"
+        | "capability-run"
       startedAt: number
       completedAt?: number
       details?: Array<{
@@ -3195,6 +3204,9 @@ export type SyncEventSessionNextStepEnded = {
             | "provider-setup"
             | "provider-prefill"
             | "generation"
+            | "capability-queue"
+            | "capability-load"
+            | "capability-run"
           startedAt: number
           completedAt?: number
           details?: Array<{
@@ -3862,6 +3874,50 @@ export type ConfigV2Device = {
   locality?: "local" | "lan" | "remote"
 }
 
+export type ConfigV2CapabilityServiceHttpTransport = {
+  type: "streamable-http"
+  url: string
+  audience?: string
+}
+
+export type ConfigV2CapabilityServiceStdioTransport = {
+  type: "stdio"
+  command: Array<string>
+  credential_env?: Array<string>
+}
+
+export type ConfigV2CapabilityServiceLimits = {
+  context_tokens?: number
+  input_bytes?: number
+  handle_bytes?: number
+}
+
+export type ConfigV2CapabilityServiceResources = {
+  estimated_resident_bytes: number
+  estimated_peak_bytes: number
+}
+
+export type ConfigV2CapabilityServiceHealth = {
+  interval_ms?: number
+  timeout_ms?: number
+}
+
+export type ConfigV2CapabilityService = {
+  capabilities: Array<string>
+  transport: ConfigV2CapabilityServiceHttpTransport | ConfigV2CapabilityServiceStdioTransport
+  locality: "local" | "lan" | "remote"
+  types?: Array<string>
+  protocol_revision?: string
+  limits?: ConfigV2CapabilityServiceLimits
+  resources: ConfigV2CapabilityServiceResources
+  queue_limit?: number
+  warmup_timeout_ms?: number
+  idle_timeout_ms?: number
+  health?: ConfigV2CapabilityServiceHealth
+  device?: string
+  disabled?: boolean
+}
+
 export type ProviderAisdk = {
   type: "aisdk"
   package: string
@@ -4193,6 +4249,9 @@ export type ConfigInfo = {
   local_model_catalog?: ConfigV2LocalModelCatalog
   devices?: {
     [key: string]: ConfigV2Device
+  }
+  capability_services?: {
+    [key: string]: ConfigV2CapabilityService
   }
   providers?: {
     [key: string]: ConfigV2Provider
@@ -4943,6 +5002,9 @@ export type SessionNextStepEnded = {
           | "provider-setup"
           | "provider-prefill"
           | "generation"
+          | "capability-queue"
+          | "capability-load"
+          | "capability-run"
         startedAt: number
         completedAt?: number
         details?: Array<{
@@ -7096,6 +7158,9 @@ export type EventSessionNextStepEnded = {
           | "provider-setup"
           | "provider-prefill"
           | "generation"
+          | "capability-queue"
+          | "capability-load"
+          | "capability-run"
         startedAt: number
         completedAt?: number
         details?: Array<{

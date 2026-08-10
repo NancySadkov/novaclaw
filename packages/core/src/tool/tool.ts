@@ -20,6 +20,13 @@ export interface Context {
   readonly agent: AgentV2.ID
   readonly assistantMessageID: SessionMessage.ID
   readonly toolCallID: string
+  /** Server-owned Working receipt. `begin` returns the exact close handle, so parallel tool spans
+   * cannot close one another merely because they share a phase name. */
+  readonly timing?: {
+    readonly begin: (
+      phase: SessionMessage.TurnPhase,
+    ) => Effect.Effect<() => Effect.Effect<void>>
+  }
   /** Canonical paths of the files the user attached, resolved once for this provider turn.
    *  A mutation tool passes these to `permission.assert` so overwriting the user's own source
    *  asks first. See `session/runner/attachment-paths.ts`. */

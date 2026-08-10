@@ -40,6 +40,7 @@ export type ExecuteInput = {
   /** Canonical paths of the user's attachments for this turn; forwarded to every tool's Context. */
   readonly attachmentPaths?: ReadonlySet<string>
   readonly call: ToolCall
+  readonly timing?: ToolContext["timing"]
 }
 
 export interface Interface {
@@ -156,6 +157,7 @@ const registryLayer = Layer.effect(
         agent: input.agent,
         assistantMessageID: input.assistantMessageID,
         toolCallID: input.call.id,
+        ...(input.timing === undefined ? {} : { timing: input.timing }),
         attachmentPaths: input.attachmentPaths ?? new Set(),
         ...(deferredTools.length === 0 ? {} : { deferredTools }),
         ...(invokeDeferred === undefined || !deferredDispatchers.has(registration.tool) ? {} : { invokeDeferred }),

@@ -21120,7 +21120,10 @@
                             "scheduler-wait",
                             "provider-setup",
                             "provider-prefill",
-                            "generation"
+                            "generation",
+                            "capability-queue",
+                            "capability-load",
+                            "capability-run"
                           ]
                         },
                         "startedAt": {
@@ -22545,7 +22548,10 @@
                                     "scheduler-wait",
                                     "provider-setup",
                                     "provider-prefill",
-                                    "generation"
+                                    "generation",
+                                    "capability-queue",
+                                    "capability-load",
+                                    "capability-run"
                                   ]
                                 },
                                 "startedAt": {
@@ -28517,7 +28523,10 @@
                         "scheduler-wait",
                         "provider-setup",
                         "provider-prefill",
-                        "generation"
+                        "generation",
+                        "capability-queue",
+                        "capability-load",
+                        "capability-run"
                       ]
                     },
                     "startedAt": {
@@ -30677,7 +30686,10 @@
                                 "scheduler-wait",
                                 "provider-setup",
                                 "provider-prefill",
-                                "generation"
+                                "generation",
+                                "capability-queue",
+                                "capability-load",
+                                "capability-run"
                               ]
                             },
                             "startedAt": {
@@ -32806,6 +32818,157 @@
         "required": ["endpoints"],
         "additionalProperties": false
       },
+      "ConfigV2CapabilityServiceHttpTransport": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["streamable-http"]
+          },
+          "url": {
+            "type": "string"
+          },
+          "audience": {
+            "type": "string"
+          }
+        },
+        "required": ["type", "url"],
+        "additionalProperties": false
+      },
+      "ConfigV2CapabilityServiceStdioTransport": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["stdio"]
+          },
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "credential_env": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["type", "command"],
+        "additionalProperties": false
+      },
+      "ConfigV2CapabilityServiceLimits": {
+        "type": "object",
+        "properties": {
+          "context_tokens": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "input_bytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "handle_bytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfigV2CapabilityServiceResources": {
+        "type": "object",
+        "properties": {
+          "estimated_resident_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "estimated_peak_bytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": ["estimated_resident_bytes", "estimated_peak_bytes"],
+        "additionalProperties": false
+      },
+      "ConfigV2CapabilityServiceHealth": {
+        "type": "object",
+        "properties": {
+          "interval_ms": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfigV2CapabilityService": {
+        "type": "object",
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "transport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfigV2CapabilityServiceHttpTransport"
+              },
+              {
+                "$ref": "#/components/schemas/ConfigV2CapabilityServiceStdioTransport"
+              }
+            ]
+          },
+          "locality": {
+            "type": "string",
+            "enum": ["local", "lan", "remote"]
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "protocol_revision": {
+            "type": "string"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/ConfigV2CapabilityServiceLimits"
+          },
+          "resources": {
+            "$ref": "#/components/schemas/ConfigV2CapabilityServiceResources"
+          },
+          "queue_limit": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "warmup_timeout_ms": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "idle_timeout_ms": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "health": {
+            "$ref": "#/components/schemas/ConfigV2CapabilityServiceHealth"
+          },
+          "device": {
+            "type": "string"
+          },
+          "disabled": {
+            "type": "boolean"
+          }
+        },
+        "required": ["capabilities", "transport", "locality", "resources"],
+        "additionalProperties": false
+      },
       "ProviderAISDK": {
         "type": "object",
         "properties": {
@@ -33807,6 +33970,12 @@
             "type": "object",
             "additionalProperties": {
               "$ref": "#/components/schemas/ConfigV2Device"
+            }
+          },
+          "capability_services": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ConfigV2CapabilityService"
             }
           },
           "providers": {
@@ -36198,7 +36367,10 @@
                             "scheduler-wait",
                             "provider-setup",
                             "provider-prefill",
-                            "generation"
+                            "generation",
+                            "capability-queue",
+                            "capability-load",
+                            "capability-run"
                           ]
                         },
                         "startedAt": {
@@ -43482,7 +43654,10 @@
                             "scheduler-wait",
                             "provider-setup",
                             "provider-prefill",
-                            "generation"
+                            "generation",
+                            "capability-queue",
+                            "capability-load",
+                            "capability-run"
                           ]
                         },
                         "startedAt": {

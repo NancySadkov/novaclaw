@@ -5,6 +5,9 @@ describe("turn receipt", () => {
   test("uses friendly labels and stable seconds", () => {
     expect(phaseLabel("memory-search")).toBe("Recalling")
     expect(phaseLabel("provider-prefill")).toBe("Waiting for the model")
+    expect(phaseLabel("capability-queue")).toBe("Waiting for a service")
+    expect(phaseLabel("capability-load")).toBe("Starting a service")
+    expect(phaseLabel("capability-run")).toBe("Running a service")
     expect(seconds(elapsedMs(100, 1349, 9999))).toBe("1.2s")
     expect(seconds(elapsedMs(100, undefined, 650))).toBe("0.6s")
   })

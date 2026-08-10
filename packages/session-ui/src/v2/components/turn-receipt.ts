@@ -15,6 +15,9 @@ const LABELS = {
   "provider-setup": "Preparing the model",
   "provider-prefill": "Waiting for the model",
   generation: "Writing the answer",
+  "capability-queue": "Waiting for a service",
+  "capability-load": "Starting a service",
+  "capability-run": "Running a service",
 } satisfies Record<TurnPhaseTiming["phase"], string>
 
 const DETAIL_LABELS = {

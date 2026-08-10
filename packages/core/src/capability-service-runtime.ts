@@ -8,17 +8,26 @@ import type { ConfigCapabilityService } from "./config/capability-service"
 import { makeGlobalNode } from "./effect/app-node"
 import { ResourcePressureContext } from "./resource-pressure-context"
 import { Log } from "@novaclaw/schema/log"
+import type { SessionMessage } from "./session/message"
 
 export const DEFAULT_INPUT_BYTES = 1024 * 1024
 export const PRESSURE_POLL_MS = 250
 export const DEFAULT_HEALTH_INTERVAL_MS = 30_000
 
+export type Stage = Extract<SessionMessage.TurnPhase, "capability-queue" | "capability-load" | "capability-run">
+
+export interface Timing {
+  readonly begin: (phase: Stage) => Effect.Effect<() => Effect.Effect<void>>
+}
+
 export interface ExecuteInput extends CapabilityServiceWorker.RunInput {
   readonly requestID: string
+  readonly timing?: Timing
 }
 
 interface Pending extends ExecuteInput {
   readonly deferred: Deferred.Deferred<unknown, Error>
+  readonly closes: Map<Stage, () => Effect.Effect<void>>
   running: boolean
 }
 
@@ -61,6 +70,20 @@ export const layer = Layer.effect(
       >
     })
 
+    const stageBegin = Effect.fn("CapabilityServiceRuntime.stageBegin")(function* (entry: Pending, stage: Stage) {
+      if (entry.closes.has(stage) || entry.timing === undefined) return
+      entry.closes.set(stage, yield* entry.timing.begin(stage))
+    })
+    const stageEnd = Effect.fn("CapabilityServiceRuntime.stageEnd")(function* (entry: Pending, stage: Stage) {
+      const close = entry.closes.get(stage)
+      if (close === undefined) return
+      entry.closes.delete(stage)
+      yield* close()
+    })
+    const stageEndAll = Effect.fn("CapabilityServiceRuntime.stageEndAll")(function* (entry: Pending) {
+      for (const stage of [...entry.closes.keys()]) yield* stageEnd(entry, stage)
+    })
+
     const settle = Effect.fn("CapabilityServiceRuntime.settle")(function* (
       ids: ReadonlyArray<string>,
       serviceID: string,
@@ -71,6 +94,7 @@ export const layer = Layer.effect(
         const entry = pending.get(key)
         if (entry === undefined) continue
         pending.delete(key)
+        yield* stageEndAll(entry)
         yield* Deferred.fail(entry.deferred, error)
       }
     })
@@ -96,6 +120,7 @@ export const layer = Layer.effect(
 
     const prepare = Effect.fn("CapabilityServiceRuntime.prepare")(function* (
       serviceID: string,
+      entry: Pending | undefined,
       nowMs: number,
       initial: CapabilityServiceGovernor.RequestDecision | { readonly kind: "idle" },
     ) {
@@ -117,6 +142,7 @@ export const layer = Layer.effect(
       if (decision.kind !== "start") return decision
       const info = (yield* services())[serviceID]
       if (info === undefined) return { kind: "refused", reason: "disabled" } as const
+      if (entry !== undefined) yield* stageBegin(entry, "capability-load")
       return yield* worker.start(serviceID, info).pipe(
         Effect.map(() => {
           nextHealthMs.set(serviceID, Date.now() + (info.health?.interval_ms ?? DEFAULT_HEALTH_INTERVAL_MS))
@@ -128,6 +154,7 @@ export const layer = Layer.effect(
             Effect.as({ kind: "refused", reason: "unavailable" } as const),
           ),
         ),
+        Effect.ensuring(entry === undefined ? Effect.void : stageEnd(entry, "capability-load")),
       )
     })
 
@@ -141,6 +168,7 @@ export const layer = Layer.effect(
         .snapshot()
         .find((state) => state.serviceID === entry.serviceID && state.activeRequestID === entry.requestID)
       if (pending.get(key) !== entry || admitted?.phase !== "busy") return
+      yield* stageBegin(entry, "capability-run")
       yield* worker
         .run({ serviceID: entry.serviceID, capability: entry.capability, arguments: entry.arguments })
         .pipe(
@@ -148,11 +176,13 @@ export const layer = Layer.effect(
             onFailure: (error) => failService(entry.serviceID, error.message).pipe(Effect.asVoid),
             onSuccess: (result) =>
               Effect.gen(function* () {
+                yield* stageEnd(entry, "capability-run")
                 governor.completed(entry.serviceID, Date.now())
                 pending.delete(key)
                 yield* Deferred.succeed(entry.deferred, result)
               }),
           }),
+          Effect.ensuring(stageEnd(entry, "capability-run")),
         )
     })
 
@@ -163,8 +193,10 @@ export const layer = Layer.effect(
     ) {
       if (decision.kind === "run") {
         const entry = pending.get(keyOf(serviceID, decision.requestID))
-        if (entry !== undefined)
+        if (entry !== undefined) {
+          yield* stageEnd(entry, "capability-queue")
           yield* dispatch(entry).pipe(Effect.forkIn(scope, { startImmediately: true }), Effect.asVoid)
+        }
         return
       }
       if (decision.kind !== "refused") return
@@ -184,7 +216,13 @@ export const layer = Layer.effect(
         services: yield* services(),
         ...(capacity === undefined ? {} : { capacity }),
       })
-      yield* launch(entry.serviceID, entry.requestID, yield* prepare(entry.serviceID, Date.now(), decision))
+      if (decision.kind === "queued") yield* stageBegin(entry, "capability-queue")
+      if (decision.kind === "start") yield* stageEnd(entry, "capability-queue")
+      yield* launch(
+        entry.serviceID,
+        entry.requestID,
+        yield* prepare(entry.serviceID, entry, Date.now(), decision),
+      )
     })
 
     const pump = Effect.fn("CapabilityServiceRuntime.pump")(function* () {
@@ -192,6 +230,11 @@ export const layer = Layer.effect(
       for (const state of governor.snapshot()) {
         if (state.queuedRequestIDs.length === 0 || (state.phase !== "stopped" && state.phase !== "ready")) continue
         const requestID = state.queuedRequestIDs[0]!
+        const entry = pending.get(keyOf(state.serviceID, requestID))
+        if (entry === undefined) {
+          governor.cancel(state.serviceID, requestID)
+          continue
+        }
         const capacity = yield* pressure.capacity()
         const decision = governor.poll({
           serviceID: state.serviceID,
@@ -199,7 +242,8 @@ export const layer = Layer.effect(
           services: serviceMap,
           ...(capacity === undefined ? {} : { capacity }),
         })
-        yield* launch(state.serviceID, requestID, yield* prepare(state.serviceID, Date.now(), decision))
+        if (decision.kind === "start") yield* stageEnd(entry, "capability-queue")
+        yield* launch(state.serviceID, requestID, yield* prepare(state.serviceID, entry, Date.now(), decision))
       }
     })
 
@@ -291,6 +335,7 @@ export const layer = Layer.effect(
       const entry = pending.get(key)
       if (entry === undefined) return false
       pending.delete(key)
+      yield* stageEndAll(entry)
       yield* Deferred.fail(entry.deferred, requestError(serviceID, requestID, "was canceled"))
       const transition = governor.cancel(serviceID, requestID)
       if (transition.kind === "stop")
@@ -324,6 +369,7 @@ export const layer = Layer.effect(
           ...input,
           arguments: JSON.parse(serialized) as Readonly<Record<string, unknown>>,
           deferred,
+          closes: new Map(),
           running: false,
         }
         pending.set(keyOf(input.serviceID, input.requestID), entry)

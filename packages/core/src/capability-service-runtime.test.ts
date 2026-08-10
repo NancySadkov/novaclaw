@@ -109,6 +109,7 @@ describe("CapabilityServiceRuntime", () => {
       floorUsedFraction: 0.8,
     }
     const calls: Array<Readonly<Record<string, unknown>>> = []
+    const timing: string[] = []
     const input = { handle: "file:1" }
     const layer = graph({
       capacity: () => capacity,
@@ -129,6 +130,13 @@ describe("CapabilityServiceRuntime", () => {
             requestID: "r1",
             capability: "document.parse.native",
             arguments: input,
+            timing: {
+              begin: (phase) =>
+                Effect.sync(() => {
+                  timing.push(`start:${phase}`)
+                  return () => Effect.sync(() => timing.push(`end:${phase}`)).pipe(Effect.asVoid)
+                }),
+            },
           }),
         )
         yield* waitForQueued(runtime, "r1")
@@ -141,6 +149,14 @@ describe("CapabilityServiceRuntime", () => {
 
     expect(result).toEqual({ content: { handle: "file:1" } })
     expect(calls).toEqual([{ handle: "file:1" }])
+    expect(timing).toEqual([
+      "start:capability-queue",
+      "end:capability-queue",
+      "start:capability-load",
+      "end:capability-load",
+      "start:capability-run",
+      "end:capability-run",
+    ])
   })
 
   test("serializes queued calls and dispatches the successor after completion", async () => {

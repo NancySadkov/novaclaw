@@ -1128,6 +1128,14 @@ export const layer = Layer.effect(
                   agent: agent.id,
                   assistantMessageID,
                   attachmentPaths,
+                  timing: {
+                    begin: (phase) =>
+                      Effect.gen(function* () {
+                        const close = timing.begin(phase)
+                        yield* publishLiveTiming()
+                        return () => Effect.sync(close).pipe(Effect.andThen(publishLiveTiming()))
+                      }),
+                  },
                   call: event,
                 }),
               ).pipe(

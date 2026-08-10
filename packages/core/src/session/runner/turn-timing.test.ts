@@ -48,6 +48,23 @@ describe("TurnTiming", () => {
     })
   })
 
+  test("closes the exact span when parallel work shares a phase", () => {
+    let now = 10
+    const timing = TurnTiming.make(() => now)
+    const closeFirst = timing.begin("capability-run")
+    now = 20
+    const closeSecond = timing.begin("capability-run")
+    now = 30
+    closeFirst()
+    now = 40
+    closeSecond()
+
+    expect(timing.snapshot().phases).toEqual([
+      { phase: "capability-run", startedAt: 10, completedAt: 30 },
+      { phase: "capability-run", startedAt: 20, completedAt: 40 },
+    ])
+  })
+
   test("nests repository detail under the active snapshot without changing its top-level phase", () => {
     let now = 10
     const timing = TurnTiming.make(() => now)
