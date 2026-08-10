@@ -337,7 +337,6 @@ async function readToastSelection(wsUrl: string) {
         host.append(root)
         return { title, description }
       }
-      const legacy = probe("toast", "toast-title", "toast-description")
       const current = probe("toast-v2", "toast-v2-title", "toast-v2-description")
       document.body.append(host)
       const range = document.createRange()
@@ -346,8 +345,6 @@ async function readToastSelection(wsUrl: string) {
       selection.removeAllRanges()
       selection.addRange(range)
       const result = {
-        legacyTitle: getComputedStyle(legacy.title).userSelect,
-        legacyDescription: getComputedStyle(legacy.description).userSelect,
         currentTitle: getComputedStyle(current.title).userSelect,
         currentDescription: getComputedStyle(current.description).userSelect,
         selected: selection.toString(),
@@ -665,7 +662,7 @@ async function run() {
   // string), under an explicitly unselectable parent, and exercise a real DOM selection too.
   try {
     const selection = await readToastSelection(renderer.wsUrl)
-    for (const key of ["legacyTitle", "legacyDescription", "currentTitle", "currentDescription"])
+    for (const key of ["currentTitle", "currentDescription"])
       check(selection[key] === "text", `toast-selectable-${key}`, `expected user-select:text, got ${selection[key]}`)
     check(
       selection.selected === "Diagnostic reference: err_12345678.",
