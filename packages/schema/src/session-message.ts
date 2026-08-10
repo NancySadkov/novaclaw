@@ -296,10 +296,21 @@ export const TurnPhase = Schema.Literals([
 ])
 export type TurnPhase = typeof TurnPhase.Type
 
+export const SnapshotPhase = Schema.Literals(["repository", "status", "persist", "hash"])
+export type SnapshotPhase = typeof SnapshotPhase.Type
+
+export const SnapshotPhaseTiming = Schema.Struct({
+  phase: SnapshotPhase,
+  startedAt: NonNegativeInt,
+  completedAt: NonNegativeInt.pipe(optional),
+})
+export type SnapshotPhaseTiming = typeof SnapshotPhaseTiming.Type
+
 export const TurnPhaseTiming = Schema.Struct({
   phase: TurnPhase,
   startedAt: NonNegativeInt,
   completedAt: NonNegativeInt.pipe(optional),
+  details: Schema.Array(SnapshotPhaseTiming).pipe(optional),
 })
 export type TurnPhaseTiming = typeof TurnPhaseTiming.Type
 

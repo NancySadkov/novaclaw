@@ -183,6 +183,24 @@ describe("Git trees", () => {
       expect(yield* read(path.join(root.path, "scope", "tracked.txt"))).toBe("one\n")
       expect(yield* read(path.join(root.path, "scope", "added.txt"))).toBe("added\n")
       expect(yield* read(path.join(root.path, "outside.txt"))).toBe("changed outside\n")
+
+      const timing: string[] = []
+      yield* git.tree.capture({
+        repository,
+        scopes: [RelativePath.make("scope")],
+        timing: {
+          start: (phase) => timing.push(`start:${phase}`),
+          end: (phase) => timing.push(`end:${phase}`),
+        },
+      })
+      expect(timing).toEqual([
+        "start:status",
+        "end:status",
+        "start:persist",
+        "end:persist",
+        "start:hash",
+        "end:hash",
+      ])
     }),
   )
 })

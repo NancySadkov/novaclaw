@@ -951,7 +951,7 @@ export const layer = Layer.effect(
         ),
       })
       timing.start("snapshot")
-      const startSnapshot = yield* snapshots.capture()
+      const startSnapshot = yield* snapshots.capture({ timing: { start: timing.detailStart, end: timing.detailEnd } })
       timing.end("snapshot")
       timing.start("provider-setup")
       const assistantMessageID = SessionMessage.ID.create()
@@ -1286,7 +1286,9 @@ export const layer = Layer.effect(
           const stepSettlement = publisher.stepSettlement()
           if (stepSettlement && !publisher.hasProviderError()) {
             timing.start("snapshot")
-            const endSnapshot = yield* snapshots.capture()
+            const endSnapshot = yield* snapshots.capture({
+              timing: { start: timing.detailStart, end: timing.detailEnd },
+            })
             const files =
               startSnapshot && endSnapshot
                 ? yield* snapshots

@@ -41,6 +41,12 @@ export type ChangeSet = typeof ChangeSet.Type
 export const TreeID = Schema.String.pipe(Schema.brand("Git.TreeID"))
 export type TreeID = typeof TreeID.Type
 
+export type CapturePhase = "status" | "persist" | "hash"
+export interface CaptureTiming {
+  readonly start: (phase: CapturePhase) => void
+  readonly end: (phase: CapturePhase) => void
+}
+
 export class OperationError extends Schema.TaggedErrorClass<OperationError>()("Git.OperationError", {
   operation: Schema.Literals([
     "clone",
@@ -161,6 +167,7 @@ export interface Interface {
       scopes: readonly RelativePath[]
       ignores?: Repository
       maximumUntrackedFileBytes?: number
+      timing?: CaptureTiming
     }) => Effect.Effect<TreeID, OperationError>
     readonly write: (repository: Repository) => Effect.Effect<TreeID, OperationError>
     readonly files: (input: {
@@ -488,11 +495,13 @@ export const layer = Layer.effect(
       scope: RelativePath
       ignores?: Repository
       maximumUntrackedFileBytes?: number
+      timing?: CaptureTiming
     }) {
       // One porcelain scan supplies both tracked changes and untracked files. This used to launch
       // diff-files and ls-files concurrently, but process startup is a material part of snapshot
       // latency on Windows. Disabling rename detection keeps every NUL-delimited record in the
       // stable `XY path` shape, so no second pathname record needs special handling.
+      input.timing?.start("status")
       const status = yield* repositoryOperation("refresh", input.repository, [
         "status",
         "--porcelain=v1",
@@ -501,7 +510,7 @@ export const layer = Layer.effect(
         "--no-renames",
         "--",
         input.scope,
-      ])
+      ]).pipe(Effect.ensuring(Effect.sync(() => input.timing?.end("status"))))
       const tracked: string[] = []
       const untracked: string[] = []
       for (const record of status.text.split("\0")) {
@@ -513,48 +522,56 @@ export const layer = Layer.effect(
         else if (record[1] !== " ") tracked.push(target)
       }
       const candidates = Array.from(new Set([...tracked, ...untracked]))
-      if (!candidates.length) return { skipped: [] }
-      const ignored = input.ignores
-        ? new Set(
-            (yield* repositoryOperation("refresh", input.ignores, ["check-ignore", "--no-index", "--stdin", "-z"], {
-              stdin: candidates.join("\0") + "\0",
-            }).pipe(Effect.catch(() => Effect.succeed({ text: "", stderr: "" })))).text
-              .split("\0")
-              .filter(Boolean),
-          )
-        : new Set<string>()
-      const allowed = candidates.filter((item) => !ignored.has(item))
-      const maximum = input.maximumUntrackedFileBytes
-      const skipped = maximum
-        ? (yield* Effect.forEach(
-            untracked.filter((item) => allowed.includes(item)),
-            (item) =>
-              fs.stat(path.join(input.repository.worktree, item)).pipe(
-                Effect.map((info) =>
-                  info.type === "File" && Number(info.size) > maximum ? RelativePath.make(item) : undefined,
+      input.timing?.start("persist")
+      return yield* Effect.gen(function* () {
+        if (!candidates.length) return { skipped: [] }
+        const ignored = input.ignores
+          ? new Set(
+              (yield* repositoryOperation(
+                "refresh",
+                input.ignores,
+                ["check-ignore", "--no-index", "--stdin", "-z"],
+                {
+                  stdin: candidates.join("\0") + "\0",
+                },
+              ).pipe(Effect.catch(() => Effect.succeed({ text: "", stderr: "" })))).text
+                .split("\0")
+                .filter(Boolean),
+            )
+          : new Set<string>()
+        const allowed = candidates.filter((item) => !ignored.has(item))
+        const maximum = input.maximumUntrackedFileBytes
+        const skipped = maximum
+          ? (yield* Effect.forEach(
+              untracked.filter((item) => allowed.includes(item)),
+              (item) =>
+                fs.stat(path.join(input.repository.worktree, item)).pipe(
+                  Effect.map((info) =>
+                    info.type === "File" && Number(info.size) > maximum ? RelativePath.make(item) : undefined,
+                  ),
+                  Effect.catch(() => Effect.succeed(undefined)),
                 ),
-                Effect.catch(() => Effect.succeed(undefined)),
-              ),
-            { concurrency: 8 },
-          )).filter((item): item is RelativePath => item !== undefined)
-        : []
-      const stage = allowed.filter((item) => !skipped.includes(RelativePath.make(item)))
-      const remove = [...ignored, ...skipped]
-      if (remove.length)
-        yield* repositoryOperation(
-          "refresh",
-          input.repository,
-          ["rm", "--cached", "-f", "--ignore-unmatch", "--pathspec-from-file=-", "--pathspec-file-nul"],
-          { stdin: remove.join("\0") + "\0" },
-        )
-      if (stage.length)
-        yield* repositoryOperation(
-          "refresh",
-          input.repository,
-          ["add", "--all", "--sparse", "--pathspec-from-file=-", "--pathspec-file-nul"],
-          { stdin: stage.join("\0") + "\0" },
-        )
-      return { skipped }
+              { concurrency: 8 },
+            )).filter((item): item is RelativePath => item !== undefined)
+          : []
+        const stage = allowed.filter((item) => !skipped.includes(RelativePath.make(item)))
+        const remove = [...ignored, ...skipped]
+        if (remove.length)
+          yield* repositoryOperation(
+            "refresh",
+            input.repository,
+            ["rm", "--cached", "-f", "--ignore-unmatch", "--pathspec-from-file=-", "--pathspec-file-nul"],
+            { stdin: remove.join("\0") + "\0" },
+          )
+        if (stage.length)
+          yield* repositoryOperation(
+            "refresh",
+            input.repository,
+            ["add", "--all", "--sparse", "--pathspec-from-file=-", "--pathspec-file-nul"],
+            { stdin: stage.join("\0") + "\0" },
+          )
+        return { skipped }
+      }).pipe(Effect.ensuring(Effect.sync(() => input.timing?.end("persist"))))
     })
 
     const ignored = Effect.fn("Git.index.ignored")(function* (input: {
@@ -610,12 +627,16 @@ export const layer = Layer.effect(
         scopes: readonly RelativePath[]
         ignores?: Repository
         maximumUntrackedFileBytes?: number
+        timing?: CaptureTiming
       }) =>
         locked(
           input.repository,
           Effect.gen(function* () {
             yield* Effect.forEach(input.scopes, (scope) => refresh({ ...input, scope }), { discard: true })
-            return yield* writeTree(input.repository)
+            input.timing?.start("hash")
+            return yield* writeTree(input.repository).pipe(
+              Effect.ensuring(Effect.sync(() => input.timing?.end("hash"))),
+            )
           }),
         ),
     )

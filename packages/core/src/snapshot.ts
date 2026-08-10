@@ -67,13 +67,23 @@ export interface PreviewInput extends RestoreInput {
   readonly context?: number
 }
 
+export type CapturePhase = "repository" | Git.CapturePhase
+export interface CaptureTiming {
+  readonly start: (phase: CapturePhase) => void
+  readonly end: (phase: CapturePhase) => void
+}
+
+export interface CaptureInput {
+  readonly timing?: CaptureTiming
+}
+
 export interface Interface {
   /**
    * Capture the current Location-scoped filesystem state as a content-addressed
    * tree. Returns `undefined` when snapshots are disabled, unsupported, or the
    * best-effort capture fails.
    */
-  readonly capture: () => Effect.Effect<ID | undefined>
+  readonly capture: (input?: CaptureInput) => Effect.Effect<ID | undefined>
 
   /**
    * List project-relative paths changed between two captured trees without
@@ -203,16 +213,20 @@ export const layer = Layer.effect(
       return !unsafeShadowWorktree
     })
 
-    const capture = Effect.fn("Snapshot.capture")(function* () {
+    const capture = Effect.fn("Snapshot.capture")(function* (input?: CaptureInput) {
       if (!(yield* enabled())) return undefined
       return yield* Effect.gen(function* () {
-        const repo = yield* repository()
+        input?.timing?.start("repository")
+        const repo = yield* repository().pipe(
+          Effect.ensuring(Effect.sync(() => input?.timing?.end("repository"))),
+        )
         return ID.make(
           yield* git.tree.capture({
             repository: repo,
             scopes: [yield* scope()],
             ignores: source,
             maximumUntrackedFileBytes: 2 * 1024 * 1024,
+            timing: input?.timing,
           }),
         )
       }).pipe(

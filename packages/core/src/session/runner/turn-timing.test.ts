@@ -43,4 +43,30 @@ describe("TurnTiming", () => {
     timing.start("memory-search")
     expect(timing.snapshot().phases).toEqual([{ phase: "memory-search", startedAt: 10 }])
   })
+
+  test("nests repository detail under the active snapshot without changing its top-level phase", () => {
+    let now = 10
+    const timing = TurnTiming.make(() => now)
+    timing.detailStart("status")
+    timing.start("snapshot")
+    timing.detailStart("repository")
+    now = 20
+    timing.detailEnd("repository")
+    timing.detailStart("status")
+    now = 30
+    timing.detailEnd("status")
+    timing.end("snapshot")
+
+    expect(timing.snapshot().phases).toEqual([
+      {
+        phase: "snapshot",
+        startedAt: 10,
+        completedAt: 30,
+        details: [
+          { phase: "repository", startedAt: 10, completedAt: 20 },
+          { phase: "status", startedAt: 20, completedAt: 30 },
+        ],
+      },
+    ])
+  })
 })
