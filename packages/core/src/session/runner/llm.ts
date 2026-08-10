@@ -112,6 +112,7 @@ import { llmClient } from "../../effect/app-node-platform"
 import { AttachmentPaths } from "./attachment-paths"
 import { TodoReminder } from "./todo-reminder"
 import { CalloutPolicy } from "../../callout-policy"
+import { ProjectGrounding } from "./project-grounding"
 
 // Ordering can only choose among retrieved candidates — fetch wider than the recall budget.
 
@@ -366,6 +367,15 @@ export const layer = Layer.effect(
       if (todoReminderStates.size >= MAX_TODO_REMINDER_STATES && !todoReminderStates.has(sessionID))
         todoReminderStates.clear()
       todoReminderStates.set(sessionID, state)
+    }
+    // Fast Chat: provider-only cwd/project horizons. Like todo reminders, this map is only a bounded
+    // delivery latch; a restart may safely repeat one reminder instead of silently losing grounding.
+    const projectGroundingStates = new Map<string, ProjectGrounding.State>()
+    const MAX_PROJECT_GROUNDING_STATES = 500
+    const rememberProjectGrounding = (sessionID: string, state: ProjectGrounding.State) => {
+      if (projectGroundingStates.size >= MAX_PROJECT_GROUNDING_STATES && !projectGroundingStates.has(sessionID))
+        projectGroundingStates.clear()
+      projectGroundingStates.set(sessionID, state)
     }
     // QE-A: sessions already nudged to provision quality commands (once per session).
     const provisionNudged = new Set<string>()
@@ -902,6 +912,34 @@ export const layer = Layer.effect(
           if (!AgentJail.attendedRoot(rootType)) yield* SessionInput.steer(db, events, session.id, nudge)
         }
       }
+      const systemParts = (ShortChat.enabled(config.shortChat)
+        ? ShortChat.systemParts(harness.chatPersona)
+        : SystemCompose.composeSystemParts({
+            persona: harness.persona,
+            modelPrePrompt,
+            expertiseHint: harness.expertiseHint,
+            tierHint,
+            systemPromptOverride: config.systemPromptOverride,
+            agentSystem: agent.info?.system,
+            projectScope: SystemCompose.projectScopeSection(config.permissionMode),
+            base: system.baseline,
+          })).map(SystemPart.make)
+      const providerMessages = toLLMMessages(context, model, modelCapabilities)
+      const latestCompactionID = context.findLast((message) => message.type === "compaction")?.id
+      const strictEnabled = ({ ...(harness.strict ?? {}), ...(config.strict ?? {}) }).enabled === true
+      const groundingDecision = ProjectGrounding.decide(
+        {
+          enabled: !strictEnabled && !ShortChat.enabled(config.shortChat),
+          directory: location.directory,
+          ...(latestCompactionID === undefined ? {} : { compactionID: latestCompactionID }),
+          contextTokens: RequestFootprint.measure({ system: [], messages: providerMessages, tools: [] }).estimatedTokens,
+        },
+        projectGroundingStates.get(session.id),
+      )
+      if (groundingDecision.state !== undefined) rememberProjectGrounding(session.id, groundingDecision.state)
+      const projectGrounding = groundingDecision.due
+        ? SessionInput.applySteerProvenance(ProjectGrounding.render(location))
+        : undefined
       const fullRequest = LLM.request({
         model,
         // Order + placement of the per-model pre-prompt live in system-compose.ts (a pure, tested
@@ -909,20 +947,10 @@ export const layer = Layer.effect(
         // position, so an absent pre-prompt yields a byte-identical prompt to before the feature.
         // `projectScope` is the guidance half of the owner's 2026-07-30 directive — present in every
         // mode but `yolo`, from the RESOLVED (already-narrowed) mode. See system-compose.ts.
-        system: (ShortChat.enabled(config.shortChat)
-          ? ShortChat.systemParts(harness.chatPersona)
-          : SystemCompose.composeSystemParts({
-              persona: harness.persona,
-              modelPrePrompt,
-              expertiseHint: harness.expertiseHint,
-              tierHint,
-              systemPromptOverride: config.systemPromptOverride,
-              agentSystem: agent.info?.system,
-              projectScope: SystemCompose.projectScopeSection(config.permissionMode),
-              base: system.baseline,
-            })).map(SystemPart.make),
+        system: systemParts,
         messages: [
-          ...toLLMMessages(context, model, modelCapabilities),
+          ...providerMessages,
+          ...(projectGrounding === undefined ? [] : [Message.user(projectGrounding)]),
           // Derived provider context only — never a transcript row. The provenance prefix makes
           // every downstream real-user detector treat it as harness guidance rather than speech.
           //

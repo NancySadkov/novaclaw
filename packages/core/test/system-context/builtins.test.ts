@@ -124,9 +124,6 @@ describe("SystemContextBuiltIns", () => {
         [
           "Here is some useful information about the environment you are running in:",
           "<env>",
-          `  Working directory: ${directory}`,
-          `  Workspace root folder: ${projectDirectory}`,
-          "  Is directory a git repo: yes",
           `  Platform: ${process.platform}`,
           `  Shell: ${Shell.agentDefault()}`,
           ...(Shell.shellFallbackNote() ? [`  ${Shell.shellFallbackNote()}`] : []),
@@ -171,9 +168,6 @@ describe("SystemContextBuiltIns", () => {
         [
           "Here is some useful information about the environment you are running in:",
           "<env>",
-          `  Working directory: ${directory}`,
-          `  Workspace root folder: ${projectDirectory}`,
-          "  Is directory a git repo: yes",
           `  Platform: ${process.platform}`,
           `  Shell: ${Shell.agentDefault()}`,
           ...(Shell.shellFallbackNote() ? [`  ${Shell.shellFallbackNote()}`] : []),
@@ -274,9 +268,6 @@ describe("SystemContextBuiltIns", () => {
         [
           "Here is some useful information about the environment you are running in:",
           "<env>",
-          `  Working directory: ${directory}`,
-          `  Workspace root folder: ${projectDirectory}`,
-          "  Is directory a git repo: yes",
           `  Platform: ${process.platform}`,
           `  Shell: ${Shell.agentDefault()}`,
           ...(Shell.shellFallbackNote() ? [`  ${Shell.shellFallbackNote()}`] : []),
