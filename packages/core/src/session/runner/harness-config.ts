@@ -70,6 +70,8 @@ export interface Derived {
   readonly entries: readonly Config.Entry[]
   /** The B3 persona baseline, composed FIRST in the system prompt. `undefined` ⇒ persona disabled. */
   readonly persona: string | undefined
+  /** Persona without the shared-notes capability line, for Short Chat's no-memory/tool posture. */
+  readonly chatPersona: string | undefined
   readonly expertiseHint: string | undefined
   readonly quality: Quality.Config
   /**
@@ -108,6 +110,7 @@ export const derive = (entries: readonly Config.Entry[], options: Options = {}):
       Config.latest(entries, "persona"),
       options.notesDir === undefined ? undefined : { notesDir: options.notesDir },
     ),
+    chatPersona: Persona.resolve(Config.latest(entries, "persona")),
     expertiseHint: Config.latest(entries, "expertise") === "normal" ? EXPERTISE_HINT : undefined,
     quality: Quality.resolve(Config.latest(entries, "quality")),
     configuredShell,

@@ -910,7 +910,7 @@ export const layer = Layer.effect(
         // `projectScope` is the guidance half of the owner's 2026-07-30 directive — present in every
         // mode but `yolo`, from the RESOLVED (already-narrowed) mode. See system-compose.ts.
         system: (ShortChat.enabled(config.shortChat)
-          ? ShortChat.systemParts(harness.persona)
+          ? ShortChat.systemParts(harness.chatPersona)
           : SystemCompose.composeSystemParts({
               persona: harness.persona,
               modelPrePrompt,
@@ -1028,7 +1028,7 @@ export const layer = Layer.effect(
       // Per-chat override (the composer's Tuning control): `false` runs the turn with the controller OFF so
       // the model reasons to its own stop, which is what makes a budget change A/B-able in one chat without
       // editing the instance default. Absent = inherit the chain, then the model's own budget.
-      const budgetEnforced = config.thinkingBudget ?? true
+      const budgetEnforced = !ShortChat.enabled(config.shortChat) && (config.thinkingBudget ?? true)
       const budgetedSource = ProviderDispatch.stream({
         llm,
         request,
