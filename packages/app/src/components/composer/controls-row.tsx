@@ -4,6 +4,7 @@
 import { Show } from "solid-js"
 import { ComposerModelControl, type ComposerModelControlState } from "./model-control"
 import { ComposerPermissionModeControl, type ComposerPermissionModeControlState } from "./permission-mode-control"
+import { ComposerPostureControl, type ComposerPostureControlState } from "./posture-control"
 import { ComposerStrictControl, type ComposerStrictControlState } from "./strict-control"
 import { ComposerFeaturesControl, type ComposerFeaturesControlState } from "./features-control"
 import { ComposerFolderControl, type ComposerFolderControlState } from "./folder-control"
@@ -14,6 +15,7 @@ export type ComposerControlsRowState = {
   /** The folder chip only renders mid-session (folder.visible). */
   folderVisible: boolean
   model: ComposerModelControlState
+  posture: ComposerPostureControlState
   permissionMode: ComposerPermissionModeControlState
   strict: ComposerStrictControlState
   features: ComposerFeaturesControlState
@@ -27,6 +29,7 @@ export function ComposerControlsRow(props: { state: ComposerControlsRowState }) 
       {/* 1K: the permission-mode droplist shows on the new-session composer AND
           mid-session (an active session id) — mid-session selection calls switchMode. */}
       <Show when={props.state.sessionControls}>
+        <ComposerPostureControl state={props.state.posture} />
         <ComposerPermissionModeControl state={props.state.permissionMode} />
         <ComposerStrictControl state={props.state.strict} />
         {/* T1: the Tuning toggles — ungated like the Strict switch (owner call

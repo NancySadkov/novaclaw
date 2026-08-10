@@ -18,6 +18,8 @@ describe("ShortChat policy", () => {
   test("short prompt contains persona and guidance only", () => {
     expect(ShortChat.systemParts("You are Nova.")).toEqual(["You are Nova.", ShortChat.GUIDANCE])
     expect(ShortChat.systemParts(undefined)).toEqual([ShortChat.GUIDANCE])
+    expect(ShortChat.GUIDANCE).toContain("MUST call upgrade_chat immediately")
+    expect(ShortChat.GUIDANCE).toContain("Do not answer, offer, or describe the upgrade first")
   })
 
   test("permission rules deny forged actions but leave Upgrade as an ask", () => {

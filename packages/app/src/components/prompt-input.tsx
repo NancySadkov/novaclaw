@@ -964,6 +964,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 sessionControls: newSession() || !!props.controls.session?.id,
                 folderVisible: props.controls.folder.visible,
                 model: modelControlState(),
+                posture: {
+                  current: props.controls.features.current.shortChat ? "chat" : "agent",
+                  style: control(),
+                  onSelect: (posture) => props.controls.features.set("shortChat", posture === "chat"),
+                },
                 permissionMode: permissionModeControlState(),
                 strict: strictControlState(),
                 features: featuresControlState(),

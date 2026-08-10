@@ -476,6 +476,11 @@ export const dict = {
   "prompt.features.shortChat.title": "Short chat",
   "prompt.features.shortChat.description":
     "Use Nova for fast local conversation without project access or memory. Turn this off for Full Agent, which can recall context and work in this folder.",
+  "prompt.posture.section.title": "How Nova should help",
+  "prompt.posture.chat.title": "Chat",
+  "prompt.posture.chat.description": "Fast local conversation; no project access or memory.",
+  "prompt.posture.agent.title": "Full Agent",
+  "prompt.posture.agent.description": "Recalls context and can work in this folder.",
   "prompt.features.thinkingBudget.title": "Thinking budget",
   "prompt.features.thinkingBudget.description":
     "Caps how long the model reasons before it must answer, and stops it looping. Turn off to let it think as long as it wants — useful for comparing the two on the same task.",

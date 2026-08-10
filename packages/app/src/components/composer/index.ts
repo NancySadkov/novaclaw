@@ -2,6 +2,7 @@
 export { ComposerControlsRow, type ComposerControlsRowState } from "./controls-row"
 export { ComposerModelControl, type ComposerModelControlState } from "./model-control"
 export { ComposerPermissionModeControl, type ComposerPermissionModeControlState } from "./permission-mode-control"
+export { ComposerPostureControl, type ComposerPosture, type ComposerPostureControlState } from "./posture-control"
 export { ComposerStrictControl, type ComposerStrictControlState } from "./strict-control"
 export {
   ComposerFeaturesControl,

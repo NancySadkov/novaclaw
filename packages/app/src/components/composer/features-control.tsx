@@ -86,7 +86,6 @@ const COMPOSER_FEATURES: readonly ComposerFeature[] = [
   "surgicalEdits",
   "contextBudget",
   "memory",
-  "shortChat",
   "introspection",
   "quality",
   "affective",
@@ -448,6 +447,59 @@ function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: ()
           <span class="text-[12px] leading-4 text-v2-text-text-faint">
             {language.t("prompt.features.popover.description")}
           </span>
+        </div>
+        <div class="flex flex-col gap-1.5" data-section="posture">
+          <span class="text-[13px] font-[560] text-v2-text-text-base">
+            {language.t("prompt.posture.section.title")}
+          </span>
+          <div role="radiogroup" aria-label={language.t("prompt.posture.section.title")} class="flex flex-col gap-1">
+            {(["chat", "agent"] as const).map((posture) => {
+              const selected = () => props.state.current.shortChat === (posture === "chat")
+              return (
+                <button
+                  type="button"
+                  role="radio"
+                  data-posture-option={posture}
+                  aria-checked={selected()}
+                  onClick={() => props.state.set("shortChat", posture === "chat")}
+                  class="flex items-start justify-between gap-3 rounded-md border px-2.5 py-1.5 text-left hover:bg-v2-background-bg-subtle"
+                  classList={{
+                    "border-v2-border-border-focus bg-v2-background-bg-layer-01": selected(),
+                    "border-transparent": !selected(),
+                  }}
+                >
+                  <span class="flex flex-col gap-0.5">
+                    <span class="text-[13px] text-v2-text-text-base">
+                      {language.t(`prompt.posture.${posture}.title`)}
+                    </span>
+                    <span class="text-[12px] leading-4 text-v2-text-text-faint">
+                      {language.t(`prompt.posture.${posture}.description`)}
+                    </span>
+                  </span>
+                  <Show when={selected()}>
+                    <Icon name="check" size="normal" class="mt-0.5 shrink-0 text-v2-icon-icon-accent" />
+                  </Show>
+                </button>
+              )
+            })}
+          </div>
+          <span class="text-[11px] leading-4 text-v2-text-text-faint" data-posture-source>
+            {props.state.override.shortChat === undefined
+              ? language.t("prompt.features.source.inherit", {
+                  state: language.t(`prompt.posture.${props.state.current.shortChat ? "chat" : "agent"}.title`),
+                })
+              : language.t("prompt.features.source.override")}
+          </span>
+          <Show when={props.state.override.shortChat !== undefined}>
+            <button
+              type="button"
+              data-action="prompt-posture-inherit"
+              class="self-start text-[11px] text-v2-text-text-faint underline decoration-dotted hover:text-v2-text-text-base"
+              onClick={() => props.state.inherit("shortChat")}
+            >
+              {language.t("prompt.features.useDefault")}
+            </button>
+          </Show>
         </div>
         {/* The chat's Mode — plain radio rows (a Kobalte Select re-emits onChange; see the
               per-session-toggle template notes), and the unattended options explain their
