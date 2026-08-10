@@ -41,6 +41,7 @@ import { ExitTool } from "./exit"
 import { WaitTool } from "./wait"
 import { WriteTool } from "./write"
 import { WriteHexTool } from "./write-hex"
+import { UpgradeChatTool } from "./upgrade-chat"
 
 /**
  * Composes only the shipped Location-scoped built-in tool transforms.
@@ -114,6 +115,7 @@ export const locationLayer = Layer.mergeAll(
   SpawnTool.layer,
   ExitTool.layer,
   WaitTool.layer,
+  UpgradeChatTool.layer,
 )
 
 export const node = makeLocationNode({
@@ -157,5 +159,6 @@ export const node = makeLocationNode({
     SpawnTool.node,
     ExitTool.node,
     WaitTool.node,
+    UpgradeChatTool.node,
   ],
 })
