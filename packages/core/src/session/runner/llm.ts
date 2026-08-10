@@ -780,7 +780,7 @@ export const layer = Layer.effect(
       // Kept for the duration of this provider step so a failed `read` can correct the exact
       // remembered file claim that was actually put on the model's horizon.
       let recalledMemories: ReadonlyArray<MemoryClient.SearchHit> = []
-      if (recallQuery !== undefined && MemorySetting.memoryEnabled()) {
+      if (recallQuery !== undefined && config.memory !== false && MemorySetting.memoryEnabled()) {
         // The VECTOR leg: one short embedding of the recall query lets the engine fuse vector KNN with
         // FTS (measured 85% vs 77% keyword-only). Bounded + degrading — no device, unreachable, or slow
         // ⇒ undefined ⇒ keyword-only recall. Never blocks the turn on a failure.

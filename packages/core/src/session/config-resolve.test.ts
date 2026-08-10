@@ -64,9 +64,7 @@ describe("resolveConfig — simple fields (undefined = inherit)", () => {
   test("controlBinding inherits the nearest explicit display and otherwise stays absent", () => {
     expect(resolveConfig(DEFAULTS, []).controlBinding).toBeUndefined()
     expect(resolveConfig(DEFAULTS, [{ controlBinding: ":99" }, {}]).controlBinding).toBe(":99")
-    expect(resolveConfig(DEFAULTS, [{ controlBinding: ":99" }, { controlBinding: ":100" }]).controlBinding).toBe(
-      ":100",
-    )
+    expect(resolveConfig(DEFAULTS, [{ controlBinding: ":99" }, { controlBinding: ":100" }]).controlBinding).toBe(":100")
   })
 
   test("feature toggles (T1): tri-state — child inherits parent's stance, own stance wins, explicit false is real", () => {
@@ -128,6 +126,21 @@ describe("resolveConfig — simple fields (undefined = inherit)", () => {
     const walk = (id: string) => Effect.runSync(resolveSessionConfig(DEFAULTS, id, (x) => Effect.succeed(sessions[x])))
     expect(walk("child").contextBudget).toBe(true)
     expect(walk("override").contextBudget).toBe(false)
+  })
+
+  test("memory is a sparse Tune: absent inherits and an explicit child stance wins", () => {
+    expect(resolveConfig(DEFAULTS, []).memory).toBeUndefined()
+    expect(resolveConfig(DEFAULTS, [{ memory: false }, {}]).memory).toBe(false)
+    expect(resolveConfig(DEFAULTS, [{ memory: false }, { memory: true }]).memory).toBe(true)
+
+    const sessions: Record<string, SessionLike> = {
+      root: { id: "root", memory: true },
+      child: { id: "child", parentID: "root" },
+      override: { id: "override", parentID: "root", memory: false },
+    }
+    const walk = (id: string) => Effect.runSync(resolveSessionConfig(DEFAULTS, id, (x) => Effect.succeed(sessions[x])))
+    expect(walk("child").memory).toBe(true)
+    expect(walk("override").memory).toBe(false)
   })
 
   test("B10 responder: defaults to nova, inherits down the chain, child can override", () => {

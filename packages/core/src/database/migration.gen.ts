@@ -87,5 +87,6 @@ export const migrations = (
     import("./migration/20260808131913_add_session_component_registry"),
     import("./migration/20260808152334_add_session_control_binding"),
     import("./migration/20260808210101_durable_permission_ask"),
+    import("./migration/20260810005722_add_session_memory"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

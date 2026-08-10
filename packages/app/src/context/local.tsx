@@ -31,6 +31,7 @@ export type FeatureChoices = {
   askBeforeChanges?: boolean
   safeMode?: boolean
   contextBudget?: boolean
+  memory?: boolean
 }
 
 /** The composer's Mode choice (kernel thread type): attended, or the unattended pair. */

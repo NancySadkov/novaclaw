@@ -13,6 +13,8 @@ import { Memory } from "../kb-graph/memory"
 import { MemorySetting } from "../kb-graph/memory-setting"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
+import { EFFECTIVE_CONFIG_DEFAULTS, resolveSessionConfig } from "../session/config-resolve"
+import { SessionStore } from "../session/store"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -136,6 +138,7 @@ export const layer = Layer.effectDiscard(
     const memory = Memory.client(yield* Memory.node.service)
     const mutation = yield* LocationMutation.Service
     const permission = yield* PermissionV2.Service
+    const sessions = yield* SessionStore.Service
 
     yield* tools
       .register({
@@ -157,11 +160,14 @@ export const layer = Layer.effectDiscard(
               Effect.gen(function* () {
                 // The user's Memory switch (Settings → Memory) is OFF → the tool stands down entirely:
                 // no recall AND no writing, so "memory off" is honest for the agent too.
-                if (!MemorySetting.memoryEnabled())
+                const sessionConfig = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, context.sessionID, (id) =>
+                  sessions.get(id as typeof context.sessionID),
+                )
+                if (sessionConfig.memory === false || !MemorySetting.memoryEnabled())
                   return {
                     ok: false,
                     message:
-                      "Long-term memory is turned off in Settings, so I can't recall or save memories right now.",
+                      "Long-term memory is turned off for this chat or in Settings, so I can't recall or save memories right now.",
                   } satisfies Output
                 const sessionScope = `session:${context.sessionID}`
                 switch (input.op) {
@@ -372,5 +378,5 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/kb",
   layer,
-  deps: [ToolRegistry.node, Memory.node, LocationMutation.node, PermissionV2.node],
+  deps: [ToolRegistry.node, Memory.node, LocationMutation.node, PermissionV2.node, SessionStore.node],
 })

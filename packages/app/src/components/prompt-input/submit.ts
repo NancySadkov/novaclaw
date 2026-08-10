@@ -60,6 +60,7 @@ const DRAFT_FEATURES = {
   askBeforeChanges: true,
   safeMode: true,
   contextBudget: true,
+  memory: true,
 } satisfies Record<SessionFeatureName, true>
 
 /** The switch names a draft can stage, in one place, so no call site re-lists them. */

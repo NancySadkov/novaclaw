@@ -14,7 +14,7 @@
 //
 // ⚠️ Everything here reads its field/feature lists off the SOURCE OF TRUTH (`SESSION_CONFIG_FIELDS`,
 // `SessionFeature.Name`, the composer's own array) rather than repeating them, so it is a ratchet:
-// a seventh switch added to the kernel without a surface fails §B by name.
+// a switch added to the kernel without a surface fails §B by name.
 
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"

@@ -172,6 +172,7 @@ type CreateInput = {
   // back behind sandbox confinement, and refuses on a host with no backend.
   safeMode?: boolean
   contextBudget?: boolean
+  memory?: boolean
   location: Location.Ref
   // F1c fork: a fork seeds its record from the source (title + cloned metadata).
   title?: string
@@ -202,10 +203,9 @@ type CreateInput = {
  * spread has to typecheck against `Session.Info` — but say it out loud rather than let a reader
  * assume this guard is stronger than it is.
  */
-type CreateInputCarriesEveryConfigField =
-  keyof SessionConfig extends keyof CreateInput
-    ? true
-    : ["CreateInput is missing", Exclude<keyof SessionConfig, keyof CreateInput>]
+type CreateInputCarriesEveryConfigField = keyof SessionConfig extends keyof CreateInput
+  ? true
+  : ["CreateInput is missing", Exclude<keyof SessionConfig, keyof CreateInput>]
 const _createInputCarriesEveryConfigField: CreateInputCarriesEveryConfigField = true
 void _createInputCarriesEveryConfigField
 
@@ -307,6 +307,7 @@ export interface Interface {
       | "askBeforeChanges"
       | "safeMode"
       | "contextBudget"
+      | "memory"
     enabled: boolean | null
   }) => Effect.Effect<void, NotFoundError>
   readonly switchType: (input: {
@@ -1082,6 +1083,7 @@ export const layer = Layer.effect(
             // `"resolved"` when the column landed), not off the source's raw row.
             safeMode: inherited.safeMode,
             contextBudget: inherited.contextBudget,
+            memory: inherited.memory,
           },
         )
         const sourceRows = yield* db

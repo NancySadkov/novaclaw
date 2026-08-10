@@ -460,6 +460,7 @@ export default {
           \`ask_before_changes\` integer,
           \`safe_mode\` integer,
           \`context_budget\` integer,
+          \`memory\` integer,
           \`provider_recovery\` text,
           \`result\` text,
           \`time_created\` integer NOT NULL,

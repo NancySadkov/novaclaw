@@ -141,6 +141,7 @@ const SessionCatalogHandler = handlerLayer(
                   askBeforeChanges: ctx.payload.askBeforeChanges,
                   safeMode: ctx.payload.safeMode,
                   contextBudget: ctx.payload.contextBudget,
+                  memory: ctx.payload.memory,
                   // 🔴 **Was `?? { directory: AbsolutePath.make(process.cwd()) }`** — the SERVER
                   // PROCESS's directory, not the one the request named. `list` honours the request's
                   // location, so a create-then-list in one breath returned NOTHING, and the create

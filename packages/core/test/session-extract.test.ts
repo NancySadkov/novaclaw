@@ -47,7 +47,7 @@ describe("SessionExtract durable-memory origin policy", () => {
     expect(exchange).not.toContain(recalled)
   })
 
-  test("the runner applies the kind gate before touching memory health or starting model work", () => {
+  test("the runner applies kind and per-chat gates before touching memory or model work", () => {
     // The pass moved out of the runner's 2 900-line closure into the `SessionMaintenance` service
     // (5.1). A SOURCE-scanning guard's site is invisible to behaviour, so it has to follow the code
     // it guards — the two `toBeGreaterThan(0)` assertions below are what stop it from silently
@@ -59,10 +59,25 @@ describe("SessionExtract durable-memory origin policy", () => {
     expect(end).toBeGreaterThan(start)
     const body = source.slice(start, end)
     const gate = body.indexOf("SessionExtract.allowsDurableMemory(config.type)")
+    const chatGate = body.indexOf("config.memory === false || !MemorySetting.memoryEnabled()")
     expect(gate).toBeGreaterThan(0)
+    expect(chatGate).toBeGreaterThan(gate)
+    expect(chatGate).toBeLessThan(body.indexOf("memory.health()"))
+    expect(chatGate).toBeLessThan(body.indexOf(".stream("))
     expect(gate).toBeLessThan(body.indexOf("memory.health()"))
     expect(gate).toBeLessThan(body.indexOf(".stream("))
     expect(body).toContain("resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, session.id")
+  })
+
+  test("the provider runner gates recall before embedding, search, or reranking", () => {
+    const source = readFileSync(path.join(import.meta.dir, "../src/session/runner/llm.ts"), "utf8")
+    const gate = source.indexOf(
+      "recallQuery !== undefined && config.memory !== false && MemorySetting.memoryEnabled()",
+    )
+    expect(gate).toBeGreaterThan(0)
+    expect(gate).toBeLessThan(source.indexOf("KbEmbedder.embedOne(recallQuery)", gate))
+    expect(gate).toBeLessThan(source.indexOf(".search({", gate))
+    expect(gate).toBeLessThan(source.indexOf("MemoryRerank.buildRerankPrompt", gate))
   })
 })
 

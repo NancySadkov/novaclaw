@@ -2863,6 +2863,7 @@ class ApiV2Session extends NovaClawApiClient {
       askBeforeChanges?: boolean
       safeMode?: boolean
       contextBudget?: boolean
+      memory?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -2890,6 +2891,7 @@ class ApiV2Session extends NovaClawApiClient {
       askBeforeChanges: parameters?.["askBeforeChanges"],
       safeMode: parameters?.["safeMode"],
       contextBudget: parameters?.["contextBudget"],
+      memory: parameters?.["memory"],
     }
     return (options?.client ?? this.client).post<T.V2SessionCreateResponses, T.V2SessionCreateErrors, ThrowOnError>({
       url: "/api/session",
@@ -3230,6 +3232,7 @@ class ApiV2Session extends NovaClawApiClient {
         | "askBeforeChanges"
         | "safeMode"
         | "contextBudget"
+        | "memory"
       enabled: boolean | null
     },
     options?: Options<never, ThrowOnError>,

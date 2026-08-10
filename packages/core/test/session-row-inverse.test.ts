@@ -52,6 +52,7 @@ function populatedInfo(): SessionSchema.Info {
     surgicalEdits: true,
     askBeforeChanges: true,
     contextBudget: true,
+    memory: true,
     providerRecovery: {
       attemptID: EventV2.ID.make("evt_rowinverse0000000000000"),
       assistantMessageID: SessionMessage.ID.make("msg_rowinverse0000000000000"),
@@ -87,6 +88,7 @@ describe("sessionRow is fromRow's inverse", () => {
     )
     expect(back.responder, "responder did not survive").toBe(info.responder)
     expect(back.contextBudget, "contextBudget did not survive").toBe(info.contextBudget)
+    expect(back.memory, "memory did not survive").toBe(info.memory)
     expect(back.controlBinding, "controlBinding did not survive").toBe(info.controlBinding)
     expect(back.providerRecovery, "providerRecovery did not survive").toEqual(info.providerRecovery)
   })
@@ -136,6 +138,7 @@ describe("sessionRow is fromRow's inverse", () => {
     expect(back.thinkingBudget).toBeUndefined()
     expect(back.responder).toBeUndefined()
     expect(back.contextBudget).toBeUndefined()
+    expect(back.memory).toBeUndefined()
     expect(back.controlBinding).toBeUndefined()
     expect(back.providerRecovery).toBeUndefined()
     expect(back.systemPromptOverride).toBeUndefined()

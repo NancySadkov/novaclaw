@@ -436,6 +436,7 @@ export type GlobalEvent = {
             | "askBeforeChanges"
             | "safeMode"
             | "contextBudget"
+            | "memory"
           enabled: boolean | null
         }
       }
@@ -2184,6 +2185,7 @@ export type SessionV2Info = {
   askBeforeChanges?: boolean
   safeMode?: boolean
   contextBudget?: boolean
+  memory?: boolean
   providerRecovery?: SessionProviderRecovery
   result?: unknown
   cost: number
@@ -2851,6 +2853,7 @@ export type SyncEventSessionNextFeatureSwitched = {
         | "askBeforeChanges"
         | "safeMode"
         | "contextBudget"
+        | "memory"
       enabled: boolean | null
     }
   }
@@ -4543,6 +4546,7 @@ export type SessionNextFeatureSwitched = {
       | "askBeforeChanges"
       | "safeMode"
       | "contextBudget"
+      | "memory"
     enabled: boolean | null
   }
 }
@@ -6856,6 +6860,7 @@ export type EventSessionNextFeatureSwitched = {
       | "askBeforeChanges"
       | "safeMode"
       | "contextBudget"
+      | "memory"
     enabled: boolean | null
   }
 }
@@ -11268,6 +11273,7 @@ export type V2SessionCreateData = {
     askBeforeChanges?: boolean
     safeMode?: boolean
     contextBudget?: boolean
+    memory?: boolean
   }
   path?: never
   query?: never
@@ -11933,6 +11939,7 @@ export type V2SessionSwitchFeatureData = {
       | "askBeforeChanges"
       | "safeMode"
       | "contextBudget"
+      | "memory"
     enabled: boolean | null
   }
   path: {

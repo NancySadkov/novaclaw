@@ -305,6 +305,7 @@ export const makeSessionGroups = <
             askBeforeChanges: Schema.Boolean.pipe(Schema.optional),
             safeMode: Schema.Boolean.pipe(Schema.optional),
             contextBudget: Schema.Boolean.pipe(Schema.optional),
+            memory: Schema.Boolean.pipe(Schema.optional),
           }),
           success: Schema.Struct({ data: Session.Info }),
         })

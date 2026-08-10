@@ -363,6 +363,8 @@ export interface SessionConfig {
   readonly safeMode?: boolean
   /** Tri-state: enforce typed context shares in this chat. Absent = inherit, then the instance Tune. */
   readonly contextBudget?: boolean
+  /** Tri-state: automatic recall and learning for this chat. Absent = inherit, then instance Memory. */
+  readonly memory?: boolean
   readonly strict?: StrictOverride
 }
 
@@ -452,6 +454,7 @@ export interface EffectiveConfig {
   readonly safeMode?: boolean
   /** Tri-state: enforce typed context shares in this chat. Absent = inherit, then the instance Tune. */
   readonly contextBudget?: boolean
+  readonly memory?: boolean
   /** The nearest per-session Strict override on the chain; `undefined` = none (use global config). */
   readonly strict?: StrictOverride
 }
@@ -522,6 +525,7 @@ export interface SessionLike {
    *  means inherit, and the only way to diverge is an explicit `false` the user had to set. */
   readonly safeMode?: boolean
   readonly contextBudget?: boolean
+  readonly memory?: boolean
 }
 
 /**
@@ -728,6 +732,7 @@ export const SESSION_CONFIG_FIELDS = {
   // carried column puts it in `SESSION_CONFIG_FORK_FIELDS`.
   safeMode: { column: "safe_mode", merge: "override" },
   contextBudget: { column: "context_budget", merge: "override" },
+  memory: { column: "memory", merge: "override" },
   strict: { column: "strict", merge: "override" },
 } as const satisfies Readonly<Record<keyof SessionConfig, SessionConfigField>>
 

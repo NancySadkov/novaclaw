@@ -102,6 +102,7 @@ const createFullyConfigured = (session: SessionV2.Interface, parentID?: SessionS
     yield* session.switchFeature({ sessionID: created.id, feature: "askBeforeChanges", enabled: true })
     yield* session.switchFeature({ sessionID: created.id, feature: "safeMode", enabled: true })
     yield* session.switchFeature({ sessionID: created.id, feature: "contextBudget", enabled: true })
+    yield* session.switchFeature({ sessionID: created.id, feature: "memory", enabled: false })
     return yield* session.get(created.id)
   })
 
@@ -138,6 +139,7 @@ describe("SESSION_CONFIG_FIELDS — the descriptor is honest about what a row ca
         askBeforeChanges: true,
         safeMode: true,
         contextBudget: true,
+        memory: true,
         strict: { enabled: true },
         device: "spark",
         controlBinding: ":99",

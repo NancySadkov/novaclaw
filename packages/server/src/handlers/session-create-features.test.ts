@@ -1,4 +1,4 @@
-// A NEW-SESSION DRAFT'S PER-CHAT SWITCHES MUST SURVIVE `session.create` — all eight of them.
+// A NEW-SESSION DRAFT'S PER-CHAT SWITCHES MUST SURVIVE `session.create` — all nine of them.
 //
 // The defect this pins (fixed 2026-07-31): the composer's Tuning panel lets a user set per-chat
 // switches on a DRAFT — a chat that does not exist yet — and on create only three of the then-seven
@@ -28,7 +28,7 @@
 // registered handler function, into a REAL kernel on an in-memory database.
 //
 // ⚠️ It is a RATCHET, not a snapshot: every case iterates `SessionFeature.Name.literals` rather
-// than repeating the list, so an eighth kernel feature fails here BY NAME until the payload schema
+// than repeating the list, so a new kernel feature fails here BY NAME until the payload schema
 // and the handler both carry it.
 //
 // ⚠️ The store layers are built against `Database.layerFromPath(":memory:")`, never `Database.node`
@@ -217,7 +217,7 @@ const createAndReload = (body: Record<string, unknown>) =>
 describe("session.create carries every per-chat switch a draft can stage", () => {
   // The premise of everything below. If this drops to three again, the rest of the file would still
   // pass while testing nothing that matters.
-  test("the kernel declares the eight switches this file is about", () => {
+  test("the kernel declares the nine switches this file is about", () => {
     expect(
       [...FEATURES].map(String).sort(),
       "SessionFeature.Name changed. Every case below iterates it, so they will keep passing over the NEW set — but a switch is only real once the payload schema (packages/protocol), the handler (./session.ts) AND the composer's create body (packages/app/.../prompt-input/submit.ts) all carry it. Check those three, then update this list.",
@@ -227,6 +227,7 @@ describe("session.create carries every per-chat switch a draft can stage", () =>
         "askBeforeChanges",
         "contextBudget",
         "introspection",
+        "memory",
         "quality",
         "safeMode",
         "surgicalEdits",
@@ -256,7 +257,7 @@ describe("session.create carries every per-chat switch a draft can stage", () =>
   })
 
   // DROP POINT 2 — the handler, end to end. This is the test that would have caught the defect.
-  test("a create setting all eight persists all eight", async () => {
+  test("a create setting all nine persists all nine", async () => {
     const { echoed, stored } = await createAndReload(Object.fromEntries(FEATURES.map((name) => [name, true])))
     const lost = FEATURES.filter((name) => stored[name] !== true)
     expect(

@@ -15,6 +15,7 @@ export type ComposerFeature =
   | "askBeforeChanges"
   | "safeMode"
   | "contextBudget"
+  | "memory"
 export type ComposerMode = "interactive" | "auto-prompting" | "goal-oriented"
 
 // The Remote-chat section (messenger-plan §6.2): where does THIS chat live remotely? The trust
@@ -83,6 +84,7 @@ const COMPOSER_FEATURES: readonly ComposerFeature[] = [
   "askBeforeChanges",
   "surgicalEdits",
   "contextBudget",
+  "memory",
   "introspection",
   "quality",
   "affective",

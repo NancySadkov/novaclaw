@@ -470,6 +470,9 @@ export const dict = {
   "prompt.features.contextBudget.title": "Context guard",
   "prompt.features.contextBudget.description":
     "Keep conversation, recalled memory, knowledge retrieval, and tool output from crowding one another out.",
+  "prompt.features.memory.title": "Memory",
+  "prompt.features.memory.description":
+    "Let this chat recall what you have taught Nova and save useful new memories after it answers. Turn it off for a faster one-off conversation Nova will not remember later; the instance-wide Memory switch can still keep every chat off.",
   "prompt.features.thinkingBudget.title": "Thinking budget",
   "prompt.features.thinkingBudget.description":
     "Caps how long the model reasons before it must answer, and stops it looping. Turn off to let it think as long as it wants — useful for comparing the two on the same task.",

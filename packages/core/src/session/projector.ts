@@ -378,7 +378,9 @@ export const layer = Layer.effectDiscard(
                     ? { safe_mode: event.data.enabled, ...stamp }
                     : event.data.feature === "contextBudget"
                       ? { context_budget: event.data.enabled, ...stamp }
-                      : { affective: event.data.enabled, ...stamp }
+                      : event.data.feature === "memory"
+                        ? { memory: event.data.enabled, ...stamp }
+                        : { affective: event.data.enabled, ...stamp }
       return db
         .update(SessionTable)
         .set(patch)

@@ -80,6 +80,8 @@ export const SessionTable = sqliteTable(
     // with no backend. Tri-state like the switches above; NULL = inherit, effective default OFF.
     safe_mode: integer({ mode: "boolean" }),
     context_budget: integer({ mode: "boolean" }),
+    // Per-session automatic memory stance. NULL = inherit; the instance Memory switch remains the ceiling.
+    memory: integer({ mode: "boolean" }),
     provider_recovery: text({ mode: "json" }).$type<StoredProviderRecovery>(),
     result: text({ mode: "json" }).$type<unknown>(),
     ...Timestamps,

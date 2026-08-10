@@ -338,6 +338,7 @@ export type SessionFeatureName =
   | "askBeforeChanges"
   | "safeMode"
   | "contextBudget"
+  | "memory"
 
 export function switchFeature(
   server: ServerConnection.HttpBase,

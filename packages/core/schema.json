@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "1b65ad69-e218-4962-83e1-c08e0eb6da4d",
+  "id": "f3838c01-f7fd-47c2-89dc-5dae3adc81db",
   "prevIds": [
-    "028d0af3-faf4-49b7-93d3-0d520472891a"
+    "1b65ad69-e218-4962-83e1-c08e0eb6da4d"
   ],
   "ddl": [
     {
@@ -3049,6 +3049,16 @@
       "default": null,
       "generated": null,
       "name": "context_budget",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "memory",
       "entityType": "columns",
       "table": "session"
     },

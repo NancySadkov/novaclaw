@@ -9514,6 +9514,9 @@
                   },
                   "contextBudget": {
                     "type": "boolean"
+                  },
+                  "memory": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false
@@ -10995,7 +10998,8 @@
                       "surgicalEdits",
                       "askBeforeChanges",
                       "safeMode",
-                      "contextBudget"
+                      "contextBudget",
+                      "memory"
                     ]
                   },
                   "enabled": {
@@ -21763,7 +21767,8 @@
                           "surgicalEdits",
                           "askBeforeChanges",
                           "safeMode",
-                          "contextBudget"
+                          "contextBudget",
+                          "memory"
                         ]
                       },
                       "enabled": {
@@ -27499,6 +27504,9 @@
           "contextBudget": {
             "type": "boolean"
           },
+          "memory": {
+            "type": "boolean"
+          },
           "providerRecovery": {
             "$ref": "#/components/schemas/SessionProviderRecovery"
           },
@@ -29509,7 +29517,8 @@
                       "surgicalEdits",
                       "askBeforeChanges",
                       "safeMode",
-                      "contextBudget"
+                      "contextBudget",
+                      "memory"
                     ]
                   },
                   "enabled": {
@@ -35010,7 +35019,8 @@
                   "surgicalEdits",
                   "askBeforeChanges",
                   "safeMode",
-                  "contextBudget"
+                  "contextBudget",
+                  "memory"
                 ]
               },
               "enabled": {
@@ -42688,7 +42698,8 @@
                   "surgicalEdits",
                   "askBeforeChanges",
                   "safeMode",
-                  "contextBudget"
+                  "contextBudget",
+                  "memory"
                 ]
               },
               "enabled": {
