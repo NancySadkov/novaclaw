@@ -8,11 +8,57 @@ import { Offline } from "@novaclaw/core/offline"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { Effect, Exit, Layer } from "effect"
 import { withTimeout } from "@/util/timeout"
 import { createClient, shutdownClient, shutdownTransport } from "."
 
 type Live = { readonly client: Client; readonly info: ConfigCapabilityService.Info }
+
+const observeProtocol = (transport: Transport) => {
+  let negotiated: string | undefined
+  const forward = transport.setProtocolVersion?.bind(transport)
+  transport.setProtocolVersion = (version) => {
+    negotiated = version
+    forward?.(version)
+  }
+  return () => negotiated
+}
+
+const validateContract = async (
+  serviceID: string,
+  client: Client,
+  info: ConfigCapabilityService.Info,
+  negotiated: () => string | undefined,
+) => {
+  const revision = negotiated()
+  if (revision === undefined) throw new Error(`Capability service "${serviceID}" did not negotiate an MCP revision`)
+  if (info.protocol_revision !== undefined && revision !== info.protocol_revision)
+    throw new Error(
+      `Capability service "${serviceID}" negotiated MCP ${revision}; config requires ${info.protocol_revision}`,
+    )
+
+  const missing = new Set(info.capabilities)
+  const cursors = new Set<string>()
+  let cursor: string | undefined
+  while (missing.size > 0) {
+    const page = await client.listTools(cursor === undefined ? undefined : { cursor })
+    for (const tool of page.tools) {
+      if (!missing.has(tool.name)) continue
+      if (tool.inputSchema.type !== "object")
+        throw new Error(`Capability service "${serviceID}" tool "${tool.name}" has no object input schema`)
+      missing.delete(tool.name)
+    }
+    cursor = page.nextCursor
+    if (cursor === undefined) break
+    if (cursors.has(cursor)) throw new Error(`Capability service "${serviceID}" repeated its tools cursor`)
+    cursors.add(cursor)
+  }
+  if (missing.size > 0)
+    throw new Error(
+      `Capability service "${serviceID}" does not expose declared tool${missing.size === 1 ? "" : "s"}: ${[...missing].join(", ")}`,
+    )
+}
 
 export const layer = Layer.effect(
   CapabilityServiceWorker.Service,
@@ -60,11 +106,16 @@ export const layer = Layer.effect(
         }
         const client = createClient(global.data)
         const timeout = info.warmup_timeout_ms ?? 30_000
+        const negotiated = observeProtocol(transport)
         yield* Effect.acquireUseRelease(
           Effect.succeed(transport),
           (owned) =>
             Effect.tryPromise({
-              try: () => withTimeout(client.connect(owned), timeout),
+              try: () =>
+                withTimeout(
+                  client.connect(owned).then(() => validateContract(serviceID, client, info, negotiated)),
+                  timeout,
+                ),
               catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
             }),
           (owned, exit) => (Exit.isFailure(exit) ? shutdownTransport(owned) : Effect.void),

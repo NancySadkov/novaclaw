@@ -4,6 +4,7 @@ import { ConfigCapabilityService } from "@novaclaw/core/config/capability-servic
 import { Global } from "@novaclaw/core/global"
 import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js"
 import { Effect, Layer } from "effect"
+import { fileURLToPath } from "node:url"
 import { McpCapabilityServiceWorker } from "@/mcp/capability-service-worker"
 
 const servers: Bun.Server<unknown>[] = []
@@ -32,6 +33,23 @@ describe("McpCapabilityServiceWorker", () => {
             },
           })
         if (message.method === "notifications/initialized") return new Response(null, { status: 202 })
+        if (message.method === "tools/list")
+          return Response.json({
+            jsonrpc: "2.0",
+            id: message.id,
+            result: {
+              tools: [
+                {
+                  name: "document.parse.native",
+                  inputSchema: {
+                    type: "object",
+                    properties: { handle: { type: "string" } },
+                    required: ["handle"],
+                  },
+                },
+              ],
+            },
+          })
         if (message.method === "tools/call")
           return Response.json({
             jsonrpc: "2.0",
@@ -50,6 +68,7 @@ describe("McpCapabilityServiceWorker", () => {
         url: server.url.toString(),
       }),
       locality: "local",
+      protocol_revision: LATEST_PROTOCOL_VERSION,
       resources: new ConfigCapabilityService.Resources({
         estimated_resident_bytes: 1,
         estimated_peak_bytes: 1,
@@ -81,8 +100,132 @@ describe("McpCapabilityServiceWorker", () => {
     )
 
     expect(methods).toContain("initialize")
+    expect(methods).toContain("tools/list")
     expect(methods).toContain("tools/call")
     expect(methods).toContain("ping")
+  })
+
+  test("negotiates and validates a real stdio service before invoking it", async () => {
+    const fixture = fileURLToPath(new URL("../fixture/mcp-capability-stdio.ts", import.meta.url))
+    const info = new ConfigCapabilityService.Info({
+      capabilities: ["document.parse.native"],
+      transport: new ConfigCapabilityService.StdioTransport({
+        type: "stdio",
+        command: [process.execPath, fixture],
+      }),
+      locality: "local",
+      protocol_revision: LATEST_PROTOCOL_VERSION,
+      resources: new ConfigCapabilityService.Resources({
+        estimated_resident_bytes: 1,
+        estimated_peak_bytes: 1,
+      }),
+    })
+    const layer = McpCapabilityServiceWorker.layer.pipe(
+      Layer.provide(Global.layerWith({ data: process.cwd(), config: process.cwd() })),
+    )
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const worker = yield* CapabilityServiceWorker.Service
+        yield* worker.start("stdio-parser", info)
+        return yield* worker.run({
+          serviceID: "stdio-parser",
+          capability: "document.parse.native",
+          arguments: { handle: "file:stdio" },
+        })
+      }).pipe(Effect.provide(layer), Effect.scoped),
+    )
+
+    expect(result).toMatchObject({ content: [{ type: "text", text: "file:stdio" }] })
+  })
+
+  test("rejects protocol and declared-tool contract mismatches before becoming live", async () => {
+    const serve = (revision: string, tools: ReadonlyArray<Record<string, unknown>>) => {
+      const server = Bun.serve({
+        port: 0,
+        async fetch(request) {
+          if (request.method === "GET") return new Response(null, { status: 405 })
+          if (request.method === "DELETE") return new Response(null, { status: 200 })
+          const message = (await request.json()) as { id?: number; method: string }
+          if (message.method === "initialize")
+            return Response.json({
+              jsonrpc: "2.0",
+              id: message.id,
+              result: {
+                protocolVersion: revision,
+                capabilities: { tools: {} },
+                serverInfo: { name: "contract-fixture", version: "1" },
+              },
+            })
+          if (message.method === "notifications/initialized") return new Response(null, { status: 202 })
+          if (message.method === "tools/list")
+            return Response.json({ jsonrpc: "2.0", id: message.id, result: { tools } })
+          return Response.json({ jsonrpc: "2.0", id: message.id, result: {} })
+        },
+      })
+      servers.push(server)
+      return server
+    }
+    const declaration = (url: string, protocolRevision: string) =>
+      new ConfigCapabilityService.Info({
+        capabilities: ["document.parse.native"],
+        transport: new ConfigCapabilityService.HttpTransport({ type: "streamable-http", url }),
+        locality: "local",
+        protocol_revision: protocolRevision,
+        resources: new ConfigCapabilityService.Resources({
+          estimated_resident_bytes: 1,
+          estimated_peak_bytes: 1,
+        }),
+      })
+    const validTool = {
+      name: "other.tool",
+      inputSchema: { type: "object", properties: {} },
+    }
+
+    const wrongRevision = serve(LATEST_PROTOCOL_VERSION, [validTool])
+    const revisionError = await Effect.runPromise(
+      Effect.gen(function* () {
+        const worker = yield* CapabilityServiceWorker.Service
+        return yield* Effect.flip(worker.start("revision", declaration(wrongRevision.url.toString(), "1900-01-01")))
+      }).pipe(
+        Effect.provide(McpCapabilityServiceWorker.layer),
+        Effect.provide(Global.layerWith({ data: process.cwd(), config: process.cwd() })),
+        Effect.scoped,
+      ),
+    )
+    expect(revisionError.message).toContain("config requires 1900-01-01")
+
+    const missingTool = serve(LATEST_PROTOCOL_VERSION, [validTool])
+    const schemaError = await Effect.runPromise(
+      Effect.gen(function* () {
+        const worker = yield* CapabilityServiceWorker.Service
+        return yield* Effect.flip(
+          worker.start("schema", declaration(missingTool.url.toString(), LATEST_PROTOCOL_VERSION)),
+        )
+      }).pipe(
+        Effect.provide(McpCapabilityServiceWorker.layer),
+        Effect.provide(Global.layerWith({ data: process.cwd(), config: process.cwd() })),
+        Effect.scoped,
+      ),
+    )
+    expect(schemaError.message).toContain("does not expose declared tool: document.parse.native")
+
+    const malformedSchema = serve(LATEST_PROTOCOL_VERSION, [
+      { name: "document.parse.native", inputSchema: { type: "string" } },
+    ])
+    const schemaShapeError = await Effect.runPromise(
+      Effect.gen(function* () {
+        const worker = yield* CapabilityServiceWorker.Service
+        return yield* Effect.flip(
+          worker.start("schema-shape", declaration(malformedSchema.url.toString(), LATEST_PROTOCOL_VERSION)),
+        )
+      }).pipe(
+        Effect.provide(McpCapabilityServiceWorker.layer),
+        Effect.provide(Global.layerWith({ data: process.cwd(), config: process.cwd() })),
+        Effect.scoped,
+      ),
+    )
+    expect(schemaShapeError.message).toContain('"inputSchema"')
   })
 
   test("fails closed instead of sending an audience-bound HTTP request without a broker", async () => {
