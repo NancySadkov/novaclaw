@@ -7,7 +7,7 @@ import { ConfigCapabilityService } from "./config/capability-service"
 import { ResourcePressureContext } from "./resource-pressure-context"
 import { SettingsConfigStore } from "./settings-config-store"
 
-const declaration = (inputBytes?: number) =>
+const declaration = (inputBytes?: number, healthIntervalMs?: number) =>
   new ConfigCapabilityService.Info({
     capabilities: ["document.parse.native"],
     transport: new ConfigCapabilityService.HttpTransport({
@@ -22,11 +22,20 @@ const declaration = (inputBytes?: number) =>
     ...(inputBytes === undefined
       ? {}
       : { limits: new ConfigCapabilityService.Limits({ input_bytes: inputBytes }) }),
+    ...(healthIntervalMs === undefined
+      ? {}
+      : {
+          health: new ConfigCapabilityService.Health({
+            interval_ms: healthIntervalMs,
+            timeout_ms: 50,
+          }),
+        }),
   })
 
 const graph = (input: {
   readonly info?: ConfigCapabilityService.Info
   readonly services?: Readonly<Record<string, ConfigCapabilityService.Info>>
+  readonly onSettingsRead?: () => void
   readonly capacity: () => ResourcePressureContext.CommitCapacity | undefined
   readonly worker: CapabilityServiceWorker.Interface
 }) => {
@@ -34,7 +43,10 @@ const graph = (input: {
     SettingsConfigStore.Service,
     SettingsConfigStore.Service.of({
       all: () =>
-        Effect.succeed({ capability_services: input.services ?? { parser: input.info ?? declaration() } }),
+        Effect.sync(() => {
+          input.onSettingsRead?.()
+          return { capability_services: input.services ?? { parser: input.info ?? declaration() } }
+        }),
       set: () => Effect.void,
       remove: () => Effect.void,
       isEmpty: () => Effect.succeed(false),
@@ -75,6 +87,18 @@ const waitForQueued = (
     if (attempts <= 0) return yield* Effect.fail(new Error(`request ${requestID} was not queued`))
     yield* Effect.sleep(10)
     return yield* waitForQueued(runtime, requestID, attempts - 1)
+  })
+
+const waitForPhase = (
+  runtime: CapabilityServiceRuntime.Interface,
+  phase: string,
+  attempts = 100,
+): Effect.Effect<void, Error> =>
+  Effect.gen(function* () {
+    if ((yield* runtime.snapshot()).some((state) => state.phase === phase)) return
+    if (attempts <= 0) return yield* Effect.fail(new Error(`service did not become ${phase}`))
+    yield* Effect.sleep(10)
+    return yield* waitForPhase(runtime, phase, attempts - 1)
   })
 
 describe("CapabilityServiceRuntime", () => {
@@ -287,6 +311,105 @@ describe("CapabilityServiceRuntime", () => {
       }).pipe(Effect.provide(layer), Effect.scoped),
     )
     expect(calls).toEqual(["run", "stop"])
+  })
+
+  test("periodic health degrades an idle failed service without touching the completed chat", async () => {
+    const calls: string[] = []
+    const layer = graph({
+      info: declaration(undefined, 1),
+      capacity: () => ({ limitBytes: 1_000, usedBytes: 100, floorUsedFraction: 0.8 }),
+      worker: {
+        start: () => Effect.void,
+        run: () => Effect.succeed({ content: "done" }),
+        stop: () => Effect.sync(() => calls.push("stop")).pipe(Effect.asVoid),
+        health: () => Effect.sync(() => (calls.push("health"), false)),
+      },
+    })
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const runtime = yield* CapabilityServiceRuntime.Service
+        expect(
+          yield* runtime.execute({
+            serviceID: "parser",
+            requestID: "r1",
+            capability: "document.parse.native",
+            arguments: {},
+          }),
+        ).toEqual({ content: "done" })
+        yield* waitForPhase(runtime, "unavailable")
+      }).pipe(Effect.provide(layer), Effect.scoped),
+    )
+    expect(calls).toEqual(["health", "stop"])
+  })
+
+  test("periodic health waits until active inference returns idle", async () => {
+    const runGate = Deferred.makeUnsafe<void>()
+    const calls: string[] = []
+    const layer = graph({
+      info: declaration(undefined, 1),
+      capacity: () => ({ limitBytes: 1_000, usedBytes: 100, floorUsedFraction: 0.8 }),
+      worker: {
+        start: () => Effect.void,
+        run: () =>
+          Effect.sync(() => calls.push("run")).pipe(
+            Effect.andThen(Deferred.await(runGate)),
+            Effect.as("done"),
+          ),
+        stop: () => Effect.void,
+        health: () => Effect.sync(() => (calls.push("health"), true)),
+      },
+    })
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const runtime = yield* CapabilityServiceRuntime.Service
+        const execution = yield* Effect.forkScoped(
+          runtime.execute({
+            serviceID: "parser",
+            requestID: "r1",
+            capability: "document.parse.native",
+            arguments: {},
+          }),
+        )
+        yield* waitUntil(() => calls.includes("run"))
+        yield* Effect.sleep(300)
+        expect(calls).toEqual(["run"])
+        yield* Deferred.succeed(runGate, undefined)
+        expect(yield* Fiber.join(execution)).toBe("done")
+        yield* waitUntil(() => calls.includes("health"))
+      }).pipe(Effect.provide(layer), Effect.scoped),
+    )
+    expect(calls).toEqual(["run", "health"])
+  })
+
+  test("an idle healthy service does not reread the settings store on every pump tick", async () => {
+    let reads = 0
+    const layer = graph({
+      info: declaration(undefined, 10_000),
+      onSettingsRead: () => reads++,
+      capacity: () => ({ limitBytes: 1_000, usedBytes: 100, floorUsedFraction: 0.8 }),
+      worker: {
+        start: () => Effect.void,
+        run: () => Effect.succeed("done"),
+        stop: () => Effect.void,
+        health: () => Effect.succeed(true),
+      },
+    })
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const runtime = yield* CapabilityServiceRuntime.Service
+        yield* runtime.execute({
+          serviceID: "parser",
+          requestID: "r1",
+          capability: "document.parse.native",
+          arguments: {},
+        })
+        const afterExecution = reads
+        yield* Effect.sleep(300)
+        expect(reads).toBe(afterExecution)
+      }).pipe(Effect.provide(layer), Effect.scoped),
+    )
   })
 
   test("rejects an oversized payload before it reaches admission or a worker", async () => {

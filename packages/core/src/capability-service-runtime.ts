@@ -11,6 +11,7 @@ import { Log } from "@novaclaw/schema/log"
 
 export const DEFAULT_INPUT_BYTES = 1024 * 1024
 export const PRESSURE_POLL_MS = 250
+export const DEFAULT_HEALTH_INTERVAL_MS = 30_000
 
 export interface ExecuteInput extends CapabilityServiceWorker.RunInput {
   readonly requestID: string
@@ -51,6 +52,8 @@ export const layer = Layer.effect(
     const scope = yield* Effect.scope
     const governor = CapabilityServiceGovernor.make()
     const pending = new Map<string, Pending>()
+    const nextHealthMs = new Map<string, number>()
+    const healthInFlight = new Map<string, Deferred.Deferred<void>>()
 
     const services = Effect.fn("CapabilityServiceRuntime.services")(function* () {
       return Object.fromEntries((yield* registry.inspect()).map((entry) => [entry.id, entry.info])) as Readonly<
@@ -76,6 +79,7 @@ export const layer = Layer.effect(
       serviceID: string,
       reason: string,
     ) {
+      nextHealthMs.delete(serviceID)
       yield* worker.stop(serviceID).pipe(Effect.ignore)
       const affected = governor.failed(serviceID, reason)
       yield* settle(affected, serviceID, new Error(reason))
@@ -83,6 +87,9 @@ export const layer = Layer.effect(
     })
 
     const stop = Effect.fn("CapabilityServiceRuntime.stopWorker")(function* (serviceID: string) {
+      const health = healthInFlight.get(serviceID)
+      if (health !== undefined) yield* Deferred.await(health)
+      nextHealthMs.delete(serviceID)
       yield* worker.stop(serviceID)
       governor.stopped(serviceID)
     })
@@ -112,6 +119,7 @@ export const layer = Layer.effect(
       if (info === undefined) return { kind: "refused", reason: "disabled" } as const
       return yield* worker.start(serviceID, info).pipe(
         Effect.map(() => {
+          nextHealthMs.set(serviceID, Date.now() + (info.health?.interval_ms ?? DEFAULT_HEALTH_INTERVAL_MS))
           const transition = governor.loaded(serviceID)
           return transition.kind === "run" ? transition : ({ kind: "idle" } as const)
         }),
@@ -127,6 +135,12 @@ export const layer = Layer.effect(
       if (entry.running) return
       entry.running = true
       const key = keyOf(entry.serviceID, entry.requestID)
+      const health = healthInFlight.get(entry.serviceID)
+      if (health !== undefined) yield* Deferred.await(health)
+      const admitted = governor
+        .snapshot()
+        .find((state) => state.serviceID === entry.serviceID && state.activeRequestID === entry.requestID)
+      if (pending.get(key) !== entry || admitted?.phase !== "busy") return
       yield* worker
         .run({ serviceID: entry.serviceID, capability: entry.capability, arguments: entry.arguments })
         .pipe(
@@ -189,11 +203,74 @@ export const layer = Layer.effect(
       }
     })
 
+    const scheduleHealth = Effect.fn("CapabilityServiceRuntime.scheduleHealth")(function* () {
+      const nowMs = Date.now()
+      const serviceMap = yield* services()
+      for (const state of governor.snapshot()) {
+        if (state.phase !== "ready" || healthInFlight.has(state.serviceID)) continue
+        const info = serviceMap[state.serviceID]
+        if (info === undefined) continue
+        const due = nextHealthMs.get(state.serviceID)
+        if (due === undefined) {
+          nextHealthMs.set(state.serviceID, nowMs + (info.health?.interval_ms ?? DEFAULT_HEALTH_INTERVAL_MS))
+          continue
+        }
+        if (nowMs < due) continue
+        const done = Deferred.makeUnsafe<void>()
+        healthInFlight.set(state.serviceID, done)
+        const check = worker.health(state.serviceID, info.health?.timeout_ms).pipe(
+          Effect.matchEffect({
+            onFailure: (error) =>
+              Log.event("instance.capability.health.failed", {
+                "instance.capability": state.serviceID,
+                "instance.cause": Log.fault(error),
+              }).pipe(
+                Effect.andThen(failService(state.serviceID, `Health check failed: ${error.message}`)),
+                Effect.asVoid,
+              ),
+            onSuccess: (healthy) =>
+              healthy
+                ? Effect.sync(() =>
+                    nextHealthMs.set(
+                      state.serviceID,
+                      Date.now() + (info.health?.interval_ms ?? DEFAULT_HEALTH_INTERVAL_MS),
+                    ),
+                  ).pipe(Effect.asVoid)
+                : Log.event("instance.capability.health.failed", {
+                    "instance.capability": state.serviceID,
+                    "instance.cause": Log.fault(new Error("MCP ping returned unhealthy")),
+                  }).pipe(Effect.andThen(failService(state.serviceID, "Health check failed")), Effect.asVoid),
+          }),
+          Effect.ensuring(
+            Effect.sync(() => healthInFlight.delete(state.serviceID)).pipe(
+              Effect.andThen(Deferred.succeed(done, undefined)),
+              Effect.asVoid,
+            ),
+          ),
+        )
+        yield* check.pipe(Effect.forkIn(scope, { startImmediately: true }), Effect.asVoid)
+      }
+    })
+
     yield* Effect.gen(function* () {
       while (true) {
         yield* Effect.sleep(PRESSURE_POLL_MS)
         if (pending.size > 0)
           yield* pump().pipe(
+            Effect.catchCause((cause) =>
+              Log.event("instance.capability.pump.failed", { "instance.cause": Log.fault(cause) }),
+            ),
+          )
+        const healthDue = governor
+          .snapshot()
+          .some(
+            (state) =>
+              state.phase === "ready" &&
+              !healthInFlight.has(state.serviceID) &&
+              (nextHealthMs.get(state.serviceID) ?? Number.POSITIVE_INFINITY) <= Date.now(),
+          )
+        if (healthDue)
+          yield* scheduleHealth().pipe(
             Effect.catchCause((cause) =>
               Log.event("instance.capability.pump.failed", { "instance.cause": Log.fault(cause) }),
             ),

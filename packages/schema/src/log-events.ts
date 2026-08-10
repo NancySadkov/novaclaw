@@ -787,6 +787,14 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/effect/capability.ts",
   },
+  /** A loaded external capability failed its periodic ping and was stopped/degraded. */
+  "instance.capability.health.failed": {
+    level: "error",
+    message: "capability service health check failed",
+    attributes: { "instance.capability": "id", "instance.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/capability-service-runtime.ts",
+  },
   /** A queued-service admission tick failed; the process-scoped pump retries on its next interval. */
   "instance.capability.pump.failed": {
     level: "error",
