@@ -21083,6 +21083,106 @@
               "type": {
                 "type": "string",
                 "enum": ["busy"]
+              },
+              "timing": {
+                "type": "object",
+                "properties": {
+                  "startedAt": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "completedAt": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "phases": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "phase": {
+                          "type": "string",
+                          "enum": [
+                            "prepare",
+                            "memory-embed",
+                            "memory-search",
+                            "memory-rerank",
+                            "compaction",
+                            "snapshot",
+                            "scheduler-wait",
+                            "provider-setup",
+                            "provider-prefill",
+                            "generation"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "completedAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "details": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "phase": {
+                                "type": "string",
+                                "enum": ["repository", "status", "persist", "hash"]
+                              },
+                              "startedAt": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "completedAt": {
+                                "type": "integer",
+                                "minimum": 0
+                              }
+                            },
+                            "required": ["phase", "startedAt"],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": ["phase", "startedAt"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "providerAttempts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "attempt": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "dispatchedAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "firstTokenAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "completedAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "outcome": {
+                          "type": "string",
+                          "enum": ["running", "completed", "failed", "interrupted", "retry"]
+                        }
+                      },
+                      "required": ["attempt", "dispatchedAt", "outcome"],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": ["startedAt", "phases", "providerAttempts"],
+                "additionalProperties": false
               }
             },
             "required": ["type"],

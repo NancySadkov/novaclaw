@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { HttpApi } from "effect/unstable/httpapi"
+import { HttpApi, HttpApiGroup } from "effect/unstable/httpapi"
 import { EventV2 } from "@novaclaw/core/event"
 import { EventManifest } from "@/event-manifest"
 import { Credential } from "@novaclaw/core/credential"
@@ -32,7 +32,7 @@ import { GlobalApi } from "./groups/global"
 import { Authorization } from "./middleware/authorization"
 import { ExperimentalSchemaErrorMiddleware } from "./middleware/schema-error"
 
-const EventSchema = Schema.Union([
+const EventSchema: Schema.Schema<unknown> = Schema.Union([
   ...EventManifest.Latest.values()
     .map((definition) =>
       Schema.Struct({
@@ -78,7 +78,9 @@ export const InstanceHttpApi = HttpApi.make("novaclaw-instance")
   .addHttpApi(WorkspaceApi)
   .middleware(ExperimentalSchemaErrorMiddleware)
 
-export const NovaClawHttpApi = HttpApi.make("novaclaw")
+// OpenAPI generation reads the runtime groups below. Widen the exported declaration so adding a
+// public event does not force TypeScript to serialize the entire endpoint+event union at this boundary.
+export const NovaClawHttpApi: HttpApi.HttpApi<"novaclaw", HttpApiGroup.Any> = HttpApi.make("novaclaw")
   .addHttpApi(RootHttpApi)
   .addHttpApi(EventApi)
   .addHttpApi(InstanceHttpApi)

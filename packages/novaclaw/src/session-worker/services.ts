@@ -9,12 +9,16 @@ import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
 import { SessionJoin } from "@novaclaw/core/session/join"
 import { EventManifest } from "@novaclaw/schema/event-manifest"
+import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import type { SessionWorkerCapabilities } from "./capabilities"
 import { makeGlobalNode, makeLocationNode } from "@novaclaw/core/effect/app-node"
 import type { LayerNode } from "@novaclaw/core/effect/layer-node"
 
 const unavailable = (operation: string) => new Error(`${operation} is host-only in a session worker`)
-const hostEvents = new Set<string>(EventManifest.ServerDefinitions.map((definition) => definition.type))
+const hostEvents = new Set<string>([
+  ...EventManifest.ServerDefinitions.map((definition) => definition.type),
+  SessionStatusEvent.Status.type,
+])
 
 /** Effect service implementations consumed by the real runner layer. Read/list/reply surfaces stay
  * host-only; only capabilities the draining worker legitimately needs cross the boundary. */
@@ -225,7 +229,11 @@ export function replacements(capabilities: SessionWorkerCapabilities.Capabilitie
     ],
     [
       SessionJoin.node,
-      makeLocationNode({ service: SessionJoin.Service, layer: Layer.succeed(SessionJoin.Service, services.join), deps: [] }),
+      makeLocationNode({
+        service: SessionJoin.Service,
+        layer: Layer.succeed(SessionJoin.Service, services.join),
+        deps: [],
+      }),
     ],
     [
       SessionSpawner.node,

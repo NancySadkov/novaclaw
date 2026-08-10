@@ -41,7 +41,11 @@ describe("TurnTiming", () => {
   test("leaves an active phase explicitly open in a live snapshot", () => {
     const timing = TurnTiming.make(() => 10)
     timing.start("memory-search")
-    expect(timing.snapshot().phases).toEqual([{ phase: "memory-search", startedAt: 10 }])
+    expect(timing.live()).toEqual({
+      startedAt: 10,
+      phases: [{ phase: "memory-search", startedAt: 10 }],
+      providerAttempts: [],
+    })
   })
 
   test("nests repository detail under the active snapshot without changing its top-level phase", () => {

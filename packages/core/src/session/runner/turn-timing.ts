@@ -73,17 +73,31 @@ export const make = (now: () => number = Date.now) => {
     if (index < 0) return
     attempts[index] = { ...attempts[index]!, completedAt: now(), outcome }
   }
-  const snapshot = (): SessionMessage.TurnTiming => ({
+  const read = (completed: boolean): SessionMessage.TurnTiming => ({
     startedAt,
-    completedAt: now(),
+    ...(completed ? { completedAt: now() } : {}),
     phases: phases.map((phase) => ({
       ...phase,
       ...(phase.details ? { details: phase.details.map((detail) => ({ ...detail })) } : {}),
     })),
     providerAttempts: attempts.map((attempt) => ({ ...attempt })),
   })
+  const live = () => read(false)
+  const snapshot = () => read(true)
 
-  return { start, end, detailStart, detailEnd, queued, admitted, attemptStarted, firstToken, attemptSettled, snapshot }
+  return {
+    start,
+    end,
+    detailStart,
+    detailEnd,
+    queued,
+    admitted,
+    attemptStarted,
+    firstToken,
+    attemptSettled,
+    live,
+    snapshot,
+  }
 }
 
 export type Recorder = ReturnType<typeof make>

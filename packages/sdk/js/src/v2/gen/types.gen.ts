@@ -219,6 +219,37 @@ export type SessionStatus =
     }
   | {
       type: "busy"
+      timing?: {
+        startedAt: number
+        completedAt?: number
+        phases: Array<{
+          phase:
+            | "prepare"
+            | "memory-embed"
+            | "memory-search"
+            | "memory-rerank"
+            | "compaction"
+            | "snapshot"
+            | "scheduler-wait"
+            | "provider-setup"
+            | "provider-prefill"
+            | "generation"
+          startedAt: number
+          completedAt?: number
+          details?: Array<{
+            phase: "repository" | "status" | "persist" | "hash"
+            startedAt: number
+            completedAt?: number
+          }>
+        }>
+        providerAttempts: Array<{
+          attempt: number
+          dispatchedAt: number
+          firstTokenAt?: number
+          completedAt?: number
+          outcome: "running" | "completed" | "failed" | "interrupted" | "retry"
+        }>
+      }
     }
   | {
       type: "exited"

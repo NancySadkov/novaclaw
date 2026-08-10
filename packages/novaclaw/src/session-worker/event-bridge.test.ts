@@ -7,6 +7,7 @@ import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionEvent } from "@novaclaw/core/session/event"
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { SessionSchema } from "@novaclaw/core/session/schema"
+import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import { SessionWorkerEventBridge } from "./event-bridge"
 
 const sessionID = SessionSchema.ID.make("ses_worker_event_bridge")
@@ -77,6 +78,30 @@ test("host accepts non-session events from the server manifest", async () => {
   )
   expect(reply.type).toBe("event-published")
   expect(published.at(-1)).toEqual({ type: Catalog.Event.Updated.type, data: {}, location })
+})
+
+test("host forwards live runner timing even though status is not an HTTP route definition", async () => {
+  const data = {
+    sessionID,
+    status: {
+      type: "busy" as const,
+      timing: {
+        startedAt: 1,
+        phases: [{ phase: "prepare" as const, startedAt: 2 }],
+        providerAttempts: [],
+      },
+    },
+  }
+  const reply = await Effect.runPromise(
+    SessionWorkerEventBridge.publish({
+      events,
+      lease,
+      location,
+      message: request(data, SessionStatusEvent.Status.type),
+    }),
+  )
+  expect(reply.type).toBe("event-published")
+  expect(published.at(-1)).toEqual({ type: SessionStatusEvent.Status.type, data, location })
 })
 
 test("host rejects unknown, malformed, cross-session, and stale event requests", async () => {

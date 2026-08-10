@@ -654,7 +654,18 @@ export const layer = Layer.effect(
       recoverOverflow?: Harness["compaction"]["compactAfterOverflow"],
       timing: TurnTiming.Recorder = TurnTiming.make(),
     ) {
-      timing.start("prepare")
+      const publishLiveTiming = () =>
+        Effect.suspend(() =>
+          events.publish(SessionStatusEvent.Status, {
+            sessionID,
+            status: { type: "busy", timing: timing.live() },
+          }),
+        ).pipe(Effect.ignore)
+      const timingStart = (phase: SessionMessage.TurnPhase) =>
+        Effect.sync(() => timing.start(phase)).pipe(Effect.andThen(publishLiveTiming()))
+      const timingEnd = (phase: SessionMessage.TurnPhase) =>
+        Effect.sync(() => timing.end(phase)).pipe(Effect.andThen(publishLiveTiming()))
+      yield* timingStart("prepare")
       // Surface ANY pre-turn setup failure (config / agent / context-prep / model) IN THE CHAT, not just
       // the server log — these run before any assistant row exists, so `step.failed` (which carries its
       // error on an assistant message) can't convey them; the turn would otherwise fail silently. Emit a
@@ -764,7 +775,7 @@ export const layer = Layer.effect(
       // system prompt so the model "just remembers" — no kb-tool call needed. Best-effort: memory
       // off/unavailable → no block, the turn proceeds. Budgeted DOWN for weak models (the JH floor).
       const recallQuery = SessionRecall.recallQuery(context)
-      timing.end("prepare")
+      yield* timingEnd("prepare")
       let memoryRecall: string | undefined
       // Kept for the duration of this provider step so a failed `read` can correct the exact
       // remembered file claim that was actually put on the model's horizon.
@@ -773,15 +784,15 @@ export const layer = Layer.effect(
         // The VECTOR leg: one short embedding of the recall query lets the engine fuse vector KNN with
         // FTS (measured 85% vs 77% keyword-only). Bounded + degrading — no device, unreachable, or slow
         // ⇒ undefined ⇒ keyword-only recall. Never blocks the turn on a failure.
-        timing.start("memory-embed")
+        yield* timingStart("memory-embed")
         const recallVector = yield* Effect.promise(() => KbEmbedder.embedOne(recallQuery))
-        timing.end("memory-embed")
+        yield* timingEnd("memory-embed")
         const budget = SessionRecall.recallBudget(tier)
         // P8 ordering: over-fetch candidates, then re-rank by recency × authority and keep `budget` of
         // them. What the model sees each turn is the SHORT list, so ordering matters most here — a
         // recent authoritative fact must beat an old passive musing that merely echoes the wording.
         // Bounded (ranking.ts) and a no-op when hits share provenance and age.
-        timing.start("memory-search")
+        yield* timingStart("memory-search")
         const recallCandidates = yield* memory
           .search({
             query: recallQuery,
@@ -790,7 +801,7 @@ export const layer = Layer.effect(
             ...(recallVector === undefined ? {} : { embedding: recallVector }),
           })
           .pipe(Effect.orElseSucceed(() => []))
-        timing.end("memory-search")
+        yield* timingEnd("memory-search")
         // P8d: let the MODEL order what it will actually see. Metadata ordering can't read
         // authoritativeness out of the TEXT — a definitive older statement should outrank a newer
         // offhand musing (measured 4/4 vs 1/4 for metadata alone). One short call (~0.4s at 5
@@ -798,7 +809,7 @@ export const layer = Layer.effect(
         // deterministic ranker, so ordering degrades but the turn never breaks.
         let ordered: ReadonlyArray<MemoryClient.SearchHit> = MemoryRanking.rankHits(recallCandidates, Date.now())
         if (MemorySetting.rerankEnabled() && recallCandidates.length > 1) {
-          timing.start("memory-rerank")
+          yield* timingStart("memory-rerank")
           const prompt = MemoryRerank.buildRerankPrompt(recallQuery, recallCandidates, Date.now())
           const reply = yield* judgeCompletion(
             session.id,
@@ -807,7 +818,7 @@ export const layer = Layer.effect(
           ).pipe(Effect.orElseSucceed(() => ""))
           const order = MemoryRerank.parseRerankOrder(reply, recallCandidates.length)
           if (order) ordered = order.map((index) => recallCandidates[index]!)
-          timing.end("memory-rerank")
+          yield* timingEnd("memory-rerank")
         }
         recalledMemories = ordered.slice(0, budget)
         memoryRecall = SessionRecall.formatRecall(recalledMemories)
@@ -818,7 +829,7 @@ export const layer = Layer.effect(
       // packer matches on this exact string to apply the `memory` category budget, so it — not the
       // bare `memoryRecall` — is what goes to `packRequest`.
       const recallMessage = memoryRecall === undefined ? undefined : SessionInput.applySteerProvenance(memoryRecall)
-      timing.start("prepare")
+      yield* timingStart("prepare")
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
       const toolMaterialization = isLastStep
         ? undefined
@@ -907,21 +918,21 @@ export const layer = Layer.effect(
         toolChoice: isLastStep ? "none" : undefined,
         ...(affectiveGeneration === undefined ? {} : { generation: affectiveGeneration }),
       })
-      timing.end("prepare")
-      timing.start("compaction")
+      yield* timingEnd("prepare")
+      yield* timingStart("compaction")
       const compacted = yield* harness.compaction.compactIfNeeded({
         sessionID: session.id,
         entries,
         model,
         request: fullRequest,
       })
-      timing.end("compaction")
+      yield* timingEnd("compaction")
       if (compacted) return yield* Effect.die(continueAfterCompaction(currentStep))
       // 1M — the deterministic fail-safe under compaction: pack the outgoing request to the
       // server's HONORED window so an Ollama-class server never silently front-truncates the
       // system prompt away. Reached when compaction declined (window unknown, summary model
       // unavailable, or simply under ITS threshold) — history in the DB stays intact.
-      timing.start("prepare")
+      yield* timingStart("prepare")
       const preparedDispatch = ProviderDispatch.prepare({
         request: fullRequest,
         promptCacheKey,
@@ -931,7 +942,7 @@ export const layer = Layer.effect(
           : undefined,
         memoryRecall: recallMessage,
       })
-      timing.end("prepare")
+      yield* timingEnd("prepare")
       const packed = preparedDispatch.packed
       if (packed.dropped > 0)
         yield* Log.event("session.context.pack.evicted", {
@@ -950,10 +961,10 @@ export const layer = Layer.effect(
           RequestFootprint.measure({ system: request.system, messages: request.messages, tools: request.tools }),
         ),
       })
-      timing.start("snapshot")
+      yield* timingStart("snapshot")
       const startSnapshot = yield* snapshots.capture({ timing: { start: timing.detailStart, end: timing.detailEnd } })
-      timing.end("snapshot")
-      timing.start("provider-setup")
+      yield* timingEnd("snapshot")
+      yield* timingStart("provider-setup")
       const assistantMessageID = SessionMessage.ID.create()
       const attemptModelRef = {
         id: ModelV2.ID.make(model.id),
@@ -971,7 +982,7 @@ export const layer = Layer.effect(
         toolSideEffects: toolMaterialization?.sideEffects,
         toolDispatched: SessionExecutionAttempt.toolDispatchedCurrent,
         toolSettled: SessionExecutionAttempt.toolSettledCurrent,
-        onFirstOutput: timing.firstToken,
+        onFirstOutput: () => Effect.sync(timing.firstToken).pipe(Effect.andThen(publishLiveTiming())),
       })
       const withPublication = Semaphore.makeUnsafe(1).withPermit
       const publish = (event: LLMEvent, outputPaths: ReadonlyArray<string> = []) =>
@@ -1285,7 +1296,7 @@ export const layer = Layer.effect(
             )
           const stepSettlement = publisher.stepSettlement()
           if (stepSettlement && !publisher.hasProviderError()) {
-            timing.start("snapshot")
+            yield* timingStart("snapshot")
             const endSnapshot = yield* snapshots.capture({
               timing: { start: timing.detailStart, end: timing.detailEnd },
             })
@@ -1295,7 +1306,7 @@ export const layer = Layer.effect(
                     .files({ from: startSnapshot, to: endSnapshot })
                     .pipe(Effect.catch(() => Effect.succeed(undefined)))
                 : undefined
-            timing.end("snapshot")
+            yield* timingEnd("snapshot")
             yield* withPublication(
               events.publish(SessionEvent.Step.Ended, {
                 sessionID: session.id,
@@ -1383,7 +1394,7 @@ export const layer = Layer.effect(
         timestamp: startedAt,
         recovery: providerRecovery,
       })
-      timing.end("provider-setup")
+      yield* timingEnd("provider-setup")
       return yield* ProviderDispatch.runAndSettle(
         {
           events,
@@ -1403,6 +1414,7 @@ export const layer = Layer.effect(
             admitted: timing.admitted,
             attemptStarted: timing.attemptStarted,
             attemptSettled: timing.attemptSettled,
+            live: timing.live,
           },
         },
         generation,

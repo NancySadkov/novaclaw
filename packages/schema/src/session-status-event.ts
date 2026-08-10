@@ -5,6 +5,7 @@ import { optional } from "./schema"
 import { Event } from "./event"
 import { NonNegativeInt } from "./schema"
 import { SessionID } from "./session-id"
+import { SessionMessage } from "./session-message"
 
 export const Info = Schema.Union([
   Schema.Struct({
@@ -28,6 +29,9 @@ export const Info = Schema.Union([
   }),
   Schema.Struct({
     type: Schema.Literal("busy"),
+    // Live-only progress for the transcript's expandable receipt. The durable twin lands on the
+    // assistant message at Step.Ended; status updates explain pre-token work before that row exists.
+    timing: optional(Schema.suspend(() => SessionMessage.TurnTiming)),
   }),
   // Terminal state (K1): the session called exit(result) — done, never busy again. Lets ps/task
   // managers show exited threads instead of inferring it from `result !== undefined`.

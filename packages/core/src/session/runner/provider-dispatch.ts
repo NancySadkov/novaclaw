@@ -4,6 +4,7 @@ import { Cause, Duration, Effect, Exit, Option, Stream } from "effect"
 import { LLM, type LLMClientShape, type LLMError, type LLMRequest } from "@novaclaw/llm"
 import { Log } from "@novaclaw/schema/log"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
+import type { SessionMessage } from "@novaclaw/schema/session-message"
 import { EventV2 } from "../../event"
 import { SessionSchema } from "../schema"
 import { SessionScheduler } from "../scheduler"
@@ -81,6 +82,7 @@ export interface Input<E, R> {
     readonly admitted?: () => void
     readonly attemptStarted?: (attempt: number) => void
     readonly attemptSettled?: (attempt: number, outcome: "completed" | "failed" | "interrupted" | "retry") => void
+    readonly live?: () => SessionMessage.TurnTiming
   }
 }
 
@@ -98,15 +100,28 @@ export interface Restore {
 const dispatch = <E, R, A, E2, R2>(
   input: Input<E, R>,
   settle: (result: Exit.Exit<void, E>, restore: Restore) => Effect.Effect<A, E2, R2>,
-): Effect.Effect<A, E2, R | R2> =>
-  Effect.sync(() => input.timing?.queued?.()).pipe(
+): Effect.Effect<A, E2, R | R2> => {
+  const publishTiming = () => {
+    const live = input.timing?.live
+    return live
+      ? Effect.suspend(() =>
+          input.events.publish(SessionStatusEvent.Status, {
+            sessionID: input.sessionID,
+            status: { type: "busy", timing: live() },
+          }),
+        ).pipe(Effect.ignore)
+      : Effect.void
+  }
+  return Effect.sync(() => input.timing?.queued?.()).pipe(
+    Effect.andThen(publishTiming()),
     Effect.andThen(input.scheduler.admit(input.slot)),
-    Effect.tap(() => Effect.sync(() => input.timing?.admitted?.())),
+    Effect.tap(() => Effect.sync(() => input.timing?.admitted?.()).pipe(Effect.andThen(publishTiming()))),
     Effect.andThen(
       Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           let attempt = 1
           input.timing?.attemptStarted?.(attempt)
+          yield* publishTiming()
           let result = yield* restore(input.attempt).pipe(Effect.exit)
           while (result._tag === "Failure" && !Cause.hasInterrupts(result.cause)) {
             if (input.hasOutput() || attempt >= input.maxAttempts) break
@@ -135,18 +150,14 @@ const dispatch = <E, R, A, E2, R2>(
             yield* restore(Effect.sleep(Duration.millis(delay)))
             attempt++
             input.timing?.attemptStarted?.(attempt)
-            yield* input.events
-              .publish(SessionStatusEvent.Status, {
-                sessionID: input.sessionID,
-                status: { type: "busy" },
-              })
-              .pipe(Effect.ignore)
+            yield* publishTiming()
             result = yield* restore(input.attempt).pipe(Effect.exit)
           }
           input.timing?.attemptSettled?.(
             attempt,
             result._tag === "Success" ? "completed" : Cause.hasInterrupts(result.cause) ? "interrupted" : "failed",
           )
+          yield* publishTiming()
           const costTokens = result._tag === "Success" ? input.costTokens?.() : undefined
           if (costTokens !== undefined)
             yield* input.scheduler.report({
@@ -159,6 +170,7 @@ const dispatch = <E, R, A, E2, R2>(
     ),
     Effect.ensuring(input.scheduler.release(input.slot)),
   )
+}
 
 export const run = <E, R>(input: Input<E, R>): Effect.Effect<Exit.Exit<void, E>, never, R> =>
   dispatch(input, (result) => Effect.succeed(result))

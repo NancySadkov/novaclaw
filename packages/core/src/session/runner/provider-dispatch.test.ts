@@ -14,6 +14,7 @@ import {
 } from "@novaclaw/llm"
 import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
 import { SessionSchema } from "../schema"
+import type { SessionMessage } from "@novaclaw/schema/session-message"
 import { ProviderDispatch } from "./provider-dispatch"
 
 const events = {
@@ -126,6 +127,45 @@ describe("ProviderDispatch", () => {
     expect(attempts).toBe(2)
     expect(calls).toEqual(["admit", "report:12", "release"])
     expect(timing).toEqual(["queued", "admitted", "start:1", "end:1:retry", "start:2", "end:2:completed"])
+  })
+
+  test("publishes server-owned live timing at scheduler and provider boundaries", async () => {
+    const sessionID = "ses_live_timing" as SessionSchema.ID
+    const statuses: Array<{ type: string; timing?: SessionMessage.TurnTiming }> = []
+    let reads = 0
+    const liveEvents = {
+      publish: (_event: unknown, data: { status?: { type: string; timing?: SessionMessage.TurnTiming } }) =>
+        Effect.sync(() => {
+          if (data.status) statuses.push(data.status)
+        }),
+    } as never
+    const scheduler = {
+      admit: () => Effect.void,
+      release: () => Effect.void,
+      report: () => Effect.void,
+    } as never
+
+    await Effect.runPromise(
+      ProviderDispatch.run({
+        events: liveEvents,
+        scheduler,
+        sessionID,
+        slot: { sessionID, deviceKey: "device", sessionClass: "interactive" },
+        maxAttempts: 1,
+        hasOutput: () => false,
+        attempt: Effect.void,
+        timing: {
+          live: () => ({ startedAt: ++reads, phases: [], providerAttempts: [] }),
+        },
+      }),
+    )
+
+    expect(statuses).toEqual([
+      { type: "busy", timing: { startedAt: 1, phases: [], providerAttempts: [] } },
+      { type: "busy", timing: { startedAt: 2, phases: [], providerAttempts: [] } },
+      { type: "busy", timing: { startedAt: 3, phases: [], providerAttempts: [] } },
+      { type: "busy", timing: { startedAt: 4, phases: [], providerAttempts: [] } },
+    ])
   })
 
   test("never replays after output and still releases the slot", async () => {

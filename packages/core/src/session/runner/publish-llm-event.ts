@@ -19,7 +19,7 @@ type Input = {
   ) => Effect.Effect<void>
   readonly providerToolProtocol?: () => Effect.Effect<void>
   /** First semantic token/tool-input fragment, not response headers or a role-only SSE frame. */
-  readonly onFirstOutput?: () => void
+  readonly onFirstOutput?: () => Effect.Effect<void>
   readonly toolSideEffects?: Readonly<
     Record<string, "read" | "idempotent-write" | "non-idempotent" | "external-unknown">
   >
@@ -128,11 +128,11 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
   let providerCheckpointed = false
   let firstOutputRecorded = false
 
-  const recordFirstOutput = () => {
+  const recordFirstOutput = Effect.fnUntraced(function* () {
     if (firstOutputRecorded) return
     firstOutputRecorded = true
-    input.onFirstOutput?.()
-  }
+    if (input.onFirstOutput) yield* input.onFirstOutput()
+  })
 
   const checkpointProviderOutput = Effect.fnUntraced(function* () {
     if (providerCheckpointed) return
@@ -404,7 +404,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         })
         return
       case "text-delta":
-        recordFirstOutput()
+        yield* recordFirstOutput()
         yield* text.append(event.id, event.text)
         yield* events.publish(SessionEvent.Text.Delta, {
           sessionID: input.sessionID,
@@ -429,7 +429,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         })
         return
       case "reasoning-delta":
-        recordFirstOutput()
+        yield* recordFirstOutput()
         yield* reasoning.append(event.id, event.text)
         yield* events.publish(SessionEvent.Reasoning.Delta, {
           sessionID: input.sessionID,
@@ -446,7 +446,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         yield* startToolInput(event)
         return
       case "tool-input-delta": {
-        recordFirstOutput()
+        yield* recordFirstOutput()
         const tool = tools.get(event.id)
         if (!tool) return yield* Effect.die(`Tool input delta before start: ${event.id}`)
         if (tool.name !== event.name)

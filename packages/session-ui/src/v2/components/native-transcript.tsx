@@ -23,6 +23,7 @@ import type {
   SessionMessageSynthetic,
   SessionMessageSystem,
   SessionMessageUser,
+  SessionStatus,
 } from "@novaclaw/sdk/v2"
 import { isSteerText, stripSteerProvenance } from "@novaclaw/core/session/steer-provenance"
 import { SessionOrigin } from "@novaclaw/core/session/origin"
@@ -117,7 +118,7 @@ export function NativeTranscript(props: {
   onRetry?: (messageID: string) => void | Promise<void>
   onChooseModel?: () => void
   errorLabels?: TranscriptActions["labels"]
-  status?: { type: string; message?: string }
+  status?: SessionStatus
   /**
    * Prompts the user has SENT that the agent has not read yet (`GET /api/session/:id/pending`).
    * They are durable and already accepted, but have no transcript row until the runner promotes them —
@@ -136,6 +137,7 @@ export function NativeTranscript(props: {
   const hasOpenAssistant = createMemo(() =>
     visible().some((message) => message.type === "assistant" && !message.time.completed),
   )
+  const liveTiming = createMemo(() => (props.status?.type === "busy" ? props.status.timing : undefined))
   return (
     <ReasoningFoldContext.Provider
       value={() => ({
@@ -154,13 +156,24 @@ export function NativeTranscript(props: {
         })}
       >
         <div data-component="native-transcript" class={props.class}>
-          <For each={visible()}>{(message) => <NativeMessage message={message} developer={props.developer} />}</For>
+          <For each={visible()}>
+            {(message) => (
+              <NativeMessage message={message} developer={props.developer} liveTiming={liveTiming() !== undefined} />
+            )}
+          </For>
           <For each={props.pending ?? []}>{(item) => <QueuedMessage text={item.text} />}</For>
-          <Show when={props.status?.type === "busy" && !hasOpenAssistant()}>
-            <div data-slot="native-provider-status" role="status" aria-live="polite">
-              <span data-slot="native-working-dot" aria-hidden="true" />
-              <span>{props.errorLabels?.working ?? "Working…"}</span>
-            </div>
+          <Show
+            when={liveTiming()}
+            fallback={
+              <Show when={props.status?.type === "busy" && !hasOpenAssistant()}>
+                <div data-slot="native-provider-status" role="status" aria-live="polite">
+                  <span data-slot="native-working-dot" aria-hidden="true" />
+                  <span>{props.errorLabels?.working ?? "Working…"}</span>
+                </div>
+              </Show>
+            }
+          >
+            {(timing) => <TurnReceipt timing={timing()} live developer={props.developer} />}
           </Show>
           <Show when={props.status?.type === "retry" && props.status.message}>
             {(message) => (
@@ -176,7 +189,7 @@ export function NativeTranscript(props: {
   )
 }
 
-function NativeMessage(props: { message: SessionMessage; developer?: boolean }) {
+function NativeMessage(props: { message: SessionMessage; developer?: boolean; liveTiming?: boolean }) {
   return (
     <Switch>
       <Match when={props.message.type === "user" && props.message}>
@@ -187,7 +200,7 @@ function NativeMessage(props: { message: SessionMessage; developer?: boolean }) 
         )}
       </Match>
       <Match when={props.message.type === "assistant" && props.message}>
-        {(m) => <AssistantMessage message={m()} developer={props.developer} />}
+        {(m) => <AssistantMessage message={m()} developer={props.developer} liveTiming={props.liveTiming} />}
       </Match>
       <Match when={props.message.type === "shell" && props.message}>{(m) => <ShellMessage message={m()} />}</Match>
       <Match when={props.message.type === "system" && props.message}>
@@ -303,7 +316,7 @@ function SteerMessage(props: { text: string }) {
 
 // ── assistant ────────────────────────────────────────────────────────────────────
 
-function AssistantMessage(props: { message: SessionMessageAssistant; developer?: boolean }) {
+function AssistantMessage(props: { message: SessionMessageAssistant; developer?: boolean; liveTiming?: boolean }) {
   // While the turn is in flight but nothing has streamed yet (the model is thinking before
   // its first token), show a "working" indicator — otherwise a slow turn reads as a blank.
   const working = () =>
@@ -355,8 +368,8 @@ function AssistantMessage(props: { message: SessionMessageAssistant; developer?:
           </Switch>
         )}
       </For>
-      <Show when={working() || props.message.timing}>
-        <TurnReceipt message={props.message} live={working()} developer={props.developer} />
+      <Show when={(working() && !props.liveTiming) || props.message.timing}>
+        <TurnReceipt timing={props.message.timing} live={working() && !props.liveTiming} developer={props.developer} />
       </Show>
       {/* The per-turn "N files changed" strip is deliberately NOT rendered. It repeated what the tool
           rows above it already say, and it re-listed build output on every rebuild (`pi.exe` after each
@@ -423,8 +436,8 @@ function ElapsedTime(props: { startedAt: number; completedAt?: number }) {
   return <span data-slot="native-turn-elapsed">{seconds(elapsedMs(props.startedAt, props.completedAt, now()))}</span>
 }
 
-function TurnReceipt(props: { message: SessionMessageAssistant; live: boolean; developer?: boolean }) {
-  const timing = () => props.message.timing
+function TurnReceipt(props: { timing?: TurnTiming; live: boolean; developer?: boolean }) {
+  const timing = () => props.timing
   const liveLabel = () => {
     const value = timing()
     const phase = value ? currentPhase(value) : undefined
