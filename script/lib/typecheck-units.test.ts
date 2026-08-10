@@ -112,15 +112,17 @@ describe("typecheck run units", () => {
     expect(units.find((unit) => unit.dir === "script")?.name).toBe(`${TYPECHECK_PREFIX}repo-script`)
   })
 
-  test("never runs the repo root, whose typecheck fans out through turbo", () => {
-    // The root DOES declare `typecheck` — `bun turbo typecheck`, which runs every package in PARALLEL.
-    // On a 15.7 GB box with `packages/novaclaw` alone peaking ~3.8 GB that is the documented false
-    // wall-clock kill (AGENTS.md pitfall #1). The exclusion is load-bearing, so assert the premise too.
-    expect(readManifest(join(ROOT, "package.json")).scripts?.typecheck).toContain("turbo")
+  test("never recurses into the repo-root safe typecheck facade", () => {
+    // The root command delegates to this gate's sequential typecheck phase. Discovering it as a
+    // package unit would recurse forever, so exclusion remains load-bearing even after the unsafe
+    // Turbo fan-out was retired.
+    expect(readManifest(join(ROOT, "package.json")).scripts?.typecheck).toBe(
+      "bun run script/test.ts --only=typecheck",
+    )
     for (const unit of typecheckUnits(ROOT)) {
       expect(unit.dir).not.toBe("")
       expect(unit.dir).not.toBe(".")
-      expect(unit.script).not.toContain("turbo")
+      expect(unit.script).not.toContain("script/test.ts")
     }
   })
 

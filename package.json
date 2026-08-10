@@ -11,7 +11,7 @@
     "dev:desktop": "bun --cwd packages/desktop dev",
     "dev:web": "bun --cwd packages/app dev",
     "lint": "oxlint",
-    "typecheck": "bun turbo typecheck",
+    "typecheck": "bun run script/test.ts --only=typecheck",
     "hooks:install": "bun run script/install-hooks.ts",
     "version:sync": "bun run script/sync-version.ts",
     "test": "bun run script/test.ts",

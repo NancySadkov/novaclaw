@@ -740,8 +740,8 @@ const promotedSubdirs = new Set<string>(PROMOTED_NOVACLAW_SUBDIRS)
  * *One at a time*, because `tsgo --noEmit` on `packages/novaclaw` peaks **~3.8 GB for ~21 s** on a
  * 15.7 GB box, and GOMAXPROCS tuning measured WORSE, not better (4.55 GB — AGENTS.md pitfall #1). Two
  * of these at once, or one alongside a suite, is the documented path to a false wall-clock kill and to
- * pagefile thrashing that is written to the SSD. `bun turbo typecheck` fans out and is exactly what we
- * must not do here.
+ * pagefile thrashing that is written to the SSD. The root `bun run typecheck` delegates back to this
+ * sequential phase; do not restore Turbo's parallel fan-out there.
  *
  * ⚠️ These units make `tsgo` visible to heavy-guard's HEAVY_PATTERNS, so a CONCURRENT `bun run test` or
  * desktop prebuild will now refuse while this phase is running. That is the guard working — but note it

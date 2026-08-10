@@ -22,10 +22,10 @@
  * `typecheck-units.test.ts` pins that the discovery still sees the real tree and is negative-controlled
  * so it cannot pass vacuously.
  *
- * ⚠️ The repo ROOT is deliberately not a unit even though `package.json` has a `typecheck` script: it is
- * `bun turbo typecheck`, which fans every package out in PARALLEL. On a 15.7 GB box that is the
- * documented path to a false wall-clock kill — `packages/novaclaw` alone peaks ~3.8 GB (AGENTS.md
- * pitfall #1). The gate runs one package at a time, in-process order, on purpose.
+ * ⚠️ The repo ROOT is deliberately not a unit even though `package.json` has a `typecheck` script:
+ * that script is the safe facade back into `script/test.ts --only=typecheck`. Including it here
+ * would recurse. The facade replaced Turbo's parallel fan-out after it exhausted commit beside a
+ * live dev build on 2026-08-10; this gate still runs one package at a time on purpose.
  *
  * ─── the hole THIS module used to sit inside (closed 2026-07-29) ───────────────────────────────────
  * Discovery is manifest-driven, so for a year the repo-root `script/` directory — `test.ts`, the whole
