@@ -143,6 +143,20 @@ describe("resolveConfig — simple fields (undefined = inherit)", () => {
     expect(walk("override").memory).toBe(false)
   })
 
+  test("short Chat is sparse: absent inherits and an explicit child posture wins", () => {
+    expect(resolveConfig(DEFAULTS, []).shortChat).toBeUndefined()
+    expect(resolveConfig(DEFAULTS, [{ shortChat: true }, {}]).shortChat).toBe(true)
+    expect(resolveConfig(DEFAULTS, [{ shortChat: true }, { shortChat: false }]).shortChat).toBe(false)
+    const sessions: Record<string, SessionLike> = {
+      root: { id: "root", shortChat: true },
+      child: { id: "child", parentID: "root" },
+      override: { id: "override", parentID: "root", shortChat: false },
+    }
+    const walk = (id: string) => Effect.runSync(resolveSessionConfig(DEFAULTS, id, (x) => Effect.succeed(sessions[x])))
+    expect(walk("child").shortChat).toBe(true)
+    expect(walk("override").shortChat).toBe(false)
+  })
+
   test("B10 responder: defaults to nova, inherits down the chain, child can override", () => {
     expect(resolveConfig(DEFAULTS, []).responder).toBe("nova")
     // A parent under operator control → a child with no responder inherits "operator".

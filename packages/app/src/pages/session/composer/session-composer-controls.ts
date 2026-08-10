@@ -102,6 +102,7 @@ export function createPromptInputController(input: {
           safeMode?: boolean
           contextBudget?: boolean
           memory?: boolean
+          shortChat?: boolean
         }
       | undefined
     const config = sync().data.config as Partial<Record<SessionFeatureName, { enabled?: boolean }>> & {
@@ -120,7 +121,9 @@ export function createPromptInputController(input: {
           ? config.context?.enabled !== false
           : feature === "memory"
             ? (config as { memory?: { enabled?: boolean } }).memory?.enabled !== false
-            : config[feature]?.enabled === true
+            : feature === "shortChat"
+              ? false
+              : config[feature]?.enabled === true
     const overrides: Record<SessionFeatureName, boolean | undefined> = {
       introspection: override("introspection"),
       quality: override("quality"),
@@ -131,6 +134,7 @@ export function createPromptInputController(input: {
       safeMode: override("safeMode"),
       contextBudget: override("contextBudget"),
       memory: override("memory"),
+      shortChat: override("shortChat"),
     }
     const current: Record<SessionFeatureName, boolean> = {
       introspection: overrides.introspection ?? baseline("introspection"),
@@ -142,6 +146,7 @@ export function createPromptInputController(input: {
       safeMode: overrides.safeMode ?? baseline("safeMode"),
       contextBudget: overrides.contextBudget ?? baseline("contextBudget"),
       memory: overrides.memory ?? baseline("memory"),
+      shortChat: overrides.shortChat ?? baseline("shortChat"),
     }
     return { current, overrides }
   }

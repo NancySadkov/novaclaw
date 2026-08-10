@@ -437,6 +437,7 @@ export type GlobalEvent = {
             | "safeMode"
             | "contextBudget"
             | "memory"
+            | "shortChat"
           enabled: boolean | null
         }
       }
@@ -2186,6 +2187,7 @@ export type SessionV2Info = {
   safeMode?: boolean
   contextBudget?: boolean
   memory?: boolean
+  shortChat?: boolean
   providerRecovery?: SessionProviderRecovery
   result?: unknown
   cost: number
@@ -2854,6 +2856,7 @@ export type SyncEventSessionNextFeatureSwitched = {
         | "safeMode"
         | "contextBudget"
         | "memory"
+        | "shortChat"
       enabled: boolean | null
     }
   }
@@ -4547,6 +4550,7 @@ export type SessionNextFeatureSwitched = {
       | "safeMode"
       | "contextBudget"
       | "memory"
+      | "shortChat"
     enabled: boolean | null
   }
 }
@@ -6861,6 +6865,7 @@ export type EventSessionNextFeatureSwitched = {
       | "safeMode"
       | "contextBudget"
       | "memory"
+      | "shortChat"
     enabled: boolean | null
   }
 }
@@ -11274,6 +11279,7 @@ export type V2SessionCreateData = {
     safeMode?: boolean
     contextBudget?: boolean
     memory?: boolean
+    shortChat?: boolean
   }
   path?: never
   query?: never
@@ -11940,6 +11946,7 @@ export type V2SessionSwitchFeatureData = {
       | "safeMode"
       | "contextBudget"
       | "memory"
+      | "shortChat"
     enabled: boolean | null
   }
   path: {

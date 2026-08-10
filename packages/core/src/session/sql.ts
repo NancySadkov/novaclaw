@@ -82,6 +82,8 @@ export const SessionTable = sqliteTable(
     context_budget: integer({ mode: "boolean" }),
     // Per-session automatic memory stance. NULL = inherit; the instance Memory switch remains the ceiling.
     memory: integer({ mode: "boolean" }),
+    // NULL inherits; true selects the short conversational posture without overwriting permission mode.
+    short_chat: integer({ mode: "boolean" }),
     provider_recovery: text({ mode: "json" }).$type<StoredProviderRecovery>(),
     result: text({ mode: "json" }).$type<unknown>(),
     ...Timestamps,

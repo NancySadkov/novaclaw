@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "f3838c01-f7fd-47c2-89dc-5dae3adc81db",
+  "id": "c7351b96-5934-4473-9ea5-6802c49e4ab1",
   "prevIds": [
-    "1b65ad69-e218-4962-83e1-c08e0eb6da4d"
+    "f3838c01-f7fd-47c2-89dc-5dae3adc81db"
   ],
   "ddl": [
     {
@@ -3059,6 +3059,16 @@
       "default": null,
       "generated": null,
       "name": "memory",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "short_chat",
       "entityType": "columns",
       "table": "session"
     },

@@ -365,6 +365,8 @@ export interface SessionConfig {
   readonly contextBudget?: boolean
   /** Tri-state: automatic recall and learning for this chat. Absent = inherit, then instance Memory. */
   readonly memory?: boolean
+  /** Tri-state product posture. True = short Chat; false = Full Agent; absent = inherit. */
+  readonly shortChat?: boolean
   readonly strict?: StrictOverride
 }
 
@@ -455,6 +457,7 @@ export interface EffectiveConfig {
   /** Tri-state: enforce typed context shares in this chat. Absent = inherit, then the instance Tune. */
   readonly contextBudget?: boolean
   readonly memory?: boolean
+  readonly shortChat?: boolean
   /** The nearest per-session Strict override on the chain; `undefined` = none (use global config). */
   readonly strict?: StrictOverride
 }
@@ -526,6 +529,7 @@ export interface SessionLike {
   readonly safeMode?: boolean
   readonly contextBudget?: boolean
   readonly memory?: boolean
+  readonly shortChat?: boolean
 }
 
 /**
@@ -733,6 +737,7 @@ export const SESSION_CONFIG_FIELDS = {
   safeMode: { column: "safe_mode", merge: "override" },
   contextBudget: { column: "context_budget", merge: "override" },
   memory: { column: "memory", merge: "override" },
+  shortChat: { column: "short_chat", merge: "override" },
   strict: { column: "strict", merge: "override" },
 } as const satisfies Readonly<Record<keyof SessionConfig, SessionConfigField>>
 

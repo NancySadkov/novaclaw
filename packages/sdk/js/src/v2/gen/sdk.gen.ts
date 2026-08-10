@@ -2864,6 +2864,7 @@ class ApiV2Session extends NovaClawApiClient {
       safeMode?: boolean
       contextBudget?: boolean
       memory?: boolean
+      shortChat?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -2892,6 +2893,7 @@ class ApiV2Session extends NovaClawApiClient {
       safeMode: parameters?.["safeMode"],
       contextBudget: parameters?.["contextBudget"],
       memory: parameters?.["memory"],
+      shortChat: parameters?.["shortChat"],
     }
     return (options?.client ?? this.client).post<T.V2SessionCreateResponses, T.V2SessionCreateErrors, ThrowOnError>({
       url: "/api/session",
@@ -3233,6 +3235,7 @@ class ApiV2Session extends NovaClawApiClient {
         | "safeMode"
         | "contextBudget"
         | "memory"
+        | "shortChat"
       enabled: boolean | null
     },
     options?: Options<never, ThrowOnError>,

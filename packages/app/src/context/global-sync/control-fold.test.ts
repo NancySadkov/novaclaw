@@ -9,6 +9,11 @@ import { applyControlPatch, controlPatch } from "./control-fold"
 const envelope = (type: string, properties: Record<string, unknown>) => ({ type, properties })
 
 describe("controlPatch", () => {
+  test("folds the short Chat posture into the live session record", () => {
+    expect(
+      controlPatch(envelope("session.next.feature.switched", { sessionID: "s", feature: "shortChat", enabled: true })),
+    ).toEqual({ sessionID: "s", patch: { shortChat: true } })
+  })
   test("maps every switch event onto its record field", () => {
     expect(controlPatch(envelope("session.next.agent.switched", { sessionID: "s", agent: "review" }))).toEqual({
       sessionID: "s",

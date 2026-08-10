@@ -44,7 +44,8 @@ export function controlPatch(event: Envelope): ControlPatch | undefined {
         feature !== "askBeforeChanges" &&
         feature !== "safeMode" &&
         feature !== "contextBudget" &&
-        feature !== "memory"
+        feature !== "memory" &&
+        feature !== "shortChat"
       )
         return undefined
       return { sessionID, patch: { [feature]: props.enabled ?? undefined } }

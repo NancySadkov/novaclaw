@@ -16,6 +16,7 @@ export type ComposerFeature =
   | "safeMode"
   | "contextBudget"
   | "memory"
+  | "shortChat"
 export type ComposerMode = "interactive" | "auto-prompting" | "goal-oriented"
 
 // The Remote-chat section (messenger-plan §6.2): where does THIS chat live remotely? The trust
@@ -85,6 +86,7 @@ const COMPOSER_FEATURES: readonly ComposerFeature[] = [
   "surgicalEdits",
   "contextBudget",
   "memory",
+  "shortChat",
   "introspection",
   "quality",
   "affective",

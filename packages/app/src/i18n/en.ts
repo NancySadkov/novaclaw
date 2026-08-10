@@ -473,6 +473,9 @@ export const dict = {
   "prompt.features.memory.title": "Memory",
   "prompt.features.memory.description":
     "Let this chat recall what you have taught Nova and save useful new memories after it answers. Turn it off for a faster one-off conversation Nova will not remember later; the instance-wide Memory switch can still keep every chat off.",
+  "prompt.features.shortChat.title": "Short chat",
+  "prompt.features.shortChat.description":
+    "Use Nova for fast local conversation without project access or memory. Turn this off for Full Agent, which can recall context and work in this folder.",
   "prompt.features.thinkingBudget.title": "Thinking budget",
   "prompt.features.thinkingBudget.description":
     "Caps how long the model reasons before it must answer, and stops it looping. Turn off to let it think as long as it wants — useful for comparing the two on the same task.",

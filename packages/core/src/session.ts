@@ -173,6 +173,7 @@ type CreateInput = {
   safeMode?: boolean
   contextBudget?: boolean
   memory?: boolean
+  shortChat?: boolean
   location: Location.Ref
   // F1c fork: a fork seeds its record from the source (title + cloned metadata).
   title?: string
@@ -308,6 +309,7 @@ export interface Interface {
       | "safeMode"
       | "contextBudget"
       | "memory"
+      | "shortChat"
     enabled: boolean | null
   }) => Effect.Effect<void, NotFoundError>
   readonly switchType: (input: {
@@ -1084,6 +1086,7 @@ export const layer = Layer.effect(
             safeMode: inherited.safeMode,
             contextBudget: inherited.contextBudget,
             memory: inherited.memory,
+            shortChat: inherited.shortChat,
           },
         )
         const sourceRows = yield* db

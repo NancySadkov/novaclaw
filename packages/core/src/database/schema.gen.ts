@@ -461,6 +461,7 @@ export default {
           \`safe_mode\` integer,
           \`context_budget\` integer,
           \`memory\` integer,
+          \`short_chat\` integer,
           \`provider_recovery\` text,
           \`result\` text,
           \`time_created\` integer NOT NULL,

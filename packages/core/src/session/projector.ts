@@ -380,7 +380,9 @@ export const layer = Layer.effectDiscard(
                       ? { context_budget: event.data.enabled, ...stamp }
                       : event.data.feature === "memory"
                         ? { memory: event.data.enabled, ...stamp }
-                        : { affective: event.data.enabled, ...stamp }
+                        : event.data.feature === "shortChat"
+                          ? { short_chat: event.data.enabled, ...stamp }
+                          : { affective: event.data.enabled, ...stamp }
       return db
         .update(SessionTable)
         .set(patch)

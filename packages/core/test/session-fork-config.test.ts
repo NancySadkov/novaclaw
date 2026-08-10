@@ -103,6 +103,7 @@ const createFullyConfigured = (session: SessionV2.Interface, parentID?: SessionS
     yield* session.switchFeature({ sessionID: created.id, feature: "safeMode", enabled: true })
     yield* session.switchFeature({ sessionID: created.id, feature: "contextBudget", enabled: true })
     yield* session.switchFeature({ sessionID: created.id, feature: "memory", enabled: false })
+    yield* session.switchFeature({ sessionID: created.id, feature: "shortChat", enabled: true })
     return yield* session.get(created.id)
   })
 
@@ -140,6 +141,7 @@ describe("SESSION_CONFIG_FIELDS — the descriptor is honest about what a row ca
         safeMode: true,
         contextBudget: true,
         memory: true,
+        shortChat: true,
         strict: { enabled: true },
         device: "spark",
         controlBinding: ":99",

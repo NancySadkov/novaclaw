@@ -217,7 +217,7 @@ const createAndReload = (body: Record<string, unknown>) =>
 describe("session.create carries every per-chat switch a draft can stage", () => {
   // The premise of everything below. If this drops to three again, the rest of the file would still
   // pass while testing nothing that matters.
-  test("the kernel declares the nine switches this file is about", () => {
+  test("the kernel declares the ten switches this file is about", () => {
     expect(
       [...FEATURES].map(String).sort(),
       "SessionFeature.Name changed. Every case below iterates it, so they will keep passing over the NEW set — but a switch is only real once the payload schema (packages/protocol), the handler (./session.ts) AND the composer's create body (packages/app/.../prompt-input/submit.ts) all carry it. Check those three, then update this list.",
@@ -228,6 +228,7 @@ describe("session.create carries every per-chat switch a draft can stage", () =>
         "contextBudget",
         "introspection",
         "memory",
+        "shortChat",
         "quality",
         "safeMode",
         "surgicalEdits",

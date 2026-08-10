@@ -306,6 +306,7 @@ export const makeSessionGroups = <
             safeMode: Schema.Boolean.pipe(Schema.optional),
             contextBudget: Schema.Boolean.pipe(Schema.optional),
             memory: Schema.Boolean.pipe(Schema.optional),
+            shortChat: Schema.Boolean.pipe(Schema.optional),
           }),
           success: Schema.Struct({ data: Session.Info }),
         })

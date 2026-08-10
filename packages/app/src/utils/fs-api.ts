@@ -339,6 +339,7 @@ export type SessionFeatureName =
   | "safeMode"
   | "contextBudget"
   | "memory"
+  | "shortChat"
 
 export function switchFeature(
   server: ServerConnection.HttpBase,

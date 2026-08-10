@@ -33,5 +33,6 @@ export const Name = Schema.Literals([
   "safeMode",
   "contextBudget",
   "memory",
+  "shortChat",
 ])
 export type Name = typeof Name.Type

@@ -77,6 +77,7 @@ export const Info = Schema.Struct({
   safeMode: Schema.Boolean.pipe(optional),
   contextBudget: Schema.Boolean.pipe(optional),
   memory: Schema.Boolean.pipe(optional),
+  shortChat: Schema.Boolean.pipe(optional),
   providerRecovery: SessionProviderRecovery.Info.pipe(optional),
   result: Schema.Unknown.pipe(optional),
   cost: Schema.Finite,
