@@ -17,6 +17,7 @@ import { ProviderV2 } from "@novaclaw/core/provider"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
+import { ShortChat } from "@novaclaw/core/session/runner/short-chat"
 import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 import { FSUtil } from "../src/fs-util"
@@ -64,6 +65,9 @@ const residentTools = [
   "tool_call",
   "tool_manual",
   "tool_search",
+  // Resident because Short Chat has no discovery horizon: this is its sole consent-bound escape.
+  // The runner hides it from Full Agent, so only Chat pays its provider-prefix cost.
+  "upgrade_chat",
   "wait",
   "webfetch",
   "websearch",
@@ -193,8 +197,12 @@ describe("LocationServiceMap", () => {
           // pages themselves cost nothing until a session actually opens one, so the resident half is
           // **13% of the manual** and the rest is genuinely on demand. `docs.test.ts` pins that split
           // mechanically — a page body leaking into the description turns it red.
-          const residentBytes = Buffer.byteLength(JSON.stringify(blockedState.tools))
+          const fullAgentTools = blockedState.tools.filter((tool) => ShortChat.offered(undefined, tool.name))
+          const residentBytes = Buffer.byteLength(JSON.stringify(fullAgentTools))
           expect(residentBytes).toBeLessThan(32_500) // observed 31,820 on 2026-08-07 (97.9% of 32,500)
+          const chatTools = blockedState.tools.filter((tool) => ShortChat.offered(true, tool.name))
+          expect(chatTools.map((tool) => tool.name)).toEqual(["upgrade_chat"])
+          expect(Buffer.byteLength(JSON.stringify(chatTools))).toBeLessThan(1_500)
           // The second location boots AFTER the policy is gone — its boot snapshot allows the
           // provider, and the first location's catalog transform never leaked into it.
           yield* settings.remove("experimental")

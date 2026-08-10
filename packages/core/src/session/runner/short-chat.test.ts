@@ -10,6 +10,7 @@ describe("ShortChat policy", () => {
   test("is opt-in and offers only the consent-bound upgrade tool", () => {
     expect(ShortChat.enabled(undefined)).toBe(false)
     expect(ShortChat.offered(undefined, "read")).toBe(true)
+    expect(ShortChat.offered(undefined, ShortChat.UPGRADE_TOOL)).toBe(false)
     expect(ShortChat.offered(true, ShortChat.UPGRADE_TOOL)).toBe(true)
     for (const name of ["read", "write", "bash", "spawn", "tool_search"])
       expect(ShortChat.offered(true, name), name).toBe(false)

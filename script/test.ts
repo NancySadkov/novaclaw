@@ -857,7 +857,10 @@ for (const r of results) {
       ? "\x1b[33mPINN\x1b[0m"
       : "\x1b[31mFAIL\x1b[0m"
   const degraded = r.shards ? `sharded ×${r.shards} (DEGRADED — composition differs from a whole run)` : ""
-  const note = isPinned(r) ? `${r.failing.length} pinned failure(s) — see ${BASELINE_PATH}` : r.note
+  const failures = r.failing.length ? `failing: ${r.failing.join("; ")}` : ""
+  const note = isPinned(r)
+    ? `${r.failing.length} pinned failure(s) — see ${BASELINE_PATH}`
+    : [failures, r.note].filter(Boolean).join(" · ")
   process.stdout.write(
     `  ${tag}${r.shards ? "" : " "} ${r.name.padEnd(30)} ${(r.ms / 1000).toFixed(1)}s  ${[degraded, note].filter(Boolean).join("  ·  ")}\n`,
   )
