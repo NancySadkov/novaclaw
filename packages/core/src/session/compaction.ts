@@ -81,6 +81,13 @@ type Settings = {
    * value must keep behaving exactly as it did (inert), and only an explicit `true` erases history.
    */
   readonly prune: boolean
+  /**
+   * Whether a cycle may write an LLM summary, or stops after the cheap prune (`prune only`).
+   *
+   * ⚠️ Defaults TRUE, the opposite of `prune`, and for the opposite reason: summarising is what has
+   * always happened, so an absent value must keep doing it. Only an explicit `false` stops it.
+   */
+  readonly summarize: boolean
 }
 
 type Dependencies = {
@@ -163,8 +170,11 @@ export const settings = (documents: readonly Config.Entry[]) => {
       buffer: current.buffer ?? result.buffer,
       tokens: current.keep?.tokens ?? result.tokens,
       prune: current.prune ?? result.prune,
+      // Default TRUE: prune-then-summarise is what has always shipped, so an absent setting must not
+      // silently turn summarising off for every existing install.
+      summarize: current.summarize ?? result.summarize,
     }),
-    { auto: true, buffer: DEFAULT_BUFFER, tokens: DEFAULT_KEEP_TOKENS, prune: false },
+    { auto: true, buffer: DEFAULT_BUFFER, tokens: DEFAULT_KEEP_TOKENS, prune: false, summarize: true },
   )
 }
 
@@ -259,6 +269,17 @@ export const make = (dependencies: Dependencies) => {
     if (context === undefined || context <= 0) return false
     const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
     const entries = yield* pruneCheapTier(input.entries)
+    // PRUNE ONLY (`compaction.summarize: false`). The cheap tier has already run and its reclaim is
+    // durable for this cycle; stopping here is the whole point of the setting. Returning `false`
+    // means "no compaction message was written", which is exactly true — and the caller's contract
+    // is already that a declined cycle leaves the transcript alone.
+    //
+    // ⚠️ Deliberately AFTER the prune, not instead of it: the reclaim is the part worth having, and
+    // gating the tier itself is what `prune: false` already does.
+    if (!config.summarize) {
+      yield* Log.event("session.compaction.prune.only", { "session.id": input.sessionID })
+      return false
+    }
     const selected = selectContext(entries, config.tokens)
     const previousSummary = entries.find((entry) => entry.message.type === "compaction")?.message
     if (!selected || (selected.head.length === 0 && previousSummary?.type !== "compaction")) return false

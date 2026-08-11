@@ -322,11 +322,21 @@ describe("the prune flag is honoured, and absent means inert", () => {
       document({ prune: true, buffer: 1_000, auto: false }),
       document({ prune: false }),
     ])
-    expect(folded).toEqual({ auto: false, buffer: 1_000, tokens: 8_000, prune: false })
+    expect(folded).toEqual({ auto: false, buffer: 1_000, tokens: 8_000, prune: false, summarize: true })
+  })
+
+  // `prune only` — the tier ships, the summary does not. ⚠️ `summarize` defaults TRUE, the opposite
+  // of `prune`, because summarising is what has always happened: an absent value must keep doing it,
+  // and only an explicit false stops it. A default of false would silently change every install.
+  test("summarize defaults TRUE and only an explicit false turns it off", () => {
+    expect(SessionCompaction.settings([]).summarize).toBe(true)
+    expect(SessionCompaction.settings([document({ prune: true })]).summarize).toBe(true)
+    expect(SessionCompaction.settings([document({ summarize: false })]).summarize).toBe(false)
+    expect(SessionCompaction.settings([document({ summarize: true })]).summarize).toBe(true)
   })
 
   test("the other keys still fold — the reduce was not broken by adding prune", () => {
-    expect(SessionCompaction.settings([])).toEqual({ auto: true, buffer: 20_000, tokens: 8_000, prune: false })
+    expect(SessionCompaction.settings([])).toEqual({ auto: true, buffer: 20_000, tokens: 8_000, prune: false, summarize: true })
     expect(SessionCompaction.settings([document({ keep: { tokens: 2_000 } })]).tokens).toBe(2_000)
   })
 })
@@ -417,5 +427,4 @@ describe("the cheap tier runs inside compactAfterOverflow, ahead of the summariz
     expect(on.compacted).toBe(true)
     expect(on.prompt).toBe(off.prompt)
     expect(on.prompt).not.toContain(CompactionPrune.ERASED_NOTICE)
-  })
-})
+  })})

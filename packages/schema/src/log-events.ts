@@ -878,6 +878,17 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/schedule/scheduler.ts",
   },
+  /**
+   * A compaction cycle stopped after the cheap prune because `compaction.summarize` is false.
+   * Informational: the reclaim happened, no summary was written, and the transcript is untouched.
+   */
+  "session.compaction.prune.only": {
+    level: "info",
+    message: "compaction pruned without summarising",
+    attributes: { "session.id": "correlate" },
+    content: "correlated",
+    file: "packages/core/src/session/compaction.ts",
+  },
   /** A directory had no instance yet, so one is being created. 1146 lines. */
   "instance.store.create": {
     level: "info",
