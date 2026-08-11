@@ -34,7 +34,14 @@
   "compilerOptions": {
     // Stated, not inherited from whatever happens to be in `node_modules/@types`. The mirror of the
     // `"types": ["node"]` pin in `tsconfig.json`: this half may see bun, that half may not.
-    "types": ["node", "bun"]
+    "types": ["node", "bun"],
+    // ⚠️ DOM, because a test may consume `src` and `src` is the BROWSER-FACING half. The comment
+    // above already sanctions the overlap ("a consumer should compile the thing it consumes"), and
+    // until 2026-08-11 the only test that used it pulled in `types.gen.ts`, which is pure types.
+    // The first test to import `v2/client.ts` — which handles `Request`, `URL` and `fetch` — turned
+    // that into `Cannot find name 'BodyInit'` and an unresolved `new Request(url, request)`: errors
+    // in shipping code, invented by compiling it under libs it never runs without.
+    "lib": ["esnext", "dom", "dom.iterable"]
   },
   "include": ["test", "script"]
 }

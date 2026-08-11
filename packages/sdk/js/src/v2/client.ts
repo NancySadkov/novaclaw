@@ -10,12 +10,37 @@ import { NovaclawClient } from "./gen/sdk.gen.js"
 import { wrapClientError } from "../error-interceptor.js"
 export { type Config as NovaclawClientConfig, NovaclawClient }
 
+/**
+ * The value to carry in the QUERY, given what the request's header holds and what the client was
+ * configured with.
+ *
+ * ⚠️ **A header and a query param want the value in DIFFERENT forms, and mixing them corrupts the
+ * directory.** A header cannot carry arbitrary bytes, so `x-novaclaw-directory` is
+ * percent-ENCODED and the server decodes it. A query param is encoded by `URLSearchParams` on the
+ * way out and decoded on the way in, so its value must be RAW — the server reads
+ * `location[directory]` verbatim, exactly once decoded by the URL parser.
+ *
+ * So every branch here must return the RAW path. The `encode(fallback)` case already did that; the
+ * no-fallback case did not, and returned the still-encoded header instead. Measured 2026-08-11
+ * against a live instance: `GET /api/location` with a manually set header and no configured
+ * directory resolved to `C%3A%5CUsers%5C…` — the literal encoded string, as a path.
+ */
 function pick(value: string | null, fallback?: string, encode?: (value: string) => string) {
   if (!value) return
-  if (!fallback) return value
+  if (!fallback) return decode(value, encode)
   if (value === fallback) return fallback
   if (encode && value === encode(fallback)) return fallback
   return value
+}
+
+/** Undo the header's encoding. A value that is not valid percent-encoding is already raw. */
+function decode(value: string, encode?: (value: string) => string) {
+  if (!encode) return value
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
 }
 
 function rewrite(request: Request, values: { directory?: string; workspace?: string }) {
