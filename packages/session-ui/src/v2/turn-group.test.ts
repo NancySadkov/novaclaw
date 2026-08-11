@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { answerStart, groupTurns, type AnswerPart } from "./turn-group"
+import { answerStart, groupTurns, stableGroups, type AnswerPart } from "./turn-group"
 
 interface Msg {
   readonly type: string
@@ -98,3 +98,48 @@ describe("answerStart", () => {
     expect(answerStart([])).toBe(0)
   })
 })
+
+describe("stableGroups — why the chat jumped to the top after a tool result", () => {
+  const msg = (id: string) => ({ id })
+  const group = (lead: unknown, body: unknown[]) => ({ lead, body }) as never
+
+  // The regression itself: recomputing produces equal-but-new objects, and `<For>` keys by
+  // reference — so without this every turn is destroyed and rebuilt, the transcript's height
+  // collapses, and the browser clamps scrollTop to the top.
+  test("returns the SAME array when nothing changed, so <For> re-renders nothing", () => {
+    const a = msg("u1")
+    const b = msg("a1")
+    const previous = [group(a, [b])]
+    const recomputed = [group(a, [b])]
+    expect(stableGroups(previous, recomputed)).toBe(previous)
+  })
+
+  test("keeps the identity of untouched turns while a new one is added", () => {
+    const lead = msg("u1")
+    const body = msg("a1")
+    const first = group(lead, [body])
+    const second = group(msg("u2"), [msg("a2")])
+    // A recompute rebuilds the first turn as an EQUAL but distinct object; only the second is new.
+    const out = stableGroups([first], [group(lead, [body]), second])
+    expect(out[0]).toBe(first)
+    expect(out[1]).toBe(second)
+  })
+
+  test("a turn whose body GREW gets a new identity, so it re-renders", () => {
+    const lead = msg("u1")
+    const one = msg("a1")
+    const previous = [group(lead, [one])]
+    const out = stableGroups(previous, [group(lead, [one, msg("a2")])])
+    expect(out[0]).not.toBe(previous[0])
+  })
+
+  // ⚠️ Comparing ids would be wrong here: a reconcile can REPLACE a row with a fresh object
+  // carrying the same id, and reusing the old group would freeze that turn's render.
+  test("a REPLACED message object breaks identity even though its id is unchanged", () => {
+    const lead = msg("u1")
+    const previous = [group(lead, [msg("a1")])]
+    const out = stableGroups(previous, [group(lead, [msg("a1")])])
+    expect(out[0]).not.toBe(previous[0])
+  })
+})
+

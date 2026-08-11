@@ -77,3 +77,42 @@ export function answerStart(content: readonly AnswerPart[]): number {
   }
   return start
 }
+
+/**
+ * Reuse the previous group objects wherever nothing in them changed.
+ *
+ * 🔴 **The scroll jump (owner, 2026-08-11): "after tool use the chat view gets scrolled to the top,
+ * despite it being positioned at the bottom".** Solid's `<For>` keys by REFERENCE, and `groupTurns`
+ * builds fresh `{lead, body}` objects on every recompute — so any event that touches a message (a
+ * tool result landing, a streamed delta) produced an all-new array and `<For>` destroyed and rebuilt
+ * EVERY turn. The transcript's height collapses during that teardown, the browser clamps `scrollTop`
+ * to the smaller `scrollHeight`, and the user is at the top.
+ *
+ * ⚠️ The auto-scroll could not save it. The timeline re-sticks on `messages().length`, and a tool
+ * result does not change the length — it mutates a message already in the list. So the one signal
+ * that would have re-pinned never fired.
+ *
+ * Identity is compared on the MESSAGE OBJECTS, not on their ids. Store rows are reference-stable
+ * while they mutate, but a reconcile can REPLACE a row with a fresh object carrying the same id —
+ * matching on ids would then hand `<Turn>` a stale object and freeze that turn's render.
+ */
+export function stableGroups<T>(
+  previous: readonly TurnGroup<T>[],
+  next: readonly TurnGroup<T>[],
+): readonly TurnGroup<T>[] {
+  let changed = previous.length !== next.length
+  const out = next.map((group, index) => {
+    const old = previous[index]
+    if (
+      old !== undefined &&
+      old.lead === group.lead &&
+      old.body.length === group.body.length &&
+      old.body.every((message, i) => message === group.body[i])
+    )
+      return old
+    changed = true
+    return group
+  })
+  // Hand back the SAME array when nothing moved, so a `createMemo` wrapping this can bail out too.
+  return changed ? out : previous
+}

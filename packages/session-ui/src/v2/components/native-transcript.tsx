@@ -28,7 +28,7 @@ import type {
 import { isSteerText, stripSteerProvenance } from "@novaclaw/core/session/steer-provenance"
 import { SessionOrigin } from "@novaclaw/core/session/origin"
 import { isOptimistic, unqueuedPending } from "../message-fold"
-import { answerStart, groupTurns, type TurnGroup } from "../turn-group"
+import { answerStart, groupTurns, stableGroups, type TurnGroup } from "../turn-group"
 import { reasoningTokenLabel } from "./reasoning-count"
 import { Markdown } from "../../components/markdown"
 import { reasoningOpenDefault, toolOpenDefault, type ReasoningFoldMode } from "../reasoning-fold"
@@ -140,8 +140,15 @@ export function NativeTranscript(props: {
     visible().some((message) => message.type === "assistant" && !message.time.completed),
   )
   // A harness steer rides the `user` role, so the turn boundary is "a user message the USER wrote".
-  const turns = createMemo(() =>
-    groupTurns(visible(), (message) => message.type === "user" && !isSteerText(message.text)),
+  //
+  // ⚠️ `stableGroups` is load-bearing, not an optimisation. `<For>` keys by reference, so returning
+  // fresh group objects on every recompute rebuilds the WHOLE transcript on any tool result — which
+  // collapses the scroller's height and drops the reader at the top (owner, 2026-08-11).
+  const turns = createMemo<readonly TurnGroup<SessionMessage>[]>((previous) =>
+    stableGroups(
+      previous ?? [],
+      groupTurns(visible(), (message) => message.type === "user" && !isSteerText(message.text)),
+    ),
   )
   const busy = createMemo(() => props.status?.type === "busy" || props.status?.type === "retry")
   const liveTiming = createMemo(() => (props.status?.type === "busy" ? props.status.timing : undefined))
