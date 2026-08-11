@@ -310,6 +310,76 @@ describe("SessionSpawner quotas use durable session facts", () => {
   )
 })
 
+// v0.2.0 prep: `SessionV2.spawn` is how a GLOBAL caller (the messenger dispatcher, and anything after
+// it) reaches this location-scoped seam. The delegation is only worth having if the quota comes with
+// it — the whole defect it closes is a caller that SPENDS the caps without checking them, because
+// the spawner counts by `parent_id` and does not care who wrote the row.
+describe("SessionV2.spawn — a global caller gets the same quota", () => {
+  it.live("counts children written by OTHER paths against its own fan-out cap", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+      const parent = yield* session.create({ location })
+
+      // Sixteen children created OFF-SEAM — exactly what the messenger dispatcher used to do. The
+      // cap is a DB count on `parent_id`, so it does not care who wrote the row.
+      for (let index = 0; index < SessionSpawner.MAX_SPAWN_CHILDREN; index++) {
+        yield* session.create({ location, parentID: parent.id })
+      }
+      // Backdate them past the rate window. Without this the RATE cap (10/min) fires first and the
+      // assertion below would pass for the wrong reason — the caps are 10 and 16, so a loop that
+      // fills the fan-out cap always trips the rate cap on its way there.
+      yield* db
+        .update(SessionTable)
+        .set({ time_created: Date.now() - 120_000 })
+        .where(eq(SessionTable.parent_id, parent.id))
+        .run()
+        .pipe(Effect.orDie)
+
+      const error = yield* session.spawn({ parentID: parent.id, text: PROMPT }).pipe(Effect.flip)
+      expect((error as SessionSpawner.SpawnLimitError).reason).toBe("children")
+      expect((error as SessionSpawner.SpawnLimitError).limit).toBe(SessionSpawner.MAX_SPAWN_CHILDREN)
+    }),
+  )
+
+  it.live("carries title, metadata and prompt origin — the fields whose absence caused the bypass", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const parent = yield* session.create({ location })
+
+      const spawned = yield* session
+        .spawn({
+          parentID: parent.id,
+          text: PROMPT,
+          type: "goal-oriented",
+          title: "summarize my inbox",
+          metadata: { messengerChatID: "self1" },
+          origin: {
+            via: "messenger",
+            driver: "fake",
+            accountID: "acct1",
+            chatID: "self1",
+            senderID: "u1",
+            senderName: "Nancy",
+            messageID: "m1",
+            trust: "operator",
+          },
+        })
+        .pipe(Effect.orDie)
+
+      const child = yield* session.get(spawned.id)
+      expect(child.title).toBe("summarize my inbox")
+      expect(child.metadata).toMatchObject({ messengerChatID: "self1" })
+      expect(child.type).toBe("goal-oriented")
+      expect(child.parentID).toBe(parent.id)
+      // The child inherits the PARENT's location — one lookup, so the two cannot disagree.
+      expect(child.location.directory).toBe(location.directory)
+    }),
+  )
+})
+
 describe("the spawn seam stays cycle-free", () => {
   // Why the wake is PUSHED into a dependency-free relay instead of the spawner PULLING
   // `SessionExecution`: the obvious edge is not a smell, it is fatal. `buildLocationServiceMap`

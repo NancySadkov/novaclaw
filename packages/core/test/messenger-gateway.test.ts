@@ -104,6 +104,42 @@ const makeSessionMock = () => {
         created.push(info)
         return info
       }),
+    // The CANONICAL seam the dispatcher now calls. Modelled as create-then-enqueue because that is
+    // what the real `SessionSpawner` does — the child appears in `created` and its opening prompt in
+    // `prompts`, so every assertion below still reads the same two arrays.
+    //
+    // ⚠️ Deliberately NOT modelling the quota. This mock exists to prove the dispatcher's routing and
+    // wording, and a fake refusal here would assert the mock rather than the product; the caps are
+    // the spawner's own to test, against a real database.
+    spawn: (input: {
+      parentID: string
+      text: string
+      title?: string
+      metadata?: Record<string, unknown>
+      type?: string
+      origin?: { via: string; trust?: string; driver?: string }
+      files?: { uri: string; mime: string; name?: string }[]
+    }) =>
+      Effect.sync(() => {
+        const parent = infos.get(input.parentID)
+        const info: MockInfo = {
+          id: `ses_child${++childSeq}`,
+          title: input.title,
+          location: parent?.location ?? { directory: WORKDIR },
+          metadata: input.metadata,
+          parentID: input.parentID,
+          type: input.type,
+        }
+        infos.set(info.id, info)
+        created.push(info)
+        prompts.push({
+          sessionID: info.id,
+          text: input.text,
+          ...(input.files === undefined ? {} : { files: input.files }),
+          ...(input.origin === undefined ? {} : { origin: input.origin }),
+        })
+        return { id: info.id, started: true }
+      }),
   } as never)
   return { layer, prompts, created, infos, sessionList, histories }
 }

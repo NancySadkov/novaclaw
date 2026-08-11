@@ -19,7 +19,7 @@ import { SessionTable } from "./sql"
 import { SessionInput } from "./input"
 import { SessionSchema } from "./schema"
 import { SessionMessage } from "./message"
-import { Prompt } from "./prompt"
+import { FileAttachment, Prompt } from "./prompt"
 import { Log } from "@novaclaw/schema/log"
 
 // Location-scoped seam that lets a running session (a location tool) SPAWN a child session — the OS
@@ -72,6 +72,21 @@ export interface SpawnInput {
   readonly priority?: number
   /** Child mode request — resolveConfig NARROWS it against the parent chain (never escalates). */
   readonly permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+  // ── what a non-tool caller needs, and what its absence used to cost ──────────────────────────
+  //
+  // ⚠️ These four landed 2026-08-11 because their absence is WHY callers bypassed this seam. The
+  // `spawn` tool needs none of them, so the seam only ever carried what one caller wanted, and the
+  // messenger dispatcher — which needs all four — hand-rolled `create({parentID}) + prompt()`
+  // instead, quietly losing the depth cap, the fan-out cap and the durable rate count with them.
+  // A seam that does not carry its callers' fields does not get used; it gets copied badly.
+  /** Human-readable child title. Omit for the default. */
+  readonly title?: string
+  /** Opaque per-caller routing state. The messenger's relay reads its dispatch target back out. */
+  readonly metadata?: Record<string, unknown>
+  /** Provenance for the opening prompt — the untrusted-content framing depends on it. */
+  readonly origin?: Prompt["origin"]
+  /** Attachments riding the opening prompt. */
+  readonly files?: readonly FileAttachment[]
 }
 
 export interface SpawnResult {
@@ -165,6 +180,8 @@ export const layer = Layer.effect(
                 type: input.type ?? "sub-agent",
                 priority: input.priority,
                 permissionMode: input.permissionMode,
+                title: input.title,
+                metadata: input.metadata,
                 location, // the parent's location = this seam's location
               },
             )
@@ -184,7 +201,11 @@ export const layer = Layer.effect(
         yield* SessionInput.admit(db, events, {
           id: SessionMessage.ID.create(),
           sessionID: child.id,
-          prompt: Prompt.make({ text: input.text }),
+          prompt: Prompt.fromUserMessage({
+            text: input.text,
+            ...(input.files === undefined ? {} : { files: input.files }),
+            ...(input.origin === undefined ? {} : { origin: input.origin }),
+          }),
           delivery: "queue",
         })
         // B1: RUN the child. Strictly after the admit — the executor's drain reads the queued row

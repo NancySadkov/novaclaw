@@ -655,30 +655,25 @@ const build = (options: Options) =>
           return
         }
         dispatchRate.set(key, [...recent, now])
-        const startedID = yield* Effect.gen(function* () {
-          const parent = yield* sessions.get(binding.sessionID as Session.ID)
-          const child = yield* sessions.create({
-            parentID: parent.id,
-            location: parent.location,
+        // THE CANONICAL SEAM (v0.2.0 prep, 2026-08-11). This was `create({parentID}) + prompt()`
+        // with a hand-rolled recipe copy beside it — a partial re-implementation that lost the
+        // depth cap, the ACTIVE fan-out cap and the durable rate count, while still SPENDING them:
+        // the spawner counts by `parent_id`, so children placed here made the agent's own `spawn`
+        // refuse with `reason: "children"`. One call now, and the quota is symmetric.
+        const startedID = yield* sessions
+          .spawn({
+            parentID: binding.sessionID as Session.ID,
+            text: prompt,
             type: "goal-oriented",
             title: MessengerPipeline.dispatchTitle(task),
             metadata: MessengerPipeline.dispatchMetadata({ accountID: account.id, chatID: event.chat.chatID }),
+            ...(origin === undefined ? {} : { origin }),
+            ...(files.length === 0 ? {} : { files: [...files] }),
           })
-          // Spawn parity (4D): the child inherits the console session's ad-hoc recipes. Best-effort.
-          yield* Effect.tryPromise(() => copySessionRecipes(parent.id, child.id, { root: sessionStoreRoot })).pipe(
-            Effect.ignore,
+          .pipe(
+            Effect.map((spawned) => spawned.id),
+            Effect.catch(() => Effect.succeed(undefined)),
           )
-          yield* sessions.prompt({
-            sessionID: child.id,
-            prompt: {
-              text: prompt,
-              ...(origin === undefined ? {} : { origin }),
-              ...(files.length === 0 ? {} : { files: [...files] }),
-            },
-            delivery: "queue",
-          })
-          return child.id
-        }).pipe(Effect.catch(() => Effect.succeed(undefined)))
         if (startedID === undefined) {
           yield* reply(
             connection,

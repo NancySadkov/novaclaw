@@ -254,6 +254,26 @@ export type Error = NotFoundError | MessageDecodeError | OperationUnavailableErr
 export interface Interface {
   readonly list: (input?: ListInput) => Effect.Effect<SessionSchema.Info[]>
   readonly create: (input: CreateInput) => Effect.Effect<SessionSchema.Info>
+  /**
+   * Fork a child of an existing session through the CANONICAL seam (v0.2.0 prep).
+   *
+   * `SessionSpawner` is location-scoped and most callers are not, which is why they reached for
+   * `create({parentID}) + prompt()` instead — and why they each grew their own partial version of
+   * what the seam already does. This resolves the parent's location and delegates, so a global
+   * caller gets the depth cap, the ACTIVE fan-out cap, the durable rate cap, ad-hoc recipe
+   * inheritance, the executor handoff, and the honest `started` flag, from one place.
+   *
+   * ⚠️ The quota is why this matters rather than being tidiness. The spawner's caps are DB counts on
+   * `parent_id`, so a child created off-seam still COUNTS against them: before this, messenger
+   * dispatch could place sixteen live children and then the agent's own `spawn` would refuse with
+   * `reason: "children"` — a quota spent by a path that checked none of it.
+   *
+   * ⚠️ Requires a parent. A ROOTLESS launch (Calendar) cannot use this and must not fake a parent to
+   * get in; see `notes/reports/session-launch-sites-2026-08-11.md`.
+   */
+  readonly spawn: (
+    input: SessionSpawner.SpawnInput,
+  ) => Effect.Effect<SessionSpawner.SpawnResult, NotFoundError | SessionSpawner.SpawnLimitError>
   readonly get: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info, NotFoundError>
   readonly messages: (input: {
     sessionID: SessionSchema.ID
@@ -581,6 +601,15 @@ export const layer = Layer.effect(
 
     const result = Service.of({
       create: Effect.fn("V2Session.create")((input) => createSessionRecord({ db, events, projects, store }, input)),
+      // The child inherits the PARENT's location, which is also the location whose graph owns the
+      // spawner — one lookup, so the two can never disagree.
+      spawn: Effect.fn("V2Session.spawn")(function* (input) {
+        const parent = yield* result.get(input.parentID)
+        return yield* SessionSpawner.Service.pipe(
+          Effect.flatMap((spawner) => spawner.spawn(input)),
+          Effect.provide(locations.get(parent.location)),
+        )
+      }),
       get: Effect.fn("V2Session.get")(function* (sessionID) {
         const session = yield* store.get(sessionID)
         if (!session) return yield* new NotFoundError({ sessionID })
