@@ -540,6 +540,24 @@ function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], wallcl
   const sample: PeakSampler.Sample = kind === "test" ? sampler.window(start, Date.now()) : { ticks: 0, ownTicks: 0 }
 
   let note = ""
+  // ⚠️ **Kill-on-breach, measuring phase.** `todo/test-speed.md` asks for runtime enforcement and
+  // says in the same breath to design it against the FALSE-KILL hazard first — core's wall-clock
+  // backstop already fired on healthy runs, and a kill is indistinguishable from a crash in a
+  // summary row. So the breach is REPORTED before anything is ever terminated on it.
+  //
+  // The gap this closes is narrow and real: `hostCommitPct` is read below only when a unit was
+  // ALREADY killed, to tell paging from a hang. A unit that ran green at 96% commit — one bad
+  // neighbour away from the 2026-07-20 OOM that took the laptop down — said nothing at all.
+  //
+  // The two lines are not new numbers. 75% is `heavy-guard.ts`'s admission line and the product's
+  // own `Pressure` warning; 90% is the product's floor (`storage/pressure.ts` DEFAULT_THRESHOLDS).
+  // One vocabulary across the gate and the app, so a breach here reads the same as a breach there.
+  // Enable a kill only after these lines have been observed across several full gates — a ceiling
+  // justified by one run inherits that run's expiry date.
+  if (sample.hostCommitPct !== undefined && sample.hostCommitPct >= 75) {
+    const level = sample.hostCommitPct >= 90 ? "FLOOR" : "warning"
+    note = `host commit ${level} — peaked ${sample.hostCommitPct}% while this unit ran (not killed; reporting phase)`
+  }
   if (timedOut) {
     // ⚠️ A wall-clock kill and a paging stall are indistinguishable in a summary row, and the second
     // is the FALSE FAILURE the memory guard exists to prevent — so when it happens anyway, say which
