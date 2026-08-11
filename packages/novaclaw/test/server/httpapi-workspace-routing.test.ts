@@ -31,6 +31,8 @@ import {
   WorkspaceRouteContext,
   workspaceRoutingLayer,
 } from "../../src/server/routes/instance/httpapi/middleware/workspace-routing"
+import { SessionLocationMiddleware, sessionLocationLayer } from "@novaclaw/server/middleware/session-location"
+import { ServerLocationServiceMap } from "../../src/location-service-map"
 import { HEADER as FenceHeader } from "../../src/server/shared/fence"
 import { resetDatabase } from "../fixture/db"
 import { workspaceLayerWithRuntimeFlags } from "../fixture/workspace"
@@ -255,6 +257,61 @@ const serveProbe = HttpApiBuilder.layer(ProbeApi).pipe(
   HttpRouter.serve,
   Layer.build,
 )
+
+// ── middleware ORDER ────────────────────────────────────────────────────────────────────────────
+//
+// 🔴 **`workspaceRoutingMiddleware` must WRAP `sessionLocationMiddleware`, and nothing above this
+// point tests that.** The ten cases above proxy `/probe`, which carries routing alone; they would all
+// still pass with the two swapped. The order holds in production only as an accident of WHERE each is
+// declared — routing at GROUP level in `groups/session.ts:489`, session-location per ENDPOINT inside
+// each `.add(...)` — so moving one `.middleware(...)` call reverses it with nothing to catch it.
+//
+// It matters because `sessionLocationLayer` resolves the session against the LOCAL database and
+// answers `SessionNotFoundError` when the row is absent. A session owned by a remote workspace lives
+// in the REMOTE database: the local instance only ever sees it through the proxy. So with
+// session-location outermost, every session-scoped call for a remote session 404s on the machine that
+// was supposed to forward it — before routing is ever consulted.
+//
+// The two probes below are the same endpoint with the declaration order swapped, and they assert
+// OPPOSITE outcomes. The reversed one is what makes the correct one load-bearing: a pin that cannot
+// fail is not a pin.
+const SESSION_PROBE_PATH = "/api/session/:sessionID/probe"
+
+const makeOrderProbeApi = (name: string, reversed: boolean) => {
+  const endpoint = HttpApiEndpoint.get("sessionScoped", SESSION_PROBE_PATH, {
+    query: WorkspaceRoutingQuery,
+    success: ProbeResult,
+  })
+  return HttpApi.make(name).add(
+    reversed
+      ? HttpApiGroup.make("ordered")
+          .add(endpoint.middleware(WorkspaceRoutingMiddleware))
+          .middleware(SessionLocationMiddleware)
+      : HttpApiGroup.make("ordered")
+          .add(endpoint.middleware(SessionLocationMiddleware))
+          .middleware(WorkspaceRoutingMiddleware),
+  )
+}
+
+const OrderedProbeApi = makeOrderProbeApi("workspace-routing-order", false)
+const ReversedProbeApi = makeOrderProbeApi("workspace-routing-order-reversed", true)
+
+const orderProbeHandlers = <A extends typeof OrderedProbeApi | typeof ReversedProbeApi>(api: A) =>
+  HttpApiBuilder.group(api as typeof OrderedProbeApi, "ordered", (handlers) =>
+    handlers.handle("sessionScoped", () => routeContextResponse),
+  )
+
+const serveOrderProbe = (reversed: boolean) => {
+  const api = reversed ? ReversedProbeApi : OrderedProbeApi
+  return HttpApiBuilder.layer(api as typeof OrderedProbeApi).pipe(
+    Layer.provide(orderProbeHandlers(api)),
+    Layer.provide(workspaceRoutingTestLayer),
+    Layer.provide(sessionLocationLayer),
+    Layer.provide(ServerLocationServiceMap.layer),
+    HttpRouter.serve,
+    Layer.build,
+  )
+}
 
 describe("HttpApi workspace routing middleware", () => {
   it.live("proxies remote workspace HTTP requests through the selected workspace target", () =>
@@ -551,6 +608,60 @@ describe("HttpApi workspace routing middleware", () => {
         directory: workspaceDir,
         workspaceID: workspace.id,
       })
+    }),
+  )
+
+  // The session ID is deliberately absent from the local database — that is the whole point. A remote
+  // workspace's sessions live in its own store, so the only correct answer here is "forward this".
+  const remoteSessionProbe = (reversed: boolean) =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const origin = yield* resolveOrigin(dir)
+      let forwarded: ProxiedRequest | undefined
+      const remoteUrl = yield* startRemoteWorkspaceHttpServer((request) => {
+        forwarded = request
+        return HttpServerResponse.json({ proxied: true }, { status: 201 })
+      })
+      const workspace = yield* createRemoteWorkspace({
+        dir,
+        projectID: origin,
+        type: reversed ? "order-remote-reversed" : "order-remote",
+        url: `${remoteUrl}/base`,
+      })
+      yield* serveOrderProbe(reversed)
+      const sessionID = "ses_0000000000000000000000000000"
+      const response = yield* HttpClient.get(
+        `/api/session/${sessionID}/probe?workspace=${workspace.id}`,
+      ).pipe(Effect.timeout("4 seconds"))
+      return { response, forwarded: () => forwarded }
+    })
+
+  it.live("routes a remote-owned session before session location can 404 it", () =>
+    Effect.gen(function* () {
+      const { response, forwarded } = yield* remoteSessionProbe(false)
+
+      // Routing outermost: the request leaves this machine, and the local session lookup never runs.
+      expect(response.status).toBe(201)
+      expect(yield* response.json).toEqual({ proxied: true })
+      expect(forwarded() ? requestURL(forwarded()!).pathname : undefined).toBe(
+        "/base/api/session/ses_0000000000000000000000000000/probe",
+      )
+    }),
+  )
+
+  it.live("reversing the order 404s the remote session instead of forwarding it", () =>
+    Effect.gen(function* () {
+      const { response, forwarded } = yield* remoteSessionProbe(true)
+
+      // Session location outermost: it resolves against the LOCAL store, finds nothing, and answers
+      // before routing is consulted. Nothing reaches the workspace that owns the session. This case
+      // exists to prove the assertion above is load-bearing — if this ever starts passing as a 201,
+      // the two middlewares have stopped being order-sensitive and the pin above means nothing.
+      // The TAG, not just the status: a 404 is also what a router miss or an unregistered handler
+      // returns, and either would make this case pass while proving nothing about ordering.
+      expect(response.status).toBe(404)
+      expect((yield* response.json) as { _tag?: string }).toMatchObject({ _tag: "SessionNotFoundError" })
+      expect(forwarded()).toBeUndefined()
     }),
   )
 })
