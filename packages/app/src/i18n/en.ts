@@ -27,7 +27,6 @@ export const dict = {
   "files.trashEmpty": "Trash is empty.",
   "files.restore": "Restore",
   "files.drives": "Drives",
-  "files.trashFailed": "Couldn’t move to Trash",
   "files.restoreFailed": "Couldn’t restore",
   "notes.title": "Notes",
   "notes.hint": "Shared with your agents — any chat can read them or add to them.",
@@ -52,16 +51,7 @@ export const dict = {
 
   // Processes — the friendly "what your agents are doing" activity view (uix.md §6.4 / SP1).
   "nav.chats": "Chats",
-  "processes.title": "Activity",
-  "processes.running": "{{count}} running",
-  "processes.empty": "Nothing running right now",
-  "processes.untitled": "Untitled chat",
-  "processes.tokens": "{{count}} tokens",
   "processes.status.working": "Working…",
-  "processes.status.waiting": "Waiting",
-  "processes.status.done": "Done",
-  "processes.status.ready": "Ready",
-  "processes.status.paused": "Paused",
 
   // Expertise levels — progressive disclosure with consent (uix.md §6).
   "settings.expertise.title": "Experience level",
@@ -101,11 +91,6 @@ export const dict = {
   // Confirm dialogs on destructive/whole-config actions (uix.md §3.4 / P1).
   "settings.tools.confirm.title": "Delete this tool?",
   "settings.tools.confirm.description": "This permanently removes the “{{name}}” tool recipe. This can’t be undone.",
-  "settings.providers.disconnect.confirm.title": "Disconnect {{provider}}?",
-  "settings.providers.disconnect.confirm.description":
-    "This removes it and any saved credentials from this device. You can reconnect later.",
-  "settings.providers.export.action": "Export",
-  "settings.providers.import.action": "Import",
   "home.sessions.new": "New Session",
   "home.sessions.select": "Select",
   "home.sessions.selectAll": "Select all",
@@ -134,49 +119,27 @@ export const dict = {
   "settings.providers.import.confirm.action": "Import",
   "command.category.suggested": "Suggested",
   "command.category.view": "View",
-  "command.category.project": "Project",
-  "command.category.provider": "Provider",
-  "command.category.server": "Server",
   "command.category.session": "Chat",
   "command.chats.jump": "Go to the chat that needs you",
-  "command.category.theme": "Theme",
-  "command.category.language": "Language",
   "command.category.file": "File",
   "command.category.context": "Context",
   "command.category.terminal": "Terminal",
   "command.category.model": "Model",
   "command.category.mcp": "MCP",
   "command.category.permissions": "Permissions",
-  "command.category.workspace": "Workspace",
   "command.category.settings": "Settings",
 
   "theme.scheme.system": "System",
   "theme.scheme.light": "Light",
   "theme.scheme.dark": "Dark",
 
-  "command.sidebar.toggle": "Toggle sidebar",
   "command.project.open": "Open project",
-  "command.project.previous": "Previous project",
-  "command.project.next": "Next project",
-  "command.project.index": "Switch to project {{index}}",
   "command.provider.connect": "Connect provider",
-  "command.server.switch": "Switch server",
   "command.settings.open": "Open settings",
-  "command.session.previous": "Previous chat",
-  "command.session.next": "Next chat",
-  "command.session.previous.unseen": "Previous unread chat",
-  "command.session.next.unseen": "Next unread chat",
-  "command.session.archive": "Archive chat",
 
   "command.palette": "Command palette",
 
-  "command.theme.cycle": "Cycle theme",
-  "command.theme.set": "Use theme: {{theme}}",
-  "command.theme.scheme.cycle": "Cycle color scheme",
-  "command.theme.scheme.set": "Use color scheme: {{scheme}}",
 
-  "command.language.cycle": "Cycle language",
-  "command.language.set": "Use language: {{language}}",
 
   "command.session.new": "New Agent",
   "command.file.open": "Open file",
@@ -191,8 +154,6 @@ export const dict = {
   "command.review.toggle": "Toggle review",
   "command.terminal.new": "New terminal",
   "command.terminal.new.description": "Create a new terminal tab",
-  "command.steps.toggle": "Toggle steps",
-  "command.steps.toggle.description": "Show or hide steps for the current message",
   "command.message.previous": "Previous message",
   "command.message.previous.description": "Go to the previous user message",
   "command.message.next": "Next message",
@@ -207,8 +168,6 @@ export const dict = {
   "command.prompt.mode.normal": "Chat",
   "command.permissions.autoaccept.enable": "Auto-accept permissions",
   "command.permissions.autoaccept.disable": "Stop auto-accepting permissions",
-  "command.workspace.toggle": "Toggle workspaces",
-  "command.workspace.toggle.description": "Enable or disable multiple workspaces in the sidebar",
   "command.session.undo": "Undo",
   "command.session.undo.description": "Undo the last message",
   "command.session.redo": "Redo",
@@ -217,103 +176,22 @@ export const dict = {
   "command.session.compact.description": "Summarize the session to reduce context size",
   "command.session.fork": "Fork from message",
   "command.session.fork.description": "Create a new chat from a previous message",
-  "command.session.share": "Share chat",
-  "command.session.share.description": "Share this chat and copy the link to your clipboard",
-  "command.session.unshare": "Unshare chat",
-  "command.session.unshare.description": "Stop sharing this chat",
 
   "palette.search.placeholder": "Search files, commands, and chats",
   "palette.empty": "No results found",
   "palette.group.commands": "Commands",
   "palette.group.files": "Files",
 
-  "dialog.provider.search.placeholder": "Search providers",
-  "dialog.provider.empty": "No providers found",
-  "dialog.provider.group.popular": "Popular",
-  "dialog.provider.group.other": "Other",
-  "dialog.provider.tag.recommended": "Recommended",
 
   "dialog.model.select.title": "Select model",
   "dialog.model.search.placeholder": "Search models",
   "dialog.model.empty": "No model results",
   "dialog.model.manage": "Manage models",
-  "dialog.model.manage.description": "Customize which models appear in the model selector.",
-  "dialog.model.manage.provider.toggle": "Toggle all {{provider}} models",
 
-  "dialog.model.unpaid.freeModels.title": "Free models",
-  "dialog.model.unpaid.addMore.title": "Add more models from popular providers",
 
-  "dialog.provider.viewAll": "Show more providers",
 
-  "provider.connect.title": "Connect {{provider}}",
-  "provider.connect.title.anthropicProMax": "Login with Claude Pro/Max",
-  "provider.connect.selectMethod": "Select login method for {{provider}}.",
-  "provider.connect.method.apiKey": "API key",
-  "provider.connect.status.inProgress": "Connecting…",
-  "provider.connect.status.waiting": "Waiting to connect…",
-  "provider.connect.status.failed": "Authorization failed: {{error}}",
-  "provider.connect.apiKey.description":
-    "Enter your {{provider}} API key to connect your account and use {{provider}} models in NovaClaw.",
-  "provider.connect.apiKey.label": "{{provider}} API key",
-  "provider.connect.apiKey.placeholder": "API key",
-  "provider.connect.apiKey.required": "API key is required",
-  "provider.connect.oauth.code.visit.prefix": "Visit ",
-  "provider.connect.oauth.code.visit.link": "this link",
-  "provider.connect.oauth.code.visit.suffix":
-    " to collect your authorization code to connect your account and use {{provider}} models in NovaClaw.",
-  "provider.connect.oauth.code.label": "{{method}} authorization code",
-  "provider.connect.oauth.code.placeholder": "Authorization code",
-  "provider.connect.oauth.code.required": "Authorization code is required",
-  "provider.connect.oauth.code.invalid": "Invalid authorization code",
-  "provider.connect.oauth.auto.visit.prefix": "Visit ",
-  "provider.connect.oauth.auto.visit.link": "this link",
-  "provider.connect.oauth.auto.visit.suffix":
-    " and enter the code below to connect your account and use {{provider}} models in NovaClaw.",
-  "provider.connect.oauth.auto.confirmationCode": "Confirmation code",
-  "provider.connect.toast.connected.title": "{{provider}} connected",
-  "provider.connect.toast.connected.description": "{{provider}} models are now available to use.",
 
-  "provider.custom.title": "Custom provider",
-  "provider.custom.description.prefix":
-    "Connect any AI service that speaks the OpenAI API format (many local and third-party servers do). See the ",
-  "provider.custom.description.link": "provider config docs",
-  "provider.custom.description.suffix": ".",
-  "provider.custom.field.providerID.label": "Provider ID",
-  "provider.custom.field.providerID.placeholder": "myprovider",
-  "provider.custom.field.providerID.description": "Lowercase letters, numbers, hyphens, or underscores",
-  "provider.custom.field.name.label": "Display name",
-  "provider.custom.field.name.placeholder": "My AI Provider",
-  "provider.custom.field.baseURL.label": "Base URL",
-  "provider.custom.field.baseURL.placeholder": "https://api.myprovider.com/v1",
-  "provider.custom.field.apiKey.label": "API key",
-  "provider.custom.field.apiKey.placeholder": "API key",
-  "provider.custom.field.apiKey.description":
-    "Optional. Leave empty if you pass credentials through custom headers instead.",
-  "provider.custom.models.label": "Models",
-  "provider.custom.models.id.label": "ID",
-  "provider.custom.models.id.placeholder": "model-id",
-  "provider.custom.models.name.label": "Name",
-  "provider.custom.models.name.placeholder": "Display Name",
-  "provider.custom.models.remove": "Remove model",
-  "provider.custom.models.add": "Add model",
-  "provider.custom.headers.label": "Headers (optional)",
-  "provider.custom.headers.key.label": "Header",
-  "provider.custom.headers.key.placeholder": "Header-Name",
-  "provider.custom.headers.value.label": "Value",
-  "provider.custom.headers.value.placeholder": "value",
-  "provider.custom.headers.remove": "Remove header",
-  "provider.custom.headers.add": "Add header",
-  "provider.custom.error.providerID.required": "Provider ID is required",
-  "provider.custom.error.providerID.format": "Use lowercase letters, numbers, hyphens, or underscores",
-  "provider.custom.error.providerID.exists": "That provider ID already exists",
-  "provider.custom.error.name.required": "Display name is required",
-  "provider.custom.error.baseURL.required": "Base URL is required",
-  "provider.custom.error.baseURL.format": "Must start with http:// or https://",
-  "provider.custom.error.required": "Required",
-  "provider.custom.error.duplicate": "Duplicate",
 
-  "provider.disconnect.toast.disconnected.title": "{{provider}} disconnected",
-  "provider.disconnect.toast.disconnected.description": "{{provider}} models are no longer available.",
 
   "model.tag.free": "Free",
   "model.tag.latest": "Latest",
@@ -341,10 +219,6 @@ export const dict = {
   "common.cancel": "Cancel",
   "common.confirm": "Confirm",
   "common.clear": "Clear",
-  "common.open": "Open",
-  "common.connect": "Connect",
-  "common.disconnect": "Disconnect",
-  "common.continue": "Continue",
   "common.submit": "Submit",
   "common.save": "Save",
   "common.saving": "Saving...",
@@ -567,8 +441,6 @@ export const dict = {
 
   "dialog.fork.empty": "No messages to fork from",
 
-  "dialog.directory.search.placeholder": "Search folders",
-  "dialog.directory.empty": "No folders found",
   "dialog.directory.action.selectFile": "Select file",
   "dialog.directory.action.selectFolder": "Select folder",
   "dialog.directory.root": "Root",
@@ -594,7 +466,6 @@ export const dict = {
   "app.connection.restored": "Reconnected",
 
   "dialog.server.title": "Servers",
-  "dialog.server.description": "Switch which NovaClaw server this app connects to.",
   "dialog.server.search.placeholder": "Search servers",
   "dialog.server.empty": "No servers yet",
   "dialog.server.add.title": "Add server",
@@ -611,22 +482,13 @@ export const dict = {
   "dialog.server.add.password": "Password (optional)",
   "dialog.server.add.passwordPlaceholder": "password",
   "dialog.server.edit.title": "Edit server",
-  "dialog.server.default.title": "Default server",
-  "dialog.server.default.description":
-    "Connect to this server on app launch instead of starting a local server. Requires restart.",
-  "dialog.server.default.none": "No server selected",
-  "dialog.server.default.set": "Set current server as default",
-  "dialog.server.default.clear": "Clear",
-  "dialog.server.action.remove": "Remove server",
 
   "dialog.server.menu.edit": "Edit",
   "dialog.server.menu.default": "Set as default",
   "dialog.server.menu.defaultRemove": "Remove default",
   "dialog.server.menu.delete": "Delete",
-  "dialog.server.current": "Current Server",
   "dialog.server.status.default": "Default",
   "wsl.server.add": "Add WSL server",
-  "wsl.server.addShort": "Add WSL",
   "wsl.server.label": "WSL",
   "wsl.server.menu.label": "WSL server",
   "wsl.server.retryStart": "Retry start",
@@ -734,7 +596,6 @@ export const dict = {
   "context.usage.usage": "Usage",
   "context.usage.cost": "Cost",
   "context.usage.window": "Context window",
-  "context.usage.clickToView": "Click to view context",
   "context.usage.view": "View context usage",
 
   "language.en": "English",
@@ -756,16 +617,8 @@ export const dict = {
   "language.th": "ไทย",
   "language.tr": "Türkçe",
 
-  "toast.language.title": "Language",
-  "toast.language.description": "Switched to {{language}}",
 
-  "toast.theme.title": "Theme switched",
-  "toast.scheme.title": "Color scheme",
 
-  "toast.workspace.enabled.title": "Workspaces enabled",
-  "toast.workspace.enabled.description": "Multiple worktrees are now shown in the sidebar",
-  "toast.workspace.disabled.title": "Workspaces disabled",
-  "toast.workspace.disabled.description": "Only the main worktree is shown in the sidebar",
 
   "toast.permissions.autoaccept.on.title": "Auto-accepting permissions",
   "toast.permissions.autoaccept.on.description": "Permission requests will be automatically approved",
@@ -781,16 +634,7 @@ export const dict = {
   "toast.context.noLineSelection.title": "No line selection",
   "toast.context.noLineSelection.description": "Select a line range in a file tab first.",
 
-  "toast.session.share.copyFailed.title": "Failed to copy URL to clipboard",
-  "toast.session.share.success.title": "Chat shared",
-  "toast.session.share.success.description": "Share URL copied to clipboard!",
-  "toast.session.share.failed.title": "Couldn't share chat",
-  "toast.session.share.failed.description": "Something went wrong while sharing. Please try again.",
 
-  "toast.session.unshare.success.title": "Chat unshared",
-  "toast.session.unshare.success.description": "This chat is no longer shared.",
-  "toast.session.unshare.failed.title": "Couldn't unshare chat",
-  "toast.session.unshare.failed.description": "Something went wrong while unsharing. Please try again.",
 
   "toast.session.listFailed.title": "Couldn't load chats for {{project}}",
   "toast.project.reloadFailed.title": "Failed to reload {{project}}",
@@ -798,10 +642,7 @@ export const dict = {
   "toast.project.directoryMissing.description":
     "NovaClaw kept your chats, but {{directory}} no longer exists. Restore that folder or move the chat to another project before asking Nova to work there.",
 
-  "toast.update.title": "Update available",
-  "toast.update.description": "A new version of NovaClaw ({{version}}) is now available to install.",
   "toast.update.action.installRestart": "Install and restart",
-  "toast.update.action.notYet": "Not yet",
 
   "error.page.title": "Something went wrong",
   "error.page.description": "An error occurred while loading the application.",
@@ -823,9 +664,7 @@ export const dict = {
   "error.dev.rootNotFound":
     "Root element not found. Did you forget to add it to your index.html? Or maybe the id attribute got misspelled?",
 
-  "error.serverSync.connectFailed": "Couldn't reach NovaClaw at {{url}}. Make sure it's running, then try again.",
   "error.serverSDK.noServerAvailable": "No server available",
-  "error.serverSDK.serverNotAvailable": "Server not available",
   "error.childStore.persistedCacheCreateFailed": "Failed to create persisted cache",
   "error.childStore.persistedProjectMetadataCreateFailed": "Failed to create persisted project metadata",
   "error.childStore.persistedProjectIconCreateFailed": "Failed to create persisted project icon",
@@ -833,7 +672,6 @@ export const dict = {
   "directory.error.invalidUrl": "That folder link doesn't point anywhere valid.",
 
   "error.chain.unknown": "Unknown error",
-  "error.server.invalidConfiguration": "Invalid configuration",
   "error.chain.causedBy": "Caused by:",
   "error.chain.apiError": "API error",
   "error.chain.status": "Status: {{status}}",
@@ -844,7 +682,6 @@ export const dict = {
   "error.chain.checkConfig": "Check the model in Settings → Models — it may have been renamed or removed.",
   "error.chain.mcpFailed":
     "Couldn't connect to the MCP tool server \"{{name}}\". NovaClaw can't sign in to MCP servers that require authentication yet.",
-  "error.chain.providerAuthFailed": "Provider authentication failed ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Failed to initialize provider "{{provider}}". Check credentials and configuration.',
   "error.chain.configJsonInvalid": "Config file at {{path}} isn't valid JSON (JSONC).",
@@ -856,10 +693,6 @@ export const dict = {
   "error.chain.configInvalidWithMessage": "Config file at {{path}} is invalid: {{message}}",
 
   "notification.permission.title": "Permission required",
-  "notification.permission.description": "{{sessionTitle}} in {{projectName}} needs permission",
-  "notification.question.title": "Question",
-  "notification.question.description": "{{sessionTitle}} in {{projectName}} has a question",
-  "notification.action.goToSession": "Go to chat",
 
   "notification.session.responseReady.title": "Response ready",
   "notification.session.error.title": "Chat error",
@@ -900,8 +733,6 @@ export const dict = {
   "home.empty.title": "No folders opened yet",
   "home.empty.description": "Get started by opening a folder on your computer.",
   "home.title": "Home",
-  "home.projects": "Projects",
-  "home.project.add": "Add project",
   // Chats greeting entry (C5/O4 — was hardcoded English).
   "home.chat.greeting": "How can I help you today?",
   "home.chat.placeholder": "Message to start a new chat…",
@@ -937,13 +768,7 @@ export const dict = {
   "help.tour.step.done.title": "You’re all set",
   "help.tour.step.done.body":
     "Open Chats and say hi. Hover any tile for a hint of what it does, and reopen this tour anytime from the Help app.",
-  "home.server.collapse": "Collapse server projects",
-  "home.server.expand": "Expand server projects",
   "home.sessions.search.placeholder": "Search chats",
-  "home.sessions.search.placeholder.scoped": "Search chats in {{scope}}",
-  "home.sessions.search.sessions": "Chats",
-  "home.sessions.search.noResults": "No chats found for {{query}}",
-  "home.sessions.title": "Sessions",
   "home.sessions.empty": "Nothing here yet",
   "home.sessions.empty.description": "Start a chat to get going.",
   "home.sessions.group.today": "Today",
@@ -1195,12 +1020,10 @@ export const dict = {
   "common.moreOptions": "More options",
   "common.learnMore": "Learn more",
   "common.rename": "Rename",
-  "common.reset": "Reset",
   "common.archive": "Archive",
   "common.delete": "Delete",
   "common.close": "Close",
   "common.edit": "Edit",
-  "common.loadMore": "Load more",
   "common.key.esc": "ESC",
   "common.key.ctrl": "Ctrl",
   "common.key.alt": "Alt",
@@ -1223,20 +1046,7 @@ export const dict = {
   "common.time.hoursAgo.short": "{{count}}h ago",
   "common.time.daysAgo.short": "{{count}}d ago",
 
-  "sidebar.menu.toggle": "Toggle menu",
-  "sidebar.nav.projectsAndSessions": "Projects and chats",
-  "sidebar.settings": "Settings",
-  "sidebar.help": "Help",
-  "sidebar.workspaces.enable": "Enable workspaces",
-  "sidebar.workspaces.disable": "Disable workspaces",
-  "sidebar.gettingStarted.title": "Getting started",
-  "sidebar.gettingStarted.line1": "NovaClaw includes free models so you can start immediately.",
-  "sidebar.gettingStarted.line2": "Connect an account like Claude, ChatGPT, or Gemini to unlock more AI models.",
   "sidebar.project.recentSessions": "Recent chats",
-  "sidebar.project.viewAllSessions": "View all chats",
-  "sidebar.project.clearNotifications": "Clear notifications",
-  "sidebar.empty.title": "No projects open",
-  "sidebar.empty.description": "Open a project to get started",
 
   "debugBar.ariaLabel": "Development performance diagnostics",
   "debugBar.na": "n/a",
@@ -1262,7 +1072,6 @@ export const dict = {
   "debugBar.mem.tipUnavailable": "Used JS heap vs heap limit. Chromium only.",
   "debugBar.mem.tip": "Used JS heap vs heap limit. {{used}} of {{limit}}.",
 
-  "app.name.desktop": "NovaClaw Desktop",
 
   "settings.section.desktop": "Settings",
   "settings.section.server": "Server",
@@ -1378,11 +1187,7 @@ export const dict = {
   "settings.recovery.row.snapshots.description":
     "Roll the workspace back to an earlier point in time. File deletions already land in a dated Trash; full workspace snapshots are coming soon.",
   "settings.recovery.row.snapshots.action": "Browse snapshots",
-  "settings.desktop.section.wsl": "WSL",
-  "settings.desktop.wsl.title": "WSL integration",
-  "settings.desktop.wsl.description": "Run the NovaClaw server inside WSL on Windows.",
 
-  "settings.general.section.appearance": "Appearance",
   // The Appearance tab's visual section (color scheme/theme/fonts) — "Visual", since the tab title is
   // already "Appearance" and the tab also holds Sound Effects.
   "settings.appearance.section.visual": "Visual",
@@ -1393,12 +1198,9 @@ export const dict = {
   "settings.appearance.theme.nova": "Nova",
   "settings.appearance.theme.summer": "Summer",
   "settings.appearance.theme.autumn": "Autumn",
-  "settings.general.section.advanced": "Advanced",
   "settings.general.section.notifications": "System notifications",
   "settings.general.section.updates": "Updates",
   "settings.general.section.sounds": "Sound effects",
-  "settings.general.section.feed": "Feed",
-  "settings.general.section.display": "Display",
 
   "settings.general.row.instance.title": "Connected instance",
   "settings.general.row.instance.description":
@@ -1427,8 +1229,6 @@ export const dict = {
     "Choose the shell used for your terminal. Compatible shells are also used for agent tool calls.",
   "settings.general.row.shell.autoDefault": "Auto (Default)",
   "settings.general.row.shell.terminalOnly": "terminal only",
-  "settings.general.row.appearance.title": "Appearance",
-  "settings.general.row.appearance.description": "Customise how NovaClaw looks on your device",
   "settings.general.row.colorScheme.title": "Mode",
   "settings.general.row.colorScheme.description": "Use light mode, dark mode, or match your system setting.",
   "settings.general.row.theme.title": "Theme",
@@ -1440,21 +1240,9 @@ export const dict = {
   "settings.general.row.terminalFont.description": "Customise the font used in the terminal",
   "settings.general.row.uiFont.title": "UI Font",
   "settings.general.row.uiFont.description": "Customise the font used throughout the interface",
-  "settings.general.row.showFileTree.title": "File tree",
-  "settings.general.row.showFileTree.description": "Show the file tree panel in sessions",
-  "settings.general.row.showNavigation.title": "Navigation controls",
-  "settings.general.row.showNavigation.description": "Show the back and forward buttons in the desktop title bar",
-  "settings.general.row.showSearch.title": "Command palette",
-  "settings.general.row.showSearch.description": "Show the search and command palette button in the title bar",
-  "settings.general.row.showTerminal.title": "Terminal",
-  "settings.general.row.showTerminal.description": "Show the terminal button in the desktop title bar",
-  "settings.general.row.showStatus.title": "Server status",
-  "settings.general.row.showStatus.description": "Show the server status button in the title bar",
   "settings.general.row.mobileTitlebarBottom.title": "Bottom navigation",
   "settings.general.row.mobileTitlebarBottom.description":
     "Place the title bar and session tabs at the bottom of the screen on mobile",
-  "settings.general.row.showCustomAgents.title": "Custom agents",
-  "settings.general.row.showCustomAgents.description": "Show the agent picker in the composer",
   "settings.general.row.defaultPermissionMode.title": "Default permission mode",
   "settings.general.row.defaultPermissionMode.description":
     'How much a new chat can do on its own before asking you. "Plan" and "Ask" check with you first; the higher modes act without asking, which is faster but riskier — only pick those for trusted work.',
@@ -1589,10 +1377,6 @@ export const dict = {
   "settings.general.row.pinchZoom.title": "Pinch to zoom",
   "settings.general.row.pinchZoom.description": "Allow trackpad pinch and Ctrl-scroll gestures to zoom",
 
-  "settings.general.row.wayland.title": "Use native Wayland",
-  "settings.general.row.wayland.description": "Disable X11 fallback on Wayland. Requires restart.",
-  "settings.general.row.wayland.tooltip":
-    "On Linux with mixed refresh-rate monitors, native Wayland can be more stable.",
 
   "settings.general.row.releaseNotes.title": "Release notes",
   "settings.general.row.releaseNotes.description": 'Show a "What\'s New" summary after NovaClaw updates.',
@@ -1610,8 +1394,6 @@ export const dict = {
   "settings.general.row.releaseNotes.status.unavailableFinal":
     "No release notes are published for this version, so NovaClaw has stopped checking.",
 
-  "settings.updates.row.startup.title": "Check for updates on startup",
-  "settings.updates.row.startup.description": "Automatically check for updates when NovaClaw launches",
   "settings.updates.row.check.title": "Check for updates",
   "settings.updates.row.check.description": "Check for a newer version now and install it if one is available.",
   "settings.updates.action.checkNow": "Check now",
@@ -1700,22 +1482,7 @@ export const dict = {
   "settings.shortcuts.group.terminal": "Terminal",
   "settings.shortcuts.group.prompt": "Prompt",
 
-  "settings.providers.title": "Providers",
-  "settings.providers.description":
-    "Connect the AI services you want to use — Anthropic, OpenAI, Google, and more. Your keys stay on this device.",
-  "settings.providers.section.connected": "Connected providers",
-  "settings.providers.connected.empty": "No connected providers",
-  "settings.providers.connected.environmentDescription": "Connected from your environment variables",
-  "settings.providers.section.popular": "Popular providers",
-  "settings.providers.custom.description":
-    "Add another AI service that uses the OpenAI API format — just point it at the server's address.",
-  "settings.providers.tag.environment": "Environment",
-  "settings.providers.tag.config": "Config",
-  "settings.providers.tag.custom": "Custom",
-  "settings.providers.tag.other": "Other",
   "settings.models.title": "Models",
-  "settings.models.description":
-    "Choose which AI models show up when you pick one for a chat, and check that each one is reachable.",
   "settings.models.probe.test": "Test",
   "settings.models.probe.probing": "Testing…",
   "settings.models.probe.ok": "Endpoint and generation are healthy",
@@ -2008,14 +1775,6 @@ export const dict = {
   "settings.systemPrompt.persona.prompt.title": "Persona prompt",
   "settings.systemPrompt.persona.prompt.description":
     "Replaces the canonical persona wholesale. Leave empty to use the default shown below.",
-  "settings.systemPrompt.profile.title": "User profile",
-  "settings.systemPrompt.profile.name.title": "Your name",
-  "settings.systemPrompt.profile.name.description": "Injected so the assistant knows who it is helping",
-  "settings.systemPrompt.profile.name.placeholder": "e.g. Nancy",
-  "settings.systemPrompt.profile.about.title": "About you",
-  "settings.systemPrompt.profile.about.description":
-    "Background the assistant should know: role, expertise, preferences.",
-  "settings.systemPrompt.profile.about.placeholder": "e.g. systems programmer building a local-LLM agent OS",
   "settings.systemPrompt.instructions.title": "Project instructions",
   "settings.systemPrompt.instructions.description":
     "Paths or URLs of instruction files loaded into every session (one per line). AGENTS.md files are discovered automatically.",
@@ -2230,21 +1989,8 @@ export const dict = {
   "settings.tools.error.description": "Description is required, max 300 chars.",
   "settings.tools.error.manual": "Manual is required, max 8192 chars.",
   "settings.tools.error.duplicate": "A tool with this name already exists.",
-  "settings.agents.title": "Agents",
-  "settings.agents.description": "Agent settings — coming soon.",
-  "settings.commands.title": "Commands",
-  "settings.commands.description": "Command settings will be configurable here.",
-  "settings.mcp.title": "MCP",
-  "settings.mcp.description": "MCP settings will be configurable here.",
 
-  "settings.permissions.title": "Permissions",
-  "settings.permissions.description": "Control what tools your agents can use by default.",
-  "settings.permissions.section.tools": "Tools",
-  "settings.permissions.toast.updateFailed.title": "Failed to update permissions",
 
-  "settings.permissions.action.allow": "Allow",
-  "settings.permissions.action.ask": "Ask",
-  "settings.permissions.action.deny": "Deny",
 
   "settings.permissions.tool.read.title": "Read",
   "settings.permissions.tool.read.description": "Read a file",
@@ -2299,28 +2045,7 @@ export const dict = {
   "workspace.new": "New workspace",
   "workspace.type.local": "local",
   "workspace.type.sandbox": "sandbox",
-  "workspace.create.failed.title": "Failed to create workspace",
-  "workspace.delete.failed.title": "Failed to delete workspace",
-  "workspace.resetting.title": "Resetting workspace",
-  "workspace.resetting.description": "This may take a minute.",
-  "workspace.reset.failed.title": "Failed to reset workspace",
-  "workspace.reset.success.title": "Workspace reset",
-  "workspace.reset.success.description": "Workspace now matches the default branch.",
   "workspace.error.stillPreparing": "Workspace is still preparing",
-  "workspace.status.checking": "Checking for unmerged changes...",
-  "workspace.status.error": "Unable to verify git status.",
-  "workspace.status.clean": "No unmerged changes detected.",
-  "workspace.status.dirty": "This workspace has changes that haven't been merged into your main branch yet.",
-  "workspace.delete.title": "Delete workspace",
-  "workspace.delete.confirm": 'Delete workspace "{{name}}"?',
-  "workspace.delete.button": "Delete workspace",
-  "workspace.reset.title": "Reset workspace",
-  "workspace.reset.confirm": 'Reset workspace "{{name}}"?',
-  "workspace.reset.button": "Reset workspace",
-  "workspace.reset.archived.none": "No active chats will be archived.",
-  "workspace.reset.archived.one": "1 chat will be archived.",
-  "workspace.reset.archived.many": "{{count}} chats will be archived.",
-  "workspace.reset.note": "This will reset the workspace to match the default branch.",
 
   // Throwing an agent-contributed tile away (right-click, or drag it onto Trash). ⚠️ NOT under
   // `home.app.*`: that namespace is `home.app.<id>.{name,subtitle}` and `app-label.test.ts` fails on
@@ -2362,4 +2087,6 @@ export const dict = {
   "home.app.help.subtitle": "A short tour of what NovaClaw can do",
   "home.app.settings.name": "Settings",
   "home.app.settings.subtitle": "Providers, models, servers, recovery",
+  "command.session.previous.unseen": "Previous unread chat",
+  "command.session.next.unseen": "Next unread chat",
 }
