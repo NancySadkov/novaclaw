@@ -85,13 +85,18 @@ export const longStageNote = (phase: TurnPhaseTiming["phase"], elapsed: number):
     case "context-fit":
       return "A long conversation takes longer to assemble."
     // ⚠️ These three were MISSING from this map until a live turn showed "Checking what changed…"
-    // sitting at 10.6 s in an ordinary repository (2026-08-11). The unit tests could not have found
-    // that: they prove each note is honest, not that the slow stages are the ones covered. If you
-    // add a phase, watch a real turn before deciding it never runs long.
+    // sitting at 10.6 s (2026-08-11). The unit tests could not have found that: they prove each note
+    // is honest, not that the slow stages are the ones covered. If you add a phase, watch a real
+    // turn before deciding it never runs long.
+    //
+    // ⚠️ And the wording is hedged ON PURPOSE. Every primitive behind this stage was then measured
+    // warm at 85–160 ms on both this repository and a larger one, so that 10.6 s has no established
+    // cause — naming one here would be describing a fault falsely (ruling 2). It says what the stage
+    // does and that it is normally quick, which is what we actually know.
     case "snapshot":
     case "snapshot-before":
     case "snapshot-after":
-      return "Scanning the working folder for changed files — a large project takes a while."
+      return "Comparing the working folder against the last snapshot. This is normally quick — a very large project or a busy disk makes it slower."
     default:
       return undefined
   }

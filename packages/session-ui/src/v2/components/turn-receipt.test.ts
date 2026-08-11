@@ -81,11 +81,12 @@ describe("turn receipt", () => {
     expect(longStageNote("compaction", 30_000)).toContain("summarised")
     expect(longStageNote("generation", 30_000)).toBeUndefined()
     expect(longStageNote("memory-rerank", 30_000)).toBeUndefined()
-    // Measured live 2026-08-11: "Checking what changed…" sat at 10.6 s in an ordinary repository,
-    // and this map did not cover it. A unit test cannot find that — it is here so a rename or a
-    // refactor cannot quietly drop the phase that was actually observed to be slow.
-    expect(longStageNote("snapshot-after", 30_000)).toContain("changed files")
-    expect(longStageNote("snapshot-before", 30_000)).toContain("changed files")
+    // Observed live 2026-08-11: "Checking what changed…" sat at 10.6 s, and this map did not cover
+    // it. A unit test cannot find that — it is here so a rename cannot quietly drop the phase that
+    // was actually seen to be slow. The note hedges because follow-up measurement found every
+    // primitive at 85–160 ms and never reproduced the 10.6 s, so its cause is not established.
+    expect(longStageNote("snapshot-after", 30_000)).toContain("normally quick")
+    expect(longStageNote("snapshot-before", 30_000)).toContain("last snapshot")
   })
 
   test("no note promises progress or an ending it cannot see", () => {
