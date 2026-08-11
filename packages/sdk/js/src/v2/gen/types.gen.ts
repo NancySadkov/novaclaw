@@ -11964,6 +11964,47 @@ export type V2SessionSwitchResponderResponses = {
 export type V2SessionSwitchResponderResponse =
   V2SessionSwitchResponderResponses[keyof V2SessionSwitchResponderResponses]
 
+export type V2SessionRepointFolderData = {
+  body: {
+    directory: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/folder"
+}
+
+export type V2SessionRepointFolderErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * Error
+   */
+  500: SessionNotFoundError | InvalidRequestError
+}
+
+export type V2SessionRepointFolderError = V2SessionRepointFolderErrors[keyof V2SessionRepointFolderErrors]
+
+export type V2SessionRepointFolderResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2SessionRepointFolderResponse = V2SessionRepointFolderResponses[keyof V2SessionRepointFolderResponses]
+
 export type V2SessionSwitchModeData = {
   body: {
     permissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"

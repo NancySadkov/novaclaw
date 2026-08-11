@@ -3164,6 +3164,33 @@ class ApiV2Session extends NovaClawApiClient {
   }
 
   /**
+   * Point a session at a different working folder
+   *
+   * Move this session's working folder. Written through the `working_folder` session component, so it re-derives project identity, publishes the same Moved event an agent's own move would, and clears any recorded missing-folder recovery. Exists because a folder that moved is something the USER knows and the agent does not: when a working folder disappears the session degrades into a scratch folder and keeps running, and only a person can say where the real one went.
+   */
+  public repointFolder<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = { directory: parameters?.["directory"] }
+    return (options?.client ?? this.client).post<
+      T.V2SessionRepointFolderResponses,
+      T.V2SessionRepointFolderErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/folder",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
    * Switch session permission mode (1K)
    *
    * Change the permission mode mid-session; the MODE_RULES overlay applies from the next turn.

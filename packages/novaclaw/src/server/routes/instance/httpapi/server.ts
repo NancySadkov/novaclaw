@@ -72,6 +72,7 @@ import { PtyTicket } from "@novaclaw/core/pty/ticket"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionComponentRegistry } from "@novaclaw/core/session/component-registry"
 import { SessionTags } from "@novaclaw/core/session/tags"
 import { lazy } from "@/util/lazy"
 import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@novaclaw/server/cors"
@@ -289,6 +290,11 @@ const app = LayerNode.group([
   Offline.node,
   httpClient,
   EventV2.node,
+  // ⚠️ Listed because an HTTP handler now writes through it (`session.repointFolder`), and the
+  // typecheck CANNOT tell you when it is missing: the handler compiled green and answered 500
+  // "Service not found: @novaclaw/v2/SessionComponentRegistry" on every call. The session TOOL
+  // reaches this registry through the location-scoped graph, so nothing here had needed it before.
+  SessionComponentRegistry.node,
   SessionTags.node,
   ProjectV2.node,
   PtyTicket.node,

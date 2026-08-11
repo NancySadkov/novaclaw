@@ -582,6 +582,29 @@ export const makeSessionGroups = <
           ),
       )
       .add(
+        HttpApiEndpoint.post("session.repointFolder", "/api/session/:sessionID/folder", {
+          params: { sessionID: Session.ID },
+          payload: Schema.Struct({ directory: AbsolutePath }),
+          success: HttpApiSchema.NoContent,
+          // Two refusals with genuinely different meanings: the session is not there (404), or the
+          // folder is (400 — unresolvable, or outside this session's project).
+          error: Schema.Union([SessionNotFoundError, InvalidRequestError]),
+        })
+          .middleware(sessionLocationMiddleware)
+          .annotateMerge(
+            OpenApi.annotations({
+              identifier: "v2.session.repointFolder",
+              summary: "Point a session at a different working folder",
+              description:
+                "Move this session's working folder. Written through the `working_folder` session component, so it " +
+                "re-derives project identity, publishes the same Moved event an agent's own move would, and clears any " +
+                "recorded missing-folder recovery. Exists because a folder that moved is something the USER knows and " +
+                "the agent does not: when a working folder disappears the session degrades into a scratch folder and " +
+                "keeps running, and only a person can say where the real one went.",
+            }),
+          ),
+      )
+      .add(
         HttpApiEndpoint.post("session.switchMode", "/api/session/:sessionID/mode", {
           params: { sessionID: Session.ID },
           payload: Schema.Struct({ permissionMode: Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"]) }),

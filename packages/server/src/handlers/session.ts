@@ -4,6 +4,7 @@ import { SessionMessage } from "@novaclaw/core/session/message"
 import { NamedError } from "@novaclaw/core/util/error"
 import { SessionInput } from "@novaclaw/core/session/input"
 import { Database } from "@novaclaw/core/database/database"
+import { SessionComponentRegistry } from "@novaclaw/core/session/component-registry"
 import { SessionTags } from "@novaclaw/core/session/tags"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { ModelV2 } from "@novaclaw/core/model"
@@ -481,6 +482,47 @@ const SessionControlHandler = handlerLayer(
                     new SessionNotFoundError({
                       sessionID: error.sessionID,
                       message: `Session not found: ${error.sessionID}`,
+                    }),
+                  ),
+                ),
+              )
+            return HttpApiSchema.NoContent.make()
+          }),
+        )
+        .handle(
+          "session.repointFolder",
+          // Written through the component registry rather than by patching the row, so this endpoint
+          // and an agent moving its own folder are the SAME operation: one validation
+          // (`resolveWorkingFolder`), one `Moved` event, one place that re-derives project identity
+          // and clears the recorded missing-folder recovery. A second write path here would be a
+          // second set of those rules to keep in step.
+          Effect.fn(function* (ctx) {
+            const components = yield* SessionComponentRegistry.Service
+            // Existence is checked HERE rather than read out of the registry's failure, because the
+            // registry collapses "no such session" and "that folder is not allowed" into one
+            // `InvalidValue`. Answering 404 off a string match, or 400 for a session that does not
+            // exist, would both describe the fault falsely (ruling 2) — so the one case that has a
+            // distinct HTTP meaning is established before the write.
+            yield* session.get(ctx.params.sessionID).pipe(
+              Effect.catchTag(
+                "Session.NotFoundError",
+                (error) =>
+                  new SessionNotFoundError({
+                    sessionID: error.sessionID,
+                    message: `Session not found: ${error.sessionID}`,
+                  }),
+              ),
+            )
+            yield* components
+              .put({ sessionID: ctx.params.sessionID, kind: "working_folder", value: ctx.payload.directory })
+              .pipe(
+                // Everything else the registry can refuse is a bad REQUEST and says why in its own
+                // words: a path that does not resolve, or a destination in a different project (the
+                // kernel keeps a session inside the project it was created in).
+                Effect.catch((error: { readonly message?: string }) =>
+                  Effect.fail(
+                    new InvalidRequestError({
+                      message: `Cannot point this session at ${ctx.payload.directory}: ${error.message ?? "rejected"}`,
                     }),
                   ),
                 ),
