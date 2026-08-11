@@ -1,12 +1,10 @@
 import { showToast } from "@/utils/toast"
-import { getFilename } from "@novaclaw/core/util/path"
 import { createEffect, createMemo, createSignal, For, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
 import { Portal } from "solid-js/web"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
-import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
@@ -16,8 +14,7 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { sessionAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
 import { Persist, persisted } from "@/utils/persist"
-import { StatusPopover, StatusPopoverV2 } from "../status-popover"
-import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
+import { StatusPopoverV2, useDirectoryStatusAttention } from "../status-popover"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
@@ -128,7 +125,6 @@ const showRequestError = (language: ReturnType<typeof useLanguage>, err: unknown
 }
 
 export function SessionHeader() {
-  const layout = useLayout()
   const command = useCommand()
   const server = useServer()
   const platform = usePlatform()
@@ -138,17 +134,8 @@ export function SessionHeader() {
   const { params, view } = useSessionLayout()
 
   const projectDirectory = createMemo(() => decode64(params.dir) ?? "")
-  const project = createMemo(() => {
-    const directory = projectDirectory()
-    if (!directory) return
-    return layout.projects.list().find((p) => p.worktree === directory || p.sandboxes?.includes(directory))
-  })
-  const name = createMemo(() => {
-    const current = project()
-    if (current) return current.name || getFilename(current.worktree)
-    return getFilename(projectDirectory())
-  })
-  const hotkey = createMemo(() => command.keybindParts("file.open"))
+  // The titlebar search box took `project`/`name` (the project label) and `hotkey` (`file.open`'s
+  // keybind chip) with it — nothing else read any of the three.
   const os = createMemo(() => detectOS(platform))
   const isDesktop = createMediaQuery("(min-width: 768px)")
 
@@ -273,54 +260,24 @@ export function SessionHeader() {
       .catch((err: unknown) => showRequestError(language, err))
   }
 
-  const [centerMount, setCenterMount] = createSignal<HTMLElement | null>(null)
   const [rightMount, setRightMount] = createSignal<HTMLElement | null>(null)
   onMount(() => {
-    setCenterMount(document.getElementById("novaclaw-titlebar-center"))
     setRightMount(document.getElementById("novaclaw-titlebar-right"))
   })
 
+  // ⚠️ The 240px "Search {project} ⌘K" box that used to be portalled into the titlebar's centre is
+  // GONE (owner, 2026-08-11). The titlebar is the TAB STRIP; a search field parked in it competes
+  // with the tabs for the one row a person reads constantly, and it is not what that row is for.
+  // The capability is untouched — `file.open` is a first-class command ("Open file") in the
+  // palette with the same keybind, so it stays both reachable and teachable, just not resident.
   return (
-    <>
-      {/* 🔴 This button had NO HOST until 2026-08-07 — `#novaclaw-titlebar-center` was portalled
-          into and never created (`titlebar.tsx` made only `-right`), so the code was correct and
-          unreachable. Its `settings.visibility.search` guard was `createMemo(() => true)`, i.e.
-          inert from the other end too, and is gone. `<Show>` still wraps it because `centerMount()`
-          is null until `onMount` runs and on any surface that renders no titlebar. */}
-      <Show when={centerMount()}>
-        {(mount) => (
-          <Portal mount={mount()}>
-            <ButtonV2
-              type="button"
-              variant="outline"
-              size="small"
-              class="hidden md:flex w-[240px] max-w-full min-w-0 items-center gap-2 !justify-between cursor-default"
-              onClick={() => command.trigger("file.open")}
-              aria-label={language.t("session.header.searchFiles")}
-            >
-              <span class="min-w-0 flex-1 truncate text-left text-v2-text-text-muted">
-                {language.t("session.header.search.placeholder", {
-                  project: name(),
-                })}
-              </span>
-
-              {/* The v1 twin was a single boxed span, and this call site spent four `!` utilities
-                  cancelling that box. v2 says the same thing with `variant="ghost"`. */}
-              <Show when={hotkey().length > 0}>
-                <KeybindV2 keys={hotkey()} variant="ghost" />
-              </Show>
-            </ButtonV2>
-          </Portal>
-        )}
-      </Show>
-      <Show when={rightMount()}>
-        {(mount) => (
-          <Portal mount={mount()}>
-            <SessionHeaderV2Actions state={v2ActionsState()} />
-          </Portal>
-        )}
-      </Show>
-    </>
+    <Show when={rightMount()}>
+      {(mount) => (
+        <Portal mount={mount()}>
+          <SessionHeaderV2Actions state={v2ActionsState()} />
+        </Portal>
+      )}
+    </Show>
   )
 }
 
@@ -335,12 +292,19 @@ type SessionHeaderV2ActionsState = {
 
 function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
   const language = useLanguage()
+  // Instance status is not daily-life information (owner, 2026-08-11): a green light that is green
+  // every day is furniture in the strip a person reads constantly. It appears when it has something
+  // to say — the server is unreachable, or an MCP server failed / needs auth — which is exactly when
+  // its popover carries the repair path. Healthy instances get the space back for tabs.
+  const attention = useDirectoryStatusAttention()
 
   return (
     <div class="flex items-center gap-2">
-      <TooltipV2 placement="bottom" value={props.state.statusLabel}>
-        <StatusPopoverV2 />
-      </TooltipV2>
+      <Show when={attention()}>
+        <TooltipV2 placement="bottom" value={props.state.statusLabel}>
+          <StatusPopoverV2 />
+        </TooltipV2>
+      </Show>
       <Show when={props.state.reviewVisible}>
         <TooltipV2
           placement="bottom"

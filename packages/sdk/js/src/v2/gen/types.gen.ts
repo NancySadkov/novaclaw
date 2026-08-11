@@ -225,6 +225,9 @@ export type SessionStatus =
         phases: Array<{
           phase:
             | "prepare"
+            | "context-load"
+            | "request-build"
+            | "context-fit"
             | "memory-embed"
             | "memory-search"
             | "memory-rerank"
@@ -644,6 +647,9 @@ export type GlobalEvent = {
             phases: Array<{
               phase:
                 | "prepare"
+                | "context-load"
+                | "request-build"
+                | "context-fit"
                 | "memory-embed"
                 | "memory-search"
                 | "memory-rerank"
@@ -2533,6 +2539,9 @@ export type SessionMessageAssistant = {
     phases: Array<{
       phase:
         | "prepare"
+        | "context-load"
+        | "request-build"
+        | "context-fit"
         | "memory-embed"
         | "memory-search"
         | "memory-rerank"
@@ -3195,6 +3204,9 @@ export type SyncEventSessionNextStepEnded = {
         phases: Array<{
           phase:
             | "prepare"
+            | "context-load"
+            | "request-build"
+            | "context-fit"
             | "memory-embed"
             | "memory-search"
             | "memory-rerank"
@@ -4993,6 +5005,9 @@ export type SessionNextStepEnded = {
       phases: Array<{
         phase:
           | "prepare"
+          | "context-load"
+          | "request-build"
+          | "context-fit"
           | "memory-embed"
           | "memory-search"
           | "memory-rerank"
@@ -7149,6 +7164,9 @@ export type EventSessionNextStepEnded = {
       phases: Array<{
         phase:
           | "prepare"
+          | "context-load"
+          | "request-build"
+          | "context-fit"
           | "memory-embed"
           | "memory-search"
           | "memory-rerank"

@@ -5,7 +5,12 @@ export type TurnPhaseTiming = TurnTiming["phases"][number]
 export type ProviderAttemptTiming = TurnTiming["providerAttempts"][number]
 
 const LABELS = {
+  // Retired 2026-08-11 — kept because stored turns from before the split still carry it (see the
+  // schema's note). Nothing records it now.
   prepare: "Preparing your prompt",
+  "context-load": "Gathering the conversation",
+  "request-build": "Building the request",
+  "context-fit": "Fitting the context window",
   "memory-embed": "Preparing recall",
   "memory-search": "Recalling",
   "memory-rerank": "Choosing useful memories",
@@ -27,6 +32,8 @@ const DETAIL_LABELS = {
   hash: "Tree hash",
 } satisfies Record<NonNullable<TurnPhaseTiming["details"]>[number]["phase"], string>
 
+/** Exposed so the test can assert the whole map is one-label-per-phase. */
+export const phaseLabels = LABELS
 export const phaseLabel = (phase: TurnPhaseTiming["phase"]) => LABELS[phase]
 export const detailLabel = (phase: NonNullable<TurnPhaseTiming["details"]>[number]["phase"]) => DETAIL_LABELS[phase]
 

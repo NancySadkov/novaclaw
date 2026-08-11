@@ -365,7 +365,7 @@ export interface SessionConfig {
   readonly contextBudget?: boolean
   /** Tri-state: automatic recall and learning for this chat. Absent = inherit, then instance Memory. */
   readonly memory?: boolean
-  /** Tri-state product posture. True = short Chat; false = Full Agent; absent = inherit. */
+  /** Tri-state product posture. True = short Chat; false = Agent; absent = inherit. */
   readonly shortChat?: boolean
   readonly strict?: StrictOverride
 }

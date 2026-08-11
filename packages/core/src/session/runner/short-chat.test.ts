@@ -33,7 +33,7 @@ describe("ShortChat policy", () => {
 
   test("the reserved horizon name is backed by the resident Upgrade tool", () => {
     expect(UpgradeChatTool.name).toBe(ShortChat.UPGRADE_TOOL)
-    expect(UpgradeChatTool.SUCCESS).toContain("Full Agent is now enabled")
+    expect(UpgradeChatTool.SUCCESS).toContain("Agent is now enabled")
   })
 
   test("Upgrade publishes only after approval and an existing session", async () => {

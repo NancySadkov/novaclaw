@@ -21112,6 +21112,9 @@
                           "type": "string",
                           "enum": [
                             "prepare",
+                            "context-load",
+                            "request-build",
+                            "context-fit",
                             "memory-embed",
                             "memory-search",
                             "memory-rerank",
@@ -22540,6 +22543,9 @@
                                   "type": "string",
                                   "enum": [
                                     "prepare",
+                                    "context-load",
+                                    "request-build",
+                                    "context-fit",
                                     "memory-embed",
                                     "memory-search",
                                     "memory-rerank",
@@ -28515,6 +28521,9 @@
                       "type": "string",
                       "enum": [
                         "prepare",
+                        "context-load",
+                        "request-build",
+                        "context-fit",
                         "memory-embed",
                         "memory-search",
                         "memory-rerank",
@@ -30678,6 +30687,9 @@
                               "type": "string",
                               "enum": [
                                 "prepare",
+                                "context-load",
+                                "request-build",
+                                "context-fit",
                                 "memory-embed",
                                 "memory-search",
                                 "memory-rerank",
@@ -36359,6 +36371,9 @@
                           "type": "string",
                           "enum": [
                             "prepare",
+                            "context-load",
+                            "request-build",
+                            "context-fit",
                             "memory-embed",
                             "memory-search",
                             "memory-rerank",
@@ -43646,6 +43661,9 @@
                           "type": "string",
                           "enum": [
                             "prepare",
+                            "context-load",
+                            "request-build",
+                            "context-fit",
                             "memory-embed",
                             "memory-search",
                             "memory-rerank",

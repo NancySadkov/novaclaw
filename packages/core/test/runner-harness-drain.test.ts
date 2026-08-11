@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
+import { EventV2 } from "@novaclaw/core/event"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, type RunnerHarness } from "./fixture/runner-harness"
@@ -53,6 +54,55 @@ describe("the harness drives the real drain", () => {
     // The maintenance pass DID run — so the assertion above is passing because it was classified, not
     // because it never happened. Without this, deleting the classification would look like a fix.
     expect(harness.maintenanceRequests, "post-drain maintenance must be classified, not absent").toHaveLength(1)
+  })
+
+  test("🔴 the session goes idle BEFORE post-drain maintenance, not after it", async () => {
+    /**
+     * The user's answer is finished when the drain's turn loop ends. What runs after it —
+     * the changes summary, the auto-title, memory extraction — is OUR housekeeping, and two of the
+     * three are model calls, so on a local endpoint it takes tens of seconds. While the session
+     * stayed `busy` through them, the transcript kept showing "Working…" over a phase list from a
+     * turn that had already ended: a spinner for work the user never asked for and cannot see.
+     *
+     * The claim is an ORDERING one, so the timeline records each status against how many
+     * maintenance requests had been issued when it was published. `idle@0` is the whole point —
+     * idle reached the client before the first maintenance model call went out.
+     */
+    const harness = makeRunnerHarness({
+      turns: [completeTurn("text-1", "Answer.")],
+      maintenanceTurns: [[]],
+    })
+    const timeline: string[] = []
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const events = yield* EventV2.Service
+        // `startsWith`, because a payload's `type` carries the schema VERSION suffix.
+        yield* events.listen((event) =>
+          Effect.sync(() => {
+            if (!event.type.startsWith("session.status")) return
+            const status = (event.data as { status?: { type?: string } } | undefined)?.status
+            if (status?.type) timeline.push(`${status.type}@${harness.maintenanceRequests.length}`)
+          }),
+        )
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Say hello" }),
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+      }),
+      "idle before post-drain maintenance",
+    )
+
+    // The maintenance pass ran — otherwise the ordering claim below would be vacuously true.
+    expect(harness.maintenanceRequests, "post-drain maintenance must actually run").toHaveLength(1)
+    // Joined, so a failure prints the whole ordering instead of "array did not contain".
+    expect(timeline.join(" → ")).toContain("idle@0")
+    // And nothing re-opened the session afterwards: no busy is published once maintenance is under way.
+    expect(timeline.filter((entry) => entry.startsWith("busy@1")).join(" → ")).toBe("")
   })
 
   test("two harnesses in one file do not share a drain", async () => {

@@ -687,7 +687,11 @@ export const layer = Layer.effect(
         Effect.sync(() => timing.start(phase)).pipe(Effect.andThen(publishLiveTiming()))
       const timingEnd = (phase: SessionMessage.TurnPhase) =>
         Effect.sync(() => timing.end(phase)).pipe(Effect.andThen(publishLiveTiming()))
-      yield* timingStart("prepare")
+      // ⚠️ Three DIFFERENT stretches of this function used to open a phase called `prepare`, so a
+      // finished turn's receipt listed "Preparing your prompt" three times and read as a stutter.
+      // Each has its own name now — this one covers loading the session: the config walk, the agent,
+      // the model, and the conversation itself.
+      yield* timingStart("context-load")
       // Surface ANY pre-turn setup failure (config / agent / context-prep / model) IN THE CHAT, not just
       // the server log — these run before any assistant row exists, so `step.failed` (which carries its
       // error on an assistant message) can't convey them; the turn would otherwise fail silently. Emit a
@@ -797,7 +801,7 @@ export const layer = Layer.effect(
       // system prompt so the model "just remembers" — no kb-tool call needed. Best-effort: memory
       // off/unavailable → no block, the turn proceeds. Budgeted DOWN for weak models (the JH floor).
       const recallQuery = SessionRecall.recallQuery(context)
-      yield* timingEnd("prepare")
+      yield* timingEnd("context-load")
       let memoryRecall: string | undefined
       // Kept for the duration of this provider step so a failed `read` can correct the exact
       // remembered file claim that was actually put on the model's horizon.
@@ -856,7 +860,9 @@ export const layer = Layer.effect(
       // packer matches on this exact string to apply the `memory` category budget, so it — not the
       // bare `memoryRecall` — is what goes to `packRequest`.
       const recallMessage = memoryRecall === undefined ? undefined : SessionInput.applySteerProvenance(memoryRecall)
-      yield* timingStart("prepare")
+      // Everything the model is actually sent: the tool definitions, the composed system prompt, the
+      // sampling overlay, and the request itself.
+      yield* timingStart("request-build")
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
       const toolMaterialization = isLastStep
         ? undefined
@@ -967,7 +973,7 @@ export const layer = Layer.effect(
         toolChoice: isLastStep ? "none" : undefined,
         ...(affectiveGeneration === undefined ? {} : { generation: affectiveGeneration }),
       })
-      yield* timingEnd("prepare")
+      yield* timingEnd("request-build")
       yield* timingStart("compaction")
       const compacted = yield* harness.compaction.compactIfNeeded({
         sessionID: session.id,
@@ -981,7 +987,8 @@ export const layer = Layer.effect(
       // server's HONORED window so an Ollama-class server never silently front-truncates the
       // system prompt away. Reached when compaction declined (window unknown, summary model
       // unavailable, or simply under ITS threshold) — history in the DB stays intact.
-      yield* timingStart("prepare")
+      // The deterministic packer: what had to be dropped for the request to fit the window.
+      yield* timingStart("context-fit")
       const preparedDispatch = ProviderDispatch.prepare({
         request: fullRequest,
         promptCacheKey,
@@ -991,7 +998,7 @@ export const layer = Layer.effect(
           : undefined,
         memoryRecall: recallMessage,
       })
-      yield* timingEnd("prepare")
+      yield* timingEnd("context-fit")
       const packed = preparedDispatch.packed
       if (packed.dropped > 0)
         yield* Log.event("session.context.pack.evicted", {
@@ -2121,6 +2128,25 @@ export const layer = Layer.effect(
           }
         }
       }
+      // 🔴 The turn is OVER at this line, and the status has to say so BEFORE the housekeeping.
+      // `postRun` is the changes summary, the auto-title and memory extraction — and two of those
+      // three are model calls, so on a local endpoint it routinely runs for tens of seconds. It used
+      // to run while the session was still `busy`, which is what made the composer's "Working…" hang
+      // around after the answer was complete, pointing at a phase list from a turn that had already
+      // ended: nothing the user asked for was still running, and the spinner said otherwise. Its own
+      // doc comment says the title is generated "while the user reads the response" — that intent
+      // only holds if the user is not being shown a spinner for it.
+      //
+      // Idle FIRST, then the housekeeping, still inside the drain and under the same lease (so
+      // nothing about lifetime, interruption or ordering changes — only what the UI is told).
+      // `execution/local.ts` publishes idle again in its `ensuring`; a repeat is a no-op.
+      // ⚠️ Guarded on `result` for the same reason that finalizer is: `exit(result)` makes `exited`
+      // the terminal status (K1), and a trailing idle would stomp it.
+      const settled = yield* store.get(input.sessionID).pipe(Effect.orElseSucceed(() => undefined))
+      if (settled?.result === undefined)
+        yield* events
+          .publish(SessionStatusEvent.Status, { sessionID: input.sessionID, status: { type: "idle" } })
+          .pipe(Effect.ignore)
       yield* maintenance.postRun(input.sessionID)
     })
 

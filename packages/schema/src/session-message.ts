@@ -282,8 +282,25 @@ export const Context = Schema.Struct({
   findings: Schema.Array(ContextFinding),
 }).annotate({ identifier: "Session.Message.Context" })
 
+/**
+ * What a turn spent its time on, as the receipt names it.
+ *
+ * ⚠️ **One phase name means ONE thing that happens once.** `prepare` used to cover three separate
+ * stretches of `runner/llm.ts` — loading the session, building the request, and fitting it to the
+ * context window — so every completed turn listed "Preparing your prompt" three times and the
+ * receipt read like a stutter or a loop. They are `context-load` / `request-build` / `context-fit`
+ * now. A phase that legitimately repeats (a retried provider attempt) is a different case: those
+ * repeats are the information.
+ *
+ * ⚠️ **`prepare` STAYS, and must not be deleted.** Timing rides on the stored assistant message, so
+ * every turn recorded before 2026-08-11 carries it on disk; dropping the literal would fail decode
+ * for those rows and take the whole conversation down with it. Nothing writes it any more.
+ */
 export const TurnPhase = Schema.Literals([
   "prepare",
+  "context-load",
+  "request-build",
+  "context-fit",
   "memory-embed",
   "memory-search",
   "memory-rerank",

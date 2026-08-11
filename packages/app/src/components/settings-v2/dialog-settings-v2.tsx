@@ -171,12 +171,7 @@ export const DialogSettings: Component<{
                               {language.t("settings.computer.title")}
                             </TabsV2.Trigger>
                           </Show>
-                          <Show when={tabVisible("computer")}>
-                <TabsV2.Content value="computer" class="settings-v2-panel">
-                  <SettingsComputerV2 />
-                </TabsV2.Content>
-              </Show>
-              <Show when={tabVisible("tools")}>
+                          <Show when={tabVisible("tools")}>
                             <TabsV2.Trigger value="tools">
                               <Icon name="code-lines" size="large" />
                               {language.t("settings.tools.title")}
@@ -262,6 +257,16 @@ export const DialogSettings: Component<{
               <Show when={tabVisible("strict")}>
                 <TabsV2.Content value="strict" class="settings-v2-panel">
                   <SettingsStrictV2 />
+                </TabsV2.Content>
+              </Show>
+              {/* ⚠️ This panel used to sit INSIDE `TabsV2.List`, between the "computer" and "tools"
+                  triggers — so the whole Computer Use tab rendered squeezed into the left tab rail
+                  instead of the content area, while every sibling panel lived out here. Kobalte
+                  places `Content` wherever it is written; nothing warns you. Keep panels in this
+                  block, in trigger order. */}
+              <Show when={tabVisible("computer")}>
+                <TabsV2.Content value="computer" class="settings-v2-panel">
+                  <SettingsComputerV2 />
                 </TabsV2.Content>
               </Show>
               <Show when={tabVisible("tools")}>

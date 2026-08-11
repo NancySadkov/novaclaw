@@ -75,13 +75,25 @@ export const SettingsComputerV2: Component = () => {
   }
 
   return (
-    <div class="flex flex-col gap-y-4">
+    // ⚠️ Structure matches every sibling tab on purpose: a `settings-v2-tab-header`, then lists —
+    // no extra flex wrapper. `settings-v2-panel` (the TabsV2.Content class) already owns the
+    // column layout and spacing, and the wrapper this replaced fought it.
+    <>
+      <div class="settings-v2-tab-header">
+        <h2 class="settings-v2-tab-title">{language.t("settings.computer.title")}</h2>
+        <p class="settings-v2-tab-description">{language.t("settings.computer.description")}</p>
+      </div>
+
       <SettingsListV2>
         <SettingsRowV2
           title={language.t("settings.computer.display.name")}
           description={language.t("settings.computer.display.description")}
         >
           <TextInputV2
+            appearance="large"
+            class="!w-full self-stretch"
+            spellcheck={false}
+            autocomplete="off"
             value={config().display ?? ""}
             placeholder=":99"
             onChange={(event) =>
@@ -98,6 +110,10 @@ export const SettingsComputerV2: Component = () => {
           description={language.t("settings.computer.screenshot.description")}
         >
           <TextInputV2
+            appearance="large"
+            class="!w-full self-stretch"
+            spellcheck={false}
+            autocomplete="off"
             value={config().screenshotPath ?? ""}
             placeholder="/tmp/novaclaw-computer.png"
             onChange={(event) =>
@@ -134,8 +150,8 @@ export const SettingsComputerV2: Component = () => {
           With no display the tool declines every call, and saying so here is cheaper than letting
           someone discover it from a failed turn. */}
       <Show when={!config().display}>
-        <p class="text-13-regular text-text-weak-base px-1">{language.t("settings.computer.unset")}</p>
+        <p class="settings-v2-field-description">{language.t("settings.computer.unset")}</p>
       </Show>
-    </div>
+    </>
   )
 }

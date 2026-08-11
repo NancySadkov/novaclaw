@@ -80,14 +80,16 @@ export function StatusPopoverV2(props: { scope?: "server" }) {
   return <DirectoryStatusPopover />
 }
 
-function DirectoryStatusPopover() {
-  const language = useLanguage()
+/**
+ * The two facts the directory-scoped status is made of, shared by the popover and by the caller
+ * that decides whether to show it at all — one derivation, so the dot and the visibility rule can
+ * never disagree about whether anything is wrong.
+ */
+function useDirectoryStatusFacts() {
   const server = useServerSDK()
   const global = useGlobal()
   const sync = useSync()
-  const [shown, setShown] = createSignal(false)
   const serverHealth = () => global.servers.health[ServerConnection.key(server().server)]?.healthy
-  const ready = createMemo(() => serverHealth() === false || sync().data.mcp_ready)
   const mcpIssue = createMemo(() => {
     const mcp = Object.values(sync().data.mcp ?? {})
     const failed = mcp.some((item) => item.status === "failed" || item.status === "needs_client_registration")
@@ -95,6 +97,27 @@ function DirectoryStatusPopover() {
     if (failed) return "critical" as const
     if (warn) return "warning" as const
   })
+  const ready = createMemo(() => serverHealth() === false || sync().data.mcp_ready)
+  return { serverHealth, mcpIssue, ready }
+}
+
+/**
+ * Is there anything worth interrupting someone for?
+ *
+ * The titlebar used to carry this indicator permanently, and a permanently-green light is
+ * furniture: it costs a slot in the one strip a person reads constantly and tells them nothing
+ * they did not assume. It earns its place only when the server is down or an MCP server needs
+ * attention — which is also the one time its popover has a repair path to offer.
+ */
+export function useDirectoryStatusAttention() {
+  const { serverHealth, mcpIssue } = useDirectoryStatusFacts()
+  return createMemo(() => serverHealth() === false || mcpIssue() !== undefined)
+}
+
+function DirectoryStatusPopover() {
+  const language = useLanguage()
+  const [shown, setShown] = createSignal(false)
+  const { serverHealth, mcpIssue, ready } = useDirectoryStatusFacts()
   const healthy = createMemo(() => serverHealth() === true && !mcpIssue())
   const state = createMemo<StatusPopoverState>(() => ({
     shown: shown(),

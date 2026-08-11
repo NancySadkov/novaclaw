@@ -338,16 +338,12 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
               }}
               onReorder={(keys) => tabsStoreActions.reorder(keys)}
             />
-            {/* 🔴 The titlebar's CENTER portal host. `session-header.tsx` has portalled its
-                "search files" button into `#novaclaw-titlebar-center` since the v2 titlebar
-                landed, and nothing in the tree ever created that element — so the only labelled,
-                visible affordance for the file/command palette has never rendered for any user.
-                Found from the other end at the same time: the toggle that would have hidden it
-                (`settings.general.showSearch`) was equally unreachable. Principle 8 settles which
-                half was the bug — a keybind is an arcane incantation until something on screen
-                teaches it, and this button carries its own keybind chip. It is `flex-1` so it
-                takes the space the bare spacer used to, and empty it costs exactly that spacer. */}
-            <div id="novaclaw-titlebar-center" class="flex min-w-0 flex-1 items-center justify-center" />
+            {/* The spacer that pushes the right-hand actions to the edge and lets the tab strip
+                take the rest. It was briefly `#novaclaw-titlebar-center`, a portal host for a
+                "Search {project} ⌘K" box (added 2026-08-07, removed by the owner on 2026-08-11):
+                this row is the TAB STRIP, and a search field in it competes with the tabs for the
+                one row a person reads constantly. `file.open` keeps its palette entry and keybind. */}
+            <div class="flex min-w-0 flex-1" />
             <TitlebarV2Right state={v2RightState()} />
           </div>
         )

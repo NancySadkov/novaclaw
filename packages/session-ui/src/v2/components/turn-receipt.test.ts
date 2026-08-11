@@ -1,7 +1,24 @@
 import { describe, expect, test } from "bun:test"
-import { attemptLabel, currentPhase, elapsedMs, phaseLabel, seconds, type TurnTiming } from "./turn-receipt"
+import { attemptLabel, currentPhase, elapsedMs, phaseLabel, phaseLabels, seconds, type TurnTiming } from "./turn-receipt"
 
 describe("turn receipt", () => {
+  test("🔴 no two phases share a label — a repeat in the receipt must mean a real repeat", () => {
+    // Three unrelated stretches of runner/llm.ts once all recorded a phase named `prepare`, so a
+    // finished turn listed "Preparing your prompt" three times and read as a stutter or a loop.
+    // Distinct labels are what make a repeated line trustworthy: it now means the work repeated.
+    const labels = Object.values(phaseLabels)
+    expect(new Set(labels).size, `duplicate labels in ${JSON.stringify(labels)}`).toBe(labels.length)
+  })
+
+  test("the three phases that replaced `prepare` each name their own work", () => {
+    expect(phaseLabel("context-load")).toBe("Gathering the conversation")
+    expect(phaseLabel("request-build")).toBe("Building the request")
+    expect(phaseLabel("context-fit")).toBe("Fitting the context window")
+    // Retired, not removed: turns stored before the split still carry it, and a missing label would
+    // render `undefined` in their receipt.
+    expect(phaseLabel("prepare")).toBe("Preparing your prompt")
+  })
+
   test("uses friendly labels and stable seconds", () => {
     expect(phaseLabel("memory-search")).toBe("Recalling")
     expect(phaseLabel("provider-prefill")).toBe("Waiting for the model")

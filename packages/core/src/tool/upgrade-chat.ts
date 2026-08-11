@@ -19,7 +19,7 @@ export const Output = Schema.Struct({ upgraded: Schema.Boolean, message: Schema.
 export type Output = typeof Output.Type
 
 export const SUCCESS =
-  "Full Agent is now enabled. Continue the user's pending request with the restored project context and tools."
+  "Agent is now enabled. Continue the user's pending request with the restored project context and tools."
 
 export const runUpgrade = <E, R>(input: {
   readonly approve: Effect.Effect<void, E, R>
@@ -44,7 +44,7 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.make({
           description:
-            "Ask the user to upgrade this short conversation to Full Agent, restoring project context and tools for the pending request.",
+            "Ask the user to upgrade this short conversation to Agent, restoring project context and tools for the pending request.",
           input: Input,
           output: Output,
           toModelOutput: ({ output }) => [{ type: "text", text: output.message }],

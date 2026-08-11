@@ -475,11 +475,11 @@ export const dict = {
     "Let this chat recall what you have taught Nova and save useful new memories after it answers. Turn it off for a faster one-off conversation Nova will not remember later; the instance-wide Memory switch can still keep every chat off.",
   "prompt.features.shortChat.title": "Short chat",
   "prompt.features.shortChat.description":
-    "Use Nova for fast local conversation without project access or memory. Turn this off for Full Agent, which can recall context and work in this folder.",
+    "Use Nova for fast local conversation without project access or memory. Turn this off for Agent, which can recall context and work in this folder.",
   "prompt.posture.section.title": "How Nova should help",
   "prompt.posture.chat.title": "Chat",
   "prompt.posture.chat.description": "Fast local conversation; no project access or memory.",
-  "prompt.posture.agent.title": "Full Agent",
+  "prompt.posture.agent.title": "Agent",
   "prompt.posture.agent.description": "Recalls context and can work in this folder.",
   "prompt.features.thinkingBudget.title": "Thinking budget",
   "prompt.features.thinkingBudget.description":
@@ -2190,6 +2190,8 @@ export const dict = {
   "settings.webSearch.throttle.sameUrl.hint":
     "Refuse to fetch one page more times than this in a session — catches an agent stuck in a loop.",
   "settings.computer.title": "Computer Use",
+  "settings.computer.description":
+    "Let the agent see a screen and click on it. Point it at a display it can reach, and decide how much it may do before asking you.",
   "settings.computer.display.name": "Display",
   "settings.computer.display.description":
     "The X display the agent observes and clicks, for example :99. Leave it empty and computer use stays off — a display is never picked up from the environment, because that would either fail on a server or quietly drive your own screen.",
