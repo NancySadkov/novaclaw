@@ -28,6 +28,7 @@ import type {
 import { isSteerText, stripSteerProvenance } from "@novaclaw/core/session/steer-provenance"
 import { SessionOrigin } from "@novaclaw/core/session/origin"
 import { isOptimistic } from "../message-fold"
+import { answerStart, groupTurns, type TurnGroup } from "../turn-group"
 import { reasoningTokenLabel } from "./reasoning-count"
 import { Markdown } from "../../components/markdown"
 import { reasoningOpenDefault, toolOpenDefault, type ReasoningFoldMode } from "../reasoning-fold"
@@ -92,19 +93,18 @@ type TranscriptActions = {
 const TranscriptActionsContext = createContext<Accessor<TranscriptActions>>(() => ({}))
 
 /**
- * F1e S4-v3 — native `SessionMessage[]` transcript renderer (strategy B).
+ * **THE transcript.** It consumes the flat native `SessionMessage` union (`@novaclaw/sdk/v2`)
+ * from the native store (`createNativeMessageStore`), so there is no `parentID` grouping and no
+ * separate `part` map: the list arrives ordered oldest-first and every assistant carries its
+ * `content[]` inline.
  *
- * A parallel render path that consumes the flat native `SessionMessage` union
- * (`@novaclaw/sdk/v2`) directly — the end-state that retires the V1
- * `Message`/`Part` shape (`session-turn.tsx` + `message-part.tsx`). It renders from
- * the native store (`createNativeMessageStore`, fed by the S1–S3 fold) instead of the
- * V1 `Data` context, so no `parentID` grouping or separate `part` map: the list is
- * already ordered oldest-first and every assistant carries its `content[]` inline.
+ * ⚠️ **This used to say it was "mounted behind a DEV-only toggle for A/B verification against the
+ * V1 timeline".** That was true while V1 still existed; the V1 nuke retired the other path
+ * entirely, and `message-v2-store.ts` has called this THE render path since. Corrected 2026-08-11,
+ * because a component that says it is a parallel experiment is one nobody dares change.
  *
- * Mounted behind a DEV-only toggle for A/B verification against the V1 timeline (see
- * the app `NativeTimeline` wrapper); it does NOT touch the V1 path. Tool cards are a
- * first cut (name · status · collapsible input/output) — full per-tool fidelity
- * (diffs, file previews, todo, question) lands in later S4-v3 increments.
+ * The unit of layout is the TURN, not the message — see `Turn` below for why the flat list needed
+ * a container at all.
  */
 export function NativeTranscript(props: {
   messages: readonly SessionMessage[]
@@ -137,6 +137,11 @@ export function NativeTranscript(props: {
   const hasOpenAssistant = createMemo(() =>
     visible().some((message) => message.type === "assistant" && !message.time.completed),
   )
+  // A harness steer rides the `user` role, so the turn boundary is "a user message the USER wrote".
+  const turns = createMemo(() =>
+    groupTurns(visible(), (message) => message.type === "user" && !isSteerText(message.text)),
+  )
+  const busy = createMemo(() => props.status?.type === "busy" || props.status?.type === "retry")
   const liveTiming = createMemo(() => (props.status?.type === "busy" ? props.status.timing : undefined))
   return (
     <ReasoningFoldContext.Provider
@@ -156,9 +161,14 @@ export function NativeTranscript(props: {
         })}
       >
         <div data-component="native-transcript" class={props.class}>
-          <For each={visible()}>
-            {(message) => (
-              <NativeMessage message={message} developer={props.developer} liveTiming={liveTiming() !== undefined} />
+          <For each={turns()}>
+            {(group, index) => (
+              <Turn
+                group={group}
+                developer={props.developer}
+                liveTiming={liveTiming() !== undefined}
+                busy={busy() && index() === turns().length - 1}
+              />
             )}
           </For>
           <For each={props.pending ?? []}>{(item) => <QueuedMessage text={item.text} />}</For>
@@ -186,6 +196,93 @@ export function NativeTranscript(props: {
         </div>
       </TranscriptActionsContext.Provider>
     </ReasoningFoldContext.Provider>
+  )
+}
+
+/**
+ * One turn: the prompt, and what the agent did about it.
+ *
+ * **While it runs, everything shows.** Watching the work IS the feedback — a fold that hides a
+ * running turn reads as a hang. **Once it settles, the work collapses under one control** and the
+ * answer stands alone (owner ruling, 2026-08-11): the internals stay one click away for whoever
+ * wants to open the hood, which is the promise, rather than a wall of tool output that buries what
+ * the reader actually came back for.
+ *
+ * Three cases deliberately do NOT fold, because folding them would hide the only thing worth
+ * showing: a turn still in flight, a turn with no prose to stand in for its work (interrupted, or
+ * ended on a tool call), and a plain answer with no work behind it — which would otherwise get a
+ * "Done" box containing nothing but its own timings.
+ */
+function Turn(props: {
+  group: TurnGroup<SessionMessage>
+  developer?: boolean
+  liveTiming?: boolean
+  /** This is the last turn and the session is still working — never fold it. */
+  busy?: boolean
+}) {
+  const body = () => props.group.body
+  const running = () =>
+    props.busy || body().some((message) => message.type === "assistant" && !message.time.completed)
+  /** The turn's closing assistant message — the only one that can carry the answer. */
+  const closing = () => {
+    const tail = body().at(-1)
+    return tail?.type === "assistant" ? tail : undefined
+  }
+  const split = () => {
+    const message = closing()
+    return message ? answerStart(message.content) : 0
+  }
+  const hasAnswer = () => {
+    const message = closing()
+    return message !== undefined && split() < message.content.length
+  }
+  /** Is there anything BEHIND the answer worth a fold? Earlier steps, or work in the closing one. */
+  const hasWork = () => body().length > 1 || split() > 0
+  const folds = () => !running() && hasAnswer() && hasWork()
+  const toolCount = () =>
+    body().reduce(
+      (total, message) =>
+        message.type === "assistant"
+          ? total + message.content.filter((part) => part.type === "tool").length
+          : total,
+      0,
+    )
+  return (
+    <div data-slot="native-turn">
+      <Show when={props.group.lead}>
+        {(lead) => <NativeMessage message={lead()} developer={props.developer} liveTiming={props.liveTiming} />}
+      </Show>
+      <Show
+        when={folds()}
+        fallback={
+          <For each={body()}>
+            {(message) => (
+              <NativeMessage message={message} developer={props.developer} liveTiming={props.liveTiming} />
+            )}
+          </For>
+        }
+      >
+        <details data-slot="native-turn-work">
+          <summary>
+            <span data-slot="native-turn-work-label">Done</span>
+            <Show when={toolCount() > 0}>
+              <span data-slot="native-turn-work-count">
+                {toolCount()} {toolCount() === 1 ? "step" : "steps"}
+              </span>
+            </Show>
+          </summary>
+          <div data-slot="native-turn-work-body">
+            <For each={body().slice(0, -1)}>
+              {(message) => (
+                <NativeMessage message={message} developer={props.developer} liveTiming={props.liveTiming} />
+              )}
+            </For>
+            <AssistantMessage message={closing()!} developer={props.developer} liveTiming={props.liveTiming} half="work" />
+          </div>
+        </details>
+        <AssistantMessage message={closing()!} developer={props.developer} liveTiming={props.liveTiming} half="answer" />
+      </Show>
+    </div>
   )
 }
 
@@ -316,7 +413,21 @@ function SteerMessage(props: { text: string }) {
 
 // ── assistant ────────────────────────────────────────────────────────────────────
 
-function AssistantMessage(props: { message: SessionMessageAssistant; developer?: boolean; liveTiming?: boolean }) {
+/**
+ * `half` splits ONE assistant message across the turn's fold: its tool calls, reasoning and
+ * in-between narration render as `work` inside Done, its closing prose as the `answer` outside.
+ * Omit it to render the whole message, which is what a running turn and every non-closing step do.
+ *
+ * The chrome follows meaning rather than position: the turn receipt belongs to the work, while a
+ * fault card, a truncated-reply notice and Copy belong to the answer — **a fault must never end up
+ * inside a fold**, or the one thing the reader must act on is the one thing hidden from them.
+ */
+function AssistantMessage(props: {
+  message: SessionMessageAssistant
+  developer?: boolean
+  liveTiming?: boolean
+  half?: "work" | "answer"
+}) {
   // While the turn is in flight but nothing has streamed yet (the model is thinking before
   // its first token), show a "working" indicator — otherwise a slow turn reads as a blank.
   const working = () =>
@@ -343,9 +454,17 @@ function AssistantMessage(props: { message: SessionMessageAssistant; developer?:
   const reasoningTokens = () => (reasoningParts() === 1 ? props.message.tokens?.reasoning : undefined)
   const faultText = useFaultText()
   const actions = useContext(TranscriptActionsContext)
+  const split = () => answerStart(props.message.content)
+  const parts = () => {
+    if (props.half === "work") return props.message.content.slice(0, split())
+    if (props.half === "answer") return props.message.content.slice(split())
+    return props.message.content
+  }
+  const showReceipt = () => props.half !== "answer"
+  const showChrome = () => props.half !== "work"
   return (
     <div data-slot="native-assistant">
-      <For each={props.message.content}>
+      <For each={parts()}>
         {(part) => (
           <Switch>
             <Match when={part.type === "text" && part}>
@@ -368,14 +487,14 @@ function AssistantMessage(props: { message: SessionMessageAssistant; developer?:
           </Switch>
         )}
       </For>
-      <Show when={(working() && !props.liveTiming) || props.message.timing}>
+      <Show when={showReceipt() && ((working() && !props.liveTiming) || props.message.timing)}>
         <TurnReceipt timing={props.message.timing} live={working() && !props.liveTiming} developer={props.developer} />
       </Show>
       {/* The per-turn "N files changed" strip is deliberately NOT rendered. It repeated what the tool
           rows above it already say, and it re-listed build output on every rebuild (`pi.exe` after each
           compile), which buried the actual conversation. The git-changes tab is the surface for "what
           changed" and shows it properly. */}
-      <Show when={props.message.error && sessionErrorDisplay(props.message.error)}>
+      <Show when={showChrome() && props.message.error && sessionErrorDisplay(props.message.error)}>
         {(fault) => (
           <Show
             when={fault().kind !== "interrupted"}
@@ -395,7 +514,7 @@ function AssistantMessage(props: { message: SessionMessageAssistant; developer?:
           </Show>
         )}
       </Show>
-      <Show when={props.message.finish === "broken"}>
+      <Show when={showChrome() && props.message.finish === "broken"}>
         <details data-slot="native-broken-reply">
           <summary>Reply ended early</summary>
           <div>
@@ -403,7 +522,7 @@ function AssistantMessage(props: { message: SessionMessageAssistant; developer?:
           </div>
         </details>
       </Show>
-      <Show when={props.message.time.completed && copyableText()}>
+      <Show when={showChrome() && props.message.time.completed && copyableText()}>
         <div data-slot="native-msg-actions">
           <button
             type="button"

@@ -124,6 +124,37 @@
   animation: native-working-pulse 1s ease-in-out infinite;
 }
 
+/* the settled turn's work, folded away — the answer is what the reader came back for */
+[data-slot="native-turn"] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+[data-slot="native-turn-work"] > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: fit-content;
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--font-size-small);
+  color: var(--v2-text-text-faint);
+}
+[data-slot="native-turn-work"] > summary:hover {
+  color: var(--v2-text-text-muted);
+}
+[data-slot="native-turn-work-count"] {
+  font-variant-numeric: tabular-nums;
+}
+[data-slot="native-turn-work-body"] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0 0.625rem;
+  padding-left: 1.125rem;
+  border-left: 1px solid var(--v2-border-border-muted);
+}
+
 [data-slot="native-turn-receipt"] {
   color: var(--v2-text-text-muted);
   font-size: var(--font-size-small);
