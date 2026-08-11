@@ -2058,6 +2058,26 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  /**
+   * Post-drain housekeeping ran long enough to be a wait rather than background work.
+   *
+   * It runs INSIDE the drain — after the idle status, so no spinner shows, but before the lease is
+   * released — so the next prompt queues behind it. Measured 2026-08-11 at 642 ms with a title
+   * already set and 1285 ms on a session's first turn (two utility model calls back to back), so
+   * this only fires on something going wrong: a stalled embedding, a contended device.
+   */
+  "session.maintenance.postrun.slow": {
+    level: "warn",
+    message: "post-run maintenance ran long",
+    attributes: {
+      "session.id": "correlate",
+      "session.stage": "id",
+      "session.stage.ms": "count",
+      "session.maintenance.ms": "count",
+    },
+    content: "correlated",
+    file: "packages/core/src/session/runner/maintenance.ts",
+  },
   /** A wake arrived with no executor attached; queued input will not run until one is. */
   "session.wake.dropped": {
     level: "warn",

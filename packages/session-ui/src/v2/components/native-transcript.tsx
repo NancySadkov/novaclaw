@@ -449,6 +449,14 @@ function AssistantMessage(props: {
   // The real reasoning-token count lands on the MESSAGE at step end. Attribute it to the reasoning
   // fold ONLY when there's exactly one reasoning part (the stitched-block norm) — with several parts
   // the per-message total can't be split, so those fall back to the per-part estimate.
+  //
+  // ⚠️ **This IS the end state, checked 2026-08-11 — do not re-open it as a gap.** No provider gives
+  // a per-part figure: `LLM.Usage` (which carries `reasoningTokens`) arrives once, at finish, for the
+  // whole step, and `reasoning-end` carries only `providerMetadata`. Anthropic does not break
+  // thinking out of `output_tokens` at all. So the only way to put an exact-looking number on each
+  // of several parts would be to invent a split — a fabricated figure rendered in the same style as
+  // a measured one, which is strictly worse than the `~` estimate `reasoningTokenLabel` already
+  // marks as approximate.
   const reasoningParts = createMemo(
     () => props.message.content.filter((c) => c.type === "reasoning" && c.text.trim().length > 0).length,
   )

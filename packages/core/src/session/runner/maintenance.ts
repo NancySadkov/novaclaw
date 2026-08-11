@@ -77,6 +77,21 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
  * model nevertheless opens a think stream. Provider-neutral until the controller's final best-effort
  * hard stop, unlike putting a Qwen-specific flag on the first request.
  */
+/**
+ * When post-drain housekeeping stops being background and starts being a wait.
+ *
+ * Measured 2026-08-11 against `holo3.1`: **642 ms** with a title already set (changes 16 ms, title a
+ * 3 ms no-op, memory 623 ms) and **1285 ms** on a session's first turn, where the title pass is a
+ * real model call (643 ms). Two utility model calls, one after the other.
+ *
+ * ⚠️ **Why it is worth a threshold at all, given those numbers are small.** This runs INSIDE the
+ * drain — after the idle status is published, so no spinner shows, but before the lease is released
+ * — so the next prompt waits behind it. That is invisible by design and fine at ~1 s; it stops being
+ * fine if an embedding stalls or a device is contended, and nothing would have said so. The
+ * threshold sits well above the measured range so it fires on a fault, not on a Tuesday.
+ */
+const POSTRUN_SLOW_MS = 5_000
+
 const TITLE_REASONING_BUDGET = 128
 
 /** The best-effort structural switch for providers that honour it. A REQUEST, never a guarantee —
@@ -389,9 +404,25 @@ export const layer = Layer.effect(
     return Service.of({
       postRun: (sessionID) =>
         Effect.gen(function* () {
-          yield* bestEffort("session.changes.refresh.failed", sessionID, refreshChangesSummary(sessionID))
-          yield* bestEffort("session.title.generate.failed", sessionID, generateTitleOnce(sessionID))
-          yield* bestEffort("session.memory.extract.failed", sessionID, extractMemory(sessionID))
+          const started = Date.now()
+          const passes: Array<{ readonly stage: string; readonly ms: number }> = []
+          const timed = Effect.fnUntraced(function* (stage: string, pass: Effect.Effect<void>) {
+            const at = Date.now()
+            yield* pass
+            passes.push({ stage, ms: Date.now() - at })
+          })
+          yield* timed("changes", bestEffort("session.changes.refresh.failed", sessionID, refreshChangesSummary(sessionID)))
+          yield* timed("title", bestEffort("session.title.generate.failed", sessionID, generateTitleOnce(sessionID)))
+          yield* timed("memory", bestEffort("session.memory.extract.failed", sessionID, extractMemory(sessionID)))
+          const total = Date.now() - started
+          if (total < POSTRUN_SLOW_MS) return
+          const slowest = passes.toSorted((a, b) => b.ms - a.ms)[0]
+          yield* Log.event("session.maintenance.postrun.slow", {
+            "session.id": sessionID,
+            "session.stage": slowest?.stage ?? "none",
+            "session.stage.ms": slowest?.ms ?? 0,
+            "session.maintenance.ms": total,
+          })
         }),
       /**
        * Title the session after 30 s if the turn is still going (owner 2026-07-25). The drain-end pass
