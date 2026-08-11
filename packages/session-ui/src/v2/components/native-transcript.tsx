@@ -47,6 +47,7 @@ import {
   currentPhase,
   detailLabel,
   elapsedMs,
+  longStageNote,
   phaseLabel,
   seconds,
   type TurnTiming,
@@ -569,6 +570,21 @@ function TurnReceipt(props: { timing?: TurnTiming; live: boolean; developer?: bo
   }
   const attempts = (value: TurnTiming) =>
     value.providerAttempts.filter((attempt) => attempt.outcome !== "completed" || value.providerAttempts.length > 1)
+  // A stage that runs long gets a sentence saying WHY it might. Ticked once a second — the note
+  // only changes at a 10 s threshold, so the 250 ms cadence the elapsed counters need would be
+  // three quarters of a second of wasted work per counter.
+  const [tick, setTick] = createSignal(Date.now())
+  createEffect(() => {
+    if (!props.live) return
+    const timer = setInterval(() => setTick(Date.now()), 1000)
+    onCleanup(() => clearInterval(timer))
+  })
+  const note = () => {
+    const value = timing()
+    if (!props.live || !value) return undefined
+    const phase = currentPhase(value)
+    return phase ? longStageNote(phase.phase, elapsedMs(phase.startedAt, phase.completedAt, tick())) : undefined
+  }
   return (
     <Show
       when={timing()}
@@ -582,6 +598,7 @@ function TurnReceipt(props: { timing?: TurnTiming; live: boolean; developer?: bo
       }
     >
       {(value) => (
+        <>
         <details data-slot="native-turn-receipt" data-live={props.live ? "" : undefined}>
           <summary aria-live={props.live ? "polite" : undefined}>
             <span data-slot="native-turn-summary">
@@ -629,6 +646,16 @@ function TurnReceipt(props: { timing?: TurnTiming; live: boolean; developer?: bo
             </For>
           </ol>
         </details>
+        {/* Outside the fold on purpose: the whole point is that it reaches someone who has NOT
+            opened the receipt and is wondering whether the thing is stuck. */}
+        <Show when={note()}>
+          {(text) => (
+            <div data-slot="native-turn-note" role="status">
+              {text()}
+            </div>
+          )}
+        </Show>
+        </>
       )}
     </Show>
   )

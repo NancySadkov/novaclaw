@@ -54,6 +54,49 @@ export const detailLabel = (phase: NonNullable<TurnPhaseTiming["details"]>[numbe
 export const elapsedMs = (startedAt: number, completedAt: number | undefined, now: number) =>
   Math.max(0, (completedAt ?? now) - startedAt)
 
+/**
+ * How long a stage may run before the receipt says something about it.
+ *
+ * A ticking counter answers "is it stuck?" and nothing else. Past this point the honest question is
+ * no longer whether anything is happening — the SSE stream heartbeats every 15 s and a dead server
+ * raises the reconnect banner — but *why this is slow*, which a number cannot answer.
+ */
+export const LONG_STAGE_MS = 10_000
+
+/**
+ * What to say about a stage that is taking a while, or `undefined` while it is still ordinary.
+ *
+ * Every line names a REAL cause the user could act on or wait out. Nothing here says "please wait"
+ * or "almost done": a reassurance that carries no information is the thing this replaces, and a
+ * guess about progress we cannot see would be describing a fault falsely.
+ */
+export const longStageNote = (phase: TurnPhaseTiming["phase"], elapsed: number): string | undefined => {
+  if (elapsed < LONG_STAGE_MS) return undefined
+  switch (phase) {
+    case "scheduler-wait":
+      return "Another session is using this model — this one starts when a slot frees up."
+    case "provider-prefill":
+      return "The model has the request and hasn't started answering yet. A busy or cold model can sit here."
+    case "capability-load":
+      return "Starting a service for the first time — later turns skip this."
+    case "compaction":
+      return "The conversation is long, so it's being summarised to fit. This happens once, not every turn."
+    case "context-load":
+    case "context-fit":
+      return "A long conversation takes longer to assemble."
+    // ⚠️ These three were MISSING from this map until a live turn showed "Checking what changed…"
+    // sitting at 10.6 s in an ordinary repository (2026-08-11). The unit tests could not have found
+    // that: they prove each note is honest, not that the slow stages are the ones covered. If you
+    // add a phase, watch a real turn before deciding it never runs long.
+    case "snapshot":
+    case "snapshot-before":
+    case "snapshot-after":
+      return "Scanning the working folder for changed files — a large project takes a while."
+    default:
+      return undefined
+  }
+}
+
 export const seconds = (milliseconds: number) => `${(milliseconds / 1000).toFixed(1)}s`
 
 export const currentPhase = (timing: TurnTiming) => timing.phases.findLast((phase) => !phase.completedAt)

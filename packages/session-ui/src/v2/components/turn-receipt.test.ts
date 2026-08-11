@@ -3,6 +3,8 @@ import {
   attemptLabel,
   currentPhase,
   elapsedMs,
+  LONG_STAGE_MS,
+  longStageNote,
   phaseLabel,
   phaseLabels,
   RETIRED_PHASES,
@@ -63,6 +65,36 @@ describe("turn receipt", () => {
       providerAttempts: [],
     } satisfies TurnTiming
     expect(currentPhase(timing)?.phase).toBe("memory-search")
+  })
+
+  test("says nothing about a stage until it has actually run long", () => {
+    expect(longStageNote("provider-prefill", 0)).toBeUndefined()
+    expect(longStageNote("provider-prefill", LONG_STAGE_MS - 1)).toBeUndefined()
+    expect(longStageNote("provider-prefill", LONG_STAGE_MS)).toBeTruthy()
+  })
+
+  test("explains a long stage with a cause, and stays silent where it has none", () => {
+    // Each note must name something real the user can wait out or act on. A phase we cannot
+    // honestly explain gets nothing — an empty reassurance is what this replaces.
+    expect(longStageNote("scheduler-wait", 30_000)).toContain("Another session")
+    expect(longStageNote("capability-load", 30_000)).toContain("first time")
+    expect(longStageNote("compaction", 30_000)).toContain("summarised")
+    expect(longStageNote("generation", 30_000)).toBeUndefined()
+    expect(longStageNote("memory-rerank", 30_000)).toBeUndefined()
+    // Measured live 2026-08-11: "Checking what changed…" sat at 10.6 s in an ordinary repository,
+    // and this map did not cover it. A unit test cannot find that — it is here so a rename or a
+    // refactor cannot quietly drop the phase that was actually observed to be slow.
+    expect(longStageNote("snapshot-after", 30_000)).toContain("changed files")
+    expect(longStageNote("snapshot-before", 30_000)).toContain("changed files")
+  })
+
+  test("no note promises progress or an ending it cannot see", () => {
+    const forbidden = /almost|nearly|soon|please wait|shortly|hang on/i
+    const phases = Object.keys(phaseLabels) as (keyof typeof phaseLabels)[]
+    for (const phase of phases) {
+      const note = longStageNote(phase, 60_000)
+      if (note) expect(note).not.toMatch(forbidden)
+    }
   })
 
   test("names retries separately from ordinary attempts", () => {
