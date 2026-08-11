@@ -9,6 +9,20 @@ import { SessionEvent } from "@novaclaw/core/session/event"
 import { SessionMessageUpdater } from "@novaclaw/core/session/message-updater"
 import { SessionMessage } from "@novaclaw/core/session/message"
 
+// 🔴 **These three carried a bare `test.skip` with NO recorded reason** — the shape that hid a dead
+// `/project/current` call for four days in `worktree-endpoint-repro.test.ts`. Un-skipped and run on
+// 2026-08-11: two now FAIL, and both failures are stale EXPECTATIONS rather than product defects.
+//
+//   · "step snapshots carry over" asserts `state.messages` is still empty after `session.next.step.
+//     started`. It is not: `publish-llm-event.ts` `startAssistant()` publishes Step.Started and the
+//     projector inserts the assistant row there — confirmed independently while tracing the
+//     interrupt path (notes/reports/chat-uix-audit-2026-08-11.md).
+//   · "tool completion stores completed timestamp" expects a narrower `provider` shape than the
+//     updater now writes.
+//
+// So they encode a SUPERSEDED design. They stay skipped rather than being deleted or rewritten
+// blind, because deciding what the in-memory updater should assert is a contract question, not a
+// test edit — but the skip now says why, which is the part that was missing.
 test.skip("step snapshots carry over to assistant messages", () => {
   const state: SessionMessageUpdater.MemoryState = { messages: [] }
   const sessionID = SessionID.make("session")
