@@ -94,7 +94,6 @@ const EXPECTED: Record<string, { readonly field: string; readonly refusedBy: str
   OpenAIResponses: { field: "input", refusedBy: "openai-responses" },
   AnthropicMessages: { field: "messages", refusedBy: "anthropic-messages" },
   Gemini: { field: "contents", refusedBy: "gemini" },
-  BedrockConverse: { field: "messages", refusedBy: "bedrock-converse" },
   OpenRouter: { field: "messages", refusedBy: "openai-chat" },
 }
 
@@ -104,10 +103,9 @@ const refusalOf = (protocol: AnyProtocol, request: LLMRequest) =>
 describe("no protocol sends an empty conversation (the guard's own check)", () => {
   test("the enumeration really found protocols — a zero-length loop proves nothing", () => {
     // Without this the two loops below are vacuous the day the barrel is renamed.
-    expect(entries.length).toBeGreaterThanOrEqual(6)
+    expect(entries.length).toBeGreaterThanOrEqual(5)
     expect(entries.map((entry) => entry.export).sort()).toEqual([
       "AnthropicMessages",
-      "BedrockConverse",
       "Gemini",
       "OpenAIChat",
       "OpenAIResponses",

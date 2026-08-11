@@ -48,7 +48,7 @@ const resolve = (policy: CachePolicy | undefined): CachePolicyObject => {
 // in `core/session/runner/system-compose.ts`. Measured on a local DeepSeek V4
 // Flash server: one edited token near the front of a 13.5K-token prompt turns a
 // 0.3s time-to-first-token back into 12.9s, and no hint here can change that.
-const RESPECTS_INLINE_HINTS = new Set(["anthropic-messages", "bedrock-converse"])
+const RESPECTS_INLINE_HINTS = new Set(["anthropic-messages"])
 
 const makeHint = (ttlSeconds: number | undefined): CacheHint =>
   ttlSeconds !== undefined ? new CacheHint({ type: "ephemeral", ttlSeconds }) : new CacheHint({ type: "ephemeral" })

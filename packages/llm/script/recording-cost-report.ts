@@ -58,7 +58,6 @@ const providerFromUrl = (url: string) => {
   if (url.includes("api.openai.com")) return "openai"
   if (url.includes("api.anthropic.com")) return "anthropic"
   if (url.includes("generativelanguage.googleapis.com")) return "google"
-  if (url.includes("bedrock")) return "amazon-bedrock"
   if (url.includes("openrouter.ai")) return "openrouter"
   if (url.includes("api.x.ai")) return "xai"
   if (url.includes("api.groq.com")) return "groq"
@@ -71,7 +70,6 @@ const providerAliases: Record<string, ReadonlyArray<string>> = {
   openai: ["openai"],
   anthropic: ["anthropic"],
   google: ["google"],
-  "amazon-bedrock": ["amazon-bedrock"],
   openrouter: ["openrouter", "openai", "anthropic", "google"],
   xai: ["xai"],
   groq: ["groq"],

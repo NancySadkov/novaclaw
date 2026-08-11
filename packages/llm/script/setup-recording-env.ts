@@ -3,7 +3,6 @@
 import { NodeFileSystem } from "@effect/platform-node"
 import * as path from "node:path"
 import * as prompts from "@clack/prompts"
-import { AwsV4Signer } from "aws4fetch"
 import { Config, ConfigProvider, Effect, FileSystem, PlatformError, Redacted } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/unstable/http"
 import * as ProviderShared from "../src/protocols/shared"
@@ -59,20 +58,6 @@ const PROVIDERS: ReadonlyArray<Provider> = [
       HttpClientRequest.get(
         `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(env.GOOGLE_GENERATIVE_AI_API_KEY)}`,
       ).pipe(executeRequest),
-  },
-  {
-    id: "bedrock",
-    label: "Amazon Bedrock",
-    tier: "core",
-    note: "Native Bedrock Converse recorded tests",
-    vars: [
-      { name: "AWS_ACCESS_KEY_ID" },
-      { name: "AWS_SECRET_ACCESS_KEY" },
-      { name: "AWS_SESSION_TOKEN", optional: true },
-      { name: "BEDROCK_RECORDING_REGION", optional: true },
-      { name: "BEDROCK_MODEL_ID", optional: true },
-    ],
-    validate: (env) => validateBedrock(env),
   },
   {
     id: "groq",
@@ -392,25 +377,6 @@ const validateChat = (input: {
       temperature: 0,
     }),
   }).pipe(executeRequest)
-
-const validateBedrock = (env: Env) =>
-  Effect.gen(function* () {
-    const request = yield* Effect.promise(() =>
-      new AwsV4Signer({
-        url: `https://bedrock.${env.BEDROCK_RECORDING_REGION || "us-east-1"}.amazonaws.com/foundation-models`,
-        method: "GET",
-        service: "bedrock",
-        region: env.BEDROCK_RECORDING_REGION || "us-east-1",
-        accessKeyId: env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-        sessionToken: env.AWS_SESSION_TOKEN || undefined,
-      }).sign(),
-    )
-    return yield* HttpClientRequest.get(request.url.toString()).pipe(
-      HttpClientRequest.setHeaders(Object.fromEntries(request.headers.entries())),
-      executeRequest,
-    )
-  })
 
 const validateProvider = Effect.fn("RecordingEnv.validateProvider")(function* (provider: Provider, env: Env) {
   return yield* (provider.validate?.(env) ?? Effect.succeed("no lightweight validator")).pipe(

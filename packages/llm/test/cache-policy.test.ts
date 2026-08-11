@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { CacheHint, LLM, Message } from "../src"
 import { Auth, LLMClient } from "../src/route"
-import { AmazonBedrock } from "../src/providers"
 import * as AnthropicMessages from "../src/protocols/anthropic-messages"
 import * as Gemini from "../src/protocols/gemini"
 import * as OpenAIChat from "../src/protocols/openai-chat"
@@ -12,10 +11,6 @@ import { it } from "./lib/effect"
 const anthropicModel = AnthropicMessages.route
   .with({ endpoint: { baseURL: "https://api.anthropic.test/v1/" }, auth: Auth.header("x-api-key", "test") })
   .model({ id: "claude-sonnet-4-5" })
-
-const bedrockModel = AmazonBedrock.configure({
-  credentials: { region: "us-east-1", accessKeyId: "fixture", secretAccessKey: "fixture" },
-}).model("anthropic.claude-3-5-sonnet-20241022-v2:0")
 
 const openaiModel = OpenAIChat.route
   .with({ endpoint: { baseURL: "https://api.openai.test/v1/" }, auth: Auth.bearer("test") })
@@ -112,32 +107,6 @@ describe("applyCachePolicy", () => {
       const flat = JSON.stringify(prepared.body)
       expect(flat).not.toContain("cache_control")
       expect(flat).not.toContain("cachePoint")
-    }),
-  )
-
-  it.effect("'auto' on Bedrock emits cachePoint markers in the right places", () =>
-    Effect.gen(function* () {
-      const prepared = yield* LLMClient.prepare(
-        LLM.request({
-          model: bedrockModel,
-          system: "Sys",
-          tools: [{ name: "t1", description: "t1", inputSchema: { type: "object", properties: {} } }],
-          messages: [Message.user("first user"), Message.assistant("reply"), Message.user("latest user")],
-          cache: "auto",
-        }),
-      )
-
-      expect(prepared.body).toMatchObject({
-        toolConfig: {
-          tools: [{ toolSpec: { name: "t1" } }, { cachePoint: { type: "default" } }],
-        },
-        system: [{ text: "Sys" }, { cachePoint: { type: "default" } }],
-        messages: [
-          { role: "user", content: [{ text: "first user" }] },
-          { role: "assistant", content: [{ text: "reply" }] },
-          { role: "user", content: [{ text: "latest user" }, { cachePoint: { type: "default" } }] },
-        ],
-      })
     }),
   )
 

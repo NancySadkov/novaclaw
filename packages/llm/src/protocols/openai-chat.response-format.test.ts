@@ -224,7 +224,6 @@ describe("openai-chat — S5 asks, and assumes nothing (ruling 2)", () => {
 // Never add a name to this list.
 const PROTOCOLS_THAT_DROP_RESPONSE_FORMAT = [
   "anthropic-messages.ts",
-  "bedrock-converse.ts",
   "gemini.ts",
   "openai-responses.ts",
 ] as const
@@ -241,7 +240,7 @@ describe("S5 — the silent-drop ledger (can only shrink)", () => {
   }
 
   test("the ledger is complete: every protocol except the one S5 implements", () => {
-    expect(PROTOCOLS_THAT_DROP_RESPONSE_FORMAT.length).toBe(4)
+    expect(PROTOCOLS_THAT_DROP_RESPONSE_FORMAT.length).toBe(3)
     // ...and the one it does implement is not on it.
     expect([...PROTOCOLS_THAT_DROP_RESPONSE_FORMAT]).not.toContain("openai-chat.ts")
   })

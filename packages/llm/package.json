@@ -14,7 +14,6 @@
     "./route": "./src/route/index.ts",
     "./provider": "./src/provider.ts",
     "./providers": "./src/providers/index.ts",
-    "./providers/amazon-bedrock": "./src/providers/amazon-bedrock.ts",
     "./providers/anthropic": "./src/providers/anthropic.ts",
     "./providers/azure": "./src/providers/azure.ts",
     "./providers/cloudflare": "./src/providers/cloudflare.ts",
@@ -26,7 +25,6 @@
     "./providers/xai": "./src/providers/xai.ts",
     "./protocols": "./src/protocols/index.ts",
     "./protocols/anthropic-messages": "./src/protocols/anthropic-messages.ts",
-    "./protocols/bedrock-converse": "./src/protocols/bedrock-converse.ts",
     "./protocols/gemini": "./src/protocols/gemini.ts",
     "./protocols/openai-chat": "./src/protocols/openai-chat.ts",
     "./protocols/openai-compatible-chat": "./src/protocols/openai-compatible-chat.ts",
@@ -44,7 +42,6 @@
     "@smithy/eventstream-codec": "4.2.14",
     "@smithy/util-utf8": "4.2.2",
     "@novaclaw/schema": "workspace:*",
-    "aws4fetch": "1.0.20",
     "effect": "catalog:"
   }
 }
