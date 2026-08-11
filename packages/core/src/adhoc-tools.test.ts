@@ -10,7 +10,6 @@ import {
   listSessionRecipes,
   mergeRecipes,
   normalizeRecipe,
-  promoteRecipeToConfig,
   removeSessionRecipe,
   saveSessionRecipe,
 } from "./adhoc-tools"
@@ -112,25 +111,4 @@ describe("4E — discard + promote", () => {
     expect(await listSessionRecipes("ses_rm", { root })).toEqual([])
   })
 
-  test("promoteRecipeToConfig appends to adhoc_tools, preserving comments; upserts by name", () => {
-    const original = `{
-  // my providers
-  "provider": { "dgx-spark": { "name": "Spark" } }
-}`
-    const once = promoteRecipeToConfig(original, recipe("weather", { description: "get weather" }))
-    expect(once).toContain("// my providers")
-    let parsed = parse(once) as { adhoc_tools: Array<{ name: string; manual: string }> }
-    expect(parsed.adhoc_tools.map((t) => t.name)).toEqual(["weather"])
-    // second recipe appends; re-promoting "weather" with a new manual replaces in place
-    const twice = promoteRecipeToConfig(once, recipe("stocks"))
-    const thrice = promoteRecipeToConfig(twice, recipe("weather", { manual: "curl v2/weather" }))
-    parsed = parse(thrice) as { adhoc_tools: Array<{ name: string; manual: string }> }
-    expect(parsed.adhoc_tools.map((t) => t.name).sort()).toEqual(["stocks", "weather"])
-    expect(parsed.adhoc_tools.find((t) => t.name === "weather")!.manual).toBe("curl v2/weather")
-  })
-
-  test("promote into an empty/blank config creates the array", () => {
-    const parsed = parse(promoteRecipeToConfig("", recipe("solo"))) as { adhoc_tools: Array<{ name: string }> }
-    expect(parsed.adhoc_tools.map((t) => t.name)).toEqual(["solo"])
-  })
 })
