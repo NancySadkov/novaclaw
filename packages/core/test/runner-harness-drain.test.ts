@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import { EventV2 } from "@novaclaw/core/event"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, type RunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness, type RunnerHarness } from "./fixture/runner-harness"
 
 /**
  * S2's ADMISSION TEST. Not a ported claim — the thing that must be true before any claim can be
@@ -132,3 +132,53 @@ describe("the harness drives the real drain", () => {
     expect(second.requests).toHaveLength(1)
   })
 })
+
+/**
+ * `todo/adoption.md`'s Fast Chat gate ends *"hidden startup work is timed and user-interruptible"*.
+ * Timed it plainly is — the receipt renders every stage. INTERRUPTIBLE was assumed: the stages run
+ * inside the drain fiber, and an interrupt kills that fiber, so it follows. Nothing tested it, and
+ * the one live observation was an interrupt AFTER `provider-prefill`, which is past the startup work
+ * the clause is about.
+ *
+ * `systemLoadHook` runs inside the system-context load — a pre-provider stage — so holding it open is
+ * exactly the window a user would be waiting through when they press stop.
+ */
+describe("hidden startup work is interruptible", () => {
+  test("an interrupt DURING system-context load stops the turn before the provider is called", async () => {
+    const reached = makeLatch()
+    const release = makeLatch()
+    const harness = makeRunnerHarness({ turns: [completeTurn("text-1", "should never be produced")] })
+    harness.controls.systemLoadHook = Effect.promise(async () => {
+      reached.open()
+      await release.promise
+    })
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Say hello" }),
+          resume: false,
+        })
+        // `Effect.race` INTERRUPTS the loser, which is exactly the mechanism under test: the turn
+        // runs until the hook parks it inside the load, the racer then wins, and the runner's fiber
+        // takes a real interrupt at that point.
+        yield* Effect.race(
+          session.resume(HARNESS_SESSION),
+          Effect.promise(() => reached.promise),
+        )
+        // Let the parked hook go so nothing leaks past the test.
+        release.open()
+      }),
+      "startup interruptibility",
+    )
+
+    // ⚠️ THE assertion, and the reason this test is worth its length: the provider was never called.
+    // A turn that is "interruptible" only after prefill would still make a user who pressed stop
+    // during startup pay for a whole request — which is the cost the gate is about.
+    expect(harness.requests, "interrupting during startup must not reach the provider").toHaveLength(0)
+  })
+})
+
