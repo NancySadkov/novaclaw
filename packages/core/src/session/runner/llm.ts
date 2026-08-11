@@ -993,6 +993,10 @@ export const layer = Layer.effect(
             tierHint,
             systemPromptOverride: config.systemPromptOverride,
             agentSystem: agent.info?.system,
+            // The tool list the model is about to receive is `toolMaterialization.definitions`; the
+            // catalogue it CANNOT see is `.deferred`. Saying how many there are is the whole point —
+            // see the section's own note on why a count and not a hedge.
+            toolDiscovery: SystemCompose.toolDiscoverySection(toolMaterialization?.deferred.length ?? 0),
             projectScope: SystemCompose.projectScopeSection(config.permissionMode),
             base: system.baseline,
           })).map(SystemPart.make)

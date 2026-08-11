@@ -77,8 +77,19 @@ export const layer = Layer.effectDiscard(
     yield* tools
       .register({
         [name]: Tool.make({
+          // ⚠️ The previous wording was jargon AND circular: "Find installed DEFERRED tools ... call
+          // this when the CATEGORY MANIFEST suggests a capability" — a model has no reason to map
+          // "deferred" onto "tools you cannot see", and the category manifest only appears in this
+          // tool's own OUTPUT, so the trigger it named was invisible until after the call. Holo-3.1,
+          // asked for its full tool list, answered from the resident set and never searched (owner,
+          // 2026-08-11). The system prompt now states the list is partial and gives the count; this
+          // says what the tool does in the words a caller would use.
           description:
-            "Find installed deferred tools by capability. Returns complete callable input schemas as an append-only result. Call this when the category manifest suggests a capability but no resident tool fits; then call a returned tool by its exact name.",
+            "Search ALL installed tools, including the ones whose schemas are not in this request. " +
+            "Give a plain-language capability (for example: read a sqlite database, take a screenshot, " +
+            "send a message) and it returns their complete callable schemas; then call the tool you " +
+            "want by its exact name. Use it whenever you are asked what you can do, or when no tool " +
+            "in this request fits — the tools listed here are not all the tools you have.",
           input: Input,
           output: Output,
           toModelOutput: ({ output }) => [{ type: "text", text: render(output) }],

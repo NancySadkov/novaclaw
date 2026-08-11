@@ -121,6 +121,44 @@ export const projectScopeSection = (mode: PermissionMode): string | undefined =>
   mode === "yolo" ? undefined : PROJECT_SCOPE_INSTRUCTION
 
 /**
+ * That the tool list is INCOMPLETE, and how to reach the rest.
+ *
+ * 🔴 **The defect (owner, 2026-08-11, on Holo-3.1):** asked *"what is the full list of tools you have
+ * available?"*, the model listed the resident tools and never called `tool_search` — so it answered
+ * confidently with a subset, and could not reach a capability that was installed the whole time.
+ *
+ * Nothing had ever told it otherwise. Deferred tools were disclosed in exactly ONE place —
+ * `tool_search`'s own description — which is both jargon ("deferred tools") and circular: it says to
+ * call it *"when the category manifest suggests a capability"*, and the category manifest is only
+ * visible in the result of calling it. A model that has never called `tool_search` has no way to
+ * learn that anything is missing. Answering from the visible list was the correct inference from the
+ * information it had.
+ *
+ * ⚠️ **The COUNT is the load-bearing part, not the prose.** "Some tools may not be listed" is the
+ * kind of hedge a model reasonably ignores; "there are 37 more" is a fact it can act on, and one the
+ * reader can check. This is also why the section is absent when the count is zero — an instruction
+ * describing tools that do not exist is a false description (ruling 2), and it would then be dead
+ * text in every prompt that has no catalogue.
+ *
+ * ⚠️ Kernel material, so a custom persona or an agent prompt cannot drop it: the list being partial
+ * is a fact about the runtime, not a preference of the assistant's.
+ */
+export const toolDiscoverySection = (deferredCount: number): string | undefined => {
+  if (deferredCount <= 0) return undefined
+  const count = `${deferredCount} more tool${deferredCount === 1 ? "" : "s"}`
+  return (
+    `Your tool list is PARTIAL. Beyond the tools defined in this request, ${count} ` +
+    `${deferredCount === 1 ? "is" : "are"} installed and callable — their schemas are held back to keep ` +
+    "this prompt small.\n\n" +
+    "To reach them, call `tool_search` with a plain-language description of the capability you need " +
+    '(for example "read a sqlite database", "take a screenshot", "send a message"). It returns their ' +
+    "complete schemas; then call the tool you want by its exact name.\n\n" +
+    "So when you are asked what you can do, or when no listed tool fits the task, search before you " +
+    "answer or decline. Answering from the listed tools alone will be wrong."
+  )
+}
+
+/**
  * ⚠️ **The turn-CLOSING instruction lived here and was CUT on 2026-08-11 — the day it shipped.**
  *
  * The idea: a settled turn renders as the answer with everything behind it folded under "Done", so
@@ -156,6 +194,8 @@ export interface SystemPromptParts {
   readonly systemPromptOverride?: string
   /** The selected agent's own system prompt. */
   readonly agentSystem?: string
+  /** That the tool list is partial (via `toolDiscoverySection`); absent when nothing is deferred. */
+  readonly toolDiscovery?: string
   /** The project-scope rule (already resolved via `projectScopeSection`); absent in `yolo`. */
   readonly projectScope?: string
   /** The immutable kernel base context (environment, tools, skills) — composed LAST. */
@@ -185,6 +225,7 @@ export const composeSystemParts = (parts: SystemPromptParts): string[] =>
     parts.tierHint,
     parts.systemPromptOverride,
     parts.agentSystem,
+    parts.toolDiscovery,
     parts.projectScope,
     parts.base,
   ].filter((part): part is string => part !== undefined && part.length > 0)

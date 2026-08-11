@@ -16,12 +16,12 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
   // ⚠️ `memoryRecall` is deliberately NOT here: it left the system prompt on 2026-08-05 because it is
   // the one per-turn-volatile part and it was destroying the server-side prefix cache. It now rides
   // the message tail (llm.ts). See the ⚠️ header in system-compose.ts.
-  // ⚠️ `projectScope` is omitted alongside `modelPrePrompt` on purpose: this
+  // ⚠️ `projectScope` and `toolDiscovery` are omitted alongside `modelPrePrompt` on purpose: this
   // file's whole claim is "byte-identical to today when the OPTIONAL sections are absent", so every
   // optional section has to be absent from the baseline. `projectScope`'s own composition is covered
   // in `test/unattended-bash-safe-mode.test.ts`.
   const baseParts: Required<
-    Omit<SystemCompose.SystemPromptParts, "modelPrePrompt" | "projectScope">
+    Omit<SystemCompose.SystemPromptParts, "modelPrePrompt" | "projectScope" | "toolDiscovery">
   > = {
     persona: "You are Nova.",
     expertiseHint: "Explain in plain language.",
@@ -104,4 +104,42 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
     const provider = Schema.decodeUnknownSync(ConfigProvider.Info)({ models: { m1: { prePrompt: "nested works" } } })
     expect(provider.models?.["m1"]?.prePrompt).toBe("nested works")
   })
+
+  // The tool-discovery section is kernel material for the same reason project scope is: the list
+  // being partial is a fact about the runtime, not a preference a persona may drop.
+  it("sits in the kernel material, after anything a persona or agent prompt can say", () => {
+    const section = SystemCompose.toolDiscoverySection(9)!
+    const parts = SystemCompose.composeSystemParts({ ...baseParts, toolDiscovery: section })
+    const index = parts.indexOf(section)
+    expect(index).toBeGreaterThan(parts.indexOf(baseParts.agentSystem))
+    expect(index).toBeGreaterThan(parts.indexOf(baseParts.systemPromptOverride))
+    expect(index).toBeLessThan(parts.indexOf(baseParts.base))
+  })
 })
+
+describe("toolDiscoverySection — the model must know its tool list is partial", () => {
+  // 🔴 The owner's report on Holo-3.1: asked for the full list of its tools, it answered from the
+  // resident set and never searched. Nothing had ever told it more existed.
+  it("names the COUNT, so it is a fact rather than a hedge", () => {
+    const section = SystemCompose.toolDiscoverySection(37)!
+    expect(section).toContain("37 more tools")
+    expect(section).toContain("tool_search")
+    // The two moments it must fire: being asked what it can do, and finding no listed tool fits.
+    expect(section).toContain("what you can do")
+    expect(section).toContain("no listed tool fits")
+  })
+
+  it("says ONE tool in the singular", () => {
+    expect(SystemCompose.toolDiscoverySection(1)!).toContain("1 more tool is")
+    expect(SystemCompose.toolDiscoverySection(2)!).toContain("2 more tools are")
+  })
+
+  // ⚠️ An instruction describing tools that do not exist is a false description, and would be dead
+  // text in every prompt with no catalogue.
+  it("is ABSENT when nothing is deferred", () => {
+    expect(SystemCompose.toolDiscoverySection(0)).toBeUndefined()
+    expect(SystemCompose.toolDiscoverySection(-1)).toBeUndefined()
+  })
+
+})
+
