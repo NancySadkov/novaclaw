@@ -287,4 +287,30 @@ describe("i18n parity", () => {
     }
     expect(untranslated, "add a real translation for each line below, in that locale's bundle").toEqual([])
   })
+
+  // The Home launcher is the FIRST screen, and its thirteen tiles are the whole map of the product.
+  // A user whose language is set gets a home screen half in English, which reads as broken rather
+  // than as untranslated — so `home.app.*` joins `session.error.*` as must-translate.
+  //
+  // ⚠️ **The session-fault rule cannot be reused verbatim here, and the difference is the point.**
+  // That one fails when a value EQUALS English, which works for full sentences. Tile names are
+  // proper nouns and loanwords: "Terminal" is "Terminal" in German, French, Danish, Polish and
+  // Turkish, and "Chats" is "Chats" in German. Failing those would push a translator toward
+  // inventing a worse word to satisfy a test. So the equality check applies to `.subtitle` only —
+  // a full phrase that matches English really is untranslated — while `.name` is required to EXIST
+  // and allowed to coincide.
+  test("non-English locales translate every Home tile", () => {
+    const keys = Object.keys(en).filter((key) => key.startsWith("home.app."))
+    expect(keys.length, "no home.app.* keys in en — have the tiles moved?").toBeGreaterThan(0)
+    const problems: string[] = []
+    for (const [name, dict] of APP_LOCALES) {
+      for (const key of keys) {
+        const value = dict[key]
+        if (typeof value !== "string") problems.push(`${name}.ts is missing ${key}`)
+        else if (key.endsWith(".subtitle") && value === en[key as keyof typeof en])
+          problems.push(`${name}.ts leaves ${key} in English`)
+      }
+    }
+    expect(problems, "translate each line below in that locale's bundle").toEqual([])
+  })
 })
