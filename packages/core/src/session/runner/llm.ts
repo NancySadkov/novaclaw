@@ -173,6 +173,17 @@ import { ProjectGrounding } from "./project-grounding"
 const STEER_POLL_MS = 400
 
 /**
+ * When a harness stage stops being ordinary and becomes worth recording.
+ *
+ * ⚠️ Deliberately the same number as the UI's `LONG_STAGE_MS`
+ * (`session-ui/src/v2/components/turn-receipt.ts`), and deliberately NOT shared with it: that one
+ * decides when to explain a wait to a person, this one decides when to keep evidence for us. They
+ * agree today because the same 10 s is the answer to both questions. If one moves, the other does
+ * not have to — but say so where you move it, because a reader will assume they are one knob.
+ */
+const SLOW_STAGE_MS = 10_000
+
+/**
  * How long the recall re-ranker may hold up the user's turn before we keep the deterministic order.
  *
  * Sized against what the pass is worth, not against what a model might want: it re-orders at most a
@@ -702,8 +713,37 @@ export const layer = Layer.effect(
         ).pipe(Effect.ignore)
       const timingStart = (phase: SessionMessage.TurnPhase) =>
         Effect.sync(() => timing.start(phase)).pipe(Effect.andThen(publishLiveTiming()))
+      /**
+       * Close a phase, and record it if it ran long.
+       *
+       * Only stages that close through HERE are considered, which is every harness stage and no
+       * provider one — `provider-prefill` and `generation` close via `attemptSettled`, and a model
+       * taking a while is not a defect worth a warning. The receipt already shows the wait; what it
+       * cannot show later is the breakdown, which is why this reads the sub-timings at the one
+       * moment they exist (see the ledger entry for the 10.6 s that went unexplained).
+       */
       const timingEnd = (phase: SessionMessage.TurnPhase) =>
-        Effect.sync(() => timing.end(phase)).pipe(Effect.andThen(publishLiveTiming()))
+        Effect.sync(() => timing.end(phase)).pipe(
+          Effect.tap((closed) => {
+            if (!closed?.completedAt) return Effect.void
+            const elapsed = closed.completedAt - closed.startedAt
+            if (elapsed < SLOW_STAGE_MS) return Effect.void
+            const slowest = (closed.details ?? [])
+              .filter((detail) => detail.completedAt !== undefined)
+              .map((detail) => ({ phase: detail.phase, ms: detail.completedAt! - detail.startedAt }))
+              .sort((a, b) => b.ms - a.ms)[0]
+            return Log.event("session.turn.stage.slow", {
+              "session.id": sessionID,
+              "session.stage": phase,
+              "session.stage.ms": elapsed,
+              // `none`/`0` rather than omitting the pair: a stage with no sub-timings and a stage
+              // whose slowest sub-timing we failed to read must not look the same in a query.
+              "session.stage.detail": slowest?.phase ?? "none",
+              "session.stage.detail.ms": slowest?.ms ?? 0,
+            })
+          }),
+          Effect.andThen(publishLiveTiming()),
+        )
       // ⚠️ Three DIFFERENT stretches of this function used to open a phase called `prepare`, so a
       // finished turn's receipt listed "Preparing your prompt" three times and read as a stutter.
       // Each has its own name now — this one covers loading the session: the config walk, the agent,

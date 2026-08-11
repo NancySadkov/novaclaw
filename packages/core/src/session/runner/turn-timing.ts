@@ -40,12 +40,22 @@ export const make = (now: () => number = Date.now) => {
   const start = (phase: Phase) => {
     begin(phase)
   }
-  const end = (phase: Phase) => {
+  /**
+   * Close the newest open record for `phase` and RETURN it.
+   *
+   * The return value is what lets a caller notice that a stage ran long without keeping its own
+   * stopwatch beside this ledger — two clocks for one stage is how they end up disagreeing. It also
+   * hands back the sub-timings, which is the only thing that can say WHICH part was slow: a 10.6 s
+   * "Checking what changed" was observed on 2026-08-11 and could not be explained afterwards,
+   * because nothing had recorded the breakdown at the moment it happened.
+   */
+  const end = (phase: Phase): SessionMessage.TurnPhaseTiming | undefined => {
     const indexes = open.get(phase)
     const index = indexes?.pop()
-    if (index === undefined) return
+    if (index === undefined) return undefined
     phases[index] = { ...phases[index]!, completedAt: now() }
     if (indexes?.length === 0) open.delete(phase)
+    return phases[index]
   }
   /**
    * The snapshot phase a `repository`/`status`/`persist`/`hash` detail belongs to — the newest open

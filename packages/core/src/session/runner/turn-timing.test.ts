@@ -90,4 +90,49 @@ describe("TurnTiming", () => {
       },
     ])
   })
+
+  test("end() hands back the closed record, WITH its sub-timings", () => {
+    // This is what lets the runner notice a long stage and say which part of it was slow, at the
+    // one moment the breakdown exists. Without the return it would need a second stopwatch beside
+    // this ledger, and two clocks for one stage eventually disagree.
+    let now = 10
+    const timing = TurnTiming.make(() => now)
+    timing.start("snapshot-after")
+    timing.detailStart("status")
+    now = 40
+    timing.detailEnd("status")
+    timing.detailStart("hash")
+    now = 50
+    timing.detailEnd("hash")
+    now = 60
+    const closed = timing.end("snapshot-after")
+
+    expect(closed).toEqual({
+      phase: "snapshot-after",
+      startedAt: 10,
+      completedAt: 60,
+      details: [
+        { phase: "status", startedAt: 10, completedAt: 40 },
+        { phase: "hash", startedAt: 40, completedAt: 50 },
+      ],
+    })
+  })
+
+  test("end() on a phase that was never open returns undefined rather than inventing one", () => {
+    const timing = TurnTiming.make(() => 100)
+    expect(timing.end("compaction")).toBeUndefined()
+    expect(timing.snapshot().phases).toEqual([])
+  })
+
+  test("end() closes the NEWEST of several open records of one phase", () => {
+    let now = 10
+    const timing = TurnTiming.make(() => now)
+    timing.start("capability-run")
+    now = 20
+    timing.start("capability-run")
+    now = 35
+    expect(timing.end("capability-run")).toEqual({ phase: "capability-run", startedAt: 20, completedAt: 35 })
+    now = 50
+    expect(timing.end("capability-run")).toEqual({ phase: "capability-run", startedAt: 10, completedAt: 50 })
+  })
 })

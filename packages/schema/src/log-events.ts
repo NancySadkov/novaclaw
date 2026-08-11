@@ -2031,6 +2031,33 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  /**
+   * A harness stage of one turn ran past the point where the UI stops calling it normal.
+   *
+   * Filed for a specific unanswered question: a `snapshot-after` was observed at **10.6 s** on
+   * 2026-08-11, and afterwards every primitive behind it measured 85–160 ms and nothing reproduced
+   * it. The breakdown existed at the moment it happened — the recorder collects
+   * `repository`/`status`/`persist`/`hash` sub-timings — and was thrown away, so the next occurrence
+   * had to be waited for rather than read. This event keeps it.
+   *
+   * Both stage names are closed vocabularies we own (`TurnPhase`, `SnapshotPhase`), so this is
+   * egress-safe by declaration and a crash signature can carry it. **PROVIDER phases are excluded at
+   * the call site** — the model taking a while is not a defect, and logging it would bury the
+   * harness stages this exists to catch.
+   */
+  "session.turn.stage.slow": {
+    level: "warn",
+    message: "a turn stage ran long",
+    attributes: {
+      "session.id": "correlate",
+      "session.stage": "id",
+      "session.stage.ms": "count",
+      "session.stage.detail": "id",
+      "session.stage.detail.ms": "count",
+    },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   /** A wake arrived with no executor attached; queued input will not run until one is. */
   "session.wake.dropped": {
     level: "warn",
