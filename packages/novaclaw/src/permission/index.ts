@@ -19,7 +19,6 @@ import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 
 export const Event = PermissionRuleset.Event
 
-
 export function evaluate(
   permission: string,
   pattern: string,
@@ -35,7 +34,6 @@ export function evaluate(
     }
   )
 }
-
 
 function expand(pattern: string): string {
   if (pattern.startsWith("~/")) return os.homedir() + pattern.slice(1)
@@ -62,8 +60,5 @@ export function fromConfig(permission: ConfigPermission.Info) {
 export function merge(...rulesets: PermissionRuleset.Ruleset[]): PermissionRuleset.Rule[] {
   return rulesets.flat()
 }
-
-
-
 
 export * as Permission from "."
