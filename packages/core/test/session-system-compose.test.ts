@@ -16,12 +16,12 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
   // ⚠️ `memoryRecall` is deliberately NOT here: it left the system prompt on 2026-08-05 because it is
   // the one per-turn-volatile part and it was destroying the server-side prefix cache. It now rides
   // the message tail (llm.ts). See the ⚠️ header in system-compose.ts.
-  // ⚠️ `projectScope` and `turnClosing` are omitted alongside `modelPrePrompt` on purpose: this
+  // ⚠️ `projectScope` is omitted alongside `modelPrePrompt` on purpose: this
   // file's whole claim is "byte-identical to today when the OPTIONAL sections are absent", so every
   // optional section has to be absent from the baseline. `projectScope`'s own composition is covered
-  // in `test/unattended-bash-safe-mode.test.ts`; `turnClosing`'s is at the bottom of this file.
+  // in `test/unattended-bash-safe-mode.test.ts`.
   const baseParts: Required<
-    Omit<SystemCompose.SystemPromptParts, "modelPrePrompt" | "projectScope" | "turnClosing">
+    Omit<SystemCompose.SystemPromptParts, "modelPrePrompt" | "projectScope">
   > = {
     persona: "You are Nova.",
     expertiseHint: "Explain in plain language.",
@@ -92,25 +92,6 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
     expect(withSection[0]).toBe(section)
     // and with no section, a persona-less prompt is byte-identical to today-without-persona
     expect(SystemCompose.composeSystemParts({ ...baseParts, persona: undefined })).toEqual(todayOrder.slice(1))
-  })
-
-  it("adds the turn-closing rule only when the turn HAS tools, as kernel material", () => {
-    // No tools ⇒ nothing to fold, nothing hidden, and a plain answer must not be told to file a
-    // status report. The section is absent, and the composed prompt is unchanged.
-    expect(SystemCompose.turnClosingSection(false)).toBeUndefined()
-    expect(SystemCompose.composeSystemParts({ ...baseParts, turnClosing: undefined })).toEqual(todayOrder)
-
-    // With tools it sits AFTER everything a user override or an agent prompt can say — a custom
-    // persona must not be able to drop the contract the transcript renderer was built against —
-    // and still inside the kernel material that closes the prompt, i.e. before `base`.
-    const section = SystemCompose.turnClosingSection(true)!
-    expect(section).toBe(SystemCompose.TURN_CLOSING_INSTRUCTION)
-    const parts = SystemCompose.composeSystemParts({ ...baseParts, turnClosing: section })
-    const idx = parts.indexOf(section)
-    expect(idx).toBeGreaterThan(parts.indexOf(baseParts.agentSystem))
-    expect(idx).toBeGreaterThan(parts.indexOf(baseParts.systemPromptOverride))
-    expect(idx).toBeLessThan(parts.indexOf(baseParts.base))
-    expect(parts).toEqual([...todayOrder.slice(0, -1), section, baseParts.base])
   })
 
   it("carries prePrompt as an OPTIONAL config field (no migration; old configs decode unchanged)", () => {

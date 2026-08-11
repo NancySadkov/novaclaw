@@ -121,34 +121,27 @@ export const projectScopeSection = (mode: PermissionMode): string | undefined =>
   mode === "yolo" ? undefined : PROJECT_SCOPE_INSTRUCTION
 
 /**
- * How a tool-bearing turn ENDS — a kernel rule, because the UI depends on it.
+ * ⚠️ **The turn-CLOSING instruction lived here and was CUT on 2026-08-11 — the day it shipped.**
  *
- * A settled turn renders as the answer with everything behind it folded under "Done"
- * (`session-ui/src/v2/turn-group.ts`, owner ruling 2026-08-11). That makes the prose after the last
- * tool call **the entire visible reply**: narration between steps is work, and a turn that stops on
- * a tool call has no answer to show at all. So this is not a style preference the persona could
- * carry — it is the contract the renderer was built against, and it belongs with the kernel
- * material for the same reason `PROJECT_SCOPE_INSTRUCTION` does: a custom persona or an agent
- * prompt must not be able to drop it.
+ * The idea: a settled turn renders as the answer with everything behind it folded under "Done", so
+ * the prose after the last tool call is the entire visible reply, and 24% of tool-bearing turns
+ * ended with none. A kernel-level instruction told the model to always close with a sentence or two
+ * and not replay the steps.
  *
- * It names the failure it prevents (stopping on a tool call, re-narrating the steps) rather than
- * asking vaguely for brevity, because the vague version is the one a model reasons its way around —
- * the same lesson `PROJECT_SCOPE_INSTRUCTION` records above.
+ * It shipped with a pre-registered kill rule, because the evidence for it was already mixed — the
+ * history arm supported it while a synthetic arm showed it ADDING length. The rule: *if the median
+ * answer length rises, cut it — it is then doing the opposite of its job.*
+ *
+ * Re-measured against the same instance, before vs after the ship
+ * (`tests/turn-closing-history.ts --since/--until`): median **9 → 25 words**, no-visible-answer
+ * **37% → 57%**. Both metrics moved the wrong way, so it went. ⚠️ n=7 after, which is far too small
+ * to call it harmful — but a weak signal against a change that never had positive evidence is
+ * enough, and a pre-registered rule honoured only when convenient is not a rule.
+ *
+ * **The defect it aimed at is still open**: a turn that stops on a tool call leaves the fold with
+ * nothing to show. Whatever is tried next, do not re-add a bare "be brief" line — that is the vague
+ * form `PROJECT_SCOPE_INSTRUCTION` records as the one a model reasons its way around.
  */
-export const TURN_CLOSING_INSTRUCTION =
-  "Closing a turn: always finish by writing to the user — never stop on a tool call.\n\n" +
-  "What you write after your last tool call is the whole reply they see: your thinking, the " +
-  "commands and their output are folded away behind a control they may never open. Say what is now " +
-  "true and anything left undone, in a sentence or two. Do not replay the steps — they are already " +
-  "on screen for anyone who wants them."
-
-/**
- * The closing SECTION — present only when the turn actually has tools. Without them there are no
- * steps to fold, nothing gets hidden, and instructing a plain conversational answer to "report the
- * outcome" would make it read like a status report.
- */
-export const turnClosingSection = (toolsPresent: boolean): string | undefined =>
-  toolsPresent ? TURN_CLOSING_INSTRUCTION : undefined
 
 export interface SystemPromptParts {
   /** The Nova persona baseline — composed FIRST (persona.ts), before per-session/agent prompts. */
@@ -165,8 +158,6 @@ export interface SystemPromptParts {
   readonly agentSystem?: string
   /** The project-scope rule (already resolved via `projectScopeSection`); absent in `yolo`. */
   readonly projectScope?: string
-  /** How a tool-bearing turn ends (via `turnClosingSection`); absent when the turn has no tools. */
-  readonly turnClosing?: string
   /** The immutable kernel base context (environment, tools, skills) — composed LAST. */
   readonly base?: string
 }
@@ -195,6 +186,5 @@ export const composeSystemParts = (parts: SystemPromptParts): string[] =>
     parts.systemPromptOverride,
     parts.agentSystem,
     parts.projectScope,
-    parts.turnClosing,
     parts.base,
   ].filter((part): part is string => part !== undefined && part.length > 0)
