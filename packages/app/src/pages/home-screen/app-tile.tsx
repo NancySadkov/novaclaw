@@ -20,15 +20,27 @@ const tileStyle = (app: HomeApp) => ({
 
 // `shouldSuppressOpen` lets the home screen swallow the trailing click that a pointer emits when a
 // drag-to-reorder is released over the tile — otherwise reordering an app would also open it.
-export const AppTile: Component<{ app: HomeApp; shouldSuppressOpen?: () => boolean }> = (props) => (
-  <Show when={props.app.hero} fallback={<RegularTile app={props.app} shouldSuppressOpen={props.shouldSuppressOpen} />}>
-    <HeroTile app={props.app} shouldSuppressOpen={props.shouldSuppressOpen} />
+//
+// `onDelete` is present only for tiles a person may throw away (agent-contributed apps). Its absence
+// is what makes a built-in's right-click do nothing rather than offer an action that would fail.
+type TileProps = { app: HomeApp; shouldSuppressOpen?: () => boolean; onDelete?: (app: HomeApp) => void }
+
+export const AppTile: Component<TileProps> = (props) => (
+  <Show when={props.app.hero} fallback={<RegularTile {...props} />}>
+    <HeroTile {...props} />
   </Show>
 )
 
-const openUnlessDragged = (props: { app: HomeApp; shouldSuppressOpen?: () => boolean }) => {
+const openUnlessDragged = (props: TileProps) => {
   if (props.shouldSuppressOpen?.()) return
   props.app.open()
+}
+
+/** Right-click a removable tile → delete it. The launcher's only context action, so it is the menu. */
+const contextMenu = (props: TileProps) => (event: MouseEvent) => {
+  if (!props.onDelete) return
+  event.preventDefault()
+  props.onDelete(props.app)
 }
 
 // The iOS-vocabulary attention badge (uix-improvement slice 2): a count pill on the tile corner when
@@ -48,11 +60,12 @@ const TileBadge: Component<{ app: HomeApp }> = (props) => {
   )
 }
 
-const RegularTile: Component<{ app: HomeApp; shouldSuppressOpen?: () => boolean }> = (props) => (
+const RegularTile: Component<TileProps> = (props) => (
   <button
     type="button"
     class="group flex flex-col items-center gap-2.5 w-full max-w-[5rem] select-none focus:outline-none"
     onClick={() => openUnlessDragged(props)}
+    onContextMenu={contextMenu(props)}
     aria-label={props.app.title}
     title={props.app.subtitle}
   >
@@ -71,11 +84,12 @@ const RegularTile: Component<{ app: HomeApp; shouldSuppressOpen?: () => boolean 
   </button>
 )
 
-const HeroTile: Component<{ app: HomeApp; shouldSuppressOpen?: () => boolean }> = (props) => (
+const HeroTile: Component<TileProps> = (props) => (
   <button
     type="button"
     class="group flex flex-col w-full h-full select-none focus:outline-none"
     onClick={() => openUnlessDragged(props)}
+    onContextMenu={contextMenu(props)}
     aria-label={props.app.title}
   >
     {/* The grid span (col-span/row-span) lives on the SortableTile wrapper — this inner button just

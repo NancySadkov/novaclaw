@@ -74,7 +74,10 @@ describe("the reader found all three declarations", () => {
     expect(tiles, `${LABELS} — BUILTIN_APP_LABELS not found`).toBeDefined()
     expect(core!.length).toBeGreaterThanOrEqual(14)
     expect(app!.length).toBeGreaterThanOrEqual(14)
-    expect(tiles!.length).toBeGreaterThanOrEqual(14)
+    // 13, not 14: Search was retired 2026-08-11 and its id stays reserved without being a tile —
+    // the same asymmetry `processes` has. These bounds only guard against a parser that silently
+    // returns nothing; the real comparisons are below.
+    expect(tiles!.length).toBeGreaterThanOrEqual(13)
     for (const list of [core!, app!, tiles!]) expect(list).toContain("chats")
   })
 

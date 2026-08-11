@@ -2315,6 +2315,17 @@ export const dict = {
   "workspace.reset.archived.many": "{{count}} chats will be archived.",
   "workspace.reset.note": "This will reset the workspace to match the default branch.",
 
+  // Throwing an agent-contributed tile away (right-click, or drag it onto Trash). ⚠️ NOT under
+  // `home.app.*`: that namespace is `home.app.<id>.{name,subtitle}` and `app-label.test.ts` fails on
+  // any key in it that does not name a built-in tile — `home.app.delete.title` would read as a tile
+  // called "delete".
+  "home.launcher.delete.title": "Remove {{app}}?",
+  "home.launcher.delete.description":
+    "The tile goes away and the app is deregistered from this instance. Anything it created — chats, files, notes — is untouched, and an agent can add it back.",
+  "home.launcher.delete.confirm": "Remove",
+  "home.launcher.delete.done": "{{app}} removed",
+  "home.launcher.delete.failed": "Could not remove {{app}}",
+
   // Home launcher tiles. `home.app.<id>.name` / `.subtitle`, resolved by `apps/app-label.ts`.
   // Built-in tiles have a key here; plugin and agent-contributed apps do not, and keep their own
   // label — a contributed app is never required to have a key, and never renders one.
@@ -2328,8 +2339,6 @@ export const dict = {
   "home.app.recipes.subtitle": "Ready-made prompts your agents can cook",
   "home.app.files.name": "Files",
   "home.app.files.subtitle": "Browse folders and ask AI to work on them",
-  "home.app.search.name": "Search",
-  "home.app.search.subtitle": "Find anything across chats and files",
   "home.app.terminal.name": "Terminal",
   "home.app.terminal.subtitle": "A shell, for when you want one",
   "home.app.registry.name": "Registry",

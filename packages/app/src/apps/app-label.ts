@@ -105,7 +105,6 @@ export const BUILTIN_APP_LABELS = {
   calendar: { name: "Calendar", subtitle: "Schedule agents to run on a repeating date" },
   recipes: { name: "Recipes", subtitle: "Ready-made prompts your agents can cook" },
   files: { name: "Files", subtitle: "Browse folders and ask AI to work on them" },
-  search: { name: "Search", subtitle: "Find anything across chats and files" },
   terminal: { name: "Terminal", subtitle: "A shell, for when you want one" },
   registry: { name: "Registry", subtitle: "The instance database, editable — handle with care" },
   debug: { name: "Debug", subtitle: "Connection, error log, sessions — under the hood" },

@@ -47,3 +47,28 @@ export async function loadPersistedApps(server: ServerConnection.HttpBase): Prom
   }
   setManifests(rows as readonly AppManifest[])
 }
+
+/**
+ * Delete a persisted app manifest (DELETE /app/:id), then drop it from the signal.
+ *
+ * 🔴 Registering a tile was reachable and removing one was not, so an agent could add to the user's
+ * home screen and nothing in the product could take it back off. Raw fetch for the same reason
+ * `loadPersistedApps` uses one: this endpoint postdates the generated SDK.
+ *
+ * The local splice is not an optimisation — the server broadcasts `app.registered`, which every
+ * client refetches on, but the window that did the deleting should not wait for its own round trip
+ * to stop showing a tile the user just threw away.
+ */
+export async function deletePersistedApp(server: ServerConnection.HttpBase, id: string): Promise<boolean> {
+  const url = new URL(`app/${encodeURIComponent(id)}`, server.url.endsWith("/") ? server.url : `${server.url}/`)
+  const ok = await fetch(url, {
+    method: "DELETE",
+    headers: server.password
+      ? { Authorization: `Basic ${authTokenFromCredentials({ username: server.username, password: server.password })}` }
+      : {},
+  })
+    .then((res) => res.ok)
+    .catch(() => false)
+  if (ok) setManifests((prev) => prev.filter((manifest) => manifest.id !== id))
+  return ok
+}

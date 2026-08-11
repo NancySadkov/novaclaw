@@ -10,7 +10,13 @@ import {
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useBuiltinApps } from "@/apps/builtins"
 import { useManifestApps } from "@/apps/manifest-apps"
+import { deletePersistedApp } from "@/apps/persisted"
+import { useConfirm } from "@/components/dialog-confirm"
 import { useExpertise } from "@/context/expertise"
+import { useGlobal } from "@/context/global"
+import { useLanguage } from "@/context/language"
+import { useServer } from "@/context/server"
+import { showToast } from "@/utils/toast"
 import { registeredApps, type HomeApp } from "@/apps/registry"
 import { AppTile } from "./app-tile"
 import { HelpTour, HELP_SEEN_KEY } from "./help-tour"
@@ -51,7 +57,11 @@ function applyOrder(apps: HomeApp[], order: string[]): HomeApp[] {
 // grid item, which is now this div, not the tile's inner button). Drag uses the
 // pointer sensor's activation distance, so plain clicks still open the app. The
 // `shouldSuppressOpen` guard swallows the trailing click a drag-release emits.
-const SortableTile: Component<{ app: HomeApp; shouldSuppressOpen: () => boolean }> = (props) => {
+const SortableTile: Component<{
+  app: HomeApp
+  shouldSuppressOpen: () => boolean
+  onDelete?: (app: HomeApp) => void
+}> = (props) => {
   // eslint-disable-next-line solid/reactivity -- sortable identity is stable per mount
   const sortable = createSortable(props.app.id)
   return (
@@ -67,10 +77,19 @@ const SortableTile: Component<{ app: HomeApp; shouldSuppressOpen: () => boolean 
         "opacity-30": sortable.isActiveDraggable,
       }}
     >
-      <AppTile app={props.app} shouldSuppressOpen={props.shouldSuppressOpen} />
+      <AppTile app={props.app} shouldSuppressOpen={props.shouldSuppressOpen} onDelete={props.onDelete} />
     </div>
   )
 }
+
+/**
+ * Which tiles a person may throw away.
+ *
+ * `agent` apps are persisted manifests (`DELETE /app/:id` removes them for good). `plugin` apps are
+ * registered in-process by code that is loaded on every start, so "deleting" one would reappear on
+ * reload — offering it would be a lie. Built-ins are the product.
+ */
+const isRemovable = (app: HomeApp) => app.source === "agent"
 
 // The NovaClaw home screen — an iOS-style launcher: app tiles laid across swipeable pages. Pages use
 // native CSS scroll-snap (touch-friendly, no gesture library); page dots + arrow keys navigate on
@@ -99,6 +118,45 @@ export const HomeScreen: Component = () => {
   const [page, setPage] = createSignal(0)
   let scroller: HTMLDivElement | undefined
   const dialog = useDialog()
+  const confirm = useConfirm()
+  const global = useGlobal()
+  const server = useServer()
+  const language = useLanguage()
+
+  /**
+   * Throw an agent-contributed app away — the launcher's one destructive action, so it confirms
+   * first and names what it is deleting. Reached two ways, because a launcher has two vocabularies
+   * for this and a person will reach for whichever they know: right-click the tile, or drag it onto
+   * Trash (`onDragEnd` below).
+   */
+  const deleteApp = async (app: HomeApp) => {
+    if (!isRemovable(app)) return
+    const proceed = await confirm({
+      title: language.t("home.launcher.delete.title", { app: app.title }),
+      description: language.t("home.launcher.delete.description"),
+      confirmLabel: language.t("home.launcher.delete.confirm"),
+    })
+    if (!proceed) return
+    const conn = server.current ?? global.servers.list()[0]
+    if (!conn) return
+    const removed = await deletePersistedApp(conn.http, app.id)
+    if (!removed) {
+      showToast({ variant: "error", title: language.t("home.launcher.delete.failed", { app: app.title }) })
+      return
+    }
+    // Drop it from the saved arrangement too, or a re-registered app with the same id would
+    // silently inherit the deleted tile's slot.
+    setOrder((ids) => {
+      const next = ids.filter((id) => id !== app.id)
+      try {
+        localStorage.setItem(ORDER_KEY, JSON.stringify(next))
+      } catch {
+        // localStorage unavailable — the order still applies for this session.
+      }
+      return next
+    })
+    showToast({ variant: "success", title: language.t("home.launcher.delete.done", { app: app.title }) })
+  }
 
   // A drag past the sensor's activation threshold still emits a trailing `click` on the tile when the
   // pointer is released over it — which would OPEN the app the user was only reordering. We detect a
@@ -160,6 +218,18 @@ export const HomeScreen: Component = () => {
   const onDragEnd = (event: DragEvent) => {
     const { draggable, droppable } = event
     if (!draggable || !droppable || draggable.id === droppable.id) return
+    // Dropped on Trash → delete, not reorder. The Trash tile is already a sortable droppable, so
+    // this needs no separate drop zone; the gesture people expect from a launcher just works.
+    if (droppable.id === "trash") {
+      const dragged = apps().find((app) => app.id === String(draggable.id))
+      if (dragged && isRemovable(dragged)) {
+        void deleteApp(dragged)
+        return
+      }
+      // A built-in dropped on Trash is a no-op rather than a reorder: it read as "delete this" and
+      // answering by moving it somewhere is the confusing outcome.
+      return
+    }
     const ids = apps().map((app) => app.id)
     const from = ids.indexOf(String(draggable.id))
     const to = ids.indexOf(String(droppable.id))
@@ -217,7 +287,13 @@ export const HomeScreen: Component = () => {
                       overflow has no start-edge scroll). Tiles are w-full inside their track. */}
                   <div class="grid w-full [grid-template-columns:repeat(4,minmax(0,5rem))] sm:[grid-template-columns:repeat(5,minmax(0,5rem))] md:[grid-template-columns:repeat(6,minmax(0,5rem))] gap-x-4 sm:gap-x-7 gap-y-9 px-4 py-8 pt-2 sm:px-8 max-w-[62rem] justify-center">
                     <For each={pageApps}>
-                      {(app) => <SortableTile app={app} shouldSuppressOpen={shouldSuppressOpen} />}
+                      {(app) => (
+                        <SortableTile
+                          app={app}
+                          shouldSuppressOpen={shouldSuppressOpen}
+                          {...(isRemovable(app) ? { onDelete: (target: HomeApp) => void deleteApp(target) } : {})}
+                        />
+                      )}
                     </For>
                   </div>
                 </div>

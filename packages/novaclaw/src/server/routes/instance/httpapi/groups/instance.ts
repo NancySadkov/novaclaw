@@ -125,6 +125,7 @@ export const InstancePaths = {
   agent: "/agent",
   formatter: "/formatter",
   app: "/app",
+  appById: "/app/:id",
   scheduler: "/scheduler/snapshot",
 } as const
 
@@ -270,6 +271,22 @@ export const InstanceApi = HttpApi.make("instance")
             summary: "Register a home app",
             description:
               "Register (or update, by id) a home-app manifest: a launcher tile opening a route, URL, or chat prompt.",
+          }),
+        ),
+        // 🔴 Registering was reachable and REMOVING was not, so an agent could put a tile on the
+        // user's home screen and nothing in the product could take it off again — the launcher was
+        // append-only to everyone including its owner. `AppRegistry.removeApp` existed and was
+        // tested the whole time; only the door was missing.
+        HttpApiEndpoint.delete("appRemove", InstancePaths.appById, {
+          params: Schema.Struct({ id: Schema.String }),
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Struct({ removed: Schema.Boolean }), "Whether a manifest was removed"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "app.remove",
+            summary: "Remove a home app",
+            description:
+              "Delete a persisted home-app manifest by id. Built-in tiles are not manifests and are unaffected.",
           }),
         ),
       )

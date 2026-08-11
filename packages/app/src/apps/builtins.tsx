@@ -4,7 +4,6 @@ import { useLanguage } from "@/context/language"
 import { useChatsAttention } from "@/apps/chats-attention"
 import { activityLabel, useChatsActivity } from "@/apps/chats-activity"
 import { useSettingsDialog } from "@/components/settings-dialog"
-import { AppPlaceholder } from "@/pages/home-screen/app-placeholder"
 import { HelpTour } from "@/pages/home-screen/help-tour"
 import { SocialPanel } from "@/pages/home-screen/social-panel"
 import { appName, appSubtitle, BUILTIN_APP_LABELS, type BuiltinAppId, type Translate } from "./app-label"
@@ -17,8 +16,9 @@ import type { HomeApp } from "./registry"
 // App-set decisions (2026-07-01, refined 2026-07-02): there is NO "New Chat" tile — new sessions live
 // inside the Chats app, which is the HERO tile (the one eye-anchor; everything else is done through
 // chat with an agent). Models + Devices are Settings tabs, not home apps. Notes / Files / Trash /
-// Processes route to real pages/dialogs; only Search remains a placeholder (a self-documenting
-// panel that teaches the chat-first model).
+// Processes route to real pages/dialogs. ⚠️ **Every tile here opens something real** — the last
+// placeholder (Search) was retired 2026-08-11, and a tile whose `open()` apologises must not come
+// back: on a launcher, a tile IS a promise that the thing exists.
 //
 // Tile palette: gold is reserved for the hero (the single warm accent on the cool purple field —
 // that contrast is what guides the eye); every other tile gets a cool hue so none competes.
@@ -43,9 +43,6 @@ export function useBuiltinApps(): () => HomeApp[] {
   // only when there is nothing at all to say, which cannot happen for an entry in the table.
   const sub = (id: BuiltinAppId): string =>
     appSubtitle(t, id, BUILTIN_APP_LABELS[id].subtitle) ?? BUILTIN_APP_LABELS[id].subtitle
-
-  const comingSoon = (id: BuiltinAppId, icon: string, accent: string) => () =>
-    void dialog.show(() => <AppPlaceholder title={name(id)} icon={icon} accent={accent} subtitle={sub(id)} />)
 
   return () => [
     {
@@ -108,15 +105,11 @@ export function useBuiltinApps(): () => HomeApp[] {
     // tree, status pills-as-attention, tokens in the info sheet). The Developer `ps` — kill /
     // suspend, scheduler snapshot, raw ids — lands in the future Debug app (todo.md → Make UIX
     // perfect). The "processes" id stays RESERVED so a plugin can't squat it meanwhile.
-    {
-      id: "search",
-      title: name("search"),
-      icon: "magnifying-glass-menu",
-      accent: "#34d399",
-      subtitle: sub("search"),
-      source: "builtin",
-      open: comingSoon("search", "magnifying-glass-menu", "#34d399"),
-    },
+    // Search RETIRED (owner, 2026-08-11). It was never a feature: it shipped with the very first
+    // launcher commit (`ce59aaccc`) as a tile whose `open()` was a "coming soon" panel, promising
+    // "find anything across chats and files" and doing nothing. Asking an agent IS the search — a
+    // tile that opens an apology teaches the opposite of the chat-first model it claimed to teach.
+    // The id stays RESERVED (like `processes`) so nothing can squat the name.
     {
       id: "terminal",
       title: name("terminal"),
