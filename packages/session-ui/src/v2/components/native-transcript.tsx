@@ -438,10 +438,15 @@ function ElapsedTime(props: { startedAt: number; completedAt?: number }) {
 
 function TurnReceipt(props: { timing?: TurnTiming; live: boolean; developer?: boolean }) {
   const timing = () => props.timing
+  // One live line, one label. The transcript's own status row, this receipt's fallback and the
+  // phase label are three places that can claim "the turn is live"; they must not do it in two
+  // different words, and only the host app knows the translated one.
+  const actions = useContext(TranscriptActionsContext)
+  const working = () => actions().labels?.working ?? "Working…"
   const liveLabel = () => {
     const value = timing()
     const phase = value ? currentPhase(value) : undefined
-    return phase ? `${phaseLabel(phase.phase)}…` : "Working…"
+    return phase ? `${phaseLabel(phase.phase)}…` : working()
   }
   const attempts = (value: TurnTiming) =>
     value.providerAttempts.filter((attempt) => attempt.outcome !== "completed" || value.providerAttempts.length > 1)
@@ -452,7 +457,7 @@ function TurnReceipt(props: { timing?: TurnTiming; live: boolean; developer?: bo
         <Show when={props.live}>
           <div data-slot="native-working" aria-live="polite">
             <span data-slot="native-working-dot" />
-            <span>Working…</span>
+            <span>{working()}</span>
           </div>
         </Show>
       }
@@ -464,7 +469,9 @@ function TurnReceipt(props: { timing?: TurnTiming; live: boolean; developer?: bo
               <Show when={props.live}>
                 <span data-slot="native-working-dot" aria-hidden="true" />
               </Show>
-              <span>{props.live ? liveLabel() : "Work details"}</span>
+              {/* Owner ruling 2026-08-11: the settled label is just "Details" — the internals are
+                  there for whoever wants to open the hood, and a longer name advertises them. */}
+              <span>{props.live ? liveLabel() : "Details"}</span>
               <ElapsedTime startedAt={value().startedAt} completedAt={value().completedAt} />
             </span>
           </summary>

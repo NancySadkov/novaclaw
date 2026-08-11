@@ -24,6 +24,7 @@ import { SessionExtract } from "./extract"
 import { SessionRunnerModel } from "./model"
 import { ReasoningBudget } from "./reasoning-budget"
 import { UtilityCap } from "./utility-cap"
+import { UtilityPass } from "./utility-pass"
 
 /**
  * Post-drain maintenance — everything the runner does *after* a turn has settled.
@@ -78,8 +79,9 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
  */
 const TITLE_REASONING_BUDGET = 128
 
-/** The best-effort structural switch for providers that honour it. A REQUEST, never a guarantee. */
-const NO_THINKING = { chat_template_kwargs: { enable_thinking: false } } as const
+/** The best-effort structural switch for providers that honour it. A REQUEST, never a guarantee —
+ *  the rationale and the backstops every utility pass still owes live in `utility-pass.ts`. */
+const NO_THINKING = UtilityPass.NO_THINKING
 
 export const layer = Layer.effect(
   Service,

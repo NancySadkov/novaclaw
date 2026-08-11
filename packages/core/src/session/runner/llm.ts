@@ -76,6 +76,7 @@ import { Affective } from "./affective"
 import { SessionDrive } from "./drive"
 import { FinishRecovery } from "./finish-recovery"
 import { UtilityCap } from "./utility-cap"
+import { UtilityPass } from "./utility-pass"
 import { ContextPack } from "./context-pack"
 import { RequestFootprint } from "./footprint"
 import { ContextBudget } from "./context-budget"
@@ -170,6 +171,17 @@ import { ProjectGrounding } from "./project-grounding"
 
 /** How often the generation loop may ask the DB whether a steer has landed. Hot path — keep it coarse. */
 const STEER_POLL_MS = 400
+
+/**
+ * How long the recall re-ranker may hold up the user's turn before we keep the deterministic order.
+ *
+ * Sized against what the pass is worth, not against what a model might want: it re-orders at most a
+ * handful of already-retrieved memories, the fallback ordering is computed before the call, and the
+ * user is staring at "Choosing useful memories" the whole time. Thinking-off on the current test
+ * model this pass lands well inside a second, so the deadline only fires when something is wrong —
+ * a model ignoring `enable_thinking:false`, a cold server, a device under load.
+ */
+const RERANK_DEADLINE = "4 seconds"
 
 /**
  * May the generation loop check for (and cut on) a steer right now?
@@ -400,11 +412,15 @@ export const layer = Layer.effect(
               },
             },
       )
-      // ⚠️ This pass is the MOST exposed of the three, and for a reason worth stating: unlike the
-      // two extraction passes it carries no `NO_THINKING` overlay, so it runs thinking-ENABLED. The
-      // 2026-08-06 table puts the empty-completion cliff at ~450 tokens in that mode against a 512
-      // cap — about 1.65× margin — where the `NO_THINKING` passes sit near 100 and have roughly 4×.
-      // So it is the one most likely to spend its budget on reasoning and return nothing at all.
+      // ⚠️ **This pass used to be the MOST exposed of the three, and 2026-08-11 fixed the cause
+      // rather than the symptom.** It alone carried no `NO_THINKING` overlay, so it ran
+      // thinking-ENABLED: the 2026-08-06 table puts the empty-completion cliff at ~450 tokens in that
+      // mode against a 512 cap — about 1.65× margin — where the overlaid passes sit near 100 and have
+      // roughly 4×. It was therefore both the likeliest to burn its whole budget reasoning and return
+      // nothing, and (via `memory-rerank`) the slowest thing the user watches during a turn, under the
+      // label "Choosing useful memories". Nothing here wants reasoning: the callers ask for a yes/no
+      // verdict, one short interjection, and an ordering of numbers. `UtilityCap` below stays the
+      // mechanical backstop for models that ignore the request.
       const chunks: string[] = []
       let cap = 512
       for (let attempt = 0; ; attempt++) {
@@ -418,6 +434,7 @@ export const layer = Layer.effect(
               messages: [Message.user(prompt)],
               tools: [],
               generation: { maxTokens: attemptCap },
+              http: { body: UtilityPass.NO_THINKING }, // else the budget goes to reasoning and the reply is EMPTY
             }),
           )
           .pipe(
@@ -842,11 +859,20 @@ export const layer = Layer.effect(
         if (MemorySetting.rerankEnabled() && recallCandidates.length > 1) {
           yield* timingStart("memory-rerank")
           const prompt = MemoryRerank.buildRerankPrompt(recallQuery, recallCandidates, Date.now())
+          // ⚠️ This is the ONE utility pass sitting inside the user's own turn — it runs before the
+          // request is even built, and the user watches it as "Choosing useful memories". `ordered`
+          // above already holds the deterministic ranking, so a slow model costs ORDERING QUALITY
+          // here and nothing else. Bound it: past the deadline we keep what we have rather than make
+          // someone wait for a list of numbers. (The `NO_THINKING` overlay on `judgeCompletion` makes
+          // the deadline the rare path; a model that ignores the overlay makes it the common one.)
           const reply = yield* judgeCompletion(
             session.id,
             harness.introspection,
             `${prompt.system}\n\n${prompt.user}`,
-          ).pipe(Effect.orElseSucceed(() => ""))
+          ).pipe(
+            Effect.timeoutOrElse({ duration: RERANK_DEADLINE, orElse: () => Effect.succeed("") }),
+            Effect.orElseSucceed(() => ""),
+          )
           const order = MemoryRerank.parseRerankOrder(reply, recallCandidates.length)
           if (order) ordered = order.map((index) => recallCandidates[index]!)
           yield* timingEnd("memory-rerank")
