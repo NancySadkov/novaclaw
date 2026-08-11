@@ -46,7 +46,8 @@ const BACKOFF_CAP_MS = 300_000
 // past any hot-fail loop and well short of a real session, and it bounds the worst case at roughly
 // one reconnect per minute even for a connection that flaps right at the threshold.
 const STABLE_CONNECTION_MS = 60_000
-const PAIRING_TTL_MS = 10 * 60_000
+/** Pairing-code lifetime. Exported so the TTL test tracks the number instead of re-typing it. */
+export const PAIRING_TTL_MS = 10 * 60_000
 // Traffic rules (§2.3): how many brand-new conversations NovaClaw may START in one day. Replies to
 // inbound don't count — only cold-starts. Providers flag accounts that spray new chats; this caps it.
 // Exported so the test that pins the counting RULE tracks the number instead of re-typing it.
@@ -440,8 +441,10 @@ const build = (options: Options) =>
     const inboundRate = new Map<string, { times: number[]; warned: boolean }>()
     // Returns whether this inbound may drive a turn; when refused, `warn` is true exactly once per
     // over-cap streak so the chat is told to slow down without the warning itself flooding.
-    const floodClear = (key: string): { ok: true } | { ok: false; warn: boolean } => {
-      const now = Date.now()
+    // `now` is a PARAMETER rather than a `Date.now()` read, so the caller's `Clock.currentTimeMillis`
+    // is the only source of time on this path. Keeping the function itself synchronous keeps the
+    // decision (and its `inboundRate` mutation) in one uninterrupted step.
+    const floodClear = (key: string, now: number): { ok: true } | { ok: false; warn: boolean } => {
       const entry = inboundRate.get(key) ?? { times: [], warned: false }
       entry.times = entry.times.filter((at) => now - at < INBOUND_WINDOW_MS)
       if (entry.times.length >= MAX_INBOUND_PER_MINUTE) {
@@ -570,6 +573,10 @@ const build = (options: Options) =>
             continue
           }
           const dir = path.join(directory, "downloads")
+          // ⚠️ Wall clock ON PURPOSE, and the last one in this file. This is a filename uniquifier,
+          // not scheduling or governance: under a TestClock time does not advance between two
+          // attachments in the same tick, so routing it through `Clock` would make a deterministic
+          // COLLISION out of something the wall clock keeps distinct. Do not "finish the sweep" here.
           const target = path.join(dir, `${Date.now().toString(36)}-${name}`)
           const wrote = yield* Effect.tryPromise(async () => {
             await fs.mkdir(dir, { recursive: true })
@@ -637,7 +644,7 @@ const build = (options: Options) =>
     ) =>
       Effect.gen(function* () {
         const key = MessengerPipeline.chatKey(account.id, event.chat.chatID)
-        const now = Date.now()
+        const now = yield* Clock.currentTimeMillis
         const recent = (dispatchRate.get(key) ?? []).filter((at) => now - at < DISPATCH_RATE_WINDOW_MS)
         if (recent.length >= MAX_DISPATCHES_PER_MINUTE) {
           yield* reply(
@@ -749,7 +756,7 @@ const build = (options: Options) =>
         const key = MessengerPipeline.chatKey(account.id, event.chat.chatID)
         // /pair is the ONLY command a non-operator may run — it's how they become one.
         if (command.kind === "pair") {
-          const now = Date.now()
+          const now = yield* Clock.currentTimeMillis
           const record = pairing.get(command.code)
           if (record === undefined || record.accountID !== account.id || record.expiresAt < now) {
             yield* reply(
@@ -1068,7 +1075,7 @@ const build = (options: Options) =>
         // Flood cap (§7.6): a chat firing faster than a human gets dropped past the cap, with a
         // single throttled slow-down reply. (Audience already coalesces, but a hard flood would
         // still flush size-batches back-to-back — the cap bounds that too.)
-        const flood = floodClear(MessengerPipeline.chatKey(account.id, event.chat.chatID))
+        const flood = floodClear(MessengerPipeline.chatKey(account.id, event.chat.chatID), yield* Clock.currentTimeMillis)
         if (!flood.ok) {
           if (flood.warn)
             yield* reply(
@@ -1432,10 +1439,14 @@ const build = (options: Options) =>
       status: () => Effect.sync(() => new Map([...entries].map(([id, entry]) => [id, entry.status]))),
       reload,
       mintPairingCode: (accountID, trust) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           const code = newPairingCode()
-          pairing.set(code, { accountID, trust, expiresAt: Date.now() + PAIRING_TTL_MS })
-          return { code, expiresAt: Date.now() + PAIRING_TTL_MS }
+          // ONE clock read, used for both. The two `Date.now()` calls here could straddle a
+          // millisecond, so the code stored and the expiry handed to the operator were allowed to
+          // disagree — harmless at a 10-minute TTL, and still a value that claimed to be one number.
+          const expiresAt = (yield* Clock.currentTimeMillis) + PAIRING_TTL_MS
+          pairing.set(code, { accountID, trust, expiresAt })
+          return { code, expiresAt }
         }),
       chats: (accountID) =>
         Effect.gen(function* () {
@@ -1454,7 +1465,7 @@ const build = (options: Options) =>
           if (listed === undefined) return { ok: true, chats: cached } satisfies ChatsOutcome
           // Seed the seen-cache: a conversation that EXISTS in the account is a known chat — the
           // traffic-rules cold-start guard must never treat replying there as cold outreach.
-          const now = Date.now()
+          const now = yield* Clock.currentTimeMillis
           for (const chat of listed) {
             yield* store
               .seenChat({

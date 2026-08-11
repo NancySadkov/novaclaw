@@ -538,6 +538,36 @@ describe("MessengerGateway pipeline", () => {
     }),
   )
 
+  // Governance on the injected clock (v0.2.0 prep). Before `mintPairingCode` and the `/pair` handler
+  // read `Clock.currentTimeMillis`, expiry could only be tested by sleeping ten real minutes — so it
+  // was not tested at all. Virtual time makes the TTL an ordinary assertion.
+  //
+  // ⚠️ The mint is also ONE clock read now. It used to call `Date.now()` twice — once for the record
+  // it stored, once for the value it returned — so the two could straddle a millisecond and the
+  // operator could be told an expiry the gateway did not hold.
+  it.effect("a pairing code expires on the injected clock, and the mint reads it once", () =>
+    Effect.gen(function* () {
+      const { store, gateway, account, queue } = yield* online("pair-ttl")
+
+      const pair = yield* gateway.mintPairingCode(account.id, "operator")
+      const now = yield* Clock.currentTimeMillis
+      expect(pair.expiresAt).toBe(now + MessengerGateway.PAIRING_TTL_MS)
+
+      // One millisecond past the TTL: the code is dead and the stranger stays a stranger.
+      yield* TestClock.adjust(MessengerGateway.PAIRING_TTL_MS + 1)
+      yield* Queue.offer(queue, message("300", { text: `/pair ${pair.code}`, sender: "stranger" }))
+      yield* eventually(
+        Effect.sync(() => fake.state.sent),
+        (sent) => sent.some((s) => s.chatID === "300"),
+        "expired pairing answered",
+      )
+      expect(yield* store.getContact(account.id, "stranger")).toBeUndefined()
+
+      yield* store.removeAccount(account.id)
+      yield* gateway.reload()
+    }),
+  )
+
   it.live("an unpaired stranger's plain text never injects a turn (default-deny)", () =>
     Effect.gen(function* () {
       const { store, gateway, account, queue } = yield* online("deny")
@@ -1736,6 +1766,12 @@ const VIRTUAL_LEDGER = new Map<string, string>([
       "TestClock.withLive hybrid while uptime was a Date.now() subtraction.",
   ],
   ["a failing connect goes to backoff with the reason, then reconnects", "1.0 s — one BACKOFF_BASE_MS wait."],
+  [
+    "a pairing code expires on the injected clock, and the mint reads it once",
+    "10 min of virtual time — PAIRING_TTL_MS. It costs nothing precisely BECAUSE it is virtual; on " +
+      "the wall clock this assertion could not exist, which is why the TTL was untested until " +
+      "mintPairingCode and the /pair handler moved onto Clock.currentTimeMillis.",
+  ],
 ])
 
 /** The gateway symbols those reasons name. Pinned in BOTH directions: each must still appear in a
