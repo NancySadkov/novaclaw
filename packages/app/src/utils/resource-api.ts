@@ -29,3 +29,37 @@ export interface InstanceResources {
 export function instanceResources(server: ServerConnection.HttpBase, signal?: AbortSignal) {
   return instanceFetch<InstanceResources>(server, { route: "global/resources", signal, timeoutMs: 20_000 })
 }
+
+/**
+ * Nova Health — one composed answer to *"is anything wrong?"*.
+ *
+ * ⚠️ `unknown` is a real verdict, not a missing value, and the UI must never render it as a tick.
+ * Some rows can legitimately answer "cannot tell" (the updater flag is unreadable outside the
+ * desktop shell), and dressing an unread probe as healthy is a false report on the one screen a
+ * person opens when they already suspect something is broken.
+ *
+ * ⚠️ `label`/`detail`/`action` arrive as ENGLISH from the server, so this board is not localized the
+ * way the rest of Settings is. That is a real gap, recorded rather than hidden: localizing it needs
+ * the server to emit keys plus arguments instead of sentences, which is a change to `NovaHealth`'s
+ * shape, not to this call.
+ */
+export type DiagnosisStatus = "problem" | "warning" | "unknown" | "ok"
+
+export interface DiagnosisSignal {
+  readonly id: string
+  readonly label: string
+  readonly status: DiagnosisStatus
+  readonly detail?: string
+  readonly action?: string
+}
+
+export interface Diagnosis {
+  readonly overall: DiagnosisStatus
+  readonly headline: string
+  readonly signals: readonly DiagnosisSignal[]
+}
+
+/** Cheap by construction: the endpoint gathers nothing that costs egress, so polling it is safe. */
+export function instanceDiagnosis(server: ServerConnection.HttpBase, signal?: AbortSignal) {
+  return instanceFetch<Diagnosis>(server, { route: "diagnosis", signal, timeoutMs: 20_000 })
+}

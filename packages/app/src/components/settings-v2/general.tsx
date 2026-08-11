@@ -7,6 +7,7 @@ import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useGlobal } from "@/context/global"
 import { ReleaseNotesStatusLine } from "@/context/highlights"
+import { NovaHealthBoard } from "./nova-health"
 import { useLanguage } from "@/context/language"
 import { useExpertise, PERMISSION_MODE_MIN_LEVEL } from "@/context/expertise"
 import { usePermission } from "@/context/permission"
@@ -659,6 +660,12 @@ export const SettingsGeneralV2: Component<{
       </div>
 
       <div class="settings-v2-tab-body">
+        {/* Nova Health leads the tab because it answers the question that BRINGS someone to
+            Settings when something feels wrong -- putting it under the preference rows would mean a
+            worried user reads a language picker first. It costs nothing to open: the endpoint
+            deliberately gathers no reading that egresses. */}
+        <NovaHealthBoard />
+
         <GeneralSection />
 
         {/* Confinement sits directly under the safety rows above (Ask-before-reading, Offline mode)
