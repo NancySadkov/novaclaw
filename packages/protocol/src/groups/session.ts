@@ -582,6 +582,35 @@ export const makeSessionGroups = <
           ),
       )
       .add(
+        HttpApiEndpoint.get("session.folder", "/api/session/:sessionID/folder", {
+          params: { sessionID: Session.ID },
+          success: Schema.Struct({
+            data: Schema.Struct({
+              directory: AbsolutePath,
+              /**
+               * The folder this session was created in, present ONLY while it is running somewhere
+               * else because that one went missing. Its absence is the normal case, not an unknown:
+               * a session with no recorded recovery is simply working where it was asked to.
+               */
+              missing: Schema.optional(AbsolutePath),
+            }),
+          }),
+          error: SessionNotFoundError,
+        })
+          .middleware(sessionLocationMiddleware)
+          .annotateMerge(
+            OpenApi.annotations({
+              identifier: "v2.session.folder",
+              summary: "Where a session is working, and what it lost",
+              description:
+                "The session's current working folder, plus the folder it was created in when that one has gone " +
+                "missing and the session was degraded into a scratch folder. `missing` is what lets a client offer to " +
+                "repoint: without it the substitution is only visible as a one-off notice in the transcript, which a " +
+                "reader who returns later has already scrolled past.",
+            }),
+          ),
+      )
+      .add(
         HttpApiEndpoint.post("session.repointFolder", "/api/session/:sessionID/folder", {
           params: { sessionID: Session.ID },
           payload: Schema.Struct({ directory: AbsolutePath }),

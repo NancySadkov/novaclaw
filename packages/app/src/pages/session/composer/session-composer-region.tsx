@@ -5,6 +5,7 @@ import { SessionQuestionDock } from "@/pages/session/composer/session-question-d
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
 import { SessionResponderDock } from "@/pages/session/composer/session-responder-dock"
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
+import { SessionLostFolderDock } from "./session-lost-folder-dock"
 import { SessionProviderRecoveryDock } from "@/pages/session/composer/session-provider-recovery-dock"
 import type { SessionComposerRegionController } from "./session-composer-region-controller"
 
@@ -133,6 +134,9 @@ export function SessionComposerRegion(props: {
                 "margin-top": `${-controller.lift()}px`,
               }}
             >
+              {/* Before the provider-recovery banner: a chat whose FOLDER is gone is a more basic
+                  problem than an interrupted reply, and the two can be true at once. */}
+              <Show when={controller.sessionID()}>{(id) => <SessionLostFolderDock sessionID={id()} />}</Show>
               <Show when={controller.providerRecovery()} keyed>
                 {(recovery) => (
                   <SessionProviderRecoveryDock

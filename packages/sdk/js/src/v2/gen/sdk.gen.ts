@@ -3164,6 +3164,25 @@ class ApiV2Session extends NovaClawApiClient {
   }
 
   /**
+   * Where a session is working, and what it lost
+   *
+   * The session's current working folder, plus the folder it was created in when that one has gone missing and the session was degraded into a scratch folder. `missing` is what lets a client offer to repoint: without it the substitution is only visible as a one-off notice in the transcript, which a reader who returns later has already scrolled past.
+   */
+  public folder<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).get<T.V2SessionFolderResponses, T.V2SessionFolderErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/folder",
+      ...options,
+      path,
+    })
+  }
+
+  /**
    * Point a session at a different working folder
    *
    * Move this session's working folder. Written through the `working_folder` session component, so it re-derives project identity, publishes the same Moved event an agent's own move would, and clears any recorded missing-folder recovery. Exists because a folder that moved is something the USER knows and the agent does not: when a working folder disappears the session degrades into a scratch folder and keeps running, and only a person can say where the real one went.

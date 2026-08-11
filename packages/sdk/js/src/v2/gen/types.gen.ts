@@ -11964,6 +11964,46 @@ export type V2SessionSwitchResponderResponses = {
 export type V2SessionSwitchResponderResponse =
   V2SessionSwitchResponderResponses[keyof V2SessionSwitchResponderResponses]
 
+export type V2SessionFolderData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/folder"
+}
+
+export type V2SessionFolderErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError | SessionNotFoundError
+}
+
+export type V2SessionFolderError = V2SessionFolderErrors[keyof V2SessionFolderErrors]
+
+export type V2SessionFolderResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: {
+      directory: string
+      missing?: string
+    }
+  }
+}
+
+export type V2SessionFolderResponse = V2SessionFolderResponses[keyof V2SessionFolderResponses]
+
 export type V2SessionRepointFolderData = {
   body: {
     directory: string

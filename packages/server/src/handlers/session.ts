@@ -5,6 +5,7 @@ import { NamedError } from "@novaclaw/core/util/error"
 import { SessionInput } from "@novaclaw/core/session/input"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionComponentRegistry } from "@novaclaw/core/session/component-registry"
+import { SessionLocationRecovery } from "@novaclaw/core/session/location-recovery"
 import { SessionTags } from "@novaclaw/core/session/tags"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { ModelV2 } from "@novaclaw/core/model"
@@ -487,6 +488,31 @@ const SessionControlHandler = handlerLayer(
                 ),
               )
             return HttpApiSchema.NoContent.make()
+          }),
+        )
+        .handle(
+          "session.folder",
+          Effect.fn(function* (ctx) {
+            const info = yield* session.get(ctx.params.sessionID).pipe(
+              Effect.catchTag(
+                "Session.NotFoundError",
+                (error) =>
+                  new SessionNotFoundError({
+                    sessionID: error.sessionID,
+                    message: `Session not found: ${error.sessionID}`,
+                  }),
+              ),
+            )
+            const { db } = yield* Database.Service
+            const missing = yield* SessionLocationRecovery.get(db, ctx.params.sessionID)
+            return {
+              data: {
+                directory: info.location.directory,
+                // Omitted rather than sent as null: an absent key is "nothing was lost", which is
+                // the overwhelmingly common answer and should not read as an unknown.
+                ...(missing === undefined ? {} : { missing }),
+              },
+            }
           }),
         )
         .handle(

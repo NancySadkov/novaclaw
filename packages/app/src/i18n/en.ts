@@ -1054,6 +1054,13 @@ export const dict = {
   "session.revertDock.collapse": "Collapse rolled back messages",
   "session.revertDock.expand": "Expand rolled back messages",
   "session.revertDock.restore": "Restore message",
+  "session.lostFolder.title": "This chat's folder is missing",
+  "session.lostFolder.description":
+    "It was working in {{folder}}, which is no longer there. Nova moved it to a temporary folder so it could keep going. If the folder moved, point this chat at the new one.",
+  "session.lostFolder.choose": "Choose folder",
+  "session.lostFolder.moving": "Moving…",
+  "session.lostFolder.moved": "This chat now works in the folder you chose",
+  "session.lostFolder.error": "Could not move this chat to that folder",
   "session.providerRecovery.title": "A previous reply was interrupted",
   "session.providerRecovery.description":
     "NovaClaw could not confirm that the reply finished. Continue when you are ready; the interrupted turn will not run again automatically.",
