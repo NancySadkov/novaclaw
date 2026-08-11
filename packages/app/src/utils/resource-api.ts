@@ -59,7 +59,18 @@ export interface Diagnosis {
   readonly signals: readonly DiagnosisSignal[]
 }
 
-/** Cheap by construction: the endpoint gathers nothing that costs egress, so polling it is safe. */
-export function instanceDiagnosis(server: ServerConnection.HttpBase, signal?: AbortSignal) {
-  return instanceFetch<Diagnosis>(server, { route: "diagnosis", signal, timeoutMs: 20_000 })
+/**
+ * Cheap by construction UNLESS `probe` is passed: the endpoint gathers nothing that costs egress on
+ * its own, so opening and polling the board is safe. `probe: true` opts into contacting the default
+ * model's provider, which is why it is a separate user action and never the page load.
+ */
+export function instanceDiagnosis(
+  server: ServerConnection.HttpBase,
+  options?: { readonly probe?: boolean; readonly signal?: AbortSignal },
+) {
+  return instanceFetch<Diagnosis>(server, {
+    route: options?.probe === true ? "diagnosis?probe=provider" : "diagnosis",
+    signal: options?.signal,
+    timeoutMs: 20_000,
+  })
 }

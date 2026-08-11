@@ -324,11 +324,19 @@ describe("instance HttpApi", () => {
         signals: { id: string; label: string; status: string; detail?: string; action?: string }[]
       }
 
-      // The four readings that are honestly available at instance scope. A provider row is absent on
-      // purpose — naming a provider we have not probed would be the false description the whole
-      // module exists to prevent — so its ABSENCE is the assertion, not an oversight.
-      expect(body.signals.map((signal) => signal.id).sort()).toEqual(["database", "scheduler", "storage", "updates"])
-      expect(body.signals.some((signal) => signal.id.startsWith("provider:"))).toBe(false)
+      // The four readings always available at instance scope. A provider row joins them only when a
+      // default model names one, so this asserts the four are PRESENT rather than pinning the exact
+      // set — pinning it would fail the moment a fixture configures a model, for no real reason.
+      for (const id of ["database", "scheduler", "storage", "updates"]) {
+        expect(body.signals.map((signal) => signal.id), `missing the ${id} row`).toContain(id)
+      }
+
+      // ⚠️ Opening the board must not contact anyone. Reachability is the ONE reading that costs
+      // egress, so without ?probe=provider a provider row may exist but must never carry a probed
+      // verdict — a health screen that phones out because someone glanced at it is not local-first.
+      for (const signal of body.signals.filter((row) => row.id.startsWith("provider:"))) {
+        expect(signal.status, "a provider row was PROBED on plain open").not.toBe("ok")
+      }
 
       // ⚠️ THE rule this endpoint exists to keep: `unknown` is never dressed as healthy. The updater
       // flag lives in the desktop main process, so a served board genuinely cannot read it — and the

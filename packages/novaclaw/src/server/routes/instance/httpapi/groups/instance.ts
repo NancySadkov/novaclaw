@@ -119,10 +119,12 @@ const SchedulerDevice = Schema.Struct({
  * The composition itself is `NovaHealth` in core: pure, no I/O, no clock. This endpoint is the
  * caller that gathers the readings, which is exactly what keeps the expensive one honest.
  *
- * ⚠️ **Reachability costs egress, so it is never part of opening the screen.** There is no provider
- * row here yet — adding one means first deciding which provider a board speaks for, and whether
- * a probe is opt-in per provider. A diagnostics page that phones out every time someone glances at
- * it is a worse citizen than one that admits it has not looked.
+ * ⚠️ **Reachability costs egress, so it is never part of opening the screen.** `?probe=provider` is
+ * an explicit opt-in; without it the provider row says it has not looked, which is true. A
+ * diagnostics page that phones out every time someone glances at it is a worse citizen than one that
+ * admits it has not looked. The board speaks for ONE provider — the default model's — because
+ * "can I talk to my model?" is a singular question and probing a dozen configured providers would
+ * multiply the only expensive reading to answer something nobody asked.
  *
  * ⚠️ `unknown` is a first-class verdict here and must never render as a tick. Half of these signals
  * can legitimately answer "cannot tell" — the updater flag is unreadable outside the desktop shell,
@@ -145,7 +147,11 @@ const Diagnosis = Schema.Struct({
   signals: Schema.Array(DiagnosisSignal),
 })
 
-const DiagnosisQuery = Schema.Struct({ ...WorkspaceRoutingQueryFields })
+const DiagnosisQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  /** `provider` opts INTO the one reading that egresses. Absent means "do not contact anyone". */
+  probe: Schema.optional(Schema.Literals(["provider"])),
+})
 
 export const InstancePaths = {
   dispose: "/instance/dispose",
@@ -282,8 +288,8 @@ export const InstanceApi = HttpApi.make("instance")
             identifier: "instance.diagnosis",
             summary: "Diagnose this instance",
             description:
-              "Compose storage, conversation store, scheduler and updater readings into one verdict. " +
-              "Nothing here costs egress, so opening a diagnostics screen never contacts a provider.",
+              "Compose storage, conversation store, scheduler, updater and provider readings into one verdict. " +
+              "Nothing costs egress unless probe=provider is passed, so opening a diagnostics screen never contacts anyone.",
           }),
         ),
         HttpApiEndpoint.get("scheduler", InstancePaths.scheduler, {

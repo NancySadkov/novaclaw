@@ -1216,6 +1216,7 @@ export const dict = {
   "settings.health.checking": "Checking…",
   "settings.health.unreachable": "This instance could not be reached, so nothing below was checked.",
   "settings.health.recheck": "Check again",
+  "settings.health.testProvider": "Test the connection to my model provider",
   "settings.storage.resources.title": "This instance's resources",
   "settings.storage.resources.description":
     "Live memory pressure and disk use on the machine running this instance. RAM figures are resident memory; SQLite and the vector knowledge base share NovaClaw's process, so Nova reports that honestly instead of inventing a split.",

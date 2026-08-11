@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createResource, type Component } from "solid-js"
+import { For, Show, createMemo, createResource, createSignal, type Component } from "solid-js"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
@@ -45,7 +45,13 @@ export const NovaHealthBoard: Component = () => {
   const server = useServer()
   const global = useGlobal()
   const connection = createMemo(() => server.current ?? global.servers.list()[0])
-  const [diagnosis, actions] = createResource(connection, (value) => instanceDiagnosis(value.http))
+  // `probe` is a SIGNAL, not an argument to the initial load: the board must open without
+  // contacting anyone, and only a deliberate click may spend egress.
+  const [probe, setProbe] = createSignal(false)
+  const [diagnosis, actions] = createResource(
+    () => ({ connection: connection(), probe: probe() }),
+    (input) => instanceDiagnosis(input.connection.http, { probe: input.probe }),
+  )
 
   // A failed fetch is itself a finding, and saying so beats an empty panel that reads as "nothing
   // wrong". This is the screen where an unexplained blank is the worst possible answer.
@@ -81,13 +87,27 @@ export const NovaHealthBoard: Component = () => {
         </For>
       </SettingsListV2>
 
-      <button
-        type="button"
-        class="settings-v2-tab-description self-start underline"
-        onClick={() => void actions.refetch()}
-      >
-        {language.t("settings.health.recheck")}
-      </button>
+      <div class="flex gap-3">
+        <button
+          type="button"
+          class="settings-v2-tab-description underline"
+          onClick={() => void actions.refetch()}
+        >
+          {language.t("settings.health.recheck")}
+        </button>
+        {/* Separate from "Check again" ON PURPOSE, and worded so the cost is visible before the
+            click: this is the only control on the screen that leaves the machine. */}
+        <button
+          type="button"
+          class="settings-v2-tab-description underline"
+          onClick={() => {
+            setProbe(true)
+            void actions.refetch()
+          }}
+        >
+          {language.t("settings.health.testProvider")}
+        </button>
+      </div>
     </section>
   )
 }

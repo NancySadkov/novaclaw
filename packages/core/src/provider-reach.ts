@@ -103,3 +103,52 @@ export const blockedByPolicy = (policy: Offline.Policy, url: string): boolean =>
   if (Offline.isLoopbackHost(host)) return false
   return !policy.allowedHosts.has(host)
 }
+
+/**
+ * WHICH provider a health board speaks for.
+ *
+ * The question a person opens Nova Health with is *"can I talk to my model?"* — singular. An
+ * instance may have a dozen providers configured, most of them never used, and a board that listed
+ * every one would answer a question nobody asked while multiplying the only reading that costs
+ * egress. So the board speaks for the provider behind the **default model**: the one a new session
+ * opens with, and therefore the one whose outage the user would actually feel.
+ *
+ * ⚠️ **No default model means NO row, not a row about nothing.** A user who has not chosen a model
+ * has no provider to be told about, and inventing one — "unknown", "not configured" — would put a
+ * worry on the screen that the rest of the product does not share. `NovaHealth`'s rule is to say
+ * nothing rather than manufacture a concern.
+ *
+ * ⚠️ **Two sources, and the CONFIGURED one wins.** A provider the user actually set up carries its
+ * address at `providers[id].api.url` — that is the URL turns are sent to. `provider_presets` only
+ * describes builtins and import defaults. Reading presets alone reported *"No address is configured
+ * for this provider"* about a working, actively-used provider (measured 2026-08-12 against a live
+ * instance whose default model was `spark-holo/holo3.1`), which is precisely the false description
+ * this module exists to prevent — and it would have shipped had the row not been exercised.
+ */
+export interface Target {
+  readonly name: string
+  /** Absent when the provider is known by name but has no address to probe. */
+  readonly baseURL?: string
+}
+
+export const targetOf = (input: {
+  /** `config.model`, in `provider/model` form. */
+  readonly model: string | undefined
+  /** `config.providers` — what the user actually configured; its `api.url` is where turns go. */
+  readonly providers?: Readonly<Record<string, { readonly api?: { readonly url?: string | undefined } }>>
+  /** `ConfigProviderPreset.effective(...)` — builtins plus overrides. */
+  readonly presets: Readonly<Record<string, { readonly baseURL?: string | undefined }>>
+}): Target | undefined => {
+  const model = input.model?.trim()
+  if (!model) return undefined
+  // Split on the FIRST slash only: a model id may itself contain slashes
+  // (`nvidia/Qwen3.6-35B-A3B-NVFP4`), and splitting on the last would name a provider that does
+  // not exist and then report it unreachable.
+  const slash = model.indexOf("/")
+  const name = slash === -1 ? model : model.slice(0, slash)
+  if (!name) return undefined
+  const configured = input.providers?.[name]?.api?.url
+  const baseURL = configured !== undefined && configured !== "" ? configured : input.presets[name]?.baseURL
+  return baseURL === undefined || baseURL === "" ? { name } : { name, baseURL }
+}
+

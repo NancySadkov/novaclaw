@@ -20,6 +20,11 @@ import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { Database } from "@novaclaw/core/database/database"
 import { DatabaseHealth } from "@novaclaw/core/database/health"
 import { NovaHealth } from "@novaclaw/core/nova-health"
+import { ProviderReach } from "@novaclaw/core/provider-reach"
+import { ConfigProviderPreset } from "@novaclaw/core/config/provider-preset"
+import { Offline } from "@novaclaw/core/offline"
+import { Config } from "@/config/config"
+import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { Storage } from "@/storage/storage"
 import { Effect, Layer } from "effect"
 import fs from "fs/promises"
@@ -51,6 +56,7 @@ function probeRoots(): Promise<string[]> {
 export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance", (handlers) =>
   Effect.gen(function* () {
     const locations = yield* LocationServiceMap.Service
+    const config = yield* Config.Service
     const format = yield* Format.Service
     const vcs = yield* Vcs.Service
     const settingsStore = yield* SettingsConfigStore.Service
@@ -198,7 +204,9 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       .handle("dispose", dispose)
       .handle(
         "diagnosis",
-        Effect.fn("InstanceHttpApi.diagnosis")(function* () {
+        Effect.fn("InstanceHttpApi.diagnosis")(function* (request: {
+          readonly query: { readonly probe?: "provider" | undefined }
+        }) {
           // Every reading degrades to `unknown` instead of failing the request. This is the screen a
           // person opens when they already suspect trouble -- a 500 here tells them nothing and
           // takes away the rows that WERE readable.
@@ -218,6 +226,56 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
               Effect.orElseSucceed(() => undefined),
             )
 
+          // WHICH provider: the default model's. "Can I talk to my model?" is a singular question,
+          // and an instance may carry a dozen configured providers that are never used.
+          const merged = (yield* ConfigStoreWrite.overlay((yield* config.getGlobal()) as Record<string, unknown>)) as {
+            model?: string
+            providers?: Record<string, { api?: { url?: string } }>
+            provider_presets?: Record<string, { baseURL?: string }>
+          }
+          const target = ProviderReach.targetOf({
+            model: merged.model,
+            providers: merged.providers,
+            presets: ConfigProviderPreset.effective(merged.provider_presets as never),
+          })
+
+          const providerRow = target === undefined
+            ? // No default model means no provider to be told about. Inventing an "unknown" row would
+              // put a worry on this screen that the rest of the product does not share.
+              undefined
+            : target.baseURL === undefined
+              ? NovaHealth.fromProvider({
+                  name: target.name,
+                  verdict: "unknown",
+                  detail: "No address is configured for this provider.",
+                })
+              : // ⚠️ The policy answer is FREE and comes first: when the airgap is on, the request
+                // would fail, and calling that "unreachable" would tell someone their provider is
+                // broken when the truth is that they turned offline mode on themselves.
+                // Read the SAME live ref that enforces the guard, never a re-derived policy: a
+                // status surface that recomputes can disagree with what is actually blocking, which
+                // is ruling 2 on the screen someone opens to find out what is wrong. `shell.ts`
+                // learned this already -- re-deriving also costs two sqlite open/close pairs.
+                ProviderReach.blockedByPolicy((yield* Offline.Service).policy, target.baseURL)
+                ? NovaHealth.fromProvider({ name: target.name, verdict: "blocked" })
+                : request.query.probe !== "provider"
+                  ? NovaHealth.fromProvider({
+                      name: target.name,
+                      verdict: "unknown",
+                      detail: "Not checked — checking contacts the provider.",
+                    })
+                  : NovaHealth.fromProvider({
+                      name: target.name,
+                      ...(yield* ProviderReach.probe({
+                        // The discovery convention this tree already uses everywhere.
+                        url: `${target.baseURL.replace(/\/$/, "")}/models`,
+                        fetcher: async (url, signal) => {
+                          const response = await fetch(url, { signal })
+                          return { ok: response.ok, status: response.status }
+                        },
+                      })),
+                    })
+
           const signals = [
             NovaHealth.fromPressure(pressure),
             NovaHealth.fromDatabase(database),
@@ -226,13 +284,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
             // server-side board cannot read it; reporting "updates are off" would describe the
             // user's own configuration falsely.
             NovaHealth.fromUpdater(undefined),
-            // ⚠️ NO provider row yet, deliberately. `NovaHealth.fromProvider` needs the provider's
-            // NAME, and `ProviderReach.probe` needs its base URL -- so an honest row means deciding
-            // which provider a board speaks for when several are configured, and whether an opt-in
-            // probes one or all of them (each costs egress). A nameless or assumed row would be the
-            // false description this module exists to prevent, and `NovaHealth`'s own rule is to say
-            // nothing rather than invent. Reachability is BUILT (`provider-reach.ts`); only this
-            // wiring decision is open.
+            ...(providerRow === undefined ? [] : [providerRow]),
           ]
 
           return { overall: NovaHealth.worst(signals), headline: NovaHealth.headline(signals), signals }

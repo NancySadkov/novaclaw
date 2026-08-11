@@ -90,3 +90,70 @@ describe("blockedByPolicy — answer from the policy, do not spend a request to 
       expect(ProviderReach.blockedByPolicy(policy(true), url)).toBe(false)
   })
 })
+
+describe("which provider the board speaks for", () => {
+  const presets = { deepseek: { baseURL: "https://api.deepseek.com/v1" }, named: {} }
+
+  test("names the provider behind the default model, with its address", () => {
+    expect(ProviderReach.targetOf({ model: "deepseek/deepseek-chat", presets })).toEqual({
+      name: "deepseek",
+      baseURL: "https://api.deepseek.com/v1",
+    })
+  })
+
+  test("splits on the FIRST slash, because a model id may contain more", () => {
+    // `nvidia/Qwen3.6-35B-A3B-NVFP4` is a real id shape. Splitting on the last slash would name a
+    // provider that does not exist and then report the user's working setup unreachable.
+    expect(ProviderReach.targetOf({ model: "nvidia/Qwen3.6-35B/A3B", presets })?.name).toBe("nvidia")
+  })
+
+  test("a provider with no configured address is named but not probeable", () => {
+    expect(ProviderReach.targetOf({ model: "named/some-model", presets })).toEqual({ name: "named" })
+  })
+
+  /**
+   * ⚠️ The regression this pair exists for. Reading `provider_presets` ALONE reported "No address is
+   * configured for this provider" about a live, actively-used provider — a false description on the
+   * one screen someone opens to find out what is wrong. A user's own provider carries its address at
+   * `providers[id].api.url`, which is where turns are actually sent; presets only describe builtins.
+   */
+  test("a user-configured provider is found by its api.url, not just by presets", () => {
+    expect(
+      ProviderReach.targetOf({
+        model: "spark-holo/holo3.1",
+        providers: { "spark-holo": { api: { url: "http://spark-0693.local:8010/v1" } } },
+        presets,
+      }),
+    ).toEqual({ name: "spark-holo", baseURL: "http://spark-0693.local:8010/v1" })
+  })
+
+  test("the configured address WINS over a preset of the same name", () => {
+    // The preset is a default for the import flow; what the user set is what turns actually use, so
+    // probing the preset would test an endpoint this instance never talks to.
+    expect(
+      ProviderReach.targetOf({
+        model: "deepseek/deepseek-chat",
+        providers: { deepseek: { api: { url: "http://my-proxy.local/v1" } } },
+        presets,
+      })?.baseURL,
+    ).toBe("http://my-proxy.local/v1")
+  })
+
+  /**
+   * ⚠️ THE case worth the test. A user who has chosen no model has no provider to be warned about,
+   * and a row saying "unknown" would put a worry on the health board that the rest of the product
+   * does not share — inventing a concern is the same defect as hiding one.
+   */
+  test("no default model yields NO row rather than a row about nothing", () => {
+    expect(ProviderReach.targetOf({ model: undefined, presets })).toBeUndefined()
+    expect(ProviderReach.targetOf({ model: "   ", presets })).toBeUndefined()
+    expect(ProviderReach.targetOf({ model: "/orphan", presets })).toBeUndefined()
+  })
+
+  test("an empty configured address is treated as absent, not as a URL", () => {
+    expect(ProviderReach.targetOf({ model: "blank/m", presets: { blank: { baseURL: "" } } })).toEqual({
+      name: "blank",
+    })
+  })
+})
+
