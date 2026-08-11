@@ -4,7 +4,7 @@
     "novaclaw:server": "Windows-from-source. 16 pinned failures. The three PublicApi OpenAPI error-shape tests were removed 2026-08-05 after passing in two independent full runs. The promptAsync entry was stored MOJIBAKED (UTF-8 bytes for an arrow decoded as cp1252), so the ledger could never match its own entry and reported one phantom fix plus one phantom new failure on every run — it was corrected, not removed; that test is still red."
   },
   "units": {
-    "llm": 30,
+    "llm": 29,
     "core": 9,
     "novaclaw:server": 13,
     "novaclaw:v2": 3,
