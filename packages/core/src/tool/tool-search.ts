@@ -14,12 +14,35 @@ import { Tools } from "./tools"
 
 export const name = "tool_search"
 
+/**
+ * How many schemas a search returns when the caller does not say.
+ *
+ * ⚠️ **This was raised to 10 on 2026-08-11 and put back the same hour.** The raise was justified by a
+ * battery that was never committed — reportedly 10/15 top-5 recall, with the five "misses" retrieved
+ * at ranks 6–12 and cut by the cap. Rebuilding that battery as
+ * `tests/tool-search-recall.ts` (15 plain-language requests, the shipped tokenizer, the shipped
+ * OR-MATCH, the shipped bm25 ordering) reproduces **15/15 at top-5, every answer at rank 1–4**. It
+ * does not reproduce the misses, so it does not support the raise — and it argues the other way,
+ * because returning ten schemas when the answer sits at rank 1 spends tokens on every search to buy
+ * nothing this battery can see.
+ *
+ * The lesson, worth more than the number: **a measurement whose inputs are not committed cannot be
+ * re-run, and an uncommitted battery is a claim, not evidence.** The reconstruction may well be
+ * easier than the original — but "my battery may be unrepresentative" is not evidence for a raise.
+ * Five stands until a committed battery shows a miss past it.
+ *
+ * The cost analysis that survives: `resultWithin` appends candidates one at a time and stops at the
+ * configured tool-output limit, so this bounds hits CONSIDERED, not bytes returned. A raise cannot
+ * blow the output budget. It just cannot be shown to buy anything either.
+ */
+export const DEFAULT_LIMIT = 5
+
 export const Input = Schema.Struct({
   query: Schema.String.annotate({
     description: "What capability you need, in plain language (for example: file a repository bug)",
   }),
   limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 20 }))).annotate({
-    description: "Maximum schemas to return (default 5, maximum 20)",
+    description: `Maximum schemas to return (default ${DEFAULT_LIMIT}, maximum 20)`,
   }),
 })
 
@@ -64,7 +87,7 @@ export const layer = Layer.effectDiscard(
             const allowed = new Set(deferred.map((source) => source.definition.name))
             return Effect.gen(function* () {
               const limits = yield* outputStore.limits()
-              return yield* store.search(location.directory, input.query, input.limit ?? 5, allowed).pipe(
+              return yield* store.search(location.directory, input.query, input.limit ?? DEFAULT_LIMIT, allowed).pipe(
                 Effect.map((hits): Output => resultWithin(limits, input.query, deferred, hits)),
                 Effect.catch((error) => {
                   const message = `tool_search is unavailable because its catalogue index failed: ${error instanceof Error ? error.message : String(error)}. Resident tools remain callable.`

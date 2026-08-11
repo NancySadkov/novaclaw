@@ -104,8 +104,17 @@ export const layer = Layer.effect(
         // every token — including "me", "for", "the" — to appear in the tool's indexed text. OR
         // scores 10/15 with zero empty results over the same corpus and the same bm25 ranking.
         // Ranking is what separates the candidates; ANDing was doing the ranker's job badly and
-        // discarding the answer instead. The remaining 5 are genuine vocabulary gaps and are the
-        // corpus `todo/tool-scale.md` wants before any vector rung is paid for.
+        // discarding the answer instead.
+        //
+        // ⚠️ **Do not cite the "remaining 5" as vocabulary gaps — that battery was never committed.**
+        // The sentence stood here, was contradicted the same day by a rank dump, and neither run can
+        // be re-executed. `tests/tool-search-recall.ts` is the committed replacement and scores
+        // **15/15 at top-5 over the 42-tool scope**, every answer at rank 1–4. That is not proof the
+        // corpus has no gaps; it is proof that the only reproducible battery shows none. Extend THAT
+        // file before claiming a retrieval limit, and before costing a vector rung.
+        //
+        // ⚠️ Also retire "the live 272-row catalogue" from the commit history's phrasing: 272 is the
+        // whole table across SEVEN scopes, and every search filters to one. A query sees ~42.
         const match = terms.map((term) => `"${term.replaceAll('"', '""')}"`).join(" OR ")
         const hits = yield* db.all<{
           name: string
