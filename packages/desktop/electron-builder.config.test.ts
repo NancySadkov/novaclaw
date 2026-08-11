@@ -40,6 +40,20 @@ for (const channel of channels) {
   })
 }
 
+test("ships the portable Windows build as a 7z, and keeps macOS on zip", async () => {
+  const module = await import(`./electron-builder.config.ts?archive=${Date.now()}`)
+  const config = module.default as Configuration
+
+  // The user-facing Windows download. `dir` + a hand-rolled zip in build-desktop-release.bat is what
+  // this replaced, so the format was previously pinned by nothing at all.
+  expect(config.win?.target).toEqual(["7z"])
+  expect(config.win?.artifactName).toBe("NovaClaw-${version}-windows-${arch}.${ext}")
+
+  // NOT symmetry — a constraint. Squirrel.Mac unpacks ZIP only, so the macOS updater feed cannot be
+  // served a 7z. If this ever has to change, autoupdate on macOS changes with it.
+  expect(config.mac?.target).toEqual(["dmg", "zip"])
+})
+
 test("embeds the prepared w64devkit tree in Windows packages", async () => {
   const module = await import(`./electron-builder.config.ts?resource=${Date.now()}`)
   const config = module.default as Configuration

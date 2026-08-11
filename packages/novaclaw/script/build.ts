@@ -302,15 +302,46 @@ for (const item of targets) {
   binaries[name] = Script.version
 }
 
+/**
+ * The Windows/macOS release archives are **7z**, not zip: these carry a ~150 MB binary each and
+ * deflate is the wrong codec for that: LZMA2 is the whole reason to publish an archive rather than
+ * the bare exe. Same choice as the desktop package (`packages/desktop/electron-builder.config.ts`).
+ *
+ * Two writers, probed in order, because there is no one tool present everywhere this runs:
+ * real 7-Zip if the box has it (multi-threaded, and what everyone else uses), else **bsdtar**, whose
+ * libarchive back end writes 7z natively — that is macOS's and Windows' system `tar`. GNU tar does
+ * NOT, which is why this probes for the `bsdtar` banner instead of just calling `tar`. Linux keeps
+ * `.tar.gz`: 7z there means telling people to install p7zip, and the platform already opens tar.gz.
+ */
+function sevenZipArgv(outFile: string): string[] {
+  const sevenZip = ["7z", "7za", "7zr"].map((exe) => Bun.which(exe)).find((found) => found)
+  if (sevenZip) return [sevenZip, "a", "-mx=9", "-y", outFile, "."]
+
+  const tar = Bun.which("bsdtar") ?? Bun.which("tar")
+  const banner = tar ? Bun.spawnSync([tar, "--version"]).stdout.toString() : ""
+  if (tar && banner.includes("bsdtar"))
+    return [tar, "-a", "-c", "--options", "7zip:compression=lzma2", "-f", outFile, "."]
+
+  throw new Error(
+    `cannot write ${outFile}: no 7-Zip (7z/7za/7zr) and no bsdtar on PATH` +
+      (tar ? ` — ${tar} is ${banner.split("\n")[0] || "not bsdtar"}, which has no 7z writer` : ""),
+  )
+}
+
 if (Script.release) {
   for (const key of Object.keys(binaries)) {
     if (key.includes("linux")) {
       await $`tar -czf ../../${key}.tar.gz *`.cwd(`dist/${key}/bin`)
     } else {
-      await $`zip -r ../../${key}.zip *`.cwd(`dist/${key}/bin`)
+      // 7-Zip APPENDS to an existing archive, so a re-run would otherwise ship a mixed-version
+      // binary alongside the current one. bsdtar truncates; delete either way.
+      rmSync(`dist/${key}.7z`, { force: true })
+      const argv = sevenZipArgv(`../../${key}.7z`)
+      const result = Bun.spawnSync(argv, { cwd: `dist/${key}/bin`, stdout: "inherit", stderr: "inherit" })
+      if (result.exitCode !== 0) throw new Error(`${argv[0]} exited ${result.exitCode} archiving ${key}`)
     }
   }
-  await $`gh release upload v${Script.version} ./dist/*.zip ./dist/*.tar.gz --clobber --repo ${process.env.GH_REPO}`
+  await $`gh release upload v${Script.version} ./dist/*.7z ./dist/*.tar.gz --clobber --repo ${process.env.GH_REPO}`
 }
 
 export { binaries }

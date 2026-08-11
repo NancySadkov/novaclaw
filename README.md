@@ -22,9 +22,11 @@ NovaClaw, download a prebuilt release:
 | **[nancygold.itch.io/novaclaw](https://nancygold.itch.io/novaclaw)** | The prebuilt releases — pay-what-you-want, free to download |
 | **[novaclaw.app](https://novaclaw.app)**                             | The same builds, with a published SHA-256 for each file     |
 
-Windows builds are **portable**: unpack the zip wherever you like and run `NovaClaw.exe`. There is
+Windows builds are **portable**: unpack the `.7z` wherever you like and run `NovaClaw.exe`. There is
 no installer, no admin rights, and no setup step — the server it needs is bundled inside. Point it
-at your model in **Settings** and you're running.
+at your model in **Settings** and you're running. (The download is a 7-Zip archive because a zip of
+a ~1 GB app is a much bigger download. Windows 11's File Explorer opens `.7z` with no extra software;
+on Windows 10, unpack it with [7-Zip](https://www.7-zip.org/).)
 
 Both pages always list the current release, so this file never goes stale about it. macOS and Linux
 packaging targets exist in the build config but are not released yet; on those platforms, build from
