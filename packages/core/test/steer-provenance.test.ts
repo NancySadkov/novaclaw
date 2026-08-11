@@ -275,6 +275,17 @@ const UNFILTERED_USER_ROLE_READS = new Map<string, string>([
     "runner/strict-drain.ts",
     "DELIBERATE: re-finds the id of the message `SessionStrict.lastUserText` already filtered — the provenance question is answered upstream, not here",
   ],
+  // The read is `context.at(-1)?.type !== "user"`, and it is not asking what the user SAID — it is
+  // asking whether the newest message is anything other than assistant output, to decide if an
+  // interrupted turn needs a transcript note. A harness steer must count exactly like a real prompt
+  // here: both mean the turn produced no assistant row, which is the only fact the decision turns
+  // on. Filtering steers out would SUPPRESS the note on precisely the turns that were nudged and
+  // then stopped. The same read is what makes the call idempotent — once the note lands, the newest
+  // message is a synthetic and a second interrupt says nothing.
+  [
+    "interrupt-notice.ts",
+    "DELIBERATE: asks whether the newest message is user-ROLE at all (steer included, on purpose), not what the user said",
+  ],
 ])
 
 describe("the ledger scan itself", () => {

@@ -4,6 +4,7 @@ import { Location } from "../../location"
 import { LocationServiceMap } from "../../location-service-map"
 import { makeGlobalNode } from "../../effect/app-node"
 import { EventV2 } from "../../event"
+import { SessionInterruptNotice } from "../interrupt-notice"
 import { SessionRunCoordinator } from "../run-coordinator"
 import { SessionRunner } from "../runner"
 import { SessionSchema } from "../schema"
@@ -55,6 +56,7 @@ export const layer = Layer.effect(
               },
             ),
           ).pipe(Effect.provide(located), Effect.ignore)
+        const noteInterrupted = SessionInterruptNotice.publish({ events, store, sessionID, located })
         return yield* Effect.scoped(
           Effect.gen(function* () {
             const lease = yield* attempts.start(sessionID, ownerID)
@@ -93,7 +95,12 @@ export const layer = Layer.effect(
                 Exit.isSuccess(exit)
                   ? attempts.settle(lease, "settled")
                   : Cause.hasInterrupts(exit.cause)
-                    ? attempts.settle(lease, "interrupted", { classification: "interrupt" })
+                    ? // The ledger already recorded this (`state: "interrupted"`), and a ledger row
+                      // is not a message — which is why the transcript showed the prompt and then
+                      // nothing at all. `noteInterrupted` is the transcript's half.
+                      attempts
+                        .settle(lease, "interrupted", { classification: "interrupt" })
+                        .pipe(Effect.andThen(noteInterrupted))
                     : attempts.settle(lease, "failed", {
                         classification: "runner-failure",
                         detail: Cause.pretty(exit.cause),

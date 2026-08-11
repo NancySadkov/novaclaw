@@ -20,6 +20,7 @@ import { SessionRunner } from "@novaclaw/core/session/runner"
 import * as SessionScratchFolder from "./scratch-folder"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { SessionSchema } from "@novaclaw/core/session/schema"
+import { SessionInterruptNotice } from "@novaclaw/core/session/interrupt-notice"
 import { SessionStore } from "@novaclaw/core/session/store"
 import os from "node:os"
 import { SessionWorkerCommand } from "./command"
@@ -166,6 +167,11 @@ export const layer = Layer.effect(
 
         const runLocated = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
           Effect.runPromise(effect.pipe(Effect.provide(located)) as Effect.Effect<A, E>)
+        // The transcript's half of an interruption. The ledger records the interrupt either way;
+        // a ledger row is not a message, so without this a turn stopped before it replied left the
+        // prompt with nothing after it. Shared with the in-process executor because THIS is the
+        // layer the server binds — a fix that lives only in `execution/local.ts` never runs.
+        const noteInterrupted = SessionInterruptNotice.publish({ events, store, sessionID, located })
         const publishIdle = Effect.gen(function* () {
           const latest = yield* store.get(sessionID).pipe(Effect.orElseSucceed(() => undefined))
           if (latest?.result === undefined) yield* publishStatus({ type: "idle" })
@@ -239,6 +245,7 @@ export const layer = Layer.effect(
               Effect.onInterrupt(() =>
                 Effect.promise(() => spawned.value.interrupt()).pipe(
                   Effect.flatMap(() => attempts.settle(lease, "interrupted", { classification: "interrupt" })),
+                  Effect.andThen(noteInterrupted),
                   Effect.andThen(publishIdle),
                 ),
               ),
@@ -252,6 +259,7 @@ export const layer = Layer.effect(
           }
           if (outcome.type === "interrupted") {
             yield* attempts.settle(lease, "interrupted", { classification: "interrupt" })
+            yield* noteInterrupted
             yield* publishIdle
             return
           }
