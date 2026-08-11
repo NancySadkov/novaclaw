@@ -120,6 +120,36 @@ export const PROJECT_SCOPE_INSTRUCTION =
 export const projectScopeSection = (mode: PermissionMode): string | undefined =>
   mode === "yolo" ? undefined : PROJECT_SCOPE_INSTRUCTION
 
+/**
+ * How a tool-bearing turn ENDS — a kernel rule, because the UI depends on it.
+ *
+ * A settled turn renders as the answer with everything behind it folded under "Done"
+ * (`session-ui/src/v2/turn-group.ts`, owner ruling 2026-08-11). That makes the prose after the last
+ * tool call **the entire visible reply**: narration between steps is work, and a turn that stops on
+ * a tool call has no answer to show at all. So this is not a style preference the persona could
+ * carry — it is the contract the renderer was built against, and it belongs with the kernel
+ * material for the same reason `PROJECT_SCOPE_INSTRUCTION` does: a custom persona or an agent
+ * prompt must not be able to drop it.
+ *
+ * It names the failure it prevents (stopping on a tool call, re-narrating the steps) rather than
+ * asking vaguely for brevity, because the vague version is the one a model reasons its way around —
+ * the same lesson `PROJECT_SCOPE_INSTRUCTION` records above.
+ */
+export const TURN_CLOSING_INSTRUCTION =
+  "Closing a turn: always finish by writing to the user — never stop on a tool call.\n\n" +
+  "What you write after your last tool call is the whole reply they see: your thinking, the " +
+  "commands and their output are folded away behind a control they may never open. Say what is now " +
+  "true and anything left undone, in a sentence or two. Do not replay the steps — they are already " +
+  "on screen for anyone who wants them."
+
+/**
+ * The closing SECTION — present only when the turn actually has tools. Without them there are no
+ * steps to fold, nothing gets hidden, and instructing a plain conversational answer to "report the
+ * outcome" would make it read like a status report.
+ */
+export const turnClosingSection = (toolsPresent: boolean): string | undefined =>
+  toolsPresent ? TURN_CLOSING_INSTRUCTION : undefined
+
 export interface SystemPromptParts {
   /** The Nova persona baseline — composed FIRST (persona.ts), before per-session/agent prompts. */
   readonly persona?: string
@@ -135,6 +165,8 @@ export interface SystemPromptParts {
   readonly agentSystem?: string
   /** The project-scope rule (already resolved via `projectScopeSection`); absent in `yolo`. */
   readonly projectScope?: string
+  /** How a tool-bearing turn ends (via `turnClosingSection`); absent when the turn has no tools. */
+  readonly turnClosing?: string
   /** The immutable kernel base context (environment, tools, skills) — composed LAST. */
   readonly base?: string
 }
@@ -163,5 +195,6 @@ export const composeSystemParts = (parts: SystemPromptParts): string[] =>
     parts.systemPromptOverride,
     parts.agentSystem,
     parts.projectScope,
+    parts.turnClosing,
     parts.base,
   ].filter((part): part is string => part !== undefined && part.length > 0)

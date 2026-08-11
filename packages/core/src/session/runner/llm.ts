@@ -954,6 +954,7 @@ export const layer = Layer.effect(
             systemPromptOverride: config.systemPromptOverride,
             agentSystem: agent.info?.system,
             projectScope: SystemCompose.projectScopeSection(config.permissionMode),
+            turnClosing: SystemCompose.turnClosingSection((toolMaterialization?.definitions.length ?? 0) > 0),
             base: system.baseline,
           })).map(SystemPart.make)
       const providerMessages = toLLMMessages(context, model, modelCapabilities)
