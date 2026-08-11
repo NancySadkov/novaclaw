@@ -195,20 +195,21 @@ describe("CalendarScheduler.tick", () => {
 })
 
 describe("CalendarScheduler.makeLaunch", () => {
-  // A fake SessionV2 (only the two methods makeLaunch uses) that records its calls.
-  const fakeSessions = (created: unknown[], prompted: unknown[]) =>
+  // A fake SessionV2 (only the ONE method makeLaunch uses) that records its calls.
+  //
+  // ⚠️ `create` + `prompt` collapsed into `spawn` on 2026-08-11 when the launch moved onto the
+  // canonical seam. Both arrays are still recorded from the single call so every assertion below
+  // reads unchanged — a launch is one operation now, but it still produces one session and one
+  // queued prompt, which is what the tests are actually about.
+  const fakeSessions = (created: unknown[], prompted: unknown[], started = true) =>
     ({
-      create: (input: unknown) =>
+      spawn: (input: { text: string }) =>
         Effect.sync(() => {
           created.push(input)
-          return { id: "ses_new" }
+          prompted.push({ sessionID: "ses_new", prompt: { text: input.text }, delivery: "queue" })
+          return { id: "ses_new", started }
         }),
-      prompt: (input: unknown) =>
-        Effect.sync(() => {
-          prompted.push(input)
-          return {}
-        }),
-    }) as unknown as Pick<SessionV2.Interface, "create" | "prompt">
+    }) as unknown as Pick<SessionV2.Interface, "spawn">
 
   const sample = (over: Partial<CalendarStore.Schedule> = {}): CalendarStore.Schedule => ({
     id: "cal_1",

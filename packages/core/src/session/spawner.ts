@@ -58,8 +58,21 @@ export class SpawnLimitError extends Schema.TaggedErrorClass<SpawnLimitError>()(
 }) {}
 
 export interface SpawnInput {
-  /** The spawning session — becomes the child's `parentID`, the root of config inheritance. */
-  readonly parentID: SessionSchema.ID
+  /**
+   * The spawning session — becomes the child's `parentID`, the root of config inheritance.
+   *
+   * ⚠️ **Optional since 2026-08-11, for ROOTLESS launches (Calendar).** A scheduled run has no
+   * parent, and inventing one to satisfy this field would put a lie in the session tree — the child
+   * would inherit config from a session that never asked for it, and `wait` would offer a join to a
+   * supervisor that does not exist. So it is absent, and the three fork-bomb guards are SKIPPED
+   * rather than faked: depth is meaningless without ancestors, and the fan-out and rate caps are
+   * per-parent DB counts with nothing to count. What bounds a rootless launch is its own schedule.
+   *
+   * This is the ONLY thing the caps key on, so read their absence precisely: a rootless spawn is
+   * unquotaed BY CONSTRUCTION, not by oversight. If rootless launches ever become model-triggerable,
+   * they need their own bound — do not assume this one covers them.
+   */
+  readonly parentID?: SessionSchema.ID
   /** The child's opening prompt — admitted with delivery "queue", then woken (see `SpawnResult`). */
   readonly text: string
   readonly agent?: AgentV2.ID
@@ -126,12 +139,32 @@ export const layer = Layer.effect(
     const spawnLocks = KeyedMutex.makeUnsafe<string>()
     return Service.of({
       spawn: Effect.fn("SessionSpawner.spawn")(function* (input) {
-        const child = yield* spawnLocks.withLock(input.parentID)(
+        const parentID = input.parentID
+        // Rootless launches serialise on one shared key rather than per-parent: they take no quota
+        // decision, so the lock is only keeping `createSessionRecord` orderly.
+        const child = yield* spawnLocks.withLock(parentID ?? "@rootless")(
           Effect.gen(function* () {
             // Fork-bomb guards (K1): recursion depth + ACTIVE direct fan-out + durable spawn rate.
             // Depth is a cycle-guarded parentID walk, like resolveSessionConfig.
+            // All three key on a parent; a rootless spawn has none — see `SpawnInput.parentID`.
+            if (parentID === undefined)
+              return yield* createSessionRecord(
+                { db, events, projects, store },
+                {
+                  agent: input.agent,
+                  model: input.model,
+                  controlBinding: input.controlBinding,
+                  systemPromptOverride: input.systemPromptOverride,
+                  type: input.type ?? "sub-agent",
+                  priority: input.priority,
+                  permissionMode: input.permissionMode,
+                  title: input.title,
+                  metadata: input.metadata,
+                  location,
+                },
+              )
             let depth = 0
-            let ancestor: SessionSchema.ID | undefined = input.parentID
+            let ancestor: SessionSchema.ID | undefined = parentID
             const seen = new Set<string>()
             while (ancestor !== undefined && !seen.has(ancestor)) {
               seen.add(ancestor)
@@ -146,7 +179,7 @@ export const layer = Layer.effect(
             const active = yield* db
               .select({ n: count() })
               .from(SessionTable)
-              .where(and(eq(SessionTable.parent_id, input.parentID), isNull(SessionTable.result)))
+              .where(and(eq(SessionTable.parent_id, parentID), isNull(SessionTable.result)))
               .get()
               .pipe(Effect.orDie)
             if ((active?.n ?? 0) >= MAX_SPAWN_CHILDREN)
@@ -159,7 +192,7 @@ export const layer = Layer.effect(
               .select({ n: count() })
               .from(SessionTable)
               .where(
-                and(eq(SessionTable.parent_id, input.parentID), gt(SessionTable.time_created, now - RATE_WINDOW_MS)),
+                and(eq(SessionTable.parent_id, parentID), gt(SessionTable.time_created, now - RATE_WINDOW_MS)),
               )
               .get()
               .pipe(Effect.orDie)
@@ -171,7 +204,7 @@ export const layer = Layer.effect(
             return yield* createSessionRecord(
               { db, events, projects, store },
               {
-                parentID: input.parentID,
+                parentID,
                 agent: input.agent,
                 model: input.model,
                 controlBinding: input.controlBinding,
@@ -189,15 +222,16 @@ export const layer = Layer.effect(
         )
         // 4D: the child inherits the parent's session-DEFINED ad-hoc recipes (copy-on-spawn —
         // the session scope is the "hand your sub-agents a tool set" channel). Best-effort:
-        // a store hiccup must never fail the spawn.
-        yield* Effect.tryPromise(() => copySessionRecipes(input.parentID, child.id, { root: sessionStoreRoot })).pipe(
-          Effect.catch((cause) =>
-            Log.event("session.adhoc.copy.failed", {
-              "session.id": child.id,
-              "session.cause": Log.fault(cause),
-            }).pipe(Effect.as(0)),
-          ),
-        )
+        // a store hiccup must never fail the spawn. Nothing to inherit without a parent.
+        if (parentID !== undefined)
+          yield* Effect.tryPromise(() => copySessionRecipes(parentID, child.id, { root: sessionStoreRoot })).pipe(
+            Effect.catch((cause) =>
+              Log.event("session.adhoc.copy.failed", {
+                "session.id": child.id,
+                "session.cause": Log.fault(cause),
+              }).pipe(Effect.as(0)),
+            ),
+          )
         yield* SessionInput.admit(db, events, {
           id: SessionMessage.ID.create(),
           sessionID: child.id,

@@ -866,6 +866,18 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/schedule/scheduler.ts",
   },
+  /**
+   * A fired schedule's session was created and its prompt admitted, but nothing in this process
+   * picked it up — no executor was attached to the wake relay. The work is durable and will run when
+   * one is, so this is a WARNING, not a failure: the launch succeeded and the run did not begin.
+   */
+  "instance.scheduler.launch.unstarted": {
+    level: "warn",
+    message: "scheduled session was queued but no executor started it",
+    attributes: { "session.id": "correlate" },
+    content: "correlated",
+    file: "packages/core/src/schedule/scheduler.ts",
+  },
   /** A directory had no instance yet, so one is being created. 1146 lines. */
   "instance.store.create": {
     level: "info",

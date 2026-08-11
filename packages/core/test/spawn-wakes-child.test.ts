@@ -343,6 +343,31 @@ describe("SessionV2.spawn — a global caller gets the same quota", () => {
     }),
   )
 
+  // Calendar's shape: no parent at all. The guards key on `parent_id`, so they are skipped BY
+  // CONSTRUCTION rather than passing — this pins that a rootless launch is not silently quotaed to
+  // zero, and that it lands in the location it NAMED rather than inheriting one it does not have.
+  it.live("launches ROOTLESS at a named location, past the caps that key on a parent", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+
+      // More than every per-parent cap, all parentless. None of them may refuse.
+      const ids: string[] = []
+      for (let index = 0; index < SessionSpawner.MAX_SPAWNS_PER_MINUTE + 2; index++) {
+        const spawned = yield* session
+          .spawn({ location, text: PROMPT, type: "goal-oriented", title: `scheduled ${index}` })
+          .pipe(Effect.orDie)
+        ids.push(spawned.id)
+      }
+      expect(new Set(ids).size).toBe(SessionSpawner.MAX_SPAWNS_PER_MINUTE + 2)
+
+      const first = yield* session.get(ids[0] as SessionV2.ID)
+      expect(first.parentID).toBeUndefined()
+      expect(first.location.directory).toBe(location.directory)
+      expect(first.type).toBe("goal-oriented")
+    }),
+  )
+
   it.live("carries title, metadata and prompt origin — the fields whose absence caused the bypass", () =>
     Effect.gen(function* () {
       const location = yield* workspace

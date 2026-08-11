@@ -251,6 +251,16 @@ export type MessageNotFoundError = SessionRevert.MessageNotFoundError
 
 export type Error = NotFoundError | MessageDecodeError | OperationUnavailableError | PromptConflictError
 
+/**
+ * Where the child's location graph comes from — a UNION, so the compiler settles it rather than a
+ * runtime branch. With a parent it is the parent's (one lookup, so the two cannot disagree). Without
+ * one — a rootless launch such as Calendar — the caller must name it, because there is nothing to
+ * inherit and defaulting to the process cwd is how a scheduled run lands in the wrong tree.
+ */
+export type SpawnAt =
+  | (SessionSpawner.SpawnInput & { readonly parentID: SessionSchema.ID; readonly location?: never })
+  | (SessionSpawner.SpawnInput & { readonly parentID?: undefined; readonly location: Location.Ref })
+
 export interface Interface {
   readonly list: (input?: ListInput) => Effect.Effect<SessionSchema.Info[]>
   readonly create: (input: CreateInput) => Effect.Effect<SessionSchema.Info>
@@ -272,7 +282,7 @@ export interface Interface {
    * get in; see `notes/reports/session-launch-sites-2026-08-11.md`.
    */
   readonly spawn: (
-    input: SessionSpawner.SpawnInput,
+    input: SpawnAt,
   ) => Effect.Effect<SessionSpawner.SpawnResult, NotFoundError | SessionSpawner.SpawnLimitError>
   readonly get: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info, NotFoundError>
   readonly messages: (input: {
@@ -604,10 +614,10 @@ export const layer = Layer.effect(
       // The child inherits the PARENT's location, which is also the location whose graph owns the
       // spawner — one lookup, so the two can never disagree.
       spawn: Effect.fn("V2Session.spawn")(function* (input) {
-        const parent = yield* result.get(input.parentID)
+        const at = input.parentID === undefined ? input.location : (yield* result.get(input.parentID)).location
         return yield* SessionSpawner.Service.pipe(
           Effect.flatMap((spawner) => spawner.spawn(input)),
-          Effect.provide(locations.get(parent.location)),
+          Effect.provide(locations.get(at)),
         )
       }),
       get: Effect.fn("V2Session.get")(function* (sessionID) {

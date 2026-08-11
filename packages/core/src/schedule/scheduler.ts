@@ -85,12 +85,13 @@ export const tick = (db: Db, launch: Launch, now: EpochMillis): Effect.Effect<Ti
 
 /**
  * The real launch seam (P3): create a goal-oriented session at the schedule's location (its own directory,
- * else the instance home) and QUEUE its prompt. Typed to only the two SessionV2 methods it uses, so it is
+ * else the instance home) and QUEUE its prompt through the canonical spawner. Typed to only the one
+ * SessionV2 method it uses, so it is
  * unit-testable with a fake. Returns the new session id. `metadata` stamps the schedule + occurrence so a
  * fired run is traceable back to its schedule.
  */
 export const makeLaunch =
-  (sessions: Pick<SessionV2.Interface, "create" | "prompt">, homeDir: string): Launch =>
+  (sessions: Pick<SessionV2.Interface, "spawn">, homeDir: string): Launch =>
   (input) =>
     Effect.gen(function* () {
       const { schedule } = input
@@ -103,8 +104,15 @@ export const makeLaunch =
         model = ModelV2.Ref.make({ id: modelID, providerID })
       }
       const agent = schedule.agent ? AgentV2.ID.make(schedule.agent) : undefined
-      const session = yield* sessions.create({
+      // THE CANONICAL SEAM (v0.2.0 prep, 2026-08-11) — was `create()` + `prompt()`. A Calendar launch
+      // is ROOTLESS, so it passes `location` instead of a `parentID`, and the fork-bomb guards are
+      // skipped BY CONSTRUCTION (see `SessionSpawner.SpawnInput.parentID`): there is no parent to
+      // count fan-out from, and what bounds a scheduled run is its own schedule. What it gains is one
+      // create → enqueue → hand-to-executor path, and `started` — an honest answer to "did this
+      // actually begin?" that the two-call version could not give.
+      const spawned = yield* sessions.spawn({
         location: { directory: AbsolutePath.make(directory) },
+        text: schedule.prompt,
         type: "goal-oriented",
         title: schedule.title || "Scheduled run",
         ...(model ? { model } : {}),
@@ -117,12 +125,9 @@ export const makeLaunch =
           : {}),
         metadata: { calendarScheduleID: schedule.id, occurrenceMillis: input.occurrenceMillis },
       })
-      yield* sessions.prompt({
-        sessionID: session.id,
-        prompt: { text: schedule.prompt },
-        delivery: "queue",
-      })
-      return session.id
+      if (!spawned.started)
+        yield* Log.event("instance.scheduler.launch.unstarted", { "session.id": spawned.id })
+      return spawned.id
     })
 
 /** Seconds between poll ticks. Sub-minute so a schedule due "now" fires promptly; the scan is index-cheap. */
