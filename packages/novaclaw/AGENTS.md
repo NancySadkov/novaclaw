@@ -79,7 +79,9 @@ evaluate every sibling, which defeats tree-shaking and slows module load.
 
 Use these rules when writing or migrating Effect code.
 
-See `specs/effect/migration.md` for the compact pattern reference and examples.
+See `specs/effect/migration.md` for the compact pattern reference and examples. (That file plus the
+three it links — `guide.md`, `todo.md`, `error-boundaries-plan.md` — are what survives here; the 13
+unreachable V2/TUI-era docs beside them went 2026-08-11.)
 
 ## Core
 
