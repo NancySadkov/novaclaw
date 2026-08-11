@@ -5,7 +5,7 @@ export * as NovaHealth from "./nova-health"
  *
  * `todo/adoption.md` asks for model-free checks across storage, database, provider reachability,
  * model capability, sidecar state, scheduler and update/telemetry — *"with calm repairs rather than
- * raw internals"*. Six of those seven now have a probe
+ * raw internals"*. All seven now have a reading
  * (`notes/reports/nova-health-inputs-2026-08-11.md`); this is the part that turns readings into
  * something a person can act on.
  *
@@ -150,3 +150,42 @@ export const fromUpdater = (enabled: boolean | undefined): Signal =>
         detail: "This build cannot see the updater — it is a desktop-only setting.",
       }
     : { id: "updates", label: "Updates", status: "ok", detail: enabled ? "On." : "Off, by your setting." }
+
+/**
+ * The model the session will actually use — the seventh signal.
+ *
+ * ⚠️ **DECLARED, not probed, and the row says so.** `Model.Capabilities` is what the catalogue
+ * claims (`{ tools, input, output }`); it is free to read and costs no egress, which is why this is
+ * a catalogue read rather than the test-call someone might reach for. What it CANNOT tell you is
+ * whether the model uses tools *well* — measured the same day, Holo-3.1 called `tool_search` 12/12
+ * on one prompt and 7/12 on another with identical declarations. A health board answers "is
+ * something broken", and "declares no tool support" is broken; "sometimes chooses badly" is not a
+ * health question.
+ *
+ * `tools: false` on an agent OS is the case worth surfacing BEFORE a turn fails: the product still
+ * chats, and nothing else works, which is exactly the confusing half-broken state a person would
+ * otherwise diagnose by watching an agent do nothing.
+ */
+export const fromModel = (input: {
+  readonly name: string | undefined
+  readonly tools: boolean | undefined
+  readonly vision?: boolean
+}): Signal => {
+  if (input.name === undefined || input.tools === undefined)
+    return {
+      id: "model",
+      label: "Model",
+      status: "unknown",
+      detail: input.name === undefined ? "No model is selected." : `Nothing is known about ${input.name}.`,
+      ...(input.name === undefined ? { action: "Choose a model in Settings." } : {}),
+    }
+  if (!input.tools)
+    return {
+      id: "model",
+      label: "Model",
+      status: "problem",
+      detail: `${input.name} does not support tools, so agents can only chat — they cannot read files or run commands.`,
+      action: "Choose a tool-capable model in Settings.",
+    }
+  return { id: "model", label: "Model", status: "ok", detail: input.name }
+}

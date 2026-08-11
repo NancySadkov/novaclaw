@@ -125,3 +125,32 @@ describe("a whole board", () => {
       expect(signal.action !== undefined || signal.detail !== undefined).toBe(true)
   })
 })
+
+describe("fromModel — declared capability, and it says so", () => {
+  test("a tool-capable model is ok", () => {
+    expect(NovaHealth.fromModel({ name: "holo3.1", tools: true }).status).toBe("ok")
+  })
+
+  // The half-broken state worth naming BEFORE a turn fails: the product still chats and nothing
+  // else works, which a person would otherwise diagnose by watching an agent do nothing.
+  test("a model without tool support is a problem, in plain terms", () => {
+    const signal = NovaHealth.fromModel({ name: "tiny-chat", tools: false })
+    expect(signal.status).toBe("problem")
+    expect(signal.detail).toContain("cannot read files or run commands")
+    expect(signal.action).toContain("Settings")
+  })
+
+  test("no model selected is unknown, with the obvious action", () => {
+    const signal = NovaHealth.fromModel({ name: undefined, tools: undefined })
+    expect(signal.status).toBe("unknown")
+    expect(signal.action).toContain("Choose a model")
+  })
+
+  // ⚠️ Declared, not probed. A model that declares tools may still choose badly — Holo-3.1 measured
+  // 12/12 on one prompt and 7/12 on another with identical declarations. That is not a health
+  // question, and the row must not pretend to answer it.
+  test("a declared-capable model is ok even though behaviour varies", () => {
+    expect(NovaHealth.fromModel({ name: "holo3.1", tools: true }).detail).toBe("holo3.1")
+  })
+})
+
