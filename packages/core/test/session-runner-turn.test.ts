@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, conversation, drive, makeRunnerHarness } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — turn start and request assembly.
@@ -38,8 +38,11 @@ describe("SessionRunnerLLM — turn start", () => {
     expect(harness.requests).toHaveLength(1)
     expect(harness.requests[0]?.model).toBe(harness.model)
     expect(harness.requests[0]?.tools.map((tool) => tool.name)).toEqual(["echo", "defect"])
+    // `conversation` drops what the harness appended to the tail (project grounding here) — this
+    // claim is about the CHRONOLOGICAL USER HISTORY, and the cadence of the tail injections is
+    // asserted by `session-runner-grounding.test.ts` rather than re-litigated in every claim.
     expect(
-      harness.requests[0]?.messages.map((message) => ({ role: message.role, content: message.content })),
+      conversation(harness.requests[0]!).map((message) => ({ role: message.role, content: message.content })),
     ).toEqual([
       { role: "user", content: [{ type: "text", text: "First" }] },
       { role: "user", content: [{ type: "text", text: "Second" }] },

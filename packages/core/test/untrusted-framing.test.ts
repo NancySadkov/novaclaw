@@ -730,6 +730,11 @@ const NO_EXTERNAL = [
   "tool.ts",
   "tools.ts",
   "trash.ts",
+  // Asks the USER to lift a short chat into an Agent session, then publishes a FeatureSwitched
+  // event. Its whole output is one compiled-in sentence of ours (`UpgradeChatTool.SUCCESS`) or a
+  // permission denial; there is no reader, no network and no store on the path, so no party other
+  // than the user can put bytes through it.
+  "upgrade-chat.ts",
   "truncation-dir.ts",
   // Pure provider-preview shaping over output already produced by another tool; fetches nothing.
   "truncation.ts",

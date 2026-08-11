@@ -9,7 +9,7 @@ import { SessionEvent } from "@novaclaw/core/session/event"
 import { SessionInput } from "@novaclaw/core/session/input"
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, messageRoles } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — state left behind by a process that died mid-tool.
@@ -105,7 +105,7 @@ describe("SessionRunnerLLM — recovery from a prior process", () => {
 
     expect(harness.requests).toHaveLength(1)
     // The continuation carries the orphan as a settled TOOL result — not as a call still awaiting one.
-    expect(harness.requests[0]?.messages.map((message) => message.role)).toEqual(["user", "assistant", "tool"])
+    expect(messageRoles(harness.requests[0]!)).toEqual(["user", "assistant", "tool"])
     expect(context).toMatchObject([
       { type: "user", text: "Recover interrupted tool" },
       {
@@ -164,7 +164,7 @@ describe("SessionRunnerLLM — recovery from a prior process", () => {
 
     expect(harness.requests).toHaveLength(1)
     expect(
-      harness.requests[0]?.messages.map((message) => message.role),
+      messageRoles(harness.requests[0]!),
       "a hosted orphan is answered INSIDE the assistant message, not as a separate tool message",
     ).toEqual(["user", "assistant"])
     expect(harness.requests[0]?.messages[1]?.content).toMatchObject([
@@ -216,7 +216,7 @@ describe("SessionRunnerLLM — recovery from a prior process", () => {
     )
 
     expect(harness.requests).toHaveLength(1)
-    expect(harness.requests[0]?.messages.map((message) => message.role)).toEqual(["user", "assistant", "tool"])
+    expect(messageRoles(harness.requests[0]!)).toEqual(["user", "assistant", "tool"])
     expect(context).toMatchObject([
       { type: "user", text: "Recover pending tool input" },
       {

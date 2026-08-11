@@ -34,6 +34,7 @@ import {
   SessionTable,
 } from "@novaclaw/core/session/sql"
 import { SessionHistory } from "@novaclaw/core/session/history"
+import { isSteerText } from "@novaclaw/core/session/steer-provenance"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SystemContext } from "@novaclaw/core/system-context"
 import { SystemContextRegistry } from "@novaclaw/core/system-context/registry"
@@ -784,13 +785,46 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
 /**
  * The text of a request's messages for one role. Lives here because claims across several files assert
  * on it, and a helper re-typed per file is a helper that will disagree with itself.
+ *
+ * ⚠️ RAW — it includes the harness's own tail injections. Use `userTexts` for a claim about the
+ * conversation; use this one only when the injection IS the subject.
  */
 export const messageTexts = (request: LLMRequest, role: "user" | "system") =>
   request.messages.flatMap((message) =>
     message.role === role ? message.content.flatMap((content) => (content.type === "text" ? [content.text] : [])) : [],
   )
 
-export const userTexts = (request: LLMRequest) => messageTexts(request, "user")
+/**
+ * A message NovaClaw appended to the request tail rather than one the conversation produced.
+ *
+ * Three of them ride the tail as `user`-role messages — project grounding, auto-recall and the todo
+ * reminder — and every one carries the 1N provenance prefix precisely so that nothing downstream
+ * mistakes it for the user speaking (`session/steer-provenance.ts`). The helpers below use the
+ * shipped predicate rather than matching text, so a change to the prefix cannot make them lie.
+ *
+ * ⚠️ **This is why they are filtered rather than written into every expectation.** When cadence
+ * project grounding landed (`03a5fb4e4`) it appended one such message to the first turn of every
+ * session, and seventeen claims about orphan recovery, promotion, steering order and compaction went
+ * red — none of which is a claim about grounding. A claim that IS about the tail belongs in
+ * `session-runner-grounding.test.ts`, which asserts the cadence directly.
+ */
+export const isHarnessInjected = (message: LLMRequest["messages"][number]) =>
+  message.role === "user" &&
+  message.content.length > 0 &&
+  message.content.every((content) => content.type === "text" && isSteerText(content.text))
+
+/** The request's messages with the harness's own tail injections removed. */
+export const conversation = (request: LLMRequest) => request.messages.filter((message) => !isHarnessInjected(message))
+
+/** The roles of the conversation's messages, in order — injections excluded. */
+export const messageRoles = (request: LLMRequest) => conversation(request).map((message) => message.role)
+
+/** The user's OWN texts: what the conversation contributed, never what the harness appended. */
+export const userTexts = (request: LLMRequest) =>
+  conversation(request).flatMap((message) =>
+    message.role === "user" ? message.content.flatMap((content) => (content.type === "text" ? [content.text] : [])) : [],
+  )
+
 export const systemTexts = (request: LLMRequest) => messageTexts(request, "system")
 
 /** Derived rather than declared, so the factory stays the single description of its own shape. */

@@ -46,6 +46,16 @@ const VALID: Record<string, unknown> = {
   tool_routing: { rules: [{ provider: "qwen", tools: { edit: true, write: false } }] },
   resource_pressure: { warning: { memory_used_fraction: 0.75 }, floor: { disk_free_bytes: 512 * 1024 * 1024 } },
   mcp: {},
+  // Added with the capability-service key (2026-08-10). `capabilities`, `transport`, `locality` and
+  // `resources` are the four required fields of `ConfigV2.CapabilityService`; the rest are optional.
+  capability_services: {
+    parser: {
+      capabilities: ["parse"],
+      transport: { type: "streamable-http", url: "http://127.0.0.1:4310/mcp" },
+      locality: "local",
+      resources: { estimated_resident_bytes: 256 * 1024 * 1024, estimated_peak_bytes: 512 * 1024 * 1024 },
+    },
+  },
   compaction: {},
   computer: { display: ":99" },
   context: { enabled: true },

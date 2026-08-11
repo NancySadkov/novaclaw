@@ -20,6 +20,7 @@ import {
   SYSTEM_CONTEXT_REMOVED_MESSAGE,
   drive,
   makeRunnerHarness,
+  messageRoles,
 } from "./fixture/runner-harness"
 
 /**
@@ -257,7 +258,7 @@ describe("SessionRunnerLLM — durable system context", () => {
     expect(observed.epoch, "no context epoch may be committed for a turn that never ran").toBeUndefined()
 
     expect(harness.requests, "the retry goes out exactly once").toHaveLength(1)
-    expect(harness.requests[0]?.messages.map((message) => message.role), "and not duplicated").toEqual(["user"])
+    expect(messageRoles(harness.requests[0]!), "and not duplicated").toEqual(["user"])
   })
 
   test("starts a real runner turn after default prompt recording", async () => {

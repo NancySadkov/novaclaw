@@ -88,6 +88,11 @@ describe("SessionRunnerLLM — application tools", () => {
       "assistantMessageID",
       "attachmentPaths",
       "sessionID",
+      // The Working receipt's span handle (`Tool.Context.timing`): a tool opens a `capability-*`
+      // phase so a long service call shows up in the turn receipt instead of reading as a stall.
+      // It carries no attribution — `begin` returns its own close handle precisely so parallel
+      // spans cannot close one another — so it neither adds to nor weakens what ② asserts.
+      "timing",
       "toolCallID",
     ])
     // ③ and its result is projected as a completed tool call, carrying the structured output

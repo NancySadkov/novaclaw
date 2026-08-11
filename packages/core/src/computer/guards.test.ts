@@ -44,7 +44,17 @@ const read = (relative: string): string => fs.readFileSync(path.join(ROOT, relat
 const modules = (): ReadonlyArray<{ readonly file: string; readonly text: string }> =>
   fs
     .readdirSync(path.join(ROOT, COMPUTER_DIR), { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".ts") && !entry.name.includes(".test."))
+    .filter(
+      (entry) =>
+        entry.isFile() &&
+        entry.name.endsWith(".ts") &&
+        !entry.name.includes(".test.") &&
+        // ⚠️ `.d.ts` is an ambient DECLARATION, not a module: `windows-helper.ps1.d.ts` is two lines
+        // that type the PowerShell file as an imported string. It has no runtime code, so neither the
+        // one-exec gate nor G8 can say anything about it, and sweeping it would only mean carrying a
+        // name in the ratchet below that no guard ever reads.
+        !entry.name.endsWith(".d.ts"),
+    )
     .map((entry) => ({ file: entry.name, text: read(`${COMPUTER_DIR}/${entry.name}`) }))
 
 // ================================================================================================
@@ -71,6 +81,10 @@ describe("the directory-sweeping guards cover every module, including the new on
     "prompt.ts",
     "proposal.ts",
     "verify.ts",
+    // Native Windows control (`f29675551`). It reaches a real screen, so both sweeps apply to it —
+    // and it passes them: it starts no process of its own (the guard below re-checks that predicate
+    // for `driver.ts`, and `one-exec-gate.test.ts` sweeps this whole directory).
+    "windows-native.ts",
   ]
 
   test("the swept set is exactly the known modules", () => {
@@ -239,8 +253,37 @@ describe("none of the loop entered the tool's input schema", () => {
   const fields = Object.keys(ComputerTool.Input.fields)
 
   test("🔴 the field list is a ratchet", () => {
+    // ⚠️ Eight fields joined this list on 2026-08-10 (`24427b2b1`, `f29675551`) and every one of them
+    // is a COMPATIBILITY ALIAS for a call form other Computer Use harnesses emit — `double`/`submit`
+    // (boolean flags for double_click / type_submit), `buttons`/`key` (keyboard spellings beside
+    // `keys`), `height`/`delta_y`/`speed` (scroll-distance spellings beside `amount`), and `app`
+    // (scope control to one window). Their annotations all say "prefer <the canonical field>".
+    //
+    // That is the decision this ratchet exists to force, and it is a different question from the one
+    // the sibling test asks: the cost here is schema bytes on a DEFERRED tool, while the thing that
+    // must never come back is LOOP vocabulary. Aliases for actions the tool already performs are the
+    // acceptable side of that line; a `watch`, `budget` or `checkpoint` field is not.
     expect(fields.sort()).toEqual(
-      ["action", "amount", "button", "direction", "display", "keys", "region", "text", "x", "y"].sort(),
+      [
+        "action",
+        "amount",
+        "app",
+        "button",
+        "buttons",
+        "delta_y",
+        "direction",
+        "display",
+        "double",
+        "height",
+        "key",
+        "keys",
+        "region",
+        "speed",
+        "submit",
+        "text",
+        "x",
+        "y",
+      ].sort(),
     )
   })
 
