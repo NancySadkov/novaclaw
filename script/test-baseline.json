@@ -1,5 +1,5 @@
 {
-  "note": "Baseline for `bun run test`. `units` = tests bun reported SKIPPED per run unit; `failing` = failures PINNED as known, by name. Both are ratchets: any change fails the run and prints what moved. Pin only failures that are understood and filed â€” never to make a red go away. Seeded 2026-07-27 (v0.2.0 PREP Wave 0).",
+  "note": "Baseline for `bun run test`. `units` = tests bun reported SKIPPED per run unit; `failing` = failures PINNED as known, by name. Both are ratchets: any change fails the run and prints what moved. Pin only failures that are understood and filed — never to make a red go away. Seeded 2026-07-27 (v0.2.0 PREP Wave 0).",
   "reasons": {
     "novaclaw:server": "Windows-from-source. 16 pinned failures. The three PublicApi OpenAPI error-shape tests were removed 2026-08-05 after passing in two independent full runs. The promptAsync entry was stored MOJIBAKED (UTF-8 bytes for an arrow decoded as cp1252), so the ledger could never match its own entry and reported one phantom fix plus one phantom new failure on every run — it was corrected, not removed; that test is still red."
   },

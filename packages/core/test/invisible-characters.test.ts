@@ -197,11 +197,36 @@ const isWordCharacter = (cp: number) =>
   cp === 0x0024 /* $ */ ||
   isConfusableLetter(cp)
 
+/**
+ * MOJIBAKE: UTF-8 bytes that were decoded as cp1252 somewhere and re-encoded.
+ *
+ * ⚠️ **Added because this tree has produced it TWICE, in the same file.** `script/test-baseline.json`
+ * carries a `reasons` note explaining that its `promptAsync` entry was stored mojibaked, "so the
+ * ledger could never match its own entry and reported one phantom fix plus one phantom new failure
+ * on every run" — and on 2026-08-11 the `note` field one key above it was found holding a mojibaked
+ * em dash of its own. A warning about the bug, carrying the bug.
+ *
+ * Unlike the classes above this one is VISIBLE, which is exactly why it survives review: it looks
+ * like punctuation someone meant. It defeats search the same way a homoglyph does — the ledger could
+ * not match its own entry — so it belongs to the same family this file exists for.
+ *
+ * The rule is one adjacent pair, `U+00E2` then `U+20AC`, which is the opening of every mojibaked
+ * dash and curly quote: an em dash becomes U+00E2 U+20AC U+201D, a right single quote becomes
+ * U+00E2 U+20AC U+2122. Written as CODE POINTS on purpose - spelling the sequence out
+ * literally makes this file trip its own guard, which is what the first draft did.
+ * Measured over the same scan roots on 2026-08-11:
+ * **zero hits across 3073 files** once the one real instance was repaired, so it is keepable by this
+ * file's own standard rather than a rule that will cry wolf.
+ */
+const isMojibakeLead = (cp: number) => cp === 0x00e2
+const isMojibakeFollow = (cp: number) => cp === 0x20ac
+
 const NUL_CLASS = "a raw NUL"
 const C0_CLASS = "a C0 control"
 const INVISIBLE_CLASS = "an invisible format character"
 const MIXED_SCRIPT_CLASS = "a mixed-script word"
-const CLASS_NAMES = new Set([NUL_CLASS, C0_CLASS, INVISIBLE_CLASS, MIXED_SCRIPT_CLASS])
+const MOJIBAKE_CLASS = "UTF-8 decoded as cp1252 (mojibake)"
+const CLASS_NAMES = new Set([NUL_CLASS, C0_CLASS, INVISIBLE_CLASS, MIXED_SCRIPT_CLASS, MOJIBAKE_CLASS])
 
 const codePointName = (cp: number) => `U+${cp.toString(16).toUpperCase().padStart(4, "0")}`
 
@@ -250,6 +275,9 @@ function findingsIn(text: string): string[] {
     if (isNul(cp)) note(NUL_CLASS, cp)
     else if (isC0Control(cp)) note(C0_CLASS, cp)
     else if (isInvisibleFormat(cp)) note(INVISIBLE_CLASS, cp)
+    // Reported against the LEAD character, so the offset in the message points at the start of the
+    // damaged sequence rather than one character into it.
+    if (isMojibakeLead(cp) && isMojibakeFollow(text.charCodeAt(i + 1))) note(MOJIBAKE_CLASS, cp)
 
     if (!afterBackslash && isWordCharacter(cp)) {
       if (wordStart === -1) {
@@ -266,7 +294,10 @@ function findingsIn(text: string): string[] {
   closeWord(text.length)
 
   const out: string[] = []
-  for (const what of [NUL_CLASS, C0_CLASS, INVISIBLE_CLASS]) {
+  // ⚠️ Every code-point class must be listed here, not just noted above. `MOJIBAKE_CLASS` was
+  // recorded into `perClass` and omitted from this list on its first draft, so the guard collected
+  // the finding and reported nothing — green against a file that provably carried the sequence.
+  for (const what of [NUL_CLASS, C0_CLASS, INVISIBLE_CLASS, MOJIBAKE_CLASS]) {
     const points = perClass.get(what)
     if (points === undefined) continue
     out.push(
