@@ -217,6 +217,12 @@ describe("worktree endpoint reproduction", () => {
         yield* Effect.promise(() => Bun.sleep(2_100))
       }),
     { git: true },
+    // ⚠️ Its OWN timeout, because this test cannot fit in bun's 5 s default and must not depend on
+    // the runner's `--timeout=15000` to be true. It waits on a deliberately slow start command —
+    // that wait IS the subject, "returns without waiting for boot" — so `bun test <this file>`
+    // failed while the gate stayed green, which is the worst way for a test to be red: only when
+    // someone checks it by hand, and never where it would be noticed.
+    15_000,
   )
 
   worktreeTest(
