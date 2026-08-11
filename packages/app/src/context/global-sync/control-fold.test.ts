@@ -68,6 +68,43 @@ describe("controlPatch", () => {
     ).toEqual({ systemPromptOverride: undefined })
   })
 
+  test("🔴 the provider-attempt latch is set AND cleared on the record", () => {
+    // The defect this pins (owner-hit 2026-08-11): a finished reply was followed by the composer's
+    // "A previous reply was interrupted" dock on every turn. The server row was correct throughout;
+    // only the client's copy was stale, because `.settled` publishes no `session.updated` and had no
+    // arm here. Set and clear are asserted together — an arm for `started` alone would produce a
+    // latch that can only ever appear.
+    const recovery = { attemptID: "evt_1", assistantMessageID: "msg_1", toolProtocol: false }
+    expect(
+      controlPatch(envelope("session.next.provider-attempt.started", { sessionID: "s", recovery })),
+    ).toEqual({ sessionID: "s", patch: { providerRecovery: recovery } })
+    for (const type of ["session.next.provider-attempt.settled", "session.next.provider-attempt.abandoned"])
+      expect(controlPatch(envelope(type, { sessionID: "s", attemptID: "evt_1" })), type).toEqual({
+        sessionID: "s",
+        patch: { providerRecovery: undefined },
+      })
+  })
+
+  test("🔴 a settled attempt leaves NO latch on the record the dock reads", () => {
+    // End to end through the applier, because "patch: {providerRecovery: undefined}" is only a fix
+    // if it DELETES the field — the dock's condition is truthiness of the record's value.
+    const draft = { id: "s" } as unknown as Session
+    const started = controlPatch(
+      envelope("session.next.provider-attempt.started", {
+        sessionID: "s",
+        recovery: { attemptID: "evt_1", assistantMessageID: "msg_1", toolProtocol: false },
+      }),
+    )!
+    applyControlPatch(draft, started.patch)
+    expect((draft as Record<string, unknown>).providerRecovery, "set while the attempt runs").toBeDefined()
+
+    const settled = controlPatch(
+      envelope("session.next.provider-attempt.settled", { sessionID: "s", attemptID: "evt_1" }),
+    )!
+    applyControlPatch(draft, settled.patch)
+    expect("providerRecovery" in draft, "cleared the moment it settles").toBe(false)
+  })
+
   test("ignores non-control events, unknown features, and missing sessionIDs", () => {
     expect(controlPatch(envelope("session.next.prompted", { sessionID: "s" }))).toBeUndefined()
     expect(controlPatch(envelope("session.updated", { info: {} }))).toBeUndefined()

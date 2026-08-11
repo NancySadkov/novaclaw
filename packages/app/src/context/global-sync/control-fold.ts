@@ -65,6 +65,27 @@ export function controlPatch(event: Envelope): ControlPatch | undefined {
       return { sessionID, patch: { revert: props.revert } }
     case "session.next.revert.cleared":
       return { sessionID, patch: { revert: undefined } }
+    // 🔴 The in-flight provider attempt, and the same omission as `revert` above cost the same kind
+    // of bug (owner-hit 2026-08-11, qwen3.5-9b in Chat mode): a completed reply was followed by the
+    // composer's "A previous reply was interrupted" dock, every turn.
+    //
+    // The row is right — the server clears `provider_recovery` on settle, verified in the owner's
+    // own database. What the CLIENT never hears is the clearing. `session.updated` is published at
+    // step-end, i.e. while the attempt is still open, so the record the client caches carries the
+    // latch; `.settled` then clears the row and publishes no `session.updated` at all. The dock is
+    // hidden while the session is working, so the stale latch surfaces the instant the turn ends.
+    //
+    // ⚠️ Turn ONE hid this: post-run auto-title publishes a `session.updated` a second later, which
+    // happened to carry the cleared row. Auto-title runs once per session, so turn two had nothing
+    // to converge it and the dock stayed — which is exactly the "and it came back" in the report.
+    case "session.next.provider-attempt.started":
+      return { sessionID, patch: { providerRecovery: props.recovery } }
+    case "session.next.provider-attempt.settled":
+    case "session.next.provider-attempt.abandoned":
+      // Unconditional, unlike the projector's attemptID-matched clear. The projector guards because
+      // durable projections can be replayed out of order against a row a NEWER attempt already
+      // owns; this fold reads one ordered live stream, where a settle can only follow its own start.
+      return { sessionID, patch: { providerRecovery: undefined } }
     case "session.next.moved": {
       const location = props.location as { directory?: string } | undefined
       if (!location?.directory) return undefined
