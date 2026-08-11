@@ -18,6 +18,7 @@ import { PtyGroup } from "@novaclaw/protocol/groups/pty"
 import { PtyInstanceGroup } from "@novaclaw/protocol/groups/pty-instance"
 import { makeQuestionGroup } from "@novaclaw/protocol/groups/question"
 import { RecipeGroup } from "@novaclaw/protocol/groups/recipe"
+import { AppGroup } from "@novaclaw/protocol/groups/app"
 import { ReferenceGroup } from "@novaclaw/protocol/groups/reference"
 import { SkillGroup } from "@novaclaw/protocol/groups/skill"
 import { TelemetryGroup } from "@novaclaw/protocol/groups/telemetry"
@@ -63,6 +64,7 @@ export const QuestionApi = fragment(
   makeQuestionGroup(LocationMiddleware, SessionLocationMiddleware).middleware(WorkspaceRoutingMiddleware),
 )
 export const RecipeApi = fragment(RecipeGroup)
+export const AppApi = fragment(AppGroup)
 export const ReferenceApi = fragment(ReferenceGroup.middleware(LocationMiddleware))
 export const SkillApi = fragment(SkillGroup.middleware(LocationMiddleware))
 export const TelemetryApi = fragment(TelemetryGroup)

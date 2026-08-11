@@ -60,7 +60,10 @@ export async function loadPersistedApps(server: ServerConnection.HttpBase): Prom
  * to stop showing a tile the user just threw away.
  */
 export async function deletePersistedApp(server: ServerConnection.HttpBase, id: string): Promise<boolean> {
-  const url = new URL(`app/${encodeURIComponent(id)}`, server.url.endsWith("/") ? server.url : `${server.url}/`)
+  // `/api/app/:id` — the modern contract. Listing and registering are still the legacy `/app`, and
+  // that asymmetry is deliberate: ruling 11 pins the legacy surface shrink-only, so a NEW route may
+  // not join it. `sdk-js`'s legacy-path ledger enforces that, and caught the first draft of this.
+  const url = new URL(`api/app/${encodeURIComponent(id)}`, server.url.endsWith("/") ? server.url : `${server.url}/`)
   const ok = await fetch(url, {
     method: "DELETE",
     headers: server.password

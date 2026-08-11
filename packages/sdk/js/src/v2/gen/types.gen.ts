@@ -233,6 +233,8 @@ export type SessionStatus =
             | "memory-rerank"
             | "compaction"
             | "snapshot"
+            | "snapshot-before"
+            | "snapshot-after"
             | "scheduler-wait"
             | "provider-setup"
             | "provider-prefill"
@@ -655,6 +657,8 @@ export type GlobalEvent = {
                 | "memory-rerank"
                 | "compaction"
                 | "snapshot"
+                | "snapshot-before"
+                | "snapshot-after"
                 | "scheduler-wait"
                 | "provider-setup"
                 | "provider-prefill"
@@ -2547,6 +2551,8 @@ export type SessionMessageAssistant = {
         | "memory-rerank"
         | "compaction"
         | "snapshot"
+        | "snapshot-before"
+        | "snapshot-after"
         | "scheduler-wait"
         | "provider-setup"
         | "provider-prefill"
@@ -3212,6 +3218,8 @@ export type SyncEventSessionNextStepEnded = {
             | "memory-rerank"
             | "compaction"
             | "snapshot"
+            | "snapshot-before"
+            | "snapshot-after"
             | "scheduler-wait"
             | "provider-setup"
             | "provider-prefill"
@@ -5013,6 +5021,8 @@ export type SessionNextStepEnded = {
           | "memory-rerank"
           | "compaction"
           | "snapshot"
+          | "snapshot-before"
+          | "snapshot-after"
           | "scheduler-wait"
           | "provider-setup"
           | "provider-prefill"
@@ -7172,6 +7182,8 @@ export type EventSessionNextStepEnded = {
           | "memory-rerank"
           | "compaction"
           | "snapshot"
+          | "snapshot-before"
+          | "snapshot-after"
           | "scheduler-wait"
           | "provider-setup"
           | "provider-prefill"
@@ -14418,6 +14430,37 @@ export type V2RecipeRunResponses = {
 }
 
 export type V2RecipeRunResponse = V2RecipeRunResponses[keyof V2RecipeRunResponses]
+
+export type V2AppRemoveData = {
+  body?: never
+  path: {
+    id: string
+  }
+  query?: never
+  url: "/api/app/{id}"
+}
+
+export type V2AppRemoveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2AppRemoveError = V2AppRemoveErrors[keyof V2AppRemoveErrors]
+
+export type V2AppRemoveResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2AppRemoveResponse = V2AppRemoveResponses[keyof V2AppRemoveResponses]
 
 export type V2PermissionRequestListData = {
   body?: never

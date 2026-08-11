@@ -1020,9 +1020,12 @@ export const layer = Layer.effect(
       const startSnapshot = ShortChat.enabled(config.shortChat)
         ? undefined
         : yield* Effect.gen(function* () {
-            yield* timingStart("snapshot")
+            // The BASELINE — what the files looked like before the model ran. Its twin after the
+            // step settles is `snapshot-after`; both used to be called `snapshot`, so the receipt
+            // said "Checking your files" twice for two different things.
+            yield* timingStart("snapshot-before")
             const captured = yield* snapshots.capture({ timing: { start: timing.detailStart, end: timing.detailEnd } })
-            yield* timingEnd("snapshot")
+            yield* timingEnd("snapshot-before")
             return captured
           })
       yield* timingStart("provider-setup")
@@ -1368,11 +1371,12 @@ export const layer = Layer.effect(
             const endSnapshot = ShortChat.enabled(config.shortChat)
               ? undefined
               : yield* Effect.gen(function* () {
-                  yield* timingStart("snapshot")
+                  // The COMPARISON — diffed against the baseline to produce the changed-file list.
+                  yield* timingStart("snapshot-after")
                   const captured = yield* snapshots.capture({
                     timing: { start: timing.detailStart, end: timing.detailEnd },
                   })
-                  yield* timingEnd("snapshot")
+                  yield* timingEnd("snapshot-after")
                   return captured
                 })
             const files =

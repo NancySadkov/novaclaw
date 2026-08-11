@@ -47,8 +47,27 @@ export const make = (now: () => number = Date.now) => {
     phases[index] = { ...phases[index]!, completedAt: now() }
     if (indexes?.length === 0) open.delete(phase)
   }
+  /**
+   * The snapshot phase a `repository`/`status`/`persist`/`hash` detail belongs to — the newest open
+   * one across the whole family.
+   *
+   * 🔴 This used to read `open.get("snapshot")` by that literal name, so splitting the phase into
+   * `snapshot-before` / `snapshot-after` (2026-08-11) would have silently dropped EVERY detail:
+   * `detailStart` would find nothing, return early, and the developer receipt would lose its
+   * sub-timings with nothing failing. Keeping the old name in the list is what makes a stored turn
+   * still resolve, and taking the max index is what attributes a detail to the snapshot actually
+   * running rather than to whichever family member was declared first.
+   */
+  const openSnapshotPhase = (): number | undefined => {
+    let newest: number | undefined
+    for (const name of ["snapshot", "snapshot-before", "snapshot-after"] as const) {
+      const index = open.get(name)?.at(-1)
+      if (index !== undefined && (newest === undefined || index > newest)) newest = index
+    }
+    return newest
+  }
   const detailStart = (detail: SnapshotPhase) => {
-    const phase = open.get("snapshot")?.at(-1)
+    const phase = openSnapshotPhase()
     if (phase === undefined) return
     const details = [...(phases[phase]?.details ?? []), { phase: detail, startedAt: now() }]
     phases[phase] = { ...phases[phase]!, details }

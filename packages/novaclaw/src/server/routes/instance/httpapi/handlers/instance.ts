@@ -190,18 +190,6 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       return manifest
     })
 
-    const removeApp = Effect.fn("InstanceHttpApi.appRemove")(function* (ctx: { params: { id: string } }) {
-      const removed = yield* Effect.tryPromise(() => AppRegistry.removeApp(ctx.params.id)).pipe(Effect.orDie)
-      // The same event `appRegister` emits, so every open client refetches and the tile disappears
-      // from a second window too — not just the one that deleted it.
-      if (removed)
-        GlobalBus.emit("event", {
-          directory: "global",
-          payload: { type: "app.registered", properties: { id: ctx.params.id, title: "" } },
-        })
-      return { removed }
-    })
-
     return handlers
       .handle("dispose", dispose)
       .handle(
@@ -224,6 +212,5 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       .handle("formatter", getFormatter)
       .handle("appList", listApp)
       .handle("appRegister", registerApp)
-      .handle("appRemove", removeApp)
   }),
 ).pipe(Layer.provide(ServerLocationServiceMap.layer))

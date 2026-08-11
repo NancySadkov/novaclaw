@@ -17328,6 +17328,56 @@
         ]
       }
     },
+    "/api/app/{id}": {
+      "delete": {
+        "tags": ["novaclaw HttpApi"],
+        "operationId": "v2.app.remove",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Delete a contributed home-app manifest by id. Built-in tiles are not manifests and are unaffected; deleting an id that does not exist succeeds, so the call is idempotent.",
+        "summary": "Remove a home app",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.app.remove({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/permission/request": {
       "get": {
         "tags": ["permissions"],
@@ -21120,6 +21170,8 @@
                             "memory-rerank",
                             "compaction",
                             "snapshot",
+                            "snapshot-before",
+                            "snapshot-after",
                             "scheduler-wait",
                             "provider-setup",
                             "provider-prefill",
@@ -22551,6 +22603,8 @@
                                     "memory-rerank",
                                     "compaction",
                                     "snapshot",
+                                    "snapshot-before",
+                                    "snapshot-after",
                                     "scheduler-wait",
                                     "provider-setup",
                                     "provider-prefill",
@@ -28529,6 +28583,8 @@
                         "memory-rerank",
                         "compaction",
                         "snapshot",
+                        "snapshot-before",
+                        "snapshot-after",
                         "scheduler-wait",
                         "provider-setup",
                         "provider-prefill",
@@ -30695,6 +30751,8 @@
                                 "memory-rerank",
                                 "compaction",
                                 "snapshot",
+                                "snapshot-before",
+                                "snapshot-after",
                                 "scheduler-wait",
                                 "provider-setup",
                                 "provider-prefill",
@@ -36379,6 +36437,8 @@
                             "memory-rerank",
                             "compaction",
                             "snapshot",
+                            "snapshot-before",
+                            "snapshot-after",
                             "scheduler-wait",
                             "provider-setup",
                             "provider-prefill",
@@ -43669,6 +43729,8 @@
                             "memory-rerank",
                             "compaction",
                             "snapshot",
+                            "snapshot-before",
+                            "snapshot-after",
                             "scheduler-wait",
                             "provider-setup",
                             "provider-prefill",
@@ -46145,6 +46207,10 @@
     {
       "name": "recipe",
       "description": "Recipes — prompts + assets an agent cooks."
+    },
+    {
+      "name": "novaclaw HttpApi",
+      "description": "Experimental HttpApi surface for selected instance routes."
     },
     {
       "name": "permissions",

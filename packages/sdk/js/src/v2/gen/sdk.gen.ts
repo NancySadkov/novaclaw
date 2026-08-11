@@ -4756,6 +4756,27 @@ class ApiV2Recipe extends NovaClawApiClient {
   }
 }
 
+class ApiV2App extends NovaClawApiClient {
+  /**
+   * Remove a home app
+   *
+   * Delete a contributed home-app manifest by id. Built-in tiles are not manifests and are unaffected; deleting an id that does not exist succeeds, so the call is idempotent.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { id: parameters?.["id"] }
+    return (options?.client ?? this.client).delete<T.V2AppRemoveResponses, T.V2AppRemoveErrors, ThrowOnError>({
+      url: "/api/app/{id}",
+      ...options,
+      path,
+    })
+  }
+}
+
 class ApiV2PermissionRequest extends NovaClawApiClient {
   /**
    * List pending permission requests
@@ -5545,6 +5566,11 @@ class ApiV2 extends NovaClawApiClient {
   private _recipe?: ApiV2Recipe
   get recipe(): ApiV2Recipe {
     return (this._recipe ??= new ApiV2Recipe({ client: this.client }))
+  }
+
+  private _app?: ApiV2App
+  get app(): ApiV2App {
+    return (this._app ??= new ApiV2App({ client: this.client }))
   }
 
   private _permission?: ApiV2Permission

@@ -305,7 +305,14 @@ export const TurnPhase = Schema.Literals([
   "memory-search",
   "memory-rerank",
   "compaction",
+  // ⚠️ `snapshot` is the same retired-but-kept case as `prepare` above: stored turns carry it.
+  // A turn takes TWO file snapshots — a baseline before the model runs and a comparison after it
+  // settles, which is what produces the changed-file list — and both were called `snapshot`, so
+  // every receipt said "Checking your files" twice. They are separate work, so they get separate
+  // names rather than being merged.
   "snapshot",
+  "snapshot-before",
+  "snapshot-after",
   "scheduler-wait",
   "provider-setup",
   "provider-prefill",

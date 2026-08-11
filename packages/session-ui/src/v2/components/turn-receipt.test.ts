@@ -1,13 +1,37 @@
 import { describe, expect, test } from "bun:test"
-import { attemptLabel, currentPhase, elapsedMs, phaseLabel, phaseLabels, seconds, type TurnTiming } from "./turn-receipt"
+import {
+  attemptLabel,
+  currentPhase,
+  elapsedMs,
+  phaseLabel,
+  phaseLabels,
+  RETIRED_PHASES,
+  seconds,
+  type TurnTiming,
+} from "./turn-receipt"
 
 describe("turn receipt", () => {
-  test("🔴 no two phases share a label — a repeat in the receipt must mean a real repeat", () => {
+  test("🔴 no two LIVE phases share a label — a repeat in the receipt must mean a real repeat", () => {
     // Three unrelated stretches of runner/llm.ts once all recorded a phase named `prepare`, so a
-    // finished turn listed "Preparing your prompt" three times and read as a stutter or a loop.
-    // Distinct labels are what make a repeated line trustworthy: it now means the work repeated.
-    const labels = Object.values(phaseLabels)
+    // finished turn listed "Preparing your prompt" three times and read as a stutter or a loop. The
+    // same thing happened to `snapshot`: a turn takes a baseline AND a comparison, and both said
+    // "Checking your files". Distinct labels are what make a repeated line trustworthy — it now
+    // means the work actually repeated.
+    //
+    // Retired phases are excluded because they cannot co-occur with their replacements in one turn;
+    // including them would force a stored turn's wording to change to satisfy a rule about new ones.
+    const live = Object.entries(phaseLabels).filter(([phase]) => !RETIRED_PHASES.has(phase))
+    const labels = live.map(([, label]) => label)
     expect(new Set(labels).size, `duplicate labels in ${JSON.stringify(labels)}`).toBe(labels.length)
+    // …and the exclusion is not a loophole: every retired name must still HAVE a label, or an old
+    // turn renders `undefined` where a phase name should be.
+    for (const phase of RETIRED_PHASES) expect(Object.keys(phaseLabels), phase).toContain(phase)
+  })
+
+  test("the two snapshots a turn takes are named apart", () => {
+    expect(phaseLabel("snapshot-before")).toBe("Checking your files")
+    expect(phaseLabel("snapshot-after")).toBe("Checking what changed")
+    expect(phaseLabel("snapshot")).toBe("Checking your files")
   })
 
   test("the three phases that replaced `prepare` each name their own work", () => {
