@@ -138,11 +138,40 @@ export const sourceLabel = (url: string): string => {
 export const toModelOutput = (output: { readonly url: string; readonly output: string }): string =>
   SessionOrigin.externalContentFrame(sourceLabel(output.url)) + output.output
 
+/**
+ * An extraction that yields nothing must SAY nothing came out.
+ *
+ * ⚠️ The silent case this exists for: a page answers 200 with `text/html`, the body arrives whole
+ * and well under the size cap, and conversion produces an empty string. Every failure signal the
+ * tool has — status, content type, byte cap, timeout — reports success, so the model receives the
+ * untrusted-content frame with nothing after it and has no way to tell an empty page from an
+ * unextractable one. The likeliest reading is "this page is blank", which is wrong.
+ *
+ * Deliberately no size threshold. A floor would need a number nothing measures, and the note is TRUE
+ * at every size — a 40-byte document that extracts to nothing is still better described than
+ * silently empty. The wording names the byte count so the reader can judge which case they are in,
+ * and states that the fetch itself succeeded, because the one wrong response here is a retry.
+ *
+ * ⚠️ **What this does NOT catch, measured rather than assumed.** The obvious motivating example — a
+ * JS-rendered SPA shell — usually carries a `<title>`, and the markdown converter lifts it, so the
+ * extraction is `"App"` rather than `""` and this guard stays silent. That residue is worse than the
+ * one fixed here (a one-word output reads as content, where an empty one at least reads as nothing),
+ * but separating "the head's title" from "the body's text" is a parse, not a threshold, and a
+ * threshold is the wrong instrument: any byte floor would be a number chosen to fit the example.
+ * Tracked in `todo/subsystem-residues.md` under Web.
+ */
+const emptyExtractionNote = (bytes: number, format: Format) =>
+  `[No readable text could be extracted. The server returned ${bytes} bytes of HTML and converting ` +
+  `it to ${format} produced nothing — typically a page that renders its content with JavaScript, or ` +
+  `an interstitial. The fetch itself succeeded, so this is an extraction result and not a network ` +
+  `failure; requesting the same URL again will return the same thing.]`
+
 const convert = (content: string, contentType: string, format: Format) => {
   if (!contentType.includes("text/html")) return content
-  if (format === "markdown") return convertHTMLToMarkdown(content)
-  if (format === "text") return extractTextFromHTML(content)
-  return content
+  if (format !== "markdown" && format !== "text") return content
+  const extracted = format === "markdown" ? convertHTMLToMarkdown(content) : extractTextFromHTML(content)
+  if (extracted.trim().length > 0 || content.length === 0) return extracted
+  return emptyExtractionNote(content.length, format)
 }
 
 export const layer = Layer.effectDiscard(

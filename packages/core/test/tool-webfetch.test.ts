@@ -200,6 +200,49 @@ describe("WebFetchTool registration", () => {
     }),
   )
 
+  // A JS-rendered page is the shape that used to pass silently: 200, text/html, a whole body under
+  // the cap, and an empty extraction. Every signal the tool has said "fine", so the model got the
+  // untrusted-content frame and nothing after it — indistinguishable from a genuinely blank page.
+  it.effect("names an empty extraction instead of returning a blank page", () =>
+    Effect.gen(function* () {
+      reset()
+      // No <title> — deliberately. A shell WITH one extracts to that title, which this guard does not
+      // catch and the source comment records as a separate, worse residue.
+      const shell = `<html><head><script>renderEverything()</script></head><body><div id="root"></div></body></html>`
+      respond = () =>
+        Effect.succeed(new Response(shell, { headers: { "content-type": "text/html; charset=utf-8" } }))
+      const registry = yield* ToolRegistry.Service
+
+      for (const format of ["markdown", "text"] as const) {
+        const result = yield* executeTool(registry, call({ url: "https://1.1.1.1", format }))
+        const value = (result as { value: string }).value
+        // The three things the note has to carry: that nothing came out, how big the source was, and
+        // that the FETCH worked — the last so a model reads it as a dead end, not a retryable fault.
+        expect(value).toContain("No readable text could be extracted")
+        expect(value).toContain(`${shell.length} bytes`)
+        expect(value).toContain("not a network failure")
+      }
+    }),
+  )
+
+  it.effect("NEGATIVE CONTROL: a page that does extract keeps its text and gains no note", () =>
+    Effect.gen(function* () {
+      reset()
+      respond = () =>
+        Effect.succeed(
+          new Response("<div id='root'></div><p>real words</p>", {
+            headers: { "content-type": "text/html; charset=utf-8" },
+          }),
+        )
+      const registry = yield* ToolRegistry.Service
+
+      expect(yield* executeTool(registry, call({ url: "https://1.1.1.1", format: "markdown" }))).toEqual({
+        type: "text",
+        value: WebFetchTool.toModelOutput({ url: "https://1.1.1.1", output: "real words" }),
+      })
+    }),
+  )
+
   it.effect("returns an error result when HTML-to-Markdown conversion throws", () =>
     Effect.gen(function* () {
       reset()

@@ -54,6 +54,17 @@ export const DAILY_NEW_CONVERSATION_CAP = 20
 // §0.1.5 dispatcher: max console task-spawns per chat per rolling minute — the fork-bomb-guard
 // parity rule (a spawn seam must ship with a rate cap; SessionSpawner carries the same number).
 // Human-typed `Nova, …` prompts land far under it; a paste-flood gets a legible refusal.
+//
+// ⚠️ **The NUMBER matches; the GUARD does not** (audited 2026-08-11). `dispatch` builds its child
+// through `sessions.create({parentID})`, not `SessionSpawner`, so it applies THIS cap and nothing
+// else: no `MAX_SPAWN_DEPTH`, no `MAX_SPAWN_CHILDREN`. And this counter is an in-memory map, while
+// the spawner re-counts rows, so a restart forgets this one and cannot forget that one.
+//
+// The asymmetry runs one way and it is the part worth knowing: the spawner's caps are DB counts on
+// `parent_id`, so children created HERE are counted THERE. A console session with 16 live dispatched
+// tasks makes the agent's own next `spawn` fail with `reason: "children"` — a quota this path spends
+// and does not check. Reaching the seam is not a one-line fix (the gateway is a global node,
+// `SessionSpawner` location-scoped); see `notes/reports/session-launch-sites-2026-08-11.md`.
 const MAX_DISPATCHES_PER_MINUTE = 10
 const DISPATCH_RATE_WINDOW_MS = 60_000
 // Files both ways (P5, edge #6): attachments at or under the inline cap ride the prompt as
