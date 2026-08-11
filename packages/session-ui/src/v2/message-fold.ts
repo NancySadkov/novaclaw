@@ -521,3 +521,31 @@ export function mergeNativeMessages(
   }
   return [...byId.values()].sort(compareOldestFirst)
 }
+
+/**
+ * Queued rows that are NOT already in the transcript.
+ *
+ * ⚠️ **The duplicate the owner saw on a packaged build (2026-08-11):** the first "hi" of a session
+ * rendered TWICE — once as the accepted user message, once as a "Queued" bubble — and the queued
+ * copy vanished a moment later. Two independent lists reach the transcript and nothing reconciled
+ * them: `messages` (which carries the optimistic row the instant Enter is pressed) and `pending`
+ * (polled every 2 s from the server's admitted-but-unstarted set). The FIRST prompt of a session is
+ * admitted with `delivery: "queue"` and sits there until the runner picks it up, so for that window
+ * both lists legitimately hold the same prompt.
+ *
+ * The id makes it decidable rather than a heuristic: the client generates the message id and sends it
+ * as `prompt({id})`, so the server's echo and its pending row carry the SAME id (see
+ * `message-v2-store.ts`'s note on optimistic sends). Matching on text or timestamp would be a guess;
+ * matching on id is the identity the two lists already share.
+ *
+ * The transcript wins because it is the richer render — the queued bubble is a stand-in for a message
+ * that is not on screen yet, and once the message IS on screen the stand-in is noise.
+ */
+export function unqueuedPending<P extends { readonly id: string }>(
+  pending: readonly P[] | undefined,
+  messages: readonly { readonly id: string }[],
+): readonly P[] {
+  if (!pending || pending.length === 0) return []
+  const shown = new Set(messages.map((message) => message.id))
+  return pending.filter((item) => !shown.has(item.id))
+}

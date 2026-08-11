@@ -27,11 +27,12 @@ import type {
 } from "@novaclaw/sdk/v2"
 import { isSteerText, stripSteerProvenance } from "@novaclaw/core/session/steer-provenance"
 import { SessionOrigin } from "@novaclaw/core/session/origin"
-import { isOptimistic } from "../message-fold"
+import { isOptimistic, unqueuedPending } from "../message-fold"
 import { answerStart, groupTurns, type TurnGroup } from "../turn-group"
 import { reasoningTokenLabel } from "./reasoning-count"
 import { Markdown } from "../../components/markdown"
 import { reasoningOpenDefault, toolOpenDefault, type ReasoningFoldMode } from "../reasoning-fold"
+import { turnOutcome } from "./turn-receipt"
 import { BasicToolV2 } from "./basic-tool-v2"
 import { ToolErrorCardV2 } from "./tool-error-card-v2"
 import {
@@ -172,7 +173,11 @@ export function NativeTranscript(props: {
               />
             )}
           </For>
-          <For each={props.pending ?? []}>{(item) => <QueuedMessage text={item.text} />}</For>
+          {/* Only prompts the transcript is not already showing — see `unqueuedPending`. Both lists hold
+              the first prompt of a session while it waits for the runner. */}
+          <For each={unqueuedPending(props.pending, props.messages)}>
+            {(item) => <QueuedMessage text={item.text} />}
+          </For>
           <Show
             when={liveTiming()}
             fallback={
@@ -239,7 +244,21 @@ function Turn(props: {
   }
   /** Is there anything BEHIND the answer worth a fold? Earlier steps, or work in the closing one. */
   const hasWork = () => body().length > 1 || split() > 0
-  const folds = () => !running() && hasAnswer() && hasWork()
+  /**
+   * The stand-in when a settled turn produced no prose — 57% of tool-bearing turns (measured
+   * 2026-08-11). Without it those turns cannot fold, and render their raw internals in full: the
+   * exact wall of tool output the Done control exists to hide. `answerStart`'s contract is *do not
+   * fold a turn that has nothing to show in its place*; this GIVES it something to show, and only
+   * ever states what the transcript knows.
+   */
+  const outcome = () =>
+    running() || hasAnswer() ? undefined : turnOutcome({ toolCount: toolCount(), lastToolName: lastToolName() })
+  const folds = () => !running() && hasWork() && (hasAnswer() || outcome() !== undefined)
+  /** The closing message's last tool — an `exit` ends the drain deliberately, so it is not a stop-short. */
+  const lastToolName = () => {
+    const parts = closing()?.content.filter((part) => part.type === "tool")
+    return parts?.at(-1)?.name
+  }
   const toolCount = () =>
     body().reduce(
       (total, message) =>
@@ -265,12 +284,16 @@ function Turn(props: {
       >
         <details data-slot="native-turn-work">
           <summary>
-            <span data-slot="native-turn-work-label">Done</span>
-            <Show when={toolCount() > 0}>
-              <span data-slot="native-turn-work-count">
-                {toolCount()} {toolCount() === 1 ? "step" : "steps"}
-              </span>
-            </Show>
+            {/* The flex lives HERE, not on <summary> — see the css note; flexing the summary drops
+                the native triangle, which is what left this fold without one. */}
+            <span data-slot="native-turn-work-summary">
+              <span data-slot="native-turn-work-label">Done</span>
+              <Show when={toolCount() > 0}>
+                <span data-slot="native-turn-work-count">
+                  {toolCount()} {toolCount() === 1 ? "step" : "steps"}
+                </span>
+              </Show>
+            </span>
           </summary>
           <div data-slot="native-turn-work-body">
             <For each={body().slice(0, -1)}>
@@ -281,7 +304,11 @@ function Turn(props: {
             <AssistantMessage message={closing()!} developer={props.developer} liveTiming={props.liveTiming} half="work" />
           </div>
         </details>
-        <AssistantMessage message={closing()!} developer={props.developer} liveTiming={props.liveTiming} half="answer" />
+        <Show when={outcome()} fallback={
+          <AssistantMessage message={closing()!} developer={props.developer} liveTiming={props.liveTiming} half="answer" />
+        }>
+          {(line) => <p data-slot="native-turn-outcome">{line()}</p>}
+        </Show>
       </Show>
     </div>
   )

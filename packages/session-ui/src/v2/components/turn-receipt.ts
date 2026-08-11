@@ -112,3 +112,38 @@ export const attemptLabel = (attempt: ProviderAttemptTiming) => {
   if (attempt.outcome === "interrupted") return `Attempt ${attempt.attempt} interrupted`
   return `Model attempt ${attempt.attempt}`
 }
+
+/**
+ * What stands in for the ANSWER when a settled turn produced no prose.
+ *
+ * ## The defect this closes
+ *
+ * 57% of tool-bearing turns end without a closing message (measured 2026-08-11 over stored history,
+ * `tests/turn-closing-history.ts`). The transcript refuses to fold those — `Turn`'s `folds()` requires
+ * `hasAnswer()`, because `answerStart`'s contract is *do not fold a turn that has nothing to show in
+ * its place*. Correct as far as it goes, and the result is the opposite of the owner's ruling: more
+ * than half of all tool-bearing turns render their raw internals in full, which is precisely the wall
+ * of tool output the Done fold exists to hide.
+ *
+ * ⚠️ **The other repair was tried and failed.** A kernel instruction telling the model to always
+ * close with prose shipped and was CUT the same day when its pre-registered kill rule fired — median
+ * answer length rose, no-answer rose. `system-compose.ts` records why, and says not to re-add a
+ * "be brief" line. So this is the renderer's problem, and the renderer solves it without asking the
+ * model for anything: give the fold something TRUE to show, and it may fold.
+ *
+ * ## What it may say
+ *
+ * Only what the transcript actually knows: the turn settled, it ran N tools, and its last message
+ * carried no prose. It must not guess why. A turn that ends on `exit` ended deliberately — the drain
+ * stops there by design (`llm.ts`) — so that reads as finishing, not as stopping short, and calling
+ * it "no closing message" would describe a fault that is not one (ruling 2).
+ */
+export const turnOutcome = (input: {
+  readonly toolCount: number
+  readonly lastToolName?: string
+}): string | undefined => {
+  if (input.toolCount <= 0) return undefined
+  const tools = `${input.toolCount} ${input.toolCount === 1 ? "step" : "steps"}`
+  if (input.lastToolName === "exit") return `Finished after ${tools}.`
+  return `Ran ${tools}. The model ended here without writing a reply.`
+}

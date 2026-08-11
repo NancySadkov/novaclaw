@@ -58,6 +58,32 @@ export const make = (now: () => number = Date.now) => {
     return phases[index]
   }
   /**
+   * Withdraw the newest open record for `phase` — it ran, and it did NOTHING.
+   *
+   * ⚠️ **Why this is not the same as `end`.** Some stages are a CHECK that may decline: compaction
+   * measures the conversation and usually concludes there is nothing to compact. Timing the check is
+   * right — it costs real milliseconds and a slow one matters — but recording it as a phase makes
+   * the receipt say *"Compacting the conversation"* over a conversation that was never compacted.
+   * The owner hit exactly that on a packaged build (2026-08-11), two messages into a fresh session.
+   *
+   * A receipt is a claim about what happened. A stage that declined did not happen, and describing
+   * it as though it did is ruling 2 on the surface a user reads — the same class as a failed
+   * mutation reporting success, one notch quieter.
+   */
+  const discard = (phase: Phase): void => {
+    const indexes = open.get(phase)
+    const index = indexes?.pop()
+    if (index === undefined) return
+    phases.splice(index, 1)
+    if (indexes?.length === 0) open.delete(phase)
+    // Indexes recorded after the removed one have all shifted down by one; without this, a later
+    // `end` closes the WRONG record — and every phase after a discarded one would be mis-timed.
+    for (const [key, list] of open) {
+      const shifted = list.map((value) => (value > index ? value - 1 : value))
+      open.set(key, shifted)
+    }
+  }
+  /**
    * The snapshot phase a `repository`/`status`/`persist`/`hash` detail belongs to — the newest open
    * one across the whole family.
    *
@@ -129,6 +155,7 @@ export const make = (now: () => number = Date.now) => {
   const snapshot = () => read(true)
 
   return {
+    discard,
     start,
     begin,
     end,

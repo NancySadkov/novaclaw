@@ -9,6 +9,7 @@ import {
   phaseLabels,
   RETIRED_PHASES,
   seconds,
+  turnOutcome,
   type TurnTiming,
 } from "./turn-receipt"
 
@@ -107,3 +108,32 @@ describe("turn receipt", () => {
     )
   })
 })
+
+describe("turnOutcome — the stand-in when a settled turn wrote no prose", () => {
+  // The case that unblocks the fold: 57% of tool-bearing turns end here.
+  test("names the step count and says plainly that no reply was written", () => {
+    expect(turnOutcome({ toolCount: 3 })).toBe("Ran 3 steps. The model ended here without writing a reply.")
+    expect(turnOutcome({ toolCount: 1 })).toBe("Ran 1 step. The model ended here without writing a reply.")
+  })
+
+  // ⚠️ `exit` ENDS the drain by design (llm.ts), so calling it "without writing a reply" would
+  // describe a fault that is not one — ruling 2, on the surface a user reads.
+  test("a turn that ended on exit reads as finished, not as stopped short", () => {
+    expect(turnOutcome({ toolCount: 2, lastToolName: "exit" })).toBe("Finished after 2 steps.")
+  })
+
+  // No work means no fold, so there is nothing to stand in for — and a receipt that appeared over a
+  // plain conversational answer would be the "Done box containing nothing" the Turn doc rules out.
+  test("says nothing when the turn ran no tools", () => {
+    expect(turnOutcome({ toolCount: 0 })).toBeUndefined()
+    expect(turnOutcome({ toolCount: -1 })).toBeUndefined()
+  })
+
+  // It may only state what the transcript knows. No cause, no blame, no guess.
+  test("never speculates about WHY", () => {
+    const line = turnOutcome({ toolCount: 4 })!
+    for (const forbidden of ["error", "failed", "crash", "stuck", "probably", "may have"])
+      expect(line.toLowerCase()).not.toContain(forbidden)
+  })
+})
+

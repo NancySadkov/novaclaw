@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { SessionMessage, V2Event } from "@novaclaw/sdk/v2"
 import {
+  unqueuedPending,
   activeAssistant,
   appendMessage,
   applySessionNextEvent,
@@ -559,5 +560,30 @@ describe("mergeNativeMessages", () => {
     const a = merged[0]!
     expect(a.type === "assistant" && a.time.completed).toBe(5)
     if (a.type === "assistant" && a.content[0]?.type === "text") expect(a.content[0].text).toBe("full (persisted)")
+  })
+})
+
+describe("unqueuedPending — the duplicate the owner saw on a packaged build", () => {
+  // The exact report: the first "hi" of a session shown as BOTH the accepted message and a Queued
+  // bubble, the queued copy vanishing a moment later.
+  test("drops a queued row whose message is already in the transcript", () => {
+    const pending = [{ id: "msg_hi", text: "hi" }]
+    expect(unqueuedPending(pending, [{ id: "msg_hi" }])).toEqual([])
+  })
+
+  test("keeps a queued row the transcript does not have yet", () => {
+    const pending = [{ id: "msg_second", text: "and this" }]
+    expect(unqueuedPending(pending, [{ id: "msg_hi" }])).toEqual(pending)
+  })
+
+  test("filters per row, not all-or-nothing", () => {
+    const shown = { id: "a", text: "shown" }
+    const hidden = { id: "b", text: "not yet" }
+    expect(unqueuedPending([shown, hidden], [{ id: "a" }])).toEqual([hidden])
+  })
+
+  test("an absent or empty list is empty, never undefined", () => {
+    expect(unqueuedPending(undefined, [])).toEqual([])
+    expect(unqueuedPending([], [{ id: "a" }])).toEqual([])
   })
 })

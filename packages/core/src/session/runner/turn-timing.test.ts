@@ -136,3 +136,39 @@ describe("TurnTiming", () => {
     expect(timing.end("capability-run")).toEqual({ phase: "capability-run", startedAt: 10, completedAt: 50 })
   })
 })
+
+describe("discard — a stage that ran and did nothing", () => {
+  // The owner's report: "Compacting the conversation" shown two messages into a fresh session, where
+  // compactIfNeeded had measured the conversation and declined.
+  test("withdraws the phase entirely, so the receipt cannot claim it happened", () => {
+    const timing = TurnTiming.make(() => 100)
+    timing.start("context-load")
+    timing.end("context-load")
+    timing.start("compaction")
+    timing.discard("compaction")
+    expect(timing.snapshot().phases.map((phase) => phase.phase)).toEqual(["context-load"])
+  })
+
+  // ⚠️ The part that could go wrong silently. `open` holds INDEXES into `phases`; removing an entry
+  // shifts every later index down by one, so without the fixup a subsequent `end` closes the wrong
+  // record and every phase after a discarded one is mis-timed.
+  test("keeps later open phases pointing at their own records", () => {
+    const timing = TurnTiming.make(() => 100)
+    timing.start("compaction")
+    timing.start("provider-setup")
+    timing.discard("compaction")
+    timing.end("provider-setup")
+    const phases = timing.snapshot().phases
+    expect(phases.map((phase) => phase.phase)).toEqual(["provider-setup"])
+    expect(phases[0]!.completedAt).toBeDefined()
+  })
+
+  test("discarding an unopened phase is a no-op, not a corruption", () => {
+    const timing = TurnTiming.make(() => 100)
+    timing.start("context-load")
+    timing.discard("compaction")
+    timing.end("context-load")
+    expect(timing.snapshot().phases.map((phase) => phase.phase)).toEqual(["context-load"])
+  })
+})
+

@@ -1040,6 +1040,12 @@ export const layer = Layer.effect(
         ...(affectiveGeneration === undefined ? {} : { generation: affectiveGeneration }),
       })
       yield* timingEnd("request-build")
+      // ⚠️ `compactIfNeeded` is a CHECK that usually declines — window unknown, no summary model, or
+      // simply under its threshold. Timing it is right; RECORDING it as a phase is not, because the
+      // receipt then says "Compacting the conversation" over a conversation nobody compacted. The
+      // owner saw exactly that two messages into a fresh session on a packaged build (2026-08-11).
+      // A receipt is a claim about what happened, so a stage that declined is withdrawn rather than
+      // reported.
       yield* timingStart("compaction")
       const compacted = yield* harness.compaction.compactIfNeeded({
         sessionID: session.id,
@@ -1047,7 +1053,8 @@ export const layer = Layer.effect(
         model,
         request: fullRequest,
       })
-      yield* timingEnd("compaction")
+      if (compacted) yield* timingEnd("compaction")
+      else yield* Effect.sync(() => timing.discard("compaction")).pipe(Effect.andThen(publishLiveTiming()))
       if (compacted) return yield* Effect.die(continueAfterCompaction(currentStep))
       // 1M — the deterministic fail-safe under compaction: pack the outgoing request to the
       // server's HONORED window so an Ollama-class server never silently front-truncates the

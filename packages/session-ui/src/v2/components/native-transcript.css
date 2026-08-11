@@ -130,15 +130,21 @@
   flex-direction: column;
   gap: 0.5rem;
 }
+/* ⚠️ `display: flex` on <summary> DROPS the native disclosure triangle, which is why this fold had
+   no marker while Reasoning and Details did (owner, 2026-08-11). The rule is already written down
+   further into this file, on the reasoning-live block: "The flex lives on an inner span — flexing
+   <summary> itself would drop the native disclosure marker." Same fix here. */
 [data-slot="native-turn-work"] > summary {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  width: fit-content;
   cursor: pointer;
   user-select: none;
   font-size: var(--font-size-small);
   color: var(--v2-text-text-faint);
+  width: fit-content;
+}
+[data-slot="native-turn-work-summary"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 [data-slot="native-turn-work"] > summary:hover {
   color: var(--v2-text-text-muted);
