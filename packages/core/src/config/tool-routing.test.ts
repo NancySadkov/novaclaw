@@ -49,6 +49,44 @@ describe("per-model tool routing", () => {
     expect(offered("unmentioned")).toBe(true)
   })
 
+  describe("🔴 an essential tool cannot be routed away", () => {
+    // The self-healing law (AGENTS.md): as long as one working model remains, the instance must be
+    // restorable by ASKING an agent. `tool_routing` is an arbitrary {name: false} map an agent can
+    // write with one `configure` card — so without a floor, one write removes the write path and
+    // nothing inside the instance can undo it. That is the single config change that cannot be
+    // repaired by the mechanism the law names.
+    test("a direct rule against it does not take", () => {
+      const offered = ConfigToolRouting.offered(decode({ rules: [{ tools: { configure: false } }] }), target)
+      expect(offered("configure")).toBe(true)
+    })
+
+    test("nor a broad rule, nor the last word in an ordered table", () => {
+      const offered = ConfigToolRouting.offered(
+        decode({
+          rules: [
+            { tools: { configure: true, read: true } },
+            { provider: "dgx", tools: { configure: false } },
+            { mode: "bypass", tools: { configure: false, read: false } },
+          ],
+        }),
+        target,
+      )
+      expect(offered("configure")).toBe(true)
+      // …and the floor is NARROW: everything else still obeys the table, or this would be a
+      // routing table that does nothing rather than a protected tool.
+      expect(offered("read")).toBe(false)
+    })
+
+    test("the guard is not vacuous — the same table disables a non-essential tool by the same route", () => {
+      // The negative control. If `offered` stopped honouring `false` at all, every assertion above
+      // would pass for the wrong reason.
+      const offered = ConfigToolRouting.offered(decode({ rules: [{ tools: { bash: false } }] }), target)
+      expect(offered("bash")).toBe(false)
+      expect(ConfigToolRouting.ESSENTIAL_TOOLS.has("bash")).toBe(false)
+      expect(ConfigToolRouting.ESSENTIAL_TOOLS.has("configure")).toBe(true)
+    })
+  })
+
   test("the schema refuses invented modes and non-boolean tool decisions", () => {
     expect(() => decode({ rules: [{ mode: "root", tools: { bash: false } }] })).toThrow()
     expect(() => decode({ rules: [{ tools: { bash: "off" } }] })).toThrow()
