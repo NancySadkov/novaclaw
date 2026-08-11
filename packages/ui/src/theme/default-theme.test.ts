@@ -119,7 +119,7 @@ const SCAN_ROOTS = [
   "packages/core/src",
 ]
 /**
- * ERE for `git grep`, not a JS RegExp — `` is supported by git's POSIX-ERE engine.
+ * ERE for `git grep`, not a JS RegExp — `\b` is supported by git's POSIX-ERE engine.
  *
  * ⚠️ Matched case-SENSITIVELY until 2026-08-11, and six prose mentions of `OC-2` survived it in
  * `theme.css`, `theme/v2/avatar.ts`, `theme/v2/default-primitives.ts` and `core/src/oauth/page.ts` —
