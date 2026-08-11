@@ -113,6 +113,40 @@ const SchedulerDevice = Schema.Struct({
   ledger: Schema.Array(SchedulerLedgerEntry),
 })
 
+/**
+ * Nova Health — ONE composed answer to *"is anything wrong?"*, from readings that already exist.
+ *
+ * The composition itself is `NovaHealth` in core: pure, no I/O, no clock. This endpoint is the
+ * caller that gathers the readings, which is exactly what keeps the expensive one honest.
+ *
+ * ⚠️ **Reachability costs egress, so it is never part of opening the screen.** There is no provider
+ * row here yet — adding one means first deciding which provider a board speaks for, and whether
+ * a probe is opt-in per provider. A diagnostics page that phones out every time someone glances at
+ * it is a worse citizen than one that admits it has not looked.
+ *
+ * ⚠️ `unknown` is a first-class verdict here and must never render as a tick. Half of these signals
+ * can legitimately answer "cannot tell" — the updater flag is unreadable outside the desktop shell,
+ * a pressure probe reports `unknown` rather than guessing. This is the one screen a person opens
+ * when they already suspect something is broken; dressing an unread probe as healthy is ruling 2.
+ */
+const DiagnosisStatus = Schema.Literals(["problem", "warning", "unknown", "ok"])
+
+const DiagnosisSignal = Schema.Struct({
+  id: Schema.String,
+  label: Schema.String,
+  status: DiagnosisStatus,
+  detail: Schema.optional(Schema.String),
+  action: Schema.optional(Schema.String),
+})
+
+const Diagnosis = Schema.Struct({
+  overall: DiagnosisStatus,
+  headline: Schema.String,
+  signals: Schema.Array(DiagnosisSignal),
+})
+
+const DiagnosisQuery = Schema.Struct({ ...WorkspaceRoutingQueryFields })
+
 export const InstancePaths = {
   dispose: "/instance/dispose",
   path: "/path",
@@ -126,6 +160,7 @@ export const InstancePaths = {
   formatter: "/formatter",
   app: "/app",
   scheduler: "/scheduler/snapshot",
+  diagnosis: "/diagnosis",
 } as const
 
 export const InstanceApi = HttpApi.make("instance")
@@ -237,6 +272,18 @@ export const InstanceApi = HttpApi.make("instance")
             identifier: "formatter.status",
             summary: "Get formatter status",
             description: "Get formatter status",
+          }),
+        ),
+        HttpApiEndpoint.get("diagnosis", InstancePaths.diagnosis, {
+          query: DiagnosisQuery,
+          success: described(Diagnosis, "One composed answer to whether anything is wrong"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "instance.diagnosis",
+            summary: "Diagnose this instance",
+            description:
+              "Compose storage, conversation store, scheduler and updater readings into one verdict. " +
+              "Nothing here costs egress, so opening a diagnostics screen never contacts a provider.",
           }),
         ),
         HttpApiEndpoint.get("scheduler", InstancePaths.scheduler, {

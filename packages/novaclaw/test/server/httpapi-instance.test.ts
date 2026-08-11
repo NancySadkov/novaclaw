@@ -303,4 +303,47 @@ describe("instance HttpApi", () => {
       expect(body.disclosure.every((row) => row.meaning.length > 0 && row.condition.length > 0)).toBe(true)
     }),
   )
+
+  /**
+   * Nova Health. The composition is unit-tested in core; what only a LIVE request can show is that
+   * the readings survive the wire — every row is gathered from a real service against a real
+   * database, and the schema accepts what the handler actually produces.
+   */
+  it.live("diagnoses the instance without contacting anything outside it", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const response = yield* HttpClientRequest.get(InstancePaths.diagnosis).pipe(
+        directoryHeader(dir),
+        HttpClient.execute,
+      )
+      expect(response.status).toBe(200)
+
+      const body = (yield* response.json) as {
+        overall: string
+        headline: string
+        signals: { id: string; label: string; status: string; detail?: string; action?: string }[]
+      }
+
+      // The four readings that are honestly available at instance scope. A provider row is absent on
+      // purpose — naming a provider we have not probed would be the false description the whole
+      // module exists to prevent — so its ABSENCE is the assertion, not an oversight.
+      expect(body.signals.map((signal) => signal.id).sort()).toEqual(["database", "scheduler", "storage", "updates"])
+      expect(body.signals.some((signal) => signal.id.startsWith("provider:"))).toBe(false)
+
+      // ⚠️ THE rule this endpoint exists to keep: `unknown` is never dressed as healthy. The updater
+      // flag lives in the desktop main process, so a served board genuinely cannot read it — and the
+      // verdict must carry that ignorance upward rather than quietly answering "ok".
+      const updates = body.signals.find((signal) => signal.id === "updates")!
+      expect(updates.status).toBe("unknown")
+      expect(body.overall).not.toBe("ok")
+      expect(body.headline).not.toMatch(/all good|healthy/i)
+
+      // Every non-ok row is actionable or explains itself; none is a bare status a person cannot use.
+      for (const signal of body.signals) {
+        if (signal.status === "ok") continue
+        expect(signal.detail ?? signal.action, `${signal.id} says nothing a person can act on`).toBeTruthy()
+      }
+    }),
+  )
+
 })
