@@ -7,7 +7,7 @@
 // etc.).
 //
 // The visual language mirrors the NovaClaw app: the design tokens are a curated
-// subset of the OC-2 semantic tokens in `packages/ui/src/styles/theme.css`, and
+// subset of the brand semantic tokens in `packages/ui/src/styles/theme.css`, and
 // the wordmark is the same geometry as `packages/ui/src/components/logo.tsx`.
 // Keep this file in sync with those sources when the brand changes.
 
@@ -146,7 +146,7 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#39;")
 }
 
-// Curated subset of OC-2 tokens (packages/ui/src/styles/theme.css). Default is
+// Curated subset of the brand tokens (packages/ui/src/styles/theme.css). Default is
 // light; dark applies via prefers-color-scheme. The [data-theme] selectors let a
 // host force a scheme without changing the default.
 const LIGHT_VARS = `

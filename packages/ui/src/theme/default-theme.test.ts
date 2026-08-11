@@ -116,8 +116,17 @@ const SCAN_ROOTS = [
   "packages/app/public",
   "packages/desktop/src",
   "packages/session-ui/src",
+  "packages/core/src",
 ]
-/** ERE for `git grep`, not a JS RegExp — `\b` is supported by git's POSIX-ERE engine. */
+/**
+ * ERE for `git grep`, not a JS RegExp — `` is supported by git's POSIX-ERE engine.
+ *
+ * ⚠️ Matched case-SENSITIVELY until 2026-08-11, and six prose mentions of `OC-2` survived it in
+ * `theme.css`, `theme/v2/avatar.ts`, `theme/v2/default-primitives.ts` and `core/src/oauth/page.ts` —
+ * the last of which this scan could not have seen anyway, because `packages/core` was not a scan
+ * root. It is the same vocabulary whatever its case, so the grep is `-i` now and `core/src` joined
+ * the roots. The residue sat in the gap between two filters, which is where residue always sits.
+ */
 const LEGACY_ID_PATTERN = "\\boc-[12]\\b"
 
 /** Files allowed to still name a legacy id. SHRINK-ONLY — remove the row in the same change as the fix. */
@@ -168,7 +177,7 @@ let scanned: string[] | undefined
  */
 function filesNamingALegacyId() {
   if (scanned) return scanned
-  const res = spawnSync("git", ["grep", "-lE", LEGACY_ID_PATTERN, "--", ...SCAN_ROOTS], {
+  const res = spawnSync("git", ["grep", "-liE", LEGACY_ID_PATTERN, "--", ...SCAN_ROOTS], {
     cwd: REPO_ROOT,
     encoding: "utf8",
   })
