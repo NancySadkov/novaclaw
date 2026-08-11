@@ -31,7 +31,9 @@ const decodeMessage = Schema.decodeUnknownEffect(SessionMessage.Message)
 export const decodeRow = (
   row: typeof SessionMessageTable.$inferSelect,
 ): Effect.Effect<SessionMessage.Message, MessageDecodeError> =>
-  decodeMessage({ ...row.data, id: row.id, type: row.type }).pipe(
+  // `seq` joins `id` and `type` as a column that OVERRIDES whatever the payload happens to hold —
+  // the payload should hold none of the three, and if an old row does, the column is the truth.
+  decodeMessage({ ...row.data, id: row.id, type: row.type, seq: row.seq }).pipe(
     Effect.mapError(
       () =>
         new MessageDecodeError({

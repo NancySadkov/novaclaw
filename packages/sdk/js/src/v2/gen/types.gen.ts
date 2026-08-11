@@ -2277,6 +2277,7 @@ export type SessionMessageAgentSwitched = {
   time: {
     created: number
   }
+  seq?: number
   type: "agent-switched"
   agent: string
 }
@@ -2289,6 +2290,7 @@ export type SessionMessageModelSwitched = {
   time: {
     created: number
   }
+  seq?: number
   type: "model-switched"
   model: ModelRef
 }
@@ -2301,6 +2303,7 @@ export type SessionMessagePermissionChanged = {
   time: {
     created: number
   }
+  seq?: number
   type: "permission-changed"
   op: "raise" | "lower"
   previous: "plan" | "ask" | "surgical" | "bypass" | "yolo"
@@ -2317,6 +2320,7 @@ export type SessionMessageUser = {
   time: {
     created: number
   }
+  seq?: number
   text: string
   files?: Array<PromptFileAttachment>
   agents?: Array<PromptAgentAttachment>
@@ -2332,6 +2336,7 @@ export type SessionMessageSynthetic = {
   time: {
     created: number
   }
+  seq?: number
   sessionID: string
   text: string
   type: "synthetic"
@@ -2345,6 +2350,7 @@ export type SessionMessageSystem = {
   time: {
     created: number
   }
+  seq?: number
   type: "system"
   text: string
 }
@@ -2358,6 +2364,7 @@ export type SessionMessageShell = {
     created: number
     completed?: number
   }
+  seq?: number
   type: "shell"
   callID: string
   command: string
@@ -2516,6 +2523,7 @@ export type SessionMessageAssistant = {
     created: number
     completed?: number
   }
+  seq?: number
   type: "assistant"
   agent: string
   model: ModelRef
@@ -2591,6 +2599,7 @@ export type SessionMessageCompaction = {
   time: {
     created: number
   }
+  seq?: number
 }
 
 export type SessionMessage =

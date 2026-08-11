@@ -243,6 +243,16 @@ describe("SessionProjector", () => {
       expect(
         (yield* sessions.context(sessionID)).map((message) => (message.type === "user" ? message.text : message.type)),
       ).toEqual(["first", "second"])
+      // The sequence reaches the reader, because the client orders the transcript by it — sorting on
+      // `time.created` instead is what filed an answer under the following prompt (2026-08-11).
+      const withSeq = yield* sessions.messages({ sessionID, order: "asc" })
+      expect(withSeq.map((message) => message.seq)).toEqual([...withSeq.keys()].map((i) => withSeq[i]!.seq).sort((a, b) => a! - b!))
+      expect(withSeq.every((message) => typeof message.seq === "number")).toBe(true)
+      // ⚠️ And a seq of ZERO must decode. The aggregate emits one, and this pair of assertions is
+      // here because declaring the field `PositiveInt` made such a message fail to decode — which
+      // does not misorder it, it removes it from the transcript entirely. Order is cosmetic;
+      // content is not, so no ordering hint may ever cost a message.
+      expect(withSeq.map((message) => message.seq)).toContain(0)
     }).pipe(Effect.provide(sessionsLayer)),
   )
 

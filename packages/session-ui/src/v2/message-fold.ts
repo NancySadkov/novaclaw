@@ -414,9 +414,33 @@ function isInFlightAssistant(message: SessionMessage): boolean {
   return message.type === "assistant" && !message.time.completed
 }
 
-/** Oldest-first order, matching `server-session.ts` `cmpMessage` (time.created asc, then id asc). */
+/**
+ * Oldest-first order: **the durable sequence**, then acceptance time, then id.
+ *
+ * ⚠️ **This used to sort on `time.created` alone, and `created` is not the order.** A prompt queued
+ * behind a running turn is accepted before the answer it waits behind, and a spawned session's task
+ * prompt can carry a `created` from days earlier — so the transcript rendered an answered prompt as
+ * unanswered and folded its answer under the NEXT prompt (measured 2026-08-11 over this store: 7 of
+ * 299 multi-message sessions came out in the wrong order, both shapes present). The server has
+ * always read by `seq`; the client threw that order away and reconstructed a different one.
+ *
+ * ⚠️ Its old doc comment claimed to match `server-session.ts`'s `cmpMessage`. **No such function
+ * exists** — it had been claiming agreement with deleted code, which is how a comparator drifts from
+ * the order it is supposed to mirror without anything failing.
+ *
+ * **An unsequenced message sorts LAST, and that is correct rather than a fallback.** No `seq` means
+ * the message has not been through the aggregate yet — a streaming assistant, an optimistic user
+ * bubble — and a message that has not been persisted is by definition the newest thing in the list.
+ * Sorting it by `created` against sequenced neighbours is what would be a guess.
+ */
+const sequenceOf = (message: SessionMessage): number => message.seq ?? Number.MAX_SAFE_INTEGER
+
 function compareOldestFirst(a: SessionMessage, b: SessionMessage): number {
-  return a.time.created - b.time.created || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  return (
+    sequenceOf(a) - sequenceOf(b) ||
+    a.time.created - b.time.created ||
+    (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  )
 }
 
 /**

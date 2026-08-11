@@ -27792,6 +27792,10 @@
             "required": ["created"],
             "additionalProperties": false
           },
+          "seq": {
+            "type": "integer",
+            "minimum": 0
+          },
           "type": {
             "type": "string",
             "enum": ["agent-switched"]
@@ -27823,6 +27827,10 @@
             "required": ["created"],
             "additionalProperties": false
           },
+          "seq": {
+            "type": "integer",
+            "minimum": 0
+          },
           "type": {
             "type": "string",
             "enum": ["model-switched"]
@@ -27853,6 +27861,10 @@
             },
             "required": ["created"],
             "additionalProperties": false
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0
           },
           "type": {
             "type": "string",
@@ -27902,6 +27914,10 @@
             "required": ["created"],
             "additionalProperties": false
           },
+          "seq": {
+            "type": "integer",
+            "minimum": 0
+          },
           "text": {
             "type": "string"
           },
@@ -27948,6 +27964,10 @@
             "required": ["created"],
             "additionalProperties": false
           },
+          "seq": {
+            "type": "integer",
+            "minimum": 0
+          },
           "sessionID": {
             "type": "string",
             "pattern": "^ses"
@@ -27983,6 +28003,10 @@
             "required": ["created"],
             "additionalProperties": false
           },
+          "seq": {
+            "type": "integer",
+            "minimum": 0
+          },
           "type": {
             "type": "string",
             "enum": ["system"]
@@ -28016,6 +28040,10 @@
             },
             "required": ["created"],
             "additionalProperties": false
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0
           },
           "type": {
             "type": "string",
@@ -28473,6 +28501,10 @@
             "required": ["created"],
             "additionalProperties": false
           },
+          "seq": {
+            "type": "integer",
+            "minimum": 0
+          },
           "type": {
             "type": "string",
             "enum": ["assistant"]
@@ -28703,6 +28735,10 @@
             },
             "required": ["created"],
             "additionalProperties": false
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": ["type", "reason", "summary", "recent", "id", "time"],

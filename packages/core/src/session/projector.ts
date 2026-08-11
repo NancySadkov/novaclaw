@@ -199,7 +199,10 @@ function run(db: DatabaseService, event: SessionEvent.Event) {
 function insertMessage(db: DatabaseService, event: SessionEvent.Event, message: SessionMessage.Message) {
   if (event.durable === undefined) return Effect.die("Durable Session event is missing aggregate sequence")
   const encoded = encodeMessage(message)
-  const { id, type, ...data } = encoded
+  // `seq` is stripped alongside `id` and `type` for the same reason they are: it lives in a COLUMN.
+  // Letting it into `data` would mint a second copy that no write path updates, and a stale order is
+  // worse than no order — `decodeRow` puts the column's value back on the way out.
+  const { id, type, seq: _seq, ...data } = encoded
   return db
     .insert(SessionMessageTable)
     .values({

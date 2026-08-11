@@ -445,6 +445,38 @@ describe("mergeNativeMessages", () => {
     expect(result.map((m) => m.id)).toEqual(["msg_1", "msg_2"])
   })
 
+  test("orders by the durable sequence, NOT by acceptance time", () => {
+    // The measured defect (2026-08-11), with the real numbers from the audit session: a prompt
+    // queued behind a running turn is accepted five seconds BEFORE the answer it waits behind, so
+    // sorting on `time.created` renders the earlier prompt as unanswered and files its answer under
+    // the queued one.
+    const answer = { ...assistantMsg("msg_b", 1786429040726, { completed: 1786429041000 }), seq: 26 } as SessionMessage
+    const queued = { ...userMsg("msg_c", 1786429035227, "Also mention the TLB."), seq: 47 } as SessionMessage
+    const prompt = { ...userMsg("msg_a", 1786429033197, "600-word explanation"), seq: 24 } as SessionMessage
+
+    const merged = mergeNativeMessages([], [queued, answer, prompt])
+    expect(merged.map((m) => m.id)).toEqual(["msg_a", "msg_b", "msg_c"])
+  })
+
+  test("a spawned session's stale prompt timestamp does not drag it to the top", () => {
+    // The second shape found in the same sweep: a sub-agent's task prompt carried a `created` from
+    // days earlier and sorted ahead of 22 messages that genuinely preceded nothing.
+    const old = { ...userMsg("msg_task", 1784587644222, "Do the subtask"), seq: 26 } as SessionMessage
+    const notice = { ...assistantMsg("msg_earlier", 1786070022492, { completed: 1786070022500 }), seq: 23 } as SessionMessage
+    expect(mergeNativeMessages([], [old, notice]).map((m) => m.id)).toEqual(["msg_earlier", "msg_task"])
+  })
+
+  test("an UNSEQUENCED message sorts last — it has not been through the aggregate, so it is newest", () => {
+    const settled = { ...assistantMsg("msg_1", 1000, { completed: 1100 }), seq: 5 } as SessionMessage
+    const inFlight = assistantMsg("msg_2", 900) // streaming; no seq, and an older created
+    expect(mergeNativeMessages([inFlight], [settled]).map((m) => m.id)).toEqual(["msg_1", "msg_2"])
+  })
+
+  test("falls back to created then id when nothing carries a sequence", () => {
+    const result = mergeNativeMessages([], [userMsg("msg_b", 2), userMsg("msg_a", 1)])
+    expect(result.map((m) => m.id)).toEqual(["msg_a", "msg_b"])
+  })
+
   test("loadMore: unions an older page ahead of the current tail", () => {
     const current = [assistantMsg("msg_9", 9, { completed: 9 })]
     const older = [userMsg("msg_1", 1), assistantMsg("msg_2", 2, { completed: 2 })]

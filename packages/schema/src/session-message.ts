@@ -89,6 +89,30 @@ const Base = {
   id: ID,
   metadata: Schema.Record(Schema.String, Schema.Unknown).pipe(optional),
   time: Schema.Struct({ created: DateTimeUtcFromMillis }),
+  /**
+   * **The transcript's ORDER**, as assigned by the durable aggregate — not a timestamp.
+   *
+   * ⚠️ `time.created` is when the message was ACCEPTED, and that is not the same thing. A prompt
+   * queued behind a running turn is created before the answer it waits behind (measured 2026-08-11
+   * at five seconds of inversion), and a spawned session's task prompt can carry a `created` from
+   * days earlier. A client sorting on `created` therefore renders an answered prompt as unanswered
+   * and files its answer under the next question — which is exactly what the transcript did until
+   * this field existed.
+   *
+   * Optional because a message IN FLIGHT has no sequence yet: it has not been through the aggregate.
+   * That is not a gap to paper over — an unsequenced message is by definition the newest one, and
+   * every consumer should order it last rather than guess a number for it.
+   *
+   * ⚠️ It is a COLUMN, never part of the stored payload. `insertMessage` strips it before writing
+   * `data`, so there is one source of truth and no stale copy to disagree with it.
+   *
+   * ⚠️ **`NonNegativeInt`, not `PositiveInt`, and the difference is not pedantry.** Declared as
+   * positive, a `seq` of 0 — which the aggregate does produce — fails to decode, and a message that
+   * fails to decode does not render *at all*. That trade is backwards: order is cosmetic, content is
+   * not, and no ordering hint should be able to delete a message from the transcript. Caught by
+   * `session-projector.test.ts` rather than by a user, which is the only reason it is a footnote.
+   */
+  seq: NonNegativeInt.pipe(optional),
 }
 
 export interface AgentSwitched extends Schema.Schema.Type<typeof AgentSwitched> {}
