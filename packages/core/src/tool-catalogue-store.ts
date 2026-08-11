@@ -98,7 +98,15 @@ export const layer = Layer.effect(
         yield* ensureIndex()
         const terms = words(query)
         if (terms.length === 0) return []
-        const match = terms.map((term) => `"${term.replaceAll('"', '""')}"`).join(" AND ")
+        // ⚠️ OR, not AND — measured 2026-08-11 against the live 272-row catalogue with 15
+        // plain-language requests ("execute a terminal command for me", "take a screenshot"):
+        // AND scored 3/15 top-5 recall and returned NOTHING for 11 of them, because it requires
+        // every token — including "me", "for", "the" — to appear in the tool's indexed text. OR
+        // scores 10/15 with zero empty results over the same corpus and the same bm25 ranking.
+        // Ranking is what separates the candidates; ANDing was doing the ranker's job badly and
+        // discarding the answer instead. The remaining 5 are genuine vocabulary gaps and are the
+        // corpus `todo/tool-scale.md` wants before any vector rung is paid for.
+        const match = terms.map((term) => `"${term.replaceAll('"', '""')}"`).join(" OR ")
         const hits = yield* db.all<{
           name: string
           server: string

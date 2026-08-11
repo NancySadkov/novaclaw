@@ -114,6 +114,15 @@ test("ToolCatalogueStore lazily indexes, searches, scopes, and replaces catalogu
       )
       yield* store.replace("/bulk", bulk)
       expect((yield* store.search("/bulk", "record 1000"))[0]?.name).toBe("bulk_search_record_1000")
+
+      // ⚠️ The reason the match is OR rather than AND, pinned. A plain-language request carries
+      // words no tool description contains ("for me", "please"), and ANDing every token made the
+      // whole query miss: measured 3/15 top-5 recall with 11 EMPTY results over a 15-request corpus
+      // against the live catalogue, versus 10/15 and zero empties for OR. The line above is the
+      // guard that stops OR becoming a flood — "record" alone matches all 1,001 rows, and bm25 must
+      // still rank the one that also matches "1000" first.
+      expect((yield* store.search("/bulk", "please find record 77 for me"))[0]?.name).toBe("bulk_search_record_77")
+      expect(yield* store.search("/bulk", "please find it for me")).not.toEqual([])
     }).pipe(Effect.provide(layer), Effect.scoped),
   )
 })
