@@ -517,25 +517,44 @@ export const layer = Layer.effect(
     const events = yield* EventV2.Service
     const location = yield* Location.Service
     /**
-     * This location's Project permissions, resolved ONCE.
+     * This location's Project permissions.
      *
      * 🔴 They are a NARROWING constraint, never part of the appended chain. `evaluate` takes the last
      * match, so appending would let a `novaclaw.json` — a file inside a folder the user may have
      * cloned minutes ago — override an operator deny with `allow`. See `evaluateNarrowed`.
      *
-     * ⚠️ Read once at layer build, so an EDIT to the file does not reach a running location. That is
-     * the wrong direction for staleness (a user who TIGHTENS their project keeps the looser rules
-     * until the layer rebuilds), and closing it is `todo/projects.md`'s watch item — the same shape
-     * `Watcher.reload` already solves for the ignore list. Recorded rather than left to be
-     * discovered.
+     * ⚠️ REVALIDATED on a short interval rather than read once at build. Reading once left a
+     * staleness that ran the UNSAFE way: a user who TIGHTENED their project kept the looser rules
+     * until the layer rebuilt, and a user who CREATED one got nothing at all. A permission constraint
+     * that ignores the user's edit is worse than one that costs a few stat calls.
+     *
+     * ⚠️ Wall-clock, deliberately, not `Clock.currentTimeMillis`. This is a cache freshness bound —
+     * a statement about the filesystem, not about the simulated time a test is driving — and keying
+     * it on a TestClock would freeze the cache for the whole of any test that never advances one.
      */
-    const projectPermissions: Permission.Ruleset = yield* ProjectFileResolve.resolve(location.directory).pipe(
-      EffectRuntime.map((resolution) => (resolution.kind === "project" ? (resolution.info.permissions ?? []) : [])),
-      // A project that cannot be read must not take the location down. An unresolvable file means no
-      // constraint, which is the same posture as no file — and the resolver already distinguishes
-      // "missing" from "malformed" for the surface that reports it.
-      EffectRuntime.orElseSucceed(() => [] as Permission.Ruleset),
-    )
+    const PROJECT_TTL_MS = 1_000
+    // ⚠️ The FSUtil service is captured HERE, at layer build, and provided to the revalidation below.
+    // Leaving `resolve`'s requirement to be discharged at call time pushes `FSUtil.Service` into the
+    // R of every method on this service, which must be `never` — a service that leaks a requirement
+    // is one no caller can hold.
+    const fsUtil = yield* FSUtil.Service
+    let projectCache: { readonly at: number; readonly rules: Permission.Ruleset } | undefined
+    const projectPermissions = EffectRuntime.fnUntraced(function* () {
+      if (projectCache && Date.now() - projectCache.at < PROJECT_TTL_MS) return projectCache.rules
+      const rules = yield* ProjectFileResolve.resolve(location.directory).pipe(
+        EffectRuntime.provideService(FSUtil.Service, fsUtil),
+        EffectRuntime.map((resolution) =>
+          resolution.kind === "project" ? (resolution.info.permissions ?? []) : ([] as Permission.Ruleset),
+        ),
+        // A project that cannot be read must not take the location down. Unresolvable means NO
+        // constraint, the same posture as no file — and the resolver still distinguishes "missing"
+        // from "malformed" for the surface that reports it.
+        EffectRuntime.orElseSucceed(() => [] as Permission.Ruleset),
+      )
+      projectCache = { at: Date.now(), rules }
+      return rules
+    })
+
     const agents = yield* AgentV2.Service
     const sessions = yield* SessionStore.Service
     const autoGrants = yield* SessionAutoGrant.Service
@@ -866,11 +885,15 @@ export const layer = Layer.effect(
       // ⚠️ `evaluateNarrowed`, not `evaluate`. Every early return above is a DENY, which a project
       // cannot narrow further, so this is the one place a Project's rules can change an answer — and
       // they can only make it stricter.
+      // Resolved ONCE per evaluation, not per resource: a multi-resource assert must be judged
+      // against ONE view of the file, or two resources in the same call could be answered from
+      // either side of an edit.
+      const projectRules = yield* projectPermissions()
       const effects = input.resources.map(
-        (resource) => evaluateNarrowed(input.action, resource, [all], [projectPermissions]).effect,
+        (resource) => evaluateNarrowed(input.action, resource, [all], [projectRules]).effect,
       )
       const aliasDenied = (input.denyAliases ?? []).some(
-        (resource) => evaluateNarrowed(input.action, resource, [all], [projectPermissions]).effect === "deny",
+        (resource) => evaluateNarrowed(input.action, resource, [all], [projectRules]).effect === "deny",
       )
       const evaluated: Permission.Effect = effects.includes("deny") ? "deny" : effects.includes("ask") ? "ask" : "allow"
       const effect: Permission.Effect =

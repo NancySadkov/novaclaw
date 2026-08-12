@@ -145,6 +145,31 @@ describe("a project file constrains the live evaluator", () => {
     }),
   )
 
+  it.live("🔴 TIGHTENING the file reaches a RUNNING location", () =>
+    Effect.gen(function* () {
+      // The staleness this closes ran the UNSAFE way: read once at layer build, a user who tightened
+      // their project kept the LOOSER rules until the layer rebuilt. `it.live` because the freshness
+      // bound is wall-clock — a TestClock would never expire it, and the test would pass by never
+      // exercising the revalidation at all.
+      yield* seed([{ action: "webfetch", resource: "*", effect: "allow" }])
+      const service = yield* PermissionV2.Service
+      expect((yield* service.ask(assertion("webfetch", "https://example.com"))).effect).toBe("allow")
+
+      fs.writeFileSync(
+        path.join(root, "novaclaw.json"),
+        JSON.stringify({
+          version: 1,
+          permissions: [
+            { action: "bash", resource: "*", effect: "deny" },
+            { action: "webfetch", resource: "*", effect: "deny" },
+          ],
+        }),
+      )
+      yield* Effect.sleep("1200 millis")
+      expect((yield* service.ask(assertion("webfetch", "https://example.com"))).effect).toBe("deny")
+    }),
+  )
+
   it.effect("an action the project says nothing about is untouched", () =>
     Effect.gen(function* () {
       // The opposite failure, and the one that would make the feature unusable: silence read as
