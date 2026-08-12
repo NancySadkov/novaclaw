@@ -170,8 +170,10 @@ export default function Page() {
   const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
   const desktopSidePanelOpen = createMemo(() => desktopReviewOpen() || desktopFileTreeOpen())
   const sessionPanelWidth = createMemo(() => {
-    if (!desktopSidePanelOpen()) return "100%"
-    if (desktopReviewOpen()) return `${layout.session.width()}px`
+    // The REVIEW no longer takes width from the conversation — it floats above it (owner,
+    // 2026-08-12). Only the file tree, which is a navigation rail rather than a document, still
+    // shares the row.
+    if (!desktopFileTreeOpen()) return "100%"
     return `calc(100% - ${layout.fileTree.width()}px)`
   })
   const centered = createMemo(() => isDesktop() && !desktopReviewOpen())

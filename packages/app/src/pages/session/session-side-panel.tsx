@@ -1,5 +1,10 @@
 import { For, Match, Show, Switch, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
+import { Dynamic, Portal } from "solid-js/web"
+
+/** Renders children where they already are — the non-modal arm of the portal switch, so the
+ *  in-flow rail gains no wrapper element and its flex sizing is untouched. */
+const PassThrough = (props: { children?: JSX.Element }) => <>{props.children}</>
 import { createMediaQuery } from "@solid-primitives/media"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
@@ -60,9 +65,15 @@ export function SessionSidePanel(props: {
   const fileOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
   const open = createMemo(() => reviewOpen() || fileOpen())
   const reviewTab = createMemo(() => isDesktop())
+  /**
+   * Review floats; the file tree does not. `asModal` is the one switch, so every rule below reads
+   * from it rather than re-deriving "is this the review?" in four places.
+   */
+  const asModal = createMemo(() => reviewOpen())
   const panelWidth = createMemo(() => {
     if (!open()) return "0px"
-    if (reviewOpen()) return "auto"
+    // An overlay sizes itself; a rail is sized by the layout that contains it.
+    if (asModal()) return "min(1100px, 92vw)"
     return `${layout.fileTree.width()}px`
   })
   const treeWidth = createMemo(() => (fileOpen() ? `${layout.fileTree.width()}px` : "0px"))
@@ -199,21 +210,63 @@ export function SessionSidePanel(props: {
 
   return (
     <Show when={isDesktop() && !!params.id}>
-      <aside
+      {/*
+        ⚠️ PORTALLED to <body>, and measured rather than assumed: with `position: fixed` alone the
+        dialog rendered at x=1360 in a 1280 viewport — off screen. An ancestor here carries
+        `contain-strict` and another `will-change: width`, and either makes a fixed child position
+        against THAT box rather than the viewport. Hunting the ancestor would fix today only; any
+        future one gaining `transform`, `filter` or `contain` would break the centring again.
+      */}
+      <Dynamic component={asModal() ? Portal : PassThrough}>
+        {/* The scrim CLOSES on click — an overlay you cannot dismiss by clicking away from reads as
+            a stuck screen. */}
+        <Show when={asModal() && open()}>
+          <div
+            data-slot="review-modal-scrim"
+            class="fixed inset-0 z-40 bg-[var(--v2-overlay-scrim,rgba(0,0,0,0.45))]"
+            onClick={() => view().reviewPanel.close()}
+          />
+        </Show>
+        <aside
         id="review-panel"
         aria-label={language.t("session.panel.reviewAndFiles")}
         aria-hidden={!open()}
+        aria-modal={asModal() ? true : undefined}
+        role={asModal() ? "dialog" : undefined}
         inert={!open()}
-        class="relative min-w-0 h-full flex shrink-0 overflow-hidden bg-background-base"
+        // ⚠️ `relative` is NOT in the base class. It and `fixed` share Tailwind specificity, so the
+        // winner is decided by STYLESHEET order rather than the order written here — measured: the
+        // modal computed `position: relative` and sat 350px low while its `translate` applied
+        // correctly, which is exactly what made the cause hard to see.
+        class="min-w-0 h-full flex shrink-0 overflow-hidden bg-background-base"
         classList={{
+          relative: !asModal(),
           "pointer-events-none": !open(),
           "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
-            !props.size.active() && !props.reviewSnap,
+            !props.size.active() && !props.reviewSnap && !asModal(),
           "rounded-[10px] shadow-[var(--v2-elevation-raised)] overflow-hidden": true,
-          "flex-1": reviewOpen(),
+          "flex-1": reviewOpen() && !asModal(),
+          // Centred overlay rather than a flex sibling. `h-[88vh]` leaves the conversation visible
+          // behind it, which is the point of a modal here: you are reviewing something you can
+          // still see the context of.
+          "fixed left-1/2 top-1/2 z-50 !h-[88vh] -translate-x-1/2 -translate-y-1/2": asModal(),
         }}
         style={{ width: panelWidth() }}
       >
+        {/* ⚠️ A real close button. This overlay replaces a header toggle the user could always see;
+            leaving only click-outside would remove the affordance that made it discoverable. */}
+        <Show when={asModal() && open()}>
+          <IconButtonV2
+            type="button"
+            variant="ghost-muted"
+            size="small"
+            data-slot="review-modal-close"
+            class="absolute right-2 top-2 z-10"
+            icon={<IconV2 name="xmark-small" />}
+            aria-label={language.t("common.close")}
+            onClick={() => view().reviewPanel.close()}
+          />
+        </Show>
         <Show when={open()}>
           <div class="size-full flex">
             <div
@@ -446,7 +499,8 @@ export function SessionSidePanel(props: {
             </div>
           </div>
         </Show>
-      </aside>
+        </aside>
+      </Dynamic>
     </Show>
   )
 }
