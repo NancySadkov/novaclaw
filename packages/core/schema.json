@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "c7351b96-5934-4473-9ea5-6802c49e4ab1",
+  "id": "c81f656d-90c1-4043-8864-7c6e03c5a8b4",
   "prevIds": [
-    "f3838c01-f7fd-47c2-89dc-5dae3adc81db"
+    "c7351b96-5934-4473-9ea5-6802c49e4ab1"
   ],
   "ddl": [
     {
@@ -20,6 +20,10 @@
     },
     {
       "name": "calendar_schedule",
+      "entityType": "tables"
+    },
+    {
+      "name": "session_quality_check",
       "entityType": "tables"
     },
     {
@@ -481,6 +485,96 @@
       "name": "permission_mode",
       "entityType": "columns",
       "table": "calendar_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "session_quality_check"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "session_id",
+      "entityType": "columns",
+      "table": "session_quality_check"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "label",
+      "entityType": "columns",
+      "table": "session_quality_check"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "command",
+      "entityType": "columns",
+      "table": "session_quality_check"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "outcome",
+      "entityType": "columns",
+      "table": "session_quality_check"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "exit_code",
+      "entityType": "columns",
+      "table": "session_quality_check"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "name": "timed_out",
+      "entityType": "columns",
+      "table": "session_quality_check"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "duration_ms",
+      "entityType": "columns",
+      "table": "session_quality_check"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "session_quality_check"
     },
     {
       "type": "text",
@@ -3709,6 +3803,15 @@
         "id"
       ],
       "nameExplicit": false,
+      "name": "session_quality_check_pk",
+      "table": "session_quality_check",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
       "name": "bash_job_pk",
       "table": "bash_job",
       "entityType": "pks"
@@ -4018,6 +4121,24 @@
       "name": "calendar_schedule_due_idx",
       "entityType": "indexes",
       "table": "calendar_schedule"
+    },
+    {
+      "columns": [
+        {
+          "value": "session_id",
+          "isExpression": false
+        },
+        {
+          "value": "time_created",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "session_quality_check_session_idx",
+      "entityType": "indexes",
+      "table": "session_quality_check"
     },
     {
       "columns": [

@@ -189,4 +189,30 @@ describe("runner/llm.ts actually spends the verdict", () => {
     // chose is not an error, and mislabelling it sends the next reader hunting a broken command.
     wired("session.quality.check.refused", "a denied quality check must have its own honest log event")
   })
+
+  /**
+   * 🔴 `todo/verified-autonomy.md` V1: checks were LOG EVENTS, not evidence. The durable write lives
+   * in `session/quality-check.ts` and is exercised for real in `session-quality-check.test.ts`; what
+   * only a source ratchet can pin on this machine is that the RUNNER calls it — and the defect a
+   * durable-evidence table exists to close is precisely "nobody wrote the row".
+   */
+  test("every outcome branch records durable evidence, not just a log line", () => {
+    wired("SessionQualityCheck.record", "the runner no longer writes the durable quality-check row")
+    for (const outcome of ["refused", "passed", "failed"])
+      wired(`evidence("${outcome}"`, `the ${outcome} branch stopped recording evidence`)
+    // ⚠️ Counted, not merely present: three branches, three writes. A single surviving call would
+    // satisfy `includes` while two outcomes vanished from the record — and a receipt built on a table
+    // that only ever holds failures would report a session that never passed anything.
+    expect(source.split("evidence(").length - 1).toBeGreaterThanOrEqual(3)
+  })
+
+  test("the evidence write cannot break the drain it is bookkeeping for", () => {
+    // The drain's own rule ("a broken check command must never break the drain it guards") has to
+    // extend to the write, or the evidence table becomes a new way for the harness to break the thing
+    // it watches.
+    expect(
+      /evidence = \([\s\S]{0,900}?Effect\.catchCause/.test(source),
+      "the durable write is no longer wrapped — a failed insert can now fail the drain",
+    ).toBe(true)
+  })
 })

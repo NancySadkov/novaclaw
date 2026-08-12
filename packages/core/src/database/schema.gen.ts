@@ -51,6 +51,19 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`session_quality_check\` (
+          \`id\` text PRIMARY KEY,
+          \`session_id\` text NOT NULL,
+          \`label\` text NOT NULL,
+          \`command\` text NOT NULL,
+          \`outcome\` text NOT NULL,
+          \`exit_code\` integer,
+          \`timed_out\` integer DEFAULT false NOT NULL,
+          \`duration_ms\` integer,
+          \`time_created\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`bash_job\` (
           \`id\` text PRIMARY KEY,
           \`owner\` text NOT NULL,
@@ -528,6 +541,9 @@ export default {
       )
       yield* tx.run(
         `CREATE INDEX \`calendar_schedule_due_idx\` ON \`calendar_schedule\` (\`enabled\`,\`next_fire_at\`);`,
+      )
+      yield* tx.run(
+        `CREATE INDEX \`session_quality_check_session_idx\` ON \`session_quality_check\` (\`session_id\`,\`time_created\`);`,
       )
       yield* tx.run(`CREATE INDEX \`bash_job_owner_idx\` ON \`bash_job\` (\`owner\`);`)
       yield* tx.run(`CREATE UNIQUE INDEX \`event_aggregate_seq_idx\` ON \`event\` (\`aggregate_id\`,\`seq\`);`)

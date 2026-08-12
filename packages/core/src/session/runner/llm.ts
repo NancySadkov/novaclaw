@@ -11,7 +11,7 @@ import {
   type FinishReason,
   type ProviderErrorEvent,
 } from "@novaclaw/llm"
-import { Cause, DateTime, Duration, Effect, Exit, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
+import { Cause, Clock, DateTime, Duration, Effect, Exit, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
 import path from "path"
 import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
@@ -104,6 +104,7 @@ import { ProviderDispatch } from "./provider-dispatch"
 import { TurnTiming } from "./turn-timing"
 import { ProviderStreamLiveness } from "./provider-stream-liveness"
 import { Quality } from "./quality"
+import { SessionQualityCheck } from "../quality-check"
 import { QualityProvision } from "./quality-provision"
 import { Snapshot } from "../../snapshot"
 import { AppProcess } from "../../process"
@@ -282,6 +283,36 @@ export const layer = Layer.effect(
       shell: string,
       check: { readonly label: string; readonly command: string; readonly timeoutMs?: number },
     ) {
+      /**
+       * The DURABLE record of this run — `todo/verified-autonomy.md` V1's only new write.
+       *
+       * ⚠️ Best-effort, and that is a contract rather than laziness: this is bookkeeping inside a
+       * drain step whose own header says *"a broken check command must never break the drain it
+       * guards"*. A write that could fail the drain would make the evidence table a new way for the
+       * harness to break the thing it is watching.
+       *
+       * ⚠️ It records ALONGSIDE the log line, never instead of it. The log is how a human reads what
+       * happened live; the table is what a receipt composes from. Replacing one with the other would
+       * lose a reader.
+       */
+      const evidence = (
+        outcome: SessionQualityCheck.Outcome,
+        rest: { readonly at: number; readonly exitCode?: number; readonly timedOut?: boolean; readonly durationMs?: number },
+      ) =>
+        SessionQualityCheck.record(db, {
+          sessionID,
+          label: check.label,
+          command: check.command,
+          outcome,
+          ...rest,
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Log.event("session.quality.check.errored", {
+              "session.id": sessionID,
+              "session.cause": Log.fault(cause),
+            }),
+          ),
+        )
       // ⚠️ THE EXECUTION GATE, and it must be spelled `bash` — the same argument
       // `tool/quality-provision.ts` records at its own verify loop, arrived at from the other side.
       // This runs a command string through the agent shell with the host user's authority, and the
@@ -314,6 +345,7 @@ export const layer = Layer.effect(
           "session.id": sessionID,
           "session.quality.label": check.label,
         })
+        yield* evidence("refused", { at: yield* Clock.currentTimeMillis })
         return false
       }
       const policy = CalloutPolicy.qualityGate(check.timeoutMs ?? 60_000)
@@ -324,6 +356,7 @@ export const layer = Layer.effect(
         detached: process.platform !== "win32",
         forceKillAfter: Duration.seconds(3),
       })
+      const startedAt = yield* Clock.currentTimeMillis
       const result = yield* appProcess
         .run(command, {
           combineOutput: true,
@@ -344,16 +377,30 @@ export const layer = Layer.effect(
         : result.run.exitCode !== 0
           ? { output: result.run.output?.toString("utf8") ?? "", exit: result.run.exitCode }
           : undefined
+      const finishedAt = yield* Clock.currentTimeMillis
       if (!failed) {
         yield* Log.event("session.quality.check.passed", {
           "session.id": sessionID,
           "session.quality.label": check.label,
+        })
+        yield* evidence("passed", {
+          at: finishedAt,
+          durationMs: finishedAt - startedAt,
+          ...(result.ok ? { exitCode: result.run.exitCode } : {}),
         })
         return false
       }
       yield* Log.event("session.quality.check.failed", {
         "session.id": sessionID,
         "session.quality.label": check.label,
+      })
+      yield* evidence("failed", {
+        at: finishedAt,
+        durationMs: finishedAt - startedAt,
+        // ⚠️ `exitCode` stays ABSENT when the process never produced one (a spawn fault or a
+        // timeout kill). Writing 0 there would say "exited cleanly" on a check that failed.
+        ...("exit" in failed && typeof failed.exit === "number" ? { exitCode: failed.exit } : {}),
+        ...(failed.timedOut === true ? { timedOut: true } : {}),
       })
       yield* SessionInput.steer(
         db,
