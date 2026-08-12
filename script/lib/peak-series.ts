@@ -205,6 +205,58 @@ export function buildRow(
 }
 
 /**
+ * ─── ARMING the peak ratchet ────────────────────────────────────────────────────────────────────
+ *
+ * `regressed` has been REPORTED and never enforced, with a stated follow-up: *"arming is a
+ * follow-up that wants a few runs of data first"*, and specifically — check whether regressed rows
+ * coincide with high host commit; if so withhold the verdict on contaminated samples, if not arm as
+ * it stands.
+ *
+ * 🔴 **Measured 2026-08-12 over 316 rows across 26 gates carrying `hostCommitPct`: ZERO regressed
+ * rows.** So the conditional is UNANSWERABLE, not answered — and "arm as it stands" on that basis
+ * would be reading a null as a negative. What the older 1616-run audit did establish is that the
+ * threshold would have failed 4 rows (0.2%), and **two of those carried up to 6.8 GB of FOREIGN
+ * memory beside 14–22 owning ticks** — attribution under host load, not a real regression.
+ *
+ * So the verdict is armed WITH the withholding branch, because that is the branch the evidence
+ * actually supports. A sample is contaminated when either signal says another process was competing:
+ *
+ *  · `hostCommitPct` at or above {@link CONTAMINATED_HOST_COMMIT_PCT}. Chosen from the measured
+ *    HEALTHY distribution rather than from the product's storage thresholds: across those 316 rows
+ *    only `core` ever reaches 75% and it does so on **13 of 25 healthy runs** — its median IS 75 — so
+ *    75 is a description of normal, not of trouble. No unit has ever reached 90.
+ *  · `foreignMb` at or above {@link CONTAMINATED_FOREIGN_MB}. ⚠️ This was first written as *"foreign
+ *    at or above the unit's own PEAK"*, which is wrong and was caught by firing it: `bun run test`'s
+ *    own shim is ~1 230 MB on every run — the report even names it — so that rule withheld 28% of all
+ *    rows, i.e. it disarmed the ratchet for every unit lighter than the harness. The absolute cut is
+ *    read off the distribution instead, which is sharply BIMODAL over 2 130 rows: median 50 MB,
+ *    p90 6 763 MB, and fewer than 1% of rows anywhere between 2 000 and 6 000. Any threshold inside
+ *    that gap gives the same partition, which is the point — the number is insensitive, so it is a
+ *    reading of the data rather than a choice.
+ *
+ * ⚠️ **A withheld verdict is printed, never swallowed.** The whole failure mode this replaces is a
+ * number that vanishes; "we saw a regression and are not counting it" must be as loud as counting it,
+ * or the next reader cannot tell a clean history from a suppressed one.
+ */
+export const CONTAMINATED_HOST_COMMIT_PCT = 85
+export const CONTAMINATED_FOREIGN_MB = 3000
+
+export type RegressionVerdict = "clean" | "regressed" | "withheld"
+
+/** Why a verdict was withheld — one short clause for the report, empty when it was not. */
+export const regressionVerdict = (row: Row): { readonly verdict: RegressionVerdict; readonly reason: string } => {
+  if (row.regressed !== true) return { verdict: "clean", reason: "" }
+  if (row.hostCommitPct !== null && row.hostCommitPct >= CONTAMINATED_HOST_COMMIT_PCT)
+    return { verdict: "withheld", reason: `host commit peaked ${row.hostCommitPct}% while this unit ran` }
+  if (row.foreignMb !== null && row.foreignMb >= CONTAMINATED_FOREIGN_MB)
+    return {
+      verdict: "withheld",
+      reason: `${row.foreignMb} MB of foreign memory beside a ${row.peakMb ?? "?"} MB peak`,
+    }
+  return { verdict: "regressed", reason: "" }
+}
+
+/**
  * Rows for one run.
  *
  * ⚠️ **Test units only.** A typecheck unit is never sampled at all (`test.ts` takes a window only for

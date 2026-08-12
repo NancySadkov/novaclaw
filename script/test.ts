@@ -997,10 +997,8 @@ if (unmeasured.length) {
  * NOT write `test-baseline.json`, which stays hand-maintained — a baseline that ratchets to whatever
  * the machine last did is not a baseline.
  */
-const series = PeakSeries.append(
-  PeakSeries.seriesPath(REPO_ROOT),
-  PeakSeries.buildRows(RUN_STAMP, PeakSeries.scopeLabel(FULL, ONLY), results, peakProfiles.commit),
-)
+const seriesRows = PeakSeries.buildRows(RUN_STAMP, PeakSeries.scopeLabel(FULL, ONLY), results, peakProfiles.commit)
+const series = PeakSeries.append(PeakSeries.seriesPath(REPO_ROOT), seriesRows)
 // Self-describing, because the block header above only prints when something was MEASURED while a row
 // is appended for every test unit that ran — the two can legitimately disagree.
 if (series.ok && series.rows > 0)
@@ -1010,6 +1008,36 @@ else if (!series.ok)
     `  \x1b[33mpeak series NOT appended\x1b[0m (${series.path}): ${series.reason}\n` +
       `  The gate is unaffected — this is a log, and a log may never decide a run.\n`,
   )
+
+/**
+ * ─── the peak ratchet, ARMED (2026-08-12) ──────────────────────────────────────────────────────
+ *
+ * `regressed` was computed, written to the series, and NEVER read here — so a real regression
+ * changed nothing about the run. It now fails, with the withholding branch the evidence supports
+ * (`PeakSeries.regressionVerdict`): the older 1616-row audit's 4 fires included two measured beside
+ * up to 6.8 GB of foreign memory, which is attribution under host load rather than a regression.
+ *
+ * ⚠️ The message carries `hostCommitPct`, `foreignMb` and `ownTicks` deliberately. ZERO regressed rows
+ * have been recorded since those fields existed (316 rows, 26 gates), so the first time this fires is
+ * also the first sample of the thing the analysis needs — and a message that omitted them would force
+ * a re-run to collect data the failing run already had in hand.
+ */
+const peakVerdicts = seriesRows
+  .map((row) => ({ row, ...PeakSeries.regressionVerdict(row) }))
+  .filter((entry) => entry.verdict !== "clean")
+const peakRegressions = peakVerdicts.filter((entry) => entry.verdict === "regressed")
+if (peakVerdicts.length) {
+  process.stdout.write(`\n\x1b[1m── peak ratchet ──\x1b[0m\n`)
+  for (const { row, verdict, reason } of peakVerdicts)
+    process.stdout.write(
+      verdict === "withheld"
+        ? `  ${row.unit.padEnd(24)} \x1b[33mWITHHELD\x1b[0m  ${row.peakMb} MB vs profile ${row.profileMb} MB — ${reason},\n` +
+          `  ${" ".repeat(24)} so this reads as the machine rather than the unit. Re-run quiet to judge it.\n`
+        : `  ${row.unit.padEnd(24)} \x1b[31mREGRESSED\x1b[0m  ${row.peakMb} MB vs profile ${row.profileMb} MB (ratio ${row.ratio})\n` +
+          `  ${" ".repeat(24)} host commit ${row.hostCommitPct ?? "?"}%, foreign ${row.foreignMb ?? "?"} MB, ${row.ownTicks ?? "?"} owning tick(s) — a CLEAN sample.\n` +
+          `  ${" ".repeat(24)} Either the unit really got heavier, or its profile entry is stale.\n`,
+    )
+}
 
 /**
  * ─── the SKIPPED ledger ────────────────────────────────────────────────────────────────────────────
@@ -1140,10 +1168,11 @@ process.stdout.write(
     `${shardedUnits.length ? `  ·  \x1b[33m${shardedUnits.length} unit(s) SHARDED — degraded\x1b[0m` : ""}` +
     `${pinnedOk.length ? `  ·  \x1b[33m${pinnedOk.length} pinned\x1b[0m` : ""}` +
     `${skipDrift ? "  ·  \x1b[31mskip-ledger drift\x1b[0m" : ""}` +
-    `${ledgerDrift ? "  ·  \x1b[31mexpected-failure drift\x1b[0m" : ""}\n`,
+    `${ledgerDrift ? "  ·  \x1b[31mexpected-failure drift\x1b[0m" : ""}` +
+    `${peakRegressions.length ? `  ·  \x1b[31m${peakRegressions.length} peak regression(s)\x1b[0m` : ""}\n`,
 )
 // `process.exitCode`, not `process.exit()`. spawnSync blocks the event loop for the whole run, so every
 // write queued while a unit was running only drains once the loop is free — and `process.exit()` would
 // truncate them whenever stdout/stderr is a pipe or a file rather than a TTY. Nothing here holds the
 // loop open, so setting the code and returning exits with the same status and keeps the output.
-process.exitCode = failed.length || skipDrift || ledgerDrift || matchedNothing ? 1 : 0
+process.exitCode = failed.length || skipDrift || ledgerDrift || matchedNothing || peakRegressions.length ? 1 : 0

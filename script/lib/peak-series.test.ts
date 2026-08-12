@@ -1,5 +1,16 @@
 import { describe, expect, test } from "bun:test"
-import { buildRow, buildRows, classifyPeak, format, scopeLabel, seriesPath, type Observation } from "./peak-series"
+import {
+  buildRow,
+  buildRows,
+  classifyPeak,
+  CONTAMINATED_FOREIGN_MB,
+  CONTAMINATED_HOST_COMMIT_PCT,
+  format,
+  regressionVerdict,
+  scopeLabel,
+  seriesPath,
+  type Observation,
+} from "./peak-series"
 
 /**
  * The row SHAPE is what these pin, not the filesystem. Every claim below is about a value a later
@@ -189,5 +200,69 @@ describe("hostCommitPct — recording what the BOX was doing", () => {
   test("a genuine 0 survives, so the null above means absent and nothing else", () => {
     // Negative control: without this, returning null for everything would pass the test above.
     expect(buildRow(RUN, "default", unit({ peakMb: 1500, hostCommitPct: 0 }), PROFILE).hostCommitPct).toBe(0)
+  })
+})
+
+/**
+ * 🔴 Arming the ratchet. `regressed` was written to the series and never read by the gate, so a real
+ * regression changed nothing about the run.
+ *
+ * The withholding branch is not caution for its own sake: the 1616-run audit's 4 fires (0.2%)
+ * included two measured beside up to 6.8 GB of FOREIGN memory with 14–22 owning ticks — attribution
+ * under host load. And the contamination line is 85%, chosen from the measured HEALTHY distribution
+ * (316 rows, 26 gates): only `core` ever reaches 75 and it does so on 13 of 25 healthy runs, so 75
+ * describes normal rather than trouble.
+ */
+describe("regressionVerdict — armed, with the withholding branch", () => {
+  const row = (over: Partial<ReturnType<typeof buildRow>>) => ({
+    ...buildRow(RUN, "default", unit({ peakMb: 7755 }), PROFILE),
+    ...over,
+  })
+
+  test("a clean regressed sample is REGRESSED — this is the arming", () => {
+    const verdict = regressionVerdict(row({ hostCommitPct: 52, foreignMb: 40 }))
+    expect(verdict.verdict).toBe("regressed")
+    expect(verdict.reason).toBe("")
+  })
+
+  test("a non-regressed row is clean whatever the host was doing", () => {
+    // ⚠️ Contamination must never invent a verdict. It only ever WITHHOLDS one.
+    const quiet = buildRow(RUN, "default", unit({ peakMb: 1200 }), PROFILE)
+    expect(regressionVerdict({ ...quiet, hostCommitPct: 99, foreignMb: 90_000 }).verdict).toBe("clean")
+  })
+
+  test("host commit at or above the line withholds, and one point below it does not", () => {
+    expect(regressionVerdict(row({ hostCommitPct: CONTAMINATED_HOST_COMMIT_PCT })).verdict).toBe("withheld")
+    // The boundary matters: core's healthy median is 75 and its healthy max is 80, so 84 must still
+    // count as a real sample or the ratchet is disarmed on the one unit it exists to watch.
+    expect(regressionVerdict(row({ hostCommitPct: CONTAMINATED_HOST_COMMIT_PCT - 1, foreignMb: 10 })).verdict).toBe(
+      "regressed",
+    )
+    expect(regressionVerdict(row({ hostCommitPct: 80, foreignMb: 10 })).verdict).toBe("regressed")
+  })
+
+  test("heavy foreign memory withholds, and the reason NAMES the number", () => {
+    // The measured shape of two of the four historical fires (~6.8 GB).
+    const verdict = regressionVerdict(row({ hostCommitPct: 60, foreignMb: 6800, peakMb: 6000 }))
+    expect(verdict.verdict).toBe("withheld")
+    expect(verdict.reason).toContain("6800")
+  })
+
+  test("🔴 the HARNESS's own shim is not contamination", () => {
+    // The rule was first "foreign >= the unit's own peak", and firing it caught that: `bun run test`'s
+    // shim is ~1 230 MB on EVERY run, so that rule withheld 28% of all rows and disarmed the ratchet
+    // for every unit lighter than the harness. A threshold that fires on the normal case is not a
+    // threshold.
+    expect(regressionVerdict(row({ hostCommitPct: 52, foreignMb: 1230, peakMb: 836 })).verdict).toBe("regressed")
+    expect(regressionVerdict(row({ hostCommitPct: 52, foreignMb: CONTAMINATED_FOREIGN_MB - 1 })).verdict).toBe(
+      "regressed",
+    )
+    expect(regressionVerdict(row({ hostCommitPct: 52, foreignMb: CONTAMINATED_FOREIGN_MB })).verdict).toBe("withheld")
+  })
+
+  test("missing signals do NOT withhold — absent is not contaminated", () => {
+    // ⚠️ The trap this closes: `hostCommitPct` is null on every row written before the field existed,
+    // and treating null as "possibly contaminated" would silently disarm the ratchet for all of them.
+    expect(regressionVerdict(row({ hostCommitPct: null, foreignMb: null })).verdict).toBe("regressed")
   })
 })
