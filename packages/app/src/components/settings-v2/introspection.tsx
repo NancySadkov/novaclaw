@@ -1,10 +1,12 @@
+import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { TextareaV2 } from "@novaclaw/ui/v2/textarea-v2"
-import { type Component } from "solid-js"
+import { Show, createMemo, createSignal, type Component } from "solid-js"
 import { showToast } from "@/utils/toast"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
+import { useProviders } from "@/hooks/use-providers"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 
@@ -36,6 +38,28 @@ const DEFAULT_INTERJECTION =
 
 export const SettingsIntrospectionV2: Component = () => {
   const language = useLanguage()
+  const providers = useProviders()
+  const [custom, setCustom] = createSignal(false)
+  /** Sentinel for "let me type one". Every real option is a `provider/model` id and therefore
+   *  contains a slash, so this slash-free literal cannot collide with one. */
+  const CUSTOM_MODEL = "custom-model-id"
+  /** "" is not usable as an option value — a select reads it as *nothing selected* and renders a
+   *  blank trigger, which breaks rule 4 (say what is in force) on this very row. */
+  const INHERIT_MODEL = "inherit-active-model"
+  const catalogModels = createMemo(() => {
+    const ids: string[] = []
+    for (const [providerID] of providers.all())
+      for (const model of providers.models(providerID)) ids.push(`${providerID}/${model.id}`)
+    return ids
+  })
+  const modelOptions = createMemo(() => {
+    const options = [
+      { value: INHERIT_MODEL, label: language.t("settings.introspection.row.model.placeholder") },
+    ]
+    for (const id of catalogModels()) options.push({ value: id, label: id })
+    options.push({ value: CUSTOM_MODEL, label: language.t("settings.introspection.row.model.custom") })
+    return options
+  })
   const serverSync = useServerSync()
 
   const current = (): IntrospectionConfig =>
@@ -102,23 +126,53 @@ export const SettingsIntrospectionV2: Component = () => {
               </div>
             </SettingsRowV2>
 
+            {/*
+              A free-text `provider/model` box asked the user to know a value the product already
+              knows — settings-ux rule 2, *offer what exists*. The catalog is right here, so the row
+              offers it. Free text remains reachable and SAYS it is the fallback, because discovery
+              cannot see a model the user has not added yet.
+            */}
             <SettingsRowV2
               title={language.t("settings.introspection.row.model.title")}
               description={language.t("settings.introspection.row.model.description")}
             >
               <div class="w-full sm:w-[260px]">
-                <TextInputV2
-                  type="text"
-                  appearance="base"
-                  value={current().model ?? ""}
-                  placeholder={language.t("settings.introspection.row.model.placeholder")}
-                  spellcheck={false}
-                  autocorrect="off"
-                  autocomplete="off"
-                  autocapitalize="off"
-                  onChange={(event) => void persist({ model: event.currentTarget.value.trim() })}
-                  aria-label={language.t("settings.introspection.row.model.title")}
-                />
+                <Show
+                  when={!custom() && catalogModels().length > 0}
+                  fallback={
+                    <TextInputV2
+                      type="text"
+                      appearance="base"
+                      value={current().model ?? ""}
+                      placeholder={language.t("settings.introspection.row.model.placeholder")}
+                      spellcheck={false}
+                      autocorrect="off"
+                      autocomplete="off"
+                      autocapitalize="off"
+                      onChange={(event) => void persist({ model: event.currentTarget.value.trim() })}
+                      aria-label={language.t("settings.introspection.row.model.title")}
+                    />
+                  }
+                >
+                  <SelectV2
+                    appearance="inline"
+                    data-action="settings-introspection-model"
+                    options={modelOptions()}
+                    current={modelOptions().find((o) => o.value === (current().model || INHERIT_MODEL))}
+                    placement="bottom-end"
+                    gutter={6}
+                    value={(o) => o.value}
+                    label={(o) => o.label}
+                    onSelect={(option) => {
+                      if (!option) return
+                      // The escape hatch is an OPTION rather than a hidden gesture: a user whose
+                      // model is not in the catalog must be able to see that typing is still allowed.
+                      if (option.value === CUSTOM_MODEL) return setCustom(true)
+                      // Inherit persists as empty, which is what the config means by *unset*.
+                      void persist({ model: option.value === INHERIT_MODEL ? "" : option.value })
+                    }}
+                  />
+                </Show>
               </div>
             </SettingsRowV2>
 

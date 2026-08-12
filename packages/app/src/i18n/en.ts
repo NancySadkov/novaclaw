@@ -1871,6 +1871,7 @@ export const dict = {
   "settings.introspection.row.model.description":
     "Model that judges, as provider/model. Empty = same as the session's model.",
   "settings.introspection.row.model.placeholder": "same as active model",
+  "settings.introspection.row.model.custom": "Type a model id…",
   "settings.introspection.row.generate.title": "Generate the interjection",
   "settings.introspection.row.generate.description":
     "Let the judge model write the interjection from context instead of using the fixed text below.",
