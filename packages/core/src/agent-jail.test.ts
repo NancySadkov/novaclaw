@@ -239,3 +239,110 @@ describe("AgentJail", () => {
     expect(message).toContain("Do not retry")
   })
 })
+
+/**
+ * 🔴 `todo/jail.md`: *"Report whether the instance is inside a container or VM using measured host
+ * capabilities."*
+ *
+ * The Linux arms are exercised HERE, on Windows, because `detectEnclosure` takes the platform and its
+ * reads as parameters — the same trick `detectPosture` uses, and the reason this whole module splits
+ * pure from impure. A detector that could only be tested on the platform it detects is a detector
+ * nobody tests.
+ */
+describe("detectEnclosure — measured, never assumed", () => {
+  const probe = (files: Record<string, string> = {}, commands: Record<string, string> = {}) => ({
+    readText: (path: string) => files[path],
+    runText: (cmd: string, args: readonly string[]) => commands[[cmd, ...args].join(" ")],
+  })
+
+  test("a runtime's own marker file is the most direct evidence, and is named", () => {
+    const docker = AgentJail.detectEnclosure("linux", probe({ "/.dockerenv": "" }))
+    expect(docker.kind).toBe("container")
+    // Evidence a person can check by hand, never a restatement of the verdict.
+    expect(docker.evidence).toContain("/.dockerenv")
+    expect(AgentJail.detectEnclosure("linux", probe({ "/run/.containerenv": "" })).kind).toBe("container")
+  })
+
+  test("a cgroup naming a runtime is container evidence, and the LINE is quoted", () => {
+    const result = AgentJail.detectEnclosure(
+      "linux",
+      probe({ "/proc/1/cgroup": ["0::/system.slice", "0::/docker/2b9c1f"].join("\n") }),
+    )
+    expect(result.kind).toBe("container")
+    expect(result.evidence).toContain("docker/2b9c1f")
+  })
+
+  test("systemd-detect-virt answers both questions separately, so it is asked both ways", () => {
+    const vm = AgentJail.detectEnclosure("linux", probe({}, { "systemd-detect-virt --container": "none", "systemd-detect-virt --vm": "kvm" }))
+    expect(vm.kind).toBe("vm")
+    expect(vm.evidence).toContain("kvm")
+    const lxc = AgentJail.detectEnclosure("linux", probe({}, { "systemd-detect-virt --container": "lxc" }))
+    expect(lxc.kind).toBe("container")
+  })
+
+  test("🔴 `bare` requires a probe to have ANSWERED — silence is `unknown`", () => {
+    // The whole reason this is not a boolean. Nothing readable, nothing runnable: we measured no
+    // enclosure and we also measured nothing, and only one of those is "there is no container".
+    const silent = AgentJail.detectEnclosure("linux", probe())
+    expect(silent.kind).toBe("unknown")
+    expect(silent.evidence).toContain("no probe answered")
+
+    // …and when it DID answer, `bare` is earned.
+    const answered = AgentJail.detectEnclosure(
+      "linux",
+      probe({ "/proc/1/cgroup": "0::/init.scope" }, { "systemd-detect-virt --container": "none", "systemd-detect-virt --vm": "none" }),
+    )
+    expect(answered.kind).toBe("bare")
+  })
+
+  test("🔴 a platform with no probe is `unknown`, NOT `bare`", () => {
+    // A Windows or macOS instance may well be inside a VM. Reporting "bare" there would answer a
+    // question we never asked the host — the same ambiguous blank the quality-check table's null exit
+    // code exists to avoid.
+    for (const platform of ["win32", "darwin"] as const) {
+      const result = AgentJail.detectEnclosure(platform, probe({ "/.dockerenv": "" }))
+      expect(result.kind).toBe("unknown")
+      expect(result.evidence).toContain(platform)
+    }
+  })
+
+  test("🔴 REAL captures, from a bare Linux host and a container on it", () => {
+    // Taken by hand from the Spark on 2026-08-12 rather than imagined, and the container case
+    // corrected a guess: on cgroup v2 `/proc/1/cgroup` INSIDE a docker container is exactly `0::/`
+    // with no runtime name. The synthetic fixture above (`0::/docker/…`) is cgroup v1 and does not
+    // occur on that host — so if the marker-file rule were removed, the cgroup rule would NOT have
+    // covered for it.
+    const bare = AgentJail.detectEnclosure(
+      "linux",
+      probe({ "/proc/1/cgroup": "0::/init.scope" }, { "systemd-detect-virt --container": "none", "systemd-detect-virt --vm": "none" }),
+    )
+    expect(bare.kind).toBe("bare")
+
+    const container = AgentJail.detectEnclosure(
+      "linux",
+      probe({ "/.dockerenv": "", "/proc/1/cgroup": "0::/" }, { "systemd-detect-virt --container": "docker" }),
+    )
+    expect(container.kind).toBe("container")
+
+    // …and the same container WITHOUT its marker file still resolves, because systemd-detect-virt
+    // answers where cgroup v2 cannot. This is the arm that keeps the detector honest on podman.
+    const noMarker = AgentJail.detectEnclosure(
+      "linux",
+      probe({ "/proc/1/cgroup": "0::/" }, { "systemd-detect-virt --container": "docker" }),
+    )
+    expect(noMarker.kind).toBe("container")
+    expect(noMarker.evidence).toContain("systemd-detect-virt")
+  })
+
+  test("every declared kind is reachable, so no arm is copy nobody can see", () => {
+    // `ENCLOSURE_KINDS` is a runtime tuple for the reason `CONFINEMENT_REASONS` is: a surface must
+    // have wording for every arm, and an arm no input produces is a lie waiting.
+    const produced = new Set([
+      AgentJail.detectEnclosure("linux", probe({ "/.dockerenv": "" })).kind,
+      AgentJail.detectEnclosure("linux", probe({}, { "systemd-detect-virt --vm": "kvm" })).kind,
+      AgentJail.detectEnclosure("linux", probe({ "/proc/1/cgroup": "0::/init.scope" }, { "systemd-detect-virt --container": "none", "systemd-detect-virt --vm": "none" })).kind,
+      AgentJail.detectEnclosure("win32", probe()).kind,
+    ])
+    expect([...produced].sort()).toEqual([...AgentJail.ENCLOSURE_KINDS].sort())
+  })
+})

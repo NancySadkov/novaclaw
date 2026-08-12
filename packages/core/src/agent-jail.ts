@@ -41,6 +41,7 @@
 export * as AgentJail from "./agent-jail"
 
 import { spawnSync } from "node:child_process"
+import { readFileSync } from "node:fs"
 import { attendedRoot, type SessionType } from "./session/config-resolve"
 
 /**
@@ -527,4 +528,143 @@ export function denyMessage(rootType: SessionType, hostileInput?: boolean, safeM
         `full authority. Turn Safe mode off in this chat's Tuning controls to allow shell commands here. `
       : `Raw shell execution is not available to ${rootType} sessions on this host: unattended commands require sandbox confinement, and this platform has no sandbox backend yet. `
   return reason + DENY_ROUTING
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// THE ENCLOSURE — is this instance already inside a container or a VM?
+//
+// `todo/jail.md`: *"Report whether the instance is inside a container or VM using measured host
+// capabilities."* It sits beside the posture rather than in its own module because it answers the
+// other half of one question a user actually asks — *how boxed in is this thing?* The posture says
+// what confinement this host can IMPOSE on a child; this says what already encloses US.
+//
+// ⚠️ **`unknown` is a first-class answer and the most important one.** The tempting shape is a
+// boolean, and a boolean forces every host we cannot measure into `false` — "not in a container" —
+// which is a claim we have not earned. On Windows there is no `/proc` and no `systemd-detect-virt`,
+// so the honest report is that we did not measure it, not that the answer is no. An unmeasured
+// blank that reads as a fact is the same defect the quality-check table's null exit code exists to
+// avoid, arrived at from a different subsystem.
+//
+// ⚠️ Every arm carries the EVIDENCE that produced it, for `agent-jail.ts`'s own standing reason: a
+// verdict a user cannot act on is worth less than the observation behind it, and "container,
+// because /.dockerenv exists" is checkable while "container" is a thing to believe.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+export const ENCLOSURE_KINDS = ["container", "vm", "bare", "unknown"] as const
+export type EnclosureKind = (typeof ENCLOSURE_KINDS)[number]
+
+export interface Enclosure {
+  readonly kind: EnclosureKind
+  /** What was OBSERVED, in words a person can check by hand. Never a restatement of `kind`. */
+  readonly evidence: string
+  readonly platform: string
+}
+
+/** The reads an enclosure probe needs. Injected so the Linux arms are testable off Linux. */
+export interface HostProbe {
+  /** File contents, or undefined when the path does not exist or cannot be read. */
+  readonly readText: (path: string) => string | undefined
+  /** stdout of a command, or undefined when it could not be run. Trimmed. */
+  readonly runText: (cmd: string, args: readonly string[]) => string | undefined
+}
+
+/**
+ * Container runtimes that leave a recognisable mark in `/proc/1/cgroup`.
+ *
+ * ⚠️ **A cgroup-v1 trick, and it does NOT fire on a modern host.** Measured 2026-08-12 inside a real
+ * `docker` container on the Spark: `/proc/1/cgroup` reads exactly `0::/` — unified hierarchy, no
+ * runtime name anywhere. The same file on the bare host reads `0::/init.scope`. So this rule is a
+ * fallback for older/hybrid hosts, and it is the marker file and `systemd-detect-virt` that actually
+ * answer on cgroup v2. Kept because it costs one string scan and still fires on v1, but do not read
+ * its presence as "containers are detected by cgroup".
+ */
+const CGROUP_MARKS = ["docker", "libpod", "kubepods", "containerd", "lxc"] as const
+
+/**
+ * The pure half: a platform plus a set of reads in, a measured enclosure out.
+ *
+ * Order matters and is by DIRECTNESS of evidence, not by likelihood — a marker file placed by the
+ * runtime beats a string match inside a cgroup path, which beats a helper's opinion.
+ */
+export function detectEnclosure(platform: NodeJS.Platform, probe: HostProbe): Enclosure {
+  if (platform !== "linux")
+    // ⚠️ NOT `bare`. A Windows or macOS instance may well be inside a VM; we simply have no probe
+    // here, and saying "bare" would answer a question we did not ask the host.
+    return {
+      kind: "unknown",
+      evidence: `no enclosure probe exists for ${platform}: /proc and systemd-detect-virt are Linux-only`,
+      platform,
+    }
+
+  for (const marker of ["/.dockerenv", "/run/.containerenv"])
+    if (probe.readText(marker) !== undefined)
+      return { kind: "container", evidence: `${marker} exists`, platform }
+
+  const cgroup = probe.readText("/proc/1/cgroup")
+  if (cgroup !== undefined) {
+    const line = cgroup.split(/\r?\n/).find((entry) => CGROUP_MARKS.some((mark) => entry.includes(mark)))
+    if (line !== undefined) return { kind: "container", evidence: `/proc/1/cgroup names ${line.trim()}`, platform }
+  }
+
+  // systemd-detect-virt answers BOTH questions and distinguishes them itself, so ask it that way
+  // rather than inferring: `--container` and `--vm` each print a name or `none`.
+  const container = probe.runText("systemd-detect-virt", ["--container"])
+  if (container !== undefined && container !== "" && container !== "none")
+    return { kind: "container", evidence: `systemd-detect-virt --container reports ${container}`, platform }
+  const vm = probe.runText("systemd-detect-virt", ["--vm"])
+  if (vm !== undefined && vm !== "" && vm !== "none")
+    return { kind: "vm", evidence: `systemd-detect-virt --vm reports ${vm}`, platform }
+
+  // ⚠️ `bare` is only reachable when a probe actually ANSWERED. If systemd-detect-virt could not be
+  // run and no marker existed, nothing has been measured — that is `unknown`, not `bare`.
+  if (container === undefined && vm === undefined && cgroup === undefined)
+    return {
+      kind: "unknown",
+      evidence: "no probe answered: /proc/1/cgroup unreadable and systemd-detect-virt could not be run",
+      platform,
+    }
+  return {
+    kind: "bare",
+    evidence:
+      container === undefined && vm === undefined
+        ? "/proc/1/cgroup names no container runtime; systemd-detect-virt could not be run"
+        : "systemd-detect-virt reports none for both container and VM",
+    platform,
+  }
+}
+
+let enclosed: Enclosure | undefined
+
+/**
+ * What encloses THIS instance, with the evidence. Memoised for the life of the process, for the same
+ * reason {@link posture} is: it spawns and reads, and the answer changes about as often as the
+ * machine is rebooted — never under a running instance.
+ */
+export function enclosure(): Enclosure {
+  enclosed ??= detectEnclosure(process.platform, {
+    readText: (path) => {
+      try {
+        return readFileSync(path, "utf8")
+      } catch {
+        return undefined
+      }
+    },
+    runText: (cmd, args) => {
+      try {
+        const result = spawnSync(cmd, args as string[], { timeout: PROBE_TIMEOUT_MS, encoding: "utf8" })
+        // ⚠️ `systemd-detect-virt` exits NON-ZERO (1) when it finds nothing, and that is an ANSWER —
+        // "none" — not a failure. Gating on status would turn every bare host into `unknown`.
+        if (result.error) return undefined
+        return (result.stdout ?? "").trim()
+      } catch {
+        return undefined
+      }
+    },
+  })
+  return enclosed
+}
+
+/** Test seam, matching `resetProbeCache()`. */
+export function resetEnclosureCache(): void {
+  enclosed = undefined
 }

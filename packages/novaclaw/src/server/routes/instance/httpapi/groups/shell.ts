@@ -50,6 +50,23 @@ const JailPosture = Schema.Struct({
   }),
 })
 
+/**
+ * What already encloses THIS instance — `todo/jail.md`'s *"report whether the instance is inside a
+ * container or VM using measured host capabilities"*.
+ *
+ * ⚠️ Separate from `jail` above and deliberately so: that one says what confinement this host can
+ * IMPOSE on a child, this says what is already around US. They are different questions with
+ * different answers, and a surface that merged them would have to pick one to lie about.
+ *
+ * ⚠️ `kind` includes `unknown`, and `evidence` is never optional. A verdict with no observation
+ * behind it is the thing this whole module refuses to ship.
+ */
+const HostEnclosure = Schema.Struct({
+  kind: Schema.Literals(AgentJail.ENCLOSURE_KINDS),
+  evidence: Schema.String,
+  platform: Schema.String,
+})
+
 export const ShellStatus = Schema.Struct({
   platform: Schema.String,
   /** What the bash tool runs when no shell is configured (Shell.agentDefault). */
@@ -67,6 +84,8 @@ export const ShellStatus = Schema.Struct({
    * the surface (ruling 2).
    */
   jail: Schema.optional(JailPosture),
+  /** Optional for the same reason `jail` is: an older instance omits it and the UI says so. */
+  enclosure: Schema.optional(HostEnclosure),
 })
 
 export const OfflineLayer = Schema.Struct({

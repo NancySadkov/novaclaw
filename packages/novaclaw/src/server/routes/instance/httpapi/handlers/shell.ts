@@ -36,6 +36,9 @@ const status = () => {
     // disagree about one host. Consequence worth knowing: installing the AppArmor profile on a live
     // Linux instance does not change this report until restart.
     jail: AgentJail.postureWire(AgentJail.posture()),
+    // Memoised like `posture()` and for the same reason — it reads /proc and spawns
+    // systemd-detect-virt, and the answer changes about as often as the machine reboots.
+    enclosure: AgentJail.enclosure(),
   }
 }
 
