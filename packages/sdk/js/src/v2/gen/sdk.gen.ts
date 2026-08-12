@@ -1879,7 +1879,7 @@ class ApiMemory extends NovaClawApiClient {
   /**
    * Ingest a document
    *
-   * Chunk a text document into searchable passages. Idempotent: re-ingesting the same document stores nothing new.
+   * Chunk a text document into searchable passages. Idempotent: re-ingesting the same document stores nothing new. Pass `absorb: <n>` to also READ the first n passages with a model, turning them into named entities — each one costs a model call.
    */
   public ingest<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -1888,11 +1888,17 @@ class ApiMemory extends NovaClawApiClient {
       text?: string
       name?: string
       scope?: string
+      absorb?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     },
     options?: Options<never, ThrowOnError>,
   ) {
     const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    const body = { text: parameters?.["text"], name: parameters?.["name"], scope: parameters?.["scope"] }
+    const body = {
+      text: parameters?.["text"],
+      name: parameters?.["name"],
+      scope: parameters?.["scope"],
+      absorb: parameters?.["absorb"],
+    }
     return (options?.client ?? this.client).post<T.MemoryIngestResponses, T.MemoryIngestErrors, ThrowOnError>({
       url: "/memory/ingest",
       ...options,

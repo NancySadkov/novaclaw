@@ -66,8 +66,21 @@ const IngestPayload = Schema.Struct({
   text: Schema.String,
   name: Schema.String,
   scope: Schema.optional(Schema.String),
+  /**
+   * How many passages to ABSORB — read with a model, so each becomes named entities the graph can
+   * connect. Absent or 0 stores passages without reading them, which is what ingest has always done.
+   *
+   * ⚠️ A count, not a boolean, and undefaulted on purpose: every passage is a model call and a
+   * document is hundreds. A `true` would hide an unbounded spend behind a flag that looks free.
+   */
+  absorb: Schema.optional(Schema.Number),
 })
-const IngestResult = Schema.Struct({ stored: Schema.Number, passages: Schema.Number })
+const IngestResult = Schema.Struct({
+  stored: Schema.Number,
+  passages: Schema.Number,
+  /** Passages queued for absorption. The work runs DETACHED, so this is not a completion count. */
+  absorbing: Schema.optional(Schema.Number),
+})
 
 const meta = (identifier: string, summary: string, description: string) =>
   OpenApi.annotations({ identifier, summary, description })
@@ -167,7 +180,7 @@ export const MemoryApi = HttpApi.make("memory").add(
         meta(
           "memory.ingest",
           "Ingest a document",
-          "Chunk a text document into searchable passages. Idempotent: re-ingesting the same document stores nothing new.",
+          "Chunk a text document into searchable passages. Idempotent: re-ingesting the same document stores nothing new. Pass `absorb: <n>` to also READ the first n passages with a model, turning them into named entities — each one costs a model call.",
         ),
       ),
     )

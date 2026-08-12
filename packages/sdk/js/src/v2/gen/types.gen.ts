@@ -10282,6 +10282,7 @@ export type MemoryIngestData = {
     text: string
     name: string
     scope?: string
+    absorb?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   }
   path?: never
   query?: {
@@ -10307,6 +10308,7 @@ export type MemoryIngestResponses = {
   200: {
     stored: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     passages: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    absorbing?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   }
 }
 

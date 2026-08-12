@@ -6577,6 +6577,29 @@
                           "enum": ["Infinity", "-Infinity", "NaN"]
                         }
                       ]
+                    },
+                    "absorbing": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
                     }
                   },
                   "required": ["stored", "passages"],
@@ -6604,7 +6627,7 @@
             }
           }
         },
-        "description": "Chunk a text document into searchable passages. Idempotent: re-ingesting the same document stores nothing new.",
+        "description": "Chunk a text document into searchable passages. Idempotent: re-ingesting the same document stores nothing new. Pass `absorb: <n>` to also READ the first n passages with a model, turning them into named entities — each one costs a model call.",
         "summary": "Ingest a document",
         "requestBody": {
           "content": {
@@ -6620,6 +6643,29 @@
                   },
                   "scope": {
                     "type": "string"
+                  },
+                  "absorb": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
                   }
                 },
                 "required": ["text", "name"],

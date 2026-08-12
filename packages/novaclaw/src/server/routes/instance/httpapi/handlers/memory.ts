@@ -1,8 +1,17 @@
+import { KbAbsorb } from "@novaclaw/core/kb-graph/absorb"
 import { KbChunk } from "@novaclaw/core/kb-graph/chunk"
+import { LLMClient } from "@novaclaw/llm"
+import { Location } from "@novaclaw/core/location"
+import { LocationServiceMap } from "@novaclaw/core/location-services"
+import { ServerLocationServiceMap } from "@/location-service-map"
+import { AbsolutePath } from "@novaclaw/core/schema"
+import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
+import { Log } from "@novaclaw/schema/log"
+import { EffectBridge } from "@/effect/bridge"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { ascending } from "@novaclaw/schema/identifier"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { InvalidRequestError } from "../errors"
@@ -34,6 +43,8 @@ const asBadRequest = <A, R>(effect: Effect.Effect<A, MemoryClient.MemoryError, R
 
 export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (handlers) =>
   Effect.gen(function* () {
+    const locations = yield* LocationServiceMap.Service
+    const bridge = yield* EffectBridge.make()
     const memory = Memory.client(yield* Memory.node.service)
 
     return handlers
@@ -198,7 +209,53 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
               .pipe(Effect.ignore)
           }
           const after = yield* memory.stats().pipe(Effect.orElseSucceed(() => ({ total: 0, valid: 0 })))
-          return { stored: Math.max(0, after.total - before.total), passages: passages.length }
+
+          /**
+           * ABSORB the first `n` passages — read them with a model so they become named entities.
+           *
+           * ⚠️ **Detached, and deliberately so.** Each passage is a model call; a document is
+           * hundreds. Awaiting them here would hold the HTTP request open for minutes and time it
+           * out, and the caller does not need the answer — the graph fills as it goes.
+           * `bridge.fork` rather than `Effect.fork`: it runs through `Effect.runFork`, detached from
+           * the request's scope — a child of that scope is interrupted the moment the response is
+           * written, i.e. before it reads its second passage.
+           *
+           * ⚠️ The model is LOCATION-scoped while this handler is server-global, so the pass runs
+           * inside the location's services. Resolving it is `resolveDefault` — there is no session
+           * here, and fabricating one would put a made-up session id into diagnostics.
+           *
+           * Best-effort as a whole: a document that stored fine must not report failure because the
+           * model was unreachable. The passages are already saved and re-ingesting resumes.
+           */
+          const requested = Math.max(0, Math.trunc(ctx.payload.absorb ?? 0))
+          const absorbing = Math.min(requested, passages.length)
+          if (absorbing > 0) {
+            const directory = ctx.query.directory ?? process.cwd()
+            bridge.fork(
+              Effect.gen(function* () {
+              const models = yield* SessionRunnerModel.Service
+              const llm = yield* LLMClient.Service
+              const model = yield* models.resolveDefault()
+              return yield* KbAbsorb.absorb({
+                llm,
+                model,
+                memory,
+                scope,
+                passages: passages.slice(0, absorbing).map((text) => ({ id: KbChunk.passageID(label, text), text })),
+                limit: absorbing,
+              })
+              }).pipe(
+                Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
+                Effect.catchCause((cause) => Log.event("kb.absorb.run.failed", { "kb.cause": Log.fault(cause) })),
+              ),
+            )
+          }
+
+          return {
+            stored: Math.max(0, after.total - before.total),
+            passages: passages.length,
+            ...(absorbing > 0 ? { absorbing } : {}),
+          }
         }),
       )
       .handle(
@@ -209,4 +266,4 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
         }),
       )
   }),
-)
+).pipe(Layer.provide(ServerLocationServiceMap.layer))

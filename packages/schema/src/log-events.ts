@@ -965,6 +965,14 @@ export const EVENTS = {
    * that started it, so nobody is watching to retry, and abandoning the remaining passages because
    * one failed would lose a whole document to a single bad chunk.
    */
+  /** The whole absorption pass could not start or run — the passages are stored regardless. */
+  "kb.absorb.run.failed": {
+    level: "warn",
+    message: "could not absorb a document:",
+    attributes: { "kb.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/memory.ts",
+  },
   "kb.absorb.passage.failed": {
     level: "warn",
     message: "could not absorb a passage:",
