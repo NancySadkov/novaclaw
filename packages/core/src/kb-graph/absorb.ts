@@ -34,8 +34,18 @@ export const SYSTEM =
   'Overview") — name the thing, not what kind of thing it is. Emit a SEPARATE object for EVERY such ' +
   "thing the passage describes. Write each `text` as a self-contained sentence that makes sense with " +
   "no other context, because the passage will not be shown beside it. EXCLUDE page furniture, " +
-  "headers, tables of contents, and anything that is not about a thing. If the passage describes " +
-  "nothing nameable, output exactly []."
+  "headers, tables of contents, and anything that is not about a thing. " +
+  // ⚠️ Measured 2026-08-12: 32 of 88 extracted names were stat-block FIELD LABELS — "Str", "Fort",
+  // "Challenge Rating", "Treasure", "Level Adjustment". The clause above already said to skip page
+  // furniture, and it did not land, because in a stat block the furniture IS the structure: the
+  // labels look like content. Naming the case explicitly is what the conversational prompt needed
+  // too, and its rewrite moved linkable pairs 5% -> 76%.
+  "⚠️ A table or stat block's LABELS are not things. Skip the names of attributes, scores, saves and " +
+  'record fields — e.g. "Strength", "Dex", "Fort", "Will save", "Challenge Rating", "Level ' +
+  'Adjustment", "Treasure", "Advancement", "Full Attack", "Organization" — because they name WHERE A ' +
+  "NUMBER LIVES, not anything in the world. Extract the creature, place, item, feat or ability the " +
+  "block is ABOUT, and the named abilities it has. If the passage describes nothing nameable, output " +
+  "exactly []."
 
 /** One passage's worth of extraction, already parsed. */
 export interface Absorbed {
