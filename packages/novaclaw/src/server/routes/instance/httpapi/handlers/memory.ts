@@ -230,8 +230,22 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
            * Best-effort as a whole: a document that stored fine must not report failure because the
            * model was unreachable. The passages are already saved and re-ingesting resumes.
            */
-          const requested = Math.max(0, Math.trunc(ctx.payload.absorb ?? 0))
-          const absorbing = Math.min(requested, passages.length)
+          /**
+           * Absorbing is the DEFAULT, and a cap is the opt-out.
+           *
+           * It shipped the other way round — absent meant "store the chunks and read none of them" —
+           * which was my hedge against the per-passage model cost. But a document that is stored and
+           * never read is a document with its pages attached, not knowledge: the graph LOOKS
+           * populated (302 edges on the owner's corpus) while containing nothing you could ask a
+           * question about. Ingesting into memory and not absorbing is the defect this program
+           * exists to fix, so it cannot be the default.
+           *
+           * The cost is bounded where the ruling puts it — off the reply path, per-call reasoning
+           * budget, sequential — not by silently reading less of the document than the user gave us.
+           * `absorb: 0` is the explicit opt-out for a caller that only wants passages.
+           */
+          const requested = ctx.payload.absorb === undefined ? passages.length : Math.trunc(ctx.payload.absorb)
+          const absorbing = Math.min(Math.max(0, requested), passages.length)
           if (absorbing > 0) {
             const directory = ctx.query.directory ?? process.cwd()
             bridge.fork(

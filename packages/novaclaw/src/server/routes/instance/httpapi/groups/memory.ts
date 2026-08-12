@@ -67,11 +67,12 @@ const IngestPayload = Schema.Struct({
   name: Schema.String,
   scope: Schema.optional(Schema.String),
   /**
-   * How many passages to ABSORB — read with a model, so each becomes named entities the graph can
-   * connect. Absent or 0 stores passages without reading them, which is what ingest has always done.
+   * CAP on how many passages to absorb — read with a model so each becomes named entities the graph
+   * can connect. **Absent absorbs the whole document**; `0` stores passages without reading them.
    *
-   * ⚠️ A count, not a boolean, and undefaulted on purpose: every passage is a model call and a
-   * document is hundreds. A `true` would hide an unbounded spend behind a flag that looks free.
+   * ⚠️ A count rather than a boolean so a caller can bound the spend deliberately. The default is
+   * "all" because a document stored and never read is a document with its pages attached, not
+   * knowledge — the graph looks populated while holding nothing you could ask a question about.
    */
   absorb: Schema.optional(Schema.Number),
 })
