@@ -163,3 +163,59 @@ describe("SkillDiscovery.pull", () => {
     }
   })
 })
+
+/**
+ * 🔴 VOLUME bounds. The 2026-08-11 audit found `pull`'s PATH posture strong and its volume posture
+ * absent: no per-file cap, no file or skill count, no bound on `index.json`, and `transportOnly` pins
+ * no digest. A skill source is user-configured, so these are robustness bounds — but "webfetch
+ * refuses at 5 MiB and this refuses at nothing" is not a posture.
+ */
+describe("SkillDiscovery.pull volume bounds", () => {
+  test("an oversized index is refused WHOLE, and no file is fetched", async () => {
+    // One skill, padded past the 1 MiB index cap by a long (but structurally valid) name.
+    const result = await pull([{ name: "x".repeat(1024 * 1024 + 10), files: ["SKILL.md"] }])
+    try {
+      expect(result.directories).toEqual([])
+      // ⚠️ The assertion that matters: the ONLY request was the index. A cap that refused the index
+      // but still walked its entries would bound nothing.
+      expect(result.requests).toEqual([`${base}index.json`])
+      expect(await fs.readdir(result.tmp.path)).toEqual([])
+    } finally {
+      await result.tmp[Symbol.asyncDispose]()
+    }
+  })
+
+  test("a skill declaring more files than the cap is DROPPED, and its siblings still install", async () => {
+    const many = Array.from({ length: 201 }, (_, i) => (i === 0 ? "SKILL.md" : `asset-${i}.txt`))
+    const result = await pull(
+      [
+        { name: "greedy", files: many },
+        { name: "normal", files: ["SKILL.md"] },
+      ],
+      { [`${base}normal/SKILL.md`]: "# normal" },
+    )
+    try {
+      // Dropped like every other malformed-skill case: one bad entry must not take a legitimate
+      // source down with it — which is the opposite call from the index cap above, because there the
+      // bad thing IS the source.
+      expect(result.directories.map((directory) => path.basename(directory))).toEqual(["normal"])
+      expect(result.requests.some((url) => url.includes("greedy"))).toBe(false)
+      expect(result.requests).toContain(`${base}normal/SKILL.md`)
+    } finally {
+      await result.tmp[Symbol.asyncDispose]()
+    }
+  })
+
+  test("NEGATIVE CONTROL: an ordinary index and an ordinary skill are untouched by the caps", async () => {
+    const result = await pull(
+      [{ name: "normal", files: ["SKILL.md", "assets/one.txt"] }],
+      { [`${base}normal/SKILL.md`]: "# normal", [`${base}normal/assets/one.txt`]: "hello" },
+    )
+    try {
+      expect(result.directories.map((directory) => path.basename(directory))).toEqual(["normal"])
+      expect(result.requests).toContain(`${base}normal/assets/one.txt`)
+    } finally {
+      await result.tmp[Symbol.asyncDispose]()
+    }
+  })
+})

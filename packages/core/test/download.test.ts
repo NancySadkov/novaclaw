@@ -350,3 +350,115 @@ describe("Download.toFile", () => {
     expect(new Uint8Array(await fs.readFile(destination))).toEqual(payload)
   })
 })
+
+/**
+ * 🔴 `Download.Options` had NO size field at all — no per-file cap, no bound on an index, and
+ * `transportOnly` pins no digest, so an unpinned response of any size streamed straight to disk while
+ * `webfetch` refused at 5 MiB (`notes/reports/skill-pull-bounds-2026-08-11.md`).
+ */
+describe("Download.toFile volume bound", () => {
+  test("refuses a body whose declared length is over the cap, before writing anything", async () => {
+    await using tmp = await tmpdir()
+    const payload = bytes("x".repeat(500))
+    const destination = path.join(tmp.path, "big.bin")
+    const client = HttpClient.make((request) => Effect.succeed(response(request, payload)))
+
+    const error = await run(
+      Download.toFile({
+        url: "https://download.example/big.bin",
+        destination,
+        integrity: { transportOnly: true },
+        maxBytes: 100,
+      }).pipe(Effect.flip),
+      client,
+    )
+    expect(String(error)).toContain("exceeds the 100 byte limit")
+    // Neither the file nor its partial may exist — refusing after the bytes land is not refusing.
+    expect(await fs.readdir(tmp.path)).toEqual([])
+  })
+
+  test("refuses a body with NO declared length once the arriving bytes cross the cap", async () => {
+    await using tmp = await tmpdir()
+    const destination = path.join(tmp.path, "chunked.bin")
+    // ⚠️ THE case a content-length check alone cannot catch, and the reason the cap is enforced twice.
+    // A server may omit the header or lie about it; the running total is what actually bounds the
+    // disk. Without the per-chunk check this test passes while the file is written in full.
+    const client = HttpClient.make((request) =>
+      Effect.succeed(
+        HttpClientResponse.fromWeb(
+          request,
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                for (let i = 0; i < 10; i++) controller.enqueue(bytes("y".repeat(50)))
+                controller.close()
+              },
+            }),
+          ),
+        ),
+      ),
+    )
+
+    const error = await run(
+      Download.toFile({
+        url: "https://download.example/chunked.bin",
+        destination,
+        integrity: { transportOnly: true },
+        maxBytes: 100,
+        retries: 0,
+      }).pipe(Effect.flip),
+      client,
+    )
+    expect(String(error)).toContain("byte limit")
+    expect(await fs.readdir(tmp.path)).toEqual([])
+  })
+
+  test("NEGATIVE CONTROL: a body under the cap is unaffected, and no cap means no bound", async () => {
+    await using tmp = await tmpdir()
+    const payload = bytes("small enough")
+    const client = HttpClient.make((request) => Effect.succeed(response(request, payload)))
+
+    const capped = path.join(tmp.path, "capped.bin")
+    await run(
+      Download.toFile({
+        url: "https://download.example/a.bin",
+        destination: capped,
+        integrity: { transportOnly: true },
+        maxBytes: 1000,
+      }),
+      client,
+    )
+    expect(await fs.readFile(capped, "utf8")).toBe("small enough")
+
+    // Omitting maxBytes must keep the previous behaviour, or every existing caller silently gained a
+    // limit they never asked for.
+    const uncapped = path.join(tmp.path, "uncapped.bin")
+    await run(
+      Download.toFile({ url: "https://download.example/b.bin", destination: uncapped, integrity: { transportOnly: true } }),
+      client,
+    )
+    expect(await fs.readFile(uncapped, "utf8")).toBe("small enough")
+  })
+
+  test("the refusal does NOT retry — re-fetching an oversize body reaches the same verdict", async () => {
+    await using tmp = await tmpdir()
+    const payload = bytes("z".repeat(500))
+    let attempts = 0
+    const client = HttpClient.make((request) => {
+      attempts++
+      return Effect.succeed(response(request, payload))
+    })
+
+    await run(
+      Download.toFile({
+        url: "https://download.example/big.bin",
+        destination: path.join(tmp.path, "big.bin"),
+        integrity: { transportOnly: true },
+        maxBytes: 100,
+        // The default is 2, so a retryable refusal would triple the traffic this exists to refuse.
+      }).pipe(Effect.flip),
+      client,
+    )
+    expect(attempts).toBe(1)
+  })
+})

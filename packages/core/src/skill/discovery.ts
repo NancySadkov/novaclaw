@@ -14,6 +14,27 @@ import { AbsolutePath } from "../schema"
 const skillConcurrency = 4
 const fileConcurrency = 8
 
+/**
+ * ─── VOLUME bounds (audit 2026-08-11, `notes/reports/skill-pull-bounds-2026-08-11.md`) ──────────
+ *
+ * 🔴 `pull`'s PATH posture was already strong — origin-pinned, double `FSUtil.contains`, a
+ * post-decode traversal re-check, a staged replace. What it had none of was a bound on VOLUME: no
+ * per-file cap, no file or skill count, no bound on `index.json`, and `transportOnly` pins no digest.
+ * `webfetch` refuses at 5 MiB and this refused at nothing.
+ *
+ * ⚠️ These are ROBUSTNESS bounds, not a closed door — a skill source is user-configured, so the
+ * threat is a mis-set URL or a source that grows, not an attacker. The numbers are chosen to be
+ * obviously generous for real skills (a SKILL.md and a few assets) and obviously small next to a
+ * disk; the point is that SOME number exists, not that these are measured.
+ *
+ * ⚠️ Every one of them is a REFUSAL that names itself in the log, never a silent truncation. A
+ * truncated skill file is a corrupt skill that looks installed, which is worse than one that failed.
+ */
+const MAX_FILE_BYTES = 8 * 1024 * 1024
+const MAX_INDEX_BYTES = 1024 * 1024
+const MAX_SKILLS_PER_SOURCE = 500
+const MAX_FILES_PER_SKILL = 200
+
 function isSafeSegment(value: string) {
   return (
     value.length > 0 &&
@@ -86,7 +107,12 @@ export const layer = Layer.effect(
     )
 
     const download = Effect.fn("SkillDiscovery.download")(function* (url: string, destination: string) {
-      return yield* Download.toFile({ url, destination, integrity: { transportOnly: true } }).pipe(
+      return yield* Download.toFile({
+        url,
+        destination,
+        integrity: { transportOnly: true },
+        maxBytes: MAX_FILE_BYTES,
+      }).pipe(
         Effect.provideService(FSUtil.Service, fs),
         Effect.provideService(HttpClient.HttpClient, client),
         Effect.as(true),
@@ -107,7 +133,22 @@ export const layer = Layer.effect(
         const data = yield* HttpClientRequest.get(index).pipe(
           HttpClientRequest.acceptJson,
           http.execute,
-          Effect.flatMap(HttpClientResponse.schemaBodyJson(Index)),
+          // ⚠️ Read as TEXT with a cap before decoding. `schemaBodyJson` buffers the whole body to
+          // parse it, so a bounded index has to be bounded before the parser sees it — checking the
+          // decoded object's size would already have held the bytes in memory.
+          Effect.flatMap((response) =>
+            response.text.pipe(
+              Effect.flatMap((body) =>
+                body.length > MAX_INDEX_BYTES
+                  ? Effect.fail(new Error(`index is ${body.length} bytes, over the ${MAX_INDEX_BYTES} byte limit`))
+                  : Effect.try({
+                      try: () => JSON.parse(body) as unknown,
+                      catch: (error) => new Error(`index is not JSON: ${String(error).slice(0, 120)}`),
+                    }),
+              ),
+              Effect.flatMap((json) => Schema.decodeUnknownEffect(Index)(json)),
+            ),
+          ),
           Effect.catch((error) =>
             Log.event("skill.index.fetch.failed", {
               "skill.url": index,
@@ -116,6 +157,18 @@ export const layer = Layer.effect(
           ),
         )
         if (!data) return []
+        // A source declaring more skills than this is refused WHOLE rather than truncated: taking the
+        // first N would install a silently partial source and report success, and there is no reading
+        // of "the first 500 in index order" that a user asked for.
+        if (data.skills.length > MAX_SKILLS_PER_SOURCE) {
+          yield* Log.event("skill.index.fetch.failed", {
+            "skill.url": index,
+            "skill.error": Log.fault(
+              new Error(`index declares ${data.skills.length} skills, over the ${MAX_SKILLS_PER_SOURCE} limit`),
+            ),
+          })
+          return []
+        }
 
         const sourceRoot = path.resolve(global.cache, "skills", Bun.hash(base).toString(16))
         return yield* Effect.forEach(
@@ -124,6 +177,11 @@ export const layer = Layer.effect(
               return []
             }
             if (!skill.files.includes("SKILL.md") && !skill.files.includes(`${skill.name}.md`)) {
+              return []
+            }
+            // Dropped like every other malformed-skill case here — one oversized entry must not take
+            // the rest of a legitimate source down with it.
+            if (skill.files.length > MAX_FILES_PER_SKILL) {
               return []
             }
 

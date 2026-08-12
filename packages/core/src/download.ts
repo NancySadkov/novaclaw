@@ -33,15 +33,41 @@ export interface Options {
   readonly onProgress?: (progress: Progress) => Effect.Effect<void>
   /** Keep a digest-named partial across an app shutdown so the next call can resume it safely. */
   readonly preservePartialOnInterrupt?: boolean
+  /**
+   * Refuse a body larger than this many bytes.
+   *
+   * 🔴 There was NO size field here at all, which is what the skill-pull audit found: no per-file
+   * cap, no bound on an index, and `transportOnly` pins no digest — so an unpinned response of any
+   * size streamed straight to disk, where `webfetch` refuses at 5 MiB. The source has to be
+   * user-configured, so this is a robustness bound rather than a closed door; a mis-set URL or a
+   * source that grows a 2 GB file should cost a legible refusal, not the disk.
+   *
+   * ⚠️ Enforced TWICE, and both are needed. A declared `content-length`/`content-range` over the cap
+   * refuses before a byte is written — cheap and honest. But a server may omit the header or lie, so
+   * the running total is checked per chunk as well, and that second check is the one that actually
+   * bounds the disk. Omitted = unbounded, which is the existing behaviour for callers that have
+   * their own reason.
+   */
+  readonly maxBytes?: number
 }
 
 export class DownloadError extends Error {
   readonly retryable: boolean
+  /**
+   * The `maxBytes` refusal, which needs its own answer rather than the general failure path.
+   *
+   * ⚠️ An ordinary failure LEAVES the partial on purpose, so the next call can resume it. A size
+   * refusal must not: resuming means appending more bytes to a body already over the cap, and the
+   * partial is itself the disk the cap exists to protect. Found by a test asserting the directory was
+   * empty after the refusal — it was not.
+   */
+  readonly oversize: boolean
 
-  constructor(message: string, retryable = false, options?: ErrorOptions) {
+  constructor(message: string, retryable = false, options?: ErrorOptions & { readonly oversize?: boolean }) {
     super(message, options)
     this.name = "DownloadError"
     this.retryable = retryable
+    this.oversize = options?.oversize ?? false
   }
 }
 
@@ -141,6 +167,18 @@ const toFileUnlocked = Effect.fn("Download.toFileUnlocked")(function* (options: 
     const completedAtStart = resumed ? offset : 0
     const length = Number(response.headers["content-length"])
     const total = range?.total ?? (Number.isSafeInteger(length) && length >= 0 ? completedAtStart + length : undefined)
+    // ⚠️ NOT retryable. Re-fetching an oversize body downloads it again to reach the same verdict,
+    // and `retries` defaults to 2 — so a missing `false` here would triple the traffic this refuses.
+    const tooLarge = (seen: number) =>
+      new DownloadError(
+        `download refused for ${options.url}: ${seen} bytes exceeds the ${options.maxBytes} byte limit`,
+        false,
+        { oversize: true },
+      )
+    if (options.maxBytes !== undefined && total !== undefined && total > options.maxBytes) {
+      yield* fs.remove(partial, { force: true }).pipe(Effect.ignore)
+      return yield* Effect.fail(tooLarge(total))
+    }
     let completed = completedAtStart
     yield* progress({ completed, ...(total === undefined ? {} : { total }) })
 
@@ -152,12 +190,17 @@ const toFileUnlocked = Effect.fn("Download.toFileUnlocked")(function* (options: 
             duration: options.stallTimeout ?? Duration.seconds(30),
             orElse: () => Stream.fail(new DownloadError(`download stalled while reading ${options.url}`, true)),
           }),
-          Stream.runForEach((chunk) => {
+          // The cap fails the STREAM, upstream of the write — a body with no declared length is
+          // bounded by what has already arrived, so the chunk that crosses the cap must not land.
+          Stream.mapEffect((chunk) => {
             completed += chunk.byteLength
-            return file
-              .writeAll(chunk)
-              .pipe(Effect.andThen(progress({ completed, ...(total === undefined ? {} : { total }) })))
+            return options.maxBytes !== undefined && completed > options.maxBytes
+              ? Effect.fail(tooLarge(completed))
+              : Effect.succeed(chunk)
           }),
+          Stream.runForEach((chunk) =>
+            file.writeAll(chunk).pipe(Effect.andThen(progress({ completed, ...(total === undefined ? {} : { total }) }))),
+          ),
           Effect.mapError((error) =>
             error instanceof DownloadError
               ? error
@@ -203,6 +246,14 @@ const toFileUnlocked = Effect.fn("Download.toFileUnlocked")(function* (options: 
   )
 
   return yield* result.pipe(
+    // A size refusal discards its partial; every other failure keeps one so a later call can resume.
+    // ⚠️ `instanceof`, not a field read — the error channel here also carries `PlatformError` from the
+    // file writes, and narrowing on a property name would be a claim about a type that does not have it.
+    Effect.tapError((error) =>
+      error instanceof DownloadError && error.oversize
+        ? fs.remove(partial, { force: true }).pipe(Effect.ignore)
+        : Effect.void,
+    ),
     Effect.onInterrupt(() =>
       options.preservePartialOnInterrupt && digest !== undefined
         ? Effect.void
