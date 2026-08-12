@@ -394,7 +394,9 @@ describe("HttpApi Server.listen", () => {
       // to do instead, because this message is the whole of their diagnosis.
       expect(failure, "a taken required port must refuse, not bind").toBeDefined()
       expect(String((failure as Error)?.message ?? failure)).toContain(String(port))
-      expect(String((failure as Error)?.message ?? failure)).toContain("--port 0")
+      // ⚠️ Must NOT hand a desktop user CLI advice: this same error surfaces in the packaged app,
+      // where the port was auto-probed and no command was ever typed.
+      expect(String((failure as Error)?.message ?? failure)).not.toContain("--port")
     } finally {
       await new Promise<void>((resolve) => blocker.close(() => resolve()))
     }

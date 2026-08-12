@@ -169,11 +169,10 @@ function listenerLayer(opts: ListenOptions, port: number) {
 
 class PortUnavailableError extends Error {
   constructor(readonly port: number, cause: unknown) {
-    super(
-      `Port ${port} is already in use, so NovaClaw could not start there. ` +
-        `Close whatever is using it, or start with --port 0 to let NovaClaw pick a free port.`,
-      { cause },
-    )
+    // ⚠️ Deliberately NOT "pass --port 0". This message reaches the DESKTOP too, where the port was
+    // auto-probed and the user never chose it, never typed a command, and cannot act on CLI advice.
+    // It names the fact and the general remedy; the CLI adds its own flag hint at its own layer.
+    super(`Port ${port} is already in use, so NovaClaw could not start there.`, { cause })
     this.name = "PortUnavailableError"
   }
 }
