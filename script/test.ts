@@ -63,6 +63,7 @@ import { join } from "node:path"
 
 import { enforce, hostCommitPct, memoryHeadroom, topConsumers } from "./lib/heavy-guard"
 import * as LedgerDrift from "./lib/ledger-drift"
+import * as CommitPressure from "./lib/commit-pressure"
 import * as MemoryPlan from "./lib/memory-plan"
 import * as PeakSampler from "./lib/peak-sampler"
 import * as PeakSeries from "./lib/peak-series"
@@ -427,12 +428,15 @@ function readPeaks(): {
   resident: MemoryPlan.PeakProfile
   /** Units whose absence from `peaks` is a DECISION — see `peaksUnsampledNote` in the baseline. */
   deliberatelyAbsent: ReadonlySet<string>
+  /** Per-unit host-commit warning lines; units absent from it use `HOST_COMMIT_WARN_PCT`. */
+  hostCommitWarnPct: Record<string, number>
 } {
   try {
     const parsed = JSON.parse(readFileSync(join(import.meta.dir, "test-baseline.json"), "utf8")) as {
       peaks?: Record<string, number>
       workingSets?: Record<string, number>
       peaksDeliberatelyAbsent?: string[]
+      hostCommitWarnPct?: Record<string, number>
     }
     const valid = (values: Record<string, number> | undefined) =>
       Object.fromEntries(Object.entries(values ?? {}).filter(([, mb]) => Number.isFinite(mb) && mb > 0))
@@ -440,9 +444,10 @@ function readPeaks(): {
       commit: valid(parsed.peaks),
       resident: valid(parsed.workingSets),
       deliberatelyAbsent: new Set(parsed.peaksDeliberatelyAbsent ?? []),
+      hostCommitWarnPct: valid(parsed.hostCommitWarnPct),
     }
   } catch {
-    return { commit: {}, resident: {}, deliberatelyAbsent: new Set() }
+    return { commit: {}, resident: {}, deliberatelyAbsent: new Set(), hostCommitWarnPct: {} }
   }
 }
 const peakProfiles = readPeaks()
@@ -565,10 +570,13 @@ function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], wallcl
   // One vocabulary across the gate and the app, so a breach here reads the same as a breach there.
   // Enable a kill only after these lines have been observed across several full gates — a ceiling
   // justified by one run inherits that run's expiry date.
-  if (sample.hostCommitPct !== undefined && sample.hostCommitPct >= 75) {
-    const level = sample.hostCommitPct >= 90 ? "FLOOR" : "warning"
-    note = `host commit ${level} — peaked ${sample.hostCommitPct}% while this unit ran (not killed; reporting phase)`
-  }
+  // The judgement — which readings deserve a line — lives in `lib/commit-pressure.ts`, where it is
+  // pure and tested. A unit that legitimately runs hot carries its own line in the baseline.
+  const pressure = CommitPressure.pressureLine(
+    sample.hostCommitPct,
+    peakProfiles.hostCommitWarnPct[name] ?? CommitPressure.HOST_COMMIT_WARN_PCT,
+  )
+  if (pressure) note = pressure.text
   if (timedOut) {
     // ⚠️ A wall-clock kill and a paging stall are indistinguishable in a summary row, and the second
     // is the FALSE FAILURE the memory guard exists to prevent — so when it happens anyway, say which
@@ -669,7 +677,7 @@ function spawnWithUpstreamRetry(name: string, kind: Kind, dir: string, argv: str
  * knob. ⚠️ It therefore also cannot be validated by waiting for it to happen, which is why
  * `NOVACLAW_TEST_FORCE_COMMIT_PCT` exists.
  */
-const COMMIT_FLOOR_PCT = 90
+const COMMIT_FLOOR_PCT = CommitPressure.COMMIT_FLOOR_PCT
 /** How long to let the host recover before giving up and running anyway. */
 const COMMIT_FLOOR_WAIT_MS = 60_000
 

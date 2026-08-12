@@ -51,6 +51,10 @@
     "script",
     "effect-drizzle-sqlite"
   ],
+  "hostCommitWarnPct": {
+    "core": 85
+  },
+  "hostCommitWarnPctNote": "Per-unit host-commit WARNING lines; anything absent uses the default 75% (heavy-guard's admission line, and the product's own Pressure warning). `core` is here because a flat 75 fired on 15 of its 31 recorded runs -- its MEDIAN host commit is 74% and its max is 80% -- while NO other unit has ever reached 75 at all. A warning that fires on half of a unit's healthy runs is one its reader learns to skip. 85 is derived from core's observed max (80) plus margin, measured 2026-08-13 over 348 unit-rows across 17 full gates. ⚠️ It therefore inherits that measurement's expiry date: if core's normal band moves, re-derive this rather than nudging it. The 90% FLOOR is a separate, product-wide line and is NOT per-unit.",
   "workingSets": {
     "core": 4616
   },
