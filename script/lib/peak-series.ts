@@ -59,6 +59,14 @@ export interface Observation {
   readonly foreignMb?: number
   /** Ticks that saw a process belonging to this unit. Absent on rows built before attribution. */
   readonly ownTicks?: number
+  /**
+   * Worst host commit charge (% of the machine's limit) reached while this unit ran.
+   *
+   * ⚠️ The point is the HEALTHY runs. A breach was only ever mentioned when a unit had already been
+   * killed, so a unit that passed green at 96% — one bad neighbour from the 2026-07-20 OOM that took
+   * the laptop down — recorded nothing. Enforcement cannot be justified against a signal nobody kept.
+   */
+  readonly hostCommitPct?: number
   /** Absent unless memory pressure forced the degraded rung. */
   readonly shards?: number
 }
@@ -119,6 +127,12 @@ export interface Row {
    * column that would have exposed `schema: 43` as an artefact instead of a measurement.
    */
   readonly ownTicks: number | null
+  /**
+   * Worst host commit charge (% of limit) reached while this unit ran. Null on rows written before
+   * this column existed — which is MOST of the file, so filter on presence rather than treating a
+   * missing reading as 0%.
+   */
+  readonly hostCommitPct: number | null
   /** The hand-maintained profile figure, or null when this unit is not in it yet. */
   readonly profileMb: number | null
   /** `peakMb - profileMb`, in MB. Null whenever either side is. */
@@ -182,6 +196,7 @@ export function buildRow(
     workingSetMb: Number.isFinite(observation.workingSetMb) ? (observation.workingSetMb as number) : null,
     foreignMb: Number.isFinite(observation.foreignMb) ? (observation.foreignMb as number) : null,
     ownTicks,
+    hostCommitPct: Number.isFinite(observation.hostCommitPct) ? (observation.hostCommitPct as number) : null,
     profileMb,
     deltaMb: comparable ? peakMb - profileMb : null,
     ratio: comparable ? round3(peakMb / profileMb) : null,

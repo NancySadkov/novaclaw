@@ -607,6 +607,12 @@ function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], wallcl
     ...(sample.treeMb !== undefined ? { sampledMb: sample.treeMb } : {}),
     ...(sample.workingSetMb !== undefined ? { workingSetMb: sample.workingSetMb } : {}),
     ...(sample.foreignMb !== undefined ? { foreignMb: sample.foreignMb } : {}),
+    // ⚠️ RECORDED, not just printed. This block's own comment says to enable a kill "only after
+    // these lines have been observed across several full gates" — and the observation was being
+    // thrown away, so that precondition could never be met by anyone. It was computed, used for a
+    // note when >=75%, and discarded. Persisting it makes the threshold decision answerable from
+    // data instead of from one run's impression.
+    ...(sample.hostCommitPct !== undefined ? { hostCommitPct: sample.hostCommitPct } : {}),
     ...(peakStatus === "measured" ? { peakMb: sample.treeMb } : {}),
   }
 }
@@ -682,6 +688,8 @@ function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs:
   const sampled = runs.map((r) => r.sampledMb).filter((mb): mb is number => mb !== undefined)
   const foreign = runs.map((r) => r.foreignMb).filter((mb): mb is number => mb !== undefined)
   const workingSets = runs.map((r) => r.workingSetMb).filter((mb): mb is number => mb !== undefined)
+  // Maxed, like every other peak here: the worst the BOX reached while any shard of this unit ran.
+  const hostCommits = runs.map((r) => r.hostCommitPct).filter((p): p is number => p !== undefined)
   // Summed, not maxed: each shard is a separate window, so its `ownTicks` are separate samples of the
   // same unit. `treeMb` is maxed for the opposite reason — a peak is not additive across windows.
   const ownTicks = runs.reduce((a, r) => a + (r.ownTicks ?? 0), 0)
@@ -712,6 +720,7 @@ function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs:
     ...(sampled.length ? { sampledMb: Math.max(...sampled) } : {}),
     ...(workingSets.length ? { workingSetMb: Math.max(...workingSets) } : {}),
     ...(foreign.length ? { foreignMb: Math.max(...foreign) } : {}),
+    ...(hostCommits.length ? { hostCommitPct: Math.max(...hostCommits) } : {}),
     ...(sharded ? { shards: sharded } : {}),
   })
 

@@ -165,3 +165,29 @@ describe("peak series rows", () => {
     expect(path).toBe("/repo/tmp/peak-series.jsonl")
   })
 })
+
+describe("hostCommitPct — recording what the BOX was doing", () => {
+  /**
+   * 🔴 The gate computed this on every unit and threw it away, printing it only when a unit was
+   * already killed. So a unit that passed green at 96% commit — one bad neighbour from the
+   * 2026-07-20 OOM that took the laptop down — recorded nothing, and `test.ts`'s own instruction to
+   * "enable a kill only after these lines have been observed across several full gates" could never
+   * be met by anyone. Enforcement cannot be justified against a signal nobody kept.
+   */
+  test("a reading is carried onto the row", () => {
+    expect(buildRow(RUN, "default", unit({ peakMb: 1500, hostCommitPct: 82 }), PROFILE).hostCommitPct).toBe(82)
+  })
+
+  test("🔴 an ABSENT reading is null, never 0 — 0% is a claim about an idle machine", () => {
+    // ⚠️ Most of the existing file predates this column. A reader aggregating with `?? 0` would
+    // invent a population of idle-machine rows; that exact coercion produced a false "peak 16 GB at
+    // working set 0" finding on 2026-08-12, which matched a real zombie-process signature closely
+    // enough to be believed. Null is the only honest value for "not recorded".
+    expect(buildRow(RUN, "default", unit({ peakMb: 1500 }), PROFILE).hostCommitPct).toBeNull()
+  })
+
+  test("a genuine 0 survives, so the null above means absent and nothing else", () => {
+    // Negative control: without this, returning null for everything would pass the test above.
+    expect(buildRow(RUN, "default", unit({ peakMb: 1500, hostCommitPct: 0 }), PROFILE).hostCommitPct).toBe(0)
+  })
+})
