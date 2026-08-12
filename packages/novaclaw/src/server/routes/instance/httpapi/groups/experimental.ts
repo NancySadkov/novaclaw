@@ -82,7 +82,40 @@ export const SessionListQuery = Schema.Struct({
   archived: Schema.optional(QueryBoolean),
 })
 
+/**
+ * The resolved Project for the routed location.
+ *
+ * `todo/projects.md`: *"Never make a person infer project state from a hidden dotfile."* A
+ * `novaclaw.json` can now narrow a session's permissions, so a user whose tool call is refused needs
+ * somewhere to see WHICH file did it — and an agent asked to explain the refusal needs the same.
+ */
+export const ProjectState = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("project"),
+    root: Schema.String,
+    file: Schema.String,
+    name: Schema.optional(Schema.String),
+    /** How many permission rules the file contributes. The rules themselves are a separate surface. */
+    permissionRules: Schema.Number,
+    exclude: Schema.Array(Schema.String),
+  }),
+  /** Found and unusable. `reason` separates "your build is old" from "your file is broken". */
+  Schema.Struct({
+    kind: Schema.Literal("invalid"),
+    file: Schema.String,
+    reason: Schema.String,
+    detail: Schema.String,
+  }),
+  Schema.Struct({ kind: Schema.Literal("none") }),
+]).annotate({ identifier: "ProjectState" })
+
 export const ExperimentalPaths = {
+  // ⚠️ `/api/`, not `/experimental/`, and the ledger is what says so. `legacy-path-ledger.test.ts`
+  // pins the non-`/api/*` set as SHRINK-ONLY (ruling 11: one contract, one generated artifact), so a
+  // new route beside these neighbours is red — it typechecks, it works, and it reviews as consistent
+  // with the file it sits in, which is exactly why the check is mechanical. `/api/diagnosis` and
+  // `/api/capability` set the same precedent from this directory.
+  project: "/api/project",
   tool: "/experimental/tool",
   toolIDs: "/experimental/tool/ids",
   worktree: "/experimental/worktree",
@@ -93,6 +126,21 @@ export const ExperimentalPaths = {
 export const ExperimentalApi = HttpApi.make("experimental")
   .add(
     HttpApiGroup.make("experimental")
+      .add(
+        HttpApiEndpoint.get("project", ExperimentalPaths.project, {
+          query: WorkspaceRoutingQuery,
+          success: described(ProjectState, "The resolved Project for this location"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "project.state",
+            title: "Resolved project",
+            description:
+              "The `novaclaw.json` governing this location: its root, validity and what it contributes. " +
+              "A folder without one answers `none` and is perfectly usable.",
+          }),
+        ),
+      )
       .add(
         HttpApiEndpoint.get("tool", ExperimentalPaths.tool, {
           query: ToolListQuery,

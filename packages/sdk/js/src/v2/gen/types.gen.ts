@@ -1379,6 +1379,25 @@ export type ProviderCatalog = {
   }
 }
 
+export type ProjectState =
+  | {
+      kind: "project"
+      root: string
+      file: string
+      name?: string
+      permissionRules: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      exclude: Array<string>
+    }
+  | {
+      kind: "invalid"
+      file: string
+      reason: string
+      detail: string
+    }
+  | {
+      kind: "none"
+    }
+
 export type ToolListItem = {
   id: string
   description: string
@@ -8681,6 +8700,38 @@ export type ConfigProvidersResponses = {
 }
 
 export type ConfigProvidersResponse = ConfigProvidersResponses[keyof ConfigProvidersResponses]
+
+export type ProjectStateData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/api/project"
+}
+
+export type ProjectStateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type ProjectStateError = ProjectStateErrors[keyof ProjectStateErrors]
+
+export type ProjectStateResponses = {
+  /**
+   * The resolved Project for this location
+   */
+  200: ProjectState
+}
+
+export type ProjectStateResponse = ProjectStateResponses[keyof ProjectStateResponses]
 
 export type ToolListData = {
   body?: never

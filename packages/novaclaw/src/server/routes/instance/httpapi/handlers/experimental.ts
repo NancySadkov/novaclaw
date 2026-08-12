@@ -4,6 +4,7 @@ import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { ServerLocationServiceMap } from "@/location-service-map"
 import { Location } from "@novaclaw/core/location"
+import { ProjectFileResolve } from "@novaclaw/core/project-file"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { Worktree } from "@/worktree"
 import { Effect, Layer } from "effect"
@@ -90,7 +91,41 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       return yield* mcp.resources()
     })
 
+    /**
+     * The `novaclaw.json` governing the routed location.
+     *
+     * Reports what the file CONTRIBUTES rather than echoing it: a rule COUNT, not the rules. The
+     * permission surface already renders rules, and a second place that formats them is a second
+     * place for the two to disagree about what is in force.
+     */
+    const project = Effect.fn("ExperimentalHttpApi.project")(function* () {
+      const directory = (yield* InstanceState.context).directory
+      const resolution = yield* ProjectFileResolve.resolve(directory).pipe(
+        Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
+      )
+      if (resolution.kind === "project")
+        return {
+          kind: "project" as const,
+          root: resolution.root,
+          file: resolution.file,
+          ...(resolution.info.name === undefined ? {} : { name: resolution.info.name }),
+          permissionRules: resolution.info.permissions?.length ?? 0,
+          exclude: resolution.info.exclude ?? [],
+        }
+      // ⚠️ `invalid` is reported, never swallowed into `none`. "There is no project here" and "your
+      // project file is broken" are the two answers a user acts on differently, and collapsing them
+      // is how a typo becomes an afternoon.
+      if (resolution.kind === "invalid")
+        return { kind: "invalid" as const, file: resolution.file, reason: resolution.reason, detail: resolution.detail }
+      return { kind: "none" as const }
+      // ⚠️ `orDie` on the WHOLE handler. The resolver already ABSORBS every expected failure — an
+      // unreadable file continues the walk, a malformed one comes back as `invalid` — so anything
+      // surviving to here is a defect in this process, and calling that a client error would tell
+      // the caller to fix a request that was fine.
+    }, Effect.orDie)
+
     return handlers
+      .handle("project", project)
       .handle("tool", tool)
       .handle("toolIDs", toolIDs)
       .handle("worktree", worktree)

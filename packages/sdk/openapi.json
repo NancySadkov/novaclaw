@@ -2306,6 +2306,70 @@
         ]
       }
     },
+    "/api/project": {
+      "get": {
+        "tags": ["experimental"],
+        "operationId": "project.state",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The resolved Project for this location",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "The `novaclaw.json` governing this location: its root, validity and what it contributes. A folder without one answers `none` and is perfectly usable.",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.project.state({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/experimental/tool": {
       "get": {
         "tags": ["experimental"],
@@ -25462,6 +25526,90 @@
         },
         "required": ["providers", "models", "connected", "default"],
         "additionalProperties": false
+      },
+      "ProjectState": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["project"]
+              },
+              "root": {
+                "type": "string"
+              },
+              "file": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "permissionRules": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "exclude": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["kind", "root", "file", "permissionRules", "exclude"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["invalid"]
+              },
+              "file": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "required": ["kind", "file", "reason", "detail"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["none"]
+              }
+            },
+            "required": ["kind"],
+            "additionalProperties": false
+          }
+        ]
       },
       "ToolListItem": {
         "type": "object",
