@@ -47,3 +47,21 @@ export const withEffect = (rules: readonly PermissionRule[], effect: PermissionE
   { action: COMPUTER_ACTION, resource: "*", effect },
   ...rules.filter((rule) => rule.action !== COMPUTER_ACTION),
 ]
+
+/**
+ * Whether the tab should say *"no display is set, so computer use is off"*.
+ *
+ * 🔴 This was inline in the JSX as `!config().display`, and on Windows it was FALSE — printed two
+ * lines under a row that says *"There is no display to set here"*, so one screen made both claims at
+ * once. `tool/computer.ts` binds a real desktop on Windows by executable basename (`bind` refuses
+ * without `app` and never reads a display), and `resolveControlTarget` consults the session's
+ * `control_binding` FIRST, falling back to the instance display only as the SANDBOX default. So a
+ * Windows user with no display has working computer use and was told the opposite.
+ *
+ * ⚠️ Extracted for the reason this whole file exists: the failure LOOKS fine. Nothing renders wrong,
+ * nothing errors, and the only symptom is a sentence that is untrue on the platform we ship.
+ * AGENTS.md design principle 12 states the general rule — **change the surrounding COPY with the
+ * control** — and this is what its absence looks like.
+ */
+export const showsUnsetWarning = (input: { readonly isWindows: boolean; readonly display: string | undefined }): boolean =>
+  !input.isWindows && (input.display ?? "").trim() === ""

@@ -9,7 +9,13 @@ import { useServer } from "@/context/server"
 import { shellStatus } from "@/utils/fs-api"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import { effectOf, withEffect, type PermissionEffect, type PermissionRule } from "./computer-rules"
+import {
+  effectOf,
+  showsUnsetWarning,
+  withEffect,
+  type PermissionEffect,
+  type PermissionRule,
+} from "./computer-rules"
 
 // The Computer Use settings tab.
 //
@@ -183,8 +189,19 @@ export const SettingsComputerV2: Component = () => {
 
       {/* Ruling 2 — an unavailable subsystem names itself rather than rendering as if it were fine.
           With no display the tool declines every call, and saying so here is cheaper than letting
-          someone discover it from a failed turn. */}
-      <Show when={!config().display}>
+          someone discover it from a failed turn.
+
+          🔴 …but NOT on Windows, where it was flatly false and contradicted the row above it on the
+          same screen. `tool/computer.ts` binds a real desktop there by executable basename — `bind`
+          refuses without `app` and never reads a display — and `resolveControlTarget` consults the
+          session's `control_binding` FIRST, falling back to the instance display only as the SANDBOX
+          default. So a Windows user with no display has working computer use, and was being told
+          "computer use is off" two lines under "There is no display to set here".
+
+          ⚠️ The generalizing rule is AGENTS.md design principle 12's: change the surrounding COPY
+          with the control. The Windows row was added and the sentence beneath it kept describing the
+          world before it. */}
+      <Show when={showsUnsetWarning({ isWindows: isWindows(), display: config().display })}>
         <p class="settings-v2-field-description">{language.t("settings.computer.unset")}</p>
       </Show>
     </>

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { effectOf, withEffect } from "./computer-rules"
+import { effectOf, showsUnsetWarning, withEffect } from "./computer-rules"
 
 /**
  * These two functions carry the whole correctness of the Computer Use permission control, and they
@@ -72,5 +72,33 @@ describe("withEffect REPLACES rather than appends", () => {
   test("the round trip holds for every effect", () => {
     for (const effect of ["ask", "allow", "deny"] as const)
       expect(effectOf(withEffect([{ action: "computer", effect: "ask" }], effect))).toBe(effect)
+  })
+})
+
+/**
+ * 🔴 The tab told a Windows user *"No display is set, so computer use is off"* two lines under a row
+ * saying *"There is no display to set here"* — one screen, both claims.
+ *
+ * It is false on Windows: `bind` there takes an executable basename and refuses without one, never
+ * reading a display, and `resolveControlTarget` consults the session's `control_binding` FIRST and
+ * falls back to the instance display only as the SANDBOX default. So the platform we ship had working
+ * computer use and a sentence saying it was off.
+ */
+describe("showsUnsetWarning — the sentence that was untrue on Windows", () => {
+  test("never on Windows, whatever the display is", () => {
+    expect(showsUnsetWarning({ isWindows: true, display: undefined })).toBe(false)
+    expect(showsUnsetWarning({ isWindows: true, display: "" })).toBe(false)
+    expect(showsUnsetWarning({ isWindows: true, display: ":0" })).toBe(false)
+  })
+
+  test("on X11 it still says so when nothing is bound — the warning is not deleted, only scoped", () => {
+    // ⚠️ The negative control that matters. Scoping a false warning is one keystroke away from
+    // removing a true one, and on X11 an unset display really does mean the tool declines every call.
+    expect(showsUnsetWarning({ isWindows: false, display: undefined })).toBe(true)
+    expect(showsUnsetWarning({ isWindows: false, display: "" })).toBe(true)
+    // Whitespace is not a display. The write path trims, so a value that survived as "  " would show
+    // a configured capability that resolves to nothing.
+    expect(showsUnsetWarning({ isWindows: false, display: "   " })).toBe(true)
+    expect(showsUnsetWarning({ isWindows: false, display: ":99" })).toBe(false)
   })
 })
