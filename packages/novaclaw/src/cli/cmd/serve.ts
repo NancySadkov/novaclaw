@@ -45,6 +45,13 @@ const superviseLoop = async (): Promise<"clean" | "giveup"> => {
   let state = initialSuperviseState
   let monitorAbort: AbortController | undefined
   let unresponsive = false
+  /**
+   * The child's loopback URL, hoisted OUT of the stdout closure that discovers it.
+   *
+   * It is the address the supervisor needs at exactly the moment the closure is no longer running,
+   * so keeping it local made the graceful stop below impossible to write.
+   */
+  let childURL: URL | undefined
   const stopMonitor = () => {
     monitorAbort?.abort()
     monitorAbort = undefined
@@ -55,13 +62,34 @@ const superviseLoop = async (): Promise<"clean" | "giveup"> => {
     stopMonitor()
     treeKill(current)
   }
-  process.on("SIGINT", () => {
+  /**
+   * Ask, wait, then kill.
+   *
+   * 🔴 The kill is `TerminateProcess` on Windows, so the child's own `Shutdown.settleAll` never ran
+   * on a supervised stop and anything mid-flush was lost silently. Asking over HTTP needs no signal,
+   * which is the whole reason it works there.
+   *
+   * ⚠️ The kill still happens, unconditionally, on every path — a child that refuses to let go must
+   * not be able to keep the supervisor alive. `requestStop` is bounded and never throws, so the only
+   * cost of an unreachable child is the timeout.
+   */
+  const gracefulShutdown = async () => {
+    if (stopping) return
+    stopMonitor() // stop probing something we are deliberately taking down; a miss here is not a fault
+    if (childURL && current && !current.killed) {
+      const released = await ServeLiveness.requestStop(childURL, Flag.NOVACLAW_SERVER_PASSWORD)
+      if (!released) console.error("[supervise] child did not confirm release before the deadline — killing anyway")
+    }
     shutdown()
-    process.exit(0)
+  }
+  // ⚠️ SIGINT/SIGTERM are async now; `exit` cannot be — nothing async survives it, so it keeps the
+  // synchronous kill. That asymmetry is the point: the graceful path is for an ordinary stop, and
+  // the sync one is the backstop for every other way this process can end.
+  process.on("SIGINT", () => {
+    void gracefulShutdown().finally(() => process.exit(0))
   })
   process.on("SIGTERM", () => {
-    shutdown()
-    process.exit(0)
+    void gracefulShutdown().finally(() => process.exit(0))
   })
   process.on("exit", shutdown) // best-effort — a hard parent death still orphans (OS territory)
 
@@ -83,6 +111,7 @@ const superviseLoop = async (): Promise<"clean" | "giveup"> => {
       if (monitorAbort) return
       const healthURL = ServeLiveness.probeURLFromListenLine(line)
       if (!healthURL) return
+      childURL = healthURL // hoisted: the graceful stop needs this after this closure has finished
       monitorAbort = new AbortController()
       void ServeLiveness.monitor({
         signal: monitorAbort.signal,
@@ -99,6 +128,10 @@ const superviseLoop = async (): Promise<"clean" | "giveup"> => {
     const code = await current.exited
     stopMonitor()
     current = undefined
+    // Clear the address with the child that owned it. A restart re-announces its own listen line —
+    // and with `--port 0` that is a DIFFERENT port, so a stale URL would send the graceful stop to
+    // whatever now holds the old one.
+    childURL = undefined
     if (stopping) return "clean"
     // A child that held the port through TIME_WAIT or a foreign holder exits fast — the backoff
     // ladder IS the bind-retry (≈1+2+4+8+16s across 5 attempts) and the giveup IS the "refuse to
