@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@novaclaw/host",
+  "private": true,
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "exports": { ".": "./src/host.ts" },
+  "scripts": { "build": "bun run build.ts" }
+}
