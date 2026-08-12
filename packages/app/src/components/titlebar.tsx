@@ -1,10 +1,11 @@
-import { createEffect, createMemo, createResource, createSignal, Show, untrack } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, For, Show, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
+import { MenuV2 } from "@novaclaw/ui/v2/menu-v2"
 
 import { LayoutRoute, useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
@@ -19,7 +20,7 @@ import { createMediaQuery } from "@solid-primitives/media"
 import { readSessionTabsRemovedDetail, SESSION_TABS_REMOVED_EVENT } from "@/components/titlebar-session-events"
 import { useGlobal } from "@/context/global"
 import { ServerConnection, useServer } from "@/context/server"
-import { tabKey, useTabs } from "@/context/tabs"
+import { tabHref, tabKey, useTabs, type Tab } from "@/context/tabs"
 
 const v2TitlebarHeight = 36
 const minTitlebarZoom = 0.25
@@ -228,6 +229,47 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
 
         // The legacy new-tab "+" (draft tabs, mod+t) is RETIRED (owner 2026-07-22): chat
         // creation lives in the launcher bar and the Chats page's New Session button.
+        /**
+         * How many tasks the strip shows. The rest are one click away in the list — a bar that grows
+         * without limit stops being scannable long before it stops fitting, and the tab you want is
+         * almost always one you touched recently.
+         */
+        /**
+         * A task's label for the list. Read from the sync cache the strip already fills — resolving
+         * every task here would turn opening a menu into N requests, and a menu that fetches is a
+         * menu that stalls. An unresolved task shows its folder, never a blank row.
+         */
+        const tabTitle = (tab: Tab) => {
+          if (tab.type === "draft") return tab.directory.split(/[\/]/).filter(Boolean).at(-1) ?? language.t("command.session.new")
+          const conn = global.servers.list().find((item) => ServerConnection.key(item) === tab.server)
+          const cached = conn ? global.ensureServerCtx(conn).sync.session.peek(tab.sessionId) : undefined
+          return cached?.title?.trim() || language.t("nav.tasks.untitled")
+        }
+
+        const VISIBLE_TABS = 4
+        const visibleTabs = createMemo(() => {
+          const ordered = tabs.recentOrder()
+          const shown = ordered.slice(0, VISIBLE_TABS)
+          const current = currentTab()
+          // ⚠️ The current task is ALWAYS shown, even if it is not in the recent few — otherwise
+          // opening an old task from the list would leave you looking at a strip that does not
+          // contain the thing on screen.
+          if (current && !shown.some((tab) => tabKey(tab) === tabKey(current))) {
+            return [current, ...shown.slice(0, VISIBLE_TABS - 1)]
+          }
+          return shown
+        })
+        const hiddenTabs = createMemo(() => {
+          const visible = new Set(visibleTabs().map(tabKey))
+          return tabs.recentOrder().filter((tab) => !visible.has(tabKey(tab)))
+        })
+        const closeCurrent = () => {
+          const current = currentTab()
+          if (!current) return
+          const index = tabsStore.findIndex((item) => tabKey(item) === tabKey(current))
+          if (index !== -1) tabsStoreActions.removeTab(index)
+        }
+
         const toggleHome = () => tabs.toggleHome({ home: layout.route().type === "home", current: currentTab() })
 
         command.register("titlebar-home", () => [
@@ -304,11 +346,13 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
               "md:pl-4": !mac(),
             }}
           >
-            <BrandBadge />
-            {/* Session-nav (Chats) is hidden on the launcher ("/") — you launch
-                    apps from the tiles there; the nav returns inside a chat/session. */}
+            <BrandBadge onToggle={toggleHome} />
+            {/* Chats is hidden on the launcher ("/") — you launch apps from the tiles there — and
+                also INSIDE a chat (owner, 2026-08-12): the tab strip beside it already lists your
+                chats, so the button only competes with them for the same click. It remains on the
+                other app pages (Notes, Files, Settings…), where nothing else leads back. */}
             {/* Home lives on the brand badge now (Start-button style) — no separate Home button. */}
-            <Show when={location.pathname !== "/"}>
+            <Show when={location.pathname !== "/" && layout.route().type !== "session"}>
               <TooltipV2 placement="bottom" value={language.t("nav.chats")} class="shrink-0">
                 <IconButtonV2
                   type="button"
@@ -323,7 +367,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
             </Show>
 
             <TitlebarTabStrip
-              tabs={tabsStore}
+              tabs={visibleTabs()}
               currentTab={currentTab}
               activeServerKey={server.key}
               forceTruncate={tabsAreOverflowing()}
@@ -338,6 +382,58 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
               }}
               onReorder={(keys) => tabsStoreActions.reorder(keys)}
             />
+
+            {/* All tasks, including the ones the strip is not showing. The count is on the button so
+                "there are others" is legible without opening it. */}
+            <Show when={tabsStore.length > 0}>
+              <MenuV2 placement="bottom" gutter={4}>
+                <MenuV2.Trigger
+                  data-component="titlebar-task-list"
+                  aria-label={language.t("nav.tasks.all")}
+                  class="flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-[12px] text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 focus-visible:outline-none data-[expanded]:bg-v2-background-bg-layer-01"
+                >
+                  <IconV2 name="bullet-list" />
+                  <Show when={hiddenTabs().length > 0}>
+                    <span>{hiddenTabs().length}</span>
+                  </Show>
+                </MenuV2.Trigger>
+                <MenuV2.Portal>
+                  <MenuV2.Content class="max-h-[60vh] w-[280px] overflow-y-auto">
+                    <MenuV2.Group>
+                      <MenuV2.GroupLabel>{language.t("nav.tasks.all")}</MenuV2.GroupLabel>
+                      <For each={tabs.recentOrder()}>
+                        {(tab: Tab) => (
+                          <MenuV2.Item onSelect={() => tabs.select(tab)}>
+                            <span class="min-w-0 flex-1 truncate">{tabTitle(tab)}</span>
+                            <Show when={currentTab() && tabKey(currentTab()!) === tabKey(tab)}>
+                              <IconV2 name="check" class="shrink-0" />
+                            </Show>
+                          </MenuV2.Item>
+                        )}
+                      </For>
+                    </MenuV2.Group>
+                  </MenuV2.Content>
+                </MenuV2.Portal>
+              </MenuV2>
+            </Show>
+
+            {/* ONE close button, for the task you are looking at. A per-tab ✕ sits inside the thing
+                you are aiming at, so "switch" and "destroy" are a few pixels apart — and on touch,
+                less than a fingertip. This cannot be hit while reaching for another tab. */}
+            <Show when={currentTab()}>
+              <TooltipV2 placement="bottom" value={language.t("nav.tasks.close")} class="shrink-0">
+                <IconButtonV2
+                  type="button"
+                  variant="ghost-muted"
+                  size="large"
+                  class="!w-9 shrink-0"
+                  data-component="titlebar-task-close"
+                  icon={<IconV2 name="xmark-small" />}
+                  onClick={closeCurrent}
+                  aria-label={language.t("nav.tasks.close")}
+                />
+              </TooltipV2>
+            </Show>
             {/* The spacer that pushes the right-hand actions to the edge and lets the tab strip
                 take the rest. It was briefly `#novaclaw-titlebar-center`, a portal host for a
                 "Search {project} ⌘K" box (added 2026-08-07, removed by the owner on 2026-08-11):
@@ -408,8 +504,7 @@ function TitlebarUpdateIconButton(props: { state: TitlebarUpdatePillState }) {
 // The top-left brand badge doubles as the Home button — click the NovaClaw logo + version to return
 // to the home launcher from anywhere (Windows Start / macOS Apple-menu metaphor). This replaces the
 // separate Home nav button; the first-run tour calls it out (help.tour.step.home).
-function BrandBadge() {
-  const navigate = useNavigate()
+function BrandBadge(props: { onToggle: () => void }) {
   const location = useLocation()
   const language = useLanguage()
   const command = useCommand()
@@ -428,7 +523,11 @@ function BrandBadge() {
       <button
         type="button"
         data-component="brand-home-button"
-        onClick={() => navigate("/")}
+        // ⚠️ The TOGGLE, not `navigate("/")`. The keybind (mod+b) has always run `toggleHome`, so
+        // clicking and pressing did different things: the key returned you to the task you came
+        // from, the click only ever went home (owner, 2026-08-12). A control and its shortcut
+        // disagreeing is worse than either behaviour alone — you cannot learn what the button does.
+        onClick={() => props.onToggle()}
         aria-label={language.t("home.title")}
         aria-pressed={isHome()}
         class="flex shrink-0 items-center rounded-md py-0.5 pl-1 pr-1.5 transition-colors hover:bg-v2-background-bg-layer-02 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--v2-border-border-focus)]"

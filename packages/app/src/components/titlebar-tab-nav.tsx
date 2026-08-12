@@ -256,19 +256,10 @@ export function TabNavItem(props: {
         }}
       </Show>
 
-      <div data-slot="tab-close" class="group-hover:bg-[var(--tab-bg)] group-data-[active=true]:bg-[var(--tab-bg)]">
-        <IconButtonV2
-          size="small"
-          variant="ghost-muted"
-          class="hover-reveal relative z-10 group-hover:opacity-100 group-data-[active=true]:opacity-100 group-data-[editing=true]:opacity-100"
-          onPointerDown={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-          }}
-          onClick={closeTab}
-          icon={<IconV2 name="xmark-small" />}
-        />
-      </div>
+      {/* No per-tab ✕ (owner, 2026-08-12). It sat INSIDE the target you aim at, so "switch to that
+          task" and "destroy it" were a few pixels apart — less than a fingertip on touch. Closing is
+          now one button in the titlebar, acting on the task you are already looking at, which cannot
+          be hit while reaching for another tab. Middle-click and the close COMMAND still work. */}
     </div>
   )
 }
@@ -331,24 +322,8 @@ export function DraftTabItem(props: {
           {props.title}
         </span>
       </a>
-      <div data-slot="tab-close" class="group-hover:bg-[var(--tab-bg)] group-data-[active=true]:bg-[var(--tab-bg)]">
-        <IconButtonV2
-          size="small"
-          variant="ghost-muted"
-          onPointerDown={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-          }}
-          onMouseDown={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-          }}
-          class="hover-reveal relative z-10 group-hover:opacity-100 group-data-[active=true]:opacity-100 group-data-[editing=true]:opacity-100"
-          onClick={closeTab}
-          icon={<IconV2 name="xmark-small" />}
-          aria-label="Close tab"
-        />
-      </div>
+      {/* Draft tabs lose their ✕ for the same reason session tabs did — one close button in the
+          titlebar, out of the way of the thing you are aiming at. */}
     </div>
   )
 }

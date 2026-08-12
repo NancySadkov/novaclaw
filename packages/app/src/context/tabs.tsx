@@ -29,7 +29,15 @@ export type Tab = SessionTab | DraftTab
 
 type RecentTab = {
   key?: string
+  /**
+   * Task keys in interaction order, most recent FIRST. Optional so an existing stored `{ key }`
+   * keeps working and simply starts empty.
+   */
+  keys?: string[]
 }
+
+/** How much history to keep. The strip asks for the first few; the rest is only ever a tiebreak. */
+const RECENT_LIMIT = 24
 
 export const draftHref = (draftID: string) => `/new-session?draftId=${encodeURIComponent(draftID)}`
 
@@ -75,15 +83,25 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
 
     const recentKey = () => (recentWrite ? recentValue : recent.key)
 
+    /** Most-recent-first, with `key` promoted and duplicates dropped. Pure so the order is testable. */
+    const promote = (keys: readonly string[] | undefined, key: string | undefined) =>
+      key === undefined ? [...(keys ?? [])] : [key, ...(keys ?? []).filter((item) => item !== key)].slice(0, RECENT_LIMIT)
+
     const setRecentKey = (key: string | undefined) => {
       const write = ++recentWrite
       recentValue = key
-      if (recentReady()) {
+      const apply = () => {
         setRecent("key", key)
+        // Only a REAL selection reorders history. `undefined` means "the task you were on is gone",
+        // which must not silently reshuffle what the strip shows next.
+        if (key !== undefined) setRecent("keys", promote(recent.keys, key))
+      }
+      if (recentReady()) {
+        apply()
         return
       }
       void recentReady.promise?.then(() => {
-        if (write === recentWrite) setRecent("key", key)
+        if (write === recentWrite) apply()
       })
     }
 
@@ -283,6 +301,19 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
           return
         }
         navigate("/")
+      },
+      /**
+       * Tasks ordered by when they were last opened, most recent first, with any never-visited task
+       * appended in store order. Never drops a task: the strip slices this, and a task missing from
+       * BOTH lists would be unreachable rather than merely further along.
+       */
+      recentOrder(): Tab[] {
+        const rank = new Map((recent.keys ?? []).map((key, index) => [key, index] as const))
+        return [...store].sort((a, b) => {
+          const left = rank.get(tabKey(a)) ?? Number.MAX_SAFE_INTEGER
+          const right = rank.get(tabKey(b)) ?? Number.MAX_SAFE_INTEGER
+          return left === right ? store.indexOf(a) - store.indexOf(b) : left - right
+        })
       },
       state<T>(tab: Tab, name: string, init: () => T) {
         return memory.ensure(tabKey(tab), name, init)

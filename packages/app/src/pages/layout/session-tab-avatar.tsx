@@ -16,6 +16,12 @@ export function SessionTabAvatar(props: {
   const directory = () => props.directory
   const sessionId = () => props.sessionId
   const state = useSessionTabAvatarState(directory, sessionId, () => props.activeServer)
+  /**
+   * A CUSTOM project icon still identifies its tab, so it is kept. What is dropped is the monogram
+   * FALLBACK — the project name's first letter, identical for every session in the same folder, so
+   * it told the tabs apart from nothing.
+   */
+  const hasCustomIcon = () => Boolean(getProjectAvatarSource(props.project?.id, props.project?.icon))
   const projectAvatar = () => (
     <ProjectAvatar
       fallback={displayName(props.project ?? { worktree: props.directory })}
@@ -24,13 +30,21 @@ export function SessionTabAvatar(props: {
       unread={state.unread()}
     />
   )
+  /** Status without identity: an unread session must still announce itself with no icon to hang on. */
+  const unreadDot = () => (
+    <Show when={state.unread()}>
+      <span class="relative block size-4 shrink-0" data-slot="session-tab-unread">
+        <span class="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-v2-background-bg-accent" />
+      </span>
+    </Show>
+  )
   return (
-    <Show when={state.loading()} fallback={projectAvatar()}>
+    <Show when={state.loading()} fallback={<Show when={hasCustomIcon()} fallback={unreadDot()}>{projectAvatar()}</Show>}>
       <span class="relative block size-4 shrink-0">
         <SessionProgressIndicatorV2
           class={`absolute inset-0 ${props.revealProjectOnHover === false ? "" : "group-hover:invisible"}`}
         />
-        <Show when={props.revealProjectOnHover !== false}>
+        <Show when={props.revealProjectOnHover !== false && hasCustomIcon()}>
           <span class="invisible absolute inset-0 group-hover:visible">{projectAvatar()}</span>
         </Show>
       </span>

@@ -50,6 +50,9 @@ export const dict = {
   "trash.expiringNow": "expiring now",
 
   // Processes — the friendly "what your agents are doing" activity view (uix.md §6.4 / SP1).
+  "nav.tasks.untitled": "Untitled chat",
+  "nav.tasks.all": "All tasks",
+  "nav.tasks.close": "Close this task",
   "nav.chats": "Chats",
   "processes.status.working": "Working…",
 
