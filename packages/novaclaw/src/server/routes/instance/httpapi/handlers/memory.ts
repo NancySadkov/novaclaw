@@ -236,13 +236,19 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
               const models = yield* SessionRunnerModel.Service
               const llm = yield* LLMClient.Service
               const model = yield* models.resolveDefault()
-              return yield* KbAbsorb.absorb({
+              const outcome = yield* KbAbsorb.absorb({
                 llm,
                 model,
                 memory,
                 scope,
                 passages: passages.slice(0, absorbing).map((text) => ({ id: KbChunk.passageID(label, text), text })),
                 limit: absorbing,
+              })
+              // Detached work MUST report that it finished. Without this, "ran and found nothing"
+              // and "never started" look identical from outside.
+              return yield* Log.event("kb.absorb.run.done", {
+                "kb.passages": outcome.passages,
+                "kb.entities": outcome.entities,
               })
               }).pipe(
                 Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),

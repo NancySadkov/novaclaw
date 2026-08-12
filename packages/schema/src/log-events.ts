@@ -965,6 +965,21 @@ export const EVENTS = {
    * that started it, so nobody is watching to retry, and abandoning the remaining passages because
    * one failed would lose a whole document to a single bad chunk.
    */
+  /**
+   * An absorption pass FINISHED, with what it produced.
+   *
+   * ⚠️ A success line, not just a failure one. This work is detached from the request that started
+   * it, so without this a pass that ran and extracted NOTHING is indistinguishable from one that
+   * never started — which is exactly the ambiguity that cost a debugging round on 2026-08-12.
+   */
+  "kb.absorb.run.done": {
+    level: "info",
+    message: "absorbed a document",
+    attributes: { "kb.passages": "count", "kb.entities": "count" },
+    // Two counts carry nothing of the user's — the redaction guard caught this declared as "user".
+    content: "none",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/memory.ts",
+  },
   /** The whole absorption pass could not start or run — the passages are stored regardless. */
   "kb.absorb.run.failed": {
     level: "warn",
