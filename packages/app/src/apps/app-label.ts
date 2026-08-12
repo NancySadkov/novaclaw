@@ -108,7 +108,7 @@ export const BUILTIN_APP_LABELS = {
   terminal: { name: "Terminal", subtitle: "A shell, for when you want one" },
   registry: { name: "Registry", subtitle: "The instance database, editable — handle with care" },
   debug: { name: "Debug", subtitle: "Connection, error log, sessions — under the hood" },
-  "memory-graph": { name: "Memory graph", subtitle: "Explore what NovaClaw remembers, as a graph" },
+  "memory-graph": { name: "Memory", subtitle: "What NovaClaw remembers about you, and how it connects" },
   trash: { name: "Trash", subtitle: "Restore anything deleted in the last 2 days" },
   social: { name: "Community", subtitle: "Discord, Reddit and the website — other people who run NovaClaw" },
   help: { name: "Help", subtitle: "A short tour of what NovaClaw can do" },

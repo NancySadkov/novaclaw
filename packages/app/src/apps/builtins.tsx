@@ -153,9 +153,10 @@ export function useBuiltinApps(): () => HomeApp[] {
       accent: "#8b5cf6",
       subtitle: sub("memory-graph"),
       source: "builtin",
-      // The advanced node-link view of the graph memory (kb-graph P5; the lay controls live in
-      // Settings → Memory). Path-tracing is a Developer surface (uix.md §6.4).
-      minLevel: "developer",
+      // NORMAL level (owner, 2026-08-12): what NovaClaw remembers about you is not an expert topic,
+      // and hiding it behind Developer meant the people most likely to ask "what does it know about
+      // me?" were the ones who could not look. Nodes now carry their KIND as a shape with a legend,
+      // so the view is readable without knowing the data model.
       open: () => navigate("/memory-graph"),
     },
     {

@@ -86,7 +86,7 @@ describe("home tile labels", () => {
       const { t } = translator(merged({}))
       expect(appName(t, "chats", BUILTIN_APP_LABELS.chats.name)).toBe("Chats")
       expect(appSubtitle(t, "memory-graph", BUILTIN_APP_LABELS["memory-graph"].subtitle)).toBe(
-        "Explore what NovaClaw remembers, as a graph",
+        "What NovaClaw remembers about you, and how it connects",
       )
     })
 

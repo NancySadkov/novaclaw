@@ -23,6 +23,29 @@ const scopeColor = (scope: string) => (scope === "global" ? SCOPE_GLOBAL : SCOPE
 const scopeLabel = (scope: string) =>
   scope === "global" ? "Always (global)" : scope.startsWith("session:") ? "One chat" : scope
 
+/**
+ * What to write beside a node.
+ *
+ * An ENTITY has a name, and a name is already a label. An episode or a passage has only prose, and
+ * prose clipped at 28 characters is not a label — it is the first few words of something, which is
+ * what made every node read as a fragment. Those say what they ARE; their text is in the detail
+ * card one click away, where there is room for it.
+ */
+const nodeLabel = (node: { kind?: string; name?: string | null; text?: string | null }) => {
+  const name = node.name?.trim()
+  if (name) return truncate(name, 28)
+  if (node.kind === "episode") return "Episode"
+  if (node.kind === "passage") return "Passage"
+  return truncate(node.text ?? "", 24)
+}
+
+/** ⚠️ A shape encoding nobody can decode is a different mystery, not a fix. */
+const KIND_LEGEND = [
+  { kind: "entity", label: "Entity — a thing NovaClaw knows about" },
+  { kind: "episode", label: "Episode — something that happened" },
+  { kind: "passage", label: "Passage — source text it came from" },
+] as const
+
 const truncate = (text: string, n = 40) => (text.length > n ? text.slice(0, n - 1) + "…" : text)
 
 // Cross-open stability: cache the laid-out positions per instance so a re-open never reshuffles, and
@@ -162,7 +185,35 @@ export function MemoryGraphPage() {
         </A>
         <div class="flex items-center gap-2">
           <Icon name="branch" size="large" />
-          <h1 class="text-sm font-medium">Memory graph</h1>
+          <h1 class="text-sm font-medium">Memory</h1>
+        </div>
+        {/* The legend. A shape encoding nobody can decode is a different mystery, not a fix — and
+            the shapes here are drawn to match the nodes rather than described in words. */}
+        <div class="flex items-center gap-3 text-[11px] opacity-70" data-slot="memory-kind-legend">
+          <For each={KIND_LEGEND}>
+            {(entry) => (
+              <span class="flex items-center gap-1.5" title={entry.label}>
+                <svg width="12" height="12" viewBox="-6 -6 12 12" aria-hidden="true">
+                  <Show
+                    when={entry.kind === "entity"}
+                    fallback={
+                      <Show
+                        when={entry.kind === "episode"}
+                        fallback={
+                          <rect x={-4} y={-4} width={8} height={8} rx={1} fill="none" stroke="currentColor" stroke-width={1.5} />
+                        }
+                      >
+                        <rect x={-4} y={-4} width={8} height={8} transform="rotate(45)" fill="currentColor" />
+                      </Show>
+                    }
+                  >
+                    <circle r={4.5} fill="currentColor" />
+                  </Show>
+                </svg>
+                <span>{entry.label.split(" — ")[0]}</span>
+              </span>
+            )}
+          </For>
         </div>
         <span class="text-xs opacity-50">
           {count()} {count() === 1 ? "memory" : "memories"} · {graph()?.edges.length ?? 0} links
@@ -243,16 +294,51 @@ export function MemoryGraphPage() {
                           setSelected(node.id)
                         }}
                       >
-                        <circle
-                          r={isSel() ? 9 : 6}
-                          fill={scopeColor(node.scope)}
-                          stroke={isSel() ? "#eab308" : "white"}
-                          stroke-width={isSel() ? 2.5 : 1}
-                          stroke-opacity={isSel() ? 1 : 0.5}
-                        />
+                        {/* SHAPE = kind, COLOUR = scope. Two attributes on two channels; using
+                            colour for both is what made a node unreadable. */}
+                        <Show
+                          when={node.kind === "entity"}
+                          fallback={
+                            <Show
+                              when={node.kind === "episode"}
+                              fallback={
+                                <rect
+                                  x={isSel() ? -6 : -4}
+                                  y={isSel() ? -6 : -4}
+                                  width={isSel() ? 12 : 8}
+                                  height={isSel() ? 12 : 8}
+                                  rx={1}
+                                  fill="none"
+                                  stroke={isSel() ? "#eab308" : scopeColor(node.scope)}
+                                  stroke-width={isSel() ? 2.5 : 1.5}
+                                />
+                              }
+                            >
+                              <rect
+                                x={isSel() ? -7 : -5}
+                                y={isSel() ? -7 : -5}
+                                width={isSel() ? 14 : 10}
+                                height={isSel() ? 14 : 10}
+                                transform="rotate(45)"
+                                fill={scopeColor(node.scope)}
+                                stroke={isSel() ? "#eab308" : "white"}
+                                stroke-width={isSel() ? 2.5 : 1}
+                                stroke-opacity={isSel() ? 1 : 0.5}
+                              />
+                            </Show>
+                          }
+                        >
+                          <circle
+                            r={isSel() ? 9 : 6}
+                            fill={scopeColor(node.scope)}
+                            stroke={isSel() ? "#eab308" : "white"}
+                            stroke-width={isSel() ? 2.5 : 1}
+                            stroke-opacity={isSel() ? 1 : 0.5}
+                          />
+                        </Show>
                         <Show when={isSel() || isNeighbor() || count() <= 40}>
-                          <text x={11} y={4} font-size="11" fill="currentColor" opacity={0.8}>
-                            {truncate(node.name || node.text, 28)}
+                          <text x={13} y={4} font-size="11" fill="currentColor" opacity={0.8}>
+                            {nodeLabel(node)}
                           </text>
                         </Show>
                       </g>
