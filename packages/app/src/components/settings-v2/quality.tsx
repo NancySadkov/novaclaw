@@ -6,6 +6,7 @@ import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { MINUTE_MS, fromMs, toMs } from "./units"
 
 // QE-D — the Quality Enforcement settings tab. Edits the QE-C config: the
 // provisioned check commands the runner executes at write/turn boundaries, the
@@ -108,17 +109,17 @@ export const SettingsQualityV2: Component = () => {
               title={language.t("settings.quality.row.testTimeout.title")}
               description={language.t("settings.quality.row.testTimeout.description")}
             >
+              {/* Minutes in, milliseconds stored. `300000` asked a person to count zeros to say
+                  "five minutes"; the config keeps ms, which is right, and only the box changes. */}
               <div class="w-full sm:w-[140px]">
                 <TextInputV2
                   type="number"
                   appearance="base"
-                  min="1000"
-                  value={current().testTimeout || ""}
-                  placeholder="300000"
-                  onChange={(event) => {
-                    const parsed = Number.parseInt(event.currentTarget.value, 10)
-                    void persist({ testTimeout: Number.isFinite(parsed) && parsed >= 1000 ? parsed : 0 })
-                  }}
+                  min="0"
+                  step="0.5"
+                  value={fromMs(current().testTimeout, MINUTE_MS)}
+                  placeholder="5"
+                  onChange={(event) => void persist({ testTimeout: toMs(event.currentTarget.value, MINUTE_MS) ?? 0 })}
                   aria-label={language.t("settings.quality.row.testTimeout.title")}
                 />
               </div>

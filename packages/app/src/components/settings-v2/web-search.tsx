@@ -1,5 +1,6 @@
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
+import { SECOND_MS, fromMs, toMs } from "./units"
 import { type Component, Show } from "solid-js"
 import { showToast } from "@/utils/toast"
 import { useLanguage, type TranslationKey } from "@/context/language"
@@ -35,12 +36,16 @@ interface WebSearchConfig {
 // ⚠️ `label`/`hint` are `TranslationKey`, not `string`. Annotating them `string` widened the
 // literals away and `language.t(field.label)` silently stopped being key-checked; the field list is
 // a closed set, so it costs nothing to keep it a union.
+// ⚠️ `unitMs` marks the ONE field that is a duration; the other four are counts and must not be
+// converted. Declaring it here keeps the render loop from special-casing a key name.
 const THROTTLE_FIELDS: Array<{
   key: keyof ThrottleConfig
   label: TranslationKey
   hint: TranslationKey
   fallback: number
   min: number
+  /** Present only on a duration: what one displayed unit is worth in stored milliseconds. */
+  unitMs?: number
 }> = [
   {
     key: "hostIntervalMs",
@@ -48,6 +53,7 @@ const THROTTLE_FIELDS: Array<{
     hint: "settings.webSearch.throttle.interval.hint",
     fallback: 4000,
     min: 0,
+    unitMs: SECOND_MS,
   },
   {
     key: "burst",
@@ -213,11 +219,24 @@ export const SettingsWebSearchV2: Component = () => {
                 appearance="large"
                 min={field.min}
                 class="!w-32 self-stretch"
-                value={fieldValue(field.key)}
-                placeholder={String(field.fallback)}
+                value={
+                  field.unitMs
+                    ? fromMs(Number(fieldValue(field.key)) || undefined, field.unitMs)
+                    : fieldValue(field.key)
+                }
+                placeholder={
+                  field.unitMs ? fromMs(field.fallback, field.unitMs) : String(field.fallback)
+                }
                 spellcheck={false}
                 autocomplete="off"
-                onChange={(event) => void persistThrottle(field.key, event.currentTarget.value)}
+                onChange={(event) =>
+                  void persistThrottle(
+                    field.key,
+                    field.unitMs
+                      ? String(toMs(event.currentTarget.value, field.unitMs) ?? "")
+                      : event.currentTarget.value,
+                  )
+                }
               />
             </SettingsRowV2>
           ))}

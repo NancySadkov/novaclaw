@@ -1755,7 +1755,7 @@ export const dict = {
   "settings.quality.row.enabled.description": "Run the provisioned checks on every change this server makes",
   "settings.quality.row.cadence.title": "Typecheck cadence",
   "settings.quality.row.cadence.description": "Run the whole-module typecheck every N writes",
-  "settings.quality.row.testTimeout.title": "Test timeout (ms)",
+  "settings.quality.row.testTimeout.title": "Test timeout (minutes)",
   "settings.quality.row.testTimeout.description": "Hard limit for the test gate — a hung test counts as a failure",
   "settings.quality.commands.title": "Provisioned commands",
   "settings.quality.commands.description":
@@ -1953,7 +1953,7 @@ export const dict = {
     "⚠️ Changing these can get you blocked. Sites judge you by your traffic, and reads come from your own connection — so a faster, heavier setting risks your IP being rate-limited or banned, for you and for anything else on your network. Leave a field empty to use its default.",
   "settings.webSearch.throttle.interval": "Delay between reads of one site",
   "settings.webSearch.throttle.interval.hint":
-    "Milliseconds to wait before reading the same site again. Lower looks more like a bot.",
+    "Seconds to wait before reading the same site again. Lower looks more like a bot.",
   "settings.webSearch.throttle.burst": "Reads allowed back-to-back",
   "settings.webSearch.throttle.burst.hint":
     "How many quick reads of one site before the delay kicks in — like opening a few tabs at once.",
