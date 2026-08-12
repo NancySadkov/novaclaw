@@ -3,6 +3,7 @@ export * as KbAbsorb from "./absorb"
 import { Context, Effect, Stream } from "effect"
 import { LLM, LLMClient, LLMEvent, Message, SystemPart, type Model } from "@novaclaw/llm"
 import { Log } from "@novaclaw/schema/log"
+import { Flag } from "../flag/flag"
 import { KbChunk } from "./chunk"
 import type { MemoryClient } from "./memory-client"
 import { SessionExtract } from "../session/runner/extract"
@@ -56,7 +57,13 @@ export interface Absorbed {
  * off the reply path. ⚠️ A first value, not a measured one — it wants the same treatment the title
  * budget got.
  */
-export const ABSORB_REASONING_BUDGET = 512
+export const ABSORB_REASONING_BUDGET = ((): number => {
+  // ⚠️ A KNOB, because the value is unmeasured. The recorded lesson from the 2026-08-12 chat-mode
+  // eval is exact: a thinking model read 18/24 at a 300-token budget and 24/24 at 2048, so a budget
+  // reported without being swept is a number about the harness, not the model.
+  const raw = Number(Flag.NOVACLAW_KB_ABSORB_BUDGET)
+  return Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : 512
+})()
 
 /**
  * Ask the model what one passage is about.
