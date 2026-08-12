@@ -9,11 +9,22 @@ export * as MergePatch from "./merge-patch"
  * (`ConfigStoreWrite.remove`, `POST /api/config/remove`) rather than a magic value inside the
  * document.
  *
+ * 🔴 **One premise below is FALSE on the wire, and the conclusion survives anyway — read both.**
+ * Measured live 2026-08-12: `PATCH /global/config {"memory":{"embedding":null}}` answered **200 with
+ * the value unchanged**. The decode argument that follows holds on the TYPE side
+ * (`decodeUnknownSync(Config.Info)` throws *"Expected boolean | undefined, got null"*) and fails on
+ * the ENCODED side, which is the one an `HttpApiEndpoint` payload actually decodes: there the union is
+ * `boolean | null`, as that route's own 400 for a mistyped value says out loud. So `null` was legal
+ * input and decoded to ABSENT — the merge saw no key and did nothing, silently. The ruling is
+ * unchanged (a tombstone would still have to widen every deletable slot's schema); what changed is
+ * that the wire now REFUSES a `null` by name and names the remove verb
+ * (`rejectNullConfigValues`, `NULL_CONFIG_VALUE_KIND`). **A decode cited as a guarantee must say
+ * which direction it runs in.**
+ *
  * ⚠️ **The `null`-ambiguity answer, stated explicitly because it is the whole question.** The usual
  * objection to RFC-7396 is soft — *a config value might legitimately be null, so the tombstone is
- * ambiguous*. Here the objection is hard, and it was measured rather than argued: **a PATCH body is
- * decoded through `Config.Info` before any merge runs**, so a tombstone has to be a legal value of
- * the slot it is deleting. It is not, anywhere that matters:
+ * ambiguous*. Here the objection is hard: a tombstone has to be a legal value of the slot it is
+ * deleting, and on the TYPE side it is not, anywhere that matters:
  *   · `mcp.servers.<name>` is `Schema.Record(String, Union([Local, Remote]))` tagged on `type` —
  *     `null` matches no branch and fails the decode;
  *   · `providers.<id>.models.<id>` is `Record(String, Model)` — same;
