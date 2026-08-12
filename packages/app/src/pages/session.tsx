@@ -327,6 +327,31 @@ export default function Page() {
    *  incomplete case in particular must never read as "nothing happened". */
   const recoveryChanges = createMemo(() => recoveryChangesNote(info()?.summary))
 
+  /**
+   * The banner's third affordance — what `todo/session-recovery.md`'s gate called `reconcile`.
+   *
+   * ⚠️ It is deliberately NOT a third verb. The gate named a word that appeared nowhere in the
+   * product, and the honest reading of it is *make the record agree with what actually happened* —
+   * which nobody can do without first SEEING what happened. Everything needed for the two real
+   * answers already ships: the Changes panel shows the diff, and the per-prompt Revert undoes the
+   * turn. What was missing is only the step between "at least 2 files changed" and either of them,
+   * so the banner now takes you there instead of naming a fourth thing to learn.
+   *
+   * ⚠️ BOTH calls are required, and the first version of this shipped only `setTab`. `setTab` sets
+   * `opened: true` ONLY when the fileTree store is still unset — after any prior interaction it
+   * changes the tab and leaves a closed panel closed. Caught by clicking the button in a browser
+   * against a genuinely paused session, not by reading `layout.tsx`: the signature reads like it
+   * opens.
+   */
+  const showChangedFiles = () => {
+    if (!isDesktop()) {
+      setStore("mobileTab", "changes")
+      return
+    }
+    layout.fileTree.open()
+    layout.fileTree.setTab("changes")
+  }
+
   const executionAction = async (action: "retry" | "stop") => {
     const conn = server.current
     const id = params.id
@@ -974,6 +999,11 @@ export default function Page() {
                 */}
                 <span class="text-v2-text-text-muted">{recoveryChanges()}</span>
               </span>
+              {/* Before Retry on purpose: "is retrying safe?" is answered by looking, and a banner
+                  that offers the irreversible action first is teaching the wrong order. */}
+              <ButtonV2 size="small" variant="neutral" onClick={showChangedFiles}>
+                See changes
+              </ButtonV2>
               <Show when={attempt().state !== "recovering"}>
                 <ButtonV2 size="small" variant="neutral" onClick={() => void executionAction("retry")}>
                   Retry
