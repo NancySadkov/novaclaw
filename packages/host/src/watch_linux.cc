@@ -44,6 +44,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -74,6 +75,7 @@ struct host_watch {
   std::mutex lock;
   std::deque<Record> queue;
   std::string root;
+  std::unordered_set<std::string> ignore;
   // Watch descriptor -> absolute directory path. Touched only by the worker after the thread starts,
   // and by open() before it does — so it needs no lock of its own.
   std::unordered_map<int, std::string> directories;
@@ -90,6 +92,29 @@ struct host_watch {
 };
 
 namespace {
+
+
+/**
+ * Should this absolute path be dropped?
+ *
+ * ⚠️ Only segments BELOW `root` are considered. Watching `/home/me/build/project` must not discard
+ * the whole tree because an ancestor is named `build` — the caller asked to watch that directory, and
+ * an ignore rule may not overrule the subject of the watch itself.
+ */
+bool ignored(const std::unordered_set<std::string> &names, const std::string &root, const std::string &full) {
+  if (names.empty()) return false;
+  if (full.size() <= root.size() + 1) return false;
+  size_t start = root.size() + 1;  // skip the root and its separator
+  while (start <= full.size()) {
+    const size_t slash = full.find('/', start);
+    const size_t end = slash == std::string::npos ? full.size() : slash;
+    if (names.count(full.substr(start, end - start)) != 0) return true;
+    if (slash == std::string::npos) break;
+    start = slash + 1;
+  }
+  return false;
+}
+
 
 bool is_directory(const std::string &path) {
   struct stat info;
@@ -111,6 +136,11 @@ bool is_directory(const std::string &path) {
  * already is, since it publishes add/change events that describe a path rather than a delta.
  */
 void add_tree(host_watch *w, const std::string &dir, bool report_existing) {
+  // ⚠️ Ignored trees are never WATCHED, not merely filtered afterwards — and on Linux that is the
+  // larger half of the win. inotify spends one kernel watch descriptor per directory, and
+  // `node_modules` is precisely what exhausts `fs.inotify.max_user_watches`; declining to descend
+  // turns the limit from a routine failure into a rare one.
+  if (ignored(w->ignore, w->root, dir)) return;
   const int wd = ::inotify_add_watch(w->fd, dir.c_str(), kMask);
   if (wd < 0) {
     // ENOSPC is the watch limit. Say so once through OVERFLOW and keep walking: a partial tree that
@@ -127,7 +157,7 @@ void add_tree(host_watch *w, const std::string &dir, bool report_existing) {
     if (name == "." || name == "..") continue;
     const std::string child = dir + "/" + name;
     const bool directory = entry->d_type == DT_DIR || (entry->d_type == DT_UNKNOWN && is_directory(child));
-    if (report_existing) w->push(directory ? HOST_WATCH_CREATE : HOST_WATCH_CREATE, child);
+    if (report_existing && !ignored(w->ignore, w->root, child)) w->push(HOST_WATCH_CREATE, child);
     if (directory) add_tree(w, child, report_existing);
   }
   ::closedir(handle);
@@ -169,6 +199,7 @@ void run(host_watch *w) {
         w->directories.erase(found);
         continue;
       }
+      if (ignored(w->ignore, w->root, full)) continue;
       if (event->mask & (IN_CREATE | IN_MOVED_TO)) {
         w->push(HOST_WATCH_CREATE, full);
         // A new directory needs its own watch, and its contents may already be there.
@@ -190,7 +221,8 @@ extern "C" {
 
 int32_t host_abi_version(void) { return HOST_ABI_VERSION; }
 
-host_watch *host_watch_open(const char *path, char *err, int32_t errlen) {
+host_watch *host_watch_open(const char *path, const char *const *ignore_dirs, int32_t ignore_count,
+                            char *err, int32_t errlen) {
   if (path == nullptr || *path == '\0') {
     write_error(err, errlen, "no path given", EINVAL);
     return nullptr;
@@ -217,6 +249,9 @@ host_watch *host_watch_open(const char *path, char *err, int32_t errlen) {
 
   w->root.assign(path);
   while (w->root.size() > 1 && w->root.back() == '/') w->root.pop_back();
+  for (int32_t i = 0; i < ignore_count && ignore_dirs != nullptr; ++i)
+    if (ignore_dirs[i] != nullptr) w->ignore.insert(ignore_dirs[i]);
+
   // The INITIAL walk does not report what it finds: the caller asked to watch a tree, not to be told
   // it already exists. Only directories discovered later announce their contents.
   add_tree(w, w->root, false);

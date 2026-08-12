@@ -58,7 +58,7 @@ extern "C" {
  * is exactly the undebuggable crash this module exists to remove — so it is a refusal at load, not a
  * mystery at runtime.
  */
-#define HOST_ABI_VERSION 1
+#define HOST_ABI_VERSION 2
 HOST_EXPORT int32_t host_abi_version(void);
 
 /* ─── file watching ─────────────────────────────────────────────────────────────────────────────
@@ -87,10 +87,20 @@ typedef struct host_watch host_watch;
 /**
  * Start watching `path` and everything under it.
  *
+ * `ignore_dirs` is an array of `ignore_count` directory NAMES (not globs, not paths) — any event
+ * whose path has one of them as a segment BELOW the root is dropped before it is ever queued.
+ *
+ * ⚠️ **Segments, and only below the root.** `node_modules` churn is the volume this exists to
+ * discard, and matching the root's own ancestry would be a bug with teeth: watching
+ * `/home/me/build/project` must not ignore the entire tree because an ancestor happens to be called
+ * `build`. The caller's richer rules (file globs, whitelists) stay in the caller — this is the cheap
+ * high-volume half, placed here so the noise never wakes the runtime at all.
+ *
  * Returns NULL on failure and writes a human-readable reason into `err` (NUL-terminated, truncated
  * to `errlen`). `err` may be NULL if the caller does not want the reason.
  */
-HOST_EXPORT host_watch *host_watch_open(const char *path, char *err, int32_t errlen);
+HOST_EXPORT host_watch *host_watch_open(const char *path, const char *const *ignore_dirs, int32_t ignore_count,
+                                        char *err, int32_t errlen);
 
 /**
  * Drain queued events into `buf`.

@@ -16,7 +16,7 @@ import { dlopen, FFIType, ptr, suffix, type Pointer } from "bun:ffi"
 import path from "node:path"
 
 /** Matches `HOST_ABI_VERSION` in host.h. Bump both together, never one. */
-export const ABI_VERSION = 1
+export const ABI_VERSION = 2
 
 export type WatchEventType = "create" | "update" | "delete" | "overflow"
 
@@ -39,7 +39,10 @@ const libraryPath = () =>
 
 const symbols = {
   host_abi_version: { args: [], returns: FFIType.i32 },
-  host_watch_open: { args: [FFIType.cstring, FFIType.ptr, FFIType.i32], returns: FFIType.ptr },
+  host_watch_open: {
+    args: [FFIType.cstring, FFIType.ptr, FFIType.i32, FFIType.ptr, FFIType.i32],
+    returns: FFIType.ptr,
+  },
   host_watch_poll: { args: [FFIType.ptr, FFIType.ptr, FFIType.i32, FFIType.ptr, FFIType.i32], returns: FFIType.i32 },
   host_watch_close: { args: [FFIType.ptr], returns: FFIType.void },
 } as const
@@ -108,11 +111,35 @@ export interface Watch {
   readonly close: () => void
 }
 
-/** Watch `directory` and everything under it. Throws with the OS reason when it cannot start. */
-export const watch = (directory: string, options?: { readonly bufferBytes?: number }): Watch => {
+/**
+ * Watch `directory` and everything under it. Throws with the OS reason when it cannot start.
+ *
+ * `ignoreDirectories` are folder NAMES dropped natively, before an event is ever queued — that is the
+ * point of passing them across rather than filtering here. Richer rules (file globs, whitelists) stay
+ * on this side; only the high-volume `node_modules`-shaped noise is worth a place in the ABI.
+ */
+export const watch = (
+  directory: string,
+  options?: { readonly bufferBytes?: number; readonly ignoreDirectories?: readonly string[] },
+): Watch => {
   const lib = open()
   const error = new Uint8Array(512)
-  const handle = lib.symbols.host_watch_open(Buffer.from(`${directory}\0`, "utf8"), ptr(error), error.length)
+  // A `const char *[]` the native side reads and never keeps — it copies the names into its own set
+  // before returning. ⚠️ Both the pointer table AND every string it points at must stay alive across
+  // the call; they do because they are locals held until it returns, and letting either be collected
+  // first is the classic FFI dangling-pointer bug.
+  const names = (options?.ignoreDirectories ?? []).map((name) => Buffer.from(`${name}\0`, "utf8"))
+  const table = new BigUint64Array(Math.max(1, names.length))
+  names.forEach((buffer, index) => {
+    table[index] = BigInt(ptr(buffer))
+  })
+  const handle = lib.symbols.host_watch_open(
+    Buffer.from(`${directory}\0`, "utf8"),
+    names.length === 0 ? null : ptr(table),
+    names.length,
+    ptr(error),
+    error.length,
+  )
   if (handle === null) throw new Error(`host: could not watch ${directory}: ${readError(error) || "unknown reason"}`)
 
   // One buffer, reused. Sized so an ordinary drain never needs a second call, while a burst simply
