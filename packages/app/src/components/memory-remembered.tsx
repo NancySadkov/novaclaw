@@ -6,7 +6,7 @@ import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
-import { memoryInvalidate, memoryList, type MemoryRow } from "@/utils/memory-api"
+import { memoryInvalidate, memoryList, memoryStats, type MemoryRow } from "@/utils/memory-api"
 import { instanceDiagnosis } from "@/utils/resource-api"
 
 /**
@@ -43,10 +43,34 @@ export const MemoryRemembered: Component<{
       const cn = conn()
       return cn ? { cn, dir: directory(), t: (props.revision ?? 0) + localTick() } : undefined
     },
-    ({ cn, dir }) => memoryList(cn.http, { directory: dir, limit: 500 }).catch(() => [] as MemoryRow[]),
+    ({ cn, dir }) =>
+      // ⚠️ Entities and episodes only — NOT passages. "Remembered" answers *what do you know*, and a
+      // passage is the raw source text a document was cut into, not something learned. Measured
+      // 2026-08-12: ingesting one rulebook put 302 chunks here, so the honest answer to that question
+      // became a wall of unreadable fragments. The graph already hides passages by default for the
+      // same reason; this keeps the two surfaces telling the same story.
+      memoryList(cn.http, { directory: dir, limit: 500, kinds: ["entity", "episode"] }).catch(
+        () => [] as MemoryRow[],
+      ),
+  )
+
+  /**
+   * How many rows exist in TOTAL, so the ones not listed can be counted rather than concealed.
+   *
+   * ⚠️ Filtering silently would be worse than the wall it replaces: a user who ingested a document
+   * would see one entity and have no way to know 302 source passages are held behind it.
+   */
+  const [totals] = createResource(
+    () => {
+      const cn = conn()
+      const rows = memories()
+      return cn !== undefined && rows !== undefined ? { cn, dir: directory(), settled: rows.length } : undefined
+    },
+    ({ cn, dir }) => memoryStats(cn.http, { directory: dir }).catch(() => undefined),
   )
 
   const count = () => memories()?.length ?? 0
+  const notListed = () => Math.max(0, (totals()?.total ?? 0) - count())
 
   /**
    * 🔴 Is the store BROKEN, or merely empty?
@@ -138,6 +162,11 @@ export const MemoryRemembered: Component<{
         when={count() > 0}
         fallback={<p class="settings-v2-field-description">{language.t("settings.memory.list.empty")}</p>}
       >
+        <Show when={notListed() > 0}>
+          <p class="settings-v2-field-description" data-slot="memory-passages-hidden">
+            {language.t("settings.memory.list.sourceHidden", { count: notListed() })}
+          </p>
+        </Show>
         <div class="flex flex-col gap-1.5 overflow-y-auto pr-1">
           <For each={memories()}>
             {(row) => (

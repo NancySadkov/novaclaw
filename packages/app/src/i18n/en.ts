@@ -1827,6 +1827,8 @@ export const dict = {
   "settings.memory.clearChat.toast": "This chat’s memory was cleared",
   "settings.memory.list.title": "Remembered ({{count}})",
   "settings.memory.list.titleEmpty": "Remembered",
+  "settings.memory.list.sourceHidden":
+    "{{count}} source passages from ingested documents are not listed here — open Graph to browse them.",
   "settings.memory.list.empty": "Nothing remembered yet. NovaClaw learns as you chat — no setup needed.",
   // 🔴 The unavailable state must never borrow the empty-state copy: "nothing remembered yet" and
   // "no setup needed" are both FALSE when the store cannot open, and the two states look identical
