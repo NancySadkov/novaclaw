@@ -2,7 +2,7 @@ import { describe, expect } from "bun:test"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { Effect, Layer } from "effect"
+import { Cause, Effect, Exit, Layer } from "effect"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Database } from "@novaclaw/core/database/database"
@@ -167,6 +167,37 @@ describe("a project file constrains the live evaluator", () => {
       )
       yield* Effect.sleep("1200 millis")
       expect((yield* service.ask(assertion("webfetch", "https://example.com"))).effect).toBe("deny")
+    }),
+  )
+
+  it.effect("🔴 a project denial says SO — the reason points at the file", () =>
+    Effect.gen(function* () {
+      // Without this a refused user is told only "denied" and goes looking through their own
+      // settings, which are innocent. The advice this reason carries is different from every other
+      // one: read the file in the folder, which may have come from whoever they cloned it from.
+      yield* seed([{ action: "bash", resource: "*", effect: "allow" }])
+      const service = yield* PermissionV2.Service
+      const result = yield* service.assert(assertion("bash", "ls")).pipe(Effect.exit)
+      expect(Exit.isFailure(result)).toBe(true)
+      if (!Exit.isFailure(result)) return
+      const error = Cause.squash(result.cause)
+      expect(error).toBeInstanceOf(PermissionV2.DeniedError)
+      expect((error as PermissionV2.DeniedError).reason).toBe("project-denied")
+    }),
+  )
+
+  it.effect("🔴 a denial the OPERATOR would have made anyway is NOT blamed on the project", () =>
+    Effect.gen(function* () {
+      // The wrong-pointer case, and the reason `projectDenied` re-evaluates without the constraint.
+      // Here the operator denies bash outright; the project also denies it. Reporting
+      // `project-denied` would send the user to read a file that changed nothing.
+      yield* seed([{ action: "bash", resource: "*", effect: "deny" }])
+      const service = yield* PermissionV2.Service
+      const result = yield* service.assert(assertion("bash", "ls")).pipe(Effect.exit)
+      expect(Exit.isFailure(result)).toBe(true)
+      if (!Exit.isFailure(result)) return
+      const error = Cause.squash(result.cause)
+      expect((error as PermissionV2.DeniedError).reason).toBeUndefined()
     }),
   )
 

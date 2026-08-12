@@ -139,6 +139,16 @@ export const DenialReason = Schema.Literals([
   "chain-unreadable",
   "unattended-unanswerable",
   "unanswerable-chain-unreadable",
+  /**
+   * This folder's `novaclaw.json` refused it, and nothing else would have.
+   *
+   * ⚠️ Its own literal because the ADVICE differs from every other reason here: the others describe
+   * the instance's own posture, which the person running NovaClaw chose. This one points at a FILE
+   * IN THE FOLDER — possibly written by whoever the user cloned it from — and the action it
+   * prescribes is "open Settings → Project and read `novaclaw.json`", not "change your settings".
+   * A reader told only *denied* would go looking in the wrong place.
+   */
+  "project-denied",
 ])
 export type DenialReason = typeof DenialReason.Type
 
@@ -198,6 +208,21 @@ export function denialMessage(error: unknown): string | undefined {
         `their own source files rather than working material. This is an UNATTENDED session, so no one is ` +
         `present to approve modifying it and waiting or retrying will change nothing. Write your output to a ` +
         `NEW file instead and name the attached file in your result if it genuinely needs to change.`
+      )
+    // The FOLDER refused it, not the instance. Every other reason here describes a posture the
+    // person running NovaClaw chose; this one is a file that may have arrived with a clone. So the
+    // advice has to point somewhere else entirely — at `novaclaw.json`, not at the settings — and it
+    // has to say that a project can only NARROW, because a model told merely "denied" will otherwise
+    // spend turns trying to get the permission widened somewhere that cannot widen it.
+    if (error.reason === "project-denied")
+      return (
+        `Permission denied: this folder's own \`novaclaw.json\` refuses action '${actions}' on ` +
+        `'${resources}'. That is a PROJECT rule declared in the working folder, not a setting of this ` +
+        `NovaClaw — the instance would have allowed it. A project may only ever NARROW what is permitted, ` +
+        `so no change to the instance's permission settings, and no consent prompt, can widen it; only ` +
+        `editing that file can, and it belongs to whoever set the folder up. Continue with what you ARE ` +
+        `allowed to do, and if the task genuinely cannot finish without '${actions}', name it in your result ` +
+        `together with the project file so the user can decide.`
       )
     // The B4c follow-up. Nobody RULED on this action, so the evaluator's honest verdict is `ask` —
     // and in an unattended chain an ask has no answerer, which makes it a hang rather than a gate.
@@ -895,6 +920,14 @@ export const layer = Layer.effect(
       const aliasDenied = (input.denyAliases ?? []).some(
         (resource) => evaluateNarrowed(input.action, resource, [all], [projectRules]).effect === "deny",
       )
+      // Did the PROJECT do this, or would it have been refused anyway? Compared against the same
+      // resources WITHOUT the constraint, because "the project denied it" is only true when nothing
+      // else would have — telling a user to go read a file that changed nothing is worse than
+      // saying nothing, and it is the kind of wrong pointer that costs an afternoon.
+      const projectDenied =
+        projectRules.length > 0 &&
+        effects.includes("deny") &&
+        !input.resources.some((resource) => evaluate(input.action, resource, all).effect === "deny")
       const evaluated: Permission.Effect = effects.includes("deny") ? "deny" : effects.includes("ask") ? "ask" : "allow"
       const effect: Permission.Effect =
         aliasDenied || evaluated === "deny" || input.minimumEffect === "deny"
@@ -961,7 +994,7 @@ export const layer = Layer.effect(
       return {
         effect,
         rules: all,
-        reason: undefined as DenialReason | undefined,
+        reason: (effect === "deny" && projectDenied ? "project-denied" : undefined) as DenialReason | undefined,
         attachment: protecting ? attachment : undefined,
       }
     })
