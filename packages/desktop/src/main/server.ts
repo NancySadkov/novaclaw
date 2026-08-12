@@ -17,7 +17,7 @@ import {
 export type HealthCheck = { wait: Promise<void> }
 
 type SidecarMessage =
-  | { type: "ready" }
+  | { type: "ready"; timings?: { sinceProcessStart: number; import: number; listen: number } }
   | { type: "stopped" }
   | { type: "error"; error: { name?: string; message: string; stack?: string } }
 
@@ -146,6 +146,15 @@ export async function spawnLocalServer(
         if (done) return
         done = true
         cleanup()
+        // ⚠️ Surfaced through the SAME stdout channel the app already writes to its log, rather than
+        // a new one: the parent's own boot timeline can only see fork-to-ready as a single number,
+        // and this is the only place the three parts of it exist. Optional on the type because a WSL
+        // sidecar answers the same protocol from an older build.
+        if (message.timings)
+          options.onStdout?.(
+            `sidecar ready sinceProcessStart=${message.timings.sinceProcessStart}ms ` +
+              `import=${message.timings.import}ms listen=${message.timings.listen}ms`,
+          )
         resolve()
         return
       }

@@ -25,7 +25,18 @@ type StopCommand = { type: "stop" }
 type SidecarCommand = StartCommand | StopCommand
 
 type SidecarMessage =
-  | { type: "ready" }
+  | {
+      type: "ready"
+      /**
+       * Where the sidecar's own startup went, in milliseconds.
+       *
+       * The parent can only see one number — fork to `ready` — and on the packaged build that is
+       * 1,515 ms, 69% of the whole boot. Which of `fork + Node bootstrap`, `the one big import`, and
+       * `building the layer graph` owns it decides whether the fix is a smaller bundle, a lazier
+       * graph, or an earlier fork, and guessing wrong costs a rewrite of the wrong thing.
+       */
+      timings: { sinceProcessStart: number; import: number; listen: number }
+    }
   | { type: "stopped" }
   | { type: "error"; error: { name?: string; message: string; stack?: string } }
 
@@ -74,8 +85,10 @@ async function start(command: StartCommand) {
     const cache = enableCompileCache()
     if (!cache.enabled) console.warn(`[novaclaw] compile cache off (${cache.reason}) — startup will be slower`)
     const serverURL = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "chunks", "novaclaw-server.js")).href
+    const beforeImport = performance.now()
     const { Server } = (await import(/* @vite-ignore */ serverURL)) as ServerModule
 
+    const beforeListen = performance.now()
     listener = await Server.listen({
       port: command.port,
       hostname: command.hostname,
@@ -83,7 +96,18 @@ async function start(command: StartCommand) {
       password: command.password,
       cors: ["nc://renderer"],
     })
-    parentPort.postMessage({ type: "ready" })
+    const done = performance.now()
+    parentPort.postMessage({
+      type: "ready",
+      // `performance.now()` in a child process is measured from ITS OWN start, so `sinceProcessStart`
+      // includes Electron's fork and Node's bootstrap — the part neither this process nor the parent
+      // can attribute any other way. Rounded: sub-millisecond precision here is noise.
+      timings: {
+        sinceProcessStart: Math.round(done),
+        import: Math.round(beforeListen - beforeImport),
+        listen: Math.round(done - beforeListen),
+      },
+    })
   } catch (error) {
     // Write it to stderr as well as posting it to the parent. The parent turns this message into a
     // rejected promise that the supervisor retries, and nothing along that path ever logged the
