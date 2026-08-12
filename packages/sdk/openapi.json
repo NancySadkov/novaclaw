@@ -7965,6 +7965,23 @@
                       },
                       "required": ["kind", "fs", "net", "reason", "bash"],
                       "additionalProperties": false
+                    },
+                    "enclosure": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": ["container", "vm", "bare", "unknown"]
+                        },
+                        "evidence": {
+                          "type": "string"
+                        },
+                        "platform": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["kind", "evidence", "platform"],
+                      "additionalProperties": false
                     }
                   },
                   "required": ["platform", "agentShell", "bash", "git", "bundle", "provisionSupported"],
@@ -8230,6 +8247,23 @@
                         }
                       },
                       "required": ["kind", "fs", "net", "reason", "bash"],
+                      "additionalProperties": false
+                    },
+                    "enclosure": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": ["container", "vm", "bare", "unknown"]
+                        },
+                        "evidence": {
+                          "type": "string"
+                        },
+                        "platform": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["kind", "evidence", "platform"],
                       "additionalProperties": false
                     }
                   },

@@ -10762,6 +10762,11 @@ export type ShellStatusResponses = {
         untrusted: "raw" | "confined" | "deny"
       }
     }
+    enclosure?: {
+      kind: "container" | "vm" | "bare" | "unknown"
+      evidence: string
+      platform: string
+    }
   }
 }
 
@@ -10855,6 +10860,11 @@ export type ShellProvisionResponses = {
         unattendedSafeMode: "raw" | "confined" | "deny"
         untrusted: "raw" | "confined" | "deny"
       }
+    }
+    enclosure?: {
+      kind: "container" | "vm" | "bare" | "unknown"
+      evidence: string
+      platform: string
     }
   }
 }
