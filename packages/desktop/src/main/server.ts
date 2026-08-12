@@ -19,7 +19,7 @@ export type HealthCheck = { wait: Promise<void> }
 type SidecarMessage =
   | { type: "ready" }
   | { type: "stopped" }
-  | { type: "error"; error: { message: string; stack?: string } }
+  | { type: "error"; error: { name?: string; message: string; stack?: string } }
 
 export type SidecarListener = { stop: () => Promise<void> }
 
@@ -150,7 +150,13 @@ export async function spawnLocalServer(
         return
       }
       if (message.type === "error") {
-        fail(Object.assign(new Error(message.error.message), { stack: message.error.stack }))
+        fail(
+          Object.assign(new Error(message.error.message), {
+            stack: message.error.stack,
+            // Preserved so the boot path can tell a lost port race from a broken sidecar.
+            ...(message.error.name === undefined ? {} : { name: message.error.name }),
+          }),
+        )
       }
     }
     const onExit = (code: number) => {
@@ -411,7 +417,7 @@ function delay(ms: number) {
 }
 
 function serializeError(error: unknown) {
-  if (error instanceof Error) return { message: error.message, stack: error.stack }
+  if (error instanceof Error) return { name: error.name, message: error.message, stack: error.stack }
   return { message: String(error) }
 }
 

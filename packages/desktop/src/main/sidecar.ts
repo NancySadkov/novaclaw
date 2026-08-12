@@ -27,7 +27,7 @@ type SidecarCommand = StartCommand | StopCommand
 type SidecarMessage =
   | { type: "ready" }
   | { type: "stopped" }
-  | { type: "error"; error: { message: string; stack?: string } }
+  | { type: "error"; error: { name?: string; message: string; stack?: string } }
 
 type ParentPort = {
   postMessage(message: SidecarMessage): void
@@ -162,7 +162,10 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
 }
 
 function serializeError(error: unknown) {
-  if (error instanceof Error) return { message: error.message, stack: error.stack }
+  // ⚠️ `name` travels too. The parent has to decide whether a start failure is RETRYABLE (a lost
+  // port race) or terminal, and matching that on the message prose would break the moment someone
+  // rewords it — a sentence is not an identifier.
+  if (error instanceof Error) return { name: error.name, message: error.message, stack: error.stack }
   return { message: String(error) }
 }
 

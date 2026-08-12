@@ -102,6 +102,39 @@ describe("desktop boot order", () => {
     expect(source).toMatch(/Deferred\.await\(res\)[\s\S]{0,200}Effect\.timeout\("10 seconds"\)/)
   })
 
+  test("a lost port race is re-probed, and ONLY a lost port race", () => {
+    // 🔴 The boot used to end on a collision it could not win: probe port 0, close the socket, and
+    // the sidecar binds a moment later — anything may take it in that gap, and the user got a
+    // "could not start the local server" page for a transient race a second probe would have missed.
+    // The retry predicate is the load-bearing part: a BROKEN sidecar must fail on the first attempt,
+    // or a prompt named error becomes a long wait for the same one.
+    expect(source).toMatch(/Effect\.retry\(\{\s*while:\s*isPortRace/)
+    expect(source).toMatch(/error\.name === "PortUnavailableError"/)
+    // ⚠️ A user-PINNED port (NOVACLAW_PORT) is never retried: re-probing returns the same number, so
+    // the retry cannot succeed and would only serve the honest error three timeouts late.
+    expect(source).toMatch(/!portIsPinned && error instanceof Error/)
+    expect(source).toMatch(/portIsPinned = process\.env\.NOVACLAW_PORT !== undefined/)
+  })
+
+  test("the re-probe is BOUNDED, and the probe is inside the retried effect", () => {
+    expect(source).toMatch(/Schedule\.recurs\(PORT_RACE_ATTEMPTS - 1\)/)
+    // ⚠️ If `probePort` sat outside `startOn`, every attempt would retry the SAME port — a retry
+    // that cannot succeed, which is worse than none because it hides the cause behind a delay.
+    const startOn = source.indexOf("const startOn = Effect.gen")
+    const retry = source.indexOf("Effect.retry({ while: isPortRace")
+    expect(startOn).toBeGreaterThan(0)
+    expect(source.indexOf("yield* probePort")).toBeGreaterThan(startOn)
+    expect(source.indexOf("yield* probePort")).toBeLessThan(retry)
+  })
+
+  test("the URL is built from the port that was actually probed, not a captured one", () => {
+    // The main process owns `url`; building it outside the retried effect would publish the port of
+    // a FAILED attempt — a server nobody talks to, which is the silent failure this design refuses.
+    const startOn = source.indexOf("const startOn = Effect.gen")
+    const urlBuild = source.indexOf("const url = `http://${hostname}:${port}`")
+    expect(urlBuild).toBeGreaterThan(startOn)
+  })
+
   test("the health wait is caught with catchCause, never catch", () => {
     expect(source).toMatch(/health\.wait[\s\S]{0,400}Effect\.catchCause\(/)
     expect(source).not.toMatch(/health\.wait[\s\S]{0,400}Effect\.catch\(/)

@@ -8,7 +8,7 @@ import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
 import { app, BrowserWindow, dialog } from "electron"
 
-import { Cause, Deferred, Effect, Exit } from "effect"
+import { Cause, Deferred, Effect, Exit, Schedule } from "effect"
 import contextMenu from "electron-context-menu"
 
 import type { ServerReadyData } from "../preload/types"
@@ -379,10 +379,32 @@ const main = Effect.gen(function* () {
   // `spawnSync` login-shell probes at 5 s each, which used to be up to ~10 s of blank screen before
   // anything was drawn. Its only contract is that it runs before `createSidecarEnv()` copies
   // `process.env`, and being the first statement of this effect keeps that exactly.
+  /**
+   * How many times a LOST PORT RACE may be re-probed before the boot gives up and reports.
+   *
+   * The race is narrow — the probe binds port 0, reads the number, closes, and the sidecar binds it
+   * a moment later — so anything that loses it twice in a row is not a race, it is a machine where
+   * something is actively taking ports. Retrying forever there would replace a named failure with a
+   * spinner, which is strictly worse.
+   */
+  const PORT_RACE_ATTEMPTS = 3
+
+  /**
+   * Only a lost race is retryable. A sidecar that is broken must fail on the FIRST attempt.
+   *
+   * ⚠️ And only when the port was PROBED. `NOVACLAW_PORT` is the user pinning a port — re-probing
+   * returns that same number, so a retry cannot possibly succeed and would just serve the honest
+   * "port N is already in use" three timeouts late. This is the same required/preferred split the
+   * server makes, decided on the side that owns the choice.
+   */
+  const portIsPinned = process.env.NOVACLAW_PORT !== undefined && process.env.NOVACLAW_PORT !== ""
+  const isPortRace = (error: unknown): boolean =>
+    !portIsPinned && error instanceof Error && error.name === "PortUnavailableError"
+
   const startSidecar = Effect.gen(function* () {
     preferAppEnv(app.getPath("userData"))
 
-    const port = yield* Effect.gen(function* () {
+    const probePort = Effect.gen(function* () {
       const fromEnv = process.env.NOVACLAW_PORT
       if (fromEnv) {
         const parsed = Number.parseInt(fromEnv, 10)
@@ -410,23 +432,59 @@ const main = Effect.gen(function* () {
     }).pipe(Effect.timeout("10 seconds"))
 
     const hostname = "127.0.0.1"
-    const url = `http://${hostname}:${port}`
     const password = randomUUID()
-
-    logger.log("sidecar connection started", { url })
 
     ensureLoopbackNoProxy()
     useEnvProxy()
 
-    logger.log("spawning sidecar", { url })
-    // P3: supervised — a sidecar that dies after boot is respawned with backoff (crash loops give
-    // up gracefully and the renderer's connection banner reports the outage).
-    const { listener, health } = yield* Effect.promise(() =>
-      superviseLocalServer(hostname, port, password, {
-        onStdout: (message) => writeLog("server", "stdout", { message }),
-        onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
-        onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
-      }),
+    /**
+     * Probe a port, spawn on it, and **re-probe if the race was lost**.
+     *
+     * The probe binds port 0, reads the number, closes the socket, and the sidecar binds it a moment
+     * later. Anything may take it in that gap, and losing that race used to end the boot outright:
+     * the child reported `PortUnavailableError`, the spawn rejected, and the user got a "could not
+     * start the local server" page for a transient collision that a second probe would have avoided.
+     *
+     * ⛔ The fix is NOT `portIntent: "preferred"` in the sidecar. The main process owns `url` and
+     * builds it from the port it probed; the sidecar's ready message carries no port, so letting the
+     * CHILD fall back yields a server nobody talks to — a silent failure replacing a loud one.
+     *
+     * ✅ Retrying HERE is safe precisely because this runs before `serverReady` is resolved, so a
+     * changed port is invisible to the renderer: no stale URL, no republish protocol. Only a
+     * POST-ready respawn would need that, and the supervisor reuses a port already proven bindable.
+     *
+     * ⚠️ Retries only on a lost race (`isPortRace`). A broken sidecar must fail on the first attempt
+     * — retrying it three times would turn a prompt, named error into a long wait for the same one.
+     */
+    const startOn = Effect.gen(function* () {
+      const port = yield* probePort
+      const url = `http://${hostname}:${port}`
+      logger.log("sidecar connection started", { url })
+      logger.log("spawning sidecar", { url })
+      // P3: supervised — a sidecar that dies after boot is respawned with backoff (crash loops give
+      // up gracefully and the renderer's connection banner reports the outage).
+      const supervised = yield* Effect.tryPromise({
+        try: () =>
+          superviseLocalServer(hostname, port, password, {
+            onStdout: (message) => writeLog("server", "stdout", { message }),
+            onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
+            onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
+          }),
+        catch: (cause) => cause,
+      })
+      return { port, url, ...supervised }
+    })
+
+    const { port, url, listener, health } = yield* startOn.pipe(
+      Effect.tapError((cause) =>
+        Effect.sync(() => {
+          if (isPortRace(cause)) writeLog("utility", "sidecar lost the port race — re-probing", {}, "warn")
+        }),
+      ),
+      Effect.retry({ while: isPortRace, schedule: Schedule.recurs(PORT_RACE_ATTEMPTS - 1) }),
+      // Exhausted, or never retryable: this is the boot failing, and `forwardInitializationFailure`
+      // turns it into the renderer's named page rather than a splash that never ends.
+      Effect.catch((cause) => Effect.die(cause)),
     )
     server = listener
     sidecarOfflineProbe = () => checkOfflineEnabled(url, password, app.getPath("home"))
