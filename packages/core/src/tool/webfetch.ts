@@ -152,26 +152,30 @@ export const toModelOutput = (output: { readonly url: string; readonly output: s
  * silently empty. The wording names the byte count so the reader can judge which case they are in,
  * and states that the fetch itself succeeded, because the one wrong response here is a retry.
  *
- * ⚠️ **What this does NOT catch, measured rather than assumed.** The obvious motivating example — a
- * JS-rendered SPA shell — usually carries a `<title>`, and the markdown converter lifts it, so the
- * extraction is `"App"` rather than `""` and this guard stays silent. That residue is worse than the
- * one fixed here (a one-word output reads as content, where an empty one at least reads as nothing),
- * but separating "the head's title" from "the body's text" is a parse, not a threshold, and a
- * threshold is the wrong instrument: any byte floor would be a number chosen to fit the example.
- * Tracked in `todo/subsystem-residues.md` under Web.
+ * ✅ **The SPA-shell case is now caught too (2026-08-12), by a parse rather than a threshold.** This
+ * guard used to ask "did conversion produce anything", and a JS-rendered shell answers YES: it
+ * carries `<title>App</title>`, the converter lifts it, and a one-word output reads as page content —
+ * worse than an empty one, which at least reads as nothing. The question was never how SHORT the
+ * output is, so no byte floor could have answered it; it is whether the BODY said anything, which
+ * `bodyTextFromHTML` answers exactly. The title is then NAMED in the note rather than returned as if
+ * it were the article.
  */
-const emptyExtractionNote = (bytes: number, format: Format) =>
-  `[No readable text could be extracted. The server returned ${bytes} bytes of HTML and converting ` +
-  `it to ${format} produced nothing — typically a page that renders its content with JavaScript, or ` +
-  `an interstitial. The fetch itself succeeded, so this is an extraction result and not a network ` +
-  `failure; requesting the same URL again will return the same thing.]`
+const emptyExtractionNote = (bytes: number, format: Format, title: string) =>
+  `[No readable text could be extracted. The server returned ${bytes} bytes of HTML and its body ` +
+  `carried no text` +
+  (title === "" ? "" : ` — only the page title, ${JSON.stringify(title)}`) +
+  `. Typically a page that renders its content with JavaScript, or an interstitial. The fetch itself ` +
+  `succeeded, so this is an extraction result and not a network failure; requesting the same URL ` +
+  `again will return the same thing.]`
 
 const convert = (content: string, contentType: string, format: Format) => {
   if (!contentType.includes("text/html")) return content
   if (format !== "markdown" && format !== "text") return content
   const extracted = format === "markdown" ? convertHTMLToMarkdown(content) : extractTextFromHTML(content)
-  if (extracted.trim().length > 0 || content.length === 0) return extracted
-  return emptyExtractionNote(content.length, format)
+  // ⚠️ The DECISION reads the body; the RETURN is still the full conversion. Those are two different
+  // questions and collapsing them would throw away a real page whose body text is thin but present.
+  if (content.length === 0 || bodyTextFromHTML(content) !== "") return extracted
+  return emptyExtractionNote(content.length, format, titleFromHTML(content))
 }
 
 export const layer = Layer.effectDiscard(
@@ -269,12 +273,70 @@ export const node = makeLocationNode({
   deps: [ToolRegistry.node, PermissionV2.node, LayerNodePlatform.httpClient, WebGovernor.node],
 })
 
+/**
+ * Text the page's BODY carries — the head, and everything unreadable, excluded.
+ *
+ * 🔴 This is the parse the empty-extraction guard was missing. That guard asked "did conversion
+ * produce anything", and an SPA shell answers YES: it carries `<title>App</title>`, the converter
+ * lifts it, and a one-word output reads as page content. A byte floor was the wrong instrument —
+ * any number would have been chosen to fit that example — and this is the right one, because the
+ * question was never "how short is it" but "did the BODY say anything".
+ *
+ * ⚠️ It does not require a `<body>` tag, deliberately. A fetched fragment has no `html`/`head`/`body`
+ * at all, and demanding one would report every fragment as bodyless. The rule is subtractive: text
+ * counts unless it is inside `<head>` or inside an element whose contents are not prose.
+ */
+export function bodyTextFromHTML(html: string) {
+  let text = ""
+  let skipDepth = 0
+  let headDepth = 0
+  const parser = new Parser({
+    onopentag(name) {
+      if (name === "head" || headDepth > 0) headDepth++
+      else if (skipDepth > 0 || UNREADABLE_ELEMENTS.includes(name)) skipDepth++
+    },
+    ontext(input) {
+      if (skipDepth === 0 && headDepth === 0) text += input
+    },
+    onclosetag() {
+      if (headDepth > 0) headDepth--
+      else if (skipDepth > 0) skipDepth--
+    },
+  })
+  parser.write(html)
+  parser.end()
+  return text.trim()
+}
+
+/** The document's `<title>`, so the note can NAME what the shell actually said. */
+export function titleFromHTML(html: string) {
+  let title = ""
+  let inTitle = false
+  const parser = new Parser({
+    onopentag(name) {
+      if (name === "title") inTitle = true
+    },
+    ontext(input) {
+      if (inTitle) title += input
+    },
+    onclosetag(name) {
+      if (name === "title") inTitle = false
+    },
+  })
+  parser.write(html)
+  parser.end()
+  return title.trim()
+}
+
+/** Elements whose text is never prose. Shared so the two walks cannot drift apart. */
+const UNREADABLE_ELEMENTS = ["script", "style", "noscript", "iframe", "object", "embed"]
+
 export function extractTextFromHTML(html: string) {
   let text = ""
   let skipDepth = 0
   const parser = new Parser({
     onopentag(name) {
-      if (skipDepth > 0 || ["script", "style", "noscript", "iframe", "object", "embed"].includes(name)) skipDepth++
+      if (skipDepth > 0 || UNREADABLE_ELEMENTS.includes(name)) skipDepth++
     },
     ontext(input) {
       if (skipDepth === 0) text += input

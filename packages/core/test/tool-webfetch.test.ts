@@ -206,8 +206,6 @@ describe("WebFetchTool registration", () => {
   it.effect("names an empty extraction instead of returning a blank page", () =>
     Effect.gen(function* () {
       reset()
-      // No <title> — deliberately. A shell WITH one extracts to that title, which this guard does not
-      // catch and the source comment records as a separate, worse residue.
       const shell = `<html><head><script>renderEverything()</script></head><body><div id="root"></div></body></html>`
       respond = () =>
         Effect.succeed(new Response(shell, { headers: { "content-type": "text/html; charset=utf-8" } }))
@@ -222,6 +220,51 @@ describe("WebFetchTool registration", () => {
         expect(value).toContain(`${shell.length} bytes`)
         expect(value).toContain("not a network failure")
       }
+    }),
+  )
+
+  /**
+   * 🔴 The residue the guard above used to leave, and the reason it needed a PARSE.
+   *
+   * A real SPA shell carries `<title>App</title>`. The converter lifts it, so extraction is `"App"`
+   * rather than `""` and the old "did conversion produce anything" test said yes — a one-word output
+   * reading as page content, which is worse than an empty one because an empty one at least reads as
+   * nothing. No byte floor could have caught it: the question was never how short the output is.
+   */
+  it.effect("an SPA shell whose only text is its <title> is named, not returned as content", () =>
+    Effect.gen(function* () {
+      reset()
+      const shell =
+        `<html><head><title>App</title><script>boot()</script></head><body><div id="root"></div></body></html>`
+      respond = () =>
+        Effect.succeed(new Response(shell, { headers: { "content-type": "text/html; charset=utf-8" } }))
+      const registry = yield* ToolRegistry.Service
+
+      for (const format of ["markdown", "text"] as const) {
+        const value = (yield* executeTool(registry, call({ url: "https://1.1.1.1", format }))) as { value: string }
+        expect(value.value).toContain("No readable text could be extracted")
+        // It NAMES the title rather than returning it. A reader can tell "the shell said App" from
+        // "the article said App", which is the whole distinction that was missing.
+        expect(value.value).toContain("only the page title")
+        expect(value.value).toContain('"App"')
+      }
+    }),
+  )
+
+  it.effect("the body/head split is structural, not positional", () =>
+    Effect.gen(function* () {
+      // ⚠️ Three shapes that a naive rule gets wrong, asserted directly on the parse so a failure
+      // says which one broke.
+      // A fragment has no html/head/body at all and must still count as having a body.
+      expect(WebFetchTool.bodyTextFromHTML("<p>bare fragment</p>")).toBe("bare fragment")
+      // A title outside <head> is page text — it is the head that is excluded, not the tag name.
+      expect(WebFetchTool.bodyTextFromHTML("<body><title>Chapter</title>text</body>")).toContain("Chapter")
+      // Script inside the BODY is still unreadable.
+      expect(WebFetchTool.bodyTextFromHTML("<body><script>var x=1</script></body>")).toBe("")
+      // And the head is excluded even when it carries prose-looking text.
+      expect(WebFetchTool.bodyTextFromHTML("<head><title>App</title></head><body></body>")).toBe("")
+      expect(WebFetchTool.titleFromHTML("<head><title>  App  </title></head>")).toBe("App")
+      expect(WebFetchTool.titleFromHTML("<body>no title here</body>")).toBe("")
     }),
   )
 
