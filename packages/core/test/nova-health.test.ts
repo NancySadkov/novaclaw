@@ -154,3 +154,62 @@ describe("fromModel — declared capability, and it says so", () => {
   })
 })
 
+
+describe("NovaHealth.fromMemory", () => {
+  /**
+   * 🔴 This signal exists because its ABSENCE was the defect. Fault injection 2026-08-12 showed the
+   * product survives an unopenable memory graph exactly as designed, then tells the user "Nothing
+   * remembered yet … no setup needed" — indistinguishable from a healthy new install, so nobody
+   * looks. The board that answers "is anything wrong?" could not answer for it.
+   */
+  test("an ERRORED engine is a PROBLEM that names the consequence and offers repair", () => {
+    const signal = NovaHealth.fromMemory({ stage: "error" })
+    expect(signal.status).toBe("problem")
+    expect(signal.id).toBe("memory")
+    // The consequence, in the user's terms — "the graph failed to open" tells a non-expert nothing
+    // about what they have lost.
+    expect(signal.detail).toContain("Nothing is being remembered")
+    expect(signal.action).toBeDefined()
+  })
+
+  test("an extra detail is appended, not swallowed", () => {
+    const signal = NovaHealth.fromMemory({ stage: "error", detail: "EEXIST on the store folder." })
+    expect(signal.detail).toContain("Nothing is being remembered")
+    expect(signal.detail).toContain("EEXIST on the store folder.")
+  })
+
+  test("not-loaded is UNKNOWN, never ok — we have not opened the store, so we cannot claim it opens", () => {
+    // ⚠️ The tempting bug: reporting a lazily-unbuilt subsystem as healthy. That is the same false
+    // reassurance the Memory app was giving, moved into the health board.
+    const idle = NovaHealth.fromMemory({ stage: "not-loaded" })
+    expect(idle.status).toBe("unknown")
+    expect(idle.detail).toContain("opens the first time it is used")
+    expect(NovaHealth.fromMemory({ stage: "loading" }).status).toBe("unknown")
+    expect(NovaHealth.fromMemory({ stage: undefined }).status).toBe("unknown")
+  })
+
+  test("switched off deliberately is not a fault", () => {
+    const off = NovaHealth.fromMemory({ stage: "disabled" })
+    expect(off.status).toBe("ok")
+    expect(off.detail).toContain("your setting")
+  })
+
+  test("ready is a clean tick with nothing to add", () => {
+    const ready = NovaHealth.fromMemory({ stage: "ready" })
+    expect(ready.status).toBe("ok")
+    expect(ready.detail).toBeUndefined()
+    expect(ready.action).toBeUndefined()
+  })
+
+  test("a broken store drags the whole board to `problem`", () => {
+    // The point of adding the row: `worst` must SEE it. A signal that exists but cannot change the
+    // overall verdict would leave the board still saying nothing is wrong.
+    const board = [
+      NovaHealth.fromScheduler(true),
+      NovaHealth.fromMemory({ stage: "error" }),
+      NovaHealth.fromUpdater(true),
+    ]
+    expect(NovaHealth.worst(board)).toBe("problem")
+    expect(NovaHealth.headline(board)).not.toContain("nothing")
+  })
+})

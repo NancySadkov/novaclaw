@@ -17,6 +17,7 @@ import { Scratch } from "@novaclaw/core/scratch"
 import { Vcs } from "@/project/vcs"
 import { OsPlaces } from "@/server/os-places"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
+import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { Database } from "@novaclaw/core/database/database"
 import { DatabaseHealth } from "@novaclaw/core/database/health"
 import { NovaHealth } from "@novaclaw/core/nova-health"
@@ -276,9 +277,16 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
                       })),
                     })
 
+          // ⚠️ The ENGINE's stage, not the capability's. The capability answers "did the layer
+          // build", and it does — the open failure is caught inside and yields a degraded client —
+          // so it reads `ready` against a provably broken store. Measured 2026-08-12.
+          // A plain read of the last transition: inspecting must not open the graph.
+          const memory = Memory.runtimeStatus()
+
           const signals = [
             NovaHealth.fromPressure(pressure),
             NovaHealth.fromDatabase(database),
+            NovaHealth.fromMemory({ stage: memory.stage, ...(memory.detail === undefined ? {} : { detail: memory.detail }) }),
             NovaHealth.fromScheduler(running),
             // ⚠️ `undefined`, not `false`. UPDATER_ENABLED lives in the desktop main process and a
             // server-side board cannot read it; reporting "updates are off" would describe the

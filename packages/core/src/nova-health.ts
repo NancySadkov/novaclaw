@@ -189,3 +189,57 @@ export const fromModel = (input: {
     }
   return { id: "model", label: "Model", status: "ok", detail: input.name }
 }
+
+/**
+ * Durable memory — the eighth signal.
+ *
+ * 🔴 **Added 2026-08-12 because its absence was the defect.** Fault injection showed the product
+ * survives an unopenable memory graph exactly as designed — boot completes, nothing white-screens —
+ * and then tells the user *"Nothing remembered yet. NovaClaw learns as you chat — no setup needed."*
+ * Both halves of that are false when the store cannot open, and the state is indistinguishable from
+ * a healthy new install, so nobody would look. Someone would chat for weeks believing it was
+ * learning about them.
+ *
+ * ⚠️ **Takes `Memory.runtimeStatus()`, NOT the capability's state — and that distinction is the
+ * whole point.** The first version of this signal read the capability, and reported `ok` against a
+ * provably broken store. The capability edge answers *"did the LAYER build"*, and it does: the
+ * engine's open failure is caught inside the layer, which returns a degraded client rather than
+ * failing. So the edge is `ready` while the store is unopenable. The engine's own runtime stage is
+ * the only thing that knows.
+ *
+ * ⚠️ Reading the stage does not START anything — it is a plain read of the last transition, so a
+ * board that has never been used still reports `not-loaded` rather than opening the graph to find
+ * out. That preserves the property the capability exists for.
+ *
+ * ⚠️ `not-loaded` is `unknown`, not `ok`, under this file's rule that unknown is never a tick: we
+ * have not opened the store, so we cannot claim it opens. Reporting `ok` there would be the same
+ * false reassurance the Memory app was giving, moved into the health board.
+ */
+export const fromMemory = (input: {
+  readonly stage: "disabled" | "not-loaded" | "loading" | "ready" | "error" | undefined
+  readonly detail?: string
+}): Signal => {
+  const detail = input.detail?.trim()
+  if (input.stage === undefined)
+    return { id: "memory", label: "Memory", status: "unknown", detail: "Could not read the memory subsystem." }
+  if (input.stage === "error")
+    return {
+      id: "memory",
+      label: "Memory",
+      status: "problem",
+      // Names the CONSEQUENCE first: "the graph failed to open" tells a non-expert nothing about
+      // what they have lost.
+      detail: `Nothing is being remembered, and saved memories cannot be read.${detail ? ` ${detail}` : ""}`,
+      action: "Open Memory and choose Retry. If it keeps failing, check the error log in Debug.",
+    }
+  // Switched off deliberately is not a fault — the same reading the updater row takes.
+  if (input.stage === "disabled")
+    return { id: "memory", label: "Memory", status: "ok", detail: "Off, by your setting." }
+  if (input.stage === "ready") return { id: "memory", label: "Memory", status: "ok" }
+  return {
+    id: "memory",
+    label: "Memory",
+    status: "unknown",
+    detail: input.stage === "loading" ? "Still opening." : "Not opened yet — it opens the first time it is used.",
+  }
+}

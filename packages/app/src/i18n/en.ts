@@ -1828,6 +1828,15 @@ export const dict = {
   "settings.memory.list.title": "Remembered ({{count}})",
   "settings.memory.list.titleEmpty": "Remembered",
   "settings.memory.list.empty": "Nothing remembered yet. NovaClaw learns as you chat — no setup needed.",
+  // 🔴 The unavailable state must never borrow the empty-state copy: "nothing remembered yet" and
+  // "no setup needed" are both FALSE when the store cannot open, and the two states look identical
+  // to the user otherwise. Measured 2026-08-12 by fault injection.
+  "settings.memory.unavailable.title": "Memory is not working",
+  "settings.memory.unavailable.body":
+    "NovaClaw cannot open its memory store, so nothing is being remembered and saved memories cannot be read. This is not an empty memory — it is a fault.",
+  "settings.memory.unavailable.retry": "Retry",
+  "settings.memory.unavailable.retrying": "Retrying…",
+  "settings.memory.unavailable.retryFailed": "Still cannot open the memory store.",
   "settings.memory.scope.global": "Always",
   "settings.memory.scope.chat": "This chat",
   "settings.memory.scope.otherChat": "Another chat",
