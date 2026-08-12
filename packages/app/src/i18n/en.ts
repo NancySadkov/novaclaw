@@ -1239,6 +1239,8 @@ export const dict = {
   "settings.general.row.theme.title": "Theme",
   "settings.general.row.theme.description":
     "Choose a full visual style, including colors and fonts. Or browse more themes.",
+  "settings.general.row.font.default": "Default",
+  "settings.general.row.font.custom": "Type a font name…",
   "settings.general.row.font.title": "Code Font",
   "settings.general.row.font.description": "Set the font used for code shown in chats. Leave blank to use the default.",
   "settings.general.row.terminalFont.title": "Terminal Font",

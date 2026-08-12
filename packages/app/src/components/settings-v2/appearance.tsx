@@ -1,4 +1,4 @@
-import { Component, createMemo, createResource, onMount, Show } from "solid-js"
+import { Component, createMemo, createResource, onMount, Show, createSignal } from "solid-js"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
@@ -22,6 +22,7 @@ import { Link } from "../link"
 import { ThemeSwatches } from "./parts/theme-swatches"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { BUNDLED_FONTS, CANDIDATE_MONO, makeFontProbe, offeredFonts } from "./fonts"
 
 // The Appearance tab — the look/feel of the app (color scheme, theme, fonts) plus Sound Effects,
 // lifted out of General so the app-wide config there isn't cluttered with per-device presentation.
@@ -92,6 +93,23 @@ export const SettingsAppearanceV2: Component = () => {
     { value: "dark", label: language.t("theme.scheme.dark") },
   ])
   const mono = () => monoInput(settings.appearance.font())
+
+  // Probed ONCE: each check renders a probe string twice per generic, and re-running it per render
+  // would measure text on every keystroke in this dialog.
+  const fontProbe = makeFontProbe()
+  const [typingFont, setTypingFont] = createSignal(false)
+  const monoChoices = createMemo(() =>
+    offeredFonts({
+      bundled: BUNDLED_FONTS,
+      candidates: CANDIDATE_MONO,
+      present: fontProbe,
+      current: mono(),
+    }),
+  )
+  const FONT_CUSTOM = "type-a-font-name"
+  /** Unset means "use the default", which this row's own copy promises. A blank trigger states
+   *  nothing, so the default is a NAMED option that persists "" — the stored form of unset. */
+  const FONT_DEFAULT = "use-the-default"
   const sans = () => sansInput(settings.appearance.uiFont())
   const terminal = () => terminalInput(settings.appearance.terminalFont())
 
@@ -221,20 +239,52 @@ export const SettingsAppearanceV2: Component = () => {
           description={language.t("settings.general.row.font.description")}
         >
           <div class="w-full sm:w-[220px]">
-            <TextInputV2
-              data-action="settings-code-font"
-              type="text"
-              appearance="base"
-              value={mono()}
-              onInput={(event) => settings.appearance.setFont(event.currentTarget.value)}
-              placeholder={monoDefault}
-              spellcheck={false}
-              autocorrect="off"
-              autocomplete="off"
-              autocapitalize="off"
-              aria-label={language.t("settings.general.row.font.title")}
-              style={{ "font-family": monoFontFamily(settings.appearance.font()) }}
-            />
+            <Show
+              when={!typingFont()}
+              fallback={
+                <TextInputV2
+                  data-action="settings-code-font"
+                  type="text"
+                  appearance="base"
+                  value={mono()}
+                  onInput={(event) => settings.appearance.setFont(event.currentTarget.value)}
+                  placeholder={monoDefault}
+                  spellcheck={false}
+                  autocorrect="off"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  aria-label={language.t("settings.general.row.font.title")}
+                  style={{ "font-family": monoFontFamily(settings.appearance.font()) }}
+                />
+              }
+            >
+              <SelectV2
+                appearance="inline"
+                data-action="settings-code-font"
+                options={[
+                  { value: FONT_DEFAULT, label: `${language.t("settings.general.row.font.default")} (${monoDefault})` },
+                  ...monoChoices().map((family) => ({ value: family, label: family })),
+                  { value: FONT_CUSTOM, label: language.t("settings.general.row.font.custom") },
+                ]}
+                current={
+                  mono()
+                    ? { value: mono(), label: mono() }
+                    : {
+                        value: FONT_DEFAULT,
+                        label: `${language.t("settings.general.row.font.default")} (${monoDefault})`,
+                      }
+                }
+                placement="bottom-end"
+                gutter={6}
+                value={(option) => option.value}
+                label={(option) => option.label}
+                onSelect={(option) => {
+                  if (!option) return
+                  if (option.value === FONT_CUSTOM) return setTypingFont(true)
+                  settings.appearance.setFont(option.value === FONT_DEFAULT ? "" : option.value)
+                }}
+              />
+            </Show>
           </div>
         </SettingsRowV2>
 
