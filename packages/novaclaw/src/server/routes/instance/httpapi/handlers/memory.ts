@@ -235,7 +235,13 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
               Effect.gen(function* () {
               const models = yield* SessionRunnerModel.Service
               const llm = yield* LLMClient.Service
-              const model = yield* models.resolveDefault()
+              // ⚠️ BOUNDED. Picking a model reads a catalog and a credential; it does not call the
+              // model, so it is fast or it is stuck. Unbounded, a stuck resolve makes the whole
+              // detached pass vanish silently — which is exactly how this failed on 2026-08-12:
+              // zero entities, zero errors, and no way to tell it from "extracted nothing".
+              const model = yield* models
+                .resolveDefault()
+                .pipe(Effect.timeoutOrElse({ duration: "30 seconds", orElse: () => Effect.die("resolveDefault timed out") }))
               const outcome = yield* KbAbsorb.absorb({
                 llm,
                 model,
