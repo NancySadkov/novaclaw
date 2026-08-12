@@ -25,8 +25,7 @@
     "novaclaw test/cli/": 1
   },
   "failing": {
-    "novaclaw:server": [
-    ]
+    "novaclaw:server": []
   },
   "peaks": {
     "schema": 1236,
@@ -48,12 +47,16 @@
     "novaclaw:control-plane": 806,
     "novaclaw:fixture": 875
   },
+  "peaksDeliberatelyAbsent": [
+    "script",
+    "effect-drizzle-sqlite"
+  ],
   "workingSets": {
     "core": 4616
   },
   "workingSetsNote": "Resident WorkingSet64 peak, measured beside the attributed commit peak. Missing units use the explicit UNPROFILED_RESIDENT_MB default; never infer resident demand from commit charge. Core measured 4616 MB resident beside 16552 MB commit across 907 owning ticks on 2026-08-09 (app b2b591b83).",
   "peaksNote": "Measured peak MB per run unit — the input to the memory ladder in script/lib/memory-plan.ts. RE-BASELINED WHOLE on 2026-08-07, all twenty at once, from the ATTRIBUTED rows of tmp/peak-series.jsonl. Each entry is the LARGEST attributed reading for that unit across every attributed run (2 to 9 runs per unit); WHOLE_HEADROOM_FACTOR then covers overshoot beyond that maximum. Piecemeal editing is how the dead 1007 MB `core` entry survived four gates, so re-baseline the set or none of it.",
   "peaksScaleNote": "🔴 ROWS ARE NOT COMPARABLE ACROSS 2026-08-07 app 2d6ad8db7. Before it the sampler summed every `bun` on the box by name and every reading also carried the `bun run test` parent shim; after it a sample is attributed by process BIRTH TIME and carries `foreignMb`. No arithmetic converts an old row into a new one — `schema` read 43 (the shim alone, its own process caught by no tick) and reads 552-1236 now. Only rows carrying `foreignMb` were used here. See todo/test-speed.md.",
-  "peaksUnsampledNote": "TWO units have no entry ON PURPOSE and must not be given one from the series: `script` (largest bound 312 MB) and `effect-drizzle-sqlite` (687 MB). No attributed run of either reached 3 own-ticks — a sub-second unit gets 2-4 ticks at a 200 ms interval, so its recorded max is a LOWER BOUND, and writing a lower bound in as a peak is the bug this whole re-baseline exists to undo. Absent, they plan with UNPROFILED_PEAK_MB (1200), a declared guess that is above every bound observed for them. `schema` is the exception and is listed: it is equally under-sampled, but its largest bound (1236) EXCEEDS that guess, so the guess is falsified and the bound is the safer of the two. Its entry is a floor, not a peak.",
+  "peaksUnsampledNote": "TWO units have no entry ON PURPOSE and must not be given one from the series: `script` and `effect-drizzle-sqlite`. Absent, they plan with UNPROFILED_PEAK_MB (1200), a declared guess. CORRECTED 2026-08-13: the original reason was 'no attributed run reached 3 own-ticks', and for `script` that is no longer true -- 28 runs now have 3+ ticks, max 345 MB, so the tool started printing 'copy it into peaks'. Do NOT. Across the whole series `script` has been observed at 625 MB, so its well-sampled runs are missing the peak by nearly 2x; 3 samples is enough to stop LOOKING thin, not enough to have SEEN the peak. Writing 345 in would under-reserve against a real observation, which is the same bug in a new disguise. `effect-drizzle-sqlite` still has only 2 well-sampled runs (max 634) against a 688 MB observation. Both are now listed in `peaksDeliberatelyAbsent`, which `script/test.ts` reads, so the printed advice and this note can no longer disagree. `schema` is the exception and is listed in `peaks`: it is equally under-sampled, but its largest bound (1236) EXCEEDS the 1200 guess, so the guess is falsified and the bound is the safer of the two. Its entry is a floor, not a peak.",
   "peaksLadderNote": "Commit and resident demand are planned against independent walls as of 2026-08-09. `core` carries 17958 MB commit and 4616 MB resident profiles; never collapse them through min(free RAM, commit headroom). Sharding core still mitigates little because ~9.3 GB of commit belongs to sixteen bun workers spawned by one flock test file."
 }

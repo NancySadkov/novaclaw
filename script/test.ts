@@ -422,17 +422,27 @@ function reapOrphans(pid: number | undefined, label: string) {
  * before the first unit runs while the ledgers are only read at the end. An unreadable or absent
  * profile is the unprofiled state, not a fault: every unit then plans with the generous default.
  */
-function readPeaks(): { commit: MemoryPlan.PeakProfile; resident: MemoryPlan.PeakProfile } {
+function readPeaks(): {
+  commit: MemoryPlan.PeakProfile
+  resident: MemoryPlan.PeakProfile
+  /** Units whose absence from `peaks` is a DECISION — see `peaksUnsampledNote` in the baseline. */
+  deliberatelyAbsent: ReadonlySet<string>
+} {
   try {
     const parsed = JSON.parse(readFileSync(join(import.meta.dir, "test-baseline.json"), "utf8")) as {
       peaks?: Record<string, number>
       workingSets?: Record<string, number>
+      peaksDeliberatelyAbsent?: string[]
     }
     const valid = (values: Record<string, number> | undefined) =>
       Object.fromEntries(Object.entries(values ?? {}).filter(([, mb]) => Number.isFinite(mb) && mb > 0))
-    return { commit: valid(parsed.peaks), resident: valid(parsed.workingSets) }
+    return {
+      commit: valid(parsed.peaks),
+      resident: valid(parsed.workingSets),
+      deliberatelyAbsent: new Set(parsed.peaksDeliberatelyAbsent ?? []),
+    }
   } catch {
-    return { commit: {}, resident: {} }
+    return { commit: {}, resident: {}, deliberatelyAbsent: new Set() }
   }
 }
 const peakProfiles = readPeaks()
@@ -935,7 +945,13 @@ if (measured.length) {
           // units are absent from the profile ON PURPOSE because every reading of them is a lower
           // bound, and pasting one in would put a guess into the ladder wearing a measurement's
           // clothes. An instruction that contradicts the file it points at is worse than none.
-          bound
+          // ⚠️ …and `deliberatelyAbsent` closes the OTHER half of the same hole. `bound` only knows
+          // about THIS run: a unit that happens to get 3+ ticks today stops looking like a bound and
+          // the line flips back to "copy it in" — which is how `script` came to be advertised at
+          // 345 MB while the series holds an observation of 625. Three samples is enough to stop
+          // being obviously thin, not enough to have seen the peak. Which units that applies to is a
+          // property of the SERIES, so it is recorded in the baseline rather than re-derived here.
+          bound || peakProfiles.deliberatelyAbsent.has(r.name)
           ? '  \x1b[2m(absent from "peaks" — do NOT paste a bound in; see peaksUnsampledNote)\x1b[0m'
           : '  (not in profile — copy it into test-baseline.json\'s "peaks")'
         : MemoryPlan.peakRegressed(was, r.peakMb ?? 0)
