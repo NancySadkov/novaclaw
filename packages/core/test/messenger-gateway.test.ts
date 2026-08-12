@@ -14,6 +14,7 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { CapabilityRegistry } from "@novaclaw/core/effect/capability-registry"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
+import { Global } from "@novaclaw/core/global"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Offline } from "@novaclaw/core/offline"
 import { SessionV2 } from "@novaclaw/core/session"
@@ -280,7 +281,14 @@ const offlineMock = (enabled: boolean) =>
 const fake = makeFakeDriver()
 const session = makeSessionMock()
 
-const graph = LayerNode.group([Database.node, EventV2.node, FSUtil.node, MessengerStore.node, MessengerGateway.node])
+const graph = LayerNode.group([
+  Database.node,
+  EventV2.node,
+  FSUtil.node,
+  Global.node,
+  MessengerStore.node,
+  MessengerGateway.node,
+])
 
 /**
  * ⏱ **Which clock a test runs on, and why it matters here.** (2026-07-28, the test-speed program.)
@@ -785,6 +793,16 @@ describe("MessengerGateway pipeline", () => {
       const consoleSession = session.created.slice(createdBefore).find((s) => s.id === binding?.sessionID)
       expect(consoleSession).toBeDefined()
       expect(consoleSession?.title).toContain("console")
+      // 🔴 The instance HOME, never `process.cwd()`. This session is the TEMPLATE every dispatched
+      // task inherits its location from, so a cwd picked by however the server happened to be
+      // launched silently became the working folder for every task run from the operator's phone —
+      // and a session's working folder is one of the three places AGENTS.md principle 11 lets
+      // NovaClaw write. Asserted against the SERVICE rather than a literal so it cannot drift.
+      const home = (yield* Global.Service).home
+      expect(consoleSession?.location.directory).toBe(home)
+      // The negative half, because on a dev box the two can coincidentally be equal and this test
+      // would then pass on the bug.
+      if (home !== process.cwd()) expect(consoleSession?.location.directory).not.toBe(process.cwd())
       yield* eventually(
         Effect.sync(() => session.created.slice(createdBefore)),
         (list) => list.some((s) => s.parentID === binding?.sessionID && s.type === "goal-oriented"),

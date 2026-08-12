@@ -410,7 +410,8 @@ const build = (options: Options) =>
     // The ad-hoc store's root through the SERVICE, composed with `storeRootIn` — the same
     // resolution `session/spawner.ts` uses, which is the copy this gateway's dispatcher duplicates.
     // Two hand-rolled copies of one operation must not be able to disagree about where the store is.
-    const sessionStoreRoot = storeRootIn((yield* Global.Service).data)
+    const global = yield* Global.Service
+    const sessionStoreRoot = storeRootIn(global.data)
     const fork = yield* FiberSet.makeRuntime<never, void, never>()
     const reloadLock = Semaphore.makeUnsafe(1)
 
@@ -617,8 +618,20 @@ const build = (options: Options) =>
     // it falls through to the manual `/sessions` guidance, which still works.
     const ensureConsoleBinding = (account: Messenger.AccountInfo, chatID: string) =>
       Effect.gen(function* () {
+        // 🔴 The instance HOME, not `process.cwd()`. The gateway is a global node, so `cwd` is
+        // wherever the SERVER happened to be launched — a service's `C:\`, the packaged app's
+        // install directory, whatever shell started it — and none of those is a place the operator
+        // chose. That matters more than it looks: this console session is the TEMPLATE every
+        // dispatched task inherits its location from, so an arbitrary cwd silently became the
+        // working folder for every task the operator runs from their phone. AGENTS.md principle 11
+        // makes a session's working folder one of the three places NovaClaw may WRITE, so picking it
+        // by accident is picking where a stranger's disk gets written by accident.
+        //
+        // ⚠️ Same answer `schedule/scheduler.ts` already gives for the other rootless launch
+        // (`schedule.location ?? global.home`), which is the point — two rootless launches on one
+        // instance must not disagree about where "no particular folder" is.
         const session = yield* sessions.create({
-          location: { directory: AbsolutePath.make(process.cwd()) },
+          location: { directory: AbsolutePath.make(global.home) },
           title: `${account.label} console`,
         })
         const binding = yield* store.createBinding({
