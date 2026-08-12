@@ -118,6 +118,8 @@ const api: ElectronAPI = {
   setBackgroundColor: (color: string) => ipcRenderer.invoke("set-background-color", color),
   exportDebugLogs: (serverLogDirectory) => ipcRenderer.invoke("export-debug-logs", serverLogDirectory),
   recordFatalRendererError: (error) => ipcRenderer.invoke("record-fatal-renderer-error", error),
+  // `send`, not `invoke`: nothing in the renderer should ever await its own instrumentation.
+  markBootPhase: (phase) => ipcRenderer.send("mark-boot-phase", phase),
   writeFile: (filePath, content) => ipcRenderer.invoke("write-file", filePath, content),
   readFile: (filePath) => ipcRenderer.invoke("read-file", filePath),
 }

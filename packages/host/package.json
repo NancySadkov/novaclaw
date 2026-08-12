@@ -4,6 +4,12 @@
   "private": true,
   "type": "module",
   "license": "SEE LICENSE IN LICENSE",
-  "exports": { ".": "./src/host.ts" },
+  "exports": {
+    ".": {
+      "bun": "./src/host.bun.ts",
+      "node": "./src/host.node.ts",
+      "default": "./src/host.bun.ts"
+    }
+  },
   "scripts": { "build": "bun run build.ts" }
 }

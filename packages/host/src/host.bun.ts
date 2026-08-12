@@ -1,4 +1,4 @@
-export * as Host from "./host"
+export * as Host from "./host.bun"
 
 /**
  * The JavaScript side of NovaClaw's own host module (`packages/host/include/host.h`).
@@ -14,27 +14,13 @@ export * as Host from "./host"
 
 import { dlopen, FFIType, ptr, suffix, type Pointer } from "bun:ffi"
 import path from "node:path"
+import { decode, type Watch, type WatchOptions } from "./wire"
+
+export type { Watch, WatchEvent, WatchEventType, WatchOptions } from "./wire"
+export { decode } from "./wire"
 
 /** Matches `HOST_ABI_VERSION` in host.h. Bump both together, never one. */
 export const ABI_VERSION = 2
-
-export type WatchEventType = "create" | "update" | "delete" | "overflow"
-
-export interface WatchEvent {
-  readonly type: WatchEventType
-  /**
-   * Absolute, in the platform's NATIVE separator — backslashes on Windows, so it compares equal to a
-   * `path.join` result without normalising first. Empty only for `overflow`, which names no path.
-   */
-  readonly path: string
-}
-
-const TYPES: Readonly<Record<number, WatchEventType>> = {
-  1: "create",
-  2: "update",
-  3: "delete",
-  4: "overflow",
-}
 
 /**
  * Where the library can be, in the order it is looked for.
@@ -127,35 +113,7 @@ const readError = (buffer: Uint8Array) => {
   return new TextDecoder().decode(buffer.subarray(0, end === -1 ? buffer.length : end))
 }
 
-/**
- * Decode the poll buffer: `[type byte][UTF-8 path][NUL]`, repeated.
- *
- * Exported for its own test — the wire format is the one place a silent mistake turns into wrong
- * paths rather than an error, and it is pure, so it can be checked without touching a filesystem.
- */
-export const decode = (buffer: Uint8Array, length: number): WatchEvent[] => {
-  const events: WatchEvent[] = []
-  const decoder = new TextDecoder()
-  let index = 0
-  while (index < length) {
-    const type = TYPES[buffer[index]!]
-    index += 1
-    let end = index
-    while (end < length && buffer[end] !== 0) end += 1
-    const value = decoder.decode(buffer.subarray(index, end))
-    index = end + 1
-    // An unrecognised type byte is a version skew the ABI check should have caught; drop the record
-    // rather than invent an event, and keep going so one bad byte is not a whole lost drain.
-    if (type !== undefined) events.push({ type, path: value })
-  }
-  return events
-}
 
-export interface Watch {
-  /** Everything that happened since the last drain. */
-  readonly poll: () => WatchEvent[]
-  readonly close: () => void
-}
 
 /**
  * Watch `directory` and everything under it. Throws with the OS reason when it cannot start.
@@ -164,10 +122,7 @@ export interface Watch {
  * point of passing them across rather than filtering here. Richer rules (file globs, whitelists) stay
  * on this side; only the high-volume `node_modules`-shaped noise is worth a place in the ABI.
  */
-export const watch = (
-  directory: string,
-  options?: { readonly bufferBytes?: number; readonly ignoreDirectories?: readonly string[] },
-): Watch => {
+export const watch = (directory: string, options?: WatchOptions): Watch => {
   const lib = open()
   const error = new Uint8Array(512)
   // A `const char *[]` the native side reads and never keeps — it copies the names into its own set

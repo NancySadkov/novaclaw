@@ -24,6 +24,7 @@ import { render } from "solid-js/web"
 // `bun run version:sync` from the root package.json (electron-builder requires a literal there), and
 // version-single-source.test.ts fails if it drifts. Reading it here needs no @novaclaw/core edge.
 import pkg from "../../package.json"
+import { reportBootPhase, setBootPhaseReporter } from "@novaclaw/app/utils/boot-phase"
 import { initI18n, t } from "./i18n"
 import { initializationData, initializationReady } from "./initialization"
 import { splashMessageKey, splashPhase, type SplashPhase } from "./splash"
@@ -242,6 +243,10 @@ const createPlatform = (): Platform => {
   }
 }
 
+// The boot timeline's renderer half (`todo/startup.md`). Installed before `render`, so a paint that
+// happens unusually early still has somewhere to report to.
+setBootPhaseReporter((phase) => window.api.markBootPhase(phase))
+
 let menuTrigger = null as null | ((id: string) => void)
 window.api.onMenuCommand((id) => {
   menuTrigger?.(id)
@@ -361,6 +366,10 @@ render(() => {
     onCleanup(() => {
       document.removeEventListener("click", handleClick)
     })
+    // ⚠️ After a FRAME, not on mount. `onMount` fires when the component tree is built, which is
+    // before the browser has painted any of it — reporting there would call a blank window
+    // "interactive" and quietly understate the phase that users actually feel.
+    requestAnimationFrame(() => reportBootPhase("renderer-interactive"))
   })
 
   return (

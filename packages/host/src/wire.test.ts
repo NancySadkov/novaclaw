@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Host } from "./host"
+import { decode } from "./wire"
 
 /**
  * The wire format between `host.h` and JavaScript.
@@ -19,7 +19,7 @@ const encode = (records: ReadonlyArray<{ type: number; path: string }>) => {
   return new Uint8Array(parts)
 }
 
-describe("Host.decode", () => {
+describe("wire decode", () => {
   test("reads the four event types with their paths", () => {
     const buffer = encode([
       { type: 1, path: "/a/create.txt" },
@@ -27,7 +27,7 @@ describe("Host.decode", () => {
       { type: 3, path: "/a/delete.txt" },
       { type: 4, path: "" },
     ])
-    expect(Host.decode(buffer, buffer.length)).toEqual([
+    expect(decode(buffer, buffer.length)).toEqual([
       { type: "create", path: "/a/create.txt" },
       { type: "update", path: "/a/update.txt" },
       { type: "delete", path: "/a/delete.txt" },
@@ -43,13 +43,13 @@ describe("Host.decode", () => {
     buffer.set(first, 0)
     const stale = encode([{ type: 3, path: "/gone.txt" }])
     buffer.set(stale, first.length)
-    expect(Host.decode(buffer, first.length)).toEqual([{ type: "create", path: "/only.txt" }])
+    expect(decode(buffer, first.length)).toEqual([{ type: "create", path: "/only.txt" }])
   })
 
   test("non-ASCII paths survive the round trip", () => {
     // The C side hands over UTF-8; a byte-wise decode would split a multi-byte character.
     const buffer = encode([{ type: 2, path: "/项目/файл.txt" }])
-    expect(Host.decode(buffer, buffer.length)).toEqual([{ type: "update", path: "/项目/файл.txt" }])
+    expect(decode(buffer, buffer.length)).toEqual([{ type: "update", path: "/项目/файл.txt" }])
   })
 
   test("an unknown type byte is DROPPED, never guessed into an event", () => {
@@ -59,10 +59,10 @@ describe("Host.decode", () => {
       { type: 9, path: "/mystery.txt" },
       { type: 1, path: "/real.txt" },
     ])
-    expect(Host.decode(buffer, buffer.length)).toEqual([{ type: "create", path: "/real.txt" }])
+    expect(decode(buffer, buffer.length)).toEqual([{ type: "create", path: "/real.txt" }])
   })
 
   test("an empty drain is an empty list", () => {
-    expect(Host.decode(new Uint8Array(64), 0)).toEqual([])
+    expect(decode(new Uint8Array(64), 0)).toEqual([])
   })
 })

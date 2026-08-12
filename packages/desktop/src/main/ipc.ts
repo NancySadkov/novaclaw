@@ -35,6 +35,12 @@ type Deps = {
   setBackgroundColor: (color: string) => void
   exportDebugLogs: (serverLogDirectory?: string) => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void> | void
+  /**
+   * The renderer reporting a boot phase only IT can see — first paint, and the first chat token.
+   * One-way and best-effort: a mark that never arrives is reported as MISSING by the timeline, which
+   * is the honest outcome, and no boot may ever be delayed or failed by its own instrumentation.
+   */
+  markBootPhase: (phase: string) => void
 }
 
 export function registerIpcHandlers(deps: Deps) {
@@ -76,6 +82,7 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("record-fatal-renderer-error", (_event: IpcMainInvokeEvent, error: FatalRendererError) =>
     deps.recordFatalRendererError(error),
   )
+  ipcMain.on("mark-boot-phase", (_event: IpcMainEvent, phase: string) => deps.markBootPhase(phase))
   ipcMain.handle("store-get", (_event: IpcMainInvokeEvent, name: string, key: string) => {
     try {
       const store = getStore(name)

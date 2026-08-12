@@ -99,6 +99,8 @@ export type ElectronAPI = {
   setBackgroundColor: (color: string) => Promise<void>
   exportDebugLogs: (serverLogDirectory?: string) => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>
+  /** Report a boot phase the main process cannot observe. Fire-and-forget; never awaited. */
+  markBootPhase: (phase: "renderer-interactive" | "first-chat-token") => void
   writeFile: (filePath: string, content: string) => Promise<void>
   readFile: (filePath: string) => Promise<string>
 }

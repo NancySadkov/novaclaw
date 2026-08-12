@@ -14,6 +14,7 @@ import contextMenu from "electron-context-menu"
 import type { ServerReadyData } from "../preload/types"
 import { checkAppExists, resolveAppPath } from "./apps"
 import { bootWindowFirst, describeSidecarFailure } from "./boot"
+import { createBootTimeline, formatMark, formatSummary, type BootPhase, type ProcessMemory } from "./boot-timeline"
 import { CHANNEL } from "./constants"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
 import { forwardInitializationFailure } from "./initialization"
@@ -62,6 +63,63 @@ const TEST_ONBOARDING = process.env.NOVACLAW_TEST_ONBOARDING === "1"
 const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
 
 let logger: ReturnType<typeof initLogging>
+
+/**
+ * The boot timeline (`todo/startup.md`). Module scope because the marks are taken from four
+ * different places — this fiber, the window-first callback, and two IPC handlers the renderer calls.
+ *
+ * ⚠️ `getCreationTime()` is the anchor, NOT `performance.timeOrigin`. In a packaged build the main
+ * script runs long after the process exists, and anchoring at module load would exclude Electron's
+ * own startup — the largest slice of a cold boot. It can return `null` on platforms that cannot
+ * answer, and the fallback is stated rather than silent, because a timeline that quietly re-anchors
+ * itself reports a fast startup that never happened.
+ */
+const processStartedAt = process.getCreationTime?.() ?? null
+const bootTimeline = createBootTimeline({
+  now: () => Date.now(),
+  processStartedAt: processStartedAt ?? Date.now(),
+  memory: () => readProcessMemory(),
+})
+
+/**
+ * Per-process memory for the whole Electron app.
+ *
+ * ⚠️ Working set, which UNDERSTATES — `getAppMetrics` exposes no commit figure. Read it as a floor.
+ * Never throws: an instrument that can fail the thing it measures is worse than no instrument.
+ */
+function readProcessMemory(): readonly ProcessMemory[] {
+  try {
+    return app.getAppMetrics().map((entry) => ({
+      kind: entry.type,
+      pid: entry.pid,
+      workingSetBytes: (entry.memory?.workingSetSize ?? 0) * 1024,
+    }))
+  } catch {
+    return []
+  }
+}
+
+/** Take a boot mark and log it. A repeat is dropped by the timeline and logs nothing. */
+function markBoot(phase: BootPhase) {
+  const mark = bootTimeline.mark(phase)
+  if (!mark) return
+  logger?.log(formatMark(mark))
+  // The last phase there is, so the timeline is complete and worth stating as a whole. An
+  // incomplete boot gets the same line at quit — see below — because the runs worth reading are
+  // exactly the ones that never got here.
+  if (phase === "first-chat-token") logger?.log(formatSummary(bootTimeline.summary()))
+}
+
+/**
+ * ⚠️ A boot that never reaches its last phase is the one worth measuring, and it would otherwise
+ * leave no summary at all. Emitting it at quit means every run produces exactly one, with the
+ * unreached phases named.
+ */
+app.on("will-quit", () => {
+  const summary = bootTimeline.summary()
+  if (summary.missing.length > 0) logger?.log(formatSummary(summary))
+})
+
 let mainWindow: BrowserWindow | null = null
 let server: SidecarListener | null = null
 // P6: set once the sidecar is up — lets the updater guard read the machine's offline status.
@@ -312,6 +370,7 @@ const main = Effect.gen(function* () {
     ),
   )
   if (!electronReady) return
+  markBoot("electron-ready")
 
   app.setAsDefaultProtocolClient("novaclaw")
   registerRendererProtocol()
@@ -341,6 +400,12 @@ const main = Effect.gen(function* () {
     setBackgroundColor: (color) => setBackgroundColor(color),
     exportDebugLogs: (serverLogDirectory) => exportDebugLogs(serverLogDirectory),
     recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
+    // ⚠️ VALIDATED against the vocabulary, not trusted. This arrives over IPC from the renderer, and
+    // an unrecognised phase would otherwise enter the timeline and be compared against runs that
+    // never had it. The renderer can only report the two phases the main process cannot observe.
+    markBootPhase: (phase) => {
+      if (phase === "renderer-interactive" || phase === "first-chat-token") markBoot(phase)
+    },
   })
   registerWslIpcHandlers(wslServers)
   // Dependability P6: airgap force-off — updater POLLING never runs when offline mode is on
@@ -472,6 +537,7 @@ const main = Effect.gen(function* () {
           }),
         catch: (cause) => cause,
       })
+      markBoot("sidecar-spawned")
       return { port, url, ...supervised }
     })
 
@@ -518,6 +584,7 @@ const main = Effect.gen(function* () {
       ),
     )
 
+    markBoot("sidecar-health")
     logger.log("loading task finished")
   }).pipe(forwardInitializationFailure(serverReady))
 
@@ -525,6 +592,9 @@ const main = Effect.gen(function* () {
     openWindow: () => {
       const win = createMainWindow()
       mainWindow = win
+      // A window EXISTS. Deliberately not "the user can use it" — that is `renderer-interactive`,
+      // which the renderer reports, and the gap between the two is the number worth having.
+      markBoot("window-shown")
       createMenu({
         trigger: (id) => {
           const focused = BrowserWindow.getFocusedWindow() ?? mainWindow

@@ -6,6 +6,7 @@
     ".": "./src/index.ts",
     "./desktop-menu": "./src/desktop-menu.ts",
     "./updater": "./src/updater.ts",
+    "./utils/boot-phase": "./src/utils/boot-phase.ts",
     "./wsl/types": "./src/wsl/types.ts",
     "./vite": "./vite.js",
     "./index.css": "./src/index.css"
