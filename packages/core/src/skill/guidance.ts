@@ -11,9 +11,28 @@ const Summary = Schema.Struct({
   name: Schema.String,
   description: Schema.String,
 })
-type Summary = typeof Summary.Type
+export type Summary = typeof Summary.Type
 
-const render = (skills: ReadonlyArray<Summary>) =>
+/**
+ * The resident skills INDEX — every permitted skill's name and description, in every request.
+ *
+ * ⚠️ **This is a TIER-2 disclosure and it is unbounded** (`notes/reports/disclosure-tiers-2026-08-12.md`).
+ * Measured 2026-08-12 against this very function: **~157 bytes per skill**, so ~142 skills cost more
+ * than the entire 21-tool resident schema set (22 235 bytes) and 1 000 skills is ~40k prompt tokens on
+ * every turn — the wall `todo/tool-scale.md` exists to keep the tool catalogue away from.
+ *
+ * 157 B/skill is CHEAP per item next to 932 B/tool, and that is exactly why it is worth saying: tier 1
+ * has a ratchet AND deferral behind `tool_search`, and this has neither. A cheaper per-item cost with
+ * no bound loses to a dearer one with a bound as soon as the count grows.
+ *
+ * ⛔ Do not "fix" it by truncating the list. A silently partial index hides skills the user installed,
+ * which is the same defect the skill-pull index cap refuses by rejecting an oversized source WHOLE.
+ * The escape is the one the tool catalogue already proved: a count plus a search.
+ *
+ * Exported so `skill-guidance-index.test.ts` can ratchet it — the resident tool set sat at 99.4% of
+ * its ceiling for days because nothing measured it until someone looked.
+ */
+export const render = (skills: ReadonlyArray<Summary>) =>
   [
     "Skills provide specialized instructions and workflows for specific tasks.",
     "Use the skill tool to load a skill when a task matches its description.",
