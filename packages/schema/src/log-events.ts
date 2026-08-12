@@ -584,6 +584,19 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/settings-config-seed.ts",
   },
+  /**
+   * A whole config DOCUMENT was dropped before seeding — bad JSON, or one field that failed schema
+   * validation. Decoding is all-or-nothing per document, so a single malformed provider entry costs
+   * the user every provider, agent and command in that file. It used to happen in silence and
+   * surface much later as "every turn fails model resolution", which names the wrong subsystem.
+   */
+  "config.catalog.seed.dropped": {
+    level: "warn",
+    message: "a config document was dropped and none of it was seeded",
+    attributes: { "config.path": "text", "config.notice": "text" },
+    content: "user",
+    file: "packages/core/src/catalog-seed.ts",
+  },
   /** Some settings keys were dropped as invalid; the rest applied. The notice names them. */
   "config.settings.skipped": {
     level: "warn",

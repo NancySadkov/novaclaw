@@ -110,3 +110,30 @@ describe("expandFlatModels", () => {
     expect(Object.keys(expanded.providers["192.168.178.40:8000"].models)).toEqual(["existing", "qwen"])
   })
 })
+
+/**
+ * Why the seed now REPORTS a dropped document (`config.catalog.seed.dropped`).
+ *
+ * Decoding is all-or-nothing per document. That is a reasonable schema choice and a surprising
+ * user-facing consequence: a single malformed provider entry does not cost that provider, it costs
+ * every provider, agent and command in the file. The instance then boots with an empty catalog and
+ * fails model resolution on every turn — a symptom that names the wrong subsystem entirely.
+ *
+ * This pins the mechanism so the log line's reason for existing cannot quietly stop being true. If
+ * the decode ever becomes per-entry tolerant, this test fails and the warning should be revisited.
+ */
+describe("a document is decoded all-or-nothing", () => {
+  const valid = { api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: URL_B, settings: {} } }
+
+  test("one malformed provider costs the WHOLE document, not just itself", () => {
+    const good = Schema.decodeUnknownOption(Config.Info)({ providers: { good: valid } })
+    expect(good._tag, "the control must decode, or this test proves nothing").toBe("Some")
+
+    const mixed = Schema.decodeUnknownOption(Config.Info)({
+      providers: { good: valid, bad: { api: 42 } },
+    })
+    // ⚠️ NOT "Some with one provider". The good provider is lost too, which is exactly the fact a
+    // user cannot discover on their own and the reason the drop must be logged with its path.
+    expect(mixed._tag).toBe("None")
+  })
+})

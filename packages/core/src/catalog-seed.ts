@@ -9,6 +9,7 @@ import { ConfigProvider } from "./config/provider"
 import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
 import { ProviderV2 } from "./provider"
+import { Log } from "@novaclaw/schema/log"
 
 const NAMES = ["config.json", "novaclaw.json", "novaclaw.jsonc"]
 const DECODE_OPTIONS = { errors: "all", onExcessProperty: "ignore", propertyOrder: "original" } as const
@@ -77,18 +78,34 @@ export const seedFromDirectory = (globalConfigDir: string) =>
     const providersSeeded = !(yield* store.isEmpty())
     const fs = yield* FSUtil.Service
 
-    const decodeText = (text: string | undefined) => {
-      if (!text) return undefined
+    /**
+     * ⚠️ Decoding is ALL-OR-NOTHING per document, and that is the whole reason this reports.
+     * `decodeUnknownOption` with `errors: "all"` yields `none` for any single bad field, so one
+     * malformed provider entry costs the user every provider, agent and command in that file. It
+     * used to do that in silence, and the loss surfaced later as "every turn fails model
+     * resolution" — a symptom that names the wrong subsystem entirely. Returning the REASON lets the
+     * caller say which file and why; it does not change what is seeded.
+     */
+    const decodeText = (text: string | undefined): { info?: Config.Info; notice?: string } => {
+      if (!text) return {}
       const errors: ParseError[] = []
       const input: unknown = parse(text, errors, { allowTrailingComma: true })
-      if (errors.length) return undefined
+      if (errors.length)
+        return { notice: `not valid JSON (${errors.length} parse error${errors.length === 1 ? "" : "s"})` }
       // P2: models-primary flat `models` → nested `providers` before decode (no-op without `models`).
-      return Option.getOrUndefined(decodeInfo(expandFlatModels(input)))
+      const decoded = Option.getOrUndefined(decodeInfo(expandFlatModels(input)))
+      return decoded ? { info: decoded } : { notice: "did not match the config schema" }
     }
 
     const loadInfo = (filepath: string) =>
       Effect.gen(function* () {
-        return decodeText(yield* fs.readFileStringSafe(filepath))
+        const result = decodeText(yield* fs.readFileStringSafe(filepath))
+        if (result.notice)
+          yield* Log.event("config.catalog.seed.dropped", {
+            "config.path": filepath,
+            "config.notice": result.notice,
+          })
+        return result.info
       })
 
     // The config dir's documents in NAMES order (general first, specific last), matching
@@ -103,8 +120,13 @@ export const seedFromDirectory = (globalConfigDir: string) =>
     // config exclusively through it, and headless/test embeddings rely on it). Without importing it
     // here, such an instance boots with an EMPTY catalog and every V2 turn fails model resolution.
     // Appended last = most specific (mirrors the V1 loader treating it as a "local" source).
-    const inline = decodeText(Flag.NOVACLAW_CONFIG_CONTENT)
-    if (inline) infos.push(inline)
+    const inlineResult = decodeText(Flag.NOVACLAW_CONFIG_CONTENT)
+    if (inlineResult.notice)
+      yield* Log.event("config.catalog.seed.dropped", {
+        "config.path": "NOVACLAW_CONFIG_CONTENT",
+        "config.notice": inlineResult.notice,
+      })
+    if (inlineResult.info) infos.push(inlineResult.info)
     if (infos.length === 0) return
 
     // Provider layers import only ONCE (idempotence gate) — a user's later store edits must win.
