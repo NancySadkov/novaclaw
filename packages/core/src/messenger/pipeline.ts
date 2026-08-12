@@ -113,6 +113,25 @@ export const dispatchTitle = (task: string): string => {
 /** The console's dispatch acknowledgement — short, because the pacer types it like a human. */
 export const DISPATCH_ACK = "🚀 On it — I'll report back here when it's done."
 
+/**
+ * What to say when a fork-bomb guard refuses a dispatch.
+ *
+ * 🔴 The reason this is a function rather than one sentence: moving dispatch onto `SessionV2.spawn`
+ * (the canonical seam) GREW its error channel from "the parent is gone" to that plus a tagged quota
+ * refusal, and the call site's single catch-all kept answering *"the linked session may be gone"* —
+ * so a console that hit its own child cap told the operator their session had died. Reaching a seam
+ * means inheriting its failures, and a catch-all at the boundary is where that goes unnoticed.
+ *
+ * Phrased for a chat, not for a model: it says what to DO next, because the operator cannot read a
+ * `reason` field. The agent-facing wording for the same three cases lives in `tool/spawn.ts`.
+ */
+export const spawnLimitReply = (limit: { reason: "depth" | "children" | "rate"; depth: number; limit: number }): string =>
+  ({
+    depth: `That task would nest ${limit.depth} sessions deep (max ${limit.limit}). Ask this console directly instead of asking it to delegate again.`,
+    children: `This console already has ${limit.depth} tasks running (max ${limit.limit}). Let some finish, then ask again.`,
+    rate: `That's ${limit.depth} tasks started in the last minute (max ${limit.limit}) — give them a moment, then ask again.`,
+  })[limit.reason]
+
 /** How long a dispatched task may run before it is worth saying "on it" at all. An answer that
  *  beats this never gets an ack: telling someone you have started, and then finishing one message
  *  later, costs them two notifications to learn one thing. */

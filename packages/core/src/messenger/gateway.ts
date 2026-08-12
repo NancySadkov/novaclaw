@@ -56,16 +56,15 @@ export const DAILY_NEW_CONVERSATION_CAP = 20
 // parity rule (a spawn seam must ship with a rate cap; SessionSpawner carries the same number).
 // Human-typed `Nova, …` prompts land far under it; a paste-flood gets a legible refusal.
 //
-// ⚠️ **The NUMBER matches; the GUARD does not** (audited 2026-08-11). `dispatch` builds its child
-// through `sessions.create({parentID})`, not `SessionSpawner`, so it applies THIS cap and nothing
-// else: no `MAX_SPAWN_DEPTH`, no `MAX_SPAWN_CHILDREN`. And this counter is an in-memory map, while
-// the spawner re-counts rows, so a restart forgets this one and cannot forget that one.
+// ✅ The guard asymmetry is CLOSED: `dispatch` goes through `sessions.spawn({parentID})`, so a
+// dispatched child now also faces `MAX_SPAWN_DEPTH` and `MAX_SPAWN_CHILDREN`. Before that it SPENT
+// those quotas without checking them — the spawner counts by `parent_id`, so 16 live dispatched tasks
+// made the agent's own next `spawn` refuse with `reason: "children"`.
 //
-// The asymmetry runs one way and it is the part worth knowing: the spawner's caps are DB counts on
-// `parent_id`, so children created HERE are counted THERE. A console session with 16 live dispatched
-// tasks makes the agent's own next `spawn` fail with `reason: "children"` — a quota this path spends
-// and does not check. Reaching the seam is not a one-line fix (the gateway is a global node,
-// `SessionSpawner` location-scoped); see `notes/reports/session-launch-sites-2026-08-11.md`.
+// ⚠️ Which leaves this cap as a per-CHAT pre-check, not the durable one. It is worth keeping for
+// exactly one reason: it refuses in the chat's own words before a spawn is spent. The DURABLE rate
+// cap is the spawner's `MAX_SPAWNS_PER_MINUTE` (a DB count, per parent, survives a restart); this
+// map is per chat and a restart forgets it. Do not read the matching number as one mechanism.
 const MAX_DISPATCHES_PER_MINUTE = 10
 const DISPATCH_RATE_WINDOW_MS = 60_000
 // Files both ways (P5, edge #6): attachments at or under the inline cap ride the prompt as
@@ -660,7 +659,7 @@ const build = (options: Options) =>
         // depth cap, the ACTIVE fan-out cap and the durable rate count, while still SPENDING them:
         // the spawner counts by `parent_id`, so children placed here made the agent's own `spawn`
         // refuse with `reason: "children"`. One call now, and the quota is symmetric.
-        const startedID = yield* sessions
+        const spawned = yield* sessions
           .spawn({
             parentID: binding.sessionID as Session.ID,
             text: prompt,
@@ -671,17 +670,26 @@ const build = (options: Options) =>
             ...(files.length === 0 ? {} : { files: [...files] }),
           })
           .pipe(
-            Effect.map((spawned) => spawned.id),
-            Effect.catch(() => Effect.succeed(undefined)),
+            Effect.map((result) => ({ id: result.id, limit: undefined })),
+            // ⚠️ Before the broad catch, never after. Reaching the canonical seam grew this call's
+            // error channel to include the tagged quota refusal, and the catch-all underneath had
+            // been answering every failure with "the linked session may be gone" — so a console at
+            // its child cap told the operator their session had died. A `catchTag` placed after a
+            // catch-all is dead code the compiler does not complain about.
+            Effect.catchTag("SessionSpawner.LimitError", (error) => Effect.succeed({ id: undefined, limit: error })),
+            Effect.catch(() => Effect.succeed({ id: undefined, limit: undefined })),
           )
-        if (startedID === undefined) {
+        if (spawned.id === undefined) {
           yield* reply(
             connection,
             event.chat.chatID,
-            "I couldn't start that task — the linked session may be gone. /sessions to relink this console.",
+            spawned.limit === undefined
+              ? "I couldn't start that task — the linked session may be gone. /sessions to relink this console."
+              : MessengerPipeline.spawnLimitReply(spawned.limit),
           )
           return
         }
+        const startedID = spawned.id
         // The ack WAITS. A question answered in a few seconds should cost the operator one message,
         // not "on it" followed by the answer — so we only announce a task that is still running
         // once the delay has passed. Long work still gets its immediate-feeling acknowledgement.

@@ -17,6 +17,7 @@ import { EventV2 } from "@novaclaw/core/event"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Offline } from "@novaclaw/core/offline"
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionSpawner } from "@novaclaw/core/session/spawner"
 import { MessengerDriver } from "@novaclaw/core/messenger/driver"
 import { MessengerPace } from "@novaclaw/core/messenger/pace"
 import { MessengerDrivers } from "@novaclaw/core/messenger/drivers"
@@ -57,6 +58,7 @@ const makeSessionMock = () => {
   // sessionID -> transcript, for the "did this task DO anything or only talk?" check.
   const histories = new Map<string, { type: string; content: { type: string; name?: string }[] }[]>()
   let childSeq = 0
+  let spawnRefusal: { reason: "depth" | "children" | "rate"; depth: number; limit: number } | undefined
   const layer = Layer.mock(SessionV2.Service, {
     prompt: (input: {
       sessionID: string
@@ -108,9 +110,16 @@ const makeSessionMock = () => {
     // what the real `SessionSpawner` does — the child appears in `created` and its opening prompt in
     // `prompts`, so every assertion below still reads the same two arrays.
     //
-    // ⚠️ Deliberately NOT modelling the quota. This mock exists to prove the dispatcher's routing and
-    // wording, and a fake refusal here would assert the mock rather than the product; the caps are
-    // the spawner's own to test, against a real database.
+    // ⚠️ Deliberately NOT modelling the quota ARITHMETIC — the caps are the spawner's own to test,
+    // against a real database, and a fake that counted here would assert the fake.
+    //
+    // 🔴 But it does model the REFUSAL, via `spawnRefusal`, and the distinction cost a live defect.
+    // The earlier note here said a fake refusal "would assert the mock rather than the product", and
+    // that reasoning skipped the one thing on this side of the seam: translating the spawner's typed
+    // failure into something an operator can act on. Moving dispatch onto `sessions.spawn` grew this
+    // call's error channel, the catch-all underneath kept answering "the linked session may be gone",
+    // and no test could see it because no test could make a spawn fail. What a mock must be able to
+    // produce is every FAILURE its subject has to handle.
     spawn: (input: {
       parentID: string
       text: string
@@ -120,7 +129,19 @@ const makeSessionMock = () => {
       origin?: { via: string; trust?: string; driver?: string }
       files?: { uri: string; mime: string; name?: string }[]
     }) =>
-      Effect.sync(() => {
+      Effect.suspend(() => {
+        // The REAL error, constructed by the real class — a hand-rolled `{_tag}` would pass
+        // `catchTag` while the gateway's `instanceof`-free narrowing silently changed shape later.
+        if (spawnRefusal !== undefined) {
+          // ONE-SHOT, and that is a harness-safety choice, not convenience. While this latched, the
+          // first run of the refusal test failed BEFORE its restore line and left the flag set for
+          // the rest of the file — one real failure became four, three of them in tests that have
+          // nothing to do with quotas. A mock knob that outlives a failing test manufactures
+          // failures downstream of the only true one.
+          const refusal = spawnRefusal
+          spawnRefusal = undefined
+          return Effect.fail(new SessionSpawner.SpawnLimitError(refusal))
+        }
         const parent = infos.get(input.parentID)
         const info: MockInfo = {
           id: `ses_child${++childSeq}`,
@@ -138,10 +159,21 @@ const makeSessionMock = () => {
           ...(input.files === undefined ? {} : { files: input.files }),
           ...(input.origin === undefined ? {} : { origin: input.origin }),
         })
-        return { id: info.id, started: true }
+        return Effect.succeed({ id: info.id, started: true })
       }),
   } as never)
-  return { layer, prompts, created, infos, sessionList, histories }
+  return {
+    layer,
+    prompts,
+    created,
+    infos,
+    sessionList,
+    histories,
+    /** Make the NEXT spawn — exactly one — fail with the spawner's real quota refusal. */
+    refuseNextSpawn: (refusal: { reason: "depth" | "children" | "rate"; depth: number; limit: number }) => {
+      spawnRefusal = refusal
+    },
+  }
 }
 
 /** A transcript for a task that ran tools (owes a result summary) vs one that only answered. */
@@ -852,6 +884,51 @@ describe("MessengerGateway pipeline", () => {
 
       yield* store.removeAccount(account.id)
       yield* gateway.reload()
+    }),
+  )
+
+  // 🔴 The regression this pins: dispatch went through `sessions.spawn`, which can refuse with a
+  // fork-bomb quota, and the call site's single catch-all answered every failure with "the linked
+  // session may be gone". A console at its child cap therefore told the operator their session had
+  // died — and the fix they would act on ("relink with /sessions") could not possibly help.
+  //
+  // ⚠️ The assertion that carries the weight is the NEGATIVE one: it is not enough that the reply
+  // mentions a cap, it must NOT be the session-gone wording, because that was the bug.
+  it.live("a fork-bomb quota refusal is reported AS a quota — never as a dead session", () =>
+    Effect.gen(function* () {
+      const { store, account, queue } = yield* online("quota")
+      yield* store.createBinding({ accountID: account.id, chatID: "self9", sessionID: "ses_alpha", trust: "operator" })
+      const createdBefore = session.created.length
+      const sentBefore = fake.state.sent.length
+      session.refuseNextSpawn({ reason: "children", depth: 16, limit: 16 })
+
+      yield* Queue.offer(queue, message("self9", { text: "Nova, one more thing", owner: true, self: true }))
+      const reply = (yield* eventually(
+        Effect.sync(() => fake.state.sent.slice(sentBefore).filter((s) => s.chatID === "self9")),
+        (sent) => sent.length > 0,
+        "the refusal reached the chat",
+      ))[0]
+      // It names the cap that actually tripped, with the numbers, and says what to do.
+      expect(reply?.text).toContain("16")
+      expect(reply?.text).toContain("tasks running")
+      // ⚠️ And it is NOT the session-gone message. Without this line the test passes on the bug the
+      // moment that wording happens to contain a number.
+      expect(reply?.text).not.toContain("may be gone")
+      expect(reply?.text).not.toContain("/sessions")
+      // No child, and no "on it" ack for a task that never started.
+      expect(session.created.slice(createdBefore)).toHaveLength(0)
+      expect(fake.state.sent.slice(sentBefore).some((s) => s.text === MessengerPipeline.DISPATCH_ACK)).toBe(false)
+
+      // The refusal was consumed, so the same chat dispatches normally again — the console did not
+      // latch. (A quota refusal that wedged the console would be the worse bug of the two.)
+      yield* Queue.offer(queue, message("self9", { text: "Nova, try again", owner: true, self: true }))
+      yield* eventually(
+        Effect.sync(() => session.created.slice(createdBefore)),
+        (list) => list.length === 1,
+        "dispatch recovers after a refusal",
+      )
+
+      yield* store.removeAccount(account.id)
     }),
   )
 
@@ -1838,6 +1915,7 @@ const LIVE_LEDGER: readonly string[] = [
   "a THREAD routes to its parent's binding, and the reply goes back to the thread",
   "a chat flooding past the per-minute cap is dropped with ONE slow-down reply (§7.6)",
   "a driver that refuses the send comes back REFUSED with the reason — never a false 'Sent'",
+  "a fork-bomb quota refusal is reported AS a quota — never as a dead session",
   "a hostile CLIENT message is delivered wrapped in untrusted framing (injection guard §7.5)",
   "a moderating batch tells the agent its reply text goes nowhere, and names the ops",
   "a provider challenge parks the account (no retry-loop) — traffic rules §2.3",
