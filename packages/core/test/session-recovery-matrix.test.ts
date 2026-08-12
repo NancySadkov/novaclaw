@@ -99,6 +99,71 @@ const MATRIX: readonly Point[] = [
 ]
 
 /**
+ * The INPUT half of the same guarantee.
+ *
+ * `todo/session-recovery.md` asks for a durable terminal projection for *every admitted input* as
+ * well as every tool-bearing turn — *"a crash must not ... strand the input"*. `session_input`
+ * carries that projection as `admitted_seq` (durable the moment it is accepted) and `promoted_seq`
+ * (set when it enters a turn), so an input is admitted-not-promoted or promoted, and a crash can
+ * land on either side.
+ *
+ * The coverage was already there and, like the tool half, unreadable — spread between
+ * `session-prompt` (admission) and `session-boot-recovery` (what a later process does with what it
+ * finds). This maps it. No gaps: an input's fault points are cheaper to cover than a tool's,
+ * because admission is a single atomic insert and nothing external happens until promotion.
+ */
+const INPUT_MATRIX: readonly Point[] = [
+  {
+    id: "admission-atomicity",
+    fault: "the process dies while accepting a prompt",
+    covered: [["session-prompt", "durably admits one user message before transcript promotion"]],
+  },
+  {
+    id: "duplicate-admission",
+    fault: "the client resends the same prompt after a crash it could not observe",
+    covered: [
+      ["session-prompt", "returns the original recorded message when the ID is retried"],
+      ["session-prompt", "returns one recorded message to concurrent exact retries"],
+    ],
+  },
+  {
+    id: "conflicting-admission",
+    fault: "the same id is reused for DIFFERENT content — a bug, not a retry, and must not be merged",
+    covered: [
+      ["session-prompt", "rejects reuse of one ID with a different prompt"],
+      ["session-prompt", "rejects reuse of one ID with a different delivery mode"],
+    ],
+  },
+  {
+    id: "admitted-not-promoted",
+    fault: "the process dies after admitting an input but before it enters a turn",
+    covered: [["session-boot-recovery", "queued input wakes; a leftover steer does not"]],
+  },
+  {
+    id: "promoted-not-drained",
+    fault: "the process dies after promoting an input but before the turn runs",
+    covered: [["session-boot-recovery", "input already promoted by the previous process is not run twice"]],
+  },
+  {
+    id: "leftover-steer",
+    fault: "a steer outlives the turn it was meant for",
+    covered: [["session-boot-recovery", "queued input wakes; a leftover steer does not"]],
+  },
+  {
+    id: "operator-control",
+    fault: "a later process finds a session someone else is driving",
+    covered: [["session-boot-recovery", "a session under operator control is left alone until control comes back"]],
+  },
+  {
+    id: "unreadable-config-at-boot",
+    fault: "recovery itself cannot read the config it needs",
+    covered: [
+      ["session-boot-recovery", "an unreadable config FAILS OPEN — the prompt is resumed, not silently dropped"],
+    ],
+  },
+]
+
+/**
  * ⚠️ SHRINK-ONLY, and now EMPTY — every fault point the roadmap names has a covering test.
  *
  * Both original gaps were filled by writing the missing tests, and both were worth writing:
@@ -114,7 +179,7 @@ const PINNED_GAPS: readonly string[] = []
 describe("the crash matrix is readable", () => {
   test("every covering test named here still exists", () => {
     const missing: string[] = []
-    for (const point of MATRIX) {
+    for (const point of [...MATRIX, ...INPUT_MATRIX]) {
       for (const [file, name] of point.covered) {
         if (!suite(file).includes(name)) missing.push(`${point.id}: ${file} has no "${name}"`)
       }
@@ -125,13 +190,13 @@ describe("the crash matrix is readable", () => {
   })
 
   test("the uncovered fault points are exactly the two pinned ones", () => {
-    const gaps = MATRIX.filter((point) => point.covered.length === 0).map((point) => point.id)
+    const gaps = [...MATRIX, ...INPUT_MATRIX].filter((point) => point.covered.length === 0).map((point) => point.id)
     expect(gaps.toSorted()).toEqual([...PINNED_GAPS].toSorted())
   })
 
   test("every pinned gap says what a covering test would have to do", () => {
     // A gap recorded without that is indistinguishable from an oversight a year later.
-    for (const point of MATRIX.filter((p) => p.covered.length === 0)) {
+    for (const point of [...MATRIX, ...INPUT_MATRIX].filter((p) => p.covered.length === 0)) {
       expect(point.gap, `${point.id} is a gap with no explanation`).toBeTruthy()
       expect(point.gap!.length, `${point.id}'s explanation is too thin to act on`).toBeGreaterThan(80)
     }
@@ -147,6 +212,19 @@ describe("the crash matrix is readable", () => {
       "host-crash",
       "cancellation",
       "restart",
+    ])
+  })
+
+  test("the input matrix covers admission through promotion", () => {
+    expect(INPUT_MATRIX.map((point) => point.id)).toEqual([
+      "admission-atomicity",
+      "duplicate-admission",
+      "conflicting-admission",
+      "admitted-not-promoted",
+      "promoted-not-drained",
+      "leftover-steer",
+      "operator-control",
+      "unreadable-config-at-boot",
     ])
   })
 })
