@@ -88,6 +88,9 @@ const deferredCoreTools = [
   "read-hex",
   "recipe",
   "register-app",
+  // DEFERRED: a raw database surface is reached after something failed, so it owes the prompt
+  // nothing until tool_search discloses it. Same call as `log`, which it pairs with.
+  "registry",
   "resource_status",
   "revert",
   "session",

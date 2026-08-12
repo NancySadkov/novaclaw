@@ -72,8 +72,49 @@ const assertTable = (table: string) =>
  */
 const READ_ONLY_TABLES: ReadonlySet<string> = new Set(["migration"])
 
-/** `assertTable` plus the write gate: the table must exist AND not be one the boot depends on. */
-const assertWritable = (table: string) =>
+/**
+ * Tables an AGENT may browse but must never write, because `configure` is where their rules live.
+ *
+ * 🔴 **A raw row-write goes around the entire permission model.** Every config key carries an
+ * operational / consequential / privileged classification (`config-tier.ts`), enforced at the
+ * `configure` seam — so an agent denied a privileged card for `mcp` could simply write the
+ * `runtime_setting` row instead and nothing would ask. Same class as a routing rule stranding
+ * `configure` (fixed 2026-08-11): a surface that quietly undoes a permission model.
+ *
+ * ⚠️ **This binds the AGENT, not the Developer-mode UI** — see {@link Writer}. The migration journal
+ * above is different in kind and binds BOTH: writing it can leave the instance unable to boot, which
+ * is the one edit even an operator does not get, because it removes the machine's ability to repair
+ * itself.
+ *
+ * ⚠️ These are the tables the config write router actually targets (`config-store-write.ts` —
+ * `SETTINGS_KEYS` → `runtime_setting`, and one per `LAYERED_ARMS` entry). A table added there without
+ * being added here is a hole, which is why `db-registry.test.ts` pins the set rather than trusting
+ * this comment.
+ */
+const CONFIG_BACKED_TABLES: ReadonlySet<string> = new Set([
+  "runtime_setting",
+  "catalog_provider",
+  "catalog_setting",
+  "agent_config",
+  "agent_setting",
+  "command_config",
+  "reference_config",
+  "skill_config",
+  "plugin_config",
+])
+
+/**
+ * Who is asking. The Registry has two callers with genuinely different standing, and conflating them
+ * would either strand the operator or hand the agent a permission bypass.
+ *
+ * · `"developer"` — the Developer-mode Registry app. A human on their own machine, past an expertise
+ *   gate, with no permission model to circumvent: honest database editing is the whole point.
+ * · `"agent"` — the `registry` tool. Its config reach is already governed, per key, at `configure`.
+ */
+export type Writer = "developer" | "agent"
+
+/** `assertTable` plus the write gate: the table must exist, and this writer may write it. */
+const assertWritable = (table: string, writer: Writer = "developer") =>
   Effect.gen(function* () {
     const name = yield* assertTable(table)
     if (READ_ONLY_TABLES.has(name))
@@ -83,8 +124,19 @@ const assertWritable = (table: string) =>
           `skips a migration on the next boot, which can leave this instance unable to start. ` +
           `Browsing it is fine.`,
       })
+    if (writer === "agent" && CONFIG_BACKED_TABLES.has(name))
+      return yield* new RegistryError({
+        message:
+          `"${name}" holds configuration, so change it with the \`configure\` tool instead. Writing ` +
+          `the row directly would skip the per-setting permission classification that \`configure\` ` +
+          `enforces, which is the only thing standing between a model and a privileged setting. ` +
+          `Browsing it is fine.`,
+      })
     return name
   })
+
+/** Exported for the ledger test that pins this set against the config write router's own targets. */
+export const configBackedTables = (): ReadonlySet<string> => CONFIG_BACKED_TABLES
 
 const tableColumns = (table: string) =>
   Effect.gen(function* () {
@@ -139,9 +191,11 @@ export const updateRow = Effect.fn("DbRegistry.updateRow")(function* (input: {
   table: string
   rowid: number
   values: Record<string, unknown>
+  /** Defaults to `developer`: the UI predates the distinction and must keep its full reach. */
+  writer?: Writer
 }) {
   const { db } = yield* Database.Service
-  const table = yield* assertWritable(input.table)
+  const table = yield* assertWritable(input.table, input.writer)
   const columns = yield* tableColumns(table)
   const entries = Object.entries(input.values).filter(([column]) => columns.includes(column))
   if (entries.length === 0) return yield* new RegistryError({ message: "No editable columns in the payload" })
@@ -160,9 +214,10 @@ export const updateRow = Effect.fn("DbRegistry.updateRow")(function* (input: {
 export const insertRow = Effect.fn("DbRegistry.insertRow")(function* (input: {
   table: string
   values: Record<string, unknown>
+  writer?: Writer
 }) {
   const { db } = yield* Database.Service
-  const table = yield* assertWritable(input.table)
+  const table = yield* assertWritable(input.table, input.writer)
   const columns = yield* tableColumns(table)
   // Same whitelist discipline as updateRow: unknown columns are dropped, never interpolated.
   const entries = Object.entries(input.values).filter(([column]) => columns.includes(column))
@@ -179,8 +234,12 @@ export const insertRow = Effect.fn("DbRegistry.insertRow")(function* (input: {
     )
 })
 
-export const deleteRow = Effect.fn("DbRegistry.deleteRow")(function* (input: { table: string; rowid: number }) {
+export const deleteRow = Effect.fn("DbRegistry.deleteRow")(function* (input: {
+  table: string
+  rowid: number
+  writer?: Writer
+}) {
   const { db } = yield* Database.Service
-  const table = yield* assertWritable(input.table)
+  const table = yield* assertWritable(input.table, input.writer)
   yield* db.run(sql`DELETE FROM ${sql.identifier(table)} WHERE rowid = ${input.rowid}`).pipe(Effect.orDie)
 })

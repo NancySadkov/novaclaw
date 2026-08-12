@@ -13,6 +13,7 @@ import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
 import { JsTool } from "./js"
 import { KbTool } from "./kb"
+import { DbRegistryTool } from "./db-registry"
 import { LogTool } from "./log"
 import { MessengerTool } from "./messenger"
 import { PermissionTool } from "./permission"
@@ -78,6 +79,10 @@ export const locationLayer = Layer.mergeAll(
   // DEFERRED (see log.ts): a diagnostic reached after something failed, not a per-turn capability,
   // so it costs no prompt tokens until tool_search discloses it. Same call as resource_status.
   LogTool.layer,
+  // DEFERRED for the same reason as LogTool, and the pair is deliberate: the log says what broke,
+  // this reaches the state that only lives in SQLite. Writes to config-backed tables are refused
+  // here and sent to `configure`, so the per-setting permission tiers cannot be walked around.
+  DbRegistryTool.layer,
   MessengerTool.layer,
   // Auto mode (`tool/permission.ts`). Registered under its own name with no `Tool.withPermission`
   // wrap, for the same reason `configure` and `recipe` are: the name fallback in `tool.ts` already
@@ -133,6 +138,7 @@ export const node = makeLocationNode({
     JsTool.node,
     KbTool.node,
     LogTool.node,
+    DbRegistryTool.node,
     MessengerTool.node,
     PermissionTool.node,
     ProfileTool.node,

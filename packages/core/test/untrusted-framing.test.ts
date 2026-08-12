@@ -643,6 +643,10 @@ const { framed } = classify(toolSources)
  * a new class fails to compile until somebody decides which side it is on.
  */
 const FRAMED = [
+  // The instance database is where OTHER parties' words are STORED — a messenger row holds what a
+  // provider sent, a session row what a model and its MCP servers said — and nothing framed them on
+  // the way in. Row VALUES are framed; table names and counts are our own schema and are not.
+  "db-registry.ts",
   "log.ts",
   "mcp-external.ts",
   "messenger.ts",

@@ -127,4 +127,87 @@ describe("DbRegistry", () => {
       expect((yield* DbRegistry.rows({ table: "data_migration" })).rowCount).toBe(0)
     }),
   )
+
+  /**
+   * 🔴 The agent could not edit a row a person could — the self-healing law backwards. Giving it the
+   * reach means also giving it the ONE guard the person does not need: config-backed tables.
+   *
+   * ⚠️ Every config key carries a tier enforced at `configure`, so a raw `runtime_setting` row-write
+   * would let a model denied a privileged card just write the row. The asymmetry is the point, and it
+   * is asserted in BOTH directions below — a test that only checked the refusal would pass just as
+   * happily if the developer path had been broken with it.
+   */
+  it.effect("an AGENT may not write a config-backed table; a developer still may", () =>
+    Effect.gen(function* () {
+      const store = yield* SettingsConfigStore.Service
+      yield* store.set("username", "set-by-developer")
+      const row = (yield* DbRegistry.rows({ table: "runtime_setting" })).rows.find(
+        (row) => row.values.key === "username",
+      )!
+      expect(row).toBeDefined()
+
+      const refusals = {
+        update: DbRegistry.updateRow({
+          table: "runtime_setting",
+          rowid: row.rowid,
+          values: { value: JSON.stringify("set-by-agent") },
+          writer: "agent",
+        }),
+        insert: DbRegistry.insertRow({
+          table: "runtime_setting",
+          values: { key: "shell", value: JSON.stringify("bash") },
+          writer: "agent",
+        }),
+        delete: DbRegistry.deleteRow({ table: "runtime_setting", rowid: row.rowid, writer: "agent" }),
+      }
+      for (const [what, write] of Object.entries(refusals)) {
+        const error = yield* write.pipe(Effect.flip)
+        expect(`${what}:${error._tag}`).toBe(`${what}:DbRegistry.RegistryError`)
+        // It NAMES the other verb. A refusal that does not say where to go leaves the agent stuck,
+        // which is the same dead end this whole item exists to remove.
+        expect(error.message).toContain("`configure`")
+      }
+      // Nothing was written, and nothing was half-written.
+      expect((yield* store.all()).username).toBe("set-by-developer")
+
+      // The other direction: the Developer-mode path is UNCHANGED. Without this the refusal could be
+      // "writes to this table are broken" and read exactly the same.
+      yield* DbRegistry.updateRow({
+        table: "runtime_setting",
+        rowid: row.rowid,
+        values: { value: JSON.stringify("still-editable") },
+      })
+      expect((yield* store.all()).username).toBe("still-editable")
+
+      // And an agent may still write an ordinary table — the gate is per-table, not a blanket
+      // read-only mode for agents.
+      yield* DbRegistry.insertRow({
+        table: "data_migration",
+        values: { name: "agent-write-probe", time_completed: 1 },
+      writer: "agent",
+      })
+      expect(
+        (yield* DbRegistry.rows({ table: "data_migration" })).rows.some(
+          (row) => row.values.name === "agent-write-probe",
+        ),
+      ).toBe(true)
+    }),
+  )
+
+  it.effect("the config-backed set covers every table the config write router targets", () =>
+    Effect.gen(function* () {
+      // ⚠️ A LEDGER, not a restatement: a new config store added to `config-store-write.ts` without
+      // being added to the set is a hole an agent walks through, and nothing else would notice. The
+      // check is by table EXISTENCE plus a pinned count, so a rename breaks it loudly.
+      const declared = DbRegistry.configBackedTables()
+      const existing = new Set((yield* DbRegistry.tables()).map((table) => table.name))
+      for (const table of declared) expect(`${table}:${existing.has(table)}`).toBe(`${table}:true`)
+      expect(declared.size).toBe(9)
+      // The settings store's own table is the one that carries every tiered key.
+      expect(declared.has("runtime_setting")).toBe(true)
+      // And a plainly non-config table is NOT in it — otherwise the set could be "every table".
+      expect(declared.has("session")).toBe(false)
+      expect(declared.has("data_migration")).toBe(false)
+    }),
+  )
 })
