@@ -44,6 +44,19 @@ type ListenOptions = CorsOptions & {
   hostname: string
   mdns?: boolean
   mdnsDomain?: string
+  /**
+   * What `port` MEANS, which decides what a collision does.
+   *
+   * `"required"` (default) — a person or a config chose this port, perhaps because a firewall rule,
+   * a proxy or a bookmark depends on it. Moving silently would be answering a different question
+   * than the one asked, so a collision REPORTS, by name.
+   *
+   * `"preferred"` — the caller only needs *a* port and picked one for us (the desktop probes a free
+   * ephemeral port, closes the probe, then spawns the sidecar to bind it). That gap is a real race:
+   * anything on the machine can take the port in between, and with no fallback the sidecar dies and
+   * the user gets "could not start the local server" for a port they never chose and cannot see.
+   */
+  portIntent?: "required" | "preferred"
 }
 type ListenerState = {
   scope: Scope.Scope
@@ -154,11 +167,33 @@ function listenerLayer(opts: ListenOptions, port: number) {
   )
 }
 
+class PortUnavailableError extends Error {
+  constructor(readonly port: number, cause: unknown) {
+    super(
+      `Port ${port} is already in use, so NovaClaw could not start there. ` +
+        `Close whatever is using it, or start with --port 0 to let NovaClaw pick a free port.`,
+      { cause },
+    )
+    this.name = "PortUnavailableError"
+  }
+}
+
 function startWithPortFallback(opts: ListenOptions) {
-  if (opts.port !== 0) return startListener(opts, opts.port)
-  // Match the legacy listener port-resolution behavior: explicit `0` prefers
-  // 4096 first, then any free port.
-  return startListener(opts, 4096).pipe(Effect.catch(() => startListener(opts, 0)))
+  // `0` has always meant "you choose": prefer 4096 so the usual URL keeps working, else anything.
+  if (opts.port === 0) return startListener(opts, 4096).pipe(Effect.catch(() => startListener(opts, 0)))
+
+  // A port the caller only PREFERS falls back rather than killing the boot. This is the desktop's
+  // case and the failure is a race it cannot win: it probes a free port, closes the probe, and the
+  // sidecar binds a moment later. Losing that race used to end the boot outright.
+  if (opts.portIntent === "preferred")
+    return startListener(opts, opts.port).pipe(Effect.catch(() => startListener(opts, 0)))
+
+  // A REQUIRED port reports instead of moving. Silently binding elsewhere would leave the user's
+  // firewall rule, proxy or bookmark pointing at nothing, with nothing said -- and an unbound
+  // expectation is worse than a refusal that names the port.
+  return startListener(opts, opts.port).pipe(
+    Effect.catch((cause) => Effect.fail(new PortUnavailableError(opts.port, cause))),
+  )
 }
 
 function startListener(opts: ListenOptions, port: number) {

@@ -358,6 +358,72 @@ describe("HttpApi Server.listen", () => {
     }
   })
 
+  /**
+   * An EXPLICIT port used to have no fallback at all, so a collision ended the boot. That is not a
+   * hypothetical: the desktop probes a free ephemeral port, closes the probe, and the sidecar binds
+   * it a moment later — anything on the machine can take it in that gap, and the user gets "could
+   * not start the local server" for a port they never chose and cannot see.
+   *
+   * The two arms differ because the intent differs, and collapsing them would be wrong in one
+   * direction or the other: a port someone CHOSE must not move silently (their firewall rule or
+   * bookmark would point at nothing), and a port we merely picked for ourselves must not be fatal.
+   *
+   * ⚠️ Uses an ephemeral port, NOT 4096 — unlike the test below, the number here is arbitrary, and
+   * borrowing 4096 would couple these to the product's default for no reason.
+   */
+  test("a REQUIRED port that is taken reports the port by name instead of dying", async () => {
+    const budget = deadline(FALLBACK_BUDGET_MS, FALLBACK_CLEANUP_FLOOR_MS)
+    // `occupyPort(0)` cannot collide, so this is always our own blocker — but PortHolder is a union
+    // and narrowing it here is cheaper than widening the helper for two callers.
+    const probe = await occupyPort(0)
+    const blocker = probe.held === "this test" ? probe.server : undefined
+    if (!blocker) throw new Error("could not open an ephemeral blocker port")
+    const port = (blocker.address() as net.AddressInfo).port
+    try {
+      let failure: unknown
+      try {
+        await budget.stage(
+          Server.listen({ hostname: "127.0.0.1", port }),
+          8_000,
+          "required-port listen neither bound nor failed",
+        )
+      } catch (error) {
+        failure = error
+      }
+      // A raw EADDRINUSE names nothing a user can act on; the refusal must say WHICH port and what
+      // to do instead, because this message is the whole of their diagnosis.
+      expect(failure, "a taken required port must refuse, not bind").toBeDefined()
+      expect(String((failure as Error)?.message ?? failure)).toContain(String(port))
+      expect(String((failure as Error)?.message ?? failure)).toContain("--port 0")
+    } finally {
+      await new Promise<void>((resolve) => blocker.close(() => resolve()))
+    }
+  })
+
+  test("a PREFERRED port that is taken falls back instead of killing the boot", async () => {
+    const budget = deadline(FALLBACK_BUDGET_MS, FALLBACK_CLEANUP_FLOOR_MS)
+    const probe = await occupyPort(0)
+    const blocker = probe.held === "this test" ? probe.server : undefined
+    if (!blocker) throw new Error("could not open an ephemeral blocker port")
+    const port = (blocker.address() as net.AddressInfo).port
+    try {
+      const listener = await budget.stage(
+        Server.listen({ hostname: "127.0.0.1", port, portIntent: "preferred" }),
+        8_000,
+        "preferred-port listen did not fall back",
+      )
+      try {
+        // THE assertion: it is listening somewhere, and somewhere is not the taken port.
+        expect(listener.port).not.toBe(port)
+        expect(listener.port).toBeGreaterThan(0)
+      } finally {
+        await budget.cleanup(listener.stop(true), 4_000, "preferred-port listener did not stop")
+      }
+    } finally {
+      await new Promise<void>((resolve) => blocker.close(() => resolve()))
+    }
+  })
+
   test("port 0 falls back when 4096 is taken", async () => {
     // ⚠️ 4096 IS THE SUBJECT OF THIS TEST, NOT AN ARBITRARY PORT — do not "fix" the sharing by moving
     // it. `Server.listen`'s `startWithPortFallback` (src/server/server.ts) compiles the literal in:
