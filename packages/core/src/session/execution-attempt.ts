@@ -445,7 +445,26 @@ export const layer = Layer.effect(
             checkpoint_at: state === "settled" ? now : undefined,
             failure_class: failure?.classification ?? null,
             failure_detail: failure?.detail?.slice(0, 2_000) ?? null,
-            failure_count: state === "settled" ? 0 : sql`${SessionExecutionTable.failure_count} + 1`,
+            /**
+             * ⚠️ **A user stop is not a failure, and must not spend the budget.** This used to read
+             * `state === "settled" ? 0 : +1`, so every deliberate interrupt incremented — and with
+             * `FAILURE_LIMIT` at 3, three cancellations of a healthy session with no successful turn
+             * between them left the budget exhausted, so the NEXT genuine fault paused the session
+             * reporting `repeated-failure`. That is ruling 2 on the recovery report: the user's own
+             * stops described as failures.
+             *
+             * `interrupted` leaves the count UNCHANGED rather than resetting it. Resetting would let
+             * a stop erase a real failure history — two genuine losses followed by one cancellation
+             * would look like a healthy session, which is the same defect pointing the other way.
+             *
+             * ⚠️ This is the `settle` path only. `recoverFailure` also lands rows in `interrupted`
+             * when it decides an automatic retry, and there the increment is CORRECT — that state
+             * came from a loss. It does its own counting inside its transaction and does not reach
+             * here.
+             */
+            ...(state === "interrupted"
+              ? {}
+              : { failure_count: state === "settled" ? 0 : sql`${SessionExecutionTable.failure_count} + 1` }),
             time_updated: now,
           })
           .where(

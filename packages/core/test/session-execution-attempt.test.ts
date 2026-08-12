@@ -242,4 +242,59 @@ describe("SessionExecutionAttempt", () => {
       }
     }),
   )
+
+  /**
+   * `cancellation` — the crash matrix's second pinned gap
+   * (`session-recovery-matrix.test.ts`). A user stopping a turn mid-tool is NOT a loss, and the
+   * difference is the failure budget: a loss increments it and eventually opens the per-session
+   * circuit breaker, so treating stops as losses would let three ordinary cancellations pause a
+   * session the user never broke.
+   *
+   * `execution/local.ts:102` already routes an interrupt to `settle(…, "interrupted")` rather than
+   * `recoverFailure`, which is the correct half. Nothing pinned it, so nothing would notice if a
+   * future refactor routed a stop through the failure path — the session would simply start pausing
+   * itself, and the cause would look like flakiness.
+   */
+  it.effect("a user stop mid-tool settles interrupted WITHOUT spending the failure budget", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const attempts = yield* SessionExecutionAttempt.Service
+      const sessionID = SessionSchema.ID.make("ses_cancel_midtool")
+      yield* makeSession(sessionID)
+
+      // The worst case on purpose: a non-idempotent effect already dispatched. If a stop were ever
+      // going to be misread as a loss, this is the row where it would matter most.
+      const lease = yield* attempts.start(sessionID, "host-a")
+      yield* attempts.toolDispatched(lease, { callID: "call_send", name: "send", sideEffect: "non-idempotent" })
+
+      yield* attempts.settle(lease, "interrupted", { classification: "interrupt" })
+
+      const after = yield* attempts.get(sessionID)
+      // One durable terminal state, and it is the one that names what happened.
+      expect(after?.state).toBe("interrupted")
+      // ⚠️ THE assertion. Three stops must not pause a session: `FAILURE_LIMIT` is 3, so a stop that
+      // spent the budget would open the breaker on the third cancellation of a perfectly healthy
+      // session, and the report would call it repeated failure.
+      expect(after?.failureCount, "a user stop must not spend the failure budget").toBe(0)
+
+      const row = yield* db
+        .select()
+        .from(SessionExecutionTable)
+        .where(eq(SessionExecutionTable.session_id, sessionID))
+        .get()
+        .pipe(Effect.orDie)
+      // Durable, not just in-memory: recovery reads this row from a later process.
+      expect(row?.state).toBe("interrupted")
+
+      // ⚠️ THE negative control, and the reason this test is not just the assertion above. The fix
+      // narrows WHICH states charge the budget, so a version that simply stopped counting would
+      // pass everything above while quietly disabling the circuit breaker. A real failure must
+      // still cost — otherwise a genuinely broken session retries forever.
+      const failing = SessionSchema.ID.make("ses_cancel_control")
+      yield* makeSession(failing)
+      const failLease = yield* attempts.start(failing, "host-a")
+      yield* attempts.settle(failLease, "failed", { classification: "runner-failure" })
+      expect((yield* attempts.get(failing))?.failureCount, "a real failure must still cost").toBe(1)
+    }),
+  )
 })
