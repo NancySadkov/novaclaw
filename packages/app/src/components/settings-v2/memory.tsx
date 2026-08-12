@@ -1,5 +1,6 @@
 import { type Component, createMemo, createResource, createSignal, For, Show } from "solid-js"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
+import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { showToast } from "@/utils/toast"
@@ -7,6 +8,7 @@ import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
 import { useGlobal } from "@/context/global"
 import { useServerSync } from "@/context/server-sync"
+import { useProviders } from "@/hooks/use-providers"
 import { useConfirm } from "@/components/dialog-confirm"
 import { RequiresLevel } from "@/context/expertise"
 import { SettingsListV2 } from "./parts/list"
@@ -67,6 +69,46 @@ export const SettingsMemoryV2: Component<{ sessionID?: string }> = (props) => {
   // this live (2s TTL), so pointing at a device takes effect without a restart; blanking a field is
   // "use default" over the patch-merge wire, which the reader treats as unconfigured.
   const embedding = () => memoryConfig().embedding ?? {}
+
+  // What the product already knows: every configured provider's endpoint, and the models each one
+  // serves. `TYPED` is a real literal because "" reads as *nothing selected* and blanks the trigger.
+  const providers = useProviders()
+  const TYPED = "type-it-myself"
+  /** Unset is a real, meaningful state here — the section says "Leave blank to match on keywords
+   *  only" — so it gets a NAMED option rather than a blank trigger that says nothing. */
+  const NONE = "not-configured"
+  const endpoints = createMemo(() => {
+    const seen = new Set<string>()
+    for (const [, provider] of providers.all()) {
+      const url = (provider as { api?: { url?: string } }).api?.url
+      if (url) seen.add(url)
+    }
+    return [...seen]
+  })
+  /** Models served by the CHOSEN endpoint — the pairing the audit asked for. Falls back to the whole
+   *  catalog when the endpoint is typed rather than picked, since nothing narrows it then. */
+  const embeddingModels = createMemo(() => {
+    const url = embedding().url
+    const ids: string[] = []
+    for (const [providerID, provider] of providers.all()) {
+      const providerURL = (provider as { api?: { url?: string } }).api?.url
+      if (url && providerURL && providerURL !== url) continue
+      for (const model of providers.models(providerID)) ids.push(model.id)
+    }
+    return [...new Set(ids)]
+  })
+  // A stored value the catalog does not know is a value the USER typed; keep showing it as text
+  // rather than letting a picker quietly drop it.
+  const urlIsCustom = () => {
+    const url = embedding().url
+    return !!url && !endpoints().includes(url)
+  }
+  const modelIsCustom = () => {
+    const model = embedding().model
+    return !!model && !embeddingModels().includes(model)
+  }
+  const [typingURL, setTypingURL] = createSignal(false)
+  const [typingModel, setTypingModel] = createSignal(false)
   const persistEmbedding = (patch: { url?: string; model?: string }) =>
     void serverSync()
       .updateConfig({ memory: { ...memoryConfig(), embedding: { ...embedding(), ...patch } } } as never)
@@ -327,17 +369,46 @@ export const SettingsMemoryV2: Component<{ sessionID?: string }> = (props) => {
                 description={language.t("settings.memory.embedding.url.description")}
               >
                 <div class="w-full sm:w-[260px]">
-                  <TextInputV2
-                    type="text"
-                    appearance="base"
-                    value={embedding().url ?? ""}
-                    placeholder="http://192.168.178.40:8001/v1"
-                    spellcheck={false}
-                    autocomplete="off"
-                    data-action="settings-memory-embedding-url"
-                    onChange={(event) => persistEmbedding({ url: event.currentTarget.value.trim() })}
-                    aria-label={language.t("settings.memory.embedding.url.title")}
-                  />
+                  <Show
+                    when={!typingURL() && !urlIsCustom() && endpoints().length > 0}
+                    fallback={
+                      <TextInputV2
+                        type="text"
+                        appearance="base"
+                        value={embedding().url ?? ""}
+                        placeholder="http://192.168.178.40:8001/v1"
+                        spellcheck={false}
+                        autocomplete="off"
+                        data-action="settings-memory-embedding-url"
+                        onChange={(event) => persistEmbedding({ url: event.currentTarget.value.trim() })}
+                        aria-label={language.t("settings.memory.embedding.url.title")}
+                      />
+                    }
+                  >
+                    <SelectV2
+                      appearance="inline"
+                      data-action="settings-memory-embedding-url"
+                      options={[
+                        { value: NONE, label: language.t("settings.memory.embedding.none") },
+                        ...endpoints().map((url) => ({ value: url, label: url })),
+                        { value: TYPED, label: language.t("settings.memory.embedding.typed") },
+                      ]}
+                      current={
+                        embedding().url
+                          ? { value: embedding().url!, label: embedding().url! }
+                          : { value: NONE, label: language.t("settings.memory.embedding.none") }
+                      }
+                      placement="bottom-end"
+                      gutter={6}
+                      value={(o) => o.value}
+                      label={(o) => o.label}
+                      onSelect={(option) => {
+                        if (!option) return
+                        if (option.value === TYPED) return setTypingURL(true)
+                        persistEmbedding({ url: option.value === NONE ? "" : option.value })
+                      }}
+                    />
+                  </Show>
                 </div>
               </SettingsRowV2>
               <SettingsRowV2
@@ -345,17 +416,46 @@ export const SettingsMemoryV2: Component<{ sessionID?: string }> = (props) => {
                 description={language.t("settings.memory.embedding.model.description")}
               >
                 <div class="w-full sm:w-[260px]">
-                  <TextInputV2
-                    type="text"
-                    appearance="base"
-                    value={embedding().model ?? ""}
-                    placeholder="qwen3-embedding"
-                    spellcheck={false}
-                    autocomplete="off"
-                    data-action="settings-memory-embedding-model"
-                    onChange={(event) => persistEmbedding({ model: event.currentTarget.value.trim() })}
-                    aria-label={language.t("settings.memory.embedding.model.title")}
-                  />
+                  <Show
+                    when={!typingModel() && !modelIsCustom() && embeddingModels().length > 0}
+                    fallback={
+                      <TextInputV2
+                        type="text"
+                        appearance="base"
+                        value={embedding().model ?? ""}
+                        placeholder="qwen3-embedding"
+                        spellcheck={false}
+                        autocomplete="off"
+                        data-action="settings-memory-embedding-model"
+                        onChange={(event) => persistEmbedding({ model: event.currentTarget.value.trim() })}
+                        aria-label={language.t("settings.memory.embedding.model.title")}
+                      />
+                    }
+                  >
+                    <SelectV2
+                      appearance="inline"
+                      data-action="settings-memory-embedding-model"
+                      options={[
+                        { value: NONE, label: language.t("settings.memory.embedding.none") },
+                        ...embeddingModels().map((id) => ({ value: id, label: id })),
+                        { value: TYPED, label: language.t("settings.memory.embedding.typed") },
+                      ]}
+                      current={
+                        embedding().model
+                          ? { value: embedding().model!, label: embedding().model! }
+                          : { value: NONE, label: language.t("settings.memory.embedding.none") }
+                      }
+                      placement="bottom-end"
+                      gutter={6}
+                      value={(o) => o.value}
+                      label={(o) => o.label}
+                      onSelect={(option) => {
+                        if (!option) return
+                        if (option.value === TYPED) return setTypingModel(true)
+                        persistEmbedding({ model: option.value === NONE ? "" : option.value })
+                      }}
+                    />
+                  </Show>
                 </div>
               </SettingsRowV2>
             </SettingsListV2>

@@ -1850,6 +1850,8 @@ export const dict = {
     "Address of an OpenAI-compatible embeddings server on your machine or network. Stays local.",
   "settings.memory.embedding.model.title": "Embedding model",
   "settings.memory.embedding.model.description": "The model id that server serves.",
+  "settings.memory.embedding.none": "Not set — keyword matching only",
+  "settings.memory.embedding.typed": "Type it myself…",
   "settings.memory.forget.action": "Forget this",
   "settings.memory.toast.failed": "Something went wrong with memory",
   "settings.about.author": "by Nancy Sadkov",
