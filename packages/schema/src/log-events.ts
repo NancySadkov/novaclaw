@@ -960,6 +960,18 @@ export const EVENTS = {
 
   // ── kb ────────────────────────────────────────────────────────────────────────────────────────
   /** The optional in-process graph could not open; memory stays safely degraded. */
+  /**
+   * One passage could not be absorbed. Best-effort BY DESIGN: this runs detached from the request
+   * that started it, so nobody is watching to retry, and abandoning the remaining passages because
+   * one failed would lose a whole document to a single bad chunk.
+   */
+  "kb.absorb.passage.failed": {
+    level: "warn",
+    message: "could not absorb a passage:",
+    attributes: { "kb.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/kb-graph/absorb.ts",
+  },
   "kb.memory.open.failed": {
     level: "warn",
     message: "kb-memory failed to open:",
