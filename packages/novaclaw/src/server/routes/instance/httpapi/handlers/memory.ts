@@ -147,10 +147,43 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
           // "stored" on a re-ingest and tell the user we added content we did not. Count the actual
           // delta instead.
           const before = yield* memory.stats().pipe(Effect.orElseSucceed(() => ({ total: 0, valid: 0 })))
+
+          /**
+           * The document itself is a THING, and every passage is part of it.
+           *
+           * 🔴 Measured 2026-08-12 before this existed: a real store held 280 nodes and **22 edges**,
+           * of which 202 were passages with none at all. Every passage carried `name: <document
+           * label>`, so 280 named nodes shared only 63 distinct names ("EDDS rules" ×102) — a wall of
+           * identical marks with nothing joining them. Writing the document as an entity and hanging
+           * its passages off it turns that wall into one navigable star per document, at zero model
+           * cost, because the association was already in the data and was simply discarded.
+           *
+           * ⚠️ `KbChunk.entityID` is the SAME function conversational extraction uses. That is the
+           * point: a thing mentioned in a chat and a document of the same name land on ONE node. Two
+           * formulas would mint two, which is the fragmentation the entity layer exists to remove.
+           *
+           * ⚠️ This does NOT extract entities from passage CONTENT — a monster manual still has no
+           * `Siege Crab` node. That needs a model pass per chunk and is the open half of this defect;
+           * do not read a connected graph here as evidence that absorption works.
+           */
+          const documentID = KbChunk.entityID(scope, label)
+          yield* memory
+            .addMemory({
+              id: documentID,
+              kind: "entity",
+              text: label,
+              name: label,
+              scope,
+              source: "ingest",
+              relation: "staged",
+            })
+            .pipe(Effect.ignore)
+
           for (const text of passages) {
+            const id = KbChunk.passageID(label, text)
             yield* memory
               .addMemory({
-                id: KbChunk.passageID(label, text),
+                id,
                 kind: "passage",
                 text,
                 name: label,
@@ -158,6 +191,10 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
                 source: "ingest",
                 relation: "staged",
               })
+              .pipe(Effect.ignore)
+            // After the node, never before: an edge needs both endpoints to exist.
+            yield* memory
+              .addEdge({ from: id, to: documentID, type: "part_of", scope, source: "ingest" })
               .pipe(Effect.ignore)
           }
           const after = yield* memory.stats().pipe(Effect.orElseSucceed(() => ({ total: 0, valid: 0 })))

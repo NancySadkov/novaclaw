@@ -1,6 +1,7 @@
 export * as SessionExtract from "./extract"
 
 import { createHash } from "node:crypto"
+import { KbChunk } from "../../kb-graph/chunk"
 import type { SessionType } from "@novaclaw/schema/session-type"
 import { lastRealUserTurn } from "../steer-provenance"
 import type { SessionMessage } from "../message"
@@ -199,10 +200,9 @@ export const memoryID = (scope: string, text: string): string =>
  * edges, all intra-turn. Keying on the name means turn 2 and turn 40 land on the SAME node, so the
  * graph accumulates connections instead of islands.
  *
- * ⚠️ Reconciliation here is exact-match on the lowercased name, deliberately. Fuzzy or embedding
- * merge (what Graphiti does) can collapse two genuinely different things that share a name, and an
- * over-merged graph is far harder to notice and repair than a slightly duplicated one — "Mercury"
- * the planet and "Mercury" the project would silently become one node. Start conservative.
+ * ⚠️ **Re-exported from `KbChunk`, never reimplemented.** Document ingestion writes entities too, and
+ * two formulas would mint two nodes for one name — recreating the exact fragmentation this exists to
+ * remove. The reconciliation rule (exact match on the lowercased name, and why it is not fuzzy)
+ * lives with the implementation.
  */
-export const entityID = (scope: string, name: string): string =>
-  "ent_x" + createHash("sha256").update(`${scope}\n${name.trim().toLowerCase()}`).digest("hex").slice(0, 24)
+export const entityID = KbChunk.entityID

@@ -32,6 +32,29 @@ ${text}`,
     .digest("hex")
     .slice(0, 24)
 
+/**
+ * Deterministic id for an ENTITY — the thing a memory is about, keyed on its NAME.
+ *
+ * 🔴 **One implementation, deliberately, and it lives HERE rather than beside either caller.** Two
+ * paths write entities: conversational extraction (`SessionExtract`) and document ingestion. If they
+ * minted ids by different formulas, the same name would become two unconnected nodes — which is the
+ * exact fragmentation the entity layer was added to remove. A shared id function is what makes a
+ * thing mentioned in a chat and a thing named in a document the SAME node.
+ *
+ * ⚠️ Exact match on the lowercased name, deliberately. Fuzzy or embedding merge can collapse two
+ * genuinely different things that share a name ("Mercury" the planet, "Mercury" the project), and an
+ * over-merged graph is far harder to notice and repair than a slightly duplicated one.
+ */
+export const entityID = (scope: string, name: string) =>
+  "ent_x" +
+  createHash("sha256")
+    .update(
+      `${scope}
+${name.trim().toLowerCase()}`,
+    )
+    .digest("hex")
+    .slice(0, 24)
+
 /** Strip Project Gutenberg boilerplate when present; a no-op for other sources. */
 export const stripGutenberg = (raw: string): string => {
   const start = raw.indexOf("*** START OF THE PROJECT GUTENBERG")

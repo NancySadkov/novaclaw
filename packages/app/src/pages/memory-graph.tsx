@@ -198,6 +198,16 @@ export function MemoryGraphPage() {
   const [appView, setAppView] = createSignal<"list" | "graph">("list")
 
   const count = () => graph()?.nodes.length ?? 0
+  /**
+   * How many nodes are actually ON SCREEN — the number the label threshold must use.
+   *
+   * 🔴 The threshold read `count()`, the TOTAL. Measured 2026-08-12 after ingesting a document:
+   * 303 nodes of which 302 were passages, hidden by default, so the canvas held exactly ONE node —
+   * and it was drawn UNLABELLED, because 303 > 40. A single anonymous dot on an empty canvas is the
+   * worst version of the complaint that opened this work ("no way to see what node represents
+   * what"), and it appeared precisely BECAUSE the filter was doing its job.
+   */
+  const visibleCount = () => (graph()?.nodes ?? []).filter((n) => kindVisible(n.kind)).length
 
   return (
     <div class="flex h-full w-full flex-col bg-v2-surface-bg-base text-v2-text-text-base">
@@ -410,7 +420,7 @@ export function MemoryGraphPage() {
                             stroke-opacity={isSel() ? 1 : 0.5}
                           />
                         </Show>
-                        <Show when={isSel() || isNeighbor() || count() <= 40}>
+                        <Show when={isSel() || isNeighbor() || visibleCount() <= 40}>
                           <text x={13} y={4} font-size="11" fill="currentColor" opacity={0.8}>
                             {nodeLabel(node)}
                           </text>

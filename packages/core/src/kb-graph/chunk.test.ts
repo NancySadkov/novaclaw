@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { chunk, isHeading, stripGutenberg } from "./chunk"
+import { chunk, entityID, isHeading, passageID, stripGutenberg } from "./chunk"
 
 // These pin the MEASURED chunking rules. The header-carrying behaviour is the one that mattered: a
 // table row cut away from its header is unreachable by keyword search (measured 0/6 → 4/6 on the
@@ -80,5 +80,37 @@ describe("stripGutenberg", () => {
 
   test("is a no-op for sources that have no boilerplate", () => {
     expect(stripGutenberg("D20 ATTACK\n1. Miss")).toBe("D20 ATTACK\n1. Miss")
+  })
+})
+
+describe("entityID — one identity for a thing, whichever path wrote it", () => {
+  /**
+   * 🔴 The reason this lives in `KbChunk` and not beside either caller. TWO paths write entities:
+   * conversational extraction and document ingestion. If they minted ids by different formulas, the
+   * same name would become two unconnected nodes — the exact fragmentation the entity layer was
+   * added to remove (measured: 280 nodes, 22 edges, 63 distinct names across 280).
+   */
+  test("a document and a chat-mentioned thing of the same name are ONE node", async () => {
+    const { SessionExtract } = await import("../session/runner/extract")
+    // Not "both look right" — literally the same id, because it is literally the same function.
+    expect(SessionExtract.entityID("global", "TypeScript")).toBe(entityID("global", "TypeScript"))
+    expect(SessionExtract.entityID).toBe(entityID)
+  })
+
+  test("reconciles casing and surrounding whitespace, but not scope", () => {
+    const canonical = entityID("global", "Acme Robotics")
+    expect(entityID("global", "  acme ROBOTICS  ")).toBe(canonical)
+    expect(entityID("session:x", "Acme Robotics")).not.toBe(canonical)
+  })
+
+  test("cannot collide with a passage id — different namespaces", () => {
+    // A document named X and a passage of X are different nodes, so one can never overwrite the
+    // other. The prefixes are what guarantee it.
+    expect(entityID("global", "EDDS rules")).toMatch(/^ent_x[0-9a-f]{24}$/)
+    expect(passageID("EDDS rules", "some text")).toMatch(/^mem_p[0-9a-f]{24}$/)
+  })
+
+  test("different names stay different (negative control)", () => {
+    expect(entityID("global", "Mercury")).not.toBe(entityID("global", "Mercury Project"))
   })
 })
