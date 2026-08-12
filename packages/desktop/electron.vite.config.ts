@@ -51,10 +51,18 @@ export default defineConfig({
           const output = "./out/main/chunks"
           await mkdir(output, { recursive: true })
           for (const name of await readdir(NOVACLAW_SERVER_DIST)) {
-            if (name !== "node.js" && name !== "session-worker-node.js" && !name.endsWith(".wasm")) continue
+            // 🔴 CHUNKS TOO. The sidecar bundle is built with `splitting: true`, so the entry is a
+            // small file that imports ~160 sibling `chunk-*.js` at runtime. Copying only the entries
+            // produced a package whose server could not load ANY of its own code — and it built
+            // clean, because nothing here knew the shape had changed. An allow-list that names files
+            // has to be revisited whenever the producer's output shape does.
+            const isChunk = /^chunk-[^/]+\.js$/.test(name)
+            if (name !== "node.js" && name !== "session-worker-node.js" && !name.endsWith(".wasm") && !isChunk)
+              continue
             // The server is already a complete Bun bundle. Treat it like the WASM payload: copy it
             // verbatim instead of making Rollup parse and re-emit 23 MB of generated JavaScript.
             // Parsing that bundle was the desktop build's dominant avoidable RAM spike.
+            // Chunks keep their own names: the entry imports them by exactly these filenames.
             const packagedName =
               name === "node.js"
                 ? "novaclaw-server.js"

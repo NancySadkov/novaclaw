@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
 
 import { Script } from "@novaclaw/script"
-import { rm } from "node:fs/promises"
+import { mkdtemp, rm } from "node:fs/promises"
 import path from "path"
+import { tmpdir } from "node:os"
 import { fileURLToPath } from "url"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -20,6 +21,17 @@ const result = await Bun.build({
   // `target: "node"`, so the bundle pulls in `sqlite.bun.ts` (→ `bun:sqlite`) etc. — which the
   // Electron utilityProcess sidecar (plain Node) can't load (ERR_UNSUPPORTED_ESM_URL_SCHEME).
   conditions: ["node"],
+  // Dynamic imports become REAL chunks instead of being inlined into one 23 MB file. Measured on the
+  // packaged desktop: the entry drops 23.7 MB -> 0.77 MB and `await import()` of it 710 -> 561 ms
+  // (n=5, non-overlapping ranges), with `Server.listen` unchanged at ~184 ms — so the work is
+  // genuinely deferred rather than moved. That is ~150 ms off every desktop boot.
+  //
+  // ⚠️ `script/build.ts` sets `splitting: false` for the compiled BINARY, and its reason still holds:
+  // split chunks can evaluate circular LayerNode imports in a different order than the source graph,
+  // leaving a dependency undefined only AFTER the first HTTP request. It is enabled here — and only
+  // here — because `node-sidecar-smoke.mjs` below boots this bundle and makes real requests on every
+  // build. Do NOT copy this flag to the binary build without carrying an equivalent check with it.
+  splitting: true,
   entrypoints: ["./src/node.ts", "./src/session-worker-node.ts"],
   outdir: "./dist/node",
   format: "esm",
@@ -62,6 +74,37 @@ for (const name of ["node.js", "session-worker-node.js"]) {
   const bundled = await Bun.file(`./dist/node/${name}`).text()
   if (/\b(?:from|import\(|require\()\s*["']bun:/.test(bundled))
     throw new Error(`${name} contains a \`bun:\` runtime import — check \`conditions: ['node']\` and the external list`)
+}
+
+/**
+ * Boot the bundle and ask it things — see `node-sidecar-smoke.mjs` for why a build-time HTTP check is
+ * the price of `splitting: true`.
+ *
+ * ⚠️ Skipped LOUDLY rather than silently when there is no `node` on PATH. A skipped check that says
+ * nothing is indistinguishable from a passing one, and this is the only thing standing between a
+ * chunk-ordering defect and a release.
+ */
+const nodeExe = Bun.which("node")
+if (!nodeExe) {
+  console.warn("WARNING: no `node` on PATH — SKIPPING the sidecar boot smoke. The split bundle is UNVERIFIED.")
+} else {
+  // Its own XDG roots and its own database: the smoke boots a real server, and a server pointed at
+  // the developer's actual data would write to it.
+  const home = await mkdtemp(path.join(tmpdir(), "novaclaw-sidecar-smoke-"))
+  const smoke = Bun.spawnSync([nodeExe, "--experimental-sqlite", "./script/node-sidecar-smoke.mjs", "./dist/node/node.js"], {
+    stdout: "inherit",
+    stderr: "inherit",
+    env: {
+      ...process.env,
+      NOVACLAW_DB: ":memory:",
+      XDG_DATA_HOME: path.join(home, "data"),
+      XDG_CONFIG_HOME: path.join(home, "config"),
+      XDG_CACHE_HOME: path.join(home, "cache"),
+      XDG_STATE_HOME: path.join(home, "state"),
+    },
+  })
+  await rm(home, { recursive: true, force: true })
+  if (smoke.exitCode !== 0) throw new Error("Node sidecar smoke failed — the built bundle does not serve")
 }
 
 console.log("Build complete")
