@@ -12,6 +12,22 @@ import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
 
+/**
+ * The resident description, exported so `tests/tool-discovery-smoke.ts` measures the text we
+ * actually ship. It used to hold a COPY, which meant the harness could keep reporting a win for
+ * wording that no longer existed — the failure mode where a green number describes the past.
+ *
+ * ⚠️ Every byte is RESIDENT: it rides in every prompt, and `location-layer.test.ts` ratchets the
+ * resident tool schemas at 32,500 bytes. The first version of this fix blew that budget by 83.
+ * Three claims are load-bearing per the measurement — the list is PARTIAL, what to give it, and
+ * that it answers "what can you do". Keep those; re-measure discovery if you change them.
+ */
+export const DESCRIPTION =
+  "Search ALL installed tools, including ones whose schemas are not in this request. Give a " +
+  "plain-language capability (for example: read a sqlite database) and it returns their " +
+  "complete callable schemas; call one by name. Use it whenever you are asked what you can " +
+  "do — the tools listed here are not all the tools you have."
+
 export const name = "tool_search"
 
 /**
@@ -85,11 +101,12 @@ export const layer = Layer.effectDiscard(
           // 2026-08-11). The system prompt now states the list is partial and gives the count; this
           // says what the tool does in the words a caller would use.
           description:
-            "Search ALL installed tools, including the ones whose schemas are not in this request. " +
-            "Give a plain-language capability (for example: read a sqlite database, take a screenshot, " +
-            "send a message) and it returns their complete callable schemas; then call the tool you " +
-            "want by its exact name. Use it whenever you are asked what you can do, or when no tool " +
-            "in this request fits — the tools listed here are not all the tools you have.",
+            // ⚠️ Every byte here is RESIDENT — it rides in every prompt, and `location-layer.test.ts`
+            // ratchets the resident tool schemas at 32,500 bytes. The first wording of this fix blew
+            // that budget by 83 bytes; this one keeps the three claims the measurement showed were
+            // load-bearing (the list is partial · what to give it · that it answers "what can you
+            // do") and drops the restatement. Re-measure discovery if you edit it.
+            DESCRIPTION,
           input: Input,
           output: Output,
           toModelOutput: ({ output }) => [{ type: "text", text: render(output) }],
