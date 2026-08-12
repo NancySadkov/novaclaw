@@ -1004,12 +1004,18 @@ if (measured.length) {
   )
   for (const r of measured) {
     const was = peakProfiles.commit[r.name]
-    // ⚠️ A SHARDED run's peak is recorded too, and that is sound rather than sloppy: measurement
-    // shows peak is nearly FLAT in file count (784 MB for 27 files, ~1 GB for 321) because it is
-    // dominated by a per-process baseline. It is also what closes the bootstrap — an unprofiled unit
-    // plans with the generous default, therefore shards, and without this would never learn its own
-    // number and would shard forever. Marked, so the provenance is never invisible.
-    const from = r.shards ? `  (from a sharded run — one shard's peak, which measures close to the whole)` : ""
+    // 🔴 A SHARDED run's peak is recorded, and it MEASURES HIGH — the note here used to say it
+    // "measures close to the whole", and the series says otherwise. For `core`: 18 whole runs have a
+    // median of 10,235 MB and a max of 10,822, while 168 sharded runs have a median of 12,936 and a
+    // max of 17,833. Shards run SEQUENTIALLY, so the excess is not two processes at once; it is the
+    // previous shard's memory not yet reclaimed inside the next shard's window.
+    //
+    // ⚠️ That closes a LOOP, and the loop is the reason `core` is permanently DEGRADED: an inflated
+    // peak enters the profile, the planner reads it and decides the unit cannot fit whole, so it
+    // shards, so the next measurement is inflated again. `core`'s profile says 17,958 MB against a
+    // whole-run maximum of 10,822. Recording it is still what closes the bootstrap for an unprofiled
+    // unit — but a sharded reading must never be promoted as if it were the unit's own demand.
+    const from = r.shards ? `  [33m(from a SHARDED run — reads high; do not promote it)[0m` : ""
     // ⚠️ A peak taken from one or two samples is a LOWER BOUND, and saying so is the cheap half of
     // the fix that item 4 of todo/test-speed.md makes structural. A 300 ms unit gets 2–4 ticks at a
     // 200 ms interval and its child may be visible in none of them.
@@ -1027,7 +1033,7 @@ if (measured.length) {
           // 345 MB while the series holds an observation of 625. Three samples is enough to stop
           // being obviously thin, not enough to have seen the peak. Which units that applies to is a
           // property of the SERIES, so it is recorded in the baseline rather than re-derived here.
-          bound || peakProfiles.deliberatelyAbsent.has(r.name)
+          bound || peakProfiles.deliberatelyAbsent.has(r.name) || r.shards !== undefined
           ? '  \x1b[2m(absent from "peaks" — do NOT paste a bound in; see peaksUnsampledNote)\x1b[0m'
           : '  (not in profile — copy it into test-baseline.json\'s "peaks")'
         : MemoryPlan.peakRegressed(was, r.peakMb ?? 0)
