@@ -1,7 +1,7 @@
 export * as SessionMaintenance from "./maintenance"
 
 import { LLM, LLMEvent, Message, SystemPart, type FinishReason } from "@novaclaw/llm"
-import { Context, DateTime, Duration, Effect, Layer, Stream } from "effect"
+import { Context, DateTime, Duration, Effect, Fiber, FiberSet, Layer, Stream } from "effect"
 import { Log } from "@novaclaw/schema/log"
 import { Database } from "../../database/database"
 import { EventV2 } from "../../event"
@@ -67,6 +67,18 @@ export interface Interface {
    * that admits it is mid-flight.
    */
   readonly markChangesIncomplete: (sessionID: SessionSchema.ID) => Effect.Effect<void>
+  /**
+   * Wait for detached memory organisation to finish.
+   *
+   * Memory extraction is deliberately NOT awaited by `postRun` — owner ruling 2026-08-12, it must not
+   * delay the reply — which makes it invisible to anything that needs to know it happened. Two
+   * callers do: a test asserting the pass ran at all, and shutdown, which would otherwise drop an
+   * in-flight extraction on quit.
+   *
+   * ⚠️ Without this, detaching silently converts "memory was written" into "memory was probably
+   * written", and a lost write is the hardest kind of bug to notice in a memory system.
+   */
+  readonly settleMemory: Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/SessionMaintenance") {}
@@ -126,6 +138,22 @@ export const layer = Layer.effect(
      * guard exists to prevent.
      */
     const titling = new Set<string>()
+
+    /**
+     * Detached memory organisation lives here, not in the drain.
+     *
+     * Owner ruling 2026-08-12: memory organisation runs off the reply path — *"such memory won't be
+     * needed immediately anyway, since the still context has it"*. A `FiberSet` rather than a bare
+     * `forkDetach` because the work must stay JOINABLE: `settleMemory` is what lets shutdown settle
+     * it rather than lose it, and what lets a test assert the pass ran.
+     *
+     * ⚠️ Scoped to this layer, which in PRODUCTION is a location's services — cached with
+     * `idleTimeToLive: "60 minutes"`, i.e. four orders of magnitude longer than the ~600 ms this
+     * work takes. A test that tears the scope down immediately must settle first; that is the
+     * harness's job, not a reason to keep the pass on the reply path.
+     */
+    const forkMemory = yield* FiberSet.makeRuntime<never, void, never>()
+    const outstanding = new Set<Fiber.Fiber<void, never>>()
 
     const generateTitle = Effect.fn("SessionMaintenance.generateTitle")(function* (sessionID: SessionSchema.ID) {
       const session = yield* getSession(sessionID)
@@ -460,7 +488,19 @@ export const layer = Layer.effect(
           })
           yield* timed("changes", bestEffort("session.changes.refresh.failed", sessionID, refreshChangesSummary(sessionID)))
           yield* timed("title", bestEffort("session.title.generate.failed", sessionID, generateTitleOnce(sessionID)))
-          yield* timed("memory", bestEffort("session.memory.extract.failed", sessionID, extractMemory(sessionID)))
+          /**
+           * DETACHED. This block runs inside the drain, after the idle status is published but
+           * BEFORE the lease is released, so every millisecond here is the next prompt waiting.
+           * Measured: memory was 623 ms of a 642 ms `postRun` — essentially all of it.
+           *
+           * `changes` and `title` stay awaited above: the UI reads both the moment the turn ends, so
+           * they are not "needed later" in the sense the ruling describes.
+           */
+          const memoryFiber = forkMemory(
+            bestEffort("session.memory.extract.failed", sessionID, extractMemory(sessionID)),
+          )
+          outstanding.add(memoryFiber)
+          void memoryFiber.addObserver(() => outstanding.delete(memoryFiber))
           const total = Date.now() - started
           if (total < POSTRUN_SLOW_MS) return
           const slowest = passes.toSorted((a, b) => b.ms - a.ms)[0]
@@ -495,6 +535,11 @@ export const layer = Layer.effect(
         ).pipe(Effect.asVoid),
       markChangesIncomplete: (sessionID) =>
         bestEffort("session.changes.refresh.failed", sessionID, markChangesIncompleteAttempt(sessionID)),
+      // Joins whatever is in flight NOW. `bestEffort` already swallowed any failure, so awaiting
+      // these can only wait — it can never turn a background fault into a caller's error.
+      settleMemory: Effect.suspend(() =>
+        Effect.forEach([...outstanding], (fiber) => Fiber.await(fiber).pipe(Effect.ignore), { discard: true }),
+      ),
     })
   }),
 )

@@ -20,6 +20,7 @@ import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionRunCoordinator } from "@novaclaw/core/session/run-coordinator"
 import { SessionRunner } from "@novaclaw/core/session/runner"
 import * as SessionRunnerLLM from "@novaclaw/core/session/runner/llm"
+import { SessionMaintenance } from "@novaclaw/core/session/runner/maintenance"
 import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { ApplicationTools } from "@novaclaw/core/tool/application-tools"
@@ -643,6 +644,10 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       Config.node,
       Snapshot.node,
       PluginV2.node,
+      // Exposed so a test can SETTLE detached memory organisation. It was already built as a
+      // dependency of the runner; listing it only makes the service reachable, which is what the
+      // post-drain ratchet needs now that the memory pass no longer blocks the drain.
+      SessionMaintenance.node,
       SessionRunnerLLM.node,
       SessionExecution.node,
       SessionV2.node,
@@ -856,7 +861,21 @@ export const drive = <A, E>(harness: RunnerHarness, body: Effect.Effect<A, E, an
   runBounded(
     Effect.gen(function* () {
       yield* harness.seed
-      return yield* body
+      const result = yield* body
+      /**
+       * Settle DETACHED memory organisation before the scope closes.
+       *
+       * `postRun` no longer awaits memory extraction — owner ruling 2026-08-12: it must not delay
+       * the reply, and the facts are still in the session's context anyway. A test reading
+       * `maintenanceRequests` the instant the drain returns would race the pass, and — worse —
+       * `Effect.scoped` below would INTERRUPT it, so the count would read 0 for work that was
+       * cancelled rather than skipped.
+       *
+       * ⚠️ Here rather than per-test, so the OUT_OF_BAND exhaustiveness ratchet keeps working for
+       * every driven test instead of only the ones that remembered to wait.
+       */
+      yield* (yield* SessionMaintenance.Service).settleMemory
+      return result
     }).pipe(Effect.scoped, Effect.provide(harness.layer)) as unknown as Effect.Effect<A, E, never>,
     { ms: 60_000, label },
   )
