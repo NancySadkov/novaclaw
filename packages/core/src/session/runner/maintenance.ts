@@ -267,8 +267,31 @@ export const layer = Layer.effect(
       // Embed the extracted facts so they're reachable by the VECTOR leg later (measured: hybrid
       // retrieval 85% vs 77% keyword-only). ONE batched call for the whole extraction, and this runs
       // in `postRun` — off the turn hot-path. No device ⇒ undefined ⇒ FTS-only memories.
+      // ONE embed call covers both node kinds: the fact texts, then the entity names. Entities are
+      // embedded on their name so they are reachable by the vector leg too, and appending them here
+      // keeps that free — a second call would double the per-turn embedding cost for no new content.
       const vectors =
-        facts.length === 0 ? undefined : yield* Effect.promise(() => KbEmbedder.embed(facts.map((f) => f.text)))
+        facts.length === 0
+          ? undefined
+          : yield* Effect.promise(() => KbEmbedder.embed([...facts.map((f) => f.text), ...names]))
+      // ENTITIES FIRST. `entityID` keys on the NAME, so these nodes are shared across turns and
+      // across sessions in the same scope — writing the same name again is a dedup, not a duplicate.
+      // They must exist before the episodes below, because those episodes link INTO them.
+      for (const [index, name] of names.entries()) {
+        const vector = vectors?.[facts.length + index]
+        yield* memory
+          .addMemory({
+            id: SessionExtract.entityID(scope, name),
+            kind: "entity",
+            text: name,
+            name,
+            scope,
+            source: "auto-extract",
+            relation: "staged",
+            ...(vector === undefined ? {} : { embedding: vector }),
+          })
+          .pipe(Effect.ignore) // duplicate id = this entity is already known; never fail the drain
+      }
       for (const [index, fact] of facts.entries()) {
         const vector = vectors?.[index]
         yield* memory
@@ -283,6 +306,21 @@ export const layer = Layer.effect(
             ...(vector === undefined ? {} : { embedding: vector }),
           })
           .pipe(Effect.ignore) // duplicate id = already remembered (dedup); never fail the drain
+      }
+      // Each episode MENTIONS the entity it is about. This single edge is what makes the graph
+      // connected over time: an episode from this turn and one from forty turns ago attach to the
+      // same entity node, so they are two hops apart instead of unreachable. It costs no model call —
+      // the association was already in the extraction, and was simply being discarded.
+      for (const fact of namedFacts) {
+        yield* memory
+          .addEdge({
+            from: SessionExtract.memoryID(scope, fact.text),
+            to: SessionExtract.entityID(scope, fact.name),
+            type: "mentions",
+            scope,
+            source: "auto-extract",
+          })
+          .pipe(Effect.ignore) // duplicate edge = already linked; never fail the drain
       }
       // Stage 2 (KB-D (a)): link the facts we just wrote. Deliberately AFTER the node writes — an edge
       // needs its endpoints to exist, and more importantly a failing/slow link call must never cost us
@@ -331,19 +369,28 @@ export const layer = Layer.effect(
               }
               return SessionExtract.parseLinks(linkChunks.join(""), names)
             }).pipe(Effect.catchCause(() => Effect.succeed([] as SessionExtract.ExtractedLink[])))
-      // `parseLinks` already guaranteed both endpoints are names from `names`, so every lookup here
-      // resolves; a name shared by several facts binds to the first (the node is the thing, not the
-      // sentence).
-      if (links.length > 0) {
-        const idByName = new Map<string, string>()
-        for (const fact of namedFacts)
-          if (!idByName.has(fact.name)) idByName.set(fact.name, SessionExtract.memoryID(scope, fact.text))
-        for (const link of links) {
-          const from = idByName.get(link.from)
-          const to = idByName.get(link.to)
-          if (from === undefined || to === undefined) continue
-          yield* memory.addEdge({ from, to, type: link.type, scope, source: "auto-extract" }).pipe(Effect.ignore) // duplicate edge = already linked; never fail the drain
-        }
+      // An extracted link names two SUBJECTS, so it is a relation between entities — "Acme Robotics"
+      // employs "Sofia" is a fact about those two things, not about the two sentences that happened
+      // to mention them.
+      //
+      // ⚠️ This used to bind each endpoint to the first EPISODE carrying that name, via
+      // `memoryID(scope, fact.text)`. That made every relation an artefact of one turn's phrasing:
+      // re-stating the same relationship next week minted two fresh episode nodes and a third edge
+      // between them, unconnected to the first. Anchoring on `entityID` means repetition REINFORCES
+      // one edge instead of scattering new ones.
+      //
+      // `parseLinks` already guaranteed both endpoints are names from `names`, and every name in
+      // `names` was written as an entity above, so both lookups resolve by construction.
+      for (const link of links) {
+        yield* memory
+          .addEdge({
+            from: SessionExtract.entityID(scope, link.from),
+            to: SessionExtract.entityID(scope, link.to),
+            type: link.type,
+            scope,
+            source: "auto-extract",
+          })
+          .pipe(Effect.ignore) // duplicate edge = already linked; never fail the drain
       }
     })
 

@@ -188,3 +188,21 @@ export const parseLinks = (raw: string, names: ReadonlyArray<string>, max = 20):
  *  same id, so the CREATE collides and the write is a no-op (dedup). */
 export const memoryID = (scope: string, text: string): string =>
   "mem_x" + createHash("sha256").update(`${scope}\n${text.trim().toLowerCase()}`).digest("hex").slice(0, 24)
+
+/**
+ * Deterministic id for an ENTITY — the thing a fact is about, keyed on its NAME rather than on any
+ * sentence mentioning it.
+ *
+ * This is the reconciliation key, and the whole reason cross-turn structure is possible. `memoryID`
+ * hashes the fact TEXT, so "TypeScript" mentioned in two different turns produced two unrelated
+ * nodes and nothing could ever join them; measured consequence on a real store was 280 nodes with 22
+ * edges, all intra-turn. Keying on the name means turn 2 and turn 40 land on the SAME node, so the
+ * graph accumulates connections instead of islands.
+ *
+ * ⚠️ Reconciliation here is exact-match on the lowercased name, deliberately. Fuzzy or embedding
+ * merge (what Graphiti does) can collapse two genuinely different things that share a name, and an
+ * over-merged graph is far harder to notice and repair than a slightly duplicated one — "Mercury"
+ * the planet and "Mercury" the project would silently become one node. Start conservative.
+ */
+export const entityID = (scope: string, name: string): string =>
+  "ent_x" + createHash("sha256").update(`${scope}\n${name.trim().toLowerCase()}`).digest("hex").slice(0, 24)

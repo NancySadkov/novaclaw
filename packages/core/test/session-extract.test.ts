@@ -172,3 +172,90 @@ describe("SessionExtract.memoryID", () => {
     expect(a).not.toBe(SessionExtract.memoryID("session:x", "different fact"))
   })
 })
+
+describe("SessionExtract.entityID — the cross-turn reconciliation key", () => {
+  /**
+   * The defect this closes, measured on a real store 2026-08-12: **280 nodes, 22 edges, 1 entity**.
+   * Every node was keyed on a fact's TEXT, so the same subject mentioned in two turns became two
+   * unrelated nodes and nothing could ever join them. The graph was islands by construction.
+   */
+  test("the same name in different turns is ONE node, while its facts stay distinct", () => {
+    const turn2 = "The user is migrating the auth service to TypeScript"
+    const turn40 = "TypeScript strict mode is enabled across the repo"
+
+    // The facts are different memories — they must NOT collapse.
+    expect(SessionExtract.memoryID("global", turn2)).not.toBe(SessionExtract.memoryID("global", turn40))
+
+    // ...but both are ABOUT the same thing, and that thing is a single node. This is the whole fix:
+    // two episodes forty turns apart are now two hops from each other instead of unreachable.
+    expect(SessionExtract.entityID("global", "TypeScript")).toBe(SessionExtract.entityID("global", "TypeScript"))
+  })
+
+  test("reconciles across casing and surrounding whitespace", () => {
+    const canonical = SessionExtract.entityID("global", "Acme Robotics")
+    expect(SessionExtract.entityID("global", "acme robotics")).toBe(canonical)
+    expect(SessionExtract.entityID("global", "  ACME Robotics  ")).toBe(canonical)
+  })
+
+  test("does not reconcile across scopes, and cannot collide with a memory id", () => {
+    expect(SessionExtract.entityID("session:x", "Berlin")).not.toBe(SessionExtract.entityID("global", "Berlin"))
+    expect(SessionExtract.entityID("global", "Berlin")).toMatch(/^ent_x[0-9a-f]{24}$/)
+    // Distinct namespaces: an entity and an episode whose text happens to equal the name are
+    // different nodes, so one can never silently overwrite the other.
+    expect(SessionExtract.entityID("global", "Berlin")).not.toBe(SessionExtract.memoryID("global", "Berlin"))
+  })
+
+  test("different names are different entities (negative control)", () => {
+    expect(SessionExtract.entityID("global", "Mercury Project")).not.toBe(
+      SessionExtract.entityID("global", "Mercury"),
+    )
+  })
+})
+
+describe("the extraction write path builds a connected graph", () => {
+  /**
+   * A SOURCE ledger, because ORDER is the correctness property here and order is invisible to a
+   * behavioural assertion about the finished store: entities must be written before the episodes
+   * that link into them, or the edge has no endpoint. Scoped to `extractMemory`'s body — a
+   * whole-file scan would match these symbols in comments elsewhere and pass vacuously.
+   */
+  const body = () => {
+    const source = readFileSync(path.join(import.meta.dir, "../src/session/runner/maintenance.ts"), "utf8")
+    const start = source.indexOf('const extractMemory = Effect.fn("SessionMaintenance.extractMemory")')
+    const end = source.indexOf("const refreshChangesSummary", start)
+    expect(start).toBeGreaterThan(0)
+    expect(end).toBeGreaterThan(start)
+    return source.slice(start, end)
+  }
+
+  test("entities are written BEFORE the episodes that link into them", () => {
+    const source = body()
+    const entity = source.indexOf('kind: "entity"')
+    const episode = source.indexOf('kind: "episode"')
+    expect(entity).toBeGreaterThan(0)
+    expect(episode).toBeGreaterThan(entity)
+  })
+
+  test("every named episode gets a `mentions` edge to its entity", () => {
+    const source = body()
+    const edge = source.indexOf('type: "mentions"')
+    expect(edge).toBeGreaterThan(source.indexOf('kind: "episode"'))
+    // The edge must run episode -> entity. A reversed edge still "connects", which is why the
+    // endpoints are pinned rather than merely counted.
+    const region = source.slice(source.lastIndexOf("addEdge", edge), edge)
+    expect(region).toContain("from: SessionExtract.memoryID(scope, fact.text)")
+    expect(region).toContain("to: SessionExtract.entityID(scope, fact.name)")
+  })
+
+  test("extracted relations anchor on ENTITIES, never on the episode that phrased them", () => {
+    const source = body()
+    const links = source.indexOf("for (const link of links)")
+    expect(links).toBeGreaterThan(0)
+    const region = source.slice(links)
+    expect(region).toContain("SessionExtract.entityID(scope, link.from)")
+    expect(region).toContain("SessionExtract.entityID(scope, link.to)")
+    // ⚠️ The regression this pins: binding an endpoint to the first episode carrying that name made
+    // every relation an artefact of one turn's phrasing.
+    expect(region).not.toContain("idByName")
+  })
+})
