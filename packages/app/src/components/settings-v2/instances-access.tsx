@@ -2,6 +2,9 @@ import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { type Component, For, Show, createMemo, createSignal } from "solid-js"
 import { RequiresLevel } from "@/context/expertise"
+import { useServer } from "@/context/server"
+import { useGlobal } from "@/context/global"
+import { discoverInstances, type DiscoveredInstance } from "@/utils/instance-discovery"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 
@@ -32,6 +35,32 @@ export const InstancesAccess: Component = () => {
 
   const peers = createMemo(() => config().instances ?? [])
   const [draft, setDraft] = createSignal<Peer>({ name: "", url: "", token: "" })
+
+  // Rule 2, offer what exists: the LAN already knows which instances are reachable, so asking a
+  // person to type `http://host:port` asks them to look up something the product can see.
+  //
+  // ⚠️ Scanning is a deliberate ACTION, never an on-open effect. It is real network work on the
+  // instance, and Settings → Instances is opened for other reasons far more often than for adding a
+  // peer. ⚠️ `self` is filtered out — the scanning instance always finds itself, and offering it
+  // would invite a peer pointing at the machine you are already using.
+  const server = useServer()
+  const global = useGlobal()
+  const [scanning, setScanning] = createSignal(false)
+  const [found, setFound] = createSignal<DiscoveredInstance[] | undefined>(undefined)
+  const scan = async () => {
+    const connection = server.current ?? global.servers.list()[0]
+    if (!connection) return
+    setScanning(true)
+    try {
+      setFound((await discoverInstances(connection.http)).filter((instance) => !instance.self))
+    } catch {
+      // A failed scan must leave the manual fields usable rather than blocking the row: an empty
+      // result and an unreachable network look the same to a user, and both mean "type it".
+      setFound([])
+    } finally {
+      setScanning(false)
+    }
+  }
   const savePeers = (next: Peer[]) => {
     void serverSync()
       .updateConfig({
@@ -119,6 +148,32 @@ export const InstancesAccess: Component = () => {
               </div>
             )}
           </For>
+          <div class="flex flex-wrap items-center gap-2 pt-1" data-slot="instances-peer-discover">
+            <ButtonV2 size="small" variant="neutral" data-action="instances-peer-scan" onClick={() => void scan()}>
+              {scanning()
+                ? language.t("settings.instances.peers.scanning")
+                : language.t("settings.instances.peers.scan")}
+            </ButtonV2>
+            <Show when={found()?.length}>
+              <For each={found()}>
+                {(instance) => (
+                  <ButtonV2
+                    size="small"
+                    variant="neutral"
+                    data-action="instances-peer-pick"
+                    onClick={() => setDraft({ ...draft(), name: instance.name, url: instance.url })}
+                  >
+                    {instance.name} — {instance.url}
+                  </ButtonV2>
+                )}
+              </For>
+            </Show>
+            {/* An empty scan says so. Silence would read as "still scanning" or as a broken button,
+                and the honest next step is the manual fields immediately below. */}
+            <Show when={found() !== undefined && found()!.length === 0 && !scanning()}>
+              <span class="settings-v2-field-description">{language.t("settings.instances.peers.none")}</span>
+            </Show>
+          </div>
           <div class="flex flex-wrap items-center gap-2 pt-1" data-slot="instances-peer-add">
             <TextInputV2
               appearance="base"
