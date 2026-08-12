@@ -106,6 +106,33 @@ describe("desktop boot order", () => {
     expect(source).toMatch(/health\.wait[\s\S]{0,400}Effect\.catchCause\(/)
     expect(source).not.toMatch(/health\.wait[\s\S]{0,400}Effect\.catch\(/)
   })
+
+  /**
+   * Quitting must WAIT for the sidecar, and must never fail to quit.
+   *
+   * `before-quit` used to be `void stopSidecars()`. Electron does not wait for a floating promise,
+   * so the app exited while the sidecar was still stopping and anything unflushed was lost on every
+   * ordinary quit — invisibly, which is why only a source assertion catches its return.
+   */
+  test("before-quit waits for the sidecar instead of floating the promise", () => {
+    expect(source).toMatch(/before-quit[\s\S]{0,600}event\.preventDefault\(\)/)
+    expect(source).not.toMatch(/on\("before-quit"[\s\S]{0,120}void stopSidecars\(\)/)
+  })
+
+  /**
+   * ⚠️ The opposite failure is worse than the one being fixed: an app that will not close is
+   * answered with a force-kill, which loses strictly more. Both bounds are asserted, because either
+   * one alone is insufficient — a timeout that does not exit, or an exit that can be skipped.
+   */
+  test("the quit path is bounded and always exits", () => {
+    expect(source, "a stuck sidecar must not hold the window open").toMatch(
+      /before-quit[\s\S]{0,900}QUIT_DEADLINE_MS/,
+    )
+    expect(source, "every branch must reach app.exit").toMatch(/before-quit[\s\S]{0,900}\.finally\(\(\) => app\.exit\(0\)\)/)
+    expect(source, "the second pass must not be intercepted again").toMatch(
+      /before-quit[\s\S]{0,200}if \(quitting\) return/,
+    )
+  })
 })
 
 /** Strip `//` and block comments without being fooled by `"/*"` inside a string or template. */

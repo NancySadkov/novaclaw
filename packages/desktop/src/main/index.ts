@@ -246,8 +246,31 @@ const main = Effect.gen(function* () {
     emitDeepLinks([url])
   })
 
-  app.on("before-quit", () => {
-    void stopSidecars()
+  /**
+   * Quit WAITS for the sidecar, bounded.
+   *
+   * Both handlers used to call `void stopSidecars()`, and Electron does not wait for a floating
+   * promise — so the app exited while the sidecar was still being asked to stop, losing anything
+   * unflushed on every ordinary quit, silently. (`relaunch()` above already used `.finally()`,
+   * which is what makes this a slip rather than a decision.)
+   *
+   * ⚠️ The opposite failure is worse, so it is bounded three ways: `quitting` lets the second pass
+   * through untouched, the timeout races a stuck sidecar, and `app.exit(0)` runs on both branches.
+   * An app that will not close is the one thing users answer with a force-kill.
+   */
+  let quitting = false
+  const QUIT_DEADLINE_MS = 5_000
+  app.on("before-quit", (event) => {
+    if (quitting) return
+    quitting = true
+    event.preventDefault()
+    const forced = new Promise<"forced">((resolve) => setTimeout(() => resolve("forced"), QUIT_DEADLINE_MS))
+    void Promise.race([stopSidecars().then(() => "settled" as const), forced])
+      .then((outcome) => {
+        if (outcome === "forced") writeLog("utility", "quit forced: sidecar did not stop in time", {}, "warn")
+      })
+      .catch((error) => writeLog("utility", "quit: stopping sidecars failed", { error: String(error) }, "warn"))
+      .finally(() => app.exit(0))
   })
 
   app.on("will-quit", () => {
