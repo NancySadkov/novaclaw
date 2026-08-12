@@ -1,13 +1,12 @@
 export * as KbAbsorb from "./absorb"
 
 import { Context, Effect, Stream } from "effect"
-import { LLM, LLMClient, LLMEvent, Message, SystemPart, type FinishReason, type Model } from "@novaclaw/llm"
+import { LLM, LLMClient, LLMEvent, Message, SystemPart, type Model } from "@novaclaw/llm"
 import { Log } from "@novaclaw/schema/log"
 import { KbChunk } from "./chunk"
 import type { MemoryClient } from "./memory-client"
 import { SessionExtract } from "../session/runner/extract"
-import { UtilityCap } from "../session/runner/utility-cap"
-import { UtilityPass } from "../session/runner/utility-pass"
+import { ReasoningBudget } from "../session/runner/reasoning-budget"
 
 /**
  * ABSORBING a document — turning stored passages into things the graph can connect.
@@ -44,12 +43,37 @@ export interface Absorbed {
 }
 
 /**
+ * How much REASONING one passage may spend.
+ *
+ * Owner ruling, 2026-08-12: memory organisation runs as a low-priority subthread with a limited
+ * context budget — *"that ensures memory management organisation doesn't slow down the model's reply,
+ * while the memory management quality won't be degraded by necessity to act fast"* — and *"if the
+ * model fails with said thinking budget, we just disable thinking, like we do with session title
+ * generation."*
+ *
+ * Larger than the title budget (128) because naming the things in 900 characters of prose is a
+ * harder judgement than naming one conversation, and quality is the whole point of doing this work
+ * off the reply path. ⚠️ A first value, not a measured one — it wants the same treatment the title
+ * budget got.
+ */
+export const ABSORB_REASONING_BUDGET = 512
+
+/**
  * Ask the model what one passage is about.
  *
- * Rides `UtilityCap`'s ladder for the same reason the conversational pass does: an empty completion
- * is a legitimate answer here (`[]` — page furniture), so it is indistinguishable from a TRUNCATED
- * one, and a reasoning model spends the whole budget before writing a character. `NO_THINKING` plus
- * re-asking with room is what makes the empty reply mean what it says.
+ * ⚠️ **Thinking is ALLOWED, within a budget, and only disabled on failure** — the opposite of what
+ * this first did. `ReasoningBudget` counts reasoning tokens live, nudges at 70% and 100% of the
+ * budget, and its mechanical hard stop re-issues the turn with thinking structurally disabled. That
+ * is the owner's ruling and it is the same shape session-title generation already ships.
+ *
+ * Measured 2026-08-12 on qwen3.6-35b with thinking OFF: extraction named `"Special Attacks and
+ * Special Qualities"` (a section heading) and `"creature's primary attack damage"` (a description),
+ * both of which this prompt explicitly forbids. Suppressing thinking to guarantee an answer bought a
+ * cheap answer, and this pass is off the reply path precisely so it does not have to.
+ *
+ * ⛔ No `UtilityCap` ladder on top. `ReasoningBudget` already owns a bounded multi-phase recovery for
+ * the empty-completion case; stacking a second retry loop is two recoveries racing over one turn,
+ * which is how a bounded thing becomes unbounded (see `maintenance.ts`'s title pass, same reasoning).
  */
 export const extractPassage = Effect.fn("KbAbsorb.extractPassage")(function* (input: {
   readonly llm: Context.Service.Shape<typeof LLMClient.Service>
@@ -57,33 +81,22 @@ export const extractPassage = Effect.fn("KbAbsorb.extractPassage")(function* (in
   readonly text: string
 }) {
   const chunks: string[] = []
-  let cap = 512
-  for (let attempt = 0; ; attempt++) {
-    chunks.length = 0
-    let finish: FinishReason | undefined
-    const attemptCap = cap
-    yield* input.llm
-      .stream(
-        LLM.request({
-          model: input.model,
-          system: [SystemPart.make(SYSTEM)],
-          messages: [Message.user(input.text)],
-          tools: [],
-          generation: { maxTokens: attemptCap },
-          http: { body: UtilityPass.NO_THINKING },
-        }),
-      )
-      .pipe(
-        Stream.runForEach((event) => {
-          if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
-          else if (event.type === "finish") finish = event.reason
-          return Effect.void
-        }),
-      )
-    const verdict = UtilityCap.decide({ finish, text: chunks.join(""), attempt, cap: attemptCap })
-    if (!verdict.retry) break
-    cap = verdict.cap
-  }
+  yield* ReasoningBudget.stream({
+    request: LLM.request({
+      model: input.model,
+      system: [SystemPart.make(SYSTEM)],
+      messages: [Message.user(input.text)],
+      tools: [],
+      generation: { maxTokens: 2048 },
+    }),
+    stream: (next) => input.llm.stream(next),
+    budget: ABSORB_REASONING_BUDGET,
+  }).pipe(
+    Stream.runForEach((event) => {
+      if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
+      return Effect.void
+    }),
+  )
   // `parseExtraction` is shared with the conversational path: same tolerance for fences and prose,
   // same dedup, same never-throws contract. A second parser would drift from it silently.
   return SessionExtract.parseExtraction(chunks.join(""), 20).filter(

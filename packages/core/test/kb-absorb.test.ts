@@ -74,8 +74,16 @@ describe("KbAbsorb.extractPassage", () => {
     )).toEqual([])
   })
 
-  test("asks with thinking OFF — else the budget goes to reasoning and the reply is empty", () => {
-    let seen: { http?: { body?: Record<string, unknown> } } | undefined
+  test("thinking is ALLOWED within a budget, not suppressed outright", () => {
+    // Owner ruling 2026-08-12: memory organisation runs off the reply path with a limited context
+    // budget, and thinking is disabled only if the model FAILS within it — the shape session-title
+    // generation already ships. This pass previously sent `enable_thinking:false` on every call.
+    //
+    // Measured on qwen3.6-35b with thinking off: it named "Special Attacks and Special Qualities" (a
+    // section heading) and "creature's primary attack damage" (a description), both of which the
+    // prompt forbids. Buying a guaranteed answer with a cheap one is exactly what running off the
+    // reply path exists to avoid.
+    let seen: { system?: ReadonlyArray<{ text?: string }>; http?: { body?: unknown } } | undefined
     return Effect.runPromise(
       KbAbsorb.extractPassage({
         llm: llmYielding("[]", (req) => void (seen = req as never)),
@@ -83,9 +91,14 @@ describe("KbAbsorb.extractPassage", () => {
         text: "x",
       }),
     ).then(() => {
-      expect(seen?.http?.body).toBeDefined()
+      // No unconditional suppression: `ReasoningBudget` owns the fallback, and it re-issues the turn
+      // with thinking disabled only after the budget is spent.
+      expect(seen?.http?.body).toBeUndefined()
+      // The budget announces itself in the system prompt — that is how the nudges are delivered.
+      expect(JSON.stringify(seen?.system ?? [])).toContain(String(KbAbsorb.ABSORB_REASONING_BUDGET))
     })
   })
+
 })
 
 describe("KbAbsorb.writeAbsorbed", () => {
