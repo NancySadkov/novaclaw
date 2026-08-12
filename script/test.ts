@@ -61,7 +61,7 @@ import { spawnSync } from "node:child_process"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 
-import { enforce, memoryHeadroom, topConsumers } from "./lib/heavy-guard"
+import { enforce, hostCommitPct, memoryHeadroom, topConsumers } from "./lib/heavy-guard"
 import * as LedgerDrift from "./lib/ledger-drift"
 import * as MemoryPlan from "./lib/memory-plan"
 import * as PeakSampler from "./lib/peak-sampler"
@@ -463,6 +463,7 @@ function planUnit(name: string, kind: Kind): MemoryPlan.Plan {
     kind === "typecheck"
       ? { commitPeakMb: 4096, residentPeakMb: 4096 }
       : MemoryPlan.demandFor(peakProfiles.commit, peakProfiles.resident, name)
+  waitForCommitFloor(name, kind)
   const headroom = memoryHeadroom()
   if (headroom === undefined) {
     // Fail closed, exactly as `requireMeasurement` does: an unmeasurable host is not a safe one.
@@ -652,6 +653,73 @@ function spawnWithUpstreamRetry(name: string, kind: Kind, dir: string, argv: str
       ? `passed on retry after an upstream watcher segfault`
       : `${second.note} · (also crashed on the first attempt)`,
   }
+}
+
+/**
+ * How much host commit is too much to START another unit on.
+ *
+ * 🔴 MEASURED, and the measurement rules out the obvious number. Across 17 full gates and 348 unit
+ * rows, `core` runs at a MEDIAN of 74% and reaches 80%; every other unit tops out at 64%. So 75% —
+ * `heavy-guard`'s admission line and the product's own warning — is `core`'s ordinary operating
+ * point, and enforcing anything there would fire on roughly half of all healthy runs. A threshold
+ * that fires on the normal case is not a threshold.
+ *
+ * 90% is the product's FLOOR (`storage/pressure.ts`), and it has never been observed here: zero rows
+ * of 348. That is the point — it is a line for territory this box has not entered, not a tuning
+ * knob. ⚠️ It therefore also cannot be validated by waiting for it to happen, which is why
+ * `NOVACLAW_TEST_FORCE_COMMIT_PCT` exists.
+ */
+const COMMIT_FLOOR_PCT = 90
+/** How long to let the host recover before giving up and running anyway. */
+const COMMIT_FLOOR_WAIT_MS = 60_000
+
+/**
+ * Before starting a unit, let the previous one's memory come back.
+ *
+ * ⚠️ This is ADMISSION, not shedding — it cannot help a unit already holding memory, and
+ * `todo/resource-pressure.md` is right that the missing level is enforcement against work in flight.
+ * What it does buy is the compounding case, which is the one that took the laptop down on
+ * 2026-07-20: a unit starting while the host is already at the floor. Mid-run enforcement is not
+ * reachable from here — `spawnSync` blocks this process for the unit's whole life, so a kill would
+ * have to come from the sampler subprocess, which is two platform implementations away.
+ *
+ * ⚠️ It WAITS rather than refuses. A gate that stops running tests because the machine is busy has
+ * turned a resource problem into an unmeasured suite, which is worse; after the wait it proceeds and
+ * says so.
+ */
+function waitForCommitFloor(name: string, kind: Kind) {
+  // A forcing knob, because a line nobody has crossed is a line nobody has seen work. Set it to a
+  // number at or above the floor and the wait must engage — that is how this was verified at all.
+  const forced = Number(process.env.NOVACLAW_TEST_FORCE_COMMIT_PCT)
+  const read = () => (Number.isFinite(forced) && forced > 0 ? forced : hostCommitPct())
+  const first = read()
+  if (first === undefined || first < COMMIT_FLOOR_PCT) return
+  const deadline = Date.now() + COMMIT_FLOOR_WAIT_MS
+  process.stderr.write(
+    `
+[33mhost commit ${first}% is at or above the ${COMMIT_FLOOR_PCT}% FLOOR — holding ${kind} unit ${name}[0m
+` +
+      `  Waiting up to ${COMMIT_FLOOR_WAIT_MS / 1000}s for the previous unit's memory to be reclaimed.
+` +
+      topConsumers().map((line) => `  ${line}
+`).join(""),
+  )
+  while (Date.now() < deadline) {
+    Bun.sleepSync(2_000)
+    const now = read()
+    if (now === undefined || now < COMMIT_FLOOR_PCT) {
+      process.stderr.write(`  host commit fell to ${now ?? "unknown"}% — starting ${name}
+`)
+      return
+    }
+  }
+  // Said loudly, and it is NOT a failure: the run continues, but a reader comparing this unit against
+  // its history has to know the host was under pressure the whole time it ran.
+  process.stderr.write(
+    `  [33mstill at or above the floor after ${COMMIT_FLOOR_WAIT_MS / 1000}s — starting ${name} anyway; ` +
+      `treat its timings and peak as measured under PRESSURE[0m
+`,
+  )
 }
 
 /**

@@ -65,6 +65,21 @@ export interface MemoryHeadroom {
   readonly commitBytes: number
 }
 
+/**
+ * Host commit charge as a percentage, or `undefined` where it cannot be measured.
+ *
+ * The same quantity `test.ts` records per unit as `hostCommitPct`, exposed so the gate can ASK before
+ * it starts a unit rather than only learn afterwards. ⚠️ Windows-only in substance: elsewhere there
+ * is no commit charge and free RAM is the honest measure, so this answers `undefined` rather than
+ * inventing a percentage out of a different quantity.
+ */
+export function hostCommitPct(): number | undefined {
+  if (process.platform !== "win32") return undefined
+  const commit = windowsCommit()
+  if (!commit || commit.limitGb <= 0) return undefined
+  return Math.round((commit.usedGb / commit.limitGb) * 100)
+}
+
 /** Measure the two independent memory walls without collapsing unlike quantities through `min()`. */
 export function memoryHeadroom(): MemoryHeadroom | undefined {
   const free = os.freemem()
