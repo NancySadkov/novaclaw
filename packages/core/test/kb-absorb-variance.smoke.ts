@@ -240,9 +240,19 @@ describe.skipIf(CORPUS === "")("absorption variance across repeats", () => {
       // UNIT. Most of that variance is between-passage: a stat block and a prose page yield wildly
       // different counts, and a run total re-rolls that mixture every time.
       //
-      // Pairing removes it. The same passage is scored under every arm, differenced WITHIN the
-      // passage, and the arm's effect is the mean of those differences — so between-passage variation
-      // cancels instead of being averaged over. Same calls, same cost, a much tighter question.
+      // Pairing cancels the item effect: the same passage under every arm, differenced within itself.
+      //
+      // 🔴 …and MEASURED 2026-08-12, it did NOT tighten this question — paired stderr came out at 7.2
+      // and 5.2 points, WIDER than the ±3.2 unpaired floor it was meant to beat. The design is fine;
+      // the METRIC is wrong to pair on. `concrete%` per passage is a ratio with a tiny denominator —
+      // one passage yields a handful of names, so a single label moves it ten or twenty points — and
+      // differencing two such percentages compounds that. **A mean of per-item ratios is not the ratio
+      // of sums, and for small per-item denominators it is far noisier.**
+      //
+      // ⚠️ The fix, when this is next run for a verdict: pair on per-passage COUNTS (they add across
+      // passages, so their paired difference is well behaved), or pool numerator and denominator and
+      // compare ratios of sums. Left as-is because its own output is now the evidence for that, and
+      // deleting it would delete the finding.
       // ⚠️ Progress, per passage, because this loop is ~84 model calls and its FIRST version printed
       // nothing until all of them finished. Measured: 50 minutes of silence on a network-bound loop,
       // which is indistinguishable from a hang — I checked CPU (9 s over 81 min, meaningless while
