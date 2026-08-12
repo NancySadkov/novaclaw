@@ -7,6 +7,12 @@ import { Flag } from "@novaclaw/core/flag/flag"
 import { killTreeSync } from "@novaclaw/core/util/kill-tree"
 import { CommandSpec } from "../command-spec"
 import { ServeChildCommand } from "../serve-child-command"
+import { Shutdown } from "@novaclaw/core/shutdown"
+import { disposeAllInstances } from "@/project/instance-runtime"
+
+/** What a person will wait for a quit. Long enough for a database flush, short enough to feel
+ *  like the app closed rather than hung. */
+const SHUTDOWN_DEADLINE = "5 seconds"
 import { ServeLiveness } from "../serve-liveness"
 
 // Dependability P4 (uix-dependability-plan): `novaclaw serve` is SUPERVISED BY DEFAULT — the
@@ -161,6 +167,41 @@ export const ServeCommand = effectCmd({
     const opts = yield* resolveNetworkOptions(args)
     const server = yield* Effect.promise(() => Server.listen(opts))
     console.log(`novaclaw server listening on http://${server.hostname}:${server.port}`)
+
+    /**
+     * Settle on the way out, inside a deadline, and SAY what was forced.
+     *
+     * This process had no signal handling at all: SIGTERM simply killed it, so anything mid-flight
+     * was lost without a word. `Shutdown.settleAll` gives the two subsystems this process owns a
+     * bounded chance to finish and names whichever did not — a failing one cannot cancel the other,
+     * which matters here because instance disposal is the half holding unflushed session state.
+     *
+     * ⚠️ The deadline is a promise about TOTAL wait, so it covers both tasks together rather than
+     * each. A quit that takes twice as long as advertised is the reason people reach for kill -9.
+     */
+    let settling = false
+    const settle = (signal: string) => {
+      if (settling) return
+      settling = true
+      void Effect.runPromise(
+        Shutdown.settleAll(
+          [
+            { name: "http", settle: Effect.promise(() => server.stop(true)) },
+            { name: "instances", settle: Effect.promise(() => disposeAllInstances()) },
+          ],
+          SHUTDOWN_DEADLINE,
+        ),
+      )
+        .then((report) => {
+          console.log(`novaclaw server stopping (${signal}). ${Shutdown.describe(report)}`)
+          process.exit(0)
+        })
+        // Never let the reporting itself hold the process: an exit that hangs is worse than one
+        // that says less.
+        .catch(() => process.exit(0))
+    }
+    process.on("SIGINT", () => settle("SIGINT"))
+    process.on("SIGTERM", () => settle("SIGTERM"))
 
     yield* Effect.never
   }),
