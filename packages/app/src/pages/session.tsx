@@ -40,6 +40,7 @@ import { useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { retrySessionExecution, sessionExecutions, stopSessionExecution } from "@/utils/session-execution-api"
+import { recoveryChangesNote } from "./session-recovery-note"
 import { PromptInput } from "@/components/prompt-input"
 import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
 import {
@@ -320,6 +321,10 @@ export default function Page() {
     refetchInterval: 2_000,
   }))
   const executionAttempt = createMemo(() => executionQuery.data?.find((item) => item.sessionID === params.id))
+  /** Wording lives in `session-recovery-note.ts` so its branches are provable — the zero-and-
+   *  incomplete case in particular must never read as "nothing happened". */
+  const recoveryChanges = createMemo(() => recoveryChangesNote(info()?.summary))
+
   const executionAction = async (action: "retry" | "stop") => {
     const conn = server.current
     const id = params.id
@@ -954,7 +959,18 @@ export default function Page() {
                 </strong>{" "}
                 {attempt().failureDetail ??
                   attempt().failureClass ??
-                  "Execution stopped before Nova could confirm the outcome."}
+                  "Execution stopped before Nova could confirm the outcome."}{" "}
+                {/*
+                  What already happened to the workspace, because that — not the failure class — is
+                  what decides whether retrying is safe. `complete: false` means the recording was
+                  still open when this stopped (`markChangesIncomplete` sets it at drain entry), so
+                  the count is a FLOOR, not a total.
+
+                  ⚠️ The dangerous case is zero-and-incomplete. Rendering "No files changed" there
+                  would be a false reassurance at exactly the moment someone is deciding whether to
+                  re-run a side effect, so it says the recording never finished instead.
+                */}
+                <span class="text-v2-text-text-muted">{recoveryChanges()}</span>
               </span>
               <Show when={attempt().state !== "recovering"}>
                 <ButtonV2 size="small" variant="neutral" onClick={() => void executionAction("retry")}>
