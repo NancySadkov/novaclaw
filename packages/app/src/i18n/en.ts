@@ -1297,8 +1297,9 @@ export const dict = {
   // make the translation backlog read as done. Translate properly or leave the key out.
   "settings.confinement.section": "Confinement",
   "settings.confinement.title": "Sandbox for the agent's shell",
-  "settings.confinement.description":
-    "Whether this machine can put an agent's shell commands inside an operating-system sandbox — a box that can only change files in your project folder and has no network at all.",
+  "settings.confinement.meanwhile":
+    "Two things hold regardless: Analyze mode refuses to run shell commands at all, and a turn driven by someone messaging you from outside can only run them inside a sandbox — where there is none, it is refused. Beyond those, in every mode except YOLO the agent is told to leave everything outside your project folder alone, which is an instruction the model follows rather than a wall. Full OS confinement comes from a setup recipe, not from NovaClaw’s core.",
+
   "settings.confinement.reason.confined":
     "This machine can sandbox, and it does ({{backend}}). A chat running on its own gets its shell commands boxed in: they can only change files in the project folder, and they have no network.",
   "settings.confinement.reason.partial-backend":
@@ -1329,16 +1330,6 @@ export const dict = {
   "settings.confinement.platform.win32": "Windows",
   "settings.confinement.platform.darwin": "macOS",
   "settings.confinement.platform.linux": "Linux",
-  "settings.confinement.guards.title": "What holds either way",
-  "settings.confinement.guards.description":
-    "Three things do not depend on the sandbox. Analyze mode refuses to run shell commands at all — a hard rule, not advice. A turn driven by someone messaging you from outside can only ever run a shell command inside the sandbox, and where there is none it is refused outright; no switch changes that. And in every mode except YOLO the agent is told in writing that it may read anything it needs but must not create, change, move or delete anything outside your project folder — that last one is an instruction the model follows rather than a wall, which is exactly why the sandbox matters.",
-  "settings.confinement.safeMode.title": "Safe mode, per chat",
-  "settings.confinement.safeMode.description":
-    "Safe mode lives in each chat's Tuning controls. It can only ever refuse — it never lets a chat do more, and it never changes what a chat you are watching is allowed to do.",
-  "settings.confinement.safeMode.changes":
-    "On this machine it makes a real difference: with it on, a chat running on its own refuses shell commands instead of running them unboxed.",
-  "settings.confinement.safeMode.noChange":
-    "On this machine it changes nothing, because those commands are sandboxed already.",
   "settings.confinement.probe.title": "What was actually tested",
   "settings.confinement.probe.description":
     "The exact check this instance ran on its own machine when it started, and what came back. Run it yourself to confirm — this screen is only repeating it.",
@@ -1348,16 +1339,6 @@ export const dict = {
   "settings.confinement.probe.exit": "exit {{code}}",
   "settings.confinement.probe.error": "could not run: {{detail}}",
   "settings.confinement.probe.noOutcome": "no result",
-  "settings.confinement.outcomes.title": "What happens to a shell command",
-  "settings.confinement.outcomes.description":
-    "This instance's own answer for each kind of turn, asked of the same code that decides it — not a summary written here.",
-  "settings.confinement.turn.attended": "A chat you are watching",
-  "settings.confinement.turn.unattended": "A chat running on its own",
-  "settings.confinement.turn.unattendedSafeMode": "…the same chat, with Safe mode on",
-  "settings.confinement.turn.untrusted": "A turn driven by someone messaging you",
-  "settings.confinement.decision.raw": "runs with your access",
-  "settings.confinement.decision.confined": "runs in the sandbox",
-  "settings.confinement.decision.deny": "refused",
   "settings.instances.access.title": "This instance",
   "settings.instances.access.hint":
     "The API token other instances and agents must present to reach this one (HTTP Basic, username 'novaclaw'). Empty means open. Applies immediately.",

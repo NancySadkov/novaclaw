@@ -3,7 +3,6 @@ import { AgentJail } from "@novaclaw/core/agent-jail"
 import { dict as en } from "@/i18n/en"
 import {
   BACKENDED_PLATFORMS,
-  TURN_KINDS,
   confinementState,
   type ConfinementState,
   type ShellStatusWithJail,
@@ -88,25 +87,6 @@ describe("confinement surface", () => {
     expect([...reached].sort()).toEqual(["backend-absent", "backend-blocked", "confined", "platform-unsupported"])
   })
 
-  test("TURN_KINDS covers every row of the kernel's BashPlan, and each has copy", () => {
-    const planKeys = Object.keys(AgentJail.bashPlan(AgentJail.NO_BACKEND)).sort()
-    // `.map(String)` rather than a cast: `Object.keys` is `string[]` while `TURN_KINDS` is the narrow
-    // literal tuple, and `toEqual` will not accept the two sides at different widths. Widening the
-    // known side is the honest direction — narrowing `planKeys` with an assertion would be claiming
-    // the very fact this test exists to check.
-    expect([...TURN_KINDS].map(String).sort()).toEqual(planKeys)
-    for (const turn of TURN_KINDS) expect(has(`settings.confinement.turn.${turn}`), turn).toBe(true)
-  })
-
-  test("every decision the policy can return has copy", () => {
-    const partial: AgentJail.BackendInfo = { kind: "appcontainer", fs: true, net: false }
-    const decisions = new Set<string>()
-    for (const backend of [AgentJail.NO_BACKEND, AgentJail.NAMESPACES, partial])
-      for (const value of Object.values(AgentJail.bashPlan(backend))) decisions.add(value)
-    expect([...decisions].sort()).toEqual(["confined", "deny", "raw"])
-    for (const decision of decisions) expect(has(`settings.confinement.decision.${decision}`), decision).toBe(true)
-  })
-
   // ── the state machine ───────────────────────────────────────────────────────────────────────────
 
   const shell = (platform: string, jail?: ShellStatusWithJail["jail"]): ShellStatusWithJail =>
@@ -171,11 +151,15 @@ describe("confinement surface", () => {
     const text = en["settings.confinement.reason.platform-unsupported"]
     expect(text).toContain("no operating-system sandbox")
     expect(text).toContain("{{platform}}")
-    // The counterweight row exists and names the two guarantees that do NOT depend on the sandbox,
-    // and flags the third as guidance rather than a wall.
-    const guards = en["settings.confinement.guards.description"]
-    expect(guards).toContain("Analyze mode")
-    expect(guards).toContain("YOLO")
-    expect(guards).toContain("instruction the model follows rather than a wall")
+    // The counterweight survives the collapse to one row: it still names the two guarantees that do
+    // NOT depend on a sandbox and still flags the third as guidance rather than a wall. Losing that
+    // distinction while shortening the section would have made the copy MORE confident and less
+    // true — the section says the write rule is enforced only where a sandbox exists.
+    const meanwhile = en["settings.confinement.meanwhile"]
+    expect(meanwhile).toContain("Analyze mode")
+    expect(meanwhile).toContain("YOLO")
+    expect(meanwhile).toContain("instruction the model follows rather than a wall")
+    // …and it names where real confinement actually comes from, which is the owner's point.
+    expect(meanwhile).toContain("recipe")
   })
 })

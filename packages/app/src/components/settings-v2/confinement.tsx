@@ -107,19 +107,6 @@ const UNPROBED_ON_THIS_PLATFORM: ReportedPosture = {
   reason: "platform-unsupported",
 }
 
-/** The four turn kinds, in the order a person meets them. Pinned exhaustive against `BashPlan`. */
-export const TURN_KINDS = [
-  "attended",
-  "unattended",
-  "unattendedSafeMode",
-  "untrusted",
-] as const satisfies readonly (keyof BashPlan)[]
-
-/** Present when the instance reported the per-turn outcomes (an older instance does not). */
-function planOf(state: ConfinementState): BashPlan | undefined {
-  return "jail" in state ? state.jail.bash : undefined
-}
-
 export const SettingsConfinementSection: Component<{
   status?: ShellStatusWithJail
   /** The status fetch is still in flight — see `displayKind` for why this is not cosmetic. */
@@ -127,7 +114,6 @@ export const SettingsConfinementSection: Component<{
 }> = (props) => {
   const language = useLanguage()
   const state = () => confinementState(props.status)
-  const plan = () => planOf(state())
   /**
    * ⚠️ "Still asking" is NOT "could not reach it". Without this arm, every open of Settings would
    * flash *"could not reach the instance to ask"* for the length of one HTTP round trip — which is
@@ -181,20 +167,25 @@ export const SettingsConfinementSection: Component<{
       <h3 class="settings-v2-section-title">{language.t("settings.confinement.section")}</h3>
 
       <SettingsListV2>
-        {/* Normal level, deliberately. This is a safety-relevant fact about the user's OWN machine,
-            and the anti-obscurantist principle says a lay person must be able to find it. The
-            Trash-retention precedent settled the same tension the same way: the user-relevant row
-            stays visible, the technical detail moves up a level. */}
+        {/*
+          ONE row, not five. This section used to carry ~5 800 characters across five rows, two of
+          which rendered `<span />` as their control — prose wearing a settings row's clothes.
+          Nothing here is a setting, because the core does not implement OS confinement: per
+          `todo/jail.md` the plan is a `set-up-isolation` RECIPE, and the Windows/macOS backends are
+          v0.3. So this states the fact, names what protects the user meanwhile, and stops.
+
+          It stays at Normal level deliberately: it is a safety-relevant fact about the user's own
+          machine, and the anti-obscurantist principle says a lay person must be able to find it.
+        */}
         <SettingsRowV2
           title={language.t("settings.confinement.title")}
           description={
             <>
-              {language.t("settings.confinement.description")}
-              <br />
               {language.t(`settings.confinement.reason.${displayKind()}`, {
                 platform: platform(),
                 backend: backendLabel(),
-              })}
+              })}{" "}
+              {language.t("settings.confinement.meanwhile")}
             </>
           }
         >
@@ -203,38 +194,8 @@ export const SettingsConfinementSection: Component<{
           </span>
         </SettingsRowV2>
 
-        {/* The counterweight, and the reason this is not a scare screen: three things do not depend
-            on the sandbox at all, and one of them is guidance rather than a wall — which is said out
-            loud, because a promise the model merely follows is not the same promise as a box. */}
-        <SettingsRowV2
-          title={language.t("settings.confinement.guards.title")}
-          description={language.t("settings.confinement.guards.description")}
-        >
-          <span />
-        </SettingsRowV2>
-
-        <SettingsRowV2
-          title={language.t("settings.confinement.safeMode.title")}
-          description={
-            <>
-              {language.t("settings.confinement.safeMode.description")}
-              <Show when={plan()}>
-                {(value) => (
-                  <>
-                    {" "}
-                    {value().unattended === value().unattendedSafeMode
-                      ? language.t("settings.confinement.safeMode.noChange")
-                      : language.t("settings.confinement.safeMode.changes")}
-                  </>
-                )}
-              </Show>
-            </>
-          }
-        >
-          <span />
-        </SettingsRowV2>
-
-        {/* Advanced+: the evidence. Nothing above is asserted that this row cannot back up. */}
+        {/* Advanced+: the evidence behind the verdict above. Kept because the line above is a
+            CLAIM about the user's machine, and a claim with no way to check it is worth less. */}
         <SettingsRowV2
           minLevel="advanced"
           title={language.t("settings.confinement.probe.title")}
@@ -248,29 +209,6 @@ export const SettingsConfinementSection: Component<{
             {probeDetail()}
           </code>
         </SettingsRowV2>
-
-        {/* Advanced+: what will ACTUALLY happen, per kind of turn — the kernel's own answers, not a
-            summary of them. Absent when the instance did not send them, rather than computed here. */}
-        <Show when={plan()}>
-          {(value) => (
-            <SettingsRowV2
-              minLevel="advanced"
-              title={language.t("settings.confinement.outcomes.title")}
-              description={language.t("settings.confinement.outcomes.description")}
-            >
-              <div class="flex min-w-0 flex-col gap-0.5 text-[12px] text-v2-text-text-muted">
-                <For each={TURN_KINDS}>
-                  {(turn) => (
-                    <div data-slot="settings-confinement-outcome">
-                      {language.t(`settings.confinement.turn.${turn}`)}:{" "}
-                      {language.t(`settings.confinement.decision.${value()[turn]}`)}
-                    </div>
-                  )}
-                </For>
-              </div>
-            </SettingsRowV2>
-          )}
-        </Show>
       </SettingsListV2>
     </div>
   )
