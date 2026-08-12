@@ -11,7 +11,13 @@ import { useServerSync } from "@/context/server-sync"
 // P2P inter-instance access (Settings → Instances):
 //   1. "This instance" — the INCOMING API token (config server.password; HTTP Basic, username
 //      "novaclaw"). Gating applies live (the auth middlewares re-read the store per request);
-//      clearing writes "" = open server (patch-merge cannot delete keys).
+//      clearing writes "" = open server.
+//      ⚠️ That empty string is the ENCODING, not a workaround for a missing delete — the comment
+//      here used to say "(patch-merge cannot delete keys)", which framed a correct design as a
+//      limitation and sent a later reader looking for `POST /api/config/remove`. The single
+//      consumer, `ServerToken.storedPassword`, reads `password.length > 0 ? password : undefined`,
+//      so `""` and absent are the same state by definition. Removing the key instead would add a
+//      second code path to reach a state this one already reaches.
 //   2. "Agent peers" — the `instances` config array: peer NovaClaw instances THIS instance's
 //      agents may drive free-form over HTTP. Each peer surfaces to models as
 //      NOVACLAW_INSTANCE_<NAME>_URL/_TOKEN env in bash plus a system-prompt line.
