@@ -28,6 +28,14 @@ import { Recipe } from "./recipe"
  *    are kernel tools and instance configuration, not host-capability facts a person can verify on their
  *    own machine, and a declaration nothing can probe would only ever report "I could not check this".
  *
+ * ⚠️ The health check's IMAGE row (added 2026-08-12) is where the *explicit unknowns* vocabulary earns
+ * its keep (`notes/reports/receipt-unknowns-vocabulary-2026-08-12.md`). The image path runs through a
+ * WASM resizer shipped as a bundled asset — exactly the kind of file an electron-builder path change
+ * loses silently, and otherwise exercised only when a user happens to attach a picture. But a
+ * TEXT-ONLY model cannot see the image either, and reporting that as NOT WORKING would blame the
+ * install for a model capability. So the row spells the two apart: NOT WORKING is the instance,
+ * NOT AVAILABLE is the model — `measurement-failed` versus `not-applicable`.
+ *
  * A declaration must be a fact a normal person could verify by hand — never a package list, which is the
  * dependency manifest ruling 14 forbids under the name "configuration".
  *
@@ -60,6 +68,9 @@ Test each capability once, in this order, and keep it quick — no deep work:
    (\`cc\`, \`gcc\`, \`clang\`), \`python3\`/\`python\`, \`node\`, \`git\`. Do not install anything.
 4. **Web search** — search for one current fact and report whether results came back.
 5. **Web fetch** — fetch one page you found and report whether you got real text (not an empty shell).
+6. **Images** — write a small PNG here (any tiny image you can produce with the tools you have), then
+   READ that file back. Report WORKING if you can say what is in it, NOT WORKING if reading it failed,
+   and NOT AVAILABLE if you cannot see images at all — a text-only model is not a broken install.
 
 Then write a table with a row per capability: WORKING / NOT WORKING / NOT AVAILABLE, plus one short note
 each. End with a single sentence: is this install healthy enough to run the other recipes?
