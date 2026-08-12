@@ -1,6 +1,8 @@
 import { KbAbsorb } from "@novaclaw/core/kb-graph/absorb"
 import { KbChunk } from "@novaclaw/core/kb-graph/chunk"
 import { LLMClient } from "@novaclaw/llm"
+import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { llmClient } from "@novaclaw/core/effect/app-node-platform"
 import { Location } from "@novaclaw/core/location"
 import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { ServerLocationServiceMap } from "@/location-service-map"
@@ -44,6 +46,7 @@ const asBadRequest = <A, R>(effect: Effect.Effect<A, MemoryClient.MemoryError, R
 export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (handlers) =>
   Effect.gen(function* () {
     const locations = yield* LocationServiceMap.Service
+
     const bridge = yield* EffectBridge.make()
     const memory = Memory.client(yield* Memory.node.service)
 
@@ -258,6 +261,13 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
               })
               }).pipe(
                 Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
+                // ⚠️ `LLMClient` is a GLOBAL node, not a location service, so the location context
+                // alone does not satisfy it. Asking for it there neither returned nor failed — the
+                // fiber reached `SessionRunnerModel.Service` and stopped dead at `LLMClient.Service`:
+                // no value, no error, no log. `bridge.fork` casts requirements away
+                // (`as Effect<A, E, never>`), so the compiler could not object either. Provided the
+                // same way `agent/agent.ts` does it.
+                Effect.provide(AppNodeBuilder.build(llmClient)),
                 Effect.catchCause((cause) => Log.event("kb.absorb.run.failed", { "kb.cause": Log.fault(cause) })),
               ),
             )
