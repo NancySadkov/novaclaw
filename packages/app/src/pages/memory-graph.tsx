@@ -118,6 +118,22 @@ export function MemoryGraphPage() {
     return map
   })
 
+  /**
+   * Which kinds to draw. Passages are OFF by default: measured on a real instance, they were 202 of
+   * 281 nodes, and the graph reads as a wall of identical marks with them on. The chip shows its off
+   * state and the header counts what is hidden, so this is a default rather than a concealment.
+   */
+  const [visibleKinds, setVisibleKinds] = createSignal<ReadonlySet<string>>(new Set(["entity", "episode"]))
+  const kindVisible = (kind?: string) => visibleKinds().has(kind ?? "entity")
+  const toggleKind = (kind: string) =>
+    setVisibleKinds((current) => {
+      const next = new Set(current)
+      if (next.has(kind)) next.delete(kind)
+      else next.add(kind)
+      return next
+    })
+  const hiddenCount = createMemo(() => (graph()?.nodes ?? []).filter((n) => !kindVisible(n.kind)).length)
+
   const [selected, setSelected] = createSignal<string | undefined>()
   // The set of node ids adjacent to the selected node (both directions) — used to highlight.
   const neighborIds = createMemo(() => {
@@ -192,7 +208,17 @@ export function MemoryGraphPage() {
         <div class="flex items-center gap-3 text-[11px] opacity-70" data-slot="memory-kind-legend">
           <For each={KIND_LEGEND}>
             {(entry) => (
-              <span class="flex items-center gap-1.5" title={entry.label}>
+              <button
+                type="button"
+                data-slot="memory-kind-toggle"
+                data-kind={entry.kind}
+                data-on={kindVisible(entry.kind) ? "" : undefined}
+                aria-pressed={kindVisible(entry.kind)}
+                onClick={() => toggleKind(entry.kind)}
+                title={entry.label}
+                class="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-v2-background-bg-layer-02"
+                classList={{ "opacity-35": !kindVisible(entry.kind) }}
+              >
                 <svg width="12" height="12" viewBox="-6 -6 12 12" aria-hidden="true">
                   <Show
                     when={entry.kind === "entity"}
@@ -211,10 +237,15 @@ export function MemoryGraphPage() {
                   </Show>
                 </svg>
                 <span>{entry.label.split(" — ")[0]}</span>
-              </span>
+              </button>
             )}
           </For>
         </div>
+        <Show when={hiddenCount() > 0}>
+          <span class="text-[11px] opacity-50" data-slot="memory-hidden-count">
+            {hiddenCount()} hidden
+          </span>
+        </Show>
         <span class="text-xs opacity-50">
           {count()} {count() === 1 ? "memory" : "memories"} · {graph()?.edges.length ?? 0} links
         </span>
@@ -258,8 +289,11 @@ export function MemoryGraphPage() {
               {/* edges */}
               <For each={graph()?.edges ?? []}>
                 {(e) => {
-                  const a = () => positions()[e.from]
-                  const b = () => positions()[e.to]
+                  // An edge whose endpoint is filtered out would be a line to nowhere.
+                  const shown = () =>
+                    kindVisible(nodeById().get(e.from)?.kind) && kindVisible(nodeById().get(e.to)?.kind)
+                  const a = () => (shown() ? positions()[e.from] : undefined)
+                  const b = () => (shown() ? positions()[e.to] : undefined)
                   const active = () => selected() === e.from || selected() === e.to
                   return (
                     <Show when={a() && b()}>
@@ -279,7 +313,9 @@ export function MemoryGraphPage() {
               {/* nodes */}
               <For each={graph()?.nodes ?? []}>
                 {(node) => {
-                  const p = () => positions()[node.id]
+                  // Hidden at RENDER, not before layout — see `positions`: filtering the layout
+                  // input would re-simulate and move every remaining node on each toggle.
+                  const p = () => (kindVisible(node.kind) ? positions()[node.id] : undefined)
                   const isSel = () => selected() === node.id
                   const isNeighbor = () => neighborIds().has(node.id)
                   const dim = () => selected() !== undefined && !isSel() && !isNeighbor()
