@@ -1,5 +1,13 @@
 export * as ReadTool from "./read"
 
+/**
+ * ⚠️ **`read` is ungated BECAUSE it is redacted.** It is deliberately not behind a permission ask,
+ * and that trade only holds while its output is scrubbed — if the redaction is ever removed,
+ * weakened, or bypassed for a caller, gate the operation in the SAME change. Carried here
+ * 2026-08-12 from the closed Fast Chat program's standing constraints, whose roadmap file was
+ * deleted; this is the code the constraint binds.
+ */
+
 import { ToolFailure } from "@novaclaw/llm"
 import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"

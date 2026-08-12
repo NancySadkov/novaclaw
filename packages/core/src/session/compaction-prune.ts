@@ -10,6 +10,13 @@ export * as CompactionPrune from "./compaction-prune"
 // schema. `packages/schema/src/session-message.ts`'s `AssistantTool.time.pruned` is the field the
 // V1 tier wrote (`state.time.compacted`) and is still declared — this module is its only writer.
 //
+// ⛔ DO NOT rebuild the durable ROW-REWRITE tier on top of this. It was built, adversarially
+// reviewed and WITHHELD over 10 defects — one voiding its premise outright: `messageRows` already
+// bounds the query at the compaction seq, so erasing rows reclaims nothing and only destroys the
+// human-readable record. The erase below is IN-MEMORY inside the compaction cycle, which is why the
+// durable transcript keeps every tool result. (Carried here 2026-08-12 from the closed Fast Chat
+// program, whose roadmap file was deleted; this is the file that entry told readers to consult.)
+//
 // PURE by construction: no Effect, no I/O, no clock. The reclaim DECISION (`plan`) and the reclaim
 // ITSELF (`erase`) are separate so the thresholds can be asserted without a session, a database or
 // a model (test/session-compaction-prune.test.ts). `compaction.ts` keeps the wiring.
