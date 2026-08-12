@@ -18,6 +18,7 @@ import { useServerSDK } from "@/context/server-sdk"
 import { ServerConnection, serverName } from "@/context/server"
 import { useServerManagementController } from "../dialog-select-server"
 import { ConfigExportImport } from "./config-io"
+import { SettingsProjectSection } from "./project"
 import { SettingsConfinementSection, type ShellStatusWithJail } from "./confinement"
 import { useSettings } from "@/context/settings"
 import { offlineStatus, shellProvision, shellStatus, type OfflineStatus, type ShellStatus } from "@/utils/fs-api"
@@ -678,6 +679,12 @@ export const SettingsGeneralV2: Component<{
           status={bundle.latest as ShellStatusWithJail | undefined}
           loading={bundle.loading}
         />
+
+        {/* Directly after Confinement, because it answers the same question from the other side: not
+            "what boxes the agent in", but "what ELSE is deciding what it may do here". A folder's
+            `novaclaw.json` can narrow this session's permissions, and until this section existed the
+            only way to discover that was to be refused and go looking for the file. */}
+        <SettingsProjectSection />
 
         <NotificationsSection />
 

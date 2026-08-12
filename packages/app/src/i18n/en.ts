@@ -1298,6 +1298,23 @@ export const dict = {
   // purpose, like `askBeforeChanges` and `surgicalEdits` before it: the parity ratchet fails on an
   // EXTRA key in a locale and only COUNTS a missing one, and pasting English into de.ts et al. would
   // make the translation backlog read as done. Translate properly or leave the key out.
+  "settings.project.section": "Project",
+  "settings.project.none": "This folder is not a Project",
+  "settings.project.noneDetail":
+    "Add a novaclaw.json here to give the folder its own defaults. Without one the folder works exactly as it does now.",
+  "settings.project.nameLabel": "Name",
+  "settings.project.rootLabel": "Project root",
+  "settings.project.fileLabel": "Declared in",
+  "settings.project.rulesLabel": "Permission rules",
+  "settings.project.rulesValue": "From this folder. They can only narrow your settings, never widen them.",
+  "settings.project.fileDetail": "The file that makes this folder a Project.",
+  "settings.project.excludeDetail": "Patterns this project asks Nova not to read.",
+  "settings.project.rulesNone": "None — this file changes no permissions",
+  "settings.project.excludeLabel": "Never read",
+  "settings.project.invalid": "This folder's novaclaw.json could not be used",
+  "settings.project.invalidFuture":
+    "It was written by a newer NovaClaw. Update NovaClaw to use it — the file itself is probably fine.",
+  "settings.project.invalidBroken": "The file could not be read: {{detail}}",
   "settings.confinement.section": "Confinement",
   "settings.confinement.title": "Sandbox for the agent's shell",
   "settings.confinement.meanwhile":
