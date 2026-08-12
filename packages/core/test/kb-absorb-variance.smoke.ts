@@ -225,6 +225,51 @@ describe.skipIf(CORPUS === "")("absorption variance across repeats", () => {
           `${arm.name}: names ${dNames >= 0 ? "+" : ""}${dNames.toFixed(1)}, concrete% ${dPct >= 0 ? "+" : ""}${dPct.toFixed(1)} → ${verdict}`,
         )
       }
+      // ── PAIRED comparison, which is the instrument the unpaired one above showed we need ──────
+      //
+      // 🔴 Measured 2026-08-12: run-total `names` moved by ±29 within a single arm, on a mean of ~110
+      // — **26% noise**. At that width no clause smaller than a redesign can ever clear the floor, and
+      // more repeats only shrink it as 1/√n, so the honest reading is that RUN TOTALS ARE THE WRONG
+      // UNIT. Most of that variance is between-passage: a stat block and a prose page yield wildly
+      // different counts, and a run total re-rolls that mixture every time.
+      //
+      // Pairing removes it. The same passage is scored under every arm, differenced WITHIN the
+      // passage, and the arm's effect is the mean of those differences — so between-passage variation
+      // cancels instead of being averaged over. Same calls, same cost, a much tighter question.
+      const byPassage = new Map<string, Map<string, number[]>>()
+      for (const [index, passage] of passages.entries()) {
+        const key = `p${index}`
+        const perArm = new Map<string, number[]>()
+        for (const arm of ARMS) {
+          const counts: number[] = []
+          for (let i = 0; i < REPEATS; i++) {
+            const scored = KbAbsorbEval.score(await extract(arm.system, passage), scaffolding)
+            counts.push(scored.total === 0 ? 0 : (100 * scored.concrete.length) / scored.total)
+          }
+          perArm.set(arm.name, counts)
+        }
+        byPassage.set(key, perArm)
+      }
+      console.log(`
+PAIRED — concrete%, differenced within each passage against \`shipped\`:`)
+      for (const arm of ARMS) {
+        if (arm.name === "shipped") continue
+        const deltas: number[] = []
+        for (const perArm of byPassage.values()) {
+          const base = mean(perArm.get("shipped") ?? [0])
+          deltas.push(mean(perArm.get(arm.name) ?? [0]) - base)
+        }
+        const m = mean(deltas)
+        // The paired spread is the honest floor for a paired claim; quoting the unpaired one here
+        // would be borrowing a wider number to make a delta look bigger than its own evidence.
+        const sd = Math.sqrt(mean(deltas.map((d) => (d - m) ** 2)))
+        const stderr = sd / Math.sqrt(Math.max(1, deltas.length))
+        console.log(
+          `${arm.name}: mean ${m >= 0 ? "+" : ""}${m.toFixed(1)} points/passage, sd ${sd.toFixed(1)}, ` +
+            `stderr ${stderr.toFixed(1)} over ${deltas.length} passages → ` +
+            (Math.abs(m) > 2 * stderr ? "CLEARS 2 stderr" : "within 2 stderr — not evidence"),
+        )
+      }
       expect(results).toHaveLength(ARMS.length)
     },
     { timeout: 120 * 60_000 },
