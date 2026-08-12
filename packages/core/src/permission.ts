@@ -429,6 +429,62 @@ export function merge(...rulesets: Permission.Ruleset[]): Permission.Ruleset {
   return rulesets.flat()
 }
 
+/**
+ * How restrictive an effect is. `allow` < `ask` < `deny`.
+ *
+ * `ask` sits in the middle because it withholds the action until a human says otherwise — strictly
+ * less permissive than `allow`, strictly more than a refusal.
+ */
+const RESTRICTIVENESS: Readonly<Record<Permission.Effect, number>> = { allow: 0, ask: 1, deny: 2 }
+
+/**
+ * The rule a ruleset has for this action/resource, or `undefined` when it has NO OPINION.
+ *
+ * 🔴 The distinction `evaluate` cannot make. It answers a synthetic `ask` when nothing matches, which
+ * is right for a final verdict and WRONG for composition: a constraint that says nothing must change
+ * nothing, and treating its silence as `ask` would let an empty project file tighten every action the
+ * operator had allowed.
+ */
+export function matchRule(
+  action: string,
+  resource: string,
+  ruleset: Permission.Ruleset,
+): Permission.Rule | undefined {
+  // `findLast`, matching `evaluate`: within ONE ruleset the later rule wins.
+  return ruleset.findLast((rule) => Wildcard.match(action, rule.action) && Wildcard.match(resource, rule.resource))
+}
+
+/**
+ * Evaluate `base` and then let `constraints` NARROW the answer — never widen it.
+ *
+ * 🔴 WHY THIS EXISTS RATHER THAN ANOTHER `merge`. `evaluate` takes the LAST matching rule across the
+ * concatenation, so appending a ruleset is how you OVERRIDE — including with `allow`. That is correct
+ * for user config, agent config and saved answers, which are the operator speaking. It is exactly
+ * wrong for a `novaclaw.json` sitting inside a folder the user may have cloned five minutes ago:
+ * `todo/projects.md` requires that a Project or session may never widen the operator's safety floor,
+ * and appending would hand a repository author a `{"*": "*": "allow"}` past every deny in the install.
+ *
+ * So a constraint can only move the verdict UP the restrictiveness order, and a constraint with no
+ * matching rule leaves it untouched.
+ *
+ * ⚠️ The returned rule keeps the ORIGIN of whichever verdict won, so a caller can tell the user which
+ * file denied them. A composed verdict that cannot name its author is one nobody can act on.
+ */
+export function evaluateNarrowed(
+  action: string,
+  resource: string,
+  base: Permission.Ruleset[],
+  constraints: Permission.Ruleset[],
+): Permission.Rule {
+  let winner = evaluate(action, resource, ...base)
+  for (const constraint of constraints) {
+    const rule = matchRule(action, resource, constraint)
+    if (!rule) continue
+    if (RESTRICTIVENESS[rule.effect] > RESTRICTIVENESS[winner.effect]) winner = rule
+  }
+  return winner
+}
+
 export interface Interface {
   readonly ask: (input: AssertInput) => EffectRuntime.Effect<AskResult, SessionV2.NotFoundError>
   readonly assert: (input: AssertInput) => EffectRuntime.Effect<void, Error | SessionV2.NotFoundError>
