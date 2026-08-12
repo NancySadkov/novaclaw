@@ -1,8 +1,9 @@
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
+import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
-import { type Component } from "solid-js"
+import { type Component, Show, createSignal } from "solid-js"
 import { showToast } from "@/utils/toast"
-import { useLanguage } from "@/context/language"
+import { type TranslationKey, useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
@@ -31,6 +32,93 @@ const DEFAULT_WALL_MINUTES = 45
 // opposite ways when starved: execution truncates (half a file), reasoning returns EMPTY.
 const DEFAULT_EXECUTION_TOKENS = 24_576
 const MAX_TOKENS = 131_072
+
+/** A preset is a RECOMMENDATION. 8192 is missing from the reasoning list because this tab's own
+ *  description says it "returns empty" — naming a broken value would be worse than a bare box. */
+const CUSTOM_BUDGET = "custom-budget"
+const EXECUTION_PRESETS = [
+  { tokens: 16_384, key: "settings.strict.budget.tight" },
+  { tokens: 24_576, key: "settings.strict.budget.standard" },
+  { tokens: 49_152, key: "settings.strict.budget.roomy" },
+] as const
+const REASONING_PRESETS = [
+  { tokens: 0, key: "settings.strict.budget.off" },
+  { tokens: 24_576, key: "settings.strict.budget.standard" },
+  { tokens: 49_152, key: "settings.strict.budget.roomy" },
+] as const
+type BudgetPreset = { readonly tokens: number; readonly key: TranslationKey }
+
+/**
+ * One control for both budgets: a named preset when the stored value IS one, the number box
+ * otherwise. A value the presets do not cover keeps the box — a picker that silently rounded
+ * someone's tuned 30 000 to "Standard" would change a setting while claiming to display it.
+ */
+const BudgetControl: Component<{
+  presets: readonly BudgetPreset[]
+  value: number | undefined
+  /**
+   * What an EMPTY setting actually means, which differs per budget and is stated in each row's own
+   * copy: execution says "Empty = 24576", reasoning says "Empty or 0 = off". Without this, unset
+   * read as 0, matched no execution preset, and dropped that row to the number box — showing a
+   * raw 24576 placeholder for a value the product would describe as Standard.
+   */
+  unsetTokens: number
+  fallbackPlaceholder: string
+  label: string
+  action: string
+  onPersist: (value: number) => void
+}> = (props) => {
+  const language = useLanguage()
+  const [custom, setCustom] = createSignal(false)
+  const stored = () => props.value ?? props.unsetTokens
+  const isPreset = () => props.presets.some((preset) => preset.tokens === stored())
+  const options = () => [
+    ...props.presets.map((preset) => ({
+      value: String(preset.tokens),
+      label: `${language.t(preset.key)} (${preset.tokens.toLocaleString()})`,
+    })),
+    { value: CUSTOM_BUDGET, label: language.t("settings.strict.budget.custom") },
+  ]
+  return (
+    <div class="w-full sm:w-[200px]">
+      <Show
+        when={!custom() && isPreset()}
+        fallback={
+          <TextInputV2
+            type="number"
+            appearance="base"
+            min="0"
+            max={String(MAX_TOKENS)}
+            step="1024"
+            value={props.value || ""}
+            placeholder={props.fallbackPlaceholder}
+            onChange={(event) => {
+              const parsed = Number.parseInt(event.currentTarget.value, 10)
+              props.onPersist(Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, MAX_TOKENS) : 0)
+            }}
+            aria-label={props.label}
+          />
+        }
+      >
+        <SelectV2
+          appearance="inline"
+          data-action={props.action}
+          options={options()}
+          current={options().find((o) => o.value === String(stored()))}
+          placement="bottom-end"
+          gutter={6}
+          value={(o) => o.value}
+          label={(o) => o.label}
+          onSelect={(option) => {
+            if (!option) return
+            if (option.value === CUSTOM_BUDGET) return setCustom(true)
+            props.onPersist(Number(option.value))
+          }}
+        />
+      </Show>
+    </div>
+  )
+}
 // The lever groups all default ON inside the engine — the switches show that default until overridden.
 const GROUPS = ["verification", "recovery", "editingAids", "budgetSteering"] as const
 
@@ -140,48 +228,30 @@ export const SettingsStrictV2: Component = () => {
               title={language.t("settings.strict.row.executionTokens.title")}
               description={language.t("settings.strict.row.executionTokens.description")}
             >
-              <div class="w-full sm:w-[100px]">
-                <TextInputV2
-                  type="number"
-                  appearance="base"
-                  min="1"
-                  max={String(MAX_TOKENS)}
-                  step="1024"
-                  value={current().executionTokens || ""}
-                  placeholder={String(DEFAULT_EXECUTION_TOKENS)}
-                  onChange={(event) => {
-                    const parsed = Number.parseInt(event.currentTarget.value, 10)
-                    void persist({
-                      executionTokens: Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, MAX_TOKENS) : 0,
-                    })
-                  }}
-                  aria-label={language.t("settings.strict.row.executionTokens.title")}
-                />
-              </div>
+              <BudgetControl
+                presets={EXECUTION_PRESETS}
+                value={current().executionTokens}
+                unsetTokens={DEFAULT_EXECUTION_TOKENS}
+                fallbackPlaceholder={String(DEFAULT_EXECUTION_TOKENS)}
+                label={language.t("settings.strict.row.executionTokens.title")}
+                action="settings-strict-execution-budget"
+                onPersist={(value) => void persist({ executionTokens: value })}
+              />
             </SettingsRowV2>
 
             <SettingsRowV2
               title={language.t("settings.strict.row.reasoningTokens.title")}
               description={language.t("settings.strict.row.reasoningTokens.description")}
             >
-              <div class="w-full sm:w-[100px]">
-                <TextInputV2
-                  type="number"
-                  appearance="base"
-                  min="0"
-                  max={String(MAX_TOKENS)}
-                  step="1024"
-                  value={current().reasoningTokens || ""}
-                  placeholder="0"
-                  onChange={(event) => {
-                    const parsed = Number.parseInt(event.currentTarget.value, 10)
-                    void persist({
-                      reasoningTokens: Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, MAX_TOKENS) : 0,
-                    })
-                  }}
-                  aria-label={language.t("settings.strict.row.reasoningTokens.title")}
-                />
-              </div>
+              <BudgetControl
+                presets={REASONING_PRESETS}
+                value={current().reasoningTokens}
+                unsetTokens={0}
+                fallbackPlaceholder="0"
+                label={language.t("settings.strict.row.reasoningTokens.title")}
+                action="settings-strict-reasoning-budget"
+                onPersist={(value) => void persist({ reasoningTokens: value })}
+              />
             </SettingsRowV2>
           </SettingsListV2>
         </div>

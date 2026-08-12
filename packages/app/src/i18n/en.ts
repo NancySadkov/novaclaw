@@ -1921,6 +1921,11 @@ export const dict = {
   "settings.strict.row.attempts.title": "Parallel attempts (race)",
   "settings.strict.row.attempts.description":
     "Run several isolated attempts at the same task on separate copies of your project and keep the first one that verifiably succeeds — a lost race leaves your folder untouched. More attempts = better odds and more compute; your local hardware runs them nearly in parallel. Works for folders up to ~5000 files / 256 MB (larger ones fall back to a single attempt). Empty or 1 = off.",
+  "settings.strict.budget.off": "Off",
+  "settings.strict.budget.tight": "Tight",
+  "settings.strict.budget.standard": "Standard",
+  "settings.strict.budget.roomy": "Roomy",
+  "settings.strict.budget.custom": "Custom…",
   "settings.strict.row.wallMinutes.title": "Time budget (minutes)",
   "settings.strict.row.wallMinutes.description":
     "Wall-clock budget per Strict task; at exhaustion the best verified state is delivered. Empty = 45.",
