@@ -62,7 +62,7 @@ export const markInstanceForDisposal = (ctx: InstanceContext) =>
 export const locationDisposerLayer: Layer.Layer<never> = Layer.effectDiscard(
   Effect.gen(function* () {
     const locations = yield* LocationServiceMap.Service
-    const unregister = registerDisposer((directory) =>
+    const unregister = registerDisposer("location services", (directory) =>
       Effect.runPromise(locations.invalidate(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
     )
     yield* Effect.addFinalizer(() => Effect.sync(unregister))

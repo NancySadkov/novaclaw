@@ -74,7 +74,7 @@ const makeWith = <A, E = never, R = never>(
         }),
     })
 
-    const off = registerDisposer(async (directory) => {
+    const off = registerDisposer("instance cache", async (directory) => {
       await Effect.runPromise(ScopedCache.invalidate(cache, directory))
       // The refs outlive nothing: a disposed instance's entry is gone, so keeping its context would
       // let a later fan-out rebuild a cache entry for an instance the process has already closed.

@@ -33,9 +33,9 @@ const setBootstrap = (run: Effect.Effect<void>) =>
       }),
   )
 
-const registerDisposerScoped = (disposer: (directory: string) => Promise<void>) =>
+const registerDisposerScoped = (disposer: (directory: string) => Promise<void>, name = "test disposer") =>
   Effect.acquireRelease(
-    Effect.sync(() => registerDisposer(disposer)),
+    Effect.sync(() => registerDisposer(name, disposer)),
     (off) => Effect.sync(off),
   )
 

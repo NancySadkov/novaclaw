@@ -3,7 +3,7 @@ import { GlobalBus } from "@/bus/global"
 import { serviceUse } from "@novaclaw/core/effect/service-use"
 import { WorkspaceContext } from "@/control-plane/workspace-context"
 import { InstanceRef } from "@/effect/instance-ref"
-import { disposeInstance as runDisposers } from "@/effect/instance-registry"
+import { describeDisposeFailures, disposeInstance as runDisposers } from "@/effect/instance-registry"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Context, Deferred, Duration, Effect, Exit, Layer, Scope } from "effect"
 import { type InstanceContext } from "./instance-context"
@@ -88,7 +88,14 @@ export const layer: Layer.Layer<Service, never, ProjectV2.Service | InstanceBoot
 
     const disposeContext = Effect.fn("InstanceStore.disposeContext")(function* (ctx: InstanceContext) {
       yield* Log.event("instance.store.dispose", { directory: ctx.directory })
-      yield* Effect.promise(() => runDisposers(ctx.directory))
+      // A disposer that refuses to let go is NAMED here. It used to fail silently, which at shutdown
+      // meant unflushed state was lost with nothing on record to say which subsystem lost it.
+      const failures = yield* Effect.promise(() => runDisposers(ctx.directory))
+      if (failures.length > 0)
+        yield* Log.event("instance.disposer.run.failed", {
+          directory: ctx.directory,
+          "instance.disposers": describeDisposeFailures(failures),
+        })
       yield* emitDisposed({ directory: ctx.directory, project: ctx.origin })
     })
 
@@ -129,7 +136,12 @@ export const layer: Layer.Layer<Service, never, ProjectV2.Service | InstanceBoot
             yield* Log.event("instance.store.reload", { directory })
             if (previous) {
               yield* Deferred.await(previous.deferred).pipe(Effect.ignore)
-              yield* Effect.promise(() => runDisposers(directory))
+              const reloadFailures = yield* Effect.promise(() => runDisposers(directory))
+              if (reloadFailures.length > 0)
+                yield* Log.event("instance.disposer.run.failed", {
+                  directory,
+                  "instance.disposers": describeDisposeFailures(reloadFailures),
+                })
               yield* emitDisposed({ directory })
             }
             yield* completeLoad(directory, input, entry)

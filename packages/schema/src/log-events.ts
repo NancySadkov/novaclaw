@@ -934,6 +934,21 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/project/instance-store.ts",
   },
+  /**
+   * A named per-instance disposer rejected — that subsystem did not let go.
+   *
+   * Distinct from `instance.store.dispose.failed`, which is about an instance whose CONTEXT never
+   * resolved. This one means the instance was fine and a specific subsystem under it refused, which
+   * at shutdown is how unflushed state gets lost. It was silent before: the disposers ran through an
+   * `allSettled` whose results were discarded, and they had no names to report anyway.
+   */
+  "instance.disposer.run.failed": {
+    level: "warn",
+    message: "instance disposer did not finish",
+    attributes: { directory: "path", "instance.disposers": "list" },
+    content: "user",
+    file: "packages/novaclaw/src/project/instance-store.ts",
+  },
   /** One cached instance is being replaced with a fresh context. */
   "instance.store.reload": {
     level: "info",
