@@ -199,6 +199,13 @@ describe.skipIf(CORPUS === "")("absorption variance across repeats", () => {
       }
       // The floor is pooled across arms: the widest within-arm spread any arm showed. Using only the
       // control's spread would understate it whenever the control happened to be the steady one.
+      //
+      // ⚠️ **This floor is NOT comparable across runs with different `REPEATS`, and that is a property
+      // of the estimator rather than of the data.** A range (max − min) can only grow as samples are
+      // added, so it is biased DOWNWARD at small n: measured on the same corpus, 3 repeats gave names
+      // ±29 and 2 repeats gave ±15 — the second is not a quieter model, it is a shorter ruler. Read a
+      // verdict here only against the floor printed beside it, and prefer the PAIRED section below,
+      // whose standard error has no such dependence.
       // What the product's controller would have been doing, stated as a distribution rather than as
       // a fallback rate this harness cannot measure.
       const sorted = [...reasoningTokens].sort((a, b) => a - b)
