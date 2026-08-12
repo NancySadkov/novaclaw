@@ -120,19 +120,36 @@ export const fromProvider = (input: {
       : {}),
 })
 
-/** The scheduler either runs or it does not; there is no middle reading. */
-export const fromScheduler = (running: boolean | undefined): Signal =>
-  running === undefined
-    ? { id: "scheduler", label: "Scheduled runs", status: "unknown", detail: "Could not read the scheduler." }
-    : running
-      ? { id: "scheduler", label: "Scheduled runs", status: "ok" }
-      : {
-          id: "scheduler",
-          label: "Scheduled runs",
-          status: "problem",
-          detail: "Scheduled work is not being started.",
-          action: "Restart the app; if it persists, check the error log in Debug.",
-        }
+/**
+ * Scheduled runs — the CALENDAR scheduler.
+ *
+ * 🔴 **This used to read the wrong subsystem.** It took a boolean derived from
+ * `SessionScheduler.snapshot()`, which is per-device ADMISSION control — how many generations may
+ * run at once — and has nothing to do with running scheduled work. The thing that fires due
+ * schedules is `CalendarScheduler` (`schedule/scheduler.ts`), and it is the one behind a capability
+ * edge, so it is also the one that can be `unavailable` while everything else is fine. The row was
+ * labelled "Scheduled runs" and detailed "Scheduled work is not being started" the whole time — the
+ * copy described the calendar scheduler while the reading came from a different module with a
+ * similar name.
+ *
+ * ⚠️ Takes the capability's recorded state, which the registry already holds, so reading it starts
+ * nothing. The server demands this capability at boot (`forkScoped(scheduler.get)`), so `idle` here
+ * means it has not come up YET rather than that nobody wanted it.
+ */
+export const fromScheduler = (state: "idle" | "starting" | "ready" | "unavailable" | undefined): Signal => {
+  if (state === undefined)
+    return { id: "scheduler", label: "Scheduled runs", status: "unknown", detail: "Could not read the scheduler." }
+  if (state === "unavailable")
+    return {
+      id: "scheduler",
+      label: "Scheduled runs",
+      status: "problem",
+      detail: "Scheduled work is not being started, so anything on the calendar will not run.",
+      action: "Restart the app; if it persists, check the error log in Debug.",
+    }
+  if (state === "ready") return { id: "scheduler", label: "Scheduled runs", status: "ok" }
+  return { id: "scheduler", label: "Scheduled runs", status: "unknown", detail: "Still starting." }
+}
 
 /**
  * The updater.
@@ -243,3 +260,31 @@ export const fromMemory = (input: {
     detail: input.stage === "loading" ? "Still opening." : "Not opened yet — it opens the first time it is used.",
   }
 }
+
+/**
+ * Any OTHER optional capability that is down — the generic row.
+ *
+ * 🔴 Five capability edges are registered (`calendar-scheduler`, `local-model`, `memory`,
+ * `messenger`, `messenger-login`) and until 2026-08-12 only two could ever reach this board. The
+ * rest were observable solely through `/api/capability`, a Developer-mode surface, so a first user
+ * whose messenger gateway or local model refused to start had nothing to look at — the same silence
+ * that made a broken memory store report "nothing remembered yet".
+ *
+ * ⚠️ Reports ONLY `unavailable`. A capability that is `idle` has not been asked for, which is the
+ * normal state of an optional subsystem nobody uses, and a board that listed every unused capability
+ * as "unknown" would bury the one real fault in noise it generated itself.
+ *
+ * ⚠️ Deliberately skips edges that already have a purpose-built row: those read the SUBSYSTEM's own
+ * state, which is strictly better than the edge's (memory's engine can be broken while its
+ * capability reads `ready`), and two rows for one thing would read as two faults.
+ */
+export const NAMED_CAPABILITY_ROWS: ReadonlySet<string> = new Set(["memory", "calendar-scheduler"])
+
+export const fromCapability = (name: string): Signal => ({
+  id: `capability:${name}`,
+  // The registry's name is a slug; a person reads the words, not the identifier.
+  label: `Optional feature — ${name.replace(/-/g, " ")}`,
+  status: "problem",
+  detail: "This feature failed to start. The rest of NovaClaw is unaffected.",
+  action: "Open Developer mode → Debug → Optional capabilities to see why, and to retry it.",
+})

@@ -80,9 +80,14 @@ describe("mapping each subsystem's vocabulary", () => {
   })
 
   test("a stopped scheduler is a problem; a readable running one is ok", () => {
-    expect(NovaHealth.fromScheduler(false).status).toBe("problem")
-    expect(NovaHealth.fromScheduler(true).status).toBe("ok")
+    expect(NovaHealth.fromScheduler("unavailable").status).toBe("problem")
+    expect(NovaHealth.fromScheduler("ready").status).toBe("ok")
     expect(NovaHealth.fromScheduler(undefined).status).toBe("unknown")
+    // 🔴 The row reads the CALENDAR scheduler, not SessionScheduler (per-device admission control).
+    // It was labelled "Scheduled runs" while measuring a different module with a similar name.
+    expect(NovaHealth.fromScheduler("starting").status).toBe("unknown")
+    expect(NovaHealth.fromScheduler("idle").status).toBe("unknown")
+    expect(NovaHealth.fromScheduler("unavailable").detail).toContain("calendar")
   })
 
   // ⚠️ UPDATER_ENABLED lives in the desktop main process. Claiming updates are OFF when the server
@@ -106,7 +111,7 @@ describe("a whole board", () => {
     const board = [
       NovaHealth.fromPressure({ level: "ok" }),
       NovaHealth.fromDatabase({ status: "ok" }),
-      NovaHealth.fromScheduler(true),
+      NovaHealth.fromScheduler("ready"),
       NovaHealth.fromUpdater(undefined),
     ]
     expect(NovaHealth.worst(board)).toBe("unknown")
@@ -119,7 +124,7 @@ describe("a whole board", () => {
       NovaHealth.fromDatabase({ status: "damaged" }),
       NovaHealth.fromProvider({ name: "spark", verdict: "unreachable" }),
       NovaHealth.fromProvider({ name: "cloud", verdict: "blocked" }),
-      NovaHealth.fromScheduler(false),
+      NovaHealth.fromScheduler("unavailable"),
     ]
     for (const signal of board.filter((s) => s.status !== "ok"))
       expect(signal.action !== undefined || signal.detail !== undefined).toBe(true)
@@ -205,11 +210,42 @@ describe("NovaHealth.fromMemory", () => {
     // The point of adding the row: `worst` must SEE it. A signal that exists but cannot change the
     // overall verdict would leave the board still saying nothing is wrong.
     const board = [
-      NovaHealth.fromScheduler(true),
+      NovaHealth.fromScheduler("ready"),
       NovaHealth.fromMemory({ stage: "error" }),
       NovaHealth.fromUpdater(true),
     ]
     expect(NovaHealth.worst(board)).toBe("problem")
     expect(NovaHealth.headline(board)).not.toContain("nothing")
+  })
+})
+
+describe("NovaHealth.fromCapability — the generic edge row", () => {
+  /**
+   * 🔴 Five capability edges are registered and until 2026-08-12 only TWO could reach this board.
+   * The rest were visible solely through `/api/capability`, behind Developer mode — so a first user
+   * whose messenger gateway or local model refused to start had nothing to look at.
+   */
+  test("names the feature in words and points at the repair surface", () => {
+    const signal = NovaHealth.fromCapability("messenger-login")
+    expect(signal.status).toBe("problem")
+    expect(signal.id).toBe("capability:messenger-login")
+    // A slug is an identifier, not something a person reads.
+    expect(signal.label).toContain("messenger login")
+    expect(signal.action).toContain("Debug")
+    // Says what is NOT broken: an optional feature failing must not read as the app being broken.
+    expect(signal.detail).toContain("rest of NovaClaw is unaffected")
+  })
+
+  test("edges with a purpose-built row are excluded, so one fault is never two rows", () => {
+    // ⚠️ Those rows read the SUBSYSTEM's own state, which is strictly better than the edge's:
+    // memory's engine can be broken while its capability still reads `ready`.
+    expect(NovaHealth.NAMED_CAPABILITY_ROWS.has("memory")).toBe(true)
+    expect(NovaHealth.NAMED_CAPABILITY_ROWS.has("calendar-scheduler")).toBe(true)
+    expect(NovaHealth.NAMED_CAPABILITY_ROWS.has("messenger")).toBe(false)
+  })
+
+  test("a down optional feature drags the board to problem", () => {
+    const board = [NovaHealth.fromScheduler("ready"), NovaHealth.fromCapability("local-model")]
+    expect(NovaHealth.worst(board)).toBe("problem")
   })
 })

@@ -21,6 +21,7 @@ import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { Database } from "@novaclaw/core/database/database"
 import { DatabaseHealth } from "@novaclaw/core/database/health"
 import { NovaHealth } from "@novaclaw/core/nova-health"
+import { CapabilityRegistry, type Snapshot as CapabilitySnapshot } from "@novaclaw/core/effect/capability-registry"
 import { ProviderReach } from "@novaclaw/core/provider-reach"
 import { ConfigProviderPreset } from "@novaclaw/core/config/provider-preset"
 import { Offline } from "@novaclaw/core/offline"
@@ -219,13 +220,20 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
             Effect.orElseSucceed(() => ({ status: "unknown" as const, detail: "The store could not be read." })),
           )
 
-          const scheduler = yield* SessionScheduler.Service
-          const running = yield* scheduler
-            .snapshot()
-            .pipe(
-              Effect.map(() => true),
-              Effect.orElseSucceed(() => undefined),
-            )
+          // ⚠️ The CALENDAR scheduler, read from the capability registry — not `SessionScheduler`,
+          // which is per-device admission control and has nothing to do with scheduled work. The row
+          // has always been labelled "Scheduled runs"; until 2026-08-12 it was measuring a different
+          // module with a similar name. The registry holds a recorded status, so this starts nothing.
+          const capabilities = yield* CapabilityRegistry.Service.pipe(
+            Effect.flatMap((registry) => registry.inspect()),
+            Effect.orElseSucceed(() => [] as ReadonlyArray<CapabilitySnapshot>),
+          )
+          const schedulerState = capabilities.find((row) => row.name === "calendar-scheduler")?.status.state
+          // Every OTHER edge that is down gets a row. Without this they were visible only through
+          // /api/capability, which lives behind Developer mode.
+          const downCapabilities = capabilities
+            .filter((row) => row.status.state === "unavailable" && !NovaHealth.NAMED_CAPABILITY_ROWS.has(row.name))
+            .map((row) => NovaHealth.fromCapability(row.name))
 
           // WHICH provider: the default model's. "Can I talk to my model?" is a singular question,
           // and an instance may carry a dozen configured providers that are never used.
@@ -287,12 +295,13 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
             NovaHealth.fromPressure(pressure),
             NovaHealth.fromDatabase(database),
             NovaHealth.fromMemory({ stage: memory.stage, ...(memory.detail === undefined ? {} : { detail: memory.detail }) }),
-            NovaHealth.fromScheduler(running),
+            NovaHealth.fromScheduler(schedulerState),
             // ⚠️ `undefined`, not `false`. UPDATER_ENABLED lives in the desktop main process and a
             // server-side board cannot read it; reporting "updates are off" would describe the
             // user's own configuration falsely.
             NovaHealth.fromUpdater(undefined),
             ...(providerRow === undefined ? [] : [providerRow]),
+            ...downCapabilities,
           ]
 
           return { overall: NovaHealth.worst(signals), headline: NovaHealth.headline(signals), signals }
