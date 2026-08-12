@@ -54,6 +54,28 @@ describe("confinement surface", () => {
         expect(AgentJail.BACKEND_KINDS as readonly string[]).toContain(AgentJail.detectBackend(platform, run).kind)
   })
 
+  test("every ENCLOSURE kind the kernel can produce has copy, and the enumeration is the real one", () => {
+    // Same ratchet as the two above, for the tuple added 2026-08-12. `ENCLOSURE_KINDS` is a runtime
+    // array precisely so this loop can exist — a `type`-only union would let a fifth arm land with no
+    // words anywhere and every check stay green.
+    for (const kind of AgentJail.ENCLOSURE_KINDS)
+      expect(has(`settings.confinement.enclosure.${kind}`), `no label for enclosure "${kind}"`).toBe(true)
+
+    // …and driven from the DETECTOR, never from the list: every kind it can actually emit must be one
+    // the loop above demanded copy for.
+    const reached = new Set<string>()
+    const probes = [
+      { readText: () => undefined, runText: () => undefined },
+      { readText: (p: string) => (p === "/.dockerenv" ? "" : undefined), runText: () => undefined },
+      { readText: () => undefined, runText: (_c: string, a: readonly string[]) => (a[0] === "--vm" ? "kvm" : "none") },
+      { readText: (p: string) => (p === "/proc/1/cgroup" ? "0::/init.scope" : undefined), runText: () => "none" },
+    ]
+    for (const platform of PLATFORMS) for (const probe of probes) reached.add(AgentJail.detectEnclosure(platform, probe).kind)
+    for (const kind of reached) expect(AgentJail.ENCLOSURE_KINDS as readonly string[]).toContain(kind)
+    // All four are reachable from these probes, so the copy loop above is not walking dead arms.
+    expect([...reached].sort()).toEqual([...AgentJail.ENCLOSURE_KINDS].sort())
+  })
+
   test("every confinement reason the kernel can produce has a verdict AND an explanation", () => {
     for (const reason of AgentJail.CONFINEMENT_REASONS) {
       expect(has(`settings.confinement.reason.${reason}`), `no explanation for "${reason}"`).toBe(true)

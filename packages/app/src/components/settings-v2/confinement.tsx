@@ -7,7 +7,7 @@ import { SettingsRowV2 } from "./parts/row"
 // import of it would follow the renderer into the browser bundle. `import type` is erased before the
 // bundler ever sees it, which is what lets the state machine below be typed by the kernel's own
 // vocabulary instead of a hand-copied union that could drift away from it.
-import type { BashPlan, ConfinementReason, JailPostureWire } from "@novaclaw/core/agent-jail"
+import type { BashPlan, ConfinementReason, Enclosure, JailPostureWire } from "@novaclaw/core/agent-jail"
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // Settings → General → "How this machine confines the agent" (todo/jail.md → *A capability probe +
@@ -39,7 +39,11 @@ import type { BashPlan, ConfinementReason, JailPostureWire } from "@novaclaw/cor
  * instance older than this screen does not send it. That is a first-class state here, not an error —
  * see `"unreported"` below.
  */
-export type ShellStatusWithJail = ShellStatus & { readonly jail?: ReportedPosture }
+export type ShellStatusWithJail = ShellStatus & {
+  readonly jail?: ReportedPosture
+  /** Optional for the same reason `jail` is: an older instance omits it and the row says so. */
+  readonly enclosure?: Enclosure
+}
 
 /**
  * The posture as this screen may receive it.
@@ -147,6 +151,18 @@ export const SettingsConfinementSection: Component<{
     return kind ? language.t(`settings.confinement.backend.${kind}`) : ""
   }
 
+  /**
+   * What encloses this instance, and its evidence.
+   *
+   * ⚠️ An instance that did not report the field is `unknown` — the same answer as one that measured
+   * and could not tell. That collapse is deliberate here: both mean *we do not know*, and inventing a
+   * fifth arm for "your instance is older than this screen" would be a distinction the reader cannot
+   * act on. The evidence line says which it was.
+   */
+  const enclosureKind = (): Enclosure["kind"] => props.status?.enclosure?.kind ?? "unknown"
+  const enclosureEvidence = () =>
+    props.status?.enclosure?.evidence ?? language.t("settings.confinement.probe.unreported")
+
   // The probe, verbatim, so the claim above is checkable by hand rather than trusted.
   const probeDetail = () => {
     if (displayKind() === "checking") return language.t("settings.confinement.probe.checking")
@@ -191,6 +207,31 @@ export const SettingsConfinementSection: Component<{
         >
           <span data-slot="settings-confinement-verdict" class="text-[13px] text-v2-text-text-muted">
             {language.t(`settings.confinement.verdict.${displayKind()}`)}
+          </span>
+        </SettingsRowV2>
+
+        {/*
+          The OTHER half of "how boxed in is this?" — what already encloses NovaClaw, as opposed to
+          what NovaClaw can put around a command. Two different questions with different answers, and
+          merging them would force one of the two to be wrong (`agent-jail.ts` → THE ENCLOSURE).
+
+          ⚠️ `unknown` is rendered as *"Not measured"*, never as "no". A boolean here would turn every
+          host we cannot probe into "not in a container", which is a claim we have not earned — and on
+          Windows, where there is no probe at all, it would be exactly the wrong one.
+        */}
+        <SettingsRowV2
+          title={language.t("settings.confinement.enclosure.title")}
+          description={
+            <>
+              {language.t("settings.confinement.enclosure.description")}{" "}
+              {/* The EVIDENCE, verbatim, for the same reason the probe row exists below: a claim
+                  about someone's machine that they cannot check is worth less than one they can. */}
+              <span class="text-v2-text-text-faint">{enclosureEvidence()}</span>
+            </>
+          }
+        >
+          <span data-slot="settings-confinement-enclosure" class="text-[13px] text-v2-text-text-muted">
+            {language.t(`settings.confinement.enclosure.${enclosureKind()}`)}
           </span>
         </SettingsRowV2>
 

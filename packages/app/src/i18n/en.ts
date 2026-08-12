@@ -1326,6 +1326,13 @@ export const dict = {
   "settings.confinement.verdict.unreported": "Not reported",
   "settings.confinement.verdict.unknown": "Unknown",
   "settings.confinement.verdict.checking": "Checking…",
+  "settings.confinement.enclosure.title": "What this machine already runs inside",
+  "settings.confinement.enclosure.description":
+    "Separate from the sandbox above: that is what NovaClaw can put AROUND a command, this is what is already around NovaClaw itself.",
+  "settings.confinement.enclosure.container": "Inside a container",
+  "settings.confinement.enclosure.vm": "Inside a virtual machine",
+  "settings.confinement.enclosure.bare": "Directly on this machine",
+  "settings.confinement.enclosure.unknown": "Not measured",
   "settings.confinement.backend.namespaces": "Linux namespaces, via bwrap",
   "settings.confinement.backend.seatbelt": "macOS Seatbelt",
   "settings.confinement.backend.appcontainer": "Windows AppContainer",
