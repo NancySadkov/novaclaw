@@ -78,6 +78,17 @@ const getBase = (appId: string): Configuration => ({
       from: "resources/icons/",
       to: "icons/",
     },
+    {
+      // NovaClaw's own native host module (`packages/host`), which replaced `@parcel/watcher`.
+      //
+      // ⚠️ It cannot live in the asar: `bun:ffi`'s `dlopen` hands the path to the OS loader, and the
+      // OS knows nothing about an asar's virtual paths. `packages/host/src/host.ts` looks under
+      // `process.resourcesPath/host` for exactly this copy. Without it the file watcher is not
+      // broken-with-an-error but SILENTLY absent, because an unavailable host means the watcher
+      // layer provides no binding at all — the same shape in which Memory shipped dead in v0.0.1.
+      from: "../host/build/",
+      to: "host/",
+    },
     ...(process.platform === "win32"
       ? [
           {

@@ -53,7 +53,7 @@ const watcherLine = () =>
     Log.event("filesystem.watcher.start", {
       directory: `/home/${SENTINEL}/project`,
       platform: "win32",
-      backend: "parcel",
+      backend: "windows",
     }),
   )[0]!
 
@@ -133,7 +133,7 @@ describe("the maintenance plane withholds by CLASS, and the control is the plane
     // assertion above would be satisfied by a projection that returns nothing, which is the vacuous
     // pass this pairing exists to make impossible.
     expect(maintenance).toContain("platform=win32")
-    expect(maintenance).toContain("backend=parcel")
+    expect(maintenance).toContain("backend=windows")
     expect(maintenance).toContain("event=filesystem.watcher.start")
     expect(maintenance).toContain("level=INFO")
   })
@@ -144,7 +144,7 @@ describe("the maintenance plane withholds by CLASS, and the control is the plane
         Log.event("filesystem.watcher.start", {
           directory: "/tmp/x",
           platform: "win32",
-          backend: "parcel",
+          backend: "windows",
         }).pipe(Effect.annotateLogs({ "client.extra.note": `annotated-${SENTINEL}` })),
       )[0]!,
     )

@@ -112,6 +112,10 @@ HOST_EXPORT host_watch *host_watch_open(const char *path, const char *const *ign
  * and `HOST_WATCH_OVERFLOW` carries an empty path. Returns the number of BYTES written, 0 when
  * nothing is queued, or -1 on error (reason in `err`).
  *
+ * Paths are absolute and use the platform's NATIVE separator — backslashes on Windows. A caller
+ * comparing against a path it built itself must get equality without normalising, or every such
+ * comparison is silently false and the watcher looks dead while it is in fact firing.
+ *
  * ⚠️ Events that do not fit stay queued; call again. The buffer is never partially written with a
  * truncated record, because a caller cannot tell a truncated path from a real one.
  */

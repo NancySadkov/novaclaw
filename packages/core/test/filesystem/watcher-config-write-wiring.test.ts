@@ -35,7 +35,7 @@ import { testEffect } from "../lib/effect"
 // are not the only writers (the v0.2.0 `configure` tool is coming), and an invariant duplicated
 // across call sites is one a new caller forgets. `Offline.reload` rides the same chokepoint, and the
 // pair is deliberate; what differs is the CURE, because Offline froze a value while the watcher
-// handed its list to `@parcel/watcher` and cannot read through to a live subscription.
+// handed its list to `@novaclaw/host` and cannot read through to a live subscription.
 //
 // This runs against the REAL store graph and the REAL `Config` read-through — only the OS-level
 // subscriber is a stand-in, because the assertion is about which ignore list reached it.
@@ -43,14 +43,24 @@ import { testEffect } from "../lib/effect"
 
 type FakeSubscription = { readonly directory: string; readonly ignore: string[]; live: boolean }
 
-class FakeParcel {
+/**
+ * A stand-in for `@novaclaw/host`'s watch, in the host's own shape: synchronous, drained by polling,
+ * closed rather than unsubscribed.
+ *
+ * ⚠️ `ignore` here is what actually CROSSED into the binding — the plain directory names. Globs stay
+ * on the JavaScript side by design, so a glob fixture would assert nothing about this seam and would
+ * pass whether the write was wired through or not. The split itself is pinned in
+ * `watcher-config-reload.test.ts`; what this file asks is only whether a write reaches the watcher.
+ */
+class FakeHost {
   readonly calls: FakeSubscription[] = []
   readonly binding = {
-    subscribe: async (directory: string, _callback: unknown, options?: { ignore?: string[] }) => {
-      const call: FakeSubscription = { directory, ignore: [...(options?.ignore ?? [])], live: true }
+    watch: (directory: string, options?: { ignoreDirectories?: readonly string[] }) => {
+      const call: FakeSubscription = { directory, ignore: [...(options?.ignoreDirectories ?? [])], live: true }
       this.calls.push(call)
       return {
-        unsubscribe: async () => {
+        poll: () => [],
+        close: () => {
           call.live = false
         },
       }
@@ -91,8 +101,8 @@ describe("a config write reaches the watcher", () => {
   it.live("PATCH-ing watcher.ignore re-subscribes with the new list — no location reopen", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const fake = new FakeParcel()
-        Watcher.setBindingForTest(fake.binding as unknown as Parameters<typeof Watcher.setBindingForTest>[0])
+        const fake = new FakeHost()
+        Watcher.setBindingForTest(fake.binding)
         yield* Effect.addFinalizer(() => Effect.sync(() => Watcher.setBindingForTest(undefined)))
 
         const dir = yield* Effect.acquireRelease(
@@ -110,13 +120,13 @@ describe("a config write reaches the watcher", () => {
 
           const before = fake.calls.length
           expect(before, "the location's watch should be established").toBeGreaterThan(0)
-          expect(fake.calls.at(-1)!.ignore).not.toContain("wired-through-the-write/**")
+          expect(fake.calls.at(-1)!.ignore).not.toContain("wired-through-the-write")
 
           // The exact path `PATCH /config` and Settings → Import take. Nothing is rebuilt after it.
-          yield* ConfigStoreWrite.apply(decodeInfo({ watcher: { ignore: ["wired-through-the-write/**"] } }))
+          yield* ConfigStoreWrite.apply(decodeInfo({ watcher: { ignore: ["wired-through-the-write"] } }))
 
           expect(fake.calls.length, "the write must have caused a re-subscribe").toBeGreaterThan(before)
-          expect(fake.calls.at(-1)!.ignore).toContain("wired-through-the-write/**")
+          expect(fake.calls.at(-1)!.ignore).toContain("wired-through-the-write")
           // …and it replaced rather than accumulated: exactly one watch per directory stays live.
           expect(fake.calls.filter((call) => call.live)).toEqual([fake.calls.at(-1)!])
         }).pipe(Effect.provide(LocationServiceMap.Service.get(location)))
@@ -127,8 +137,8 @@ describe("a config write reaches the watcher", () => {
   it.live("a write that carries no `watcher` key does not churn the subscription", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const fake = new FakeParcel()
-        Watcher.setBindingForTest(fake.binding as unknown as Parameters<typeof Watcher.setBindingForTest>[0])
+        const fake = new FakeHost()
+        Watcher.setBindingForTest(fake.binding)
         yield* Effect.addFinalizer(() => Effect.sync(() => Watcher.setBindingForTest(undefined)))
 
         const dir = yield* Effect.acquireRelease(

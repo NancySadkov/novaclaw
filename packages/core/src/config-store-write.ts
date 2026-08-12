@@ -861,7 +861,7 @@ const refreshDomains = (domains: readonly ReloadDomain[]) =>
  *
  * v0.2.0-prep B7 tier-2 — `Watcher.reload` rides the same chokepoint for the same reasons, but it
  * is a different CURE. Offline froze a value, so reading through fixes it; the watcher hands its
- * ignore list to `@parcel/watcher` when the subscription is established, so no read-through can
+ * ignore list to `@novaclaw/host` when the subscription is established, so no read-through can
  * reach a live subscription — it has to re-SUBSCRIBE. Same seam, same "one place every config write
  * lands" argument, same no-op-where-no-layer-was-built property.
  *

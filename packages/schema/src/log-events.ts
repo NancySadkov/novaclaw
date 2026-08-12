@@ -503,6 +503,19 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/groups/config.ts",
   },
+  /**
+   * The OS dropped file events because more changed than its buffer could hold.
+   *
+   * ⚠️ NOT an error — it is the signal that a caller's picture of the tree is stale and wants a
+   * rescan. Silence here is how a watcher goes quietly wrong after a branch switch or an install.
+   */
+  "filesystem.watcher.overflow": {
+    level: "warn",
+    message: "file watcher overflowed — events were dropped",
+    attributes: { directory: "path" },
+    content: "user",
+    file: "packages/core/src/filesystem/watcher.ts",
+  },
   /** A config PATCH carried a `null` value; the whole patch is refused (deletion is a separate verb). */
   "config.patch.value.null": {
     level: "warn",
@@ -705,6 +718,19 @@ export const EVENTS = {
   "filesystem.watcher.start.unsupported": {
     level: "error",
     message: "watcher backend not supported",
+    attributes: { directory: "path", platform: "id" },
+    content: "user",
+    file: "packages/core/src/filesystem/watcher.ts",
+  },
+  /**
+   * The platform HAS a backend but the host library did not load — almost always a build that
+   * shipped without it beside the executable. Separate from `.start.unsupported` on purpose: that
+   * one means "nobody wrote this platform yet", this one means "a file is missing from this build",
+   * and collapsing them would hide a packaging regression inside a known limitation.
+   */
+  "filesystem.watcher.start.unavailable": {
+    level: "error",
+    message: "watcher host library unavailable",
     attributes: { directory: "path", platform: "id" },
     content: "user",
     file: "packages/core/src/filesystem/watcher.ts",

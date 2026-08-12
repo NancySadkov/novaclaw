@@ -15,6 +15,16 @@ enforce("a desktop build", process.argv, { minimumFreeBytes: 2.5 * 1024 ** 3 })
 
 const channel = resolveChannel()
 await prepareW64devkit()
+
+// The native host module, which `electron-builder.config.ts` copies out of `packages/host/build/`
+// into `resources/host/`. Built here because that directory must EXIST before packaging — an
+// `extraResources` entry pointing at a missing source is the difference between a packaged watcher
+// that works and one that is silently absent. Not fatal: macOS has no backend yet, and a build
+// without a host library is a documented degradation rather than a broken build.
+await $`bun ../host/build.ts`.catch((error) => {
+  console.warn(`WARNING: could not build the host module — file watching will be absent in this package.`)
+  console.warn(String(error?.stderr?.toString().trim() || error))
+})
 await $`bun ./scripts/copy-icons.ts ${channel}`
 await $`bun ./scripts/copy-metainfo.ts ${channel}`
 

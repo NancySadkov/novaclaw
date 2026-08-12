@@ -25,8 +25,8 @@ exact = true
 #     `bun add`/`bun install`, commit `bun.lock` WITH the manifest, and put it back. That is the point:
 #     a dependency change is a deliberate, reviewable act, not a side effect of running a build.
 #   · `bun add`/`bun install <pkg>@<ver>` still succeeds when it needs NO lockfile change — which is
-#     exactly `packages/novaclaw/script/build.ts`'s two all-platform re-installs of already-pinned,
-#     already-resolved packages (verified: exit 0, 13 `@parcel/watcher-*` platform packages installed,
+#     exactly `packages/novaclaw/script/build.ts`'s all-platform re-install of already-pinned,
+#     already-resolved packages (verified: exit 0, 13 platform packages installed,
 #     `bun.lock` byte-identical). It refuses `bun add` of anything new.
 #   · It is INERT when no lockfile exists at all — a frozen install in a directory with no `bun.lock`
 #     resolves freely and writes one. `bun.lock` being tracked is therefore part of the control, and

@@ -1,10 +1,8 @@
 export * as Watcher from "./watcher"
 
-// @ts-ignore
-import { createWrapper } from "@parcel/watcher/wrapper"
-import type ParcelWatcher from "@parcel/watcher"
+import { Host } from "@novaclaw/host"
 import { makeLocationNode } from "../effect/app-node"
-import { Context, Effect, Layer, Semaphore } from "effect"
+import { Context, Duration, Effect, Fiber, Layer, Schedule, Semaphore } from "effect"
 import { FileSystemWatcher } from "@novaclaw/schema/filesystem-watcher"
 import path from "path"
 import { Config } from "../config"
@@ -14,31 +12,55 @@ import { FSUtil } from "../fs-util"
 import { Git } from "../git"
 import { Location } from "../location"
 import { lazy } from "../util/lazy"
+import { Glob } from "../util/glob"
 import { Ignore } from "./ignore"
 import { Protected } from "./protected"
 import { Log } from "@novaclaw/schema/log"
 
 declare const NOVACLAW_LIBC: string | undefined
 
-const SUBSCRIBE_TIMEOUT_MS = 10_000
+/**
+ * How often the drain asks the host module for queued events.
+ *
+ * ⚠️ Parcel PUSHED through a callback; the host module QUEUES and we poll — deliberately, because a
+ * foreign thread calling into a JS runtime is the crash class this whole move exists to leave. The
+ * cost of that choice is one lock and a memcpy per tick per watch, and the price is up to this much
+ * latency on a file event. 100 ms is imperceptible for what consumes these (config reload, the file
+ * tree) and keeps an idle instance nearly free.
+ *
+ * ⛔ There is no `SUBSCRIBE_TIMEOUT_MS` any more, and its absence is a REDUCTION rather than an
+ * oversight: `Host.watch` returns synchronously, so the old ten-second wait — and its hazard, a
+ * timed-out subscribe still being handed a live OS watch afterwards — cannot happen.
+ */
+const POLL_INTERVAL_MS = 100
 
 export const Event = FileSystemWatcher.Event
 
-const watcher = lazy((): typeof import("@parcel/watcher") | undefined => {
-  try {
-    const libc = typeof NOVACLAW_LIBC === "undefined" ? undefined : NOVACLAW_LIBC
-    const binding = require(
-      `@parcel/watcher-${process.platform}-${process.arch}${process.platform === "linux" ? `-${libc || "glibc"}` : ""}`,
-    )
-    return createWrapper(binding) as typeof import("@parcel/watcher")
-  } catch {
-    return
-  }
-})
+/**
+ * The native watcher, through NovaClaw's own host module.
+ *
+ * ⭐ Was `@parcel/watcher`. Owner ruling 2026-08-12 — one C++ host module we build ourselves, because
+ * a segfault in somebody else's prebuilt `.node` had no route from "it crashed" to "here is the
+ * line": no PDB, a build on their CI runner, and the upstream report closed as not planned.
+ *
+ * ⚠️ **A platform with no backend yields `undefined` here and the layer returns an empty service** —
+ * the posture this module has always had for an unavailable binding. That is what let the migration
+ * be CLEAN rather than a dual path (AGENTS.md principle 1): darwin has no host backend yet and is
+ * not a shipped desktop target, so it simply does not watch, exactly as it would have with a missing
+ * parcel prebuild.
+ */
+const watcher = lazy((): WatchBinding | undefined => (Host.available() ? { watch: Host.watch } : undefined))
 
+/**
+ * Which OS mechanism does the watching, or `undefined` where we have none.
+ *
+ * ⚠️ These are OUR backends now, not the names a dependency used. darwin returns `undefined`
+ * DELIBERATELY: `packages/host` has no FSEvents source yet, and leaving the old `"fs-events"` here
+ * would report a working backend on a platform that cannot watch — the layer would then fall through
+ * to the missing-binding branch and log nothing at all. A platform we do not support has to SAY so.
+ */
 function getBackend() {
-  if (process.platform === "win32") return "windows"
-  if (process.platform === "darwin") return "fs-events"
+  if (process.platform === "win32") return "windows" // ReadDirectoryChangesW
   if (process.platform === "linux") return "inotify"
 }
 
@@ -51,10 +73,22 @@ function protecteds(dir: string) {
 
 export const hasNativeBinding = () => !!watcher()
 
-let bindingOverride: typeof import("@parcel/watcher") | undefined
+/**
+ * What the layer needs from a watcher. Deliberately the HOST's shape, not a parcel-shaped adapter:
+ * principle 1 forbids wrapping new logic in the old abstraction, and an adapter would have kept
+ * parcel's promise-returning subscribe alive in a codebase that no longer has one.
+ */
+export interface WatchBinding {
+  readonly watch: (
+    directory: string,
+    options: { readonly ignoreDirectories: readonly string[] },
+  ) => { readonly poll: () => readonly Host.WatchEvent[]; readonly close: () => void }
+}
+
+let bindingOverride: WatchBinding | undefined
 
 /**
- * Tests only: substitute the `@parcel/watcher` binding the LAYER subscribes through.
+ * Tests only: substitute the host binding the LAYER subscribes through.
  *
  * `hasNativeBinding()` deliberately still answers about the real native module — a test stand-in is
  * not a native binding, and the suites that gate on it are asking whether this machine can watch a
@@ -64,7 +98,7 @@ let bindingOverride: typeof import("@parcel/watcher") | undefined
  * all without a subscriber that can be made to fail on demand.
  * Same shape, and the same reason, as `Offline.resetPolicy`.
  */
-export function setBindingForTest(binding: typeof import("@parcel/watcher") | undefined) {
+export function setBindingForTest(binding: WatchBinding | undefined) {
   bindingOverride = binding
 }
 
@@ -95,7 +129,7 @@ let live = 0
  * user edited a preference.
  *
  * ⚠️ This is a re-SUBSCRIBE, not a re-read, and that is forced by the consumer: the ignore list is
- * handed to `@parcel/watcher` when the subscription is established and the OS-level watch is what
+ * handed to `@novaclaw/host` when the subscription is established and the OS-level watch is what
  * enforces it, so there is no later point of use to read through to. A no-op in a process with no
  * watcher layer built (the CLI, most tests) — no I/O is done to discover that.
  *
@@ -107,7 +141,7 @@ export const reload = () =>
   Effect.forEach([...instances], (refresh) => refresh, { discard: true, concurrency: "unbounded" })
 
 /**
- * Parcel subscriptions this module currently holds, across every location. The invariant a
+ * Native subscriptions this module currently holds, across every location. The invariant a
  * re-subscribe can break silently: N config changes must leave the count where it started, because
  * a re-subscribe that forgets to release its predecessor keeps a live OS watch (and a duplicate
  * event stream) that nothing will ever unsubscribe. Exported so that can be ASSERTED rather than
@@ -117,7 +151,7 @@ export function liveSubscriptions(): number {
   return live
 }
 
-/** Parcel subscriptions ever established by this module (monotonic). Pairs with `liveSubscriptions`
+/** Native subscriptions ever established by this module (monotonic). Pairs with `liveSubscriptions`
  *  to tell "re-subscribed and released" apart from "never re-subscribed at all". */
 export function subscriptionsCreated(): number {
   return created
@@ -151,7 +185,18 @@ export const layer = Layer.effect(
     }
 
     const w = binding()
-    if (!w) return Service.of({})
+    // A backend the platform HAS but whose library did not load — a build that shipped without
+    // `host.dll` beside it, most likely. Distinct from the branch above and logged separately,
+    // because "this platform is unsupported" and "this build is missing a file" are different
+    // problems with different fixes, and returning an empty service for both without a word is how a
+    // watcher ends up silently dead in a release.
+    if (!w) {
+      yield* Log.event("filesystem.watcher.start.unavailable", {
+        directory: location.directory,
+        platform: process.platform,
+      })
+      return Service.of({})
+    }
 
     yield* Log.event("filesystem.watcher.start", {
       directory: location.directory,
@@ -170,67 +215,112 @@ export const layer = Layer.effect(
     const context = yield* Effect.context()
     const runFork = Effect.runForkWith(context)
 
-    const callback: ParcelWatcher.SubscribeCallback = (_error, updates) => {
-      for (const update of updates) {
-        if (update.type === "create") runFork(events.publish(Event.Updated, { file: update.path, event: "add" }))
-        if (update.type === "update") runFork(events.publish(Event.Updated, { file: update.path, event: "change" }))
-        if (update.type === "delete") runFork(events.publish(Event.Updated, { file: update.path, event: "unlink" }))
-      }
+
+    /** One live watch: the native handle plus the fiber draining it. Both are released together. */
+    type Subscription = {
+      readonly handle: ReturnType<WatchBinding["watch"]>
+      readonly fiber: Fiber.Fiber<unknown, unknown>
     }
 
     /** directory → the subscription in force for it, tagged with the ignore list it carries. The tag
      *  is what makes a reload cheap: an unchanged list re-subscribes nothing. */
     const active = new Map<
       string,
-      { readonly ignore: readonly string[]; readonly subscription: ParcelWatcher.AsyncSubscription }
+      { readonly ignore: readonly string[]; readonly subscription: Subscription }
     >()
     // Compared element-wise rather than through a joined key: every separator is a character some
     // legitimate glob could contain, and a key collision here would read as "nothing changed".
     const same = (a: readonly string[] | undefined, b: readonly string[]) =>
       a !== undefined && a.length === b.length && a.every((item, index) => item === b[index])
 
+    /**
+     * The half of a subscription's ignore list C++ does not do: globs, and absolute paths.
+     *
+     * 🔴 Deliberately NOT `Ignore.match`. That helper ALWAYS applies the default folder and file
+     * sets, and the `.git` arm exists precisely to carry a list that omits them — put its events
+     * through the defaults and `.git/HEAD` is dropped, which is the one event that subscription is
+     * for. The plan composes `Ignore.PATTERNS` into the arms that want them, so the drain must
+     * honour the list it was handed and nothing besides.
+     */
+    const blocked = (patterns: readonly string[], file: string) => {
+      if (patterns.length === 0) return false
+      // Globs speak forward slashes; Windows paths do not. Both sides are normalised for the
+      // COMPARISON only — the published path stays native, so it still compares equal to whatever
+      // the caller built with `path.join`.
+      const candidate = file.replaceAll("\\", "/")
+      for (const pattern of patterns) {
+        const normalised = pattern.replaceAll("\\", "/")
+        // An entry naming a path covers everything beneath it — that is what ignoring a directory
+        // means. A glob match alone would exclude only the directory's own entry and let all of its
+        // contents through, which is the failure that looks like the ignore list doing nothing.
+        if (candidate === normalised || candidate.startsWith(`${normalised}/`)) return true
+        if (Glob.match(normalised, candidate)) return true
+      }
+      return false
+    }
+
     const subscribe = (directory: string, ignore: string[]) =>
       Effect.suspend(() => {
-        const pending = w.subscribe(directory, callback, { ignore, backend })
-        return Effect.promise(() => pending).pipe(
-          Effect.timeout(SUBSCRIBE_TIMEOUT_MS),
-          Effect.map((subscription): ParcelWatcher.AsyncSubscription | undefined => subscription),
-          Effect.catchCause((cause) => {
-            // The timeout arm can still be handed a subscription later — release it rather than
-            // letting an OS watch nobody tracks outlive the process's interest in it.
-            pending.then((subscription) => subscription.unsubscribe()).catch(() => {})
-            return Log.event("filesystem.watcher.subscribe.failed", {
-              directory,
-              "filesystem.cause": Log.fault(cause),
-            }).pipe(Effect.as(undefined))
-          }),
+        // ⚠️ The ignore list SPLITS. Plain folder names cross into C++, where a match is dropped
+        // before it is ever queued — that is what keeps `node_modules` churn from waking the runtime
+        // at all, the one property parcel gave us that a JS filter cannot. Globs and absolute paths
+        // stay here, because they are low-volume and a glob engine in the ABI would be a second
+        // implementation of `Ignore`.
+        const directories = ignore.filter((entry) => !entry.includes("*") && !entry.includes("/") && !entry.includes("\\"))
+        const rest = ignore.filter((entry) => !directories.includes(entry))
+        let handle: ReturnType<WatchBinding["watch"]>
+        try {
+          handle = w.watch(directory, { ignoreDirectories: directories })
+        } catch (cause) {
+          return Log.event("filesystem.watcher.subscribe.failed", {
+            directory,
+            "filesystem.cause": Log.fault(cause),
+          }).pipe(Effect.as(undefined))
+        }
+        // The drain. Forked so a slow consumer cannot stall the reconcile, and interrupted by
+        // `release` BEFORE the handle is closed — the ordering the host module's own teardown note
+        // insists on, mirrored here because this side owns the fiber.
+        const fiber = runFork(
+          Effect.sync(() => {
+            for (const event of handle.poll()) {
+              if (event.type === "overflow") {
+                // Not an error: the OS dropped events because more arrived than its buffer held.
+                // Saying so is the difference between a caller that rescans and one that is quietly
+                // stale after a branch switch.
+                runFork(Log.event("filesystem.watcher.overflow", { directory }))
+                continue
+              }
+              if (blocked(rest, event.path)) continue
+              if (event.type === "create") runFork(events.publish(Event.Updated, { file: event.path, event: "add" }))
+              if (event.type === "update") runFork(events.publish(Event.Updated, { file: event.path, event: "change" }))
+              if (event.type === "delete") runFork(events.publish(Event.Updated, { file: event.path, event: "unlink" }))
+            }
+          }).pipe(Effect.repeat(Schedule.spaced(Duration.millis(POLL_INTERVAL_MS)))),
         )
+        return Effect.succeed({ handle, fiber })
       })
 
-    const release = (directory: string, subscription: ParcelWatcher.AsyncSubscription) =>
+    const release = (directory: string, subscription: Subscription) =>
       Effect.suspend(() => {
         // Decremented up front: the count means "subscriptions this module still holds", and once we
-        // have dropped the reference we hold it regardless of what `unsubscribe` answers.
+        // have dropped the reference we hold it regardless of what teardown answers.
         live--
-        return Effect.promise(() =>
-          subscription.unsubscribe().then(
-            () => undefined,
-            (cause: unknown) => cause,
+        // ⚠️ INTERRUPT, then close — never the other way. Closing first would leave a scheduled drain
+        // holding a handle the native side has already freed, which is the exact use-after-free shape
+        // that produced the crash this module replaced.
+        return Fiber.interrupt(subscription.fiber).pipe(
+          Effect.andThen(
+            Effect.try({ try: () => subscription.handle.close(), catch: (cause) => cause }).pipe(
+              Effect.catchCause((cause) =>
+                // Ruling 2 — an unavailable subsystem names itself. A watch we failed to release is an
+                // OS resource still delivering into a dead queue; silence is how that becomes an
+                // unexplained event storm later.
+                Log.event("filesystem.watcher.release.failed", { directory, "filesystem.cause": Log.fault(cause) }),
+              ),
+            ),
           ),
         )
-      }).pipe(
-        Effect.flatMap((cause) =>
-          cause === undefined
-            ? Effect.void
-            : // Ruling 2 — an unavailable subsystem names itself. A watch we failed to release is an
-              // OS resource still delivering events into a dead callback; silence here is how that
-              // becomes an unexplained event storm later.
-              Log.event("filesystem.watcher.release.failed", {
-                directory,
-                "filesystem.cause": Log.fault(cause),
-              }),
-        ),
-      )
+      })
 
     // ── the git-directory arm ────────────────────────────────────────────────────────────────────
     // Two memoized stages, so a reload costs no filesystem I/O. What CAN change between reloads is
@@ -283,7 +373,7 @@ export const layer = Layer.effect(
     const bookkeep = Effect.fnUntraced(function* (
       established: readonly {
         readonly item: { readonly directory: string; readonly ignore: string[] }
-        readonly subscription: ParcelWatcher.AsyncSubscription | undefined
+        readonly subscription: Subscription | undefined
       }[],
       wanted: ReadonlyMap<string, unknown>,
     ) {

@@ -42,11 +42,13 @@ const ROOT = join(import.meta.dir, "..", "..")
  * on these lines is the bunfig, and what this ledger buys is that a NEW one cannot appear unnoticed.
  */
 const TREE_MUTATING_INSTALLS: readonly string[] = [
-  // The release build re-installs two already-pinned packages with `--os="*" --cpu="*"` so every
-  // platform's optional binaries land in the tree before cross-target binaries are assembled. Both
-  // versions are read out of the manifest by literal key (`todo/supply-chain.md` §4), so neither can
-  // float. `build-linux.sh` passes `--skip-install` and never reaches them.
-  'packages/novaclaw/script/build.ts :: bun install --os="*" --cpu="*" @parcel/watcher@${pkg.dependencies["@parcel/watcher"]}',
+  // The release build re-installs an already-pinned package with `--os="*" --cpu="*"` so every
+  // platform's optional binaries land in the tree before cross-target binaries are assembled. The
+  // version is read out of the manifest by literal key (`todo/supply-chain.md` §4), so it cannot
+  // float. `build-linux.sh` passes `--skip-install` and never reaches it.
+  //
+  // ⚠️ This was TWO lines until `@parcel/watcher` was replaced by `packages/host`, which is compiled
+  // from our own source rather than installed — one fewer platform-binary fan-out to trust.
   'packages/novaclaw/script/build.ts :: bun install --os="*" --cpu="*" @ff-labs/fff-bun@${pkg.dependencies["@ff-labs/fff-bun"]}',
   // Installs OUR OWN freshly packed tarball into a throwaway directory to prove the published package
   // resolves. There is no lockfile in that directory for a flag to freeze against — and per the bunfig
@@ -79,7 +81,11 @@ describe("the repo's install paths", () => {
   // `native:build` went: it installed into `packages/desktop/native/`, a directory never tracked in
   // any commit, and running it produced `failed to change directory to "native": ENOENT`.
   test("the scan actually finds this repo's install paths", () => {
-    expect(invocations.length).toBeGreaterThanOrEqual(4)
+    // ⚠️ A FLOOR on the scanner, not on the repo: it exists so a scan that silently matches nothing
+    // cannot make every other test in this file vacuously green. Lowered 4 → 3 when `@parcel/watcher`
+    // was replaced by `packages/host`, which is compiled rather than installed. Lower it only with
+    // the removed invocation named, and never to zero.
+    expect(invocations.length).toBeGreaterThanOrEqual(3)
     expect(invocations.map((item) => item.file)).toContain("build-linux.sh")
   })
 

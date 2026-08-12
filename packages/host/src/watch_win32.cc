@@ -117,7 +117,7 @@ bool ignored(const std::unordered_set<std::string> &names, const std::string &ro
   if (full.size() <= root.size() + 1) return false;
   size_t start = root.size() + 1;  // skip the root and its separator
   while (start <= full.size()) {
-    const size_t slash = full.find('/', start);
+    const size_t slash = full.find('\\', start);
     const size_t end = slash == std::string::npos ? full.size() : slash;
     if (names.count(full.substr(start, end - start)) != 0) return true;
     if (slash == std::string::npos) break;
@@ -166,7 +166,7 @@ void run(host_watch *w) {
       const size_t name_chars = info->FileNameLength / sizeof(wchar_t);
       std::string relative = to_utf8(info->FileName, name_chars);
       for (char &c : relative)
-        if (c == '\\') c = '/';
+        if (c == '/') c = '\\';
 
       host_watch_event type = HOST_WATCH_UPDATE;
       switch (info->Action) {
@@ -183,7 +183,7 @@ void run(host_watch *w) {
           break;
       }
       // Absolute paths, because a caller that has to rejoin them re-implements this loop badly.
-      const std::string full = relative.empty() ? w->root : w->root + "/" + relative;
+      const std::string full = relative.empty() ? w->root : w->root + "\\" + relative;
       // Dropped BEFORE it is queued: the point of filtering here is that the noise never wakes the
       // runtime, which a filter on the JS side cannot give.
       if (!ignored(w->ignore, w->root, full)) w->push(type, full);
@@ -236,10 +236,14 @@ host_watch *host_watch_open(const char *path, const char *const *ignore_dirs, in
     return nullptr;
   }
 
+  // 🔴 NATIVE separators, deliberately. Every JavaScript consumer builds the paths it compares against
+  // with `path.join`, which is backslashed here; handing back a forward-slashed twin makes each of
+  // those comparisons silently false — an event that arrives but never matches, which reads exactly
+  // like a watcher that is not firing. Tidiness is not worth a whole class of invisible mismatch.
   w->root.assign(path);
   while (!w->root.empty() && (w->root.back() == '/' || w->root.back() == '\\')) w->root.pop_back();
   for (char &c : w->root)
-    if (c == '\\') c = '/';
+    if (c == '/') c = '\\';
 
   for (int32_t i = 0; i < ignore_count && ignore_dirs != nullptr; ++i)
     if (ignore_dirs[i] != nullptr) w->ignore.insert(ignore_dirs[i]);

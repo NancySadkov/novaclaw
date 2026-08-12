@@ -132,9 +132,11 @@ bun run --cwd packages/novaclaw build --single --skip-install
 ```
 
 - `--single` builds only for the host platform (the default is all twelve targets).
-- `--skip-install` skips two `bun add` calls the build otherwise makes, which rewrite
+- `--skip-install` skips the `bun add` call the build otherwise makes, which rewrites
   `packages/novaclaw/package.json` and `bun.lock` as a side effect. Drop it on a first build if
-  `@parcel/watcher` or `@ff-labs/fff-bun` are missing for your platform.
+  `@ff-labs/fff-bun` is missing for your platform. It does NOT skip compiling `packages/host`,
+  which needs a `g++` on PATH; without one the binary is built anyway and says so, and its file
+  watching is off.
 - Add `--baseline` on an x86-64 CPU without AVX2.
 - Add `--skip-embed-web-ui` for a server-only binary — the API without the bundled UI, which you
   then reach from another NovaClaw instance or from `bun run dev:web`. That is the one build in this

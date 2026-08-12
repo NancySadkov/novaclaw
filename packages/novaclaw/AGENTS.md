@@ -134,6 +134,8 @@ Use `Effect.cached` when multiple concurrent callers should share a single in-fl
 
 ## Callback boundaries
 
-Use `EffectBridge` for native or external callbacks (`@parcel/watcher`, `node-pty`, native `fs.watch`, plugin callbacks, etc.) that need to re-enter Effect services with instance/workspace context.
+Use `EffectBridge` for native or external callbacks (`node-pty`, native `fs.watch`, plugin callbacks, etc.) that need to re-enter Effect services with instance/workspace context.
+
+⚠️ `@novaclaw/host` is deliberately NOT in that list: it hands back a queue the caller drains, and never calls into the JS runtime from a foreign thread. That is the whole reason it exists — a callback across that boundary is the segfault class it replaced. New native capability belongs in `packages/host` behind a poll, not behind another bridged callback.
 
 Plain async code should pass explicit context or stay inside an Effect fiber; do not add ambient instance context shims.

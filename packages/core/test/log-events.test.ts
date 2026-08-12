@@ -496,7 +496,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
       Log.event("filesystem.watcher.start", {
         directory: "/home/nancy/my project",
         platform: "win32",
-        backend: "parcel",
+        backend: "windows",
       }),
     )
     expect(line).toBeDefined()
@@ -507,7 +507,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(line).toContain('message="watcher backend"')
     // The attributes are top-level logfmt columns, exactly as the un-keyed second argument is today.
     expect(line).toContain("platform=win32")
-    expect(line).toContain("backend=parcel")
+    expect(line).toContain("backend=windows")
     // …and a value carrying a space is still JSON-quoted exactly as it is today. The wrapper hands
     // its attributes to the SAME formatter; it does not re-encode them.
     expect(line).toContain('directory="/home/nancy/my project"')
@@ -843,7 +843,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
   test("an UN-keyed record is untouched — the 36 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
-    const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))
+    const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "windows" }))
     expect(columns(line ?? "")).toEqual(["timestamp", "level", "run", "message", "directory", "backend"])
     expect(line).not.toContain("event=")
   })

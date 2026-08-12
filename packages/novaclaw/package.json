@@ -55,7 +55,6 @@
     "@novaclaw/script": "workspace:*",
     "@novaclaw/sdk": "workspace:*",
     "@novaclaw/server": "workspace:*",
-    "@parcel/watcher": "2.5.1",
     "@whiskeysockets/baileys": "7.0.0-rc13",
     "bonjour-service": "1.3.0",
     "cross-spawn": "catalog:",

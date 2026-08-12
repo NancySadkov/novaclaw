@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { $ } from "bun"
-import { mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "path"
 import { fileURLToPath } from "url"
@@ -195,9 +195,27 @@ await $`rm -rf dist`.catch((error) => {
 
 const binaries: Record<string, string> = {}
 if (!skipInstall) {
-  await $`bun install --os="*" --cpu="*" @parcel/watcher@${pkg.dependencies["@parcel/watcher"]}`
   await $`bun install --os="*" --cpu="*" @ff-labs/fff-bun@${pkg.dependencies["@ff-labs/fff-bun"]}`
 }
+
+/**
+ * The native host module (`packages/host`), which replaced `@parcel/watcher`.
+ *
+ * BUILT here rather than installed, because we own it now — that was the point of writing it. It
+ * ships BESIDE the executable: a compiled binary has no `node_modules`, and `packages/host/src/host.ts`
+ * looks next to `process.execPath` before anywhere else.
+ *
+ * ⚠️ Only the target matching THIS machine can get one — a C++ shared library is not cross-compiled
+ * by the toolchain we ship, and macOS has no backend at all yet. A build failure here is therefore
+ * NOT fatal, but every target that ends up without a library is named on stdout, because the
+ * alternative is a release whose file watching is silently dead while every test on the machine that
+ * built it was green.
+ */
+const hostLibrary = process.platform === "win32" ? "host.dll" : "libhost.so"
+const hostBuilt = path.resolve(dir, "../host/build", hostLibrary)
+await $`bun ${path.resolve(dir, "../host/build.ts")}`.catch((error) => {
+  console.warn(`WARNING: could not build the host module — ${error?.stderr?.toString().trim() || error}`)
+})
 for (const item of targets) {
   const name = [
     pkg.name,
@@ -264,6 +282,13 @@ for (const item of targets) {
       NOVACLAW_STANDALONE_BINARY: "true",
     },
   })
+
+  // The host library, beside the binary. Named when absent rather than skipped quietly — see above.
+  if (item.os === process.platform && item.arch === process.arch && existsSync(hostBuilt)) {
+    await Bun.write(`dist/${name}/bin/${hostLibrary}`, Bun.file(hostBuilt))
+  } else {
+    console.warn(`WARNING: ${name} ships NO host library (${hostLibrary}) — file watching is off in it.`)
+  }
 
   // Smoke test: only run if binary is for current platform — and only when the UI is actually
   // embedded. A `--skip-embed-web-ui` (server-only) binary bundles no UI, so smokeServer's

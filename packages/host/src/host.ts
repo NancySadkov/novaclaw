@@ -22,7 +22,10 @@ export type WatchEventType = "create" | "update" | "delete" | "overflow"
 
 export interface WatchEvent {
   readonly type: WatchEventType
-  /** Absolute, forward-slashed. Empty only for `overflow`, which names no path. */
+  /**
+   * Absolute, in the platform's NATIVE separator — backslashes on Windows, so it compares equal to a
+   * `path.join` result without normalising first. Empty only for `overflow`, which names no path.
+   */
   readonly path: string
 }
 
@@ -33,9 +36,38 @@ const TYPES: Readonly<Record<number, WatchEventType>> = {
   4: "overflow",
 }
 
-const libraryPath = () =>
-  process.env["NOVACLAW_HOST_LIB"] ??
-  path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), "..", "build", `host.${suffix}`)
+/**
+ * Where the library can be, in the order it is looked for.
+ *
+ * 🔴 A COMPILED BINARY HAS NO `node_modules`. Resolving only against `import.meta.url` works in dev
+ * and in tests and then finds nothing in the shipped product — where the failure is silent, because
+ * an unavailable host means the watcher layer simply provides no binding. That is how a subsystem
+ * ends up dead in a release while every test on the machine that built it is green, and it is the
+ * shape the packaged KB layer already shipped once. So: the env override first (tests, and anyone
+ * relocating it), then beside the executable, then Electron's resources directory, and only then the
+ * source-tree path that dev and the test runner use.
+ */
+const candidates = (): string[] => {
+  const file = `host.${suffix}`
+  const override = process.env["NOVACLAW_HOST_LIB"]
+  if (override) return [override]
+  const found: string[] = []
+  // `process.execPath` is the compiled binary in a standalone build and the runtime itself in dev,
+  // where nothing sits beside it — a miss here costs one `dlopen` attempt, never a wrong answer.
+  try {
+    found.push(path.join(path.dirname(process.execPath), file))
+  } catch {
+    /* no execPath — an embedding we do not need to serve */
+  }
+  const resources = (process as { resourcesPath?: string }).resourcesPath
+  if (resources) found.push(path.join(resources, "host", file))
+  try {
+    found.push(path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), "..", "build", file))
+  } catch {
+    /* a virtual module URL inside a compiled binary — the paths above are the real ones there */
+  }
+  return found
+}
 
 const symbols = {
   host_abi_version: { args: [], returns: FFIType.i32 },
@@ -52,8 +84,22 @@ let library: ReturnType<typeof dlopen<typeof symbols>> | undefined
 /** Open the library once. Throws with the reason — a missing build is a normal, fixable state. */
 const open = () => {
   if (library) return library
-  const target = libraryPath()
-  const opened = dlopen(target, symbols)
+  const tried = candidates()
+  let target = tried[0]!
+  let opened: ReturnType<typeof dlopen<typeof symbols>> | undefined
+  for (const candidate of tried) {
+    try {
+      opened = dlopen(candidate, symbols)
+      target = candidate
+      break
+    } catch (cause) {
+      // Keep the LAST reason, not the first: the earlier candidates are speculative locations that
+      // are simply absent in most builds, while the final one is where the library was expected to
+      // be. Reporting "no such file" for a path nobody uses would send a reader to the wrong place.
+      if (candidate === tried.at(-1)) throw new Error(`host: could not load ${candidate}: ${cause}`)
+    }
+  }
+  if (!opened) throw new Error(`host: no library found; looked in ${tried.join(", ")}`)
   const found = opened.symbols.host_abi_version()
   if (found !== ABI_VERSION) {
     opened.close()

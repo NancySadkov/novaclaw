@@ -20,28 +20,40 @@ import { testEffect } from "../lib/effect"
 // of use — a settings change is not a reboot."
 //
 // `watcher.ignore` is the case where a read-through is NOT enough, and that is a fact about the
-// CONSUMER rather than about the value: the list is handed to `@parcel/watcher` when the
+// CONSUMER rather than about the value: the list is handed to `@novaclaw/host` when the
 // subscription is established, and from then on the OS-level watch is what enforces it. There is no
 // later point of use to read through to, so the cure is a re-SUBSCRIBE. Until this landed, the only
 // thing that applied an edited ignore list was `markInstanceForDisposal` — tearing down terminals,
 // pending asks and MCP children because a user changed a preference.
 //
-// ⚠️ The roadmap called the subscriber chokidar. It is `@parcel/watcher` 2.5.1 (`w.subscribe(dir,
-// callback, { ignore, backend })`); chokidar is in `bun.lock` only as a transitive dep of the
-// unrelated `c12` config loader and is imported nowhere in `packages/core/src/filesystem/`.
+// ⚠️ The roadmap called the subscriber chokidar, then it was `@parcel/watcher` 2.5.1. It is now
+// `@novaclaw/host` (`Host.watch(dir, { ignoreDirectories })`), NovaClaw's own C++ module. chokidar
+// is in `bun.lock` only as a transitive dep of the unrelated `c12` config loader and is imported
+// nowhere in `packages/core/src/filesystem/`.
 //
 // These tests drive the SUBSCRIPTION SEAM, not the filesystem: the layer subscribes through a stand-
 // in binding (`Watcher.setBindingForTest`), so every assertion is about the exact ignore list handed
-// to parcel and the exact set of subscriptions left alive — no wall-clock wait, and the failing
+// to the host binding and the exact set of subscriptions left alive — no wall-clock wait, and the failing
 // re-subscribe below is not reachable against the real binding at all. The real binding stays
 // covered end-to-end by `watcher.test.ts`.
 // ────────────────────────────────────────────────────────────────────────────────────────────────
 
 type FakeSubscription = { readonly directory: string; readonly ignore: string[]; live: boolean }
 
-class FakeParcel {
+/**
+ * A stand-in for the HOST binding.
+ *
+ * ⚠️ It is host-shaped, not parcel-shaped, and the difference is the migration in miniature:
+ * `watch` returns SYNCHRONOUSLY (so there is no timeout arm and no "the reject may still hand you a
+ * live watch later" hazard), and events are DRAINED by `poll` rather than pushed to a callback.
+ *
+ * ⚠️ `ignore` here records only what crossed into the native side — folder NAMES. The glob half of
+ * the list stays in the layer, so a test asserting on this list is asserting about what the OS was
+ * told, which is exactly the property the ignore list exists for.
+ */
+class FakeHost {
   readonly calls: FakeSubscription[] = []
-  /** Set to make the NEXT subscribe reject, the way parcel does when a directory cannot be watched. */
+  /** Set to make the NEXT watch throw, the way the host module does when a directory cannot be opened. */
   failNext = false
 
   get liveCalls() {
@@ -49,15 +61,16 @@ class FakeParcel {
   }
 
   readonly binding = {
-    subscribe: async (directory: string, _callback: unknown, options?: { ignore?: string[] }) => {
+    watch: (directory: string, options: { readonly ignoreDirectories: readonly string[] }) => {
       if (this.failNext) {
         this.failNext = false
-        throw new Error("parcel: refused to watch")
+        throw new Error("host: could not watch")
       }
-      const call: FakeSubscription = { directory, ignore: [...(options?.ignore ?? [])], live: true }
+      const call: FakeSubscription = { directory, ignore: [...options.ignoreDirectories], live: true }
       this.calls.push(call)
       return {
-        unsubscribe: async () => {
+        poll: () => [],
+        close: () => {
           call.live = false
         },
       }
@@ -89,12 +102,12 @@ const flagsLayer = ConfigProvider.layer(
 // no vcs (so the git arm is inert), and `Protected.paths()` resolves under the home rather than here.
 const DIRECTORY = path.join(os.tmpdir(), "novaclaw-watcher-config-reload")
 
-function provide(fake: FakeParcel, config: Layer.Layer<Config.Service>) {
+function provide(fake: FakeHost, config: Layer.Layer<Config.Service>) {
   const locationLayer = Layer.succeed(
     Location.Service,
     Location.Service.of(location({ directory: AbsolutePath.make(DIRECTORY) })),
   )
-  Watcher.setBindingForTest(fake.binding as unknown as Parameters<typeof Watcher.setBindingForTest>[0])
+  Watcher.setBindingForTest(fake.binding)
   return Effect.provide(
     AppNodeBuilder.build(Watcher.node, [
       [Config.node, config],
@@ -119,38 +132,42 @@ const settled = Watcher.reload
 
 describe("Watcher re-subscribes when watcher.ignore changes", () => {
   it.effect("a live edit to watcher.ignore is in force with no layer rebuild", () => {
-    const fake = new FakeParcel()
+    const fake = new FakeHost()
     const config = mutableConfig()
     return Effect.gen(function* () {
       yield* settled()
       expect(fake.calls).toHaveLength(1)
       expect(fake.calls[0]!.directory).toBe(DIRECTORY)
-      // The compiled defaults lead the list, and nothing from config is in it yet.
-      expect(fake.calls[0]!.ignore.slice(0, Ignore.PATTERNS.length)).toEqual(Ignore.PATTERNS)
-      expect(fake.calls[0]!.ignore).not.toContain("build-output/**")
+      // ⚠️ The SPLIT, asserted directly rather than by re-deriving the layer's predicate here — a
+      // test that recomputed the split would pass even if the layer's copy were wrong. Folder names
+      // cross into the native side (where a match never wakes the runtime); globs stay in the layer.
+      expect(fake.calls[0]!.ignore).toContain("node_modules")
+      expect(fake.calls[0]!.ignore).toContain(".git")
+      expect(fake.calls[0]!.ignore).not.toContain("**/*.log")
+      expect(fake.calls[0]!.ignore).not.toContain("build-output")
 
       // The whole point: edit the value the way a Settings toggle does, and ask for it to apply.
-      config.state.ignore = ["build-output/**"]
+      config.state.ignore = ["build-output"]
       yield* settled()
 
       expect(fake.calls).toHaveLength(2)
-      expect(fake.calls[1]!.ignore).toContain("build-output/**")
+      expect(fake.calls[1]!.ignore).toContain("build-output")
       // The defaults are still there — a re-subscribe must rebuild the WHOLE list, not swap it.
-      expect(fake.calls[1]!.ignore.slice(0, Ignore.PATTERNS.length)).toEqual(Ignore.PATTERNS)
+      expect(fake.calls[1]!.ignore).toContain("node_modules")
       // …and exactly one watch is in force, the new one.
       expect(fake.liveCalls).toEqual([fake.calls[1]!])
     }).pipe(provide(fake, config.layer))
   })
 
   it.effect("three config changes leave exactly one live subscription", () => {
-    const fake = new FakeParcel()
+    const fake = new FakeHost()
     const config = mutableConfig()
     return Effect.gen(function* () {
       const created = Watcher.subscriptionsCreated()
       const live = Watcher.liveSubscriptions()
       yield* settled()
 
-      for (const pattern of ["a/**", "b/**", "c/**"]) {
+      for (const pattern of ["a", "b", "c"]) {
         config.state.ignore = [pattern]
         yield* settled()
       }
@@ -165,12 +182,12 @@ describe("Watcher re-subscribes when watcher.ignore changes", () => {
       // The module's own count, checked against the stand-in's ground truth — a counter that can lie
       // about the thing it counts is worse than no counter.
       expect(fake.liveCalls).toEqual([fake.calls[3]!])
-      expect(fake.calls[3]!.ignore).toContain("c/**")
+      expect(fake.calls[3]!.ignore).toContain("c")
     }).pipe(provide(fake, config.layer))
   })
 
   it.effect("a reload whose ignore list did not change re-subscribes nothing", () => {
-    const fake = new FakeParcel()
+    const fake = new FakeHost()
     const config = mutableConfig()
     return Effect.gen(function* () {
       yield* settled()
@@ -188,7 +205,7 @@ describe("Watcher re-subscribes when watcher.ignore changes", () => {
   })
 
   it.effect("a FAILED re-subscribe keeps the previous subscription, and names what is in force", () => {
-    const fake = new FakeParcel()
+    const fake = new FakeHost()
     const config = mutableConfig()
     return Effect.gen(function* () {
       yield* settled()
@@ -198,7 +215,7 @@ describe("Watcher re-subscribes when watcher.ignore changes", () => {
       // itself. Of the two degradations, dropping the subscription is the worse one: the directory
       // would stop being watched entirely and no later reload would rebuild it, because a reload
       // with an unchanged config finds nothing to do.
-      config.state.ignore = ["never-applied/**"]
+      config.state.ignore = ["never-applied"]
       fake.failNext = true
       yield* settled()
 
@@ -212,13 +229,13 @@ describe("Watcher re-subscribes when watcher.ignore changes", () => {
       // plan is recomputed from the store rather than remembered.
       yield* settled()
       expect(fake.calls).toHaveLength(2)
-      expect(fake.calls[1]!.ignore).toContain("never-applied/**")
+      expect(fake.calls[1]!.ignore).toContain("never-applied")
       expect(fake.liveCalls).toEqual([fake.calls[1]!])
     }).pipe(provide(fake, config.layer))
   })
 
   it.effect("teardown releases every subscription, and a later reload cannot resurrect one", () => {
-    const fake = new FakeParcel()
+    const fake = new FakeHost()
     const config = mutableConfig()
     return Effect.gen(function* () {
       const live = Watcher.liveSubscriptions()
