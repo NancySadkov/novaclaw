@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
 import { LLM } from "@novaclaw/llm"
@@ -603,4 +603,67 @@ describe("the runner CONSULTS the device key (source ratchet)", () => {
       expect(literal).toContain("device: config.device")
     }),
   )
+})
+
+describe("SessionRunnerModel.resolveDefault", () => {
+  /**
+   * The entry point for work with NO conversation behind it — document ingestion is the case it
+   * exists for. It is not a new resolution path: `select()` already resolves `catalog.model.default()`
+   * when a session carries no model. This only gives that branch a door that does not demand a
+   * session.
+   */
+  it.effect("the test seam refuses BY NAME rather than pretending to have a default", () =>
+    Effect.gen(function* () {
+      const layer = SessionRunnerModel.layerWith(() => Effect.die("resolve unused here"))
+      const outcome = yield* Effect.gen(function* () {
+        const models = yield* SessionRunnerModel.Service
+        return yield* models.resolveDefault()
+      }).pipe(Effect.provide(layer), Effect.flip)
+      // ⚠️ In the file's own error VOCABULARY, not a global Error. `Error` there is a local union
+      // type, so a `new Error(...)` here would not even typecheck — which is the point of having it.
+      expect(outcome._tag).toBe("SessionRunnerModel.NoDefaultModelError")
+      // Narrowed on the tag before reading the payload: `Error` here is the file's closed UNION, so
+      // `reason` exists only on this member.
+      if (outcome._tag !== "SessionRunnerModel.NoDefaultModelError") throw new Error("unreachable")
+      expect(outcome.reason).toContain("seam")
+    }),
+  )
+
+  it.effect("a seam that DOES supply one is used unchanged (negative control)", () =>
+    Effect.gen(function* () {
+      const stub = { modelID: "stub" } as never
+      const layer = SessionRunnerModel.layerWith(
+        () => Effect.die("resolve unused here"),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => Effect.succeed(stub),
+      )
+      const got = yield* Effect.gen(function* () {
+        const models = yield* SessionRunnerModel.Service
+        return yield* models.resolveDefault()
+      }).pipe(Effect.provide(layer))
+      expect(got).toBe(stub)
+    }),
+  )
+
+  test("the real resolver REUSES the session path rather than re-deriving it", () => {
+    // ⚠️ A second copy of model selection is a second place to forget `ensureManagedModel`, and
+    // forgetting it means a managed local model is never woken for this path while every symptom
+    // points at the model. A source ledger because the sharing is invisible once it compiles.
+    const src = fs.readFileSync(path.join(import.meta.dir, "../src/session/runner/model.ts"), "utf8")
+    const start = src.indexOf('resolveDefault: Effect.fn("SessionRunnerModel.resolveDefault")')
+    const end = src.indexOf("tier: Effect.fn(", start)
+    expect(start).toBeGreaterThan(0)
+    expect(end).toBeGreaterThan(start)
+    const body = src.slice(start, end)
+    expect(body).toContain("yield* select(sessionless)")
+    expect(body).toContain("ensureManagedModel(localModels, selected")
+    // No fabricated session id reaches diagnostics: the error names the instance, not a session.
+    expect(body).toContain("NoDefaultModelError")
+    expect(body).not.toContain("ModelNotSelectedError")
+  })
 })

@@ -33,6 +33,21 @@ export class ModelNotSelectedError extends Schema.TaggedErrorClass<ModelNotSelec
   }
 }
 
+/**
+ * No default model, for a caller that has NO session to blame.
+ *
+ * Distinct from `ModelNotSelectedError`, which carries a `sessionID`: inventing one here to reuse
+ * that error would put a fabricated session id into diagnostics.
+ */
+export class NoDefaultModelError extends Schema.TaggedErrorClass<NoDefaultModelError>()(
+  "SessionRunnerModel.NoDefaultModelError",
+  { reason: Schema.String },
+) {
+  override get message() {
+    return `This instance has no default model, so work without a session cannot pick one: ${this.reason}`
+  }
+}
+
 export class ModelUnavailableError extends Schema.TaggedErrorClass<ModelUnavailableError>()(
   "SessionRunnerModel.ModelUnavailableError",
   {
@@ -101,6 +116,7 @@ export class UnsupportedApiError extends Schema.TaggedErrorClass<UnsupportedApiE
 
 export type Error =
   | ModelNotSelectedError
+  | NoDefaultModelError
   | ModelUnavailableError
   | VariantUnavailableError
   | UnsupportedApiError
@@ -110,6 +126,19 @@ export type Error =
 
 export interface Interface {
   readonly resolve: (session: SessionSchema.Info) => Effect.Effect<Model, Error>
+  /**
+   * The instance's DEFAULT model, resolved without a session.
+   *
+   * For work that has no conversation behind it — document ingestion is the case this exists for.
+   * It is not a new resolution path: it is `select()`'s `session.model === undefined` branch, which
+   * already resolves `catalog.model.default()`, given an entry point that does not demand a session.
+   *
+   * ⛔ The alternative — fabricating a `SessionSchema.Info` to satisfy the signature — was rejected:
+   * eight required fields would have to be invented, and the made-up `id` surfaces in
+   * `ModelNotSelectedError({ sessionID })` and in logs, i.e. a fake session id in diagnostics.
+   * `maintenance.ts` spreads a REAL session; that is not the same thing as inventing one.
+   */
+  readonly resolveDefault: () => Effect.Effect<Model, Error>
   /** Models item (c): the resolved catalog model's capability tier, for the system-prompt scaffold.
    *  Best-effort — an unresolvable model yields `undefined` rather than failing the turn. */
   readonly tier: (session: SessionSchema.Info) => Effect.Effect<ModelV2.Tier | undefined>
@@ -157,7 +186,13 @@ export const layerWith = (
   ref: Interface["ref"] = () => Effect.succeed(undefined),
   retryAttempts: Interface["retryAttempts"] = () => Effect.succeed(undefined),
   device: Interface["device"] = () => Effect.succeed(undefined),
-) => Layer.succeed(Service, Service.of({ resolve, tier, prePrompt, retryAttempts, capabilities, ref, device }))
+  // ⚠️ LAST, deliberately. Inserting a parameter mid-list silently rebinds every positional argument
+  // after it — a caller passing `tier` second would have been handing it a default-model resolver,
+  // and both compile.
+  /** Seams that never do session-free work leave this alone; calling it then says so by name. */
+  resolveDefault: Interface["resolveDefault"] = () =>
+    Effect.fail(new NoDefaultModelError({ reason: "this SessionRunnerModel seam provides no default resolver" })),
+) => Layer.succeed(Service, Service.of({ resolve, resolveDefault, tier, prePrompt, retryAttempts, capabilities, ref, device }))
 
 /**
  * THE SCHEDULER'S NOTION OF A DEVICE — one physical backend, not one model on it.
@@ -431,6 +466,38 @@ export const locationLayer = Layer.effect(
         )
         return yield* resolve(
           session,
+          selected,
+          connection ? yield* integrations.connection.resolve(connection) : undefined,
+        )
+      }),
+      /**
+       * The instance default, for work with no conversation behind it (document ingestion).
+       *
+       * ⚠️ Shares `select`, `ensureManagedModel` and the credential lookup with `resolve` above
+       * rather than re-deriving them: a second copy of model selection is a second place for the
+       * managed-local `ensure` to be forgotten, and forgetting it means a local model is never woken
+       * for this path while every symptom points at the model instead.
+       *
+       * The boot-latch retry is kept for the same reason it exists above — this can run moments
+       * after boot, when a location's catalog is still filling.
+       */
+      resolveDefault: Effect.fn("SessionRunnerModel.resolveDefault")(function* () {
+        const sessionless = { model: undefined } as unknown as SessionSchema.Info
+        let selected = yield* select(sessionless)
+        if (!selected) {
+          yield* plugins.ready.pipe(Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.void }))
+          selected = yield* select(sessionless)
+        }
+        // No `session.id` to name, and none invented: the caller had no session, so the error says
+        // the instance has no usable default rather than blaming a session that never existed.
+        if (!selected) return yield* new NoDefaultModelError({ reason: "the catalog offers no supported model" })
+        yield* ensureManagedModel(localModels, selected, Config.latest(yield* config.entries(), "local_model_catalog"))
+        const provider = yield* catalog.provider.get(selected.providerID)
+        const connection = yield* integrations.connection.active(
+          provider?.integrationID ?? Integration.ID.make(selected.providerID),
+        )
+        return yield* resolve(
+          sessionless,
           selected,
           connection ? yield* integrations.connection.resolve(connection) : undefined,
         )
