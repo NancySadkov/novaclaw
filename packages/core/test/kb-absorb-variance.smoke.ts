@@ -243,10 +243,16 @@ describe.skipIf(CORPUS === "")("absorption variance across repeats", () => {
       // Pairing removes it. The same passage is scored under every arm, differenced WITHIN the
       // passage, and the arm's effect is the mean of those differences — so between-passage variation
       // cancels instead of being averaged over. Same calls, same cost, a much tighter question.
+      // ⚠️ Progress, per passage, because this loop is ~84 model calls and its FIRST version printed
+      // nothing until all of them finished. Measured: 50 minutes of silence on a network-bound loop,
+      // which is indistinguishable from a hang — I checked CPU (9 s over 81 min, meaningless while
+      // blocked on HTTP) and an established keep-alive socket before concluding it was merely quiet.
+      // A long run must say it is alive, or its next reader kills it.
       const byPassage = new Map<string, Map<string, number[]>>()
       for (const [index, passage] of passages.entries()) {
         const key = `p${index}`
         const perArm = new Map<string, number[]>()
+        console.log(`paired: passage ${index + 1}/${passages.length}`)
         for (const arm of ARMS) {
           const counts: number[] = []
           for (let i = 0; i < REPEATS; i++) {
