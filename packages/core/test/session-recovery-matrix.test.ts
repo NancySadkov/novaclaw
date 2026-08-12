@@ -60,13 +60,10 @@ const MATRIX: readonly Point[] = [
   {
     id: "during-result-persistence",
     fault: "the process dies midway through writing the tool result",
-    covered: [],
-    gap:
-      "Nothing injects a fault BETWEEN the effect completing and its result being durable. " +
-      "`atomically replaces ownership and fences stale settlement` is the nearest, and it tests " +
-      "the fence rather than a torn write. A covering test must leave the store in the state a " +
-      "half-written result produces and assert recovery reaches one durable terminal state — not " +
-      "that it resumes, which for a non-idempotent effect would be the wrong answer.",
+    covered: [
+      ["session-recovery-decision", "a crash after the result is durable continues instead of replaying the effect"],
+      ["session-recovery-decision", "the tool result is published BEFORE the checkpoint that authorises continuing"],
+    ],
   },
   {
     id: "worker-crash",
@@ -87,12 +84,9 @@ const MATRIX: readonly Point[] = [
   {
     id: "cancellation",
     fault: "the user stops a turn while a tool is in flight",
-    covered: [],
-    gap:
-      "`marks an expired heartbeat interrupted` covers a heartbeat EXPIRING, which is not the same " +
-      "event: a user-initiated stop is prompt, attributable and expected, and must not open the " +
-      "failure circuit breaker the way a loss does. Nothing asserts that difference, so a stop " +
-      "during a non-idempotent tool has no pinned terminal state.",
+    covered: [
+      ["session-execution-attempt", "a user stop mid-tool settles interrupted WITHOUT spending the failure budget"],
+    ],
   },
   {
     id: "restart",
@@ -105,11 +99,17 @@ const MATRIX: readonly Point[] = [
 ]
 
 /**
- * ⚠️ SHRINK-ONLY. These two are the honest state of the matrix, not an allowance. Adding an id here
- * is how a fault point stops being covered, which is exactly the move this ledger exists to catch —
- * so the assertion is equality, not `toContain`.
+ * ⚠️ SHRINK-ONLY, and now EMPTY — every fault point the roadmap names has a covering test.
+ *
+ * Both original gaps were filled by writing the missing tests, and both were worth writing:
+ * `cancellation` exposed a real defect (a user stop spent the failure budget, so three
+ * cancellations of a healthy session armed the circuit breaker), and `during-result-persistence`
+ * turned out to rest on a source ORDERING no behavioural test could see.
+ *
+ * Adding an id back here is how a fault point stops being covered — which is the move this ledger
+ * exists to catch, so the assertion is equality, not `toContain`.
  */
-const PINNED_GAPS = ["cancellation", "during-result-persistence"] as const
+const PINNED_GAPS: readonly string[] = []
 
 describe("the crash matrix is readable", () => {
   test("every covering test named here still exists", () => {
