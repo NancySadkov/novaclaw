@@ -59,6 +59,30 @@ const root = "/config"
  */
 export const UNKNOWN_CONFIG_KEY_KIND = "unknown-config-key"
 
+/**
+ * ─── the wire REFUSES a `null` VALUE, for the same reason and by the same mechanism ─────────────
+ *
+ * 🔴 Measured live 2026-08-12 against a real instance: `PATCH /global/config` with
+ * `{"memory":{"embedding":null}}` answers **200 and changes nothing**. RFC-7396 spends `null` to mean
+ * *delete this key*, so a caller following the standard is told success and gets a no-op — ruling 2
+ * broken again, on the same surface, one value-shape over.
+ *
+ * ⚠️ **`merge-patch.ts`'s ruling is right and its stated PREMISE is wrong**, which is worth recording
+ * because the premise is what a reader would rely on. That file argues null-as-tombstone is
+ * unnecessary here because *"a PATCH body is decoded through `Config.Info` before any merge runs"* and
+ * `null` "cannot decode" against an optional field. On the TYPE side that is true —
+ * `decodeUnknownEffect(Config.Info)({memory:{enabled:null}})` fails with *"Expected boolean |
+ * undefined, got null"*. On the WIRE it is false: the encoded schema an `HttpApiEndpoint` payload
+ * decodes is `boolean | null`, as the endpoint's own 400 for a bad value says out loud (*"Expected
+ * boolean | null"*). So `null` decodes to ABSENT, the merge sees no key, and nothing happens. A
+ * ruling defended by a decode is only as strong as the decode's direction.
+ *
+ * The conclusion still stands — `null` stays a value, deletion stays the separate verb — so this is
+ * the reporting half: refuse it by name and point at `POST /api/config/remove`. A caller then gets
+ * two distinguishable answers instead of one lie, exactly as with an unknown key.
+ */
+export const NULL_CONFIG_VALUE_KIND = "null-config-value"
+
 /** How many offending keys the error names, and how long each may be. */
 const MAX_NAMED_KEYS = 10
 const MAX_KEY_CHARS = 80
@@ -135,6 +159,62 @@ export const rejectUnknownConfigKeys = (request: HttpServerRequest.HttpServerReq
           `unknown config key: ${list}. Nothing was written — the whole patch was refused rather ` +
           `than answer 200 for a key that would vanish. Re-send the patch without ${plural}, or ` +
           `GET ${root} for the keys this instance accepts.`,
+      }),
+    )
+  })
+
+/**
+ * Every path in a PATCH body whose value is `null`, deepest-first order irrelevant — the message
+ * names them all.
+ *
+ * ⚠️ **Does not descend into ARRAYS**, matching `MergePatch.removeAt`'s refusal and for the same
+ * reason: arrays replace wholesale, so a `null` inside one is an element the payload decoder judges
+ * against that array's element schema. Claiming "you tried to delete `skills[2]`" would be a false
+ * description of a fault that belongs to the decoder — this file's own rule for non-object bodies.
+ */
+export const nullConfigPaths = (body: unknown, prefix: ReadonlyArray<string> = []): string[][] => {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return []
+  const found: string[][] = []
+  for (const [key, value] of Object.entries(body)) {
+    if (value === null) found.push([...prefix, key])
+    else found.push(...nullConfigPaths(value, [...prefix, key]))
+  }
+  return found
+}
+
+/**
+ * Fail the request with a 400 naming every `null`-valued path, or succeed silently.
+ *
+ * Runs alongside `rejectUnknownConfigKeys` and after it, so a body with both faults is answered for
+ * the unknown key first: a key this instance never heard of is the more fundamental thing to say, and
+ * a `null` under a misspelt key would send the caller to the remove endpoint with a path that does
+ * not exist there either.
+ */
+export const rejectNullConfigValues = (request: HttpServerRequest.HttpServerRequest) =>
+  Effect.gen(function* () {
+    const text = yield* Effect.orDie(request.text)
+    let body: unknown
+    try {
+      body = JSON.parse(text === "" ? "{}" : text)
+    } catch {
+      return
+    }
+    const nulls = nullConfigPaths(body)
+    if (nulls.length === 0) return
+
+    const named = nulls.slice(0, MAX_NAMED_KEYS)
+    const hidden = nulls.length - named.length
+    const list = named.map((path) => showKey(path.join("."))).join(", ") + (hidden > 0 ? `, …and ${hidden} more` : "")
+    yield* Log.event("config.patch.value.null", { "config.keys": named.map((path) => path.join(".")), "config.hidden": hidden })
+    yield* Effect.fail(
+      new InvalidRequestError({
+        kind: NULL_CONFIG_VALUE_KIND,
+        field: named[0]?.join("."),
+        message:
+          `null config value at: ${list}. Nothing was written. \`null\` is not a deletion here — on ` +
+          `the wire it decodes as "key absent", so this patch would have answered 200 and changed ` +
+          `nothing. To DELETE, POST /api/config/remove with segment arrays, e.g. ` +
+          `{"paths":[${JSON.stringify(named[0] ?? [])}]}. To SET a value, send the value.`,
       }),
     )
   })

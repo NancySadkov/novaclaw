@@ -3,7 +3,12 @@ import { Effect, Layer, Schema } from "effect"
 import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { Database } from "@novaclaw/core/database/database"
 
-import { UNKNOWN_CONFIG_KEY_KIND, unknownConfigKeys } from "../../src/server/routes/instance/httpapi/groups/config"
+import {
+  NULL_CONFIG_VALUE_KIND,
+  nullConfigPaths,
+  UNKNOWN_CONFIG_KEY_KIND,
+  unknownConfigKeys,
+} from "../../src/server/routes/instance/httpapi/groups/config"
 import { GlobalPaths } from "../../src/server/routes/instance/httpapi/groups/global"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
@@ -148,6 +153,97 @@ describe("PATCH /config refuses an unknown top-level key", () => {
   )
 })
 
+/**
+ * **`PATCH /config` must not answer 200 for a `null` it decoded away either.**
+ *
+ * 🔴 Measured live 2026-08-12 on a real instance: `{"memory":{"embedding":null}}` → **200, value
+ * unchanged**. RFC-7396 spends `null` to mean *delete*, so a standard-following caller is told
+ * success and gets a no-op — the same ruling-2 break as the unknown key, one value-shape over.
+ *
+ * ⚠️ And the reason it survived the first fix is worth pinning: `merge-patch.ts` argues null-deletion
+ * is unnecessary because `null` "cannot decode" against an optional field. That is true of the TYPE
+ * side and FALSE of the wire — the encoded schema is `boolean | null`, so `null` decodes to ABSENT.
+ * The negative control below measures exactly that, because if the wire ever starts rejecting `null`
+ * on its own, this guard is dead code and these tests would pass for the wrong reason.
+ */
+describe("PATCH /config refuses a null value", () => {
+  it.instance(
+    "global route: 400 naming the path, pointing at the remove verb, and nothing written",
+    () =>
+      Effect.gen(function* () {
+        // It rides along with a VALID key, which is what made the old behaviour bad: 200 and a
+        // half-write, with the deletion silently dropped.
+        const res = yield* request(GlobalPaths.config, json({ username: "must-not-land", memory: { enabled: null } }))
+        const body: Record<string, unknown> = JSON.parse(yield* res.text)
+
+        expect(res.status).toBe(400)
+        expect(body._tag).toBe("InvalidRequestError")
+        expect(body.kind).toBe(NULL_CONFIG_VALUE_KIND)
+        // NAMED by full path, not just "somewhere in your body" — a nested null is otherwise
+        // unfindable in a document the size of a config export.
+        expect(body.message).toContain("memory.enabled")
+        // It says what to do INSTEAD. A refusal that does not name the other verb just moves the
+        // caller's loop one step later.
+        expect(body.message).toContain("/api/config/remove")
+
+        const after = yield* request(GlobalPaths.config)
+        const stored: { username?: string } = JSON.parse(yield* after.text)
+        expect(stored.username).not.toBe("must-not-land")
+      }),
+    { git: true, config: { formatter: false } },
+  )
+
+  it.instance(
+    "instance route: the same refusal, and it is DISTINGUISHABLE from the unknown-key one",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const res = yield* requestInDirectory("/config", test.directory, json({ memory: { embedding: null } }))
+        const body: Record<string, unknown> = JSON.parse(yield* res.text)
+
+        expect(res.status).toBe(400)
+        expect(body.kind).toBe(NULL_CONFIG_VALUE_KIND)
+        // Three faults, three kinds: drop-these-keys, fix-this-value, use-the-other-verb. Collapsing
+        // any two turns a client's retry into a guess.
+        expect(body.kind).not.toBe(UNKNOWN_CONFIG_KEY_KIND)
+      }),
+    { git: true, config: { formatter: false } },
+  )
+
+  it.instance(
+    "the wire admits null: a bad value for the SAME field is refused as `boolean | null`",
+    () =>
+      Effect.gen(function* () {
+        // ⚠️ THE negative control for this whole guard, and it is measured through the endpoint on
+        // purpose. `merge-patch.ts` argues null-deletion is unnecessary because `null` cannot decode;
+        // the payload decoder's own message for a WRONG-typed value names the union it checked
+        // against, and that union contains `null`. So on this path null is legal input and decodes to
+        // absent — which is why a 200-and-no-op was possible at all. If this message ever reads
+        // `boolean | undefined`, the wire started rejecting null itself and the guard is dead code.
+        const res = yield* request(GlobalPaths.config, json({ memory: { enabled: "yes" } }))
+        const body: Record<string, unknown> = JSON.parse(yield* res.text)
+        expect(res.status).toBe(400)
+        expect(JSON.stringify(body)).toContain("boolean | null")
+      }),
+    { git: true, config: { formatter: false } },
+  )
+
+  it.instance(
+    "an unknown key OUTRANKS a null — a null under a misspelt key must not send you to remove",
+    () =>
+      Effect.gen(function* () {
+        // Order matters and is asserted rather than incidental: answering "delete it with
+        // /api/config/remove" for `nonsense.x` would send the caller to an endpoint that also refuses
+        // it, one round trip later, with a worse message.
+        const res = yield* request(GlobalPaths.config, json({ nonsense: null }))
+        const body: Record<string, unknown> = JSON.parse(yield* res.text)
+        expect(res.status).toBe(400)
+        expect(body.kind).toBe(UNKNOWN_CONFIG_KEY_KIND)
+      }),
+    { git: true, config: { formatter: false } },
+  )
+})
+
 describe("the guard actually bites (negative control)", () => {
   test("the payload schema STILL ignores excess — the guard is what rejects, not the decode", () => {
     // The measurement the whole fix rests on (2026-07-29). If this ever stops holding, the guard has
@@ -172,6 +268,31 @@ describe("the guard actually bites (negative control)", () => {
     expect(unknownConfigKeys("nope")).toEqual([])
     expect(unknownConfigKeys(null)).toEqual([])
     expect(unknownConfigKeys(undefined)).toEqual([])
+  })
+
+  test("the TYPE side rejects null — which is the half `merge-patch.ts`'s ruling cites", () => {
+    // Half the measurement the null guard rests on. This direction is the one the ruling quotes, and
+    // it is true. The other half — that the WIRE admits null — is measured through the endpoint in
+    // `the wire admits null…` above, because a schema-helper assertion here would be testing my
+    // guess about which codec an HttpApi payload uses rather than the codec it actually uses.
+    expect(() => Schema.decodeUnknownSync(ConfigV2.Info)({ memory: { enabled: null } })).toThrow()
+  })
+
+  test("nullConfigPaths finds every null by path, and stays out of arrays", () => {
+    expect(nullConfigPaths({ memory: { enabled: null } })).toEqual([["memory", "enabled"]])
+    expect(nullConfigPaths({ memory: { embedding: { url: null, model: null } } })).toEqual([
+      ["memory", "embedding", "url"],
+      ["memory", "embedding", "model"],
+    ])
+    // A legitimate patch says nothing.
+    expect(nullConfigPaths({ memory: { enabled: true }, username: "nancy" })).toEqual([])
+    // ⚠️ Arrays replace wholesale, so a null INSIDE one is the payload decoder's fault to describe —
+    // the same rule `unknownConfigKeys` follows for a non-object body, and the same refusal
+    // `MergePatch.removeAt` makes.
+    expect(nullConfigPaths({ skills: [null] })).toEqual([])
+    expect(nullConfigPaths([null])).toEqual([])
+    expect(nullConfigPaths(null)).toEqual([])
+    expect(nullConfigPaths(undefined)).toEqual([])
   })
 
   test("the key set it checks against is the real schema, and it is not empty", () => {

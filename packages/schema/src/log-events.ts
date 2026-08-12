@@ -503,6 +503,14 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/groups/config.ts",
   },
+  /** A config PATCH carried a `null` value; the whole patch is refused (deletion is a separate verb). */
+  "config.patch.value.null": {
+    level: "warn",
+    message: "config PATCH refused, null is not a deletion",
+    attributes: { "config.keys": "list", "config.hidden": "count" },
+    content: "user",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/groups/config.ts",
+  },
   /** The legacy permission environment override was malformed and was skipped. */
   "config.permission.parse.failed": {
     level: "warn",

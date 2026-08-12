@@ -18,7 +18,7 @@ import { HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import * as Sse from "effect/unstable/encoding/Sse"
 import { RootHttpApi } from "../api"
-import { rejectUnknownConfigKeys } from "../groups/config"
+import { rejectNullConfigValues, rejectUnknownConfigKeys } from "../groups/config"
 import { Log } from "@novaclaw/schema/log"
 
 function eventData(data: unknown): Sse.Event {
@@ -131,6 +131,9 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       // reasoning — the deliberate divergence from the FILE import path, and the forward-compat
       // cost of 400ing a newer client's key — lives with the guard in `../groups/config`.
       yield* rejectUnknownConfigKeys(ctx.request)
+      // And a `null` VALUE, which decodes to ABSENT on the wire and would answer 200 for a
+      // deletion that never happened. Deletion is POST /api/config/remove; see the guard's header.
+      yield* rejectNullConfigValues(ctx.request)
       const consumed = yield* ConfigStoreWrite.apply(ctx.payload)
       if (consumed.size > 0) {
         yield* config.invalidate()

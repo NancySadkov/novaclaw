@@ -11,7 +11,7 @@ import * as InstanceState from "@/effect/instance-state"
 import { Effect, Layer, Schema } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { rejectUnknownConfigKeys } from "../groups/config"
+import { rejectNullConfigValues, rejectUnknownConfigKeys } from "../groups/config"
 
 export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (handlers) =>
   Effect.gen(function* () {
@@ -74,6 +74,9 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
       // FILE import path deliberately stays lenient, and the forward-compat cost — lives with the
       // guard in `../groups/config`.
       yield* rejectUnknownConfigKeys(ctx.request)
+      // And a `null` VALUE, which decodes to ABSENT on the wire and would answer 200 for a
+      // deletion that never happened. Deletion is POST /api/config/remove; see the guard's header.
+      yield* rejectNullConfigValues(ctx.request)
       const consumed = yield* ConfigStoreWrite.apply(ctx.payload)
       if (consumed.size > 0) yield* configSvc.invalidate()
       // Answer with what the STORES hold, never an echo of the request (ruling 2: a failed mutation
