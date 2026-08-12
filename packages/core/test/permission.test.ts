@@ -3,6 +3,7 @@ import fs from "node:fs"
 import nodePath from "node:path"
 import { DateTime, Deferred, Effect, Fiber, Layer } from "effect"
 import { AgentV2 } from "@novaclaw/core/agent"
+import { FSUtil } from "@novaclaw/core/fs-util"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
@@ -34,6 +35,8 @@ const it = testEffect(
     LayerNode.group([
       Database.node,
       EventV2.node,
+      // PermissionV2 reads this location's `novaclaw.json` once at build; FSUtil is how.
+      FSUtil.node,
       SessionStore.node,
       PermissionSaved.node,
       AgentV2.node,

@@ -1,0 +1,160 @@
+import { describe, expect } from "bun:test"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
+import { Effect, Layer } from "effect"
+import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { LayerNode } from "@novaclaw/core/effect/layer-node"
+import { Database } from "@novaclaw/core/database/database"
+import { EventV2 } from "@novaclaw/core/event"
+import { FSUtil } from "@novaclaw/core/fs-util"
+import { AgentV2 } from "@novaclaw/core/agent"
+import { Location } from "@novaclaw/core/location"
+import { PermissionV2 } from "@novaclaw/core/permission"
+import { PermissionSaved } from "@novaclaw/core/permission/saved"
+import { SessionStore } from "@novaclaw/core/session/store"
+import { SessionTable } from "@novaclaw/core/session/sql"
+import { SessionV2 } from "@novaclaw/core/session"
+import { AbsolutePath } from "@novaclaw/core/schema"
+import { location } from "./fixture/location"
+import { testEffect } from "./lib/effect"
+
+/**
+ * A Project's permissions, through the LIVE evaluator.
+ *
+ * 🔴 `permission-narrowing.test.ts` pins the algebra; this pins that anything CALLS it. Those are two
+ * different failures, and only one of them is visible from inside the algebra — a narrowing that is
+ * perfect and unreachable is indistinguishable, from the user's side, from no narrowing at all.
+ *
+ * The location points at a REAL temp directory, because the whole path under test is "read the file
+ * beside this session's folder": a fixture path resolves to nothing and the test would pass against
+ * a build that never looked.
+ */
+
+const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "novaclaw-perm-project-")))
+fs.writeFileSync(
+  path.join(root, "novaclaw.json"),
+  JSON.stringify({ version: 1, name: "Locked", permissions: [{ action: "bash", resource: "*", effect: "deny" }] }),
+)
+
+const current = Layer.succeed(Location.Service, Location.Service.of(location({ directory: AbsolutePath.make(root) })))
+
+const it = testEffect(
+  AppNodeBuilder.build(
+    LayerNode.group([
+      Database.node,
+      EventV2.node,
+      FSUtil.node,
+      SessionStore.node,
+      PermissionSaved.node,
+      AgentV2.node,
+      PermissionV2.node,
+    ]),
+    [[Location.node, current]],
+  ),
+)
+
+// The operator's rules live on the AGENT, exactly as `permission.test.ts` seeds them. Putting them
+// on the session row instead silently seeds NOTHING, and the resulting verdict then comes from the
+// baseline rather than from the thing under test.
+const seed = (rules: PermissionV2.Ruleset) =>
+  Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    yield* db
+      .insert(SessionTable)
+      .values({
+        id: SessionV2.ID.make("ses_test"),
+        slug: "test",
+        directory: root,
+        title: "test",
+        version: "test",
+        agent: "test",
+      })
+      .onConflictDoNothing()
+      .run()
+      .pipe(Effect.orDie)
+    const agents = yield* AgentV2.Service
+    yield* agents.transform((editor) =>
+      editor.update(AgentV2.ID.make("test"), (agent) => {
+        agent.permissions = [...rules]
+      }),
+    )
+  })
+
+const assertion = (action: string, resource: string) => ({
+  sessionID: SessionV2.ID.make("ses_test"),
+  action,
+  resources: [resource],
+  id: PermissionV2.ID.create("per_test"),
+})
+
+/**
+ * 🔴 THE NEGATIVE CONTROL, and it is not optional here. The deny in the first test passed even while
+ * the seed was silently writing nothing — the verdict happened to be `deny` for an unrelated reason.
+ * A second location with NO project file, and everything else identical, is the only thing that shows
+ * the deny came from the file rather than from the stack around it.
+ */
+const bare = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "novaclaw-perm-bare-")))
+const itBare = testEffect(
+  AppNodeBuilder.build(
+    LayerNode.group([
+      Database.node,
+      EventV2.node,
+      FSUtil.node,
+      SessionStore.node,
+      PermissionSaved.node,
+      AgentV2.node,
+      PermissionV2.node,
+    ]),
+    [[Location.node, Layer.succeed(Location.Service, Location.Service.of(location({ directory: AbsolutePath.make(bare) })))]],
+  ),
+)
+
+describe("without a project file", () => {
+  itBare.effect("the same operator allow is ALLOWED — so the deny above was the file", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* db
+        .insert(SessionTable)
+        .values({ id: SessionV2.ID.make("ses_test"), slug: "test", directory: bare, title: "test", version: "test", agent: "test" })
+        .onConflictDoNothing()
+        .run()
+        .pipe(Effect.orDie)
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) =>
+        editor.update(AgentV2.ID.make("test"), (agent) => {
+          agent.permissions = [{ action: "bash", resource: "*", effect: "allow" }]
+        }),
+      )
+      const service = yield* PermissionV2.Service
+      expect((yield* service.ask(assertion("bash", "ls"))).effect).toBe("allow")
+    }),
+  )
+})
+
+describe("a project file constrains the live evaluator", () => {
+  it.effect("🔴 the project's DENY beats the operator's allow", () =>
+    Effect.gen(function* () {
+      // The operator allows every bash; the folder's `novaclaw.json` denies it. Under the ordinary
+      // append-and-findLast composition the project would have had to LOSE this — appending is how
+      // you override, so a narrowing constraint had to be a different operation entirely.
+      yield* seed([{ action: "bash", resource: "*", effect: "allow" }])
+      const service = yield* PermissionV2.Service
+      const verdict = yield* service.ask(assertion("bash", "ls"))
+      expect(verdict.effect).toBe("deny")
+    }),
+  )
+
+  it.effect("an action the project says nothing about is untouched", () =>
+    Effect.gen(function* () {
+      // The opposite failure, and the one that would make the feature unusable: silence read as
+      // `ask` would mean this file tightens every action it never mentions.
+      yield* seed([{ action: "read", resource: "*", effect: "allow" }])
+      const service = yield* PermissionV2.Service
+      // INSIDE the root: a path outside it is refused by the external-directory baseline, which
+      // would make this test pass or fail for a reason that has nothing to do with the project file.
+      const verdict = yield* service.ask(assertion("read", path.join(root, "file.txt")))
+      expect(verdict.effect).toBe("allow")
+    }),
+  )
+})

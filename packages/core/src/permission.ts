@@ -11,6 +11,8 @@ import { Location } from "./location"
 import { AgentV2 } from "./agent"
 import { SessionV2 } from "./session"
 import { SessionStore } from "./session/store"
+import { FSUtil } from "./fs-util"
+import { ProjectFileResolve } from "./project-file"
 import { Wildcard } from "./util/wildcard"
 import {
   ASK_BEFORE_CHANGES_RULES,
@@ -514,6 +516,26 @@ export const layer = Layer.effect(
   EffectRuntime.gen(function* () {
     const events = yield* EventV2.Service
     const location = yield* Location.Service
+    /**
+     * This location's Project permissions, resolved ONCE.
+     *
+     * 🔴 They are a NARROWING constraint, never part of the appended chain. `evaluate` takes the last
+     * match, so appending would let a `novaclaw.json` — a file inside a folder the user may have
+     * cloned minutes ago — override an operator deny with `allow`. See `evaluateNarrowed`.
+     *
+     * ⚠️ Read once at layer build, so an EDIT to the file does not reach a running location. That is
+     * the wrong direction for staleness (a user who TIGHTENS their project keeps the looser rules
+     * until the layer rebuilds), and closing it is `todo/projects.md`'s watch item — the same shape
+     * `Watcher.reload` already solves for the ignore list. Recorded rather than left to be
+     * discovered.
+     */
+    const projectPermissions: Permission.Ruleset = yield* ProjectFileResolve.resolve(location.directory).pipe(
+      EffectRuntime.map((resolution) => (resolution.kind === "project" ? (resolution.info.permissions ?? []) : [])),
+      // A project that cannot be read must not take the location down. An unresolvable file means no
+      // constraint, which is the same posture as no file — and the resolver already distinguishes
+      // "missing" from "malformed" for the surface that reports it.
+      EffectRuntime.orElseSucceed(() => [] as Permission.Ruleset),
+    )
     const agents = yield* AgentV2.Service
     const sessions = yield* SessionStore.Service
     const autoGrants = yield* SessionAutoGrant.Service
@@ -841,9 +863,14 @@ export const layer = Layer.effect(
         ? [{ action: input.action, resource: attachment.resource, effect: "ask" }]
         : []
       const all = [...rules, ...saved, ...attachmentRules]
-      const effects = input.resources.map((resource) => evaluate(input.action, resource, all).effect)
+      // ⚠️ `evaluateNarrowed`, not `evaluate`. Every early return above is a DENY, which a project
+      // cannot narrow further, so this is the one place a Project's rules can change an answer — and
+      // they can only make it stricter.
+      const effects = input.resources.map(
+        (resource) => evaluateNarrowed(input.action, resource, [all], [projectPermissions]).effect,
+      )
       const aliasDenied = (input.denyAliases ?? []).some(
-        (resource) => evaluate(input.action, resource, all).effect === "deny",
+        (resource) => evaluateNarrowed(input.action, resource, [all], [projectPermissions]).effect === "deny",
       )
       const evaluated: Permission.Effect = effects.includes("deny") ? "deny" : effects.includes("ask") ? "ask" : "allow"
       const effect: Permission.Effect =
@@ -1149,5 +1176,8 @@ export const node = makeLocationNode({
     PermissionSaved.node,
     SessionAutoGrant.node,
     Database.node,
+    // Reading this location's `novaclaw.json` once, at build. FSUtil is a GLOBAL node already built
+    // in every instance, so this adds a reference rather than a new subsystem to the boot order.
+    FSUtil.node,
   ],
 })
