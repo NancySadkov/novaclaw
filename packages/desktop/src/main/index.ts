@@ -90,7 +90,11 @@ const bootTimeline = createBootTimeline({
 function readProcessMemory(): readonly ProcessMemory[] {
   try {
     return app.getAppMetrics().map((entry) => ({
-      kind: entry.type,
+      // ⚠️ The NAME when there is one, not just the type. A packaged run reports two processes both
+      // typed `Utility` — the network service and our own sidecar — and the sidecar is the one whose
+      // memory anyone reading this actually wants. Two identically-labelled rows are not a
+      // measurement of either.
+      kind: entry.name ? `${entry.type}:${entry.name}` : entry.type,
       pid: entry.pid,
       workingSetBytes: (entry.memory?.workingSetSize ?? 0) * 1024,
     }))
