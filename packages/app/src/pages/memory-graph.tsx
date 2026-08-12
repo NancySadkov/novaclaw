@@ -1,5 +1,6 @@
 import { A } from "@solidjs/router"
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
+import { MemoryRemembered } from "@/components/memory-remembered"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { useGlobal } from "@/context/global"
 import { useServer, ServerConnection } from "@/context/server"
@@ -190,6 +191,12 @@ export function MemoryGraphPage() {
   }
   const resetView = () => setView({ tx: 0, ty: 0, scale: 1 })
 
+  /**
+   * LIST first. "What do you know about me" is answered in sentences; the graph answers "how does
+   * it connect", which is the second question. Opening on the graph led with the harder view.
+   */
+  const [appView, setAppView] = createSignal<"list" | "graph">("list")
+
   const count = () => graph()?.nodes.length ?? 0
 
   return (
@@ -203,8 +210,30 @@ export function MemoryGraphPage() {
           <Icon name="branch" size="large" />
           <h1 class="text-sm font-medium">Memory</h1>
         </div>
-        {/* The legend. A shape encoding nobody can decode is a different mystery, not a fix — and
-            the shapes here are drawn to match the nodes rather than described in words. */}
+        <div class="flex items-center gap-0.5 rounded-md bg-v2-background-bg-layer-01 p-0.5 text-[11px]">
+          <For each={[{ id: "list", label: "Remembered" }, { id: "graph", label: "Graph" }] as const}>
+            {(entry) => (
+              <button
+                type="button"
+                data-slot="memory-view-switch"
+                data-view={entry.id}
+                aria-pressed={appView() === entry.id}
+                onClick={() => setAppView(entry.id)}
+                class="rounded px-2 py-1"
+                classList={{
+                  "bg-v2-background-bg-layer-03 text-v2-text-text-strong": appView() === entry.id,
+                  "opacity-60 hover:opacity-100": appView() !== entry.id,
+                }}
+              >
+                {entry.label}
+              </button>
+            )}
+          </For>
+        </div>
+
+        {/* The legend belongs to the GRAPH, so it appears with it — a legend for marks that are not
+            on screen is noise. */}
+        <Show when={appView() === "graph"}>
         <div class="flex items-center gap-3 text-[11px] opacity-70" data-slot="memory-kind-legend">
           <For each={KIND_LEGEND}>
             {(entry) => (
@@ -241,7 +270,8 @@ export function MemoryGraphPage() {
             )}
           </For>
         </div>
-        <Show when={hiddenCount() > 0}>
+        </Show>
+        <Show when={appView() === "graph" && hiddenCount() > 0}>
           <span class="text-[11px] opacity-50" data-slot="memory-hidden-count">
             {hiddenCount()} hidden
           </span>
@@ -265,7 +295,15 @@ export function MemoryGraphPage() {
         </div>
       </header>
 
-      <div class="relative flex min-h-0 flex-1">
+      {/* The Remembered list, in the app where a person actually asks "what do you know about me".
+          It owns its own fetch, so switching views does not depend on the graph having loaded. */}
+      <Show when={appView() === "list"}>
+        <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+          <MemoryRemembered />
+        </div>
+      </Show>
+
+      <div class="relative flex min-h-0 flex-1" classList={{ hidden: appView() !== "graph" }}>
         <Show
           when={count() > 0}
           fallback={
