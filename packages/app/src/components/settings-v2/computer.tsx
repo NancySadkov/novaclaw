@@ -1,9 +1,12 @@
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
-import { type Component, Show, createMemo } from "solid-js"
+import { type Component, Show, createMemo, createResource } from "solid-js"
 import { showToast } from "@/utils/toast"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
+import { useGlobal } from "@/context/global"
+import { useServer } from "@/context/server"
+import { shellStatus } from "@/utils/fs-api"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { effectOf, withEffect, type PermissionEffect, type PermissionRule } from "./computer-rules"
@@ -37,6 +40,16 @@ interface ComputerConfig {
 export const SettingsComputerV2: Component = () => {
   const language = useLanguage()
   const serverSync = useServerSync()
+  // ⚠️ The INSTANCE's platform, not the browser's. This UI can be driving a headless Linux box from
+  // a Windows desktop, and it is the instance that runs the shell commands being talked about.
+  const server = useServer()
+  const global = useGlobal()
+  const [shell] = createResource(
+    () => server.current ?? global.servers.list()[0],
+    (conn) =>
+      shellStatus(conn.http, { directory: serverSync().data.path?.directory ?? "" }).catch(() => undefined),
+  )
+  const isWindows = createMemo(() => (shell()?.platform ?? "").toLowerCase() === "win32")
 
   const config = createMemo(() => (serverSync().data.config?.computer ?? {}) as ComputerConfig)
   const rules = createMemo(() => (serverSync().data.config?.permissions ?? []) as PermissionRule[])
@@ -85,27 +98,49 @@ export const SettingsComputerV2: Component = () => {
       </div>
 
       <SettingsListV2>
-        <SettingsRowV2
-          title={language.t("settings.computer.display.name")}
-          description={language.t("settings.computer.display.description")}
+        {/*
+          On Windows the display is not asked for AT ALL, because it is not used: `tool/computer.ts`
+          binds by executable basename there and never reads it. Showing the box would tell a
+          Windows user their capability is off for want of a value that would change nothing.
+        */}
+        <Show
+          when={!isWindows()}
+          fallback={
+            <SettingsRowV2
+              title={language.t("settings.computer.display.name")}
+              description={language.t("settings.computer.windows.description")}
+            >
+              <span class="text-[13px] text-v2-text-text-muted">{language.t("settings.computer.windows.value")}</span>
+            </SettingsRowV2>
+          }
         >
-          <TextInputV2
-            appearance="large"
-            class="!w-full self-stretch"
-            spellcheck={false}
-            autocomplete="off"
-            value={config().display ?? ""}
-            placeholder=":99"
-            onChange={(event) =>
-              void save(
-                { computer: { ...config(), display: event.currentTarget.value.trim() || undefined } },
-                language.t("settings.computer.save.failed"),
-              )
-            }
-          />
-        </SettingsRowV2>
+          <SettingsRowV2
+            title={language.t("settings.computer.display.name")}
+            description={language.t("settings.computer.display.description")}
+          >
+            <TextInputV2
+              appearance="large"
+              class="!w-full self-stretch"
+              spellcheck={false}
+              autocomplete="off"
+              value={config().display ?? ""}
+              placeholder=":99"
+              onChange={(event) =>
+                void save(
+                  { computer: { ...config(), display: event.currentTarget.value.trim() || undefined } },
+                  language.t("settings.computer.save.failed"),
+                )
+              }
+            />
+          </SettingsRowV2>
+        </Show>
 
+        {/* Advanced: it already works. A row with a correct default that asks anyway is the same
+            defect as one that asks for a value you cannot know — it implies a decision is required
+            when none is. ⚠️ The placeholder is resolved by the INSTANCE, so a Windows instance must
+            not be shown a POSIX path as if it were the default. */}
         <SettingsRowV2
+          minLevel="advanced"
           title={language.t("settings.computer.screenshot.name")}
           description={language.t("settings.computer.screenshot.description")}
         >
@@ -115,7 +150,7 @@ export const SettingsComputerV2: Component = () => {
             spellcheck={false}
             autocomplete="off"
             value={config().screenshotPath ?? ""}
-            placeholder="/tmp/novaclaw-computer.png"
+            placeholder={isWindows() ? "%TEMP%\\novaclaw-computer.png" : "/tmp/novaclaw-computer.png"}
             onChange={(event) =>
               void save(
                 { computer: { ...config(), screenshotPath: event.currentTarget.value.trim() || undefined } },

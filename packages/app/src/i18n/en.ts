@@ -1959,8 +1959,12 @@ export const dict = {
     "Refuse to fetch one page more times than this in a session — catches an agent stuck in a loop.",
   "settings.computer.title": "Computer Use",
   "settings.computer.description":
-    "Let the agent see a screen and click on it. Point it at a display it can reach, and decide how much it may do before asking you.",
+    "Let the agent see a screen and click on it, and decide how much it may do before asking you.",
   "settings.computer.display.name": "Display",
+  "settings.computer.windows.description":
+    "On Windows, NovaClaw drives one application at a time rather than a whole screen — the agent names the program it wants (for example dosbox-x.exe) and you approve it when it asks. There is no display to set here.",
+  "settings.computer.windows.value": "Per app, on request",
+
   "settings.computer.display.description":
     "The X display the agent observes and clicks, for example :99. Leave it empty and computer use stays off — a display is never picked up from the environment, because that would either fail on a server or quietly drive your own screen.",
   "settings.computer.screenshot.name": "Screenshot path",
