@@ -22,7 +22,7 @@ import { Link } from "../link"
 import { ThemeSwatches } from "./parts/theme-swatches"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import { BUNDLED_FONTS, CANDIDATE_MONO, makeFontProbe, offeredFonts } from "./fonts"
+import { BUNDLED_MONO, BUNDLED_SANS, CANDIDATE_MONO, CANDIDATE_SANS, makeFontProbe, offeredFonts } from "./fonts"
 
 // The Appearance tab — the look/feel of the app (color scheme, theme, fonts) plus Sound Effects,
 // lifted out of General so the app-wide config there isn't cluttered with per-device presentation.
@@ -53,6 +53,87 @@ const playDemoSound = (id: string | undefined) => {
       demoSoundState.cleanup = cleanup
     })
   }, 100)
+}
+
+const FONT_CUSTOM = "type-a-font-name"
+/** Unset means "use the default", which every font row's copy promises. A blank trigger states
+ *  nothing, so the default is a NAMED option whose selection persists "" — the stored form of unset. */
+const FONT_DEFAULT = "use-the-default"
+
+/**
+ * One control for all three font rows (UI · code · terminal). They differ only in their candidate
+ * list, their accessor pair and their preview family; the six rules do not, so they live here once:
+ * shipped fonts are offered unprobed, a value already set is always offered, unset shows the named
+ * default, and free text stays reachable and labelled.
+ */
+const FontPicker: Component<{
+  value: string
+  onChange: (value: string) => void
+  bundled: readonly string[]
+  candidates: readonly string[]
+  fallbackDefault: string
+  previewFamily: string
+  label: string
+  action: string
+  probe: (family: string) => boolean
+}> = (props) => {
+  const language = useLanguage()
+  const [typing, setTyping] = createSignal(false)
+  const choices = createMemo(() =>
+    offeredFonts({
+      bundled: props.bundled,
+      candidates: props.candidates,
+      present: props.probe,
+      current: props.value,
+    }),
+  )
+  const defaultOption = () => ({
+    value: FONT_DEFAULT,
+    label: `${language.t("settings.general.row.font.default")} (${props.fallbackDefault})`,
+  })
+  return (
+    <div class="w-full sm:w-[220px]">
+      <Show
+        when={!typing()}
+        fallback={
+          <TextInputV2
+            data-action={props.action}
+            type="text"
+            appearance="base"
+            value={props.value}
+            onInput={(event) => props.onChange(event.currentTarget.value)}
+            placeholder={props.fallbackDefault}
+            spellcheck={false}
+            autocorrect="off"
+            autocomplete="off"
+            autocapitalize="off"
+            aria-label={props.label}
+            style={{ "font-family": props.previewFamily }}
+          />
+        }
+      >
+        <SelectV2
+          appearance="inline"
+          data-action={props.action}
+          options={[
+            defaultOption(),
+            ...choices().map((family) => ({ value: family, label: family })),
+            { value: FONT_CUSTOM, label: language.t("settings.general.row.font.custom") },
+          ]}
+          current={props.value ? { value: props.value, label: props.value } : defaultOption()}
+          placement="bottom-end"
+          gutter={6}
+          value={(option) => option.value}
+          label={(option) => option.label}
+          onSelect={(option) => {
+            if (!option) return
+            if (option.value === FONT_CUSTOM) return setTyping(true)
+            props.onChange(option.value === FONT_DEFAULT ? "" : option.value)
+          }}
+        />
+      </Show>
+    </div>
+  )
 }
 
 export const SettingsAppearanceV2: Component = () => {
@@ -94,22 +175,9 @@ export const SettingsAppearanceV2: Component = () => {
   ])
   const mono = () => monoInput(settings.appearance.font())
 
-  // Probed ONCE: each check renders a probe string twice per generic, and re-running it per render
-  // would measure text on every keystroke in this dialog.
+  // Probed ONCE per dialog: each check renders a probe string twice per generic fallback, and
+  // re-running it per render would measure text on every keystroke in here.
   const fontProbe = makeFontProbe()
-  const [typingFont, setTypingFont] = createSignal(false)
-  const monoChoices = createMemo(() =>
-    offeredFonts({
-      bundled: BUNDLED_FONTS,
-      candidates: CANDIDATE_MONO,
-      present: fontProbe,
-      current: mono(),
-    }),
-  )
-  const FONT_CUSTOM = "type-a-font-name"
-  /** Unset means "use the default", which this row's own copy promises. A blank trigger states
-   *  nothing, so the default is a NAMED option that persists "" — the stored form of unset. */
-  const FONT_DEFAULT = "use-the-default"
   const sans = () => sansInput(settings.appearance.uiFont())
   const terminal = () => terminalInput(settings.appearance.terminalFont())
 
@@ -216,76 +284,34 @@ export const SettingsAppearanceV2: Component = () => {
           title={language.t("settings.general.row.uiFont.title")}
           description={language.t("settings.general.row.uiFont.description")}
         >
-          <div class="w-full sm:w-[220px]">
-            <TextInputV2
-              data-action="settings-ui-font"
-              type="text"
-              appearance="base"
-              value={sans()}
-              onInput={(event) => settings.appearance.setUIFont(event.currentTarget.value)}
-              placeholder={sansDefault}
-              spellcheck={false}
-              autocorrect="off"
-              autocomplete="off"
-              autocapitalize="off"
-              aria-label={language.t("settings.general.row.uiFont.title")}
-              style={{ "font-family": sansFontFamily(settings.appearance.uiFont()) }}
-            />
-          </div>
+          <FontPicker
+            value={sans()}
+            onChange={(value) => settings.appearance.setUIFont(value)}
+            bundled={BUNDLED_SANS}
+            candidates={CANDIDATE_SANS}
+            fallbackDefault={sansDefault}
+            previewFamily={sansFontFamily(settings.appearance.uiFont())}
+            label={language.t("settings.general.row.uiFont.title")}
+            action="settings-ui-font"
+            probe={fontProbe}
+          />
         </SettingsRowV2>
 
         <SettingsRowV2
           title={language.t("settings.general.row.font.title")}
           description={language.t("settings.general.row.font.description")}
         >
-          <div class="w-full sm:w-[220px]">
-            <Show
-              when={!typingFont()}
-              fallback={
-                <TextInputV2
-                  data-action="settings-code-font"
-                  type="text"
-                  appearance="base"
-                  value={mono()}
-                  onInput={(event) => settings.appearance.setFont(event.currentTarget.value)}
-                  placeholder={monoDefault}
-                  spellcheck={false}
-                  autocorrect="off"
-                  autocomplete="off"
-                  autocapitalize="off"
-                  aria-label={language.t("settings.general.row.font.title")}
-                  style={{ "font-family": monoFontFamily(settings.appearance.font()) }}
-                />
-              }
-            >
-              <SelectV2
-                appearance="inline"
-                data-action="settings-code-font"
-                options={[
-                  { value: FONT_DEFAULT, label: `${language.t("settings.general.row.font.default")} (${monoDefault})` },
-                  ...monoChoices().map((family) => ({ value: family, label: family })),
-                  { value: FONT_CUSTOM, label: language.t("settings.general.row.font.custom") },
-                ]}
-                current={
-                  mono()
-                    ? { value: mono(), label: mono() }
-                    : {
-                        value: FONT_DEFAULT,
-                        label: `${language.t("settings.general.row.font.default")} (${monoDefault})`,
-                      }
-                }
-                placement="bottom-end"
-                gutter={6}
-                value={(option) => option.value}
-                label={(option) => option.label}
-                onSelect={(option) => {
-                  if (!option) return
-                  if (option.value === FONT_CUSTOM) return setTypingFont(true)
-                  settings.appearance.setFont(option.value === FONT_DEFAULT ? "" : option.value)
-                }}
-              />
-            </Show>
-          </div>
+          <FontPicker
+            value={mono()}
+            onChange={(value) => settings.appearance.setFont(value)}
+            bundled={BUNDLED_MONO}
+            candidates={CANDIDATE_MONO}
+            fallbackDefault={monoDefault}
+            previewFamily={monoFontFamily(settings.appearance.font())}
+            label={language.t("settings.general.row.font.title")}
+            action="settings-code-font"
+            probe={fontProbe}
+          />
         </SettingsRowV2>
 
         <Show when={pinchZoomSupported()}>
@@ -307,22 +333,17 @@ export const SettingsAppearanceV2: Component = () => {
           title={language.t("settings.general.row.terminalFont.title")}
           description={language.t("settings.general.row.terminalFont.description")}
         >
-          <div class="w-full sm:w-[220px]">
-            <TextInputV2
-              data-action="settings-terminal-font"
-              type="text"
-              appearance="base"
-              value={terminal()}
-              onInput={(event) => settings.appearance.setTerminalFont(event.currentTarget.value)}
-              placeholder={terminalDefault}
-              spellcheck={false}
-              autocorrect="off"
-              autocomplete="off"
-              autocapitalize="off"
-              aria-label={language.t("settings.general.row.terminalFont.title")}
-              style={{ "font-family": terminalFontFamily(settings.appearance.terminalFont()) }}
-            />
-          </div>
+          <FontPicker
+            value={terminal()}
+            onChange={(value) => settings.appearance.setTerminalFont(value)}
+            bundled={BUNDLED_MONO}
+            candidates={CANDIDATE_MONO}
+            fallbackDefault={terminalDefault}
+            previewFamily={terminalFontFamily(settings.appearance.terminalFont())}
+            label={language.t("settings.general.row.terminalFont.title")}
+            action="settings-terminal-font"
+            probe={fontProbe}
+          />
         </SettingsRowV2>
       </SettingsListV2>
     </div>

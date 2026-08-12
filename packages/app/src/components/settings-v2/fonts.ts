@@ -25,8 +25,15 @@
  * as missing would be a false statement about the product's own asset.
  */
 
-/** Fonts this app ships, so their presence is a fact rather than a measurement. */
-export const BUNDLED_FONTS = ["Inter", "JetBrainsMono Nerd Font Mono"] as const
+/**
+ * Fonts this app ships, so their presence is a fact rather than a measurement — split by ROLE.
+ *
+ * ⚠️ Offering every bundled font to every row put a monospace face in the interface-font list. "Offer
+ * what exists" does not mean offer everything: a list that includes obviously wrong answers is
+ * harder to choose from than a shorter honest one.
+ */
+export const BUNDLED_SANS = ["Inter"] as const
+export const BUNDLED_MONO = ["JetBrainsMono Nerd Font Mono"] as const
 
 /** Common families worth offering when the machine has them. Measured, never assumed. */
 export const CANDIDATE_MONO = [
@@ -43,6 +50,23 @@ export const CANDIDATE_MONO = [
   "SF Mono",
   "Source Code Pro",
   "Ubuntu Mono",
+] as const
+
+/** Interface families worth offering when present. Same discipline: measured, never assumed. */
+export const CANDIDATE_SANS = [
+  "Arial",
+  "Calibri",
+  "Cantarell",
+  "Georgia",
+  "Helvetica Neue",
+  "IBM Plex Sans",
+  "Noto Sans",
+  "Roboto",
+  "SF Pro Text",
+  "Segoe UI",
+  "Source Sans Pro",
+  "Ubuntu",
+  "Verdana",
 ] as const
 
 /**
