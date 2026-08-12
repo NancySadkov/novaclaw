@@ -471,6 +471,10 @@ const main = Effect.gen(function* () {
     !portIsPinned && error instanceof Error && error.name === "PortUnavailableError"
 
   const startSidecar = Effect.gen(function* () {
+    // The sidecar track OPENS here. Without this mark the spawn's duration had to be inferred from
+    // whatever mark happened to precede it in time — and since the renderer runs concurrently, that
+    // was usually a renderer mark, producing a number that measured neither. See PHASE_TRACK.
+    markBoot("sidecar-start")
     preferAppEnv(app.getPath("userData"))
 
     const probePort = Effect.gen(function* () {

@@ -20,12 +20,14 @@
 export const BOOT_PHASES = [
   /** Electron finished its own startup and the main script can draw. */
   "electron-ready",
+  /** A window exists on screen. The sidecar work is forked AFTER this — the desktop boots window-first. */
+  "window-shown",
+  /** The boot fiber began the server work: `preferAppEnv`, the port probe, then the spawn. */
+  "sidecar-start",
   /** The sidecar child has been spawned; nothing has been asked of it yet. */
   "sidecar-spawned",
   /** `/global/health` answered — the server is genuinely serving, not merely running. */
   "sidecar-health",
-  /** A window exists on screen. May precede `sidecar-health`: the desktop boots window-first. */
-  "window-shown",
   /** The renderer says it has finished its first paint and is accepting input. */
   "renderer-interactive",
   /** The first token of the first assistant reply reached the renderer. */
@@ -33,6 +35,26 @@ export const BOOT_PHASES = [
 ] as const
 
 export type BootPhase = (typeof BOOT_PHASES)[number]
+
+/**
+ * Which concurrent track a phase belongs to.
+ *
+ * 🔴 THE CORRECTION THIS FILE EXISTS TO CARRY. Without tracks, the summary computed each delta
+ * against whichever mark happened to precede it in TIME — and the desktop runs the renderer and the
+ * sidecar concurrently, so `renderer-interactive → sidecar-spawned` looked like a duration and was
+ * the gap between two unrelated things. It was published as *"the sidecar spawn is 45% of the boot"*
+ * before this was caught. A delta between concurrent tracks measures NEITHER of them, and it looks
+ * exactly like a measurement, so the type system now refuses to compute one.
+ */
+export const PHASE_TRACK: Readonly<Record<BootPhase, "main" | "renderer">> = {
+  "electron-ready": "main",
+  "window-shown": "main",
+  "sidecar-start": "main",
+  "sidecar-spawned": "main",
+  "sidecar-health": "main",
+  "renderer-interactive": "renderer",
+  "first-chat-token": "renderer",
+}
 
 /** One process's memory at a moment. Bytes, so no reader has to remember a unit. */
 export interface ProcessMemory {
@@ -91,7 +113,14 @@ export interface BootSummary {
    * same way will average them together into a number describing neither run.
    */
   readonly missing: readonly BootPhase[]
-  /** Milliseconds between each mark and the one before it, keyed by the LATER phase. */
+  /**
+   * Milliseconds between each mark and the one before it ON ITS OWN TRACK, keyed by the later phase.
+   *
+   * 🔴 Within a track only. The renderer and the sidecar run concurrently, so a delta across them is
+   * the gap between two unrelated events — a number that looks like a duration and is not one. The
+   * first mark of each track has no delta at all rather than a delta from zero, because "how long
+   * after process start" is already `elapsedMs` and does not need a second, wronger spelling.
+   */
   readonly deltasMs: Readonly<Partial<Record<BootPhase, number>>>
 }
 
@@ -118,15 +147,19 @@ export function createBootTimeline(options: BootTimelineOptions): BootTimeline {
   }
 
   const summary = (): BootSummary => {
-    // Ordered by WHEN THEY HAPPENED, not by the vocabulary's order: the desktop boots window-first,
-    // so `window-shown` legitimately precedes `sidecar-health`, and sorting by the declaration would
-    // invent a negative delta and report it as though the clock had gone backwards.
+    // Ordered by WHEN THEY HAPPENED, not by the vocabulary's order: a run can reach phases out of
+    // the declared order, and sorting by the declaration would invent a negative delta and report it
+    // as though the clock had gone backwards.
     const ordered = [...taken].sort((a, b) => a.elapsedMs - b.elapsedMs)
     const deltasMs: Partial<Record<BootPhase, number>> = {}
-    ordered.forEach((entry, index) => {
-      const previous = index === 0 ? 0 : ordered[index - 1]!.elapsedMs
-      deltasMs[entry.phase] = entry.elapsedMs - previous
-    })
+    // Per TRACK. See PHASE_TRACK — a delta across concurrent tracks measures neither of them.
+    const previousOnTrack = new Map<string, number>()
+    for (const entry of ordered) {
+      const track = PHASE_TRACK[entry.phase]
+      const previous = previousOnTrack.get(track)
+      if (previous !== undefined) deltasMs[entry.phase] = entry.elapsedMs - previous
+      previousOnTrack.set(track, entry.elapsedMs)
+    }
     return {
       marks: ordered,
       missing: BOOT_PHASES.filter((phase) => !seen.has(phase)),
@@ -157,7 +190,11 @@ export function formatMark(mark: BootMark): string {
  * much did not, and the phases most worth knowing about are exactly the ones a bad boot never reaches.
  */
 export function formatSummary(summary: BootSummary): string {
-  const reached = summary.marks.map((mark) => `${mark.phase}=${mark.elapsedMs}ms`).join(" ")
+  // Marks carry their TRACK, so nobody reading this line subtracts two numbers that sit on different
+  // ones — which is exactly the mistake this format is correcting.
+  const reached = summary.marks
+    .map((mark) => `${mark.phase}[${PHASE_TRACK[mark.phase]}]=${mark.elapsedMs}ms`)
+    .join(" ")
   const missing = summary.missing.length > 0 ? ` missing=${summary.missing.join(",")}` : ""
   return `boot summary ${reached}${missing}`
 }

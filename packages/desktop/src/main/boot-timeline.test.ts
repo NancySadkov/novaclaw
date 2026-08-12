@@ -49,10 +49,9 @@ describe("boot timeline", () => {
     expect(formatSummary(summary)).toContain("missing=")
   })
 
-  test("deltas follow the order marks HAPPENED, so window-first boot has no negative slice", () => {
-    // The desktop opens its window before the sidecar is healthy, on purpose. Ordering by the
-    // vocabulary rather than by the clock would produce a negative delta and report it as though
-    // time had run backwards.
+  test("deltas follow the order marks HAPPENED, so a reordered boot has no negative slice", () => {
+    // Ordering by the vocabulary rather than by the clock would produce a negative delta and report
+    // it as though time had run backwards.
     const timeline = createBootTimeline({
       now: at([1_100, 1_300, 1_800]),
       processStartedAt: 1_000,
@@ -66,6 +65,30 @@ describe("boot timeline", () => {
     expect(summary.deltasMs["window-shown"]).toBe(200)
     expect(summary.deltasMs["sidecar-health"]).toBe(500)
     expect(Object.values(summary.deltasMs).every((value) => value >= 0)).toBe(true)
+  })
+
+  test("🔴 a delta is NEVER computed across concurrent tracks", () => {
+    // The defect this pins, and it was PUBLISHED before it was caught: the renderer and the sidecar
+    // run concurrently, so `renderer-interactive → sidecar-spawned` is the gap between two unrelated
+    // events. Reported as a delta it read as "the sidecar spawn took 1,035 ms — 45% of the boot",
+    // which measured neither of them and looked exactly like a measurement.
+    const timeline = createBootTimeline({
+      now: at([1_100, 1_200, 1_500, 2_000]),
+      processStartedAt: 1_000,
+      memory: () => [],
+    })
+    timeline.mark("window-shown") // main, 100
+    timeline.mark("sidecar-start") // main, 200
+    timeline.mark("renderer-interactive") // renderer, 500 — interleaved in TIME, unrelated in cause
+    timeline.mark("sidecar-spawned") // main, 1000
+    const summary = timeline.summary()
+    // Measured against its own track's predecessor (sidecar-start at 200), NOT against the renderer
+    // mark that happens to sit between them.
+    expect(summary.deltasMs["sidecar-spawned"]).toBe(800)
+    expect(summary.deltasMs["sidecar-start"]).toBe(100)
+    // The first mark of a track has no delta at all — `elapsedMs` already says how long after
+    // process start it happened, and a delta from zero would be that same fact spelled worse.
+    expect(summary.deltasMs["renderer-interactive"]).toBeUndefined()
   })
 
   test("a clock that reads before process start clamps to 0 rather than going negative", () => {
