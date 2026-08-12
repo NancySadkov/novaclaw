@@ -1205,6 +1205,31 @@ class ApiInstance extends NovaClawApiClient {
   }
 
   /**
+   * Diagnose this instance
+   *
+   * Compose storage, conversation store, memory, scheduler, updater and provider readings into one verdict. Nothing costs egress unless probe=provider is passed, so opening a diagnostics screen never contacts anyone.
+   */
+  public diagnosis<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      probe?: "provider"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = {
+      directory: parameters?.["directory"],
+      workspace: parameters?.["workspace"],
+      probe: parameters?.["probe"],
+    }
+    return (options?.client ?? this.client).get<T.InstanceDiagnosisResponses, T.InstanceDiagnosisErrors, ThrowOnError>({
+      url: "/api/diagnosis",
+      ...options,
+      query,
+    })
+  }
+
+  /**
    * Scheduler snapshot
    *
    * Per-device in-flight and waiting sessions plus the EEVDF ledger — the live `ps` view.

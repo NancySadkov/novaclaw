@@ -69,7 +69,7 @@ export function instanceDiagnosis(
   options?: { readonly probe?: boolean; readonly signal?: AbortSignal },
 ) {
   return instanceFetch<Diagnosis>(server, {
-    route: options?.probe === true ? "diagnosis?probe=provider" : "diagnosis",
+    route: options?.probe === true ? "api/diagnosis?probe=provider" : "api/diagnosis",
     signal: options?.signal,
     timeoutMs: 20_000,
   })

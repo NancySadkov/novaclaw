@@ -166,7 +166,11 @@ export const InstancePaths = {
   formatter: "/formatter",
   app: "/app",
   scheduler: "/scheduler/snapshot",
-  diagnosis: "/diagnosis",
+  // ⚠️ `/api/` — ruling 11's ONE contract prefix. Every sibling in this map is a LEGACY path pinned
+  // in `legacy-path-ledger.test.ts` (a list that may only shrink); `/diagnosis` was added here after
+  // that ledger was frozen and inherited the legacy shape by proximity. The ledger could not object,
+  // because `openapi.json` had gone stale and the spec it reads never showed the new route.
+  diagnosis: "/api/diagnosis",
 } as const
 
 export const InstanceApi = HttpApi.make("instance")
@@ -288,7 +292,8 @@ export const InstanceApi = HttpApi.make("instance")
             identifier: "instance.diagnosis",
             summary: "Diagnose this instance",
             description:
-              "Compose storage, conversation store, scheduler, updater and provider readings into one verdict. " +
+              "Compose storage, conversation store, memory, scheduler, updater and provider readings into one " +
+            "verdict. " +
               "Nothing costs egress unless probe=provider is passed, so opening a diagnostics screen never contacts anyone.",
           }),
         ),

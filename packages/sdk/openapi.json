@@ -4276,6 +4276,111 @@
         ]
       }
     },
+    "/api/diagnosis": {
+      "get": {
+        "tags": ["instance"],
+        "operationId": "instance.diagnosis",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "probe",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["provider"]
+            },
+            "required": false
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "One composed answer to whether anything is wrong",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "overall": {
+                      "type": "string",
+                      "enum": ["problem", "warning", "unknown", "ok"]
+                    },
+                    "headline": {
+                      "type": "string"
+                    },
+                    "signals": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": ["problem", "warning", "unknown", "ok"]
+                          },
+                          "detail": {
+                            "type": "string"
+                          },
+                          "action": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["id", "label", "status"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["overall", "headline", "signals"],
+                  "additionalProperties": false,
+                  "description": "One composed answer to whether anything is wrong"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Compose storage, conversation store, memory, scheduler, updater and provider readings into one verdict. Nothing costs egress unless probe=provider is passed, so opening a diagnostics screen never contacts anyone.",
+        "summary": "Diagnose this instance",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.instance.diagnosis({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/scheduler/snapshot": {
       "get": {
         "tags": ["instance"],
@@ -32806,6 +32911,9 @@
             "type": "boolean"
           },
           "prune": {
+            "type": "boolean"
+          },
+          "summarize": {
             "type": "boolean"
           },
           "keep": {

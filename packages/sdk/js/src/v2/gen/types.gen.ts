@@ -3792,6 +3792,7 @@ export type ConfigV2CompactionKeep = {
 export type ConfigV2Compaction = {
   auto?: boolean
   prune?: boolean
+  summarize?: boolean
   keep?: ConfigV2CompactionKeep
   buffer?: number
 }
@@ -9523,6 +9524,49 @@ export type FormatterStatusResponses = {
 }
 
 export type FormatterStatusResponse = FormatterStatusResponses[keyof FormatterStatusResponses]
+
+export type InstanceDiagnosisData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    probe?: "provider"
+  }
+  url: "/api/diagnosis"
+}
+
+export type InstanceDiagnosisErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type InstanceDiagnosisError = InstanceDiagnosisErrors[keyof InstanceDiagnosisErrors]
+
+export type InstanceDiagnosisResponses = {
+  /**
+   * One composed answer to whether anything is wrong
+   */
+  200: {
+    overall: "problem" | "warning" | "unknown" | "ok"
+    headline: string
+    signals: Array<{
+      id: string
+      label: string
+      status: "problem" | "warning" | "unknown" | "ok"
+      detail?: string
+      action?: string
+    }>
+  }
+}
+
+export type InstanceDiagnosisResponse = InstanceDiagnosisResponses[keyof InstanceDiagnosisResponses]
 
 export type InstanceSchedulerData = {
   body?: never
