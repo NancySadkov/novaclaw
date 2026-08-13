@@ -232,3 +232,40 @@ describe("a recovered call is indistinguishable from a native one", () => {
     expect(toolCalls(events)).toHaveLength(1)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// WHICH SERVING PROCESS ANSWERED.
+//
+// `model` echoes the ALIAS we asked for, so an alias repointed at different weights is invisible in
+// it. `system_fingerprint` is the only serving identity this wire offers — measured 2026-08-13 as
+// stable across calls to one server and different between two servers on the same vLLM build.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+const served = (fingerprint: string, content = "hi") => ({
+  choices: [{ delta: { content }, finish_reason: null }],
+  system_fingerprint: fingerprint,
+})
+
+describe("the serving identity reaches the finish event", () => {
+  const finishOf = (events: LLMEvent[]) => events.find(LLMEvent.is.finish)
+
+  test("it rides providerMetadata, the channel that already exists for un-normalised facts", () => {
+    const events = decode([], [served("vllm-x-a44fe734"), stop])
+    expect(finishOf(events)?.providerMetadata).toEqual({ openai: { system_fingerprint: "vllm-x-a44fe734" } })
+  })
+
+  test("🔴 a chunk that omits it does not ERASE it — vLLM repeats it, a truncated tail may not", () => {
+    // The failure this forbids is quiet: the identity arrives on chunk one, the final chunk carries
+    // no fingerprint, and the finish event reports nothing — so a turn that WAS attributable looks
+    // like one from an endpoint that does not report identity at all.
+    const events = decode([], [served("vllm-x-a44fe734"), { choices: [{ delta: { content: "!" }, finish_reason: null }] }, stop])
+    expect(finishOf(events)?.providerMetadata).toEqual({ openai: { system_fingerprint: "vllm-x-a44fe734" } })
+  })
+
+  test("an endpoint that reports no identity says nothing, rather than 'unknown'", () => {
+    // Absent is honest: most wires do not report this, and a synthesised "unknown" would read as a
+    // measurement that failed rather than a question never asked.
+    const events = decode([], [{ choices: [{ delta: { content: "hi" }, finish_reason: null }] }, stop])
+    expect(finishOf(events)?.providerMetadata).toBeUndefined()
+  })
+})

@@ -215,6 +215,20 @@ const OpenAIChatChoice = Schema.Struct({
 const OpenAIChatEvent = Schema.Struct({
   choices: Schema.Array(OpenAIChatChoice),
   usage: optionalNull(OpenAIChatUsage),
+  /**
+   * WHICH serving process answered.
+   *
+   * OpenAI defines this as "the backend configuration that the model runs with", and vLLM fills it
+   * with its build plus a per-process suffix. Measured 2026-08-13 on the Spark: STABLE across calls
+   * to one server and DIFFERENT between two servers on the same build
+   * (`…d20260805-a44fe734` vs `…-a54ff5e8`).
+   *
+   * That makes it the only serving identity available on this wire — `model` echoes the ALIAS we
+   * asked for, so an alias repointed at different weights is invisible in it, and
+   * `/v1/models[].created` is regenerated per request. Read here so a caller can tell one serving
+   * process from another; nothing downstream is required to care.
+   */
+  system_fingerprint: optionalNull(Schema.String),
 })
 type OpenAIChatEvent = Schema.Schema.Type<typeof OpenAIChatEvent>
 type OpenAIChatRequestMessage = LLMRequest["messages"][number]
@@ -224,6 +238,8 @@ export interface ParserState {
   readonly toolCallEvents: ReadonlyArray<LLMEvent>
   readonly usage?: Usage
   readonly finishReason?: FinishReason
+  /** The serving identity the endpoint reported, kept so the finish event can carry it. */
+  readonly servedBy?: string
   readonly lifecycle: Lifecycle.State
   // The request's tool names — the whitelist that keeps text-recovery from
   // misreading prose with angle brackets as a call. Empty => recovery is off.
@@ -609,6 +625,8 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
   Effect.gen(function* () {
     const events: LLMEvent[] = []
     const usage = mapUsage(event.usage) ?? state.usage
+    // Repeated on every chunk by vLLM; keep the first one seen so a truncated tail cannot erase it.
+    const servedBy = state.servedBy ?? event.system_fingerprint ?? undefined
     const choice = event.choices[0]
     const finishReason = choice?.finish_reason ? mapFinishReason(choice.finish_reason) : state.finishReason
     const delta = choice?.delta
@@ -662,6 +680,7 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
         tools: finished?.tools ?? tools,
         toolCallEvents: finished?.events ?? state.toolCallEvents,
         usage,
+        ...(servedBy === undefined ? {} : { servedBy }),
         finishReason,
         lifecycle,
         allowedToolNames: state.allowedToolNames,
@@ -725,7 +744,16 @@ const finishEvents = (state: ParserState): ReadonlyArray<LLMEvent> => {
   const reason = state.finishReason === "stop" && hasToolCalls ? "tool-calls" : state.finishReason
   const lifecycle = hasToolCalls ? Lifecycle.stepStart(state.lifecycle, events) : state.lifecycle
   events.push(...toolCallEvents)
-  if (reason) Lifecycle.finish(lifecycle, events, { reason, usage: state.usage })
+  if (reason)
+    Lifecycle.finish(lifecycle, events, {
+      reason,
+      usage: state.usage,
+      // WHICH serving process answered, on the channel that already exists for provider facts we do
+      // not normalise. Not a normalised field of its own: only some wires report it, and inventing a
+      // top-level one would make every other protocol look like it had answered "unknown" when it
+      // was never asked.
+      ...(state.servedBy === undefined ? {} : { providerMetadata: { openai: { system_fingerprint: state.servedBy } } }),
+    })
   return events
 }
 
