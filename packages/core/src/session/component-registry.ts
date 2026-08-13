@@ -395,6 +395,32 @@ export const make = (kernelDefinitions: ReadonlyArray<AnyDefinition> = []) =>
         Effect.mapError((cause) => new InvalidValueError({ kind: definition.kind, message: String(cause) })),
       )
 
+    /**
+     * A WRITE decodes strictly: an unknown key is refused, not dropped.
+     *
+     * 🔴 **Without this the registry answers success for a write that vanished.** Effect Schema's
+     * default is `onExcessProperty: "ignore"`, so `{introspction: true}` — one transposed letter —
+     * decoded to `{}`, stored `{}`, and returned an `Entry` the caller read as confirmation. Every
+     * struct-codec component had this: `tuning` (ten switches an agent sets by name), `observation`,
+     * `goal`, `plan`, and every component a tool registers. The agent's next read shows the old
+     * value, which reads as "the instance is broken" rather than "I typed it wrong" — the same loop
+     * the self-healing law's unrouted-config-key defect produced (`config-store-write.ts`).
+     *
+     * ⚠️ Deliberately NOT applied to `projectedEntry`'s read path. That value came out of a
+     * kernel-owned store through the definition's own projection, so an excess key there would be a
+     * kernel bug, and failing a READ is how a session becomes unopenable. Refusing bad input and
+     * refusing to show existing state are different promises; only the first is this one.
+     *
+     * ⚠️ It also refuses a key a NEWER build would understand. That is the right direction for a
+     * write — silently discarding half of what an agent asked for is worse than telling it the field
+     * is unknown — and it is the opposite of `ProjectFile.parse`'s deliberate leniency, which exists
+     * so an older build can READ a newer file.
+     */
+    const decodeWrite = (definition: AnyDefinition, value: unknown) =>
+      Schema.decodeUnknownEffect(definition.codec, { errors: "all", onExcessProperty: "error" })(value).pipe(
+        Effect.mapError((cause) => new InvalidValueError({ kind: definition.kind, message: String(cause) })),
+      )
+
     const encodeInput = (definition: AnyDefinition, value: unknown) =>
       Schema.encodeEffect(definition.codec)(value).pipe(
         Effect.mapError((cause) => new InvalidValueError({ kind: definition.kind, message: String(cause) })),
@@ -407,7 +433,7 @@ export const make = (kernelDefinitions: ReadonlyArray<AnyDefinition> = []) =>
       value: unknown
     }) {
       const definition = yield* definitionOf(input.kind)
-      const decoded = yield* decodeInput(definition, input.value)
+      const decoded = yield* decodeWrite(definition, input.value)
       if (definition.validateWrite)
         yield* definition
           .validateWrite({ id: input.id, value: decoded, system: false })
@@ -564,7 +590,7 @@ export const make = (kernelDefinitions: ReadonlyArray<AnyDefinition> = []) =>
       const definition = yield* definitionOf(input.kind)
       const componentID = yield* storedID(definition, input.id)
       yield* assertLifetime(definition, input)
-      const decoded = yield* decodeInput(definition, input.value)
+      const decoded = yield* decodeWrite(definition, input.value)
       if (definition.validateWrite)
         yield* definition
           .validateWrite({ id: input.id, value: decoded, system: input.system === true })

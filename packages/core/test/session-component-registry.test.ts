@@ -92,6 +92,30 @@ describe("SessionComponentRegistry", () => {
       }),
     ))
 
+  test("🔴 a write with an unknown key is REFUSED, not silently dropped", () =>
+    withRegistry([Goal], ({ sessionID }) =>
+      Effect.gen(function* () {
+        const registry = yield* SessionComponentRegistry.Service
+        // Effect Schema's default is `onExcessProperty: "ignore"`, so this used to decode to
+        // `{text: "ship"}`, store it, and hand back an Entry the caller reads as confirmation of
+        // the whole write. On `tuning` — ten switches an agent sets BY NAME — one transposed letter
+        // was a no-op reported as success, and the agent's next read looks like a broken instance
+        // rather than a typo. Both entry points must refuse it.
+        const typo = { text: "ship", tetx: "ship" }
+        const written = yield* registry.put({ sessionID, kind: Goal.kind, value: typo }).pipe(Effect.flip)
+        expect(written).toBeInstanceOf(SessionComponentRegistry.InvalidValueError)
+        const validated = yield* registry.validate({ sessionID, kind: Goal.kind, value: typo }).pipe(Effect.flip)
+        expect(validated).toBeInstanceOf(SessionComponentRegistry.InvalidValueError)
+        // And nothing landed — a refusal that half-wrote would be worse than the silent drop.
+        expect(yield* registry.get({ sessionID, kind: Goal.kind })).toBeUndefined()
+
+        // The negative control: the same value WITHOUT the stray key still writes. Otherwise this
+        // test would pass just as well against a decode that refuses everything.
+        const clean = yield* registry.put({ sessionID, kind: Goal.kind, value: { text: "ship" } })
+        expect(clean.value).toEqual({ text: "ship" })
+      }),
+    ))
+
   test("decodes singleton values on both sides of storage and cascades with the session", () =>
     withRegistry([Goal], ({ sessionID }) =>
       Effect.gen(function* () {
