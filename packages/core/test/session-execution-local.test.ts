@@ -65,6 +65,7 @@ const harness = (input: {
         providerStarted: () => Effect.void,
         providerToolProtocol: () => Effect.void,
         providerSettled: () => Effect.void,
+        servedBy: () => Effect.void,
         providerRecovery: () => Effect.succeed(undefined),
         settle: () => Effect.void,
         recoverFailure: () => Effect.succeed(undefined),

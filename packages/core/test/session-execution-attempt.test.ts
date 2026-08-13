@@ -37,6 +37,7 @@ describe("SessionExecutionAttempt", () => {
         providerStarted: () => Effect.void,
         providerToolProtocol: () => Effect.void,
         providerSettled: () => Effect.void,
+        servedBy: () => Effect.void,
         providerRecovery: () => Effect.succeed(undefined),
       }
       expect(

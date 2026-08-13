@@ -20,6 +20,7 @@ import { Global } from "../../global"
 import { Database } from "../../database/database"
 import { EventV2 } from "../../event"
 import { Location } from "../../location"
+import { ProviderCapability } from "../../provider-capability"
 import { ModelV2 } from "../../model"
 import { ProviderV2 } from "../../provider"
 import { QuestionV2 } from "../../question"
@@ -1226,13 +1227,18 @@ export const layer = Layer.effect(
             if (event.type === "tool-call") sawToolCall = true
             // WHICH process served this turn. A server restarted behind the same URL keeps its
             // address, so this is the only signal that a stored capability verdict describes a
-            // process that is gone. Best-effort: `observeServing` cannot fail, because no capability
-            // record is worth failing a turn for.
+            // process that is gone. `observeServing` cannot fail — no capability record is worth
+            // failing a turn for — while `servedByCurrent` dies like every other attempt write, since
+            // a receipt that omits provenance while looking complete is the worse outcome.
             if (event.type === "finish") {
-              const reported = (event.providerMetadata?.["openai"] as { system_fingerprint?: unknown } | undefined)
-                ?.system_fingerprint
-              if (typeof reported === "string" && reported.length > 0)
+              const reported = ProviderCapability.servingIdentityOf(event.providerMetadata)
+              if (reported !== undefined) {
                 yield* models.observeServing({ providerID: model.provider, id: model.id }, reported)
+                // The same fact serves two readers with opposite lifetimes: the capability store
+                // keeps ONE current verdict per model and discards it on a move, while the receipt
+                // keeps what served THIS attempt forever. Neither can be derived from the other.
+                yield* SessionExecutionAttempt.servedByCurrent(reported)
+              }
             }
             if (
               shouldCheckForSteer({

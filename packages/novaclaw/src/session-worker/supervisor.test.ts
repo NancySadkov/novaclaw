@@ -285,6 +285,7 @@ test("the standard worker keeps execution checkpoints and heartbeats host-owned"
     toolDispatched: (_lease, receipt) =>
       Effect.sync(() => receipts.push(`dispatch:${receipt.callID}:${receipt.sideEffect}`)),
     toolSettled: (_lease, callID) => Effect.sync(() => receipts.push(`settle:${callID}`)),
+    servedBy: (_lease, fingerprint) => Effect.sync(() => receipts.push(`served:${fingerprint}`)),
     heartbeat: () =>
       Effect.sync(() => {
         heartbeats++
@@ -321,7 +322,14 @@ test("the standard worker keeps execution checkpoints and heartbeats host-owned"
   expect(await worker.result).toEqual({ type: "settled" })
   expect(advanced).toEqual(["provider:mark"])
   expect(contextUpdates).toEqual(["context changed"])
-  expect(receipts).toEqual(["dispatch:call_fixture:idempotent-write", "settle:call_fixture"])
+  // 🔴 The serving identity crosses the worker boundary under its own message. Five files carry it
+  // (protocol, client pairing, supervisor admission, bridge, worker facade) and a receipt would be
+  // silently blank on provenance under the worker if any one of them were missed.
+  expect(receipts).toEqual([
+    "dispatch:call_fixture:idempotent-write",
+    "settle:call_fixture",
+    "served:vllm-fixture-a44fe734",
+  ])
   expect(heartbeats).toBeGreaterThan(0)
 })
 

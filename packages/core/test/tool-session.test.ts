@@ -282,6 +282,7 @@ describe("session tool", () => {
             providerStarted: () => Effect.void,
             providerToolProtocol: () => Effect.void,
             providerSettled: () => Effect.void,
+            servedBy: () => Effect.void,
             providerRecovery: () => Effect.succeed(undefined),
           }
           const read = yield* call(registry, sessionID, { op: "read", kind: "observation" }).pipe(

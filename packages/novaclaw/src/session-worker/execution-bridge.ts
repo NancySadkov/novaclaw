@@ -59,6 +59,9 @@ export const handle = Effect.fn("SessionWorkerExecutionBridge.handle")(function*
     case "execution-provider-settled":
       yield* input.attempts.providerSettled(input.lease, input.message.providerAttemptID)
       return reply(input.message, "applied")
+    case "execution-served-by":
+      yield* input.attempts.servedBy(input.lease, input.message.fingerprint)
+      return reply(input.message, "applied")
     case "execution-provider-recovery": {
       const recovery = yield* input.attempts.providerRecovery(input.lease)
       return reply(input.message, "applied", {

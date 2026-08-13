@@ -200,3 +200,81 @@ describe("the task receipt", () => {
     }),
   )
 })
+
+describe("which process served the turns", () => {
+  it.effect('🔴 nothing reported reads as EMPTY, and empty is not "unknown process"', () =>
+    Effect.gen(function* () {
+      // Most wires never carry a serving identity. If a blank field read as anything other than
+      // "nobody said", every receipt from an ordinary provider would look like a provenance gap.
+      const id = SessionSchema.ID.make("ses_served_none")
+      yield* makeSession(id)
+      yield* (yield* SessionExecutionAttempt.Service).start(id, "owner-1")
+
+      const receipt = yield* (yield* SessionReceipt.Service).forSession(id)
+      expect(receipt?.servedBy).toEqual([])
+    }),
+  )
+
+  it.effect("a stable server is recorded ONCE however many turns it answers", () =>
+    Effect.gen(function* () {
+      const id = SessionSchema.ID.make("ses_served_stable")
+      yield* makeSession(id)
+      const attempt = yield* SessionExecutionAttempt.Service
+      const lease = yield* attempt.start(id, "owner-1")
+      for (let turn = 0; turn < 4; turn++) yield* attempt.servedBy(lease, "vllm-0.9.2-a44fe734")
+
+      const receipt = yield* (yield* SessionReceipt.Service).forSession(id)
+      expect(receipt?.servedBy).toEqual(["vllm-0.9.2-a44fe734"])
+    }),
+  )
+
+  it.effect("🔴 an attempt that outlived a restart keeps BOTH, in first-seen order", () =>
+    Effect.gen(function* () {
+      // Collapsing to the last would let the receipt claim one process served a turn another did —
+      // the exact substitution this field exists to make visible.
+      const id = SessionSchema.ID.make("ses_served_moved")
+      yield* makeSession(id)
+      const attempt = yield* SessionExecutionAttempt.Service
+      const lease = yield* attempt.start(id, "owner-1")
+      yield* attempt.servedBy(lease, "before-restart")
+      yield* attempt.servedBy(lease, "after-restart")
+      yield* attempt.servedBy(lease, "before-restart")
+
+      const receipt = yield* (yield* SessionReceipt.Service).forSession(id)
+      expect(receipt?.servedBy).toEqual(["before-restart", "after-restart"])
+    }),
+  )
+
+  it.effect("🔴 a NEW attempt starts blank — provenance is per-attempt, and the row is reused", () =>
+    Effect.gen(function* () {
+      // `session_execution` holds one row per session, overwritten in place. A provenance left
+      // standing across `start` would be attributed to a run that never saw that server.
+      const id = SessionSchema.ID.make("ses_served_reset")
+      yield* makeSession(id)
+      const attempt = yield* SessionExecutionAttempt.Service
+      const first = yield* attempt.start(id, "owner-1")
+      yield* attempt.servedBy(first, "served-the-first-attempt")
+      yield* attempt.start(id, "owner-2")
+
+      const receipt = yield* (yield* SessionReceipt.Service).forSession(id)
+      expect(receipt?.servedBy).toEqual([])
+    }),
+  )
+
+  it.effect("🔴 a SUPERSEDED lease cannot stamp the attempt that replaced it", () =>
+    Effect.gen(function* () {
+      // A worker losing its lease keeps running until it notices. Its late finish event must not
+      // write provenance onto the drain that took over.
+      const id = SessionSchema.ID.make("ses_served_fenced")
+      yield* makeSession(id)
+      const attempt = yield* SessionExecutionAttempt.Service
+      const stale = yield* attempt.start(id, "owner-1")
+      const live = yield* attempt.start(id, "owner-2")
+      yield* attempt.servedBy(stale, "from-the-superseded-worker")
+      yield* attempt.servedBy(live, "from-the-live-drain")
+
+      const receipt = yield* (yield* SessionReceipt.Service).forSession(id)
+      expect(receipt?.servedBy).toEqual(["from-the-live-drain"])
+    }),
+  )
+})

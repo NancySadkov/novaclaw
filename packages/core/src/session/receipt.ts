@@ -5,7 +5,7 @@ import { Context, Effect, Layer } from "effect"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import type { SessionSchema } from "./schema"
-import { SessionExecutionTable, SessionTable, TodoSnapshotTable } from "./sql"
+import { decodeServingIdentities, SessionExecutionTable, SessionTable, TodoSnapshotTable } from "./sql"
 import { SessionQualityCheckTable } from "./quality-check.sql"
 
 /**
@@ -15,10 +15,13 @@ import { SessionQualityCheckTable } from "./quality-check.sql"
  * or calibrate but never promote.* So every field here is READ from a table that something else
  * wrote as it happened. Nothing is inferred, and nothing is asked of a model.
  *
- * ⚠️ This is the relational subset, not the whole of V1. Three of the inventory's inputs are still
- * absent — tools/effects, file versions and serving provenance — because they live inside message
- * JSON rather than in a column, and extracting them is its own piece of work. They are absent rather
- * than stubbed: a receipt field that always says "unknown" trains its reader to skip the receipt.
+ * ⚠️ This is the relational subset, not the whole of V1. Two of the inventory's inputs are still
+ * absent — tools/effects and file versions — because they live inside message JSON rather than in a
+ * column, and extracting them is its own piece of work. They are absent rather than stubbed: a
+ * receipt field that always says "unknown" trains its reader to skip the receipt.
+ *
+ * Serving provenance was the third and is now a column (`servedBy`), written by the drain from what
+ * the responses themselves reported.
  */
 
 /** One run of one quality check. Never per definition — the same label runs many times in a drain. */
@@ -53,6 +56,20 @@ export interface Receipt {
   readonly declaredPlan: readonly PlanItem[]
   readonly checks: readonly Check[]
   /**
+   * WHICH serving processes answered this attempt's turns, in first-seen order.
+   *
+   * The model name on a turn is the alias the config asked for; this is what the endpoint said
+   * about ITSELF (`system_fingerprint`). It is what distinguishes two runs of the same alias
+   * against a server that was restarted or repointed in between.
+   *
+   * ⚠️ EMPTY is the common case and does not mean "unknown process" — it means no response
+   * reported an identity, which is true of every wire that does not carry the field.
+   *
+   * ⚠️ More than one entry is not a fault: it says the attempt outlived a change of server. That
+   * is a fact about the run, and the receipt is the place it belongs.
+   */
+  readonly servedBy: readonly string[]
+  /**
    * Sessions this one spawned. Ordinary sessions with `parent_id` set — the inventory's *children*.
    *
    * ⚠️ Ids only, not their receipts. A receipt that inlined its children's receipts would recurse to
@@ -84,6 +101,7 @@ export const layer = Layer.effect(
           generation: SessionExecutionTable.generation,
           state: SessionExecutionTable.state,
           startedAt: SessionExecutionTable.started_at,
+          servedBy: SessionExecutionTable.served_by,
         })
         .from(SessionExecutionTable)
         .where(eq(SessionExecutionTable.session_id, sessionID))
@@ -154,6 +172,7 @@ export const layer = Layer.effect(
         startedAt: attempt.startedAt,
         declaredPlan,
         checks: checks.map((row) => ({ ...row, timedOut: Boolean(row.timedOut) })),
+        servedBy: decodeServingIdentities(attempt.servedBy),
         children: children.map((row) => row.id),
       } satisfies Receipt
     })

@@ -2481,6 +2481,16 @@
       "table": "session_execution"
     },
     {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "served_by",
+      "entityType": "columns",
+      "table": "session_execution"
+    },
+    {
       "type": "integer",
       "notNull": true,
       "autoincrement": false,

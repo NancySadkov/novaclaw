@@ -320,6 +320,7 @@ export function spawn(input: Input): Handle {
       case "execution-provider-tool-protocol":
       case "execution-provider-settled":
       case "execution-provider-recovery":
+      case "execution-served-by":
       case "execution-context-updated": {
         if (!ready) {
           finish({ type: "protocol-error", detail: "execution request arrived before ready" })

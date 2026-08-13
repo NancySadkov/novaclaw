@@ -43,6 +43,11 @@ export const Info = Schema.Struct({
   /** The plan as DECLARED, frozen when the attempt opened — never the live list. */
   declaredPlan: Schema.Array(PlanItem),
   checks: Schema.Array(Check),
+  /**
+   * The serving processes that answered this attempt (`system_fingerprint`), first-seen order.
+   * ⚠️ Empty means no response reported one — never "unknown process".
+   */
+  servedBy: Schema.Array(Schema.String),
   /** Spawned sessions, by id. Their receipts are separate reads, deliberately — see the composer. */
   children: Schema.Array(Schema.String),
 }).annotate({ identifier: "SessionReceipt.Info" })

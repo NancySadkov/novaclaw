@@ -5,7 +5,13 @@ import { Context, DateTime, Effect, Layer, Option } from "effect"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { SessionSchema } from "./schema"
-import { SessionExecutionTable, TodoSnapshotTable, TodoTable } from "./sql"
+import {
+  decodeServingIdentities,
+  encodeServingIdentities,
+  SessionExecutionTable,
+  TodoSnapshotTable,
+  TodoTable,
+} from "./sql"
 import { SessionRecoveryDecision } from "./recovery-decision"
 import { SessionProviderRecovery } from "@novaclaw/schema/session-provider-recovery"
 import { SystemContext } from "../system-context/index"
@@ -56,6 +62,17 @@ export interface Interface {
   readonly providerToolProtocol: (lease: Lease) => Effect.Effect<void>
   readonly providerSettled: (lease: Lease, providerAttemptID: string) => Effect.Effect<void>
   readonly providerRecovery: (lease: Lease) => Effect.Effect<SessionProviderRecovery.Info | undefined>
+  /**
+   * Records that a serving process answered a turn of this attempt — append-if-new.
+   *
+   * Accumulating HERE rather than in each caller is deliberate: the drain and the worker bridge
+   * are two runtimes reaching the same row, and a de-duplication rule implemented twice is one
+   * that can be right in-process and wrong under the worker.
+   *
+   * An attempt that outlives a server restart legitimately holds more than one identity;
+   * collapsing to the last would let a receipt claim one process served a turn another did.
+   */
+  readonly servedBy: (lease: Lease, fingerprint: string) => Effect.Effect<void>
   readonly settle: (
     lease: Lease,
     state: "settled" | "failed" | "interrupted",
@@ -96,6 +113,14 @@ export interface CurrentInterface {
   readonly providerToolProtocol: () => Effect.Effect<void>
   readonly providerSettled: (providerAttemptID: string) => Effect.Effect<void>
   readonly providerRecovery: () => Effect.Effect<SessionProviderRecovery.Info | undefined>
+  /**
+   * One turn reported the process that served it.
+   *
+   * ⚠️ Required, not optional like `contextUpdated`. Optional would let a runtime that
+   * forgets to supply it produce receipts that are silently blank on provenance — and a
+   * blank field is indistinguishable from an endpoint that reports no identity.
+   */
+  readonly servedBy: (fingerprint: string) => Effect.Effect<void>
   readonly contextUpdated?: (input: ContextUpdate) => Effect.Effect<void>
 }
 
@@ -161,6 +186,19 @@ export const providerStartedCurrent = (recovery: SessionProviderRecovery.Info) =
 export const providerToolProtocolCurrent = () => useCurrent((current) => current.providerToolProtocol(), undefined)
 export const providerSettledCurrent = (providerAttemptID: string) =>
   useCurrent((current) => current.providerSettled(providerAttemptID), undefined)
+/**
+ * Records the process that served a turn, from the runner's finish event.
+ *
+ * ⚠️ NOT swallowed on failure — it dies like every other attempt write, because a `session_execution`
+ * write that cannot land means the drain has lost the database it is also writing messages to. The
+ * softer-looking alternative is worse: a receipt that silently omits provenance while presenting
+ * itself as complete is the failure the whole receipt programme exists to prevent.
+ *
+ * Absent `Current` (narrow unit tests, migrations) it does nothing, like its siblings here.
+ */
+export const servedByCurrent = (fingerprint: string) =>
+  useCurrent((current) => current.servedBy(fingerprint), undefined)
+
 export const providerRecoveryCurrent = () =>
   useCurrent((current) => current.providerRecovery(), undefined as SessionProviderRecovery.Info | undefined)
 
@@ -240,6 +278,9 @@ export const layer = Layer.effect(
                       phase: "drain",
                       failure_class: null,
                       failure_detail: null,
+                      // Per-ATTEMPT, like the tool columns below: the row is overwritten in place, so a
+                      // provenance left standing here would be attributed to a run it never served.
+                      served_by: null,
                       heartbeat_at: now,
                       checkpoint_at: null,
                       tool_call_id: null,
@@ -401,6 +442,41 @@ export const layer = Layer.effect(
             ),
           )
           .run()
+          .pipe(Effect.orDie)
+      }),
+      servedBy: Effect.fn("SessionExecutionAttempt.servedBy")(function* (lease, fingerprint) {
+        yield* db
+          .transaction(
+            (tx) =>
+              Effect.gen(function* () {
+                // Fenced on the WHOLE lease, like every other write here: a superseded owner
+                // must not stamp its provenance onto the attempt that replaced it.
+                const fence = and(
+                  eq(SessionExecutionTable.session_id, lease.sessionID),
+                  eq(SessionExecutionTable.attempt_id, lease.attemptID),
+                  eq(SessionExecutionTable.generation, lease.generation),
+                )
+                const row = yield* tx
+                  .select({ servedBy: SessionExecutionTable.served_by })
+                  .from(SessionExecutionTable)
+                  .where(fence)
+                  .get()
+                if (!row) return
+                const seen = decodeServingIdentities(row.servedBy)
+                // A stable server reports the same identity every turn, so this is the usual
+                // path: read, recognise, write nothing.
+                if (seen.includes(fingerprint)) return
+                yield* tx
+                  .update(SessionExecutionTable)
+                  .set({
+                    served_by: encodeServingIdentities([...seen, fingerprint]),
+                    time_updated: Date.now(),
+                  })
+                  .where(fence)
+                  .run()
+              }),
+            { behavior: "immediate" },
+          )
           .pipe(Effect.orDie)
       }),
       providerToolProtocol: Effect.fn("SessionExecutionAttempt.providerToolProtocol")(function* (lease) {

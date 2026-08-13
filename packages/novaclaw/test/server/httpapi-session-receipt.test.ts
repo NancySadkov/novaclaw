@@ -79,7 +79,9 @@ describe("GET /api/session/:id/receipt", () => {
         .run()
         .pipe(Effect.orDie)
 
-      const lease = yield* (yield* SessionExecutionAttempt.Service).start(id, "owner-http")
+      const attempts = yield* SessionExecutionAttempt.Service
+      const lease = yield* attempts.start(id, "owner-http")
+      yield* attempts.servedBy(lease, "vllm-0.9.2-a44fe734")
       yield* db
         .insert(SessionQualityCheckTable)
         .values({
@@ -109,6 +111,10 @@ describe("GET /api/session/:id/receipt", () => {
       expect(checks.map((check) => check.label)).toEqual(["typecheck"])
       expect(checks[0]?.command).toBe("bun run typecheck")
       expect(checks[0]?.exitCode).toBeNull()
+      // 🔴 Only THIS level can catch it: a field the success schema does not declare is dropped from
+      // the response body, and the composer's own tests pass either way. Serving provenance would
+      // then be present in the database, correct in every unit test, and invisible to every caller.
+      expect(body.data["servedBy"]).toEqual(["vllm-0.9.2-a44fe734"])
     }),
   )
 })

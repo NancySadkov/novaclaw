@@ -74,6 +74,7 @@ export const layer = Layer.effect(
                 providerToolProtocol: () => attempts.providerToolProtocol(lease),
                 providerSettled: (providerAttemptID) => attempts.providerSettled(lease, providerAttemptID),
                 providerRecovery: () => attempts.providerRecovery(lease),
+                servedBy: (fingerprint) => attempts.servedBy(lease, fingerprint),
               }),
               Effect.provide(located),
               Effect.tapCause((cause) =>

@@ -18,6 +18,7 @@ const current = (attemptID: string, generation = 1): SessionExecutionAttempt.Cur
   providerStarted: () => Effect.void,
   providerToolProtocol: () => Effect.void,
   providerSettled: () => Effect.void,
+  servedBy: () => Effect.void,
   providerRecovery: () => Effect.succeed(undefined),
 })
 

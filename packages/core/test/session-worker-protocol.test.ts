@@ -186,6 +186,19 @@ describe("SessionWorkerProtocol", () => {
       message: applied,
     })
 
+    // A serving identity crosses the worker boundary as its own message: the host owns the
+    // accumulation, so a worker cannot shorten a receipt's provenance by sending a list.
+    const servedBy = {
+      ...identity,
+      type: "execution-served-by" as const,
+      requestID: "rpc_served",
+      fingerprint: "vllm-0.9.2-a44fe734",
+    }
+    expect(SessionWorkerProtocol.decodeWorkerLine(SessionWorkerProtocol.encodeLine(servedBy).trimEnd())).toEqual({
+      ok: true,
+      message: servedBy,
+    })
+
     const contextUpdated = {
       ...identity,
       type: "execution-context-updated" as const,

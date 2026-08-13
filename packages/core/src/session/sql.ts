@@ -98,6 +98,32 @@ export const SessionTable = sqliteTable(
 // conditional on (attempt_id, generation), so a late worker cannot publish itself healthy or idle
 // after the host has fenced it. Attempt history belongs in structured logs; this table is the small,
 // authoritative recovery fact queried at boot and by Processes.
+/**
+ * `session_execution.served_by` holds a JSON array of serving identities, first-seen order.
+ *
+ * JSON rather than a delimiter because a fingerprint is an opaque vendor string — vLLM's carries
+ * dashes and hex, and any separator chosen here is one some future server is free to emit.
+ *
+ * The codec sits beside the column rather than with either user: the drain writes it and the receipt
+ * reads it, and a format owned by neither is a format that can drift on one side only.
+ */
+export const encodeServingIdentities = (identities: ReadonlyArray<string>): string => JSON.stringify(identities)
+
+/**
+ * ⚠️ Unreadable reads as EMPTY, never as an error. A receipt is evidence about a run that already
+ * happened; refusing to compose it over one malformed provenance field would withhold the checks,
+ * the plan and the terminal state — the fields a reader actually came for.
+ */
+export const decodeServingIdentities = (raw: string | null | undefined): ReadonlyArray<string> => {
+  if (raw === null || raw === undefined || raw.length === 0) return []
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === "string") : []
+  } catch {
+    return []
+  }
+}
+
 export const SessionExecutionTable = sqliteTable(
   "session_execution",
   {
@@ -114,6 +140,17 @@ export const SessionExecutionTable = sqliteTable(
     phase: text().$type<"drain" | "provider" | "tool" | "maintenance">().notNull(),
     failure_class: text(),
     failure_detail: text(),
+    /**
+     * WHICH serving process produced this attempt's turns (the response's `system_fingerprint`).
+     *
+     * A receipt says what happened; without this it cannot say what ANSWERED. The model name is the
+     * alias the config asked for, so an alias repointed at different weights — or a server restarted
+     * behind the same URL — leaves every receipt before and after identical.
+     *
+     * Nullable and expected to be null in most installs: only some wires report an identity at all.
+     * Absent means "not reported", never "unknown process".
+     */
+    served_by: text(),
     failure_count: integer().notNull().default(0),
     heartbeat_at: integer().notNull(),
     checkpoint_at: integer(),

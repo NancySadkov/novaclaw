@@ -35720,6 +35720,12 @@
               "$ref": "#/components/schemas/SessionReceiptCheck"
             }
           },
+          "servedBy": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "children": {
             "type": "array",
             "items": {
@@ -35727,7 +35733,7 @@
             }
           }
         },
-        "required": ["attemptID", "generation", "state", "startedAt", "declaredPlan", "checks", "children"],
+        "required": ["attemptID", "generation", "state", "startedAt", "declaredPlan", "checks", "servedBy", "children"],
         "additionalProperties": false
       },
       "PromptInputFileAttachment": {

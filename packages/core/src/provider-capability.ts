@@ -336,6 +336,28 @@ export const report = (outcomes: Readonly<Record<Capability, Outcome>>): Report 
 })
 
 /**
+ * WHICH serving process answered, read off a finished turn's provider metadata.
+ *
+ * `system_fingerprint` is the only serving identity on an OpenAI-compatible wire: vLLM fills it with
+ * its build plus a per-process suffix, so it is stable across calls to one server and differs
+ * between two servers of the same build. That makes it the one signal that a URL now points at a
+ * different process — the case a stored capability verdict cannot otherwise notice.
+ *
+ * ⚠️ Lives here rather than inline in the runner because the runner's stream loop is not driven by
+ * any test: a namespace key or a field name that quietly changed would be caught by nothing. Kept
+ * pure and exported so the reading is checked even though its two callers are glue.
+ *
+ * ⚠️ The `openai` namespace regardless of vendor — it is the decoder that names the key, and every
+ * protocol in the OpenAI-compatible family decodes through the same one.
+ */
+export const servingIdentityOf = (metadata: Readonly<Record<string, unknown>> | undefined): string | undefined => {
+  const reported = (metadata?.["openai"] as { system_fingerprint?: unknown } | undefined)?.system_fingerprint
+  // An empty string is not an identity. Some servers send `""` when they have nothing to report, and
+  // recording it would make every such turn look like a MOVE away from the real one.
+  return typeof reported === "string" && reported.length > 0 ? reported : undefined
+}
+
+/**
  * What a stored verdict is ABOUT. A change to any of it invalidates the evidence.
  *
  * ⚠️ The template is in here because it is the thing that changes under you. A server reloaded with

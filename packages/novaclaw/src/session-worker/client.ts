@@ -22,6 +22,7 @@ export type Request = Extract<
       | "execution-provider-tool-protocol"
       | "execution-provider-settled"
       | "execution-provider-recovery"
+      | "execution-served-by"
       | "execution-context-updated"
   }
 >
@@ -60,6 +61,7 @@ const replyTypes: Record<Request["type"], ReadonlySet<Reply["type"]>> = {
   "execution-provider-tool-protocol": new Set(["execution-result"]),
   "execution-provider-settled": new Set(["execution-result"]),
   "execution-provider-recovery": new Set(["execution-result"]),
+  "execution-served-by": new Set(["execution-result"]),
   "execution-context-updated": new Set(["execution-result"]),
 }
 

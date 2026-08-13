@@ -391,6 +391,7 @@ export default {
           \`phase\` text NOT NULL,
           \`failure_class\` text,
           \`failure_detail\` text,
+          \`served_by\` text,
           \`failure_count\` integer DEFAULT 0 NOT NULL,
           \`heartbeat_at\` integer NOT NULL,
           \`checkpoint_at\` integer,

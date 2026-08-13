@@ -209,6 +209,10 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
             providerAttemptID,
           }),
         ).pipe(Effect.asVoid),
+      servedBy: (fingerprint) =>
+        Effect.promise(() =>
+          execution({ ...identity, type: "execution-served-by", requestID: requestID(), fingerprint }),
+        ).pipe(Effect.asVoid),
       providerRecovery: () =>
         Effect.promise(async () => {
           const reply = await execution({

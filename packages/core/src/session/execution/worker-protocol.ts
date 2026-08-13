@@ -330,6 +330,17 @@ export const ExecutionProviderSettled = Schema.Struct({
   type: Schema.Literal("execution-provider-settled"),
   providerAttemptID: Schema.String,
 }).annotate({ identifier: "SessionWorker.ExecutionProviderSettled" })
+/**
+ * WHICH serving process answered a turn, reported once per distinct identity per attempt.
+ *
+ * One identity per message rather than the accumulated list: the host owns the accumulation, so
+ * a worker cannot shorten a receipt's provenance by sending a list that forgot an entry.
+ */
+export const ExecutionServedBy = Schema.Struct({
+  ...ExecutionRequestBase,
+  type: Schema.Literal("execution-served-by"),
+  fingerprint: Schema.String,
+}).annotate({ identifier: "SessionWorker.ExecutionServedBy" })
 export const ExecutionProviderRecovery = Schema.Struct({
   ...ExecutionRequestBase,
   type: Schema.Literal("execution-provider-recovery"),
@@ -350,6 +361,7 @@ export type ExecutionRequest =
   | typeof ExecutionProviderToolProtocol.Type
   | typeof ExecutionProviderSettled.Type
   | typeof ExecutionProviderRecovery.Type
+  | typeof ExecutionServedBy.Type
   | typeof ExecutionContextUpdated.Type
 
 export const WorkerMessage = Schema.Union([
@@ -372,6 +384,7 @@ export const WorkerMessage = Schema.Union([
   ExecutionProviderToolProtocol,
   ExecutionProviderSettled,
   ExecutionProviderRecovery,
+  ExecutionServedBy,
   ExecutionContextUpdated,
 ]).annotate({ identifier: "SessionWorker.WorkerMessage" })
 export type WorkerMessage = typeof WorkerMessage.Type

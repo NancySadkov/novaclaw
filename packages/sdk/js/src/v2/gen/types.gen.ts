@@ -4521,6 +4521,7 @@ export type SessionReceiptInfo = {
   startedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   declaredPlan: Array<SessionReceiptPlanItem>
   checks: Array<SessionReceiptCheck>
+  servedBy: Array<string>
   children: Array<string>
 }
 

@@ -28,6 +28,7 @@ await SessionWorkerEntrypoint.run({
       )
       await Effect.runPromise(context.capabilities.execution.toolSettled("call_fixture"))
       await Effect.runPromise(context.capabilities.execution.advance("provider", "mark"))
+      await Effect.runPromise(context.capabilities.execution.servedBy("vllm-fixture-a44fe734"))
       await Effect.runPromise(
         context.capabilities.execution.contextUpdated!({
           messageID: SessionMessage.ID.create(),

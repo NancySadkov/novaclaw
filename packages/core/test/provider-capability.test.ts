@@ -248,3 +248,25 @@ describe("the fingerprint", () => {
     expect(a).toBe(b)
   })
 })
+
+describe("reading the serving identity off a finished turn", () => {
+  test("the `openai` namespace's `system_fingerprint` is the identity", () => {
+    expect(ProviderCapability.servingIdentityOf({ openai: { system_fingerprint: "vllm-0.9.2-a44fe734" } })).toBe(
+      "vllm-0.9.2-a44fe734",
+    )
+  })
+
+  test("🔴 an EMPTY string is not an identity", () => {
+    // Some servers send `""` when they have nothing to report. Recording it would make every such
+    // turn read as a MOVE away from whatever real identity was seen before it.
+    expect(ProviderCapability.servingIdentityOf({ openai: { system_fingerprint: "" } })).toBeUndefined()
+  })
+
+  test("absent metadata, another vendor's namespace, and a non-string all read as nothing", () => {
+    expect(ProviderCapability.servingIdentityOf(undefined)).toBeUndefined()
+    expect(ProviderCapability.servingIdentityOf({})).toBeUndefined()
+    expect(ProviderCapability.servingIdentityOf({ anthropic: { system_fingerprint: "x" } })).toBeUndefined()
+    expect(ProviderCapability.servingIdentityOf({ openai: { system_fingerprint: 42 } })).toBeUndefined()
+    expect(ProviderCapability.servingIdentityOf({ openai: {} })).toBeUndefined()
+  })
+})
