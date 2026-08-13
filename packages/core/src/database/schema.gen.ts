@@ -494,6 +494,18 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`todo_snapshot\` (
+          \`attempt_id\` text NOT NULL,
+          \`content\` text NOT NULL,
+          \`status\` text NOT NULL,
+          \`priority\` text NOT NULL,
+          \`position\` integer NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL,
+          CONSTRAINT \`todo_snapshot_pk\` PRIMARY KEY(\`attempt_id\`, \`position\`)
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`todo\` (
           \`session_id\` text NOT NULL,
           \`content\` text NOT NULL,
@@ -592,6 +604,7 @@ export default {
       yield* tx.run(`CREATE INDEX \`session_workspace_idx\` ON \`session\` (\`workspace_id\`);`)
       yield* tx.run(`CREATE INDEX \`session_parent_idx\` ON \`session\` (\`parent_id\`);`)
       yield* tx.run(`CREATE INDEX \`session_tag_tag_idx\` ON \`session_tag\` (\`tag\`);`)
+      yield* tx.run(`CREATE INDEX \`todo_snapshot_attempt_idx\` ON \`todo_snapshot\` (\`attempt_id\`);`)
       yield* tx.run(`CREATE INDEX \`todo_session_idx\` ON \`todo\` (\`session_id\`);`)
       yield* tx.run(`CREATE INDEX \`tool_catalogue_scope_server_idx\` ON \`tool_catalogue\` (\`scope\`,\`server\`);`)
     })

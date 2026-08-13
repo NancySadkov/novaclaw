@@ -90,5 +90,6 @@ export const migrations = (
     import("./migration/20260810005722_add_session_memory"),
     import("./migration/20260810014020_add_session_short_chat"),
     import("./migration/20260812165955_add_session_quality_check"),
+    import("./migration/20260813001757_add_todo_snapshot"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

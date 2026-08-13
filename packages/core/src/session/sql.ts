@@ -189,7 +189,40 @@ export const TodoTable = sqliteTable(
   ],
 )
 
+/**
+ * The declared plan, FROZEN at the moment an execution attempt opened.
+ *
+ * `todo/verified-autonomy.md` V1: a task receipt carries the *declared plan*, and its only source is
+ * `TodoTable` — which is per SESSION and mutable. A receipt pointing at the live list is not
+ * order-stable: the model reorders and completes items while the attempt runs, so by the time anyone
+ * reads the receipt, the "plan" it names is the plan as it ENDED, not as it was declared.
+ *
+ * ⚠️ Keyed on `attempt_id`, not on the session — that is the fence recovery already uses. Two
+ * attempts of one session have two plans, and a receipt for the first must not show the second's.
+ *
+ * ⚠️ No foreign key to `session_execution.attempt_id`, deliberately. That column is overwritten in
+ * place on the next attempt (`onConflictDoUpdate` on `session_id`), so a reference would either
+ * cascade the older attempt's plan away or block the update — and the whole point of this table is
+ * that the older attempt's plan SURVIVES its attempt.
+ */
+export const TodoSnapshotTable = sqliteTable(
+  "todo_snapshot",
+  {
+    attempt_id: text().notNull(),
+    content: text().notNull(),
+    status: text().notNull(),
+    priority: text().notNull(),
+    position: integer().notNull(),
+    ...Timestamps,
+  },
+  (table) => [
+    primaryKey({ columns: [table.attempt_id, table.position] }),
+    index("todo_snapshot_attempt_idx").on(table.attempt_id),
+  ],
+)
+
 // The ECS tag component on the session entity (notes/entities.md T0): a sparse two-column store —
+
 // organization over chat processes lives here, never as structure on the session row itself.
 export const SessionTagTable = sqliteTable(
   "session_tag",

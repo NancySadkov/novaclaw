@@ -5,7 +5,7 @@ import { Context, DateTime, Effect, Layer, Option } from "effect"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { SessionSchema } from "./schema"
-import { SessionExecutionTable } from "./sql"
+import { SessionExecutionTable, TodoSnapshotTable, TodoTable } from "./sql"
 import { SessionRecoveryDecision } from "./recovery-decision"
 import { SessionProviderRecovery } from "@novaclaw/schema/session-provider-recovery"
 import { SystemContext } from "../system-context/index"
@@ -251,6 +251,49 @@ export const layer = Layer.effect(
                     },
                   })
                   .run()
+                /**
+                 * Freeze the declared plan for THIS attempt (`todo/verified-autonomy.md` V1).
+                 *
+                 * 🔴 In the SAME transaction that opens the attempt, and that is the whole
+                 * correctness argument. The `todo` list is per SESSION and the model edits it while
+                 * the attempt runs, so a snapshot taken a moment later is already a different plan —
+                 * a receipt would then name the plan as it ENDED and call it what was declared.
+                 *
+                 * ⚠️ Ordered by `position`, and the copy preserves it, because a plan whose steps
+                 * come back in storage order is not a plan.
+                 */
+                const declared = yield* tx
+                  .select({
+                    content: TodoTable.content,
+                    status: TodoTable.status,
+                    priority: TodoTable.priority,
+                    position: TodoTable.position,
+                  })
+                  .from(TodoTable)
+                  .where(eq(TodoTable.session_id, sessionID))
+                  .orderBy(TodoTable.position)
+                  .all()
+                if (declared.length > 0)
+                  yield* tx
+                    .insert(TodoSnapshotTable)
+                    .values(
+                      declared.map((item) => ({
+                        attempt_id: attemptID,
+                        content: item.content,
+                        status: item.status,
+                        priority: item.priority,
+                        position: item.position,
+                        time_created: now,
+                        time_updated: now,
+                      })),
+                    )
+                    // An attempt id is fresh per attempt, so a conflict means a RETRY of the same
+                    // open — take the newer read rather than failing the attempt over bookkeeping.
+                    .onConflictDoUpdate({
+                      target: [TodoSnapshotTable.attempt_id, TodoSnapshotTable.position],
+                      set: { content: sql`excluded.content`, status: sql`excluded.status` },
+                    })
+                    .run()
                 return { sessionID, attemptID, generation, ownerID }
               }),
             { behavior: "immediate" },
