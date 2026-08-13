@@ -3,6 +3,7 @@ export * as SessionEffectiveConfig from "./effective-config"
 import { Context, Effect, Layer } from "effect"
 import { ProjectFile } from "@novaclaw/schema/project-file"
 import { makeGlobalNode } from "../effect/app-node"
+import { MemorySetting } from "../kb-graph/memory-setting"
 import { ProjectFileCache } from "../project-file-cache"
 import { EFFECTIVE_CONFIG_DEFAULTS, resolveSessionConfig, type EffectiveConfig } from "./config-resolve"
 import { ProjectDefaults } from "./project-defaults"
@@ -56,6 +57,40 @@ export interface Resolution {
   readonly project?: { readonly root: string; readonly file: string }
 }
 
+/**
+ * Instance CEILINGS, applied after the chain resolves.
+ *
+ * 🔴 **A ceiling clamps down and never up.** The chain's job is to say what a session asked for; a
+ * ceiling says what the instance permits, and the two are different questions. `memory` is the case
+ * that forced it: the user's Memory switch in Settings is a PRIVACY choice, so a session — or a
+ * `novaclaw.json` in a folder they cloned — asking `memory: true` must not turn recording back on.
+ *
+ * ⚠️ It lives HERE rather than at the readers, and that is the whole change. All three readers ANDed
+ * `MemorySetting.memoryEnabled()` into their own expression, so the ceiling held only for as long as
+ * every one of them remembered to; a fourth reader would have been off by omission, silently, and
+ * "memory is off" would have been true of the parts of the system that asked and false of the part
+ * that forgot. Clamping the resolution makes the answer the same everywhere by construction — and
+ * makes the introspection view report `memory: false` instead of showing a stance nothing honours.
+ *
+ * ⚠️ It is applied to the RESOLVED config, not folded into the defaults, because a default is what
+ * an absent value means while a ceiling overrides a present one. Folding it under the chain would
+ * let an explicit `true` climb straight back over it.
+ */
+export interface Ceilings {
+  /** The user's Memory privacy switch (Settings → Memory). Off caps every session at off. */
+  readonly memory: boolean
+}
+
+/**
+ * Exported with the ceiling values INJECTED so the rule is testable without a settings database.
+ * `MemorySetting.memoryEnabled()` is a synchronous sqlite read against the instance's real path; a
+ * test that had to flip it would be testing the settings store, not this clamp.
+ */
+export const clampToCeilings = (config: EffectiveConfig, ceilings: Ceilings): EffectiveConfig =>
+  ceilings.memory ? config : { ...config, memory: false }
+
+const currentCeilings = (): Ceilings => ({ memory: MemorySetting.memoryEnabled() })
+
 export interface Interface {
   /** The full resolution, including where the folder layer came from and what it could not do. */
   readonly resolution: (sessionID: SessionSchema.ID) => Effect.Effect<Resolution>
@@ -78,8 +113,9 @@ export const layer = Layer.effect(
       // result identical to what the readers computed before, for a session that vanished mid-turn.
       const found = session ? yield* projects.read(session.location.directory) : ProjectFileCache.EMPTY
       const folded = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, found.tune)
-      const config = yield* resolveSessionConfig(folded.defaults, sessionID, (id) =>
-        sessions.get(id as SessionSchema.ID),
+      const config = clampToCeilings(
+        yield* resolveSessionConfig(folded.defaults, sessionID, (id) => sessions.get(id as SessionSchema.ID)),
+        currentCeilings(),
       )
       return {
         config,

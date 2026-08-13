@@ -919,8 +919,9 @@ export const layer = Layer.effect(
       if (
         recallQuery !== undefined &&
         !ShortChat.enabled(config.shortChat) &&
-        stanceOf("memory", config.memory) &&
-        MemorySetting.memoryEnabled()
+        // ⚠️ No `MemorySetting.memoryEnabled()` here any more: the instance ceiling is applied
+        // when the config resolves, so a reader that forgets it can no longer be off by omission.
+        stanceOf("memory", config.memory)
       ) {
         // The VECTOR leg: one short embedding of the recall query lets the engine fuse vector KNN with
         // FTS (measured 85% vs 77% keyword-only). Bounded + degrading — no device, unreachable, or slow

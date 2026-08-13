@@ -165,7 +165,8 @@ export const layer = Layer.effectDiscard(
                 // that stood down while extraction kept writing would be "memory off" for half the
                 // system.
                 const sessionConfig = yield* effective.resolve(context.sessionID)
-                if (!stanceOf("memory", sessionConfig.memory) || !MemorySetting.memoryEnabled())
+                // The resolved value already carries the instance ceiling.
+                if (!stanceOf("memory", sessionConfig.memory))
                   return {
                     ok: false,
                     message:

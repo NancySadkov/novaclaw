@@ -59,21 +59,28 @@ describe("SessionExtract durable-memory origin policy", () => {
     expect(end).toBeGreaterThan(start)
     const body = source.slice(start, end)
     const gate = body.indexOf("SessionExtract.allowsDurableMemory(config.type)")
-    const chatGate = body.indexOf("config.memory === false || !MemorySetting.memoryEnabled()")
+    // ⚠️ The per-chat gate lost its `&& MemorySetting.memoryEnabled()` on 2026-08-13, and that is a
+    // STRENGTHENING rather than a removal: the instance ceiling is applied when the config resolves
+    // (`session/effective-config.ts`), so `config.memory` already carries it and a reader cannot be
+    // off by omission. What this ledger now pins is that the gate still runs, and still runs BEFORE
+    // any engine or model work.
+    const chatGate = body.indexOf('!stanceOf("memory", config.memory)')
     expect(gate).toBeGreaterThan(0)
     expect(chatGate).toBeGreaterThan(gate)
     expect(chatGate).toBeLessThan(body.indexOf("memory.health()"))
     expect(chatGate).toBeLessThan(body.indexOf(".stream("))
     expect(gate).toBeLessThan(body.indexOf("memory.health()"))
     expect(gate).toBeLessThan(body.indexOf(".stream("))
-    expect(body).toContain("resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, session.id")
+    // Resolved through the ONE entry point, which is where the folder layer and the ceiling are
+    // applied — a bare chain walk here would see neither.
+    expect(body).toContain("effective.resolve(session.id)")
   })
 
   test("the provider runner gates recall before embedding, search, or reranking", () => {
     const source = readFileSync(path.join(import.meta.dir, "../src/session/runner/llm.ts"), "utf8")
     const gate = source.indexOf("recallQuery !== undefined &&")
     const shortChatGate = source.indexOf("!ShortChat.enabled(config.shortChat)", gate)
-    const memoryGate = source.indexOf("config.memory !== false", gate)
+    const memoryGate = source.indexOf('stanceOf("memory", config.memory)', gate)
     expect(gate).toBeGreaterThan(0)
     expect(shortChatGate).toBeGreaterThan(gate)
     expect(memoryGate).toBeGreaterThan(shortChatGate)

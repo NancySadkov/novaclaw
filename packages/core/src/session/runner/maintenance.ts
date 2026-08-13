@@ -227,8 +227,8 @@ export const layer = Layer.effect(
       const session = yield* getSession(sessionID)
       const config = yield* effective.resolve(session.id)
       if (!SessionExtract.allowsDurableMemory(config.type)) return
-      if (ShortChat.enabled(config.shortChat) || !stanceOf("memory", config.memory) || !MemorySetting.memoryEnabled())
-        return
+      // `memory` already carries the instance ceiling (`session/effective-config.ts`).
+      if (ShortChat.enabled(config.shortChat) || !stanceOf("memory", config.memory)) return
       if (!(yield* memory.health())) return
       const exchange = SessionExtract.buildExchange(yield* getContext(sessionID))
       if (!exchange) return
