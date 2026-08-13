@@ -31,6 +31,60 @@ import { Permission } from "./permission"
  */
 export const VERSION = 1
 
+/**
+ * The per-chat Tune a folder starts its sessions with — the composer's Tuning panel, persisted.
+ *
+ * ⚠️ **Not `config.context`.** Two different controls are called "Tune": the composer's per-chat
+ * panel (thread mode + the harness-helper switches) and Settings → Tunes (the instance-wide context
+ * budget). `todo/projects.md` means the FIRST — "a fresh chat in the folder starts with its Tune" is
+ * a statement about a new session's stance, not about the instance's token shares. The section was
+ * left untyped until this was settled; it is settled now.
+ *
+ * ⚠️ Every field optional, and ABSENT MEANS INHERIT — never "off". That is the same sparse-override
+ * discipline `resolveSessionConfig` runs on (`architecture.md`'s ECS lens: only divergent values
+ * create rows). A file that listed every switch would freeze this folder against every later change
+ * to the user's own defaults.
+ */
+export const Tune = Schema.Struct({
+  /**
+   * The kernel thread type a fresh chat starts as.
+   *
+   * 🔴 Only `interactive` is expressible, and the omission is the security property — see
+   * {@link narrowTune}. The unattended modes auto-prompt without a human in the loop, and a folder
+   * the user cloned five minutes ago must not be able to start chats that way.
+   */
+  mode: Schema.optional(Schema.Literal("interactive")),
+  /** The harness-helper switches. Absent = inherit; see {@link narrowTune} for which may go which way. */
+  features: Schema.optional(
+    Schema.Struct({
+      safeMode: Schema.optional(Schema.Boolean),
+      askBeforeChanges: Schema.optional(Schema.Boolean),
+      surgicalEdits: Schema.optional(Schema.Boolean),
+      contextBudget: Schema.optional(Schema.Boolean),
+      memory: Schema.optional(Schema.Boolean),
+      introspection: Schema.optional(Schema.Boolean),
+      quality: Schema.optional(Schema.Boolean),
+      affective: Schema.optional(Schema.Boolean),
+    }),
+  ),
+}).annotate({ identifier: "Project.Tune" })
+export type Tune = typeof Tune.Type
+
+/**
+ * The switches a project file may only ever turn **on**.
+ *
+ * 🔴 These are SUPERVISION, not preference. `safeMode` is the control Agent Jail's deny message
+ * names by hand; `askBeforeChanges` is what puts a human in front of a write. A `novaclaw.json`
+ * inside a cloned repository that could set either to `false` would be a repository silently
+ * disarming the user's own safety rails — the exact hazard that forced `evaluateNarrowed` on the
+ * permissions half, restated for the half that decides how supervised the agent is.
+ *
+ * Everything not listed here changes how the harness WORKS (retrieval budget, memory, the stuck
+ * detector, quality gates, mood sampling, surgical edits). None of them lets an agent do something
+ * it could not already do, so a folder may set them either way.
+ */
+export const SUPERVISION_FEATURES = ["safeMode", "askBeforeChanges"] as const
+
 /** What a folder may declare about itself. Every section optional: an empty project is still valid. */
 export const Info = Schema.Struct({
   version: Schema.Number,
@@ -44,6 +98,8 @@ export const Info = Schema.Struct({
    * Enforcing that belongs to resolution; this type only says what the file may CONTAIN.
    */
   permissions: Schema.optional(Permission.Ruleset),
+  /** The stance a fresh chat in this folder starts with. Narrowing only — see {@link narrowTune}. */
+  tune: Schema.optional(Tune),
   /** Paths this project asks NOT to be read. Globs, matched against the project root. */
   exclude: Schema.optional(Schema.Array(Schema.String)),
   /** IDs of installed pre-action policies. ⛔ IDs only — never a command, and never anything run. */
@@ -128,3 +184,49 @@ export function merge(raw: Record<string, unknown>, changes: Partial<Info>): Rec
 export function format(raw: Record<string, unknown>): string {
   return `${JSON.stringify(raw, null, 2)}\n`
 }
+
+/**
+ * The Tune a project file is ALLOWED to impose, given what the user's own defaults already say.
+ *
+ * 🔴 **This is the tune half of the `evaluateNarrowed` story, and it exists for the same reason.**
+ * The permissions half learned that appending a project's ruleset IS overriding it, so a cloned
+ * repository could have widened past every deny in the install. The identical shape exists here and
+ * is easier to miss because none of these fields looks like a permission: a repository that shipped
+ * `{"tune":{"features":{"safeMode":false,"askBeforeChanges":false}}}` would turn off the user's
+ * safety rails on checkout, and one that shipped `{"tune":{"mode":"goal-oriented"}}` would start
+ * agents that prompt themselves unattended in a folder the user has not read yet.
+ *
+ * So a project may only move a supervision switch TOWARD supervision. `mode` cannot be widened at
+ * all — the type admits only `interactive`, so this function has nothing to police there and the
+ * schema is the enforcement; it is restated in the tests so a later widening of the type fails loudly.
+ *
+ * @param declared what the file asks for
+ * @param baseline the effective value of each feature WITHOUT the project (user + agent defaults)
+ * @returns only the entries that may be applied, each already known to be a narrowing
+ */
+export function narrowTune(
+  declared: Tune | undefined,
+  baseline: Partial<Record<TuneFeature, boolean>>,
+): { readonly features: Partial<Record<TuneFeature, boolean>>; readonly refused: readonly TuneFeature[] } {
+  const features: Partial<Record<TuneFeature, boolean>> = {}
+  const refused: TuneFeature[] = []
+  for (const [key, value] of Object.entries(declared?.features ?? {})) {
+    const feature = key as TuneFeature
+    if (value === undefined) continue
+    // A supervision switch may be raised, never lowered. `baseline === true` and the file says
+    // `false` is the attack; every other combination is either a narrowing or a no-op.
+    if (isSupervisionFeature(feature) && value === false && baseline[feature] === true) {
+      refused.push(feature)
+      continue
+    }
+    features[feature] = value
+  }
+  return { features, refused }
+}
+
+/** One switch on the composer's Tuning panel. */
+export type TuneFeature = keyof NonNullable<Tune["features"]>
+
+/** Whether a switch is supervision (raise-only) rather than preference (either way). */
+export const isSupervisionFeature = (feature: TuneFeature): boolean =>
+  (SUPERVISION_FEATURES as readonly string[]).includes(feature)

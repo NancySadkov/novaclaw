@@ -114,3 +114,84 @@ describe("novaclaw.json", () => {
     expect(text).toContain('\n  "name": "Acme"')
   })
 })
+
+/**
+ * The `tune` section and its narrowing algebra.
+ *
+ * 🔴 These are the tune half of the hazard `evaluateNarrowed` exists for on the permissions half: a
+ * repository the user cloned five minutes ago must not be able to disarm their supervision or start
+ * agents that run unattended. None of these fields LOOKS like a permission, which is exactly why the
+ * rule needs tests rather than a comment.
+ */
+describe("novaclaw.json tune", () => {
+  test("reads a tune section, absent switches staying absent", () => {
+    const result = ProjectFile.parse(write({ version: 1, tune: { features: { memory: false } } }))
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.info.tune?.features?.memory).toBe(false)
+    // Absent means INHERIT, so it must not decode to `false`.
+    expect(result.info.tune?.features?.quality).toBeUndefined()
+  })
+
+  test("🔴 an unattended mode is not even expressible", () => {
+    // The schema is the enforcement for `mode`. If someone later widens the literal, this fails and
+    // sends them to `narrowTune`'s comment rather than letting a cloned repo auto-prompt itself.
+    for (const mode of ["goal-oriented", "auto-prompting"]) {
+      expect(ProjectFile.parse(write({ version: 1, tune: { mode } })).ok).toBe(false)
+    }
+    // ⚠️ NEGATIVE CONTROL. Without it this test passes for any reason at all — a typo'd key, a
+    // schema that rejects every tune section, a `version` mistake — and would keep passing after
+    // someone broke the section entirely. The same file with the allowed mode must parse.
+    const allowed = ProjectFile.parse(write({ version: 1, tune: { mode: "interactive" } }))
+    expect(allowed.ok).toBe(true)
+    if (!allowed.ok) return
+    expect(allowed.info.tune?.mode).toBe("interactive")
+  })
+
+  test("a preference switch may go either way", () => {
+    const both = ProjectFile.narrowTune({ features: { memory: false, quality: true } }, { memory: true, quality: false })
+    expect(both.features).toEqual({ memory: false, quality: true })
+    expect(both.refused).toEqual([])
+  })
+
+  test("🔴 a supervision switch may be RAISED but never lowered", () => {
+    const raise = ProjectFile.narrowTune({ features: { safeMode: true } }, { safeMode: false })
+    expect(raise.features).toEqual({ safeMode: true })
+    expect(raise.refused).toEqual([])
+
+    // The attack: the folder's file says "no safe mode" while the user's own default says yes.
+    const lower = ProjectFile.narrowTune({ features: { safeMode: false } }, { safeMode: true })
+    expect(lower.features).toEqual({})
+    expect(lower.refused).toEqual(["safeMode"])
+  })
+
+  test("lowering a supervision switch the user already had OFF is a no-op, not a refusal", () => {
+    // Nothing is taken away, so there is nothing to refuse — reporting one would train the user to
+    // ignore the warning that matters.
+    const result = ProjectFile.narrowTune({ features: { askBeforeChanges: false } }, { askBeforeChanges: false })
+    expect(result.features).toEqual({ askBeforeChanges: false })
+    expect(result.refused).toEqual([])
+  })
+
+  test("both supervision switches are policed, and the list is the source of truth", () => {
+    for (const feature of ProjectFile.SUPERVISION_FEATURES) {
+      const result = ProjectFile.narrowTune({ features: { [feature]: false } }, { [feature]: true })
+      expect(result.refused).toEqual([feature])
+      expect(ProjectFile.isSupervisionFeature(feature)).toBe(true)
+    }
+  })
+
+  test("an absent tune section narrows to nothing at all", () => {
+    expect(ProjectFile.narrowTune(undefined, { safeMode: true })).toEqual({ features: {}, refused: [] })
+  })
+
+  test("a tune edit preserves sections this build does not know", () => {
+    // The whole point of merging onto the RAW object rather than the decoded view.
+    const parsed = ProjectFile.parse(write({ version: 1, tune: { features: { memory: true } }, futureThing: { a: 1 } }))
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    const merged = ProjectFile.merge(parsed.raw, { tune: { features: { memory: false } } })
+    expect(merged["futureThing"]).toEqual({ a: 1 })
+    expect((merged["tune"] as { features: Record<string, boolean> }).features.memory).toBe(false)
+  })
+})
