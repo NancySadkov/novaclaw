@@ -19,6 +19,8 @@ import { SessionAutoGrant } from "@novaclaw/core/session/auto-grant"
 import { ASK_BEFORE_CHANGES_RULES, MODE_RULES } from "@novaclaw/core/session/config-resolve"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { Global } from "@novaclaw/core/global"
+import { ProjectFileCache } from "@novaclaw/core/project-file-cache"
+import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
@@ -35,9 +37,12 @@ const it = testEffect(
     LayerNode.group([
       Database.node,
       EventV2.node,
-      // PermissionV2 reads this location's `novaclaw.json` once at build; FSUtil is how.
+      // PermissionV2 reads the SESSION's `novaclaw.json` through the shared cache, and its config
+      // through the one effective-config entry point; FSUtil is how the cache reaches the disk.
       FSUtil.node,
+      ProjectFileCache.node,
       SessionStore.node,
+      SessionEffectiveConfig.node,
       PermissionSaved.node,
       AgentV2.node,
       PermissionV2.node,
@@ -587,6 +592,8 @@ describe("PermissionV2", () => {
         current,
         Layer.succeed(AgentV2.Service, yield* AgentV2.Service),
         Layer.succeed(SessionStore.Service, yield* SessionStore.Service),
+        Layer.succeed(ProjectFileCache.Service, yield* ProjectFileCache.Service),
+        Layer.succeed(SessionEffectiveConfig.Service, yield* SessionEffectiveConfig.Service),
         Layer.succeed(PermissionSaved.Service, yield* PermissionSaved.Service),
         SessionAutoGrant.layer.pipe(Layer.provide(Layer.succeed(Database.Service, yield* Database.Service))),
       )
@@ -633,6 +640,8 @@ describe("PermissionV2", () => {
         current,
         Layer.succeed(AgentV2.Service, yield* AgentV2.Service),
         Layer.succeed(SessionStore.Service, yield* SessionStore.Service),
+        Layer.succeed(ProjectFileCache.Service, yield* ProjectFileCache.Service),
+        Layer.succeed(SessionEffectiveConfig.Service, yield* SessionEffectiveConfig.Service),
         Layer.succeed(PermissionSaved.Service, yield* PermissionSaved.Service),
         SessionAutoGrant.layer.pipe(Layer.provide(Layer.succeed(Database.Service, yield* Database.Service))),
       )

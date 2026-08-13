@@ -18,13 +18,9 @@ import { BashJobs } from "./bash-jobs"
 import { MessengerStore } from "../messenger/store"
 import { PermissionV2 } from "../permission"
 import { PositiveInt } from "../schema"
-import {
-  attendedRoot,
-  EFFECTIVE_CONFIG_DEFAULTS,
-  resolveSessionConfig,
-  rootSessionType,
-} from "../session/config-resolve"
+import { attendedRoot, rootSessionType } from "../session/config-resolve"
 import type { SessionV2 } from "../session"
+import { SessionEffectiveConfig } from "../session/effective-config"
 import { SessionStore } from "../session/store"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
@@ -140,6 +136,7 @@ export const layer = Layer.effectDiscard(
     const permission = yield* PermissionV2.Service
     const bashJobs = yield* BashJobs.Service
     const sessions = yield* SessionStore.Service
+    const effective = yield* SessionEffectiveConfig.Service
     const messengerStore = yield* MessengerStore.Service
     // OFF-C: the offline policy is a machine-level snapshot (flag-aware config dir);
     // consume the shared service so the guard sees the SAME policy as the HttpClient.
@@ -234,12 +231,13 @@ export const layer = Layer.effectDiscard(
               // walk answered `false` there and this tool ran RAW on a fault nobody had seen.
               const hostileInput = yield* chainHasHostileBinding(context.sessionID)
               // SAFE MODE (the Tuning switch, owner 2026-07-30): the per-session opt-in that puts
-              // the unattended deny arm back. Resolved through the SAME chain walk the permission
-              // evaluator uses, so `undefined` = inherit and a child cannot declare itself out of
-              // its parent's stance. `sessions.get` orDies, so this cannot fail typed.
-              const resolvedConfig = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, context.sessionID, (id) =>
-                sessions.get(id as SessionV2.ID),
-              )
+              // the unattended deny arm back. Resolved through the SAME entry point the permission
+              // evaluator uses, so `undefined` = inherit, a child cannot declare itself out of its
+              // parent's stance, and the folder's own stance folds in identically at both readers.
+              // ⚠️ That last property is why this is `SessionEffectiveConfig` and not a bare chain
+              // walk: `safeMode` has two readers, and a switch one of them sees is a supervision
+              // stance that is half on — worse than not offering it (`project-defaults.ts`).
+              const resolvedConfig = yield* effective.resolve(context.sessionID)
               const safeMode = resolvedConfig.safeMode === true
               // ONE host-execution gate (ruling 6, `src/host-exec.ts`): the jail decision, shell
               // resolution, env composition and the peer-token rule all live there, so the jh/Strict
@@ -518,6 +516,7 @@ export const node = makeLocationNode({
     PermissionV2.node,
     BashJobs.node,
     SessionStore.node,
+    SessionEffectiveConfig.node,
     MessengerStore.node,
     Offline.node,
   ],

@@ -13,8 +13,7 @@ import { Memory } from "../kb-graph/memory"
 import { MemorySetting } from "../kb-graph/memory-setting"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
-import { EFFECTIVE_CONFIG_DEFAULTS, resolveSessionConfig } from "../session/config-resolve"
-import { SessionStore } from "../session/store"
+import { SessionEffectiveConfig } from "../session/effective-config"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -138,7 +137,7 @@ export const layer = Layer.effectDiscard(
     const memory = Memory.client(yield* Memory.node.service)
     const mutation = yield* LocationMutation.Service
     const permission = yield* PermissionV2.Service
-    const sessions = yield* SessionStore.Service
+    const effective = yield* SessionEffectiveConfig.Service
 
     yield* tools
       .register({
@@ -160,9 +159,11 @@ export const layer = Layer.effectDiscard(
               Effect.gen(function* () {
                 // The user's Memory switch (Settings → Memory) is OFF → the tool stands down entirely:
                 // no recall AND no writing, so "memory off" is honest for the agent too.
-                const sessionConfig = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, context.sessionID, (id) =>
-                  sessions.get(id as typeof context.sessionID),
-                )
+                // Through the ONE entry point: `memory` is a folder-settable switch, and its other
+                // reader (`runner/maintenance.ts`'s auto-extraction) resolves the same way. A tool
+                // that stood down while extraction kept writing would be "memory off" for half the
+                // system.
+                const sessionConfig = yield* effective.resolve(context.sessionID)
                 if (sessionConfig.memory === false || !MemorySetting.memoryEnabled())
                   return {
                     ok: false,
@@ -378,5 +379,5 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/kb",
   layer,
-  deps: [ToolRegistry.node, Memory.node, LocationMutation.node, PermissionV2.node, SessionStore.node],
+  deps: [ToolRegistry.node, Memory.node, LocationMutation.node, PermissionV2.node, SessionEffectiveConfig.node],
 })

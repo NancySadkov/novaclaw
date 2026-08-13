@@ -11,10 +11,8 @@ import { Location } from "./location"
 import { AgentV2 } from "./agent"
 import { SessionV2 } from "./session"
 import { SessionStore } from "./session/store"
-import { FSUtil } from "./fs-util"
-import { ProjectFileResolve } from "./project-file"
-import { ProjectDefaults } from "./session/project-defaults"
-import { ProjectFile } from "@novaclaw/schema/project-file"
+import { ProjectFileCache } from "./project-file-cache"
+import { SessionEffectiveConfig } from "./session/effective-config"
 import { Wildcard } from "./util/wildcard"
 import {
   ASK_BEFORE_CHANGES_RULES,
@@ -23,7 +21,6 @@ import {
   chainAutoGrant,
   EFFECTIVE_CONFIG_DEFAULTS,
   MODE_RULES,
-  resolveSessionConfig,
   rootAttendance,
   unattendedStanceRules,
   type PermissionMode,
@@ -543,57 +540,41 @@ export const layer = Layer.effect(
   EffectRuntime.gen(function* () {
     const events = yield* EventV2.Service
     const location = yield* Location.Service
+    const agents = yield* AgentV2.Service
+    const sessions = yield* SessionStore.Service
+    const projects = yield* ProjectFileCache.Service
+    const effective = yield* SessionEffectiveConfig.Service
     /**
-     * This location's Project permissions.
+     * A session's Project permissions.
      *
      * 🔴 They are a NARROWING constraint, never part of the appended chain. `evaluate` takes the last
      * match, so appending would let a `novaclaw.json` — a file inside a folder the user may have
      * cloned minutes ago — override an operator deny with `allow`. See `evaluateNarrowed`.
      *
-     * ⚠️ REVALIDATED on a short interval rather than read once at build. Reading once left a
-     * staleness that ran the UNSAFE way: a user who TIGHTENED their project kept the looser rules
-     * until the layer rebuilt, and a user who CREATED one got nothing at all. A permission constraint
-     * that ignores the user's edit is worse than one that costs a few stat calls.
+     * ⚠️ Resolved from the SESSION's working folder, not this location's directory. The two differ
+     * whenever a session was opened somewhere else, and the folder the agent is actually working in
+     * is the one whose project governs it (`todo/projects.md`: *"the nearest valid `novaclaw.json`
+     * at or above the session folder"*). Reading the location's directory answered for the instance
+     * no matter whose folder was asked about — correct only while every session sits in the
+     * instance's own folder, which is not a property the kernel has. The direction of the change is
+     * worth naming: a session working outside a project now carries no project constraint, where it
+     * used to inherit the instance folder's. That is the honest reading of a narrowing rule set —
+     * it belongs to a folder, and a session that left the folder left its rules.
      *
-     * ⚠️ Wall-clock, deliberately, not `Clock.currentTimeMillis`. This is a cache freshness bound —
-     * a statement about the filesystem, not about the simulated time a test is driving — and keying
-     * it on a TestClock would freeze the cache for the whole of any test that never advances one.
+     * ⚠️ The read itself lives in `ProjectFileCache` so the rules and the tune come from ONE read of
+     * one file. Two caches over one file can disagree across a mid-window edit and apply a folder's
+     * rules without its stance.
      */
-    const PROJECT_TTL_MS = 1_000
-    // ⚠️ The FSUtil service is captured HERE, at layer build, and provided to the revalidation below.
-    // Leaving `resolve`'s requirement to be discharged at call time pushes `FSUtil.Service` into the
-    // R of every method on this service, which must be `never` — a service that leaks a requirement
-    // is one no caller can hold.
-    const fsUtil = yield* FSUtil.Service
-    // ⚠️ ONE cache entry for the whole resolution, not one per consumer. The permissions and the
-    // tune come from the same file, so two caches would read it twice a second and — worse — could
-    // disagree across a mid-window edit, applying a folder's rules without its stance.
-    let projectCache:
-      | { readonly at: number; readonly rules: Permission.Ruleset; readonly tune: ProjectFile.Tune | undefined }
-      | undefined
-    const projectFile = EffectRuntime.fnUntraced(function* () {
-      if (projectCache && Date.now() - projectCache.at < PROJECT_TTL_MS) return projectCache
-      const found = yield* ProjectFileResolve.resolve(location.directory).pipe(
-        EffectRuntime.provideService(FSUtil.Service, fsUtil),
-        EffectRuntime.map((resolution) =>
-          resolution.kind === "project"
-            ? { rules: resolution.info.permissions ?? ([] as Permission.Ruleset), tune: resolution.info.tune }
-            : { rules: [] as Permission.Ruleset, tune: undefined },
-        ),
-        // A project that cannot be read must not take the location down. Unresolvable means NO
-        // constraint, the same posture as no file — and the resolver still distinguishes "missing"
-        // from "malformed" for the surface that reports it.
-        EffectRuntime.orElseSucceed(() => ({ rules: [] as Permission.Ruleset, tune: undefined })),
-      )
-      projectCache = { at: Date.now(), ...found }
-      return projectCache
+    const sessionDirectory = EffectRuntime.fnUntraced(function* (sessionID: SessionV2.ID) {
+      const session = yield* sessions.get(sessionID)
+      // A session that vanished mid-evaluation gets the location's own folder rather than none: the
+      // fallback direction for a narrowing constraint must be the stricter one.
+      return session?.location.directory ?? location.directory
     })
-    const projectPermissions = EffectRuntime.fnUntraced(function* () {
-      return (yield* projectFile()).rules
+    const projectPermissions = EffectRuntime.fnUntraced(function* (sessionID: SessionV2.ID) {
+      return (yield* projects.read(yield* sessionDirectory(sessionID))).rules
     })
 
-    const agents = yield* AgentV2.Service
-    const sessions = yield* SessionStore.Service
     const autoGrants = yield* SessionAutoGrant.Service
     const saved = yield* PermissionSaved.Service
     const { db } = yield* Database.Service
@@ -750,14 +731,11 @@ export const layer = Layer.effect(
       return rules.filter((rule) => Wildcard.match(input.action, rule.action))
     }
 
-    // The whole resolved config, not just the mode: the evaluator also needs the surgical-edits switch.
-    const sessionConfig = EffectRuntime.fnUntraced(function* (sessionID: SessionV2.ID) {
-      // The folder's stance is a layer BENEATH the entity: it supplies a component no session on the
-      // chain declared, and loses to every one that does. `fold` applies only the components whose
-      // every reader resolves through a folded layer (`ProjectDefaults.WIRED`).
-      const { defaults } = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, (yield* projectFile()).tune)
-      return yield* resolveSessionConfig(defaults, sessionID, (id) => sessions.get(id as SessionV2.ID))
-    })
+    // The whole resolved config, not just the mode: the evaluator also needs the surgical-edits
+    // switch. Through `SessionEffectiveConfig`, which is the ONE place the folder's stance is folded
+    // in — a layer BENEATH the entity, supplying a component no session on the chain declared and
+    // losing to every one that does (`ProjectDefaults.WIRED` gates which components that reaches).
+    const sessionConfig = (sessionID: SessionV2.ID) => effective.resolve(sessionID)
 
     const evaluateInput = EffectRuntime.fnUntraced(function* (input: AssertInput) {
       // 1K: the session's resolved permission MODE contributes a rule overlay. Appended after the
@@ -929,7 +907,7 @@ export const layer = Layer.effect(
       // Resolved ONCE per evaluation, not per resource: a multi-resource assert must be judged
       // against ONE view of the file, or two resources in the same call could be answered from
       // either side of an edit.
-      const projectRules = yield* projectPermissions()
+      const projectRules = yield* projectPermissions(input.sessionID)
       const effects = input.resources.map(
         (resource) => evaluateNarrowed(input.action, resource, [all], [projectRules]).effect,
       )
@@ -1248,8 +1226,10 @@ export const node = makeLocationNode({
     PermissionSaved.node,
     SessionAutoGrant.node,
     Database.node,
-    // Reading this location's `novaclaw.json` once, at build. FSUtil is a GLOBAL node already built
-    // in every instance, so this adds a reference rather than a new subsystem to the boot order.
-    FSUtil.node,
+    // The session's `novaclaw.json`: its rules here, its tune through the effective-config entry
+    // point. Both are GLOBAL nodes already built in every instance, so this adds references rather
+    // than new subsystems to the boot order.
+    ProjectFileCache.node,
+    SessionEffectiveConfig.node,
   ],
 })

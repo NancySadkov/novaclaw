@@ -46,7 +46,8 @@ import { SessionComponentRegistry } from "../component-registry"
 import { Log } from "@novaclaw/schema/log"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 
-import { resolveSessionConfig, rootSessionType, EFFECTIVE_CONFIG_DEFAULTS } from "../config-resolve"
+import { rootSessionType } from "../config-resolve"
+import { SessionEffectiveConfig } from "../effective-config"
 import { AgentJail } from "../../agent-jail"
 import { MessengerStore } from "../../messenger/store"
 import { Offline } from "../../offline"
@@ -219,6 +220,9 @@ export const layer = Layer.effect(
     const tools = yield* ToolRegistry.Service
     const models = yield* SessionRunnerModel.Service
     const store = yield* SessionStore.Service
+    // THE config entry point (`session/effective-config.ts`). Every reader in this runner resolves
+    // through it, which is what lets a folder's tune reach the turn at all.
+    const effective = yield* SessionEffectiveConfig.Service
     const location = yield* Location.Service
     const systemContext = yield* SystemContextRegistry.Service
     const toolCatalogueGuidance = yield* ToolCatalogueGuidance.Service
@@ -693,9 +697,11 @@ export const layer = Layer.effect(
       // walk, so a child session inherits its parent's unless overridden. Behavior-preserving at the
       // root (the chain is just [session] -> config.* === session.*). config.* carry the real branded
       // values (they flow from session.* through the walk; only the static type is widened -> cast).
-      const config = yield* tap(
-        resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, session.id, (id) => store.get(id as SessionSchema.ID)),
-      )
+      // ⚠️ Through `SessionEffectiveConfig`, not a bare walk: this resolution is what `prepared`
+      // carries into `runTurnAttempt`, so it is the value the in-turn readers (affective/shortChat,
+      // the context budget) see. A folder layer folded at some readers and not others is a switch
+      // that is half on — the hazard `project-defaults.ts` exists to prevent.
+      const config = yield* tap(effective.resolve(session.id))
       const agent = yield* tap(agents.select(config.agent as typeof session.agent))
       const initialized = yield* SessionContextEpoch.initialize(
         db,
@@ -1793,9 +1799,7 @@ export const layer = Layer.effect(
       // auto-respond. Input still QUEUES durably (nothing lost); it drains the moment control
       // is handed back to nova. Resolve via the config walk so a child inherits the parent's
       // responder unless it overrides.
-      const handoff = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, input.sessionID, (id) =>
-        store.get(id as SessionSchema.ID),
-      )
+      const handoff = yield* effective.resolve(input.sessionID)
       if (handoff.responder === "operator") {
         yield* Log.event("session.control.operator", { "session.id": input.sessionID })
         return
@@ -2182,9 +2186,7 @@ export const layer = Layer.effect(
         shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
         promotion = shouldRun ? "queue" : undefined
         if (!shouldRun) {
-          const driveConfig = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, input.sessionID, (id) =>
-            store.get(id as SessionSchema.ID),
-          )
+          const driveConfig = yield* effective.resolve(input.sessionID)
           if (ShortChat.enabled(driveConfig.shortChat)) break
           // The auto-prompt SELF-DRIVE (architecture.md "run until exit()"): an auto-prompting /
           // goal-oriented session whose queue ran dry keeps working — the harness injects the next
@@ -2298,6 +2300,7 @@ export const node = makeLocationNode({
     SessionRunnerModel.node,
     SessionMaintenance.node,
     SessionStore.node,
+    SessionEffectiveConfig.node,
     Location.node,
     SystemContextRegistry.node,
     SkillGuidance.node,

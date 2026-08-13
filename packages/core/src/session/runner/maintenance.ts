@@ -12,7 +12,7 @@ import { MemorySetting } from "../../kb-graph/memory-setting"
 import { Snapshot } from "../../snapshot"
 import { makeLocationNode } from "../../effect/app-node"
 import { llmClient } from "../../effect/app-node-platform"
-import { EFFECTIVE_CONFIG_DEFAULTS, resolveSessionConfig } from "../config-resolve"
+import { SessionEffectiveConfig } from "../effective-config"
 import { SessionChanges } from "../changes"
 import { SessionMessageRead } from "../message-read"
 import { SessionPatch } from "../patch"
@@ -116,6 +116,7 @@ export const layer = Layer.effect(
     const { db } = yield* Database.Service
     const events = yield* EventV2.Service
     const store = yield* SessionStore.Service
+    const effective = yield* SessionEffectiveConfig.Service
     const models = yield* SessionRunnerModel.Service
     const llm = yield* LLMClient.Service
     const snapshots = yield* Snapshot.Service
@@ -222,9 +223,7 @@ export const layer = Layer.effect(
     // gated on the engine being live so a disabled/still-opening memory costs no model call.
     const extractMemory = Effect.fn("SessionMaintenance.extractMemory")(function* (sessionID: SessionSchema.ID) {
       const session = yield* getSession(sessionID)
-      const config = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, session.id, (id) =>
-        store.get(id as SessionSchema.ID),
-      )
+      const config = yield* effective.resolve(session.id)
       if (!SessionExtract.allowsDurableMemory(config.type)) return
       if (config.shortChat === true || config.memory === false || !MemorySetting.memoryEnabled()) return
       if (!(yield* memory.health())) return
@@ -551,6 +550,7 @@ export const node = makeLocationNode({
     Database.node,
     EventV2.node,
     SessionStore.node,
+    SessionEffectiveConfig.node,
     SessionRunnerModel.node,
     Snapshot.node,
     Memory.node,
