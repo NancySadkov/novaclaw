@@ -59,7 +59,7 @@ export const ProbeResult = Schema.Struct({
         Schema.Struct({
           kind: Schema.Literals(["supported", "unsupported", "unknown"]),
           fault: Schema.optional(
-            Schema.Literals(["transport", "auth", "http", "malformed", "not-attempted"]),
+            Schema.Literals(["transport", "auth", "http", "malformed", "not-attempted", "budget"]),
           ),
           detail: Schema.optional(Schema.String),
         }),

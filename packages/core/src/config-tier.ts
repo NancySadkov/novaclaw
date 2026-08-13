@@ -144,6 +144,11 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // prompt. A hostile entry can only over-group backends, which serializes turns (a throughput
   // loss) rather than oversubscribing hardware, and is undone by deleting the entry.
   devices: "operational",
+  // The measured tool channel per model. CONSEQUENTIAL rather than operational: it decides how the
+  // agent is offered tools for every later turn, and a wrong value is a chat where the agent
+  // silently cannot act. Not privileged — it grants no capability the model did not already have,
+  // and the self-healing law wants a still-working model able to repair a stale verdict.
+  provider_capability: "consequential",
 
   // ── consequential: one card, savable per key ────────────────────────────────────────────────
   // Sampling numbers plus an enable flag. The nudge TEXT is compiled, not configured.

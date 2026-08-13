@@ -151,6 +151,29 @@ describe("a failure is not a capability", () => {
   })
 })
 
+describe("a spent budget is a fault, not a verdict", () => {
+  test("🔴 empty content with a length finish is NOT evidence about the endpoint", () => {
+    // The probe got this wrong on itself, measured against Holo3.1: the JSON rung asked with 64
+    // tokens, the model spent all of them reasoning, and the empty reply scored  — a
+    // PERMANENT wrong verdict recorded for OUR budget on a rung the endpoint handles fine.
+    expect(ProviderCapability.spentWithoutAnswering({ content: "", finishReason: "length" })).toBe(true)
+    expect(ProviderCapability.spentWithoutAnswering({ content: "   ", finishReason: "length" })).toBe(true)
+  })
+
+  test("a length finish WITH content is an ordinary truncation, not a fault", () => {
+    // Both halves are required. A truncated real answer is something we learned from; only an empty
+    // one means we learned nothing.
+    expect(ProviderCapability.spentWithoutAnswering({ content: '{"ok":tr', finishReason: "length" })).toBe(false)
+  })
+
+  test("an empty answer that stopped NORMALLY is the endpoint's own answer", () => {
+    // A model that simply said nothing is a real (bad) result. Calling it a budget fault would hide
+    // an endpoint that never answers behind "we could not find out".
+    expect(ProviderCapability.spentWithoutAnswering({ content: "", finishReason: "stop" })).toBe(false)
+    expect(ProviderCapability.spentWithoutAnswering({ content: "" })).toBe(false)
+  })
+})
+
 describe("choosing the rung", () => {
   const outcomes = (
     over: Partial<Record<ProviderCapability.Capability, ProviderCapability.Outcome>>,

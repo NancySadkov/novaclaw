@@ -75,6 +75,10 @@ export const SETTINGS_KEYS = [
   // which is what makes `PATCH /config` able to declare "these two endpoints are one box" at runtime.
   "devices",
   "capability_services",
+  // Machine-written: the capability probe's measured tool channel per model. It rides the settings
+  // store like every other operational key, which is what lets a still-working model repair a stale
+  // verdict over HTTP — and what stops an undeclared key crash-looping the instance at boot.
+  "provider_capability",
   "experimental",
 ] as const satisfies readonly (keyof Config.Info)[]
 

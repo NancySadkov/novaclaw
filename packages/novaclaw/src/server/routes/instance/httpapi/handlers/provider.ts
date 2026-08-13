@@ -148,6 +148,15 @@ export const probeEndpoint = (
  */
 const CAPABILITY_TIMEOUT = Duration.seconds(30)
 
+/**
+ * Room for a reasoning pass AND the answer.
+ *
+ * The probe asks for three tiny values, so this is not about the answer's size — it is about what a
+ * thinking model spends before it starts. Measured 2026-08-13: at 64 the JSON rung returned nothing
+ * at all on Holo3.1.
+ */
+const PROBE_TOKENS = 512
+
 const capabilityAsk = (
   client: HttpClient.HttpClient,
   input: { baseURL: string; headers: Record<string, string>; body: Record<string, unknown> },
@@ -220,6 +229,29 @@ const messageContent = (payload: unknown): string => {
   return typeof content === "string" ? content : ""
 }
 
+const finishReason = (payload: unknown): string | undefined => {
+  const choices = (payload as { choices?: unknown } | null)?.choices
+  if (!Array.isArray(choices) || choices.length === 0) return undefined
+  const reason = (choices[0] as { finish_reason?: unknown } | undefined)?.finish_reason
+  return typeof reason === "string" ? reason : undefined
+}
+
+/**
+ * A completion that spent its whole budget saying nothing teaches us about OUR REQUEST, not the
+ * endpoint. Checked before every rung's reader so no rung can score it as a capability.
+ */
+const budgetFault = (payload: unknown): ProviderCapability.Outcome | undefined =>
+  ProviderCapability.spentWithoutAnswering({
+    content: messageContent(payload),
+    ...(finishReason(payload) === undefined ? {} : { finishReason: finishReason(payload) }),
+  })
+    ? {
+        kind: "unknown",
+        fault: "budget",
+        detail: "The model spent the probe's whole token budget without answering — often a reasoning pass.",
+      }
+    : undefined
+
 /** An envelope we cannot read is a fault, never "the model cannot do this". */
 const malformed = (): ProviderCapability.Outcome => ({
   kind: "unknown",
@@ -258,7 +290,10 @@ export const probeCapabilities = (
         ...input,
         body: {
           ...base,
-          max_tokens: 64,
+          // ⚠️ Not 64. A reasoning model spends its budget BEFORE the first content token, and at 64
+          // this rung came back empty and scored `unsupported` for a format the endpoint handles.
+          // The budget fault above catches the class; this keeps the common case off it.
+          max_tokens: PROBE_TOKENS,
           response_format: { type: "json_object" },
           messages: [{ role: "user", content: 'Reply with only this JSON object: {"ok":true}' }],
         },
@@ -266,10 +301,11 @@ export const probeCapabilities = (
       {
         parameter: "response_format",
         read: (payload) => {
-          const content = messageContent(payload)
           if (firstMessage(payload) === undefined) return malformed()
+          const spent = budgetFault(payload)
+          if (spent) return spent
           try {
-            JSON.parse(content)
+            JSON.parse(messageContent(payload))
             return { kind: "supported" }
           } catch {
             return { kind: "unsupported", detail: "The endpoint accepted a JSON response format and answered prose." }
@@ -285,7 +321,7 @@ export const probeCapabilities = (
           ...base,
           // Room for the whole call. A budget too small truncates the arguments, and this probe
           // would then measure OUR budget and record it as the endpoint's failure.
-          max_tokens: 256,
+          max_tokens: PROBE_TOKENS,
           tools: [{ type: "function", function: ProviderCapability.CAPTURE_TOOL }],
           messages: [
             {
@@ -297,10 +333,17 @@ export const probeCapabilities = (
       }),
       {
         parameter: "tools",
-        read: (payload) =>
-          firstMessage(payload) === undefined
-            ? malformed()
-            : ProviderCapability.readToolCall(firstToolCall(payload), [ProviderCapability.CAPTURE_TOOL.name]),
+        read: (payload) => {
+          if (firstMessage(payload) === undefined) return malformed()
+          // ⚠️ AFTER the tool-call check, not before: a native call arrives in `tool_calls` with empty
+          // content, so a budget test first would score every healthy native answer as a fault.
+          const call = firstToolCall(payload)
+          if (call === undefined) {
+            const spent = budgetFault(payload)
+            if (spent) return spent
+          }
+          return ProviderCapability.readToolCall(call, [ProviderCapability.CAPTURE_TOOL.name])
+        },
       },
     )
 
@@ -309,20 +352,20 @@ export const probeCapabilities = (
         ...input,
         body: {
           ...base,
-          max_tokens: 256,
+          max_tokens: PROBE_TOKENS,
           messages: [{ role: "user", content: ProviderCapability.TEXT_TOOL_PROMPT }],
         },
       }),
       {
-        read: (payload) =>
-          firstMessage(payload) === undefined
-            ? malformed()
-            : ProviderCapability.readToolCall(
-                ProviderCapability.recoverTextToolCall(messageContent(payload), [
-                  ProviderCapability.CAPTURE_TOOL.name,
-                ]),
-                [ProviderCapability.CAPTURE_TOOL.name],
-              ),
+        read: (payload) => {
+          if (firstMessage(payload) === undefined) return malformed()
+          const spent = budgetFault(payload)
+          if (spent) return spent
+          return ProviderCapability.readToolCall(
+            ProviderCapability.recoverTextToolCall(messageContent(payload), [ProviderCapability.CAPTURE_TOOL.name]),
+            [ProviderCapability.CAPTURE_TOOL.name],
+          )
+        },
       },
     )
 

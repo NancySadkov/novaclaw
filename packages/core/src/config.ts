@@ -418,6 +418,43 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   // unrelated backends, i.e. make turns queue behind one another — a throughput loss, recoverable by
   // deleting the entry, and strictly the safe direction of the two errors available (the other one
   // oversubscribes real hardware).
+  /**
+   * What the capability probe MEASURED about each model's tool channel, keyed `providerID/modelID`.
+   *
+   * 🔴 **Machine-written, and behind the config surface on purpose.** It is an operational fact an
+   * outage hinges on — a model whose tool channel stopped working is a chat where the agent silently
+   * cannot act — and AGENTS.md's self-healing law says every such fact belongs in a runtime-editable
+   * store reachable over HTTP, not compiled in. So a still-working model can read this, see that the
+   * verdict is stale or wrong, and repair it with one PATCH.
+   *
+   * ⚠️ It does NOT override the operator. `providers.<id>.models.<m>.request.body.toolChannel` still
+   * wins; this is the measured fallback beneath it. The two are kept apart precisely so a re-test
+   * cannot overwrite a deliberate decision.
+   *
+   * ⚠️ It had to be DECLARED here, not merely written. `SettingsConfigStore` validates its keys
+   * against this type (`SETTINGS_KEYS satisfies keyof Config.Info`), and an undeclared key does not
+   * fail the write — it fails the next BOOT, with "Configuration is invalid at sqlite-stores" and a
+   * crash loop. Measured the hard way on 2026-08-13: one probe made the instance unbootable while
+   * the whole test suite stayed green, because nothing in it boots a server with the row present.
+   */
+  provider_capability: Schema.Record(
+    Schema.String,
+    Schema.Struct({
+      choice: Schema.Literals(["native", "prompted", "chat-only", "unknown"]),
+      rationale: Schema.optional(Schema.String),
+      measuredAt: Schema.Number,
+      fingerprint: Schema.String,
+    }),
+  )
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        "What the endpoint-capability probe measured about each model's tool channel, keyed " +
+        '"providerID/modelID" — e.g. {"spark-holo/holo3.1":{"choice":"native",…}}. Written by the ' +
+        "probe, read when a model resolves, and beaten by an explicit " +
+        "providers.<id>.models.<m>.request.body.toolChannel. `fingerprint` records what was measured " +
+        "so a moved endpoint discards the verdict instead of acting on it.",
+    }),
   devices: Schema.Record(Schema.String, ConfigDevice.Info)
     .pipe(Schema.optional)
     .annotate({

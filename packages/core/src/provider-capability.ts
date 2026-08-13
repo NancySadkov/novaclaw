@@ -64,6 +64,16 @@ export type Fault =
   | "http"
   /** A success arrived whose body is not what this protocol returns. A proxy's error page lands here. */
   | "malformed"
+  /**
+   * The completion ran out of budget before it said anything.
+   *
+   * 🔴 A fault, NOT a capability, and this arm exists because the probe got it wrong on itself.
+   * Measured against Holo3.1: the JSON rung asked with `max_tokens: 64`, the model spent all of it
+   * reasoning, and the reply came back with `content: null` and `finish_reason: "length"` — which the
+   * reader scored as *"accepted a JSON response format and answered prose"*. That is a permanent
+   * `unsupported` recorded for OUR budget, on a rung the endpoint handles fine.
+   */
+  | "budget"
   /** Not asked. A rung below it failed, so asking would have measured that failure again. */
   | "not-attempted"
 
@@ -237,6 +247,17 @@ export type Response =
   | { readonly kind: "transport"; readonly detail: string }
   | { readonly kind: "http"; readonly status: number; readonly body: string }
   | { readonly kind: "body"; readonly payload: unknown }
+
+/**
+ * Did this completion stop because it ran out of room, with nothing to show for it?
+ *
+ * ⚠️ Both halves are required. A `length` finish with content is a normal truncation of a real
+ * answer — the native rung's arguments arriving whole is exactly that case — and only an EMPTY one
+ * means we learned nothing. A reasoning model burns its budget before the first content token, so
+ * this is the shape a too-small budget takes rather than an exotic edge.
+ */
+export const spentWithoutAnswering = (input: { readonly content: string; readonly finishReason?: string }): boolean =>
+  input.finishReason === "length" && input.content.trim().length === 0
 
 /**
  * Turn one rung's response into an outcome, given a reader for a successful body.
