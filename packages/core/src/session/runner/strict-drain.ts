@@ -16,7 +16,7 @@ import { Snapshot } from "../../snapshot"
 import type { RelativePath } from "../../schema"
 import { JhStore } from "../../jh/store"
 import type { JhEngine } from "../../jh/engine"
-import { rootSessionType, type EffectiveConfig } from "../config-resolve"
+import { rootSessionType, stanceOf, type EffectiveConfig } from "../config-resolve"
 import { SessionEvent } from "../event"
 import { SessionExecutionAttempt } from "../execution-attempt"
 import { SessionInput } from "../input"
@@ -119,7 +119,7 @@ export const make = (dependencies: Dependencies) => {
     }
     const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
     const thinkingBudget = model.route.defaults.limits?.thinkingBudget ?? 0
-    const budgetEnforced = resolved.thinkingBudget ?? true
+    const budgetEnforced = stanceOf("thinkingBudget", resolved.thinkingBudget)
     // The engine's one-shot completion (the judgeCompletion idiom). The budget is per-CALL and comes
     // from ConfigStrict: execution steps need a whole non-trivial source file of headroom (jh.md §3
     // "Measured": a C program is ~13-15k tokens; truncation is fatal), and reasoning steps need room
@@ -316,7 +316,7 @@ export const make = (dependencies: Dependencies) => {
         rootType,
         hostileInput,
         ...(configuredShell === undefined ? {} : { shell: configuredShell }),
-        ...(resolved.safeMode === undefined ? {} : { safeMode: resolved.safeMode }),
+        safeMode: stanceOf("safeMode", resolved.safeMode),
         egress: offline.egressEnv(),
         backend,
       }

@@ -13,6 +13,7 @@ import { Memory } from "../kb-graph/memory"
 import { MemorySetting } from "../kb-graph/memory-setting"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
+import { stanceOf } from "../session/config-resolve"
 import { SessionEffectiveConfig } from "../session/effective-config"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
@@ -164,7 +165,7 @@ export const layer = Layer.effectDiscard(
                 // that stood down while extraction kept writing would be "memory off" for half the
                 // system.
                 const sessionConfig = yield* effective.resolve(context.sessionID)
-                if (sessionConfig.memory === false || !MemorySetting.memoryEnabled())
+                if (!stanceOf("memory", sessionConfig.memory) || !MemorySetting.memoryEnabled())
                   return {
                     ok: false,
                     message:

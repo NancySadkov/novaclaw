@@ -46,7 +46,7 @@ import { SessionComponentRegistry } from "../component-registry"
 import { Log } from "@novaclaw/schema/log"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 
-import { rootSessionType } from "../config-resolve"
+import { rootSessionType, stanceOf } from "../config-resolve"
 import { SessionEffectiveConfig } from "../effective-config"
 import { AgentJail } from "../../agent-jail"
 import { MessengerStore } from "../../messenger/store"
@@ -919,7 +919,7 @@ export const layer = Layer.effect(
       if (
         recallQuery !== undefined &&
         !ShortChat.enabled(config.shortChat) &&
-        config.memory !== false &&
+        stanceOf("memory", config.memory) &&
         MemorySetting.memoryEnabled()
       ) {
         // The VECTOR leg: one short embedding of the recall query lets the engine fuse vector KNN with
@@ -1196,7 +1196,7 @@ export const layer = Layer.effect(
       // Per-chat override (the composer's Tuning control): `false` runs the turn with the controller OFF so
       // the model reasons to its own stop, which is what makes a budget change A/B-able in one chat without
       // editing the instance default. Absent = inherit the chain, then the model's own budget.
-      const budgetEnforced = !ShortChat.enabled(config.shortChat) && (config.thinkingBudget ?? true)
+      const budgetEnforced = !ShortChat.enabled(config.shortChat) && stanceOf("thinkingBudget", config.thinkingBudget)
       const budgetedSource = ProviderDispatch.stream({
         llm,
         request,

@@ -22,6 +22,7 @@ import {
   EFFECTIVE_CONFIG_DEFAULTS,
   MODE_RULES,
   rootAttendance,
+  stanceOf,
   unattendedStanceRules,
   type PermissionMode,
 } from "./session/config-resolve"
@@ -838,11 +839,13 @@ export const layer = Layer.effect(
       const featureRules: Permission.Ruleset = [
         ...ShortChat.permissionRules(resolved.shortChat),
         // "Edits instead of overwriting": a full-file `write` is refused; `edit`/`create` still work.
-        ...(resolved.surgicalEdits === true ? [{ action: "write", resource: "*", effect: "deny" as const }] : []),
+        ...(stanceOf("surgicalEdits", resolved.surgicalEdits)
+          ? [{ action: "write", resource: "*", effect: "deny" as const }]
+          : []),
         // "Ask before every change": the old `ask` mode's overlay, now composable with Analyze or Build.
         // Literally THE SAME list `MODE_RULES.ask` is (config-resolve.ts, ASK_BEFORE_CHANGES_RULES) —
         // it used to be a second copy of it, with nothing but a comment claiming they agreed.
-        ...(resolved.askBeforeChanges === true ? ASK_BEFORE_CHANGES_RULES : []),
+        ...(stanceOf("askBeforeChanges", resolved.askBeforeChanges) ? ASK_BEFORE_CHANGES_RULES : []),
       ]
       // READ BASELINE. Reading outside the project folder is ordinary work — a toolchain, an SDK,
       // another checkout, or any other host-readable file. Every permission mode gets this same

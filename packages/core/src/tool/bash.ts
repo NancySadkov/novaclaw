@@ -18,7 +18,7 @@ import { BashJobs } from "./bash-jobs"
 import { MessengerStore } from "../messenger/store"
 import { PermissionV2 } from "../permission"
 import { PositiveInt } from "../schema"
-import { attendedRoot, rootSessionType } from "../session/config-resolve"
+import { attendedRoot, rootSessionType, stanceOf } from "../session/config-resolve"
 import type { SessionV2 } from "../session"
 import { SessionEffectiveConfig } from "../session/effective-config"
 import { SessionStore } from "../session/store"
@@ -238,7 +238,7 @@ export const layer = Layer.effectDiscard(
               // walk: `safeMode` has two readers, and a switch one of them sees is a supervision
               // stance that is half on — worse than not offering it (`project-defaults.ts`).
               const resolvedConfig = yield* effective.resolve(context.sessionID)
-              const safeMode = resolvedConfig.safeMode === true
+              const safeMode = stanceOf("safeMode", resolvedConfig.safeMode)
               // ONE host-execution gate (ruling 6, `src/host-exec.ts`): the jail decision, shell
               // resolution, env composition and the peer-token rule all live there, so the jh/Strict
               // runner and the js sandbox cannot drift from this call site.

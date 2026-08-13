@@ -12,7 +12,9 @@ import { MemorySetting } from "../../kb-graph/memory-setting"
 import { Snapshot } from "../../snapshot"
 import { makeLocationNode } from "../../effect/app-node"
 import { llmClient } from "../../effect/app-node-platform"
+import { stanceOf } from "../config-resolve"
 import { SessionEffectiveConfig } from "../effective-config"
+import { ShortChat } from "./short-chat"
 import { SessionChanges } from "../changes"
 import { SessionMessageRead } from "../message-read"
 import { SessionPatch } from "../patch"
@@ -225,7 +227,8 @@ export const layer = Layer.effect(
       const session = yield* getSession(sessionID)
       const config = yield* effective.resolve(session.id)
       if (!SessionExtract.allowsDurableMemory(config.type)) return
-      if (config.shortChat === true || config.memory === false || !MemorySetting.memoryEnabled()) return
+      if (ShortChat.enabled(config.shortChat) || !stanceOf("memory", config.memory) || !MemorySetting.memoryEnabled())
+        return
       if (!(yield* memory.health())) return
       const exchange = SessionExtract.buildExchange(yield* getContext(sessionID))
       if (!exchange) return

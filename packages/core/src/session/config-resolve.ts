@@ -412,20 +412,6 @@ export interface SessionConfig {
 // true because the switch is on the panel.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * The base effective config before any session override. `model`/`agent` are left undefined so the
- * runner's existing catalog/agent fallbacks still apply; permission mode + the mode toggles carry
- * safe defaults. Used as the root of the resolution chain.
- */
-export const EFFECTIVE_CONFIG_DEFAULTS: EffectiveConfig = {
-  type: "interactive",
-  priority: 0,
-  responder: "nova",
-  // Write access to the session's OWN folder by default (owner 2026-07-25). Writing outside it is
-  // guarded independently of the mode, so the trust is scoped to the folder, not global.
-  permissionMode: "bypass",
-}
-
 /** The fully-resolved config a session actually runs with. */
 export interface EffectiveConfig {
   readonly model?: ModelRef
@@ -687,7 +673,38 @@ export interface SessionConfigField {
    */
   readonly column: string | undefined
   readonly merge: SessionConfigMerge
+  /** What an ABSENT value means. See {@link SessionConfigFallback}. */
+  readonly fallback: SessionConfigFallback
 }
+
+/**
+ * What it means for a field to resolve to nothing.
+ *
+ * 🔴 **Every field HAS a default; the question is who holds it.** Four lived in
+ * `EFFECTIVE_CONFIG_DEFAULTS` and the rest lived at the readers in three different idioms —
+ * `x === true`, `x ?? true`, `x !== false` — so "what happens if nobody sets this?" could only be
+ * answered by finding every reader and reading its expression. Two readers of one field could
+ * disagree and nothing would say so; that is how `memory` came to mean *on unless explicitly off*
+ * in the runner and the same thing by a different spelling in the `kb` tool, which is fine right up
+ * until one of them is edited.
+ *
+ * The four kinds are not decoration — each has a distinct consumer, and a field cannot be declared
+ * without picking one:
+ *
+ *  · `base` seeds `EFFECTIVE_CONFIG_DEFAULTS`, so the value is PRESENT in every resolved config.
+ *  · `stance` does NOT. A tri-state's absence has to survive resolution, or the introspection view
+ *    cannot tell "nobody set this" from "someone set it to the default" — the one question that
+ *    surface exists to answer. The reader applies it through {@link stanceOf}.
+ *  · `instance` says the answer is not here at all: an instance config block decides, and this
+ *    field only overrides it. The block is named so a surface can send someone to the right screen.
+ *  · `derived` says no SETTING decides it — a resolver does (the model catalog, the agent registry,
+ *    the endpoint the model resolves to). Naming the resolver is the whole content.
+ */
+export type SessionConfigFallback =
+  | { readonly kind: "base"; readonly value: unknown }
+  | { readonly kind: "stance"; readonly value: boolean }
+  | { readonly kind: "instance"; readonly block: string }
+  | { readonly kind: "derived"; readonly by: string }
 
 /**
  * Ruling 8's *"declare every `SessionConfig` field ONCE in a `SESSION_CONFIG_FIELDS` descriptor"*,
@@ -712,34 +729,90 @@ export interface SessionConfigField {
  * None of those repeats the field list — all read it from here.
  */
 export const SESSION_CONFIG_FIELDS = {
-  model: { column: "model", merge: "override" },
-  agent: { column: "agent", merge: "override" },
+  model: { column: "model", merge: "override", fallback: { kind: "derived", by: "the model catalog" } },
+  agent: { column: "agent", merge: "override", fallback: { kind: "derived", by: "the agent registry" } },
   // Re-added in B2's third step WITH its column, its store (`session/device-registry.ts`) and its
   // consumer (`SessionRunnerModel.deviceKeyFor`) in one slice — the forced order the decisions doc
   // gives, and the reason the phantom was deleted first rather than repaired in place.
-  device: { column: "device", merge: "override" },
-  controlBinding: { column: "control_binding", merge: "override" },
-  systemPromptOverride: { column: "system_prompt_override", merge: "override" },
-  type: { column: "type", merge: "override" },
-  priority: { column: "priority", merge: "override" },
-  responder: { column: "responder", merge: "override" },
+  device: { column: "device", merge: "override", fallback: { kind: "derived", by: "the resolved model's endpoint" } },
+  controlBinding: { column: "control_binding", merge: "override", fallback: { kind: "instance", block: "computer" } },
+  systemPromptOverride: {
+    column: "system_prompt_override",
+    merge: "override",
+    // Absence is not a missing value here — it is the agent's own prompt, unoverridden.
+    fallback: { kind: "derived", by: "the agent's base prompt" },
+  },
+  type: { column: "type", merge: "override", fallback: { kind: "base", value: "interactive" } },
+  priority: { column: "priority", merge: "override", fallback: { kind: "base", value: 0 } },
+  responder: { column: "responder", merge: "override", fallback: { kind: "base", value: "nova" } },
   // The one narrowing field. See `SessionConfigMerge` above and this file's header.
-  permissionMode: { column: "permission_mode", merge: "narrow" },
-  introspection: { column: "introspection", merge: "override" },
-  quality: { column: "quality", merge: "override" },
-  affective: { column: "affective", merge: "override" },
-  thinkingBudget: { column: "thinking_budget", merge: "override" },
-  surgicalEdits: { column: "surgical_edits", merge: "override" },
-  askBeforeChanges: { column: "ask_before_changes", merge: "override" },
+  // Write access to the session's OWN folder by default (owner 2026-07-25). Writing outside it is
+  // guarded independently of the mode, so the trust is scoped to the folder, not global.
+  permissionMode: { column: "permission_mode", merge: "narrow", fallback: { kind: "base", value: "bypass" } },
+  introspection: {
+    column: "introspection",
+    merge: "override",
+    fallback: { kind: "instance", block: "introspection" },
+  },
+  quality: { column: "quality", merge: "override", fallback: { kind: "instance", block: "quality" } },
+  affective: { column: "affective", merge: "override", fallback: { kind: "instance", block: "affective" } },
+  thinkingBudget: { column: "thinking_budget", merge: "override", fallback: { kind: "stance", value: true } },
+  surgicalEdits: { column: "surgical_edits", merge: "override", fallback: { kind: "stance", value: false } },
+  askBeforeChanges: { column: "ask_before_changes", merge: "override", fallback: { kind: "stance", value: false } },
   // Gained its column 2026-07-31 (see §SAFE MODE). It is a RESTRICTION, so this is precisely the
   // case ruling 8 exists for: a fork of a safe-mode session resolves to safe mode, because a
   // carried column puts it in `SESSION_CONFIG_FORK_FIELDS`.
-  safeMode: { column: "safe_mode", merge: "override" },
-  contextBudget: { column: "context_budget", merge: "override" },
-  memory: { column: "memory", merge: "override" },
-  shortChat: { column: "short_chat", merge: "override" },
-  strict: { column: "strict", merge: "override" },
+  // ⚠️ Its fallback is `false` — unattended commands RUN by default. Changing that literal changes
+  // the product's confinement posture; it is not a tidy-up.
+  safeMode: { column: "safe_mode", merge: "override", fallback: { kind: "stance", value: false } },
+  contextBudget: { column: "context_budget", merge: "override", fallback: { kind: "instance", block: "context" } },
+  // ⚠️ `stance`, not `instance`: an absent value means ON, and `MemorySetting.memoryEnabled()` is a
+  // SEPARATE global gate the readers AND in. Calling this one `instance` would say the setting is
+  // the fallback, which would make "no stance" mean "off" the day the setting defaults off.
+  memory: { column: "memory", merge: "override", fallback: { kind: "stance", value: true } },
+  shortChat: { column: "short_chat", merge: "override", fallback: { kind: "stance", value: false } },
+  strict: { column: "strict", merge: "override", fallback: { kind: "instance", block: "strict" } },
 } as const satisfies Readonly<Record<keyof SessionConfig, SessionConfigField>>
+
+/**
+ * The declared fallback for a tri-state switch, applied.
+ *
+ * Readers spelled this three ways — `x === true`, `x ?? true`, `x !== false` — each carrying its own
+ * copy of the answer, so two readers of one field could disagree and nothing would say so. This is
+ * the one place the answer lives now, and it reads it off the descriptor rather than repeating it.
+ *
+ * ⚠️ `stance` fields only. A field whose absence defers to an instance block or a resolver has no
+ * static answer to give, and inventing one here would silently shadow the setting that actually
+ * decides — so those throw rather than guess.
+ */
+export const stanceOf = (key: keyof SessionConfig, value: boolean | undefined): boolean => {
+  if (value !== undefined) return value
+  const fallback = SESSION_CONFIG_FIELDS[key].fallback
+  if (fallback.kind !== "stance")
+    throw new Error(
+      `${String(key)} has a ${fallback.kind} fallback; its reader must consult that source, not a literal`,
+    )
+  return fallback.value
+}
+
+/**
+ * The base effective config before any session override — the root of the resolution chain.
+ *
+ * ⚠️ **Read off the descriptor, not written here.** These are exactly the `kind: "base"` fallbacks,
+ * and `session-config-defaults.test.ts` fails if the two sets ever differ. A default declared in one
+ * place and applied from another is the defect shape ruling 8 came from, at its smallest scale.
+ *
+ * ⚠️ The tri-state switches are deliberately ABSENT. Their default is `kind: "stance"`, applied at
+ * the reader through `stanceOf`, because a resolved config carrying `surgicalEdits: false` could no
+ * longer tell "nobody set this" from "someone chose the default" — and the introspection view exists
+ * to answer precisely that.
+ */
+export const EFFECTIVE_CONFIG_DEFAULTS: EffectiveConfig = {
+  type: SESSION_CONFIG_FIELDS.type.fallback.value,
+  priority: SESSION_CONFIG_FIELDS.priority.fallback.value,
+  responder: SESSION_CONFIG_FIELDS.responder.fallback.value,
+  permissionMode: SESSION_CONFIG_FIELDS.permissionMode.fallback.value,
+}
 
 /** Every `SessionConfig` key, read off the descriptor (never re-typed). */
 export const SESSION_CONFIG_FIELD_KEYS: readonly (keyof SessionConfig)[] = Object.keys(
