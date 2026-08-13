@@ -2186,7 +2186,7 @@ class ApiProvider extends NovaClawApiClient {
   /**
    * Probe a provider endpoint
    *
-   * One-shot health probe: validates the provider URL, key, and (optionally) that a model is listed, in one GET /models round trip. Reports the server's honored context window where available.
+   * One-shot health probe: validates the provider URL, key, and (optionally) that a model is listed, in one GET /models round trip. Reports the server's honored context window where available. Pass capabilities:true to additionally negotiate what the endpoint can do — JSON mode, native tool calls, and prompted text tool calls — which costs three completions.
    */
   public probe<ThrowOnError extends boolean = false>(
     parameters: {
@@ -2197,6 +2197,7 @@ class ApiProvider extends NovaClawApiClient {
       baseURL?: string
       apiKey?: string
       authStyle?: "bearer" | "anthropic"
+      capabilities?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -2207,6 +2208,7 @@ class ApiProvider extends NovaClawApiClient {
       baseURL: parameters?.["baseURL"],
       apiKey: parameters?.["apiKey"],
       authStyle: parameters?.["authStyle"],
+      capabilities: parameters?.["capabilities"],
     }
     return (options?.client ?? this.client).post<T.ProviderProbeResponses, T.ProviderProbeErrors, ThrowOnError>({
       url: "/provider/{providerID}/probe",
