@@ -82,6 +82,27 @@ export interface ProbeResult {
   readonly limits?: Readonly<Record<string, { readonly context?: number; readonly output?: number }>>
   readonly detail?: string
   readonly models?: readonly string[]
+  /**
+   * What the endpoint can DO, when the probe was asked to negotiate it.
+   *
+   * ⚠️ Three answers per rung, never two. A 401 or a dropped socket is `unknown` WITH a fault, not
+   * `unsupported`: a wrong "cannot" is permanent and would demote a capable endpoint on the strength
+   * of a blip. `choice` keeps the same discipline — `unknown` is not a synonym for `chat-only`.
+   */
+  readonly capabilities?: {
+    readonly choice: "native" | "prompted" | "chat-only" | "unknown"
+    readonly rationale: string
+    readonly outcomes: Readonly<
+      Record<
+        string,
+        {
+          readonly kind: "supported" | "unsupported" | "unknown"
+          readonly fault?: "transport" | "auth" | "http" | "malformed" | "not-attempted" | "budget"
+          readonly detail?: string
+        }
+      >
+    >
+  }
 }
 
 export function providerProbe(
@@ -93,6 +114,8 @@ export function providerProbe(
     baseURL?: string
     apiKey?: string
     authStyle?: "bearer" | "anthropic"
+    /** Negotiate what the endpoint can do. ⚠️ Costs three completions — never on screen-open. */
+    capabilities?: boolean
     signal?: AbortSignal
   },
 ) {
@@ -106,8 +129,12 @@ export function providerProbe(
       ...(input.baseURL === undefined ? {} : { baseURL: input.baseURL }),
       ...(input.apiKey === undefined ? {} : { apiKey: input.apiKey }),
       ...(input.authStyle === undefined ? {} : { authStyle: input.authStyle }),
+      ...(input.capabilities === undefined ? {} : { capabilities: input.capabilities }),
     },
-    { signal: input.signal, timeoutMs: 7_000 },
+    // ⚠️ The capability pass is three GENERATIONS, and a reasoning model spends real time before its
+    // first token — 7s is the discovery budget and would abort a healthy negotiation, recording the
+    // abort as a failure to the person watching.
+    { signal: input.signal, timeoutMs: input.capabilities === true ? 120_000 : 7_000 },
   )
 }
 

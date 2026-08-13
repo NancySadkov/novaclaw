@@ -555,6 +555,10 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     queryOptions: queryOptionsApi,
     // bootstrap,
     updateConfig: updateConfigMutation.mutateAsync,
+    // Re-read the global config after something OTHER than `updateConfig` wrote it — the capability
+    // probe writes its measured verdict server-side, and without this the panel that just triggered
+    // the measurement keeps showing the answer from before it.
+    refetchConfig: () => configQuery.refetch(),
     project: projectApi,
     session,
     nativeMessages,

@@ -1,4 +1,4 @@
-import { Component, For, createMemo } from "solid-js"
+import { Component, For, Show, createMemo, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
@@ -9,6 +9,10 @@ import { TextareaV2 } from "@novaclaw/ui/v2/textarea-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
+import { providerProbe } from "@/utils/fs-api"
+import type { ServerConnection } from "@/context/server"
+import { errorMessage } from "@/pages/layout/helpers"
+import * as ToolChannel from "./tool-channel"
 import { showToast } from "@/utils/toast"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
@@ -191,6 +195,16 @@ export const DialogModelConfig: Component<{
   apiModelID: string
   providerApi: ProviderApi
   defaults?: ModelConfig
+  /**
+   * The connection to probe through, passed in like `DialogNewModel`'s.
+   *
+   * ⚠️ NOT `useSDK()`/`useServer()`. A settings dialog is pushed OUTSIDE the SDK context provider, so
+   * reaching for the context throws "SDK context must be used within a context provider" and the app
+   * error boundary swallows the whole dialog. Measured 2026-08-13 by opening it; the typecheck and
+   * 1,009 unit tests were green through it.
+   */
+  http: ServerConnection.HttpBase
+  directory: string
 }> = (props) => {
   const dialog = useDialog()
   const language = useLanguage()
@@ -200,7 +214,50 @@ export const DialogModelConfig: Component<{
     (serverSync().data.config?.providers as Record<string, ProviderConfig> | undefined)?.[props.providerID] ?? {}
   const savedModel = (): ModelConfig => providerCfg().models?.[props.modelID] ?? {}
 
+  /**
+   * The tool channel in force, and who decided it.
+   *
+   * Read from the SAME config the runner resolves against — the measurement under
+   * `provider_capability`, the operator's answer under this model's `request.body`. Nothing is
+   * recomputed here: staleness is checked server-side when a model resolves, and a second
+   * implementation would be free to disagree with what is actually in force.
+   */
+  const channelStatus = () =>
+    ToolChannel.status(serverSync().data.config as ToolChannel.ConfigLike | undefined, props.providerID, props.modelID)
+
+  const [testing, setTesting] = createSignal(false)
+  const [testError, setTestError] = createSignal<string>()
+
+  /**
+   * Measure this endpoint and record the verdict.
+   *
+   * ⚠️ Three generations, so it is only ever this button. The server writes the result, so the panel
+   * re-reads it from config rather than holding a second copy that could disagree with the runner.
+   */
+  const testChannel = async () => {
+    setTesting(true)
+    setTestError(undefined)
+    try {
+      const result = await providerProbe(props.http, {
+        directory: props.directory,
+        providerID: props.providerID,
+        modelID: props.modelID,
+        capabilities: true,
+      })
+      // A probe that answers `status: ok` with no capabilities negotiated something it could not
+      // measure at all — reported rather than shown as a silent no-op.
+      if (result.capabilities === undefined)
+        setTestError(result.detail ?? language.t("settings.models.config.toolChannel.testFailed"))
+      await serverSync().refetchConfig?.()
+    } catch (error) {
+      setTestError(errorMessage(error, language.t("settings.models.config.toolChannel.testFailed")))
+    } finally {
+      setTesting(false)
+    }
+  }
+
   const init = savedModel()
+
   const d = props.defaults ?? {}
   const nstr = (v: unknown) => (typeof v === "number" ? String(v) : "")
   const optNum = (k: string) => nstr((init.options as Record<string, unknown> | undefined)?.[k])
@@ -550,6 +607,69 @@ export const DialogModelConfig: Component<{
               description={language.t("settings.models.config.tool_call.desc")}
             >
               <Switch checked={form.tool_call} onChange={(v) => setForm("tool_call", v)} />
+            </SettingsRowV2>
+            {/*
+              WHICH tool channel this model runs on, and WHO decided. When it is wrong the agent
+              silently cannot act and the chat reads as a model refusing — so the decider is named
+              here, next to the way to change it. Testing costs three generations, so it is a button
+              and never something opening this dialog does.
+            */}
+            <SettingsRowV2
+              title={language.t("settings.models.config.toolChannel.name")}
+              description={language.t(`settings.models.config.toolChannel.${channelStatus().channel}`)}
+            >
+              <div class="flex flex-col items-end gap-1" data-tool-channel={channelStatus().channel}>
+                <span class="text-[12px] text-v2-text-text-muted" data-tool-channel-source>
+                  {language.t(`settings.models.config.toolChannel.source.${channelStatus().source}`)}
+                </span>
+                <Show when={channelStatus().rationale}>
+                  {(why) => (
+                    <span class="text-[11px] leading-4 text-right text-v2-text-text-faint" data-tool-channel-why>
+                      {why()}
+                    </span>
+                  )}
+                </Show>
+                {/*
+                  An override that contradicts a measurement is the most confusing state this screen
+                  can be in — "I tested it and it still does the other thing". Both are shown, with
+                  the winner named above.
+                */}
+                <Show when={channelStatus().overriddenMeasurement}>
+                  {(over) => (
+                    <span class="text-[11px] leading-4 text-right text-v2-text-text-faint" data-tool-channel-override>
+                      {language.t("settings.models.config.toolChannel.overridden", { channel: over().channel })}
+                    </span>
+                  )}
+                </Show>
+                <Show when={channelStatus().inconclusive}>
+                  {(verdict) => (
+                    <span
+                      class="text-[11px] leading-4 text-right text-v2-text-text-faint"
+                      data-tool-channel-inconclusive
+                    >
+                      {language.t(`settings.models.config.toolChannel.inconclusive.${verdict()}`)}
+                    </span>
+                  )}
+                </Show>
+                <button
+                  type="button"
+                  data-action="tool-channel-test"
+                  class="text-[12px] text-v2-text-text-base underline decoration-dotted hover:text-v2-text-text-strong disabled:opacity-50"
+                  disabled={testing()}
+                  onClick={() => void testChannel()}
+                >
+                  {language.t(
+                    testing() ? "settings.models.config.toolChannel.testing" : "settings.models.config.toolChannel.test",
+                  )}
+                </button>
+                <Show when={testError()}>
+                  {(message) => (
+                    <span class="text-[11px] leading-4 text-right text-v2-text-text-faint" data-tool-channel-error>
+                      {message()}
+                    </span>
+                  )}
+                </Show>
+              </div>
             </SettingsRowV2>
           </SettingsListV2>
 

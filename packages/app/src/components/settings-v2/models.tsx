@@ -270,9 +270,17 @@ export const SettingsModelsV2: Component = () => {
                           size="small"
                           variant="ghost-muted"
                           aria-label={language.t("settings.models.config.open")}
-                          onClick={() =>
+                          onClick={() => {
+                            const cn = conn()
+                            const dir = routeDir()
+                            // The same guard the sibling openers use: without a connection and a
+                            // directory the dialog cannot probe, and pushing it anyway would offer a
+                            // Test button that fails for a reason the user cannot see.
+                            if (!cn || !dir) return
                             dialog.push(() => (
                               <DialogModelConfig
+                                http={cn.http}
+                                directory={dir}
                                 providerID={key.providerID}
                                 modelID={key.modelID}
                                 modelName={item.name}
@@ -289,7 +297,7 @@ export const SettingsModelsV2: Component = () => {
                                 }}
                               />
                             ))
-                          }
+                          }}
                         >
                           {language.t("settings.models.config.open")}
                         </ButtonV2>

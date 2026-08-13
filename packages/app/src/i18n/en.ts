@@ -1615,6 +1615,23 @@ export const dict = {
   "settings.models.config.tool_call.name": "Tool use",
   "settings.models.config.tool_call.desc":
     "Let the model use NovaClaw's tools — read and edit files, run commands, search. Turn off for models that can't.",
+  "settings.models.config.toolChannel.name": "How tools are offered",
+  "settings.models.config.toolChannel.native":
+    "This model is handed tools through the endpoint's own tool channel — the usual way, and the one that works when it works.",
+  "settings.models.config.toolChannel.prompted":
+    "This model's endpoint can't carry tool calls properly, so the tools are described in the prompt instead and the calls are read back out of its reply.",
+  "settings.models.config.toolChannel.source.default": "Not tested — using the usual way",
+  "settings.models.config.toolChannel.source.measured": "Chosen by testing this endpoint",
+  "settings.models.config.toolChannel.source.configured": "Set by you, in this model's settings",
+  "settings.models.config.toolChannel.overridden":
+    "Testing said {{channel}}. Your setting is being used instead — clear it to go back to the tested answer.",
+  "settings.models.config.toolChannel.inconclusive.chat-only":
+    "Testing found no working way to offer tools here at all, so the usual way is still being used. Expect the agent to answer rather than act.",
+  "settings.models.config.toolChannel.inconclusive.unknown":
+    "The last test couldn't reach a conclusion, so the usual way is still being used. Try again when the endpoint is up.",
+  "settings.models.config.toolChannel.test": "Test what this endpoint can do",
+  "settings.models.config.toolChannel.testing": "Testing — this asks the model a few questions…",
+  "settings.models.config.toolChannel.testFailed": "The test couldn't finish. The endpoint may be down.",
   "settings.models.config.modalities.in.name": "Accepts",
   "settings.models.config.modalities.in.desc": "What you can send this model.",
   "settings.models.config.modalities.out.name": "Produces",
