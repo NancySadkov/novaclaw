@@ -157,6 +157,15 @@ const CAPABILITY_TIMEOUT = Duration.seconds(30)
  */
 const PROBE_TOKENS = 512
 
+/**
+ * WHICH serving process answered, remembered across the rungs of one negotiation.
+ *
+ * ⚠️ Module-scoped and reset by `probeCapabilities` before its first request. A negotiation is one
+ * sequence of awaited calls from one handler, so its rungs cannot interleave with another's; this is
+ * a scratch slot for that sequence, not shared state.
+ */
+let seenFingerprint: string | undefined
+
 const capabilityAsk = (
   client: HttpClient.HttpClient,
   input: { baseURL: string; headers: Record<string, string>; body: Record<string, unknown> },
@@ -178,7 +187,14 @@ const capabilityAsk = (
               ),
             )
           : response.json.pipe(
-              Effect.map((payload): ProviderCapability.Response => ({ kind: "body", payload })),
+              Effect.map((payload): ProviderCapability.Response => {
+                // Every response carries it, so the first rung that answers settles it. Read here
+                // rather than by a fourth request: asking again would spend a generation to learn
+                // something three responses already said.
+                const reported = (payload as { system_fingerprint?: unknown } | null)?.system_fingerprint
+                if (typeof reported === "string" && reported.length > 0) seenFingerprint ??= reported
+                return { kind: "body", payload }
+              }),
               // A success whose body is not JSON is a proxy or a gateway answering for the endpoint.
               // That says nothing about the model, so it must land as a fault, not as a capability.
               Effect.catch(() =>
@@ -268,8 +284,9 @@ export const probeCapabilities = (
     headers: Record<string, string>
     chat: ProviderCapability.Outcome
   },
-): Effect.Effect<ProviderCapability.Report> =>
+): Effect.Effect<ProviderCapability.Report & { readonly servedBy?: string }> =>
   Effect.gen(function* () {
+    seenFingerprint = undefined
     const skip = (why: string) =>
       ProviderCapability.report({
         chat: input.chat,
@@ -369,7 +386,12 @@ export const probeCapabilities = (
       },
     )
 
-    return ProviderCapability.report({ chat: input.chat, json, "native-tools": nativeTools, "text-tools": textTools })
+    return {
+      ...ProviderCapability.report({ chat: input.chat, json, "native-tools": nativeTools, "text-tools": textTools }),
+      // `skip` returns before any request, so a skipped negotiation carries no identity — correct:
+      // nothing answered, so nothing served it.
+      ...(seenFingerprint === undefined ? {} : { servedBy: seenFingerprint }),
+    }
   })
 
 type CompletionProbe =
@@ -677,7 +699,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       // CAPABILITY NEGOTIATION, only when asked and only once a plain completion has come back:
       // every rung generates, so without chat there is nothing to read and asking would measure the
       // same failure three more times under three different names.
-      let capabilities: ProviderCapability.Report | undefined
+      let capabilities: (ProviderCapability.Report & { readonly servedBy?: string }) | undefined
       if (ctx.payload.capabilities === true && ctx.payload.modelID) {
         const savedModel = entry?.models?.[ctx.payload.modelID] as { api?: { id?: string } } | undefined
         const wireModel = savedModel?.api?.id ?? ctx.payload.modelID
@@ -706,6 +728,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
               rationale: capabilities.rationale,
               measuredAt: Date.now(),
               endpoint: baseURL,
+              ...(capabilities.servedBy === undefined ? {} : { servedBy: capabilities.servedBy }),
               fingerprint: ProviderCapability.fingerprint({
                 endpoint: baseURL,
                 model: wireModel,

@@ -60,6 +60,18 @@ export interface Entry {
   /** What the measurement was ABOUT (`ProviderCapability.fingerprint`). Compared, never keyed on. */
   readonly fingerprint: string
   /**
+   * WHICH serving process answered, from the response's own `system_fingerprint`.
+   *
+   * Measured stable across calls to one server and different between two servers on the same vLLM
+   * build, so it identifies a process rather than a build. A URL can stay identical while the thing
+   * behind it is restarted or reloaded — the case `endpoint` cannot see and `template` was meant to.
+   *
+   * ⚠️ Recorded, not yet COMPARED automatically. The comparison needs the fingerprint of a live
+   * turn, which only arrives on a response, and the runner discards its finish event today. Until
+   * that hook exists this is provenance a person can read, not a staleness check.
+   */
+  readonly servedBy?: string
+  /**
    * The endpoint the measurement was taken from, as its own field.
    *
    * ⚠️ It is already inside `fingerprint`, and duplicating it is deliberate: a SURFACE has to be
@@ -115,6 +127,7 @@ const decode = (value: unknown): Entry | undefined => {
     // Empty rather than dropped: a row written before this field existed is still a real
     // measurement, and losing it would re-measure every endpoint for a display detail.
     endpoint: typeof row["endpoint"] === "string" ? row["endpoint"] : "",
+    ...(typeof row["servedBy"] === "string" && row["servedBy"].length > 0 ? { servedBy: row["servedBy"] } : {}),
   }
 }
 

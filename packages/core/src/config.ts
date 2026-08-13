@@ -447,6 +447,8 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       // The endpoint it was measured from. Optional so a row written before this field is still a
       // valid measurement rather than a decode failure that re-measures for a display detail.
       endpoint: Schema.optional(Schema.String),
+      /** The serving process that answered (`system_fingerprint`), when the endpoint reports one. */
+      servedBy: Schema.optional(Schema.String),
     }),
   )
     .pipe(Schema.optional)

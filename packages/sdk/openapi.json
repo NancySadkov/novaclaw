@@ -34818,6 +34818,9 @@
                 },
                 "endpoint": {
                   "type": "string"
+                },
+                "servedBy": {
+                  "type": "string"
                 }
               },
               "required": ["choice", "measuredAt", "fingerprint"],

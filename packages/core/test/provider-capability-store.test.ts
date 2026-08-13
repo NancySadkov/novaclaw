@@ -56,6 +56,15 @@ describe("decoding what was stored", () => {
     expect(decoded["p/m"]).toEqual({ choice: "chat-only", rationale: "", measuredAt: 5, fingerprint: "f", endpoint: "" })
   })
 
+  test("a serving identity round-trips, and its absence is silence", () => {
+    // Recorded so a person can see WHICH process produced a verdict. Absent for an endpoint that
+    // reports none, rather than a synthesised "unknown" — most wires never answer this question.
+    const withID = ProviderCapabilityStore.decodeAll({ "p/m": { ...entry, servedBy: "vllm-x-a44fe734" } })
+    expect(withID["p/m"]?.servedBy).toBe("vllm-x-a44fe734")
+    expect(ProviderCapabilityStore.decodeAll({ "p/m": entry })["p/m"]?.servedBy).toBeUndefined()
+    expect(ProviderCapabilityStore.decodeAll({ "p/m": { ...entry, servedBy: "" } })["p/m"]?.servedBy).toBeUndefined()
+  })
+
   test("nothing stored is an empty map, never a throw", () => {
     // Read on every model resolution; a throw here would take down turns to answer a question about
     // tool channels.

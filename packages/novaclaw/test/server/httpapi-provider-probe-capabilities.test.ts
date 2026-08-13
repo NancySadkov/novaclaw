@@ -182,6 +182,53 @@ describe("mapping a response onto a rung", () => {
   })
 })
 
+describe("which serving process answered", () => {
+  test("🔴 it is read off a response the probe ALREADY made, never a fourth request", () => {
+    // Asking again would spend a generation to learn something three responses already said.
+    // (Assertion is on the request count; the value itself is checked below.)
+    return run([
+      json({ choices: [{ message: { content: '{"ok":true}' }, finish_reason: "stop" }], system_fingerprint: "vllm-x-a44fe734" }),
+      nativeCall(GOOD_ARGS),
+      message("{}"),
+    ]).then(({ report, sent }) => {
+      expect(sent).toHaveLength(3)
+      expect((report as { servedBy?: string }).servedBy).toBe("vllm-x-a44fe734")
+    })
+  })
+
+  test("the FIRST rung to report it settles it", async () => {
+    // vLLM repeats it on every response; taking the first means a later rung that omits it cannot
+    // erase an identity we already have.
+    const { report } = await run([
+      json({ choices: [{ message: { content: '{"ok":true}' }, finish_reason: "stop" }], system_fingerprint: "first" }),
+      json({
+        choices: [
+          {
+            message: {
+              content: null,
+              tool_calls: [{ function: { name: ProviderCapability.CAPTURE_TOOL.name, arguments: JSON.stringify(GOOD_ARGS) } }],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+        system_fingerprint: "second",
+      }),
+      message("{}"),
+    ])
+    expect((report as { servedBy?: string }).servedBy).toBe("first")
+  })
+
+  test("an endpoint that reports none says nothing", async () => {
+    const { report } = await run([message('{"ok":true}'), nativeCall(GOOD_ARGS), message("{}")])
+    expect((report as { servedBy?: string }).servedBy).toBeUndefined()
+  })
+
+  test("🔴 a SKIPPED negotiation carries no identity — nothing answered, so nothing served it", async () => {
+    const { report } = await run([], { chat: { kind: "unknown", fault: "transport", detail: "timeout" } })
+    expect((report as { servedBy?: string }).servedBy).toBeUndefined()
+  })
+})
+
 describe("what it refuses to guess", () => {
   test("🔴 no chat means the rungs are NOT asked — the same failure three more times is not evidence", async () => {
     const { report, sent } = await run([], { chat: { kind: "unknown", fault: "transport", detail: "timeout" } })
