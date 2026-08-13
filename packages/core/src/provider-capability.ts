@@ -1,5 +1,7 @@
 export * as ProviderCapability from "./provider-capability"
 
+import { recoverToolCallsFromText } from "@novaclaw/llm"
+
 /**
  * WHAT CAN THIS ENDPOINT ACTUALLY DO — the reading half of capability negotiation.
  *
@@ -114,12 +116,33 @@ export const CAPTURE_TOOL = {
   },
 } as const
 
-/** The prompt that asks for a TEXT tool call, for endpoints with no native channel. */
+/**
+ * The prompt that asks for a TEXT tool call, for endpoints with no native channel.
+ *
+ * 🔴 **It asks for BARE JSON, and that is a measured decision rather than a style choice.**
+ *
+ * Measured against Holo3.1 on the Spark, 2026-08-13, three requests differing only in the wrapper:
+ *
+ *   · `Reply with only this line: {"name":…}`                    → the JSON comes back verbatim
+ *   · the same line wrapped in `<tool_call>…</tool_call>`        → **content is `null`**, no tool_calls
+ *   · `Reply with exactly: OK`                                   → "OK"
+ *
+ * The server's own tool parser CONSUMES the `<tool_call>` block and emits nothing in its place. So
+ * the hermes shape — the one the decoder was built to recover, because models emit it unprompted —
+ * is exactly the shape you must not ASK for on a server that has a tool parser armed: the client
+ * sees an empty turn and reads it as the model having nothing to say.
+ *
+ * Bare JSON is recovered by the same `recoverToolCallsFromText` (its `recoverBareJson` arm) and
+ * passes through untouched. The general lesson, worth more than this prompt: on the prompted rung
+ * the SERVER is a participant, not a pipe — a format it recognises is one it may swallow.
+ *
+ * ⚠️ The recovery still accepts every shape it always did. This is about what we ASK for; a model
+ * that answers in hermes anyway is still recovered when the server passes it through.
+ */
 export const TEXT_TOOL_PROMPT =
-  `You can call one tool. Reply with nothing but a single line of the form ` +
-  `<tool>{"name":"${CAPTURE_TOOL.name}","arguments":{...}}</tool>. ` +
-  `The tool is ${CAPTURE_TOOL.name}: it takes label (a short word), count (a whole number 1-9), ` +
-  `and nested (an object with left and right, both short words). Fill in all three.`
+  `You can call one tool. Reply with nothing but a single line of JSON, no code fence and no tags: ` +
+  `{"name":"${CAPTURE_TOOL.name}","arguments":{"label":"…","count":1,"nested":{"left":"…","right":"…"}}}. ` +
+  `label is a short word, count is a whole number 1-9, and left and right are short words. Fill in all three.`
 
 /** A tool call, however it arrived. */
 export interface ToolCall {
@@ -177,27 +200,20 @@ export const readToolCall = (call: ToolCall | undefined, offered: readonly strin
 }
 
 /**
- * Recover a TEXT tool call from a completion's content.
+ * Recover a TEXT tool call using the RUNNER's own recovery.
  *
- * Deliberately lenient about the wrapper and strict about the payload: models put the line inside a
- * code fence, add a sentence before it, or use single quotes around the tag. None of that says
- * anything about whether the endpoint can carry a call. What must be exact is the JSON.
+ * ⚠️ Not a reimplementation, and that is the whole point. `recoverToolCallsFromText` is
+ * whitelist-gated on the offered names — ordinary prose, C++ `<vector>`, markdown and code are
+ * never misread as a call — and it already handles the four shapes small models actually emit. Any
+ * second reader here would drift from it, and the drift would show up as a verdict about a channel
+ * that does not match the one the turn would use.
+ *
+ * A recovered call is BY CONSTRUCTION whitelist-clean, so what {@link readToolCall} still judges is
+ * the payload: multiple arguments carried intact, and the nested object not flattened.
  */
-export const recoverTextToolCall = (content: string): ToolCall | undefined => {
-  const match = /<tool>\s*([\s\S]*?)\s*<\/tool>/.exec(content)
-  if (!match?.[1]) return undefined
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(match[1])
-  } catch {
-    return { name: "", rawArguments: match[1] }
-  }
-  if (typeof parsed !== "object" || parsed === null) return { name: "", rawArguments: match[1] }
-  const body = parsed as { name?: unknown; arguments?: unknown }
-  return {
-    name: typeof body.name === "string" ? body.name : "",
-    rawArguments: JSON.stringify(body.arguments ?? {}),
-  }
+export const recoverTextToolCall = (content: string, offered: readonly string[]): ToolCall | undefined => {
+  const [first] = recoverToolCallsFromText(content, offered)
+  return first === undefined ? undefined : { name: first.name, rawArguments: first.arguments }
 }
 
 /**

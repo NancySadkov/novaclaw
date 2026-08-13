@@ -316,9 +316,12 @@ export const probeCapabilities = (
         read: (payload) =>
           firstMessage(payload) === undefined
             ? malformed()
-            : ProviderCapability.readToolCall(ProviderCapability.recoverTextToolCall(messageContent(payload)), [
-                ProviderCapability.CAPTURE_TOOL.name,
-              ]),
+            : ProviderCapability.readToolCall(
+                ProviderCapability.recoverTextToolCall(messageContent(payload), [
+                  ProviderCapability.CAPTURE_TOOL.name,
+                ]),
+                [ProviderCapability.CAPTURE_TOOL.name],
+              ),
       },
     )
 

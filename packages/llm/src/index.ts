@@ -16,6 +16,11 @@ export {
   truncatedArgsMessage,
   truncatedArgsResult,
 } from "./protocols/utils/truncated-args"
+// Exported because the CAPABILITY PROBE has to measure the channel the decoder actually recovers.
+// A probe with its own reader would report "this endpoint can do prompted tools" for a format the
+// runner cannot parse — a verdict about a channel that does not exist. One reader, both ends.
+export { recoverToolCallsFromText, resolveToolName } from "./protocols/utils/tool-recovery"
+export type { RecoveredCall } from "./protocols/utils/tool-recovery"
 export { Tool, ToolFailure, toDefinitions } from "./tool"
 export { ToolRuntime } from "./tool-runtime"
 export type { DispatchResult as ToolDispatchResult, ToolSettlement } from "./tool-runtime"

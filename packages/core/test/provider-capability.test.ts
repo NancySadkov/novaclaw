@@ -67,25 +67,55 @@ describe("judging a tool call", () => {
 })
 
 describe("recovering a tool call from text", () => {
-  test("lenient about the wrapper, strict about the payload", () => {
-    // A code fence and a sentence before the line say nothing about whether the endpoint can carry a
-    // call; the JSON does.
-    const content = 'Sure, here you go:\n```\n<tool>{"name":"nova_probe_capture","arguments":{"label":"x","count":1,"nested":{"left":"a","right":"b"}}}</tool>\n```'
-    const call = ProviderCapability.recoverTextToolCall(content)
+  // ⚠️ These go through the RUNNER's own `recoverToolCallsFromText`, not a reader of this module's
+  // own. A probe with its own parser would report "this endpoint can do prompted tools" for a format
+  // the decoder cannot parse — a verdict about a channel that does not exist.
+
+  test("the hermes shape the decoder already recovers is supported, fence and prose included", () => {
+    const content =
+      'Sure, here you go:\n```\n<tool_call>{"name":"nova_probe_capture","arguments":{"label":"x","count":1,"nested":{"left":"a","right":"b"}}}</tool_call>\n```'
+    const call = ProviderCapability.recoverTextToolCall(content, OFFERED)
     expect(call?.name).toBe("nova_probe_capture")
     expect(ProviderCapability.readToolCall(call, OFFERED).kind).toBe("supported")
   })
 
-  test("prose with no tag recovers nothing", () => {
-    expect(ProviderCapability.recoverTextToolCall("I would call the tool but here is a poem instead")).toBeUndefined()
+  test("a bare JSON object naming an offered tool is recovered too", () => {
+    // The decoder handles four shapes; the probe inherits all of them by asking it rather than
+    // matching one format of its own.
+    const call = ProviderCapability.recoverTextToolCall(
+      '{"name":"nova_probe_capture","arguments":{"label":"x","count":1,"nested":{"left":"a","right":"b"}}}',
+      OFFERED,
+    )
+    expect(ProviderCapability.readToolCall(call, OFFERED).kind).toBe("supported")
   })
 
-  test("a tag with unparseable content recovers a nameless call, which fails the whitelist", () => {
-    // Not silently dropped: a malformed call is evidence, and reporting nothing would read as "the
-    // model ignored the instruction", which is a different thing.
-    const call = ProviderCapability.recoverTextToolCall("<tool>{name: nova_probe_capture}</tool>")
-    expect(call).toBeDefined()
+  test("🔴 prose with angle brackets is NOT a call", () => {
+    // The whitelist gate is what keeps `#include <vector>` and markdown out. Losing it here would
+    // make every endpoint look capable of prompted tools.
+    expect(ProviderCapability.recoverTextToolCall("I would call it, but here is `<vector>` instead", OFFERED)).toBeUndefined()
+  })
+
+  test("a call naming a tool that was never offered recovers NOTHING", () => {
+    // The gate lives in the recovery, so a hallucinated name never even reaches the payload check —
+    // and the rung correctly reads as "the model did not call the tool it was offered".
+    const call = ProviderCapability.recoverTextToolCall(
+      '<tool_call>{"name":"get_weather","arguments":{"city":"Berlin"}}</tool_call>',
+      OFFERED,
+    )
+    expect(call).toBeUndefined()
     expect(ProviderCapability.readToolCall(call, OFFERED).kind).toBe("unsupported")
+  })
+
+  test("a recovered call that DROPPED arguments still fails the payload check", () => {
+    // Whitelist-clean is not the same as usable: this is the half `readToolCall` still owns.
+    const call = ProviderCapability.recoverTextToolCall(
+      '<tool_call>{"name":"nova_probe_capture","arguments":{"label":"x"}}</tool_call>',
+      OFFERED,
+    )
+    expect(call).toBeDefined()
+    const outcome = ProviderCapability.readToolCall(call, OFFERED)
+    expect(outcome.kind).toBe("unsupported")
+    expect(outcome.kind === "unsupported" && outcome.detail).toContain("count")
   })
 })
 
