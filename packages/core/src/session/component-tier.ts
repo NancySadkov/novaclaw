@@ -20,6 +20,23 @@ export const KERNEL_KIND_TIERS: Record<SessionComponentRegistry.KernelKind, Tier
   system_prompt_override: "privileged",
   device: "operational",
   priority: "operational",
+  // Which model answers, and which persona it wears. Both change the CHARACTER of every later turn
+  // — a cheaper model, or an agent with a different tool set and permission baseline — so neither is
+  // a routine knob. Neither is privileged either: the composer offers both to the user directly, and
+  // a repair the self-healing law promises ("ask any still-working model to fix it") has to be able
+  // to reach the model entry.
+  model: "consequential",
+  agent: "consequential",
+  // Read-only to an agent (`validateWrite` refuses a non-system write), so the write tier is what a
+  // SYSTEM write costs. Kept at the same tier as `permission_mode` because it decides the same
+  // thing: whether this chain counts as attended.
+  session_type: "consequential",
+  // Handing the conversation to a human is a stand-down, not an escalation — and the reverse is
+  // refused outright by `validateWrite` rather than priced.
+  responder: "operational",
+  // It decides whether the deterministic step-tree engine drives the turn, and its bounds. Turning
+  // it OFF removes per-step verification from an autonomous run, which is a supervision change.
+  strict: "consequential",
   goal: "privileged",
   plan: "privileged",
   // It may grant one real-desktop application, so the whole kind takes the higher tier. Values are
@@ -45,6 +62,13 @@ export const CROSS_READ_KIND_TIERS: Record<SessionComponentRegistry.KernelKind, 
   system_prompt_override: "privileged",
   device: "operational",
   priority: "operational",
+  // None of the five carries free text another user could have authored, so reading them across
+  // sessions leaks configuration rather than intent — the line this map draws.
+  model: "operational",
+  agent: "operational",
+  session_type: "operational",
+  responder: "operational",
+  strict: "operational",
   goal: "privileged",
   plan: "privileged",
   control_binding: "operational",

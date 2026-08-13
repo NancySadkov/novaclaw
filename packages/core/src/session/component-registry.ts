@@ -4,8 +4,12 @@ import { and, asc, eq } from "drizzle-orm"
 import { Context, DateTime, Effect, Layer, Schema } from "effect"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
+import { CatalogStore } from "../catalog-store"
 import { EventV2 } from "../event"
+import { Model } from "@novaclaw/schema/model"
 import { ProjectV2 } from "../project"
+import { SessionStrict } from "@novaclaw/schema/session-strict"
+import { SessionType } from "@novaclaw/schema/session-type"
 import { AbsolutePath, NonNegativeInt, PositiveInt, RelativePath } from "../schema"
 import path from "node:path"
 import { SessionEvent } from "./event"
@@ -33,6 +37,11 @@ export const KERNEL_KIND_NAMES = [
   "system_prompt_override",
   "device",
   "priority",
+  "model",
+  "agent",
+  "session_type",
+  "responder",
+  "strict",
   "goal",
   "plan",
   "control_binding",
@@ -595,6 +604,16 @@ export const make = (kernelDefinitions: ReadonlyArray<AnyDefinition> = []) =>
         yield* definition
           .validateWrite({ id: input.id, value: decoded, system: input.system === true })
           .pipe(Effect.mapError((cause) => projectionFailure(definition, "Writing", cause)))
+      // 🔴 The projection's own check runs HERE too, not only in `validate`. It used to run only
+      // there, which made it a courtesy for the dry-run path rather than a rule: a caller that went
+      // straight to `put` skipped it entirely. `working_folder` was safe only because its `put`
+      // re-ran the identical resolution by hand — i.e. the guarantee was upheld by a duplicate that
+      // the next projection to declare a `validate` would not have known to copy, and `model`'s
+      // catalog check is exactly that next one.
+      if (definition.projection?.validate)
+        yield* definition.projection
+          .validate(input.sessionID, decoded)
+          .pipe(Effect.mapError((cause) => projectionFailure(definition, "Writing", cause)))
       const value = yield* encodeInput(definition, decoded)
       if (definition.projection) {
         yield* definition.projection
@@ -696,6 +715,15 @@ const compiledDefinitions = Effect.gen(function* () {
   const { db } = yield* Database.Service
   const events = yield* EventV2.Service
   const projects = yield* ProjectV2.Service
+  // The catalog the `model` component resolves THROUGH. Validating on write is what makes "resolves
+  // through the catalog" a property of the component rather than a note in a ledger.
+  //
+  // ⚠️ `agent` gets NO such check, and the reason is structural rather than an oversight: the agent
+  // registry is a LOCATION-scoped service and this registry is a GLOBAL node, so it cannot hold one
+  // without either duplicating the registry per location or making the whole component surface
+  // location-scoped. The runner's `agents.select` already falls back to the default agent for an
+  // unknown name, so an unrecognised value degrades rather than breaking the chat.
+  const catalog = yield* CatalogStore.Service
   const current = (sessionID: SessionSchema.ID) =>
     db
       .select({
@@ -704,6 +732,11 @@ const compiledDefinitions = Effect.gen(function* () {
         priority: SessionTable.priority,
         controlBinding: SessionTable.control_binding,
         directory: SessionTable.directory,
+        model: SessionTable.model,
+        agent: SessionTable.agent,
+        sessionType: SessionTable.type,
+        responder: SessionTable.responder,
+        strict: SessionTable.strict,
       })
       .from(SessionTable)
       .where(eq(SessionTable.id, sessionID))
@@ -762,6 +795,41 @@ const compiledDefinitions = Effect.gen(function* () {
       enabled,
     })
 
+  const publishModel = (sessionID: SessionSchema.ID, model: Model.Ref) =>
+    events.publish(SessionEvent.ModelSwitched, {
+      sessionID,
+      messageID: SessionMessage.ID.create(),
+      timestamp: DateTime.nowUnsafe(),
+      model,
+    })
+  const publishAgent = (sessionID: SessionSchema.ID, agent: string) =>
+    events.publish(SessionEvent.AgentSwitched, {
+      sessionID,
+      messageID: SessionMessage.ID.create(),
+      timestamp: DateTime.nowUnsafe(),
+      agent,
+    })
+  const publishType = (sessionID: SessionSchema.ID, sessionType: SessionType.Info) =>
+    events.publish(SessionEvent.TypeSwitched, {
+      sessionID,
+      messageID: SessionMessage.ID.create(),
+      timestamp: DateTime.nowUnsafe(),
+      sessionType,
+    })
+  const publishResponder = (sessionID: SessionSchema.ID, responder: "nova" | "operator") =>
+    events.publish(SessionEvent.ResponderSwitched, {
+      sessionID,
+      messageID: SessionMessage.ID.create(),
+      timestamp: DateTime.nowUnsafe(),
+      responder,
+    })
+  const publishStrict = (sessionID: SessionSchema.ID, strict: SessionStrict.Override | null) =>
+    events.publish(SessionEvent.StrictSwitched, {
+      sessionID,
+      messageID: SessionMessage.ID.create(),
+      timestamp: DateTime.nowUnsafe(),
+      strict,
+    })
   const publishControlBinding = (sessionID: SessionSchema.ID, controlBinding: string | null) =>
     events.publish(SessionEvent.ControlBindingSwitched, {
       sessionID,
@@ -947,6 +1015,168 @@ const compiledDefinitions = Effect.gen(function* () {
           }),
       },
     }),
+    kernelDefinition({
+      kind: "model",
+      description:
+        "The model answering this session. Descendants inherit it unless they override. It is validated against the catalog, so a model that is not served cannot be set.",
+      cardinality: "singleton",
+      lifetime: "entity",
+      version: 1,
+      codec: Model.Ref,
+      // ⚠️ NOT removable, and the reason is mechanical rather than a policy: `ModelSwitched` carries
+      // a non-null `model`, so the kernel has no event that means "go back to inheriting". Adding
+      // one widens a durable wire event, its projector arm and the SDK — a change with its own
+      // migration, not a side effect of exposing this component. Filed in `todo/ecs.md`.
+      removable: false,
+      projection: {
+        // The column is a plain JSON object; `Model.Ref` is branded. The codec re-decodes it either
+        // way, so the cast is at the boundary where the shapes are known to match rather than spread
+        // across the projection.
+        get: (sessionID) => current(sessionID).pipe(Effect.map((row) => (row?.model ?? undefined) as Model.Ref | undefined)),
+        // The catalog is the registry this field resolves through, so "does this model exist" is
+        // answered HERE rather than at the next turn, where an unservable ref surfaces as a provider
+        // error the user has no way to connect back to the write that caused it.
+        validate: (_sessionID, value) =>
+          Effect.gen(function* () {
+            const stored = yield* catalog.providers()
+            const layers = stored[value.providerID]
+            // ⚠️ ANY layer, not the merged view: a model added by a later layer is servable, and
+            // re-implementing the merge here would be a second copy of the catalog's own algebra.
+            if (!layers?.some((layer) => layer.models?.[value.id] !== undefined))
+              return yield* Effect.fail(new Error(`No model ${value.providerID}/${value.id} in this instance's catalog`))
+          }),
+        put: (sessionID, value) =>
+          Effect.gen(function* () {
+            const row = yield* current(sessionID)
+            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            const same =
+              row.model?.id === value.id &&
+              row.model?.providerID === value.providerID &&
+              (row.model?.variant ?? undefined) === value.variant
+            if (!same) yield* publishModel(sessionID, value)
+            return undefined
+          }),
+      },
+    }),
+    kernelDefinition({
+      kind: "agent",
+      description:
+        "The agent persona driving this session — its base prompt, tools and permissions. Descendants inherit it unless they override.",
+      cardinality: "singleton",
+      lifetime: "entity",
+      version: 1,
+      codec: Schema.NonEmptyString,
+      // Same mechanical reason as `model`: `AgentSwitched` carries a non-null `agent`.
+      removable: false,
+      projection: {
+        get: (sessionID) => current(sessionID).pipe(Effect.map((row) => row?.agent ?? undefined)),
+        put: (sessionID, value) =>
+          Effect.gen(function* () {
+            const row = yield* current(sessionID)
+            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            if (row.agent !== value) yield* publishAgent(sessionID, value)
+            return undefined
+          }),
+      },
+    }),
+    kernelDefinition({
+      kind: "session_type",
+      description:
+        "This chat's kernel thread type — interactive, sub-agent, auto-prompting or goal-oriented. READ-ONLY to an agent: it is set by the person driving the chat.",
+      cardinality: "singleton",
+      lifetime: "entity",
+      version: 1,
+      codec: SessionType.Info,
+      removable: false,
+      // 🔴 SYSTEM-ONLY, and this is a security decision rather than a missing feature. Attendance
+      // derives from the chain ROOT's type (`rootAttendance`, agent-jail doctrine): an UNATTENDED
+      // root has out-of-folder writes DENIED outright and its bash confined, because nobody is there
+      // to answer an ask. An agent that could write its own type would declare itself `interactive`
+      // and walk straight out of that stance — the escalation the whole unattended arm exists to
+      // prevent. Exposed for READING because "what kind of thread am I" is a legitimate question and
+      // answering it costs nothing; the composer's Mode control remains how a HUMAN changes it.
+      validateWrite: ({ system }) =>
+        system
+          ? Effect.void
+          : Effect.fail(
+              new Error(
+                "A session's type is set by the person driving the chat, not by the agent: declaring yourself attended would lift the unattended confinement stance.",
+              ),
+            ),
+      projection: {
+        get: (sessionID) => current(sessionID).pipe(Effect.map((row) => row?.sessionType ?? undefined)),
+        put: (sessionID, value) =>
+          Effect.gen(function* () {
+            const row = yield* current(sessionID)
+            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            if (row.sessionType !== value) yield* publishType(sessionID, value)
+            return undefined
+          }),
+      },
+    }),
+    kernelDefinition({
+      kind: "responder",
+      description:
+        'Who answers on our side of this chat: "nova" (the agent) or "operator" (a human has taken over, so the agent stops auto-responding). An agent may hand control to a human; only a human hands it back.',
+      cardinality: "singleton",
+      lifetime: "entity",
+      version: 1,
+      codec: Schema.Literals(["nova", "operator"]),
+      // Same mechanical reason as `model`: `ResponderSwitched` carries a non-null responder.
+      removable: false,
+      // 🔴 ONE-WAY for an agent, mirroring the narrowing keystone on `permissionMode`. Standing down
+      // is always allowed — an agent deciding a human should take this conversation is the product
+      // working. Taking control BACK is not the agent's to decide: a human took over for a reason,
+      // and an agent that could set `nova` would overrule them silently, on their own account.
+      validateWrite: ({ value, system }) =>
+        system || value === "operator"
+          ? Effect.void
+          : Effect.fail(
+              new Error(
+                "A human has taken over this chat. You can hand control to a person, but only a person hands it back.",
+              ),
+            ),
+      projection: {
+        get: (sessionID) => current(sessionID).pipe(Effect.map((row) => row?.responder ?? undefined)),
+        put: (sessionID, value) =>
+          Effect.gen(function* () {
+            const row = yield* current(sessionID)
+            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            if (row.responder !== value) yield* publishResponder(sessionID, value)
+            return undefined
+          }),
+      },
+    }),
+    kernelDefinition({
+      kind: "strict",
+      description:
+        "This chat's Strict-harness override: whether the deterministic step-tree engine drives the turn, and its attempt/wall-clock bounds. Remove to inherit the parent chain, then the instance setting.",
+      cardinality: "singleton",
+      lifetime: "entity",
+      version: 1,
+      codec: SessionStrict.Override,
+      // The one of the five that CAN be cleared: `StrictSwitched.strict` is nullable, so the kernel
+      // already has an event meaning "back to inherit".
+      removable: true,
+      projection: {
+        get: (sessionID) => current(sessionID).pipe(Effect.map((row) => row?.strict ?? undefined)),
+        put: (sessionID, value) =>
+          Effect.gen(function* () {
+            const row = yield* current(sessionID)
+            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            yield* publishStrict(sessionID, value)
+            return undefined
+          }),
+        remove: (sessionID) =>
+          Effect.gen(function* () {
+            const row = yield* current(sessionID)
+            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            if (row.strict === null) return false
+            yield* publishStrict(sessionID, null)
+            return true
+          }),
+      },
+    }),
     GoalDefinition,
     PlanDefinition,
     ObservationDefinition,
@@ -998,5 +1228,5 @@ export const kernelLayer = Layer.effect(Service, compiledDefinitions.pipe(Effect
 export const node = makeGlobalNode({
   service: Service,
   layer: kernelLayer,
-  deps: [Database.node, EventV2.node, ProjectV2.node],
+  deps: [Database.node, EventV2.node, ProjectV2.node, CatalogStore.node],
 })

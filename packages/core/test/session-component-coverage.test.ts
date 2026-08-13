@@ -40,22 +40,32 @@ const EXPOSED: Readonly<Record<string, SessionComponentRegistry.KernelKind>> = {
   contextBudget: "tuning",
   shortChat: "tuning",
   memory: "tuning",
+  // Closed 2026-08-13. Each of the five needed a decision about its VALUE rather than a projection,
+  // and the decisions are recorded on the definitions themselves:
+  //   · `model` validates against the catalog on write — the registry it "resolves through" is now
+  //     consulted at the write, not at the next turn where a bad ref reads as a provider outage.
+  //   · `agent` does NOT validate: the agent registry is location-scoped and this registry is a
+  //     global node. The runner already falls back for an unknown name.
+  //   · `session_type` is READ-ONLY to an agent. Attendance derives from the chain root's type, so
+  //     an agent that could write it would declare itself attended and leave the unattended
+  //     confinement stance — the escalation that arm exists to prevent.
+  //   · `responder` is ONE-WAY: an agent may hand control to a human, only a human hands it back.
+  //   · `strict` is the one that can be REMOVED, because `StrictSwitched` is nullable.
+  model: "model",
+  agent: "agent",
+  type: "session_type",
+  responder: "responder",
+  strict: "strict",
 }
 
 /**
  * Config fields with no component kind, and why. ⛔ SHRINK ONLY.
  *
- * What remains are the five that each need a decision about their VALUE, not a projection: two
- * resolve through another registry (catalog, agents), two are kernel identity, and one is a nested
- * document rather than a scalar.
+ * EMPTY since 2026-08-13 — every config field is reachable as a component. Keep the map: an entry
+ * here is how a field that genuinely cannot be one gets declared instead of quietly missing, and the
+ * count assertion below is what stops it from growing back.
  */
-const NOT_YET_A_COMPONENT: Readonly<Record<string, string>> = {
-  model: "a model ref needs a codec and resolves through the catalog",
-  agent: "resolves through the agent registry",
-  type: "the kernel thread type; changing it mid-session is not a component write today",
-  responder: "who answers this session",
-  strict: "a nested override document, not a scalar",
-}
+const NOT_YET_A_COMPONENT: Readonly<Record<string, string>> = {}
 
 describe("every per-session fact is a component", () => {
   test("each config field is either exposed as a kind or a declared gap — never neither, never both", () => {
@@ -86,13 +96,14 @@ describe("every per-session fact is a component", () => {
     const kinds = new Set<string>(SessionComponentRegistry.KERNEL_KIND_NAMES)
     const snake = (value: string) => value.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)
     const stale = Object.keys(NOT_YET_A_COMPONENT).filter((f) => kinds.has(f) || kinds.has(snake(f)))
+    void snake
     expect(stale, "these fields now have a component kind — move them to EXPOSED").toEqual([])
   })
 
   test("⛔ the gap ledger shrinks only", () => {
-    // 5 of 20 config fields are not reachable as components. Lower this when you close one; a
-    // raise means a per-session fact was added outside the component model on purpose.
-    expect(Object.keys(NOT_YET_A_COMPONENT).length).toBeLessThanOrEqual(5)
+    // 0 of 20. It reached zero on 2026-08-13; a raise means a per-session fact was added outside the
+    // component model on purpose, which is a decision that belongs in a commit message.
+    expect(Object.keys(NOT_YET_A_COMPONENT).length).toBeLessThanOrEqual(0)
   })
 
   test("`tuning` carries every switch that claims it", () => {
