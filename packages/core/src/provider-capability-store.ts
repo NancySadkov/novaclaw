@@ -29,12 +29,25 @@ import { SettingsConfigStore } from "./settings-config-store"
  * instance drive the same endpoint differently before and after a reboot, with nothing on screen
  * that changed.
  *
- * ## Staleness
+ * ## Staleness, and why the fingerprint is not the KEY
  *
- * Keyed on `ProviderCapability.fingerprint` — endpoint, model, protocol, TEMPLATE. A server reloaded
- * with a different chat template is the same URL and the same model name with a different tool
- * channel, so a key that ignored it would hand the runner a rung that no longer works. A fingerprint
- * that no longer matches is simply absent: no entry, no claim.
+ * 🔴 **The key is `providerID/modelID`; the fingerprint is a FIELD.** Keying on the fingerprint reads
+ * better and is a trap: the writer (the probe handler, holding provider config) and the reader (model
+ * resolution, holding a catalog model) derive it from different inputs, so they can disagree — and a
+ * disagreement makes every lookup miss. That failure is SILENT and green: no entry means "not
+ * measured", which falls back to the protocol default, which is exactly what the system did before
+ * this store existed. Nothing would fail; the store would simply never be read.
+ *
+ * Both sides trivially agree on provider and model id, so the lookup cannot miss. Staleness then
+ * becomes an explicit comparison of the stored fingerprint against the current one, which can only
+ * ever be too conservative: a mismatch discards a measurement and re-measures, and the worst case is
+ * the behaviour before the store.
+ *
+ * ⚠️ **`template` is part of `fingerprint`'s shape and NOTHING SUPPLIES IT TODAY.** A server reloaded
+ * with a different chat template is the same URL, the same model name and possibly a different tool
+ * channel — the case the field exists for — and it is currently NOT detected, because neither the
+ * probe nor the resolver can see the template through an OpenAI-compatible endpoint. Said plainly
+ * here rather than implied away: the protection is designed, not in force.
  */
 
 const KEY = "provider_capability"
@@ -44,12 +57,23 @@ export interface Entry {
   readonly rationale: string
   /** Epoch millis. Kept so a surface can say HOW OLD the answer is rather than implying it is fresh. */
   readonly measuredAt: number
+  /** What the measurement was ABOUT (`ProviderCapability.fingerprint`). Compared, never keyed on. */
+  readonly fingerprint: string
 }
 
+/** The lookup key. Both sides know these two, so a lookup cannot miss for want of agreement. */
+export const key = (providerID: string, modelID: string) => `${providerID}/${modelID}`
+
 export interface Interface {
-  /** The recorded verdict for this fingerprint, or `undefined` when nothing was measured. */
-  readonly get: (fingerprint: string) => Effect.Effect<Entry | undefined>
-  readonly put: (fingerprint: string, entry: Entry) => Effect.Effect<void>
+  /**
+   * The recorded verdict for this model, or `undefined` when nothing was measured.
+   *
+   * `fingerprint` is what the CALLER believes it is asking about. A stored entry that does not match
+   * it is discarded rather than returned: it was measured about a different endpoint, model,
+   * protocol or template, and answering with it would be a claim about something else.
+   */
+  readonly get: (providerID: string, modelID: string, fingerprint: string) => Effect.Effect<Entry | undefined>
+  readonly put: (providerID: string, modelID: string, entry: Entry) => Effect.Effect<void>
   /** Everything recorded, for a surface that lists what this instance knows. */
   readonly all: () => Effect.Effect<Record<string, Entry>>
 }
@@ -70,19 +94,23 @@ const decode = (value: unknown): Entry | undefined => {
   const row = value as Record<string, unknown>
   if (typeof row["choice"] !== "string" || !CHOICES.has(row["choice"])) return undefined
   if (typeof row["measuredAt"] !== "number") return undefined
+  // A row with no fingerprint cannot be checked for staleness, and a measurement we cannot place is
+  // one we must not act on.
+  if (typeof row["fingerprint"] !== "string") return undefined
   return {
     choice: row["choice"] as ProviderCapability.Choice,
     rationale: typeof row["rationale"] === "string" ? row["rationale"] : "",
     measuredAt: row["measuredAt"],
+    fingerprint: row["fingerprint"],
   }
 }
 
 export const decodeAll = (stored: unknown): Record<string, Entry> => {
   if (typeof stored !== "object" || stored === null) return {}
   const out: Record<string, Entry> = {}
-  for (const [fingerprint, value] of Object.entries(stored as Record<string, unknown>)) {
+  for (const [rowKey, value] of Object.entries(stored as Record<string, unknown>)) {
     const entry = decode(value)
-    if (entry !== undefined) out[fingerprint] = entry
+    if (entry !== undefined) out[rowKey] = entry
   }
   return out
 }
@@ -98,14 +126,19 @@ export const layer = Layer.effect(
 
     return Service.of({
       all,
-      get: Effect.fn("ProviderCapabilityStore.get")(function* (fingerprint: string) {
-        return (yield* all())[fingerprint]
+      get: Effect.fn("ProviderCapabilityStore.get")(function* (
+        providerID: string,
+        modelID: string,
+        fingerprint: string,
+      ) {
+        const entry = (yield* all())[key(providerID, modelID)]
+        return entry?.fingerprint === fingerprint ? entry : undefined
       }),
-      put: Effect.fn("ProviderCapabilityStore.put")(function* (fingerprint: string, entry: Entry) {
+      put: Effect.fn("ProviderCapabilityStore.put")(function* (providerID: string, modelID: string, entry: Entry) {
         // Read-modify-write of the whole map. The map holds one row per model an instance has
         // probed — single digits — so a targeted update would buy nothing and cost a second shape
         // that has to agree with `decodeAll`.
-        yield* settings.set(KEY, { ...(yield* all()), [fingerprint]: entry })
+        yield* settings.set(KEY, { ...(yield* all()), [key(providerID, modelID)]: entry })
       }),
     })
   }),

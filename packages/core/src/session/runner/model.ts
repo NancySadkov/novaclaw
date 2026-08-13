@@ -509,12 +509,15 @@ export const locationLayer = Layer.effect(
       if (url === undefined) return undefined
       const entry = yield* capabilities
         .get(
+          model.providerID,
+          model.id,
           ProviderCapability.fingerprint({
             endpoint: url,
             model: model.api.type === "aisdk" ? model.api.id : model.id,
-            protocol: model.api.type === "aisdk" && model.api.package === "@ai-sdk/anthropic"
-              ? "anthropic-messages"
-              : "openai-chat",
+            protocol:
+              model.api.type === "aisdk" && model.api.package === "@ai-sdk/anthropic"
+                ? "anthropic-messages"
+                : "openai-chat",
           }),
         )
         .pipe(Effect.catchCause(() => Effect.succeed(undefined)))

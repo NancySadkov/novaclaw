@@ -658,18 +658,16 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
         // taken from.
         if (ctx.payload.baseURL === undefined)
           yield* capabilityStore
-            .put(
-              ProviderCapability.fingerprint({
+            .put(ctx.params.providerID, ctx.payload.modelID, {
+              choice: capabilities.choice,
+              rationale: capabilities.rationale,
+              measuredAt: Date.now(),
+              fingerprint: ProviderCapability.fingerprint({
                 endpoint: baseURL,
                 model: wireModel,
                 protocol: authStyle === "anthropic" ? "anthropic-messages" : "openai-chat",
               }),
-              {
-                choice: capabilities.choice,
-                rationale: capabilities.rationale,
-                measuredAt: Date.now(),
-              },
-            )
+            })
             // A store that will not write must not fail the probe: the user asked what this endpoint
             // can do, and they get that answer either way. The cost of the failure is that the next
             // turn re-measures, which is the behaviour before this store existed.
