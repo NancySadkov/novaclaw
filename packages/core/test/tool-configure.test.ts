@@ -190,6 +190,12 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "enabled_providers",
       "expertise",
       "model",
+      // The capability probe's measured tool channel per model. Consequential rather than
+      // operational: it decides HOW the agent is offered tools on every later turn, and a wrong
+      // value is a chat where the agent silently cannot act. Not privileged — it grants no
+      // capability the model did not already have, and the self-healing law wants a still-working
+      // model able to repair a stale verdict.
+      "provider_capability",
       "provider_presets",
       "resource_pressure",
       "snapshots",

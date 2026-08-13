@@ -7795,7 +7795,7 @@
                               },
                               "fault": {
                                 "type": "string",
-                                "enum": ["transport", "auth", "http", "malformed", "not-attempted"]
+                                "enum": ["transport", "auth", "http", "malformed", "not-attempted", "budget"]
                               },
                               "detail": {
                                 "type": "string"
@@ -34777,6 +34777,49 @@
           },
           "local_model_catalog": {
             "$ref": "#/components/schemas/ConfigV2LocalModelCatalog"
+          },
+          "provider_capability": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "choice": {
+                  "type": "string",
+                  "enum": ["native", "prompted", "chat-only", "unknown"]
+                },
+                "rationale": {
+                  "type": "string"
+                },
+                "measuredAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["NaN"]
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["Infinity"]
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["-Infinity"]
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["Infinity", "-Infinity", "NaN"]
+                    }
+                  ]
+                },
+                "fingerprint": {
+                  "type": "string"
+                }
+              },
+              "required": ["choice", "measuredAt", "fingerprint"],
+              "additionalProperties": false
+            }
           },
           "devices": {
             "type": "object",

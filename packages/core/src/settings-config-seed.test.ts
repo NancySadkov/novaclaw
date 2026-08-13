@@ -59,6 +59,9 @@ const VALID: Record<string, unknown> = {
   compaction: {},
   computer: { display: ":99" },
   context: { enabled: true },
+  provider_capability: {
+    "spark-holo/holo3.1": { choice: "native", rationale: "a well-formed native tool call", measuredAt: 1, fingerprint: "f" },
+  },
   provider_connection: { stall_timeout_ms: 300_000 },
   permissions: [{ action: "bash", resource: "*", effect: "ask" }],
   persona: {},

@@ -4312,6 +4312,14 @@ export type ConfigInfo = {
     [key: string]: ConfigV2ProviderPreset
   }
   local_model_catalog?: ConfigV2LocalModelCatalog
+  provider_capability?: {
+    [key: string]: {
+      choice: "native" | "prompted" | "chat-only" | "unknown"
+      rationale?: string
+      measuredAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      fingerprint: string
+    }
+  }
   devices?: {
     [key: string]: ConfigV2Device
   }
@@ -10778,7 +10786,7 @@ export type ProviderProbeResponses = {
       outcomes: {
         [key: string]: {
           kind: "supported" | "unsupported" | "unknown"
-          fault?: "transport" | "auth" | "http" | "malformed" | "not-attempted"
+          fault?: "transport" | "auth" | "http" | "malformed" | "not-attempted" | "budget"
           detail?: string
         }
       }
