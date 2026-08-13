@@ -223,7 +223,14 @@ export const DialogModelConfig: Component<{
    * implementation would be free to disagree with what is actually in force.
    */
   const channelStatus = () =>
-    ToolChannel.status(serverSync().data.config as ToolChannel.ConfigLike | undefined, props.providerID, props.modelID)
+    ToolChannel.status(
+      serverSync().data.config as ToolChannel.ConfigLike | undefined,
+      props.providerID,
+      props.modelID,
+      // Where this model points NOW — the same value the form edits, so a URL the user just changed
+      // is compared against, not the stale saved one.
+      form.apiPath || providerCfg().api?.url || props.providerApi.url,
+    )
 
   const [testing, setTesting] = createSignal(false)
   const [testError, setTestError] = createSignal<string>()
@@ -638,6 +645,13 @@ export const DialogModelConfig: Component<{
                   {(over) => (
                     <span class="text-[11px] leading-4 text-right text-v2-text-text-faint" data-tool-channel-override>
                       {language.t("settings.models.config.toolChannel.overridden", { channel: over().channel })}
+                    </span>
+                  )}
+                </Show>
+                <Show when={channelStatus().movedFrom}>
+                  {(from) => (
+                    <span class="text-[11px] leading-4 text-right text-v2-text-text-faint" data-tool-channel-moved>
+                      {language.t("settings.models.config.toolChannel.moved", { from: from() })}
                     </span>
                   )}
                 </Show>

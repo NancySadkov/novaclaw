@@ -705,6 +705,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
               choice: capabilities.choice,
               rationale: capabilities.rationale,
               measuredAt: Date.now(),
+              endpoint: baseURL,
               fingerprint: ProviderCapability.fingerprint({
                 endpoint: baseURL,
                 model: wireModel,

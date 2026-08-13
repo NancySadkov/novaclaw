@@ -1629,6 +1629,8 @@ export const dict = {
     "Testing found no working way to offer tools here at all, so the usual way is still being used. Expect the agent to answer rather than act.",
   "settings.models.config.toolChannel.inconclusive.unknown":
     "The last test couldn't reach a conclusion, so the usual way is still being used. Try again when the endpoint is up.",
+  "settings.models.config.toolChannel.moved":
+    "This model's address changed since it was tested (it was {{from}}), so the old result no longer applies. Test again.",
   "settings.models.config.toolChannel.test": "Test what this endpoint can do",
   "settings.models.config.toolChannel.testing": "Testing — this asks the model a few questions…",
   "settings.models.config.toolChannel.testFailed": "The test couldn't finish. The endpoint may be down.",

@@ -14,6 +14,7 @@ const entry = {
   rationale: "native dropped an argument",
   measuredAt: 1_700_000_000_000,
   fingerprint: '["http://h/v1","m","openai-chat",null]',
+  endpoint: "http://h/v1",
 }
 
 describe("decoding what was stored", () => {
@@ -26,9 +27,9 @@ describe("decoding what was stored", () => {
     // native rung on the strength of a parse failure. Absent is the only honest answer.
     const decoded = ProviderCapabilityStore.decodeAll({
       good: entry,
-      noChoice: { rationale: "x", measuredAt: 1, fingerprint: "f" },
-      badChoice: { choice: "sometimes", measuredAt: 1, fingerprint: "f" },
-      noTime: { choice: "native", rationale: "x", fingerprint: "f" },
+      noChoice: { rationale: "x", measuredAt: 1, fingerprint: "f", endpoint: "e" },
+      badChoice: { choice: "sometimes", measuredAt: 1, fingerprint: "f", endpoint: "e" },
+      noTime: { choice: "native", rationale: "x", fingerprint: "f", endpoint: "e" },
       notAnObject: "native",
       nul: null,
     })
@@ -50,7 +51,9 @@ describe("decoding what was stored", () => {
     const decoded = ProviderCapabilityStore.decodeAll({
       "p/m": { choice: "chat-only", measuredAt: 5, fingerprint: "f" },
     })
-    expect(decoded["p/m"]).toEqual({ choice: "chat-only", rationale: "", measuredAt: 5, fingerprint: "f" })
+    // ⚠️ A row written before `endpoint` existed keeps its verdict, with an empty endpoint. Dropping
+    // it would re-measure every endpoint for the sake of a display detail.
+    expect(decoded["p/m"]).toEqual({ choice: "chat-only", rationale: "", measuredAt: 5, fingerprint: "f", endpoint: "" })
   })
 
   test("nothing stored is an empty map, never a throw", () => {
@@ -66,7 +69,7 @@ describe("decoding what was stored", () => {
     // "We tried and could not find out" is worth remembering: it stops a surface claiming the
     // endpoint was never tested, and it is deliberately NOT a decision the runner acts on.
     const decoded = ProviderCapabilityStore.decodeAll({
-      "p/m": { choice: "unknown", rationale: "401", measuredAt: 9, fingerprint: "f" },
+      "p/m": { choice: "unknown", rationale: "401", measuredAt: 9, fingerprint: "f", endpoint: "e" },
     })
     expect(decoded["p/m"]?.choice).toBe("unknown")
   })

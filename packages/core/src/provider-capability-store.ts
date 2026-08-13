@@ -59,6 +59,16 @@ export interface Entry {
   readonly measuredAt: number
   /** What the measurement was ABOUT (`ProviderCapability.fingerprint`). Compared, never keyed on. */
   readonly fingerprint: string
+  /**
+   * The endpoint the measurement was taken from, as its own field.
+   *
+   * ⚠️ It is already inside `fingerprint`, and duplicating it is deliberate: a SURFACE has to be
+   * able to say *"this endpoint changed since it was tested"*, and the only alternative is parsing
+   * the fingerprint — coupling a display to an opaque equality token whose format exists to be
+   * compared, not read. The server keeps comparing fingerprints; the client compares a field it
+   * understands.
+   */
+  readonly endpoint: string
 }
 
 /** The lookup key. Both sides know these two, so a lookup cannot miss for want of agreement. */
@@ -102,6 +112,9 @@ const decode = (value: unknown): Entry | undefined => {
     rationale: typeof row["rationale"] === "string" ? row["rationale"] : "",
     measuredAt: row["measuredAt"],
     fingerprint: row["fingerprint"],
+    // Empty rather than dropped: a row written before this field existed is still a real
+    // measurement, and losing it would re-measure every endpoint for a display detail.
+    endpoint: typeof row["endpoint"] === "string" ? row["endpoint"] : "",
   }
 }
 

@@ -41,12 +41,27 @@ export interface ChannelStatus {
    * protocol default — and saying so beats showing "native" as though it had been chosen.
    */
   readonly inconclusive?: "chat-only" | "unknown"
+  /**
+   * The measurement was taken from a DIFFERENT endpoint than this model points at now.
+   *
+   * 🔴 "Never tested" and "tested, but the endpoint moved" are different facts and only the second
+   * is something a person can act on. The runner already ignores the stale row (it compares
+   * fingerprints when a model resolves), so the model is silently back on the protocol default —
+   * and without this the screen would keep showing the old verdict as though it still applied.
+   *
+   * ⚠️ It does NOT re-measure. Probing costs three generations, and a screen that spends tokens
+   * because you opened it is the thing `?probe=provider` exists to avoid. Saying so and offering the
+   * button is the whole fix.
+   */
+  readonly movedFrom?: string
 }
 
 interface StoredMeasurement {
   readonly choice?: unknown
   readonly rationale?: unknown
   readonly measuredAt?: unknown
+  /** Where it was measured. Compared as a FIELD — never by parsing the fingerprint. */
+  readonly endpoint?: unknown
 }
 
 /** The config shape this reads, structurally, so the SDK's own types still satisfy it. */
@@ -70,25 +85,48 @@ export const configuredChannel = (config: ConfigLike | undefined, providerID: st
   return channelOf((body as Record<string, unknown>)["toolChannel"])
 }
 
-export const status = (config: ConfigLike | undefined, providerID: string, modelID: string): ChannelStatus => {
+/**
+ * Trailing slashes are not a different endpoint — the kernel's own fingerprint normalises them, and a
+ * screen that disagreed would report a move nobody made.
+ */
+const sameEndpoint = (a: string, b: string) => a.replace(/\/+$/, "") === b.replace(/\/+$/, "")
+
+export const status = (
+  config: ConfigLike | undefined,
+  providerID: string,
+  modelID: string,
+  /** Where this model points NOW. Omit when the caller cannot know; no claim is then made. */
+  currentEndpoint?: string,
+): ChannelStatus => {
   const configured = configuredChannel(config, providerID, modelID)
   const stored = config?.provider_capability?.[`${providerID}/${modelID}`]
   const measured = channelOf(stored?.choice)
   const rationale = typeof stored?.rationale === "string" && stored.rationale.length > 0 ? stored.rationale : undefined
   const measuredAt = typeof stored?.measuredAt === "number" ? stored.measuredAt : undefined
   const inconclusive = stored?.choice === "chat-only" || stored?.choice === "unknown" ? stored.choice : undefined
+  const measuredEndpoint = typeof stored?.endpoint === "string" && stored.endpoint.length > 0 ? stored.endpoint : undefined
+  // ⚠️ Only claims a move when BOTH are known. A row written before the endpoint was recorded, or a
+  // caller that cannot supply the current one, must not be reported as moved — that would send
+  // someone re-testing a model nothing is wrong with.
+  const moved =
+    measuredEndpoint !== undefined && currentEndpoint !== undefined && !sameEndpoint(measuredEndpoint, currentEndpoint)
+      ? measuredEndpoint
+      : undefined
 
   if (configured !== undefined)
     return {
       channel: configured,
       source: "configured",
-      ...(measured !== undefined && measured !== configured
+      ...(measured !== undefined && measured !== configured && moved === undefined
         ? { overriddenMeasurement: { channel: measured, ...(rationale === undefined ? {} : { rationale }) } }
         : {}),
-      ...(inconclusive === undefined ? {} : { inconclusive }),
+      ...(moved === undefined ? {} : { movedFrom: moved }),
+      ...(inconclusive === undefined || moved !== undefined ? {} : { inconclusive }),
     }
 
-  if (measured !== undefined)
+  // A moved measurement is one the RUNNER already discards, so the model is on the protocol default.
+  // Reporting it as `measured` would be the screen claiming a verdict is in force when it is not.
+  if (measured !== undefined && moved === undefined)
     return {
       channel: measured,
       source: "measured",
@@ -99,8 +137,9 @@ export const status = (config: ConfigLike | undefined, providerID: string, model
   return {
     channel: "native",
     source: "default",
-    ...(inconclusive === undefined ? {} : { inconclusive }),
-    ...(rationale === undefined ? {} : { rationale }),
+    ...(moved === undefined ? {} : { movedFrom: moved }),
+    ...(inconclusive === undefined || moved !== undefined ? {} : { inconclusive }),
+    ...(rationale === undefined || moved !== undefined ? {} : { rationale }),
     ...(measuredAt === undefined ? {} : { measuredAt }),
   }
 }

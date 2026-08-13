@@ -34815,6 +34815,9 @@
                 },
                 "fingerprint": {
                   "type": "string"
+                },
+                "endpoint": {
+                  "type": "string"
                 }
               },
               "required": ["choice", "measuredAt", "fingerprint"],

@@ -444,6 +444,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       rationale: Schema.optional(Schema.String),
       measuredAt: Schema.Number,
       fingerprint: Schema.String,
+      // The endpoint it was measured from. Optional so a row written before this field is still a
+      // valid measurement rather than a decode failure that re-measures for a display detail.
+      endpoint: Schema.optional(Schema.String),
     }),
   )
     .pipe(Schema.optional)

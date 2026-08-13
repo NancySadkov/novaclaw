@@ -4318,6 +4318,7 @@ export type ConfigInfo = {
       rationale?: string
       measuredAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
       fingerprint: string
+      endpoint?: string
     }
   }
   devices?: {

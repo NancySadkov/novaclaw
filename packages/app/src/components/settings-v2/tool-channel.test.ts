@@ -9,8 +9,14 @@ import { configuredChannel, status, type ConfigLike } from "./tool-channel"
  * nothing: the user would go and change something that was never in force.
  */
 
-const measured = (choice: string, rationale = "native dropped an argument"): ConfigLike => ({
-  provider_capability: { "p/m": { choice, rationale, measuredAt: 1_700_000_000_000 } },
+const HERE = "http://spark:8010/v1"
+
+const measured = (
+  choice: string,
+  rationale = "native dropped an argument",
+  endpoint: string | undefined = HERE,
+): ConfigLike => ({
+  provider_capability: { "p/m": { choice, rationale, measuredAt: 1_700_000_000_000, endpoint } },
 })
 
 const configured = (toolChannel: unknown): ConfigLike => ({
@@ -64,6 +70,42 @@ describe("who decided the tool channel", () => {
     for (const value of ["Prompted", "text", "", 1, true, null])
       expect(configuredChannel(configured(value), "p", "m")).toBeUndefined()
     expect(status(configured("Prompted"), "p", "m").source).toBe("default")
+  })
+
+  test("🔴 a measurement from a DIFFERENT endpoint stops being in force, and says so", () => {
+    // "Never tested" and "tested, but the endpoint moved" are different facts, and only the second is
+    // something a person can act on. The runner already discards the stale row, so reporting it as
+    // `measured` would be the screen claiming a verdict is in force when it is not.
+    const result = status(measured("prompted"), "p", "m", "http://elsewhere:9000/v1")
+    expect(result.source).toBe("default")
+    expect(result.channel).toBe("native")
+    expect(result.movedFrom).toBe(HERE)
+    // The stale reason must not ride along — it describes somewhere else.
+    expect(result.rationale).toBeUndefined()
+  })
+
+  test("a trailing slash is not a move", () => {
+    // The kernel's fingerprint normalises it; a screen that disagreed would report a move nobody made.
+    expect(status(measured("prompted"), "p", "m", HERE + "/").movedFrom).toBeUndefined()
+  })
+
+  test("🔴 no move is claimed when either side is unknown", () => {
+    // A row written before the endpoint was recorded, or a caller that cannot supply the current one,
+    // must not send someone re-testing a model nothing is wrong with.
+    expect(status(measured("prompted", "why", undefined), "p", "m", HERE).movedFrom).toBeUndefined()
+    expect(status(measured("prompted"), "p", "m").movedFrom).toBeUndefined()
+    expect(status(measured("prompted"), "p", "m").source).toBe("measured")
+  })
+
+  test("an operator override still runs when the endpoint moved, and the move is still reported", () => {
+    // The override is about THIS model and remains in force; the measurement it would have overridden
+    // is about somewhere else, so it is not shown as overridden.
+    const cfg = { ...measured("prompted"), ...configured("native") }
+    const result = status(cfg, "p", "m", "http://elsewhere:9000/v1")
+    expect(result.source).toBe("configured")
+    expect(result.channel).toBe("native")
+    expect(result.movedFrom).toBe(HERE)
+    expect(result.overriddenMeasurement).toBeUndefined()
   })
 
   test("another model's entries do not leak in", () => {
