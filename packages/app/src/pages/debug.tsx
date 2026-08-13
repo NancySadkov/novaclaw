@@ -833,7 +833,9 @@ export function DebugPage() {
               Refresh
             </button>
           </div>
-          <div class="max-h-72 overflow-y-auto px-4 pb-3">
+          {/* overflow-x too: seven columns outgrow a narrow window, and a table that spills past
+              the viewport drags the whole page wide instead of scrolling inside its panel. */}
+          <div class="max-h-72 overflow-y-auto overflow-x-auto px-4 pb-3">
             <Show when={sessions().length > 0} fallback={<div class={hint}>no sessions cached yet</div>}>
               <table class="w-full border-collapse text-[11px]">
                 <thead>
