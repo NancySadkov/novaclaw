@@ -5,7 +5,7 @@ import { Context, Effect, Layer } from "effect"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import type { SessionSchema } from "./schema"
-import { SessionExecutionTable, TodoSnapshotTable } from "./sql"
+import { SessionExecutionTable, SessionTable, TodoSnapshotTable } from "./sql"
 import { SessionQualityCheckTable } from "./quality-check.sql"
 
 /**
@@ -15,9 +15,9 @@ import { SessionQualityCheckTable } from "./quality-check.sql"
  * or calibrate but never promote.* So every field here is READ from a table that something else
  * wrote as it happened. Nothing is inferred, and nothing is asked of a model.
  *
- * ⚠️ This is the DB-backed subset, not the whole of V1. The eight inputs the inventory names include
- * tools/effects (the event log), file versions and serving provenance (assistant messages) and
- * children (the session tree) — reads that live outside this module's tables. They are absent rather
+ * ⚠️ This is the relational subset, not the whole of V1. Three of the inventory's inputs are still
+ * absent — tools/effects, file versions and serving provenance — because they live inside message
+ * JSON rather than in a column, and extracting them is its own piece of work. They are absent rather
  * than stubbed: a receipt field that always says "unknown" trains its reader to skip the receipt.
  */
 
@@ -52,6 +52,18 @@ export interface Receipt {
   /** The plan as DECLARED, frozen when the attempt opened — never the live list. */
   readonly declaredPlan: readonly PlanItem[]
   readonly checks: readonly Check[]
+  /**
+   * Sessions this one spawned. Ordinary sessions with `parent_id` set — the inventory's *children*.
+   *
+   * ⚠️ Ids only, not their receipts. A receipt that inlined its children's receipts would recurse to
+   * whatever depth the run reached, and a reader following one link at a time can stop; a reader
+   * handed the whole tree cannot. Each child's own receipt is one more call to `forSession`.
+   *
+   * ⚠️ This is the tree as it stands NOW, not as of the attempt — a child spawned by a later attempt
+   * appears here too. Binding children to an attempt needs a column the spawner does not yet write,
+   * and inventing one would be the same lie the checks table refused.
+   */
+  readonly children: readonly string[]
 }
 
 export interface Interface {
@@ -126,6 +138,15 @@ export const layer = Layer.effect(
         .all()
         .pipe(Effect.orDie)
 
+      // Ordinary sessions with this one as parent — the `session_parent_idx` the inventory names.
+      const children = yield* db
+        .select({ id: SessionTable.id })
+        .from(SessionTable)
+        .where(eq(SessionTable.parent_id, sessionID))
+        .orderBy(asc(SessionTable.id))
+        .all()
+        .pipe(Effect.orDie)
+
       return {
         attemptID: attempt.attemptID,
         generation: attempt.generation,
@@ -133,6 +154,7 @@ export const layer = Layer.effect(
         startedAt: attempt.startedAt,
         declaredPlan,
         checks: checks.map((row) => ({ ...row, timedOut: Boolean(row.timedOut) })),
+        children: children.map((row) => row.id),
       } satisfies Receipt
     })
 

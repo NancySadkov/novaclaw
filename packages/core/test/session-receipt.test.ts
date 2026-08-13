@@ -53,7 +53,10 @@ const addPlan = (id: SessionSchema.ID, items: string[]) =>
         .pipe(Effect.orDie)
   })
 
-const addCheck = (id: SessionSchema.ID, input: { label: string; outcome: string; exitCode: number | null; at: number }) =>
+const addCheck = (
+  id: SessionSchema.ID,
+  input: { label: string; outcome: string; exitCode: number | null; at: number },
+) =>
   Effect.gen(function* () {
     const { db } = yield* Database.Service
     yield* db
@@ -97,10 +100,7 @@ describe("the task receipt", () => {
       const receipt = yield* (yield* SessionReceipt.Service).forSession(id)
       expect(receipt?.attemptID).toBe(lease.attemptID)
       expect(receipt?.generation).toBe(lease.generation)
-      expect(receipt?.declaredPlan.map((item) => item.content)).toEqual([
-        "read the failing test",
-        "fix the parser",
-      ])
+      expect(receipt?.declaredPlan.map((item) => item.content)).toEqual(["read the failing test", "fix the parser"])
       expect(receipt?.checks.map((check) => check.label)).toEqual(["typecheck"])
       // The command, not just the label: a label is a name the user chose, and provisioned commands
       // change. A receipt naming `typecheck` without saying what ran is a claim, not evidence.
@@ -145,6 +145,37 @@ describe("the task receipt", () => {
       const receipt = yield* (yield* SessionReceipt.Service).forSession(id)
       expect(receipt?.checks[0]?.outcome).toBe("refused")
       expect(receipt?.checks[0]?.exitCode).toBeNull()
+    }),
+  )
+
+  it.effect("lists spawned children by id, and none when there are none", () =>
+    Effect.gen(function* () {
+      const parent = SessionSchema.ID.make("ses_parent")
+      yield* makeSession(parent)
+      const attempt = yield* SessionExecutionAttempt.Service
+      yield* attempt.start(parent, "owner-1")
+
+      const service = yield* SessionReceipt.Service
+      expect((yield* service.forSession(parent))?.children).toEqual([])
+
+      const { db } = yield* Database.Service
+      for (const child of ["ses_child_b", "ses_child_a"])
+        yield* db
+          .insert(SessionTable)
+          .values({
+            id: SessionSchema.ID.make(child),
+            slug: child,
+            directory: "/project",
+            title: child,
+            version: "test",
+            parent_id: parent,
+          })
+          .run()
+          .pipe(Effect.orDie)
+
+      // Ids only, and ordered — a receipt that inlined its children's receipts would recurse to
+      // whatever depth the run reached, and a reader handed the whole tree cannot stop.
+      expect((yield* service.forSession(parent))?.children).toEqual(["ses_child_a", "ses_child_b"])
     }),
   )
 
