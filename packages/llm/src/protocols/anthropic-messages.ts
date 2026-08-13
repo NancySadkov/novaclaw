@@ -23,6 +23,7 @@ import { JsonObject, optionalArray, optionalNull, ProviderShared } from "./share
 import { isContextOverflow } from "../provider-error"
 import * as Cache from "./utils/cache"
 import { Lifecycle } from "./utils/lifecycle"
+import { PromptedTools } from "./utils/prompted-tools"
 import { ToolSchemaProjection } from "./utils/tool-schema"
 import { ToolStream } from "./utils/tool-stream"
 
@@ -513,8 +514,12 @@ const fromRequest = Effect.fn("AnthropicMessages.fromRequest")(function* (reques
   // messages. Tools live highest in the cache hierarchy, so when callers
   // over-mark we keep their tool hints and shed the message-tail ones first.
   const breakpoints = Cache.newBreakpoints(ANTHROPIC_BREAKPOINT_CAP)
+  // 🔴 ONE branch decides both halves, as in every other protocol: on the prompted channel the body
+  // carries no `tools` and the system text describes them instead. Split, the failure is silent — a
+  // body with neither is a turn where the agent cannot act, which reads as a model refusing.
+  const prompted = PromptedTools.isPrompted(request)
   const tools =
-    request.tools.length === 0 || request.toolChoice?.type === "none"
+    prompted || request.tools.length === 0 || request.toolChoice?.type === "none"
       ? undefined
       : request.tools.map((tool) =>
           lowerTool(
@@ -523,14 +528,21 @@ const fromRequest = Effect.fn("AnthropicMessages.fromRequest")(function* (reques
             ToolSchemaProjection.modelCompatibility(tool.inputSchema, toolSchemaCompatibility),
           ),
         )
-  const system =
-    request.system.length === 0
-      ? undefined
-      : request.system.map((part) => ({
-          type: "text" as const,
-          text: part.text,
-          cache_control: cacheControl(breakpoints, part.cache),
-        }))
+  const toolsSection = prompted ? PromptedTools.promptedToolsSection(request.tools) : undefined
+  const systemParts = [
+    ...request.system.map((part) => ({
+      type: "text" as const,
+      text: part.text,
+      cache_control: cacheControl(breakpoints, part.cache),
+    })),
+    // ⚠️ Appended as its own part with NO cache_control. `system` is a real array on this wire, so a
+    // second part is legitimate — unlike the OpenAI wires, where it would be a second system
+    // MESSAGE. It is left uncached deliberately: the breakpoint budget is allocated tools → system →
+    // messages, and spending one here would evict a caller's own hint for text that changes only
+    // when the tool set does.
+    ...(toolsSection === undefined ? [] : [{ type: "text" as const, text: toolsSection }]),
+  ]
+  const system = systemParts.length === 0 ? undefined : systemParts
   const messages = yield* lowerMessages(request, breakpoints)
   if (breakpoints.dropped > 0) {
     yield* Log.event("llm.cache.breakpoint.truncated", {

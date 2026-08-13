@@ -20,6 +20,7 @@ import {
 import { JsonObject, optionalArray, ProviderShared } from "./shared"
 import { GeminiToolSchema } from "./utils/gemini-tool-schema"
 import { Lifecycle } from "./utils/lifecycle"
+import { PromptedTools } from "./utils/prompted-tools"
 import { ToolSchemaProjection } from "./utils/tool-schema"
 
 const ADAPTER = "gemini"
@@ -300,7 +301,10 @@ const thinkingConfig = (request: LLMRequest) => {
 }
 
 const fromRequest = Effect.fn("Gemini.fromRequest")(function* (request: LLMRequest) {
-  const toolsEnabled = request.tools.length > 0 && request.toolChoice?.type !== "none"
+  // 🔴 One branch, both halves — see `prompted-tools.ts`. On the prompted channel no
+  // `functionDeclarations` go out and the tools are described in `systemInstruction` instead.
+  const prompted = PromptedTools.isPrompted(request)
+  const toolsEnabled = !prompted && request.tools.length > 0 && request.toolChoice?.type !== "none"
   const generation = request.generation
   const toolSchemaCompatibility = request.model.compatibility?.toolSchema
   const generationConfig = {
@@ -312,10 +316,15 @@ const fromRequest = Effect.fn("Gemini.fromRequest")(function* (request: LLMReque
     thinkingConfig: thinkingConfig(request),
   }
 
+  const toolsSection = prompted ? PromptedTools.promptedToolsSection(request.tools) : undefined
+  // One instruction, not two parts: this wire takes a single `systemInstruction`, and splitting it
+  // would leave the tools in a part some templates drop.
+  const systemText = [ProviderShared.joinText(request.system), toolsSection].filter(Boolean).join("\n\n")
+  const systemInstruction = systemText.length === 0 ? undefined : { parts: [{ text: systemText }] }
+
   return {
     contents: yield* lowerMessages(request),
-    systemInstruction:
-      request.system.length === 0 ? undefined : { parts: [{ text: ProviderShared.joinText(request.system) }] },
+    systemInstruction: systemInstruction,
     tools: toolsEnabled
       ? [
           {

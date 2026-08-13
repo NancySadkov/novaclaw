@@ -22,6 +22,7 @@ import { JsonObject, optionalArray, optionalNull, ProviderShared } from "./share
 import { isContextOverflow } from "../provider-error"
 import { OpenAIOptions } from "./utils/openai-options"
 import { Lifecycle } from "./utils/lifecycle"
+import { PromptedTools } from "./utils/prompted-tools"
 import { ToolSchemaProjection } from "./utils/tool-schema"
 import { ToolStream } from "./utils/tool-stream"
 
@@ -344,8 +345,12 @@ const lowerToolResultOutput = Effect.fn("OpenAIResponses.lowerToolResultOutput")
 })
 
 const lowerMessages = Effect.fn("OpenAIResponses.lowerMessages")(function* (request: LLMRequest) {
+  // Appended to the existing system item rather than pushed as a second one: this wire carries the
+  // system prompt INSIDE the input list, so a second item is a second turn-shaped message.
+  const toolsSection = PromptedTools.isPrompted(request) ? PromptedTools.promptedToolsSection(request.tools) : undefined
+  const systemText = [ProviderShared.joinText(request.system), toolsSection].filter(Boolean).join("\n\n")
   const system: OpenAIResponsesInputItem[] =
-    request.system.length === 0 ? [] : [{ role: "system", content: ProviderShared.joinText(request.system) }]
+    systemText.length === 0 ? [] : [{ role: "system", content: systemText }]
   const input: OpenAIResponsesInputItem[] = [...system]
   const store = OpenAIOptions.store(request)
 
@@ -479,16 +484,20 @@ const fromRequest = Effect.fn("OpenAIResponses.fromRequest")(function* (request:
   const generation = request.generation
   const options = yield* lowerOptions(request)
   const toolSchemaCompatibility = request.model.compatibility?.toolSchema
+  const prompted = PromptedTools.isPrompted(request)
   return {
     model: request.model.id,
     input: yield* lowerMessages(request),
+    // 🔴 ONE branch, both halves — see `prompted-tools.ts`. `lowerMessages` adds the description on
+    // the same test that omits the array here, so a body can never go out with neither, which is a
+    // turn where the agent cannot act and reads as a model refusing.
     tools:
-      request.tools.length === 0
+      prompted || request.tools.length === 0
         ? undefined
         : request.tools.map((tool) =>
             lowerTool(tool, ToolSchemaProjection.modelCompatibility(tool.inputSchema, toolSchemaCompatibility)),
           ),
-    tool_choice: request.toolChoice ? yield* lowerToolChoice(request.toolChoice) : undefined,
+    tool_choice: prompted || !request.toolChoice ? undefined : yield* lowerToolChoice(request.toolChoice),
     stream: true as const,
     max_output_tokens: generation?.maxTokens,
     temperature: generation?.temperature,
