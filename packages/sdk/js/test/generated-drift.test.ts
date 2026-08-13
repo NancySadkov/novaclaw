@@ -142,9 +142,11 @@ const GENERATE_TIMEOUT_MS = 60_000
 // acronym normalization and collision suffixes that the structural schema test below deliberately
 // cannot predict. A protocol schema addition changes it legitimately; update the fingerprint only
 // after reviewing the readable mapping diff printed by the failure.
-// Updated 2026-08-13 for ONE addition, reviewed against the printed mapping: `ProjectState` ->
-// `ProjectState` (GET /api/project). No rename, no collision suffix, no acronym normalisation moved.
-const SCHEMA_NAME_FINGERPRINT = "86a4ecfe615ba8aab7c389178f54071d6b03db3d9a302282c146548b2d364f29"
+// Updated 2026-08-13, reviewed against the printed mapping each time. Additions only, every one
+// mapping to itself — no rename, no collision suffix, no acronym normalisation moved:
+//   `ProjectState`                                (GET /api/project)
+//   `SessionReceiptInfo` / `Check` / `PlanItem`   (GET /api/session/:id/receipt)
+const SCHEMA_NAME_FINGERPRINT = "bf75c699a6762828d9e4fda0861a3b0f53d1433c7ad60d566cdb567ed517e9ec"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

@@ -11,6 +11,7 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { SessionTags } from "@novaclaw/core/session/tags"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
+import { SessionReceipt } from "@novaclaw/core/session/receipt"
 import { LocationServiceMap } from "@novaclaw/core/location-service-map"
 import { MessengerDrivers } from "@novaclaw/core/messenger/drivers"
 import { MessengerGateway } from "@novaclaw/core/messenger/gateway"
@@ -40,6 +41,7 @@ const applicationServices = LayerNode.group([
   SessionV2.node,
   SessionTags.node,
   SessionExecutionAttempt.node,
+  SessionReceipt.node,
   SessionExecution.node,
   PermissionSaved.node,
   PtyTicket.node,

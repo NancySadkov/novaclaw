@@ -1,5 +1,6 @@
 import { SessionMessage } from "@novaclaw/schema/session-message"
 import { SessionInput } from "@novaclaw/schema/session-input"
+import { SessionReceipt as SessionReceiptSchema } from "@novaclaw/schema/session-receipt"
 import { PromptInput } from "@novaclaw/schema/prompt-input"
 import { Session } from "@novaclaw/schema/session"
 import { AbsolutePath, NonNegativeInt, PositiveInt, RelativePath, statics } from "@novaclaw/schema/schema"
@@ -375,6 +376,31 @@ export const makeSessionGroups = <
               "List durable execution and recovery state, including paused failures and their human-readable details.",
           }),
         ),
+      )
+      .add(
+        /**
+         * "What Nova checked" — the task receipt for this session's CURRENT attempt.
+         *
+         * `todo/verified-autonomy.md` V1: mechanical evidence is authoritative, so every field is
+         * read from a table something else wrote as it happened. ⚠️ A session that has never run
+         * answers 404, not an empty receipt — an empty one asserts that nothing happened, which is a
+         * different claim from "nothing ran yet".
+         */
+        HttpApiEndpoint.get("session.receipt", "/api/session/:sessionID/receipt", {
+          params: { sessionID: Session.ID },
+          success: Schema.Struct({ data: SessionReceiptSchema.Info }),
+          error: SessionNotFoundError,
+        })
+          .middleware(sessionLocationMiddleware)
+          .annotateMerge(
+            OpenApi.annotations({
+              identifier: "v2.session.receipt",
+              summary: "Task receipt",
+              description:
+                "What this session's current attempt declared and what it checked: the frozen plan, " +
+                "each quality check that ran with its command and exit code, and any spawned children.",
+            }),
+          ),
       )
       .add(
         HttpApiEndpoint.get("session.get", "/api/session/:sessionID", {

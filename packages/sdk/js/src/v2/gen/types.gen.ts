@@ -4471,6 +4471,33 @@ export type SessionExecution = {
   updatedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
+export type SessionReceiptPlanItem = {
+  content: string
+  status: string
+  priority: string
+  position: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type SessionReceiptCheck = {
+  label: string
+  command: string
+  outcome: string
+  exitCode: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+  timedOut: boolean
+  durationMs: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+  at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type SessionReceiptInfo = {
+  attemptID: string
+  generation: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  state: string
+  startedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  declaredPlan: Array<SessionReceiptPlanItem>
+  checks: Array<SessionReceiptCheck>
+  children: Array<string>
+}
+
 export type PromptInputFileAttachment = {
   uri: string
   sourceUri?: string
@@ -11654,6 +11681,43 @@ export type V2SessionExecutionListResponses = {
 }
 
 export type V2SessionExecutionListResponse = V2SessionExecutionListResponses[keyof V2SessionExecutionListResponses]
+
+export type V2SessionReceiptData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/receipt"
+}
+
+export type V2SessionReceiptErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError | SessionNotFoundError
+}
+
+export type V2SessionReceiptError = V2SessionReceiptErrors[keyof V2SessionReceiptErrors]
+
+export type V2SessionReceiptResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: SessionReceiptInfo
+  }
+}
+
+export type V2SessionReceiptResponse = V2SessionReceiptResponses[keyof V2SessionReceiptResponses]
 
 export type V2SessionGetData = {
   body?: never

@@ -2967,6 +2967,25 @@ class ApiV2Session extends NovaClawApiClient {
   }
 
   /**
+   * Task receipt
+   *
+   * What this session's current attempt declared and what it checked: the frozen plan, each quality check that ran with its command and exit code, and any spawned children.
+   */
+  public receipt<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).get<T.V2SessionReceiptResponses, T.V2SessionReceiptErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/receipt",
+      ...options,
+      path,
+    })
+  }
+
+  /**
    * Get session
    *
    * Retrieve a session by ID.

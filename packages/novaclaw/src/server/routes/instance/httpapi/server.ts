@@ -48,6 +48,7 @@ import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
+import { SessionReceipt } from "@novaclaw/core/session/receipt"
 import { CalendarScheduler } from "@novaclaw/core/schedule/scheduler"
 import { RecipeBuiltin } from "@novaclaw/core/recipe-builtin"
 import { LocalModelRuntime } from "@/local-model/runtime"
@@ -250,6 +251,7 @@ const app = LayerNode.group([
   // location-scoped runner share ONE ledger (two builds would report different worlds).
   SessionScheduler.node,
   SessionExecutionAttempt.node,
+  SessionReceipt.node,
   Auth.node,
   Config.node,
   Env.node,

@@ -27,6 +27,7 @@ import {
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { Log } from "@novaclaw/schema/log"
 import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
+import { SessionReceipt } from "@novaclaw/core/session/receipt"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { resolveConfigView } from "./session-config"
@@ -40,6 +41,7 @@ const SessionCatalogHandler = handlerLayer(
       const session = yield* SessionV2.Service
       const tags = yield* SessionTags.Service
       const attempts = yield* SessionExecutionAttempt.Service
+      const receipts = yield* SessionReceipt.Service
       const execution = yield* SessionExecution.Service
 
       return (
@@ -178,6 +180,21 @@ const SessionCatalogHandler = handlerLayer(
             "session.execution.list",
             Effect.fn(function* () {
               return { data: yield* attempts.list() }
+            }),
+          )
+          .handle(
+            "session.receipt",
+            Effect.fn(function* (ctx) {
+              const found = yield* receipts.forSession(ctx.params.sessionID)
+              // ⚠️ 404, not an empty receipt. An empty one asserts that nothing happened, which is a
+              // different claim from "this session has not run yet" — and a caller cannot tell them
+              // apart once they are spelled the same.
+              if (!found)
+                return yield* new SessionNotFoundError({
+                  sessionID: ctx.params.sessionID,
+                  message: `No attempt has run for session ${ctx.params.sessionID}, so there is no receipt`,
+                })
+              return { data: found }
             }),
           )
           .handle(
