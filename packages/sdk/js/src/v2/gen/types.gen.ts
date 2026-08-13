@@ -1732,6 +1732,14 @@ export type SessionConfigFieldResolution = {
   merge: "override" | "narrow"
   origin?: string
   declaredBy: Array<string>
+  source?:
+    | {
+        kind: "instance"
+      }
+    | {
+        kind: "project"
+        file: string
+      }
 }
 
 export type SessionConfigResolved = {
@@ -1739,6 +1747,12 @@ export type SessionConfigResolved = {
   chain: Array<string>
   defaults: {
     [key: string]: unknown
+  }
+  project?: {
+    root: string
+    file: string
+    applied: Array<string>
+    refused: Array<string>
   }
   resolved: {
     [key: string]: unknown
@@ -8330,6 +8344,7 @@ export type GlobalResourcesResponses = {
         }
     >
     level: string
+    memoryLevel: string
     ram: Array<{
       id: string
       label: string

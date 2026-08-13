@@ -22,6 +22,9 @@
 // reasoning as `session-create-features.test.ts` and `config-remove.test.ts` in this directory.)
 
 import { describe, expect, test } from "bun:test"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
 import { Effect, Layer, Schema } from "effect"
 import { Authorization } from "@novaclaw/protocol/middleware/authorization"
 import { SchemaErrorMiddleware } from "@novaclaw/protocol/middleware/schema-error"
@@ -29,6 +32,9 @@ import { AgentV2 } from "@novaclaw/core/agent"
 import { Database } from "@novaclaw/core/database/database"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { FSUtil } from "@novaclaw/core/fs-util"
+import { ProjectFileCache } from "@novaclaw/core/project-file-cache"
+import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { ProjectV2 } from "@novaclaw/core/project"
@@ -238,6 +244,11 @@ const kernel = AppNodeBuilder.build(
     // The session routes reach the receipt service; without its node the three tests that drive a
     // real HTTP request fail with `Service not found` rather than anything about config resolution.
     SessionReceipt.node,
+    // The handler resolves the layer the TURN uses through this service — the folder's tune folded
+    // in — so the view cannot disagree with the runner. `FSUtil` is how the cache reaches the disk.
+    FSUtil.node,
+    ProjectFileCache.node,
+    SessionEffectiveConfig.node,
   ]),
   [
     [Database.node, Database.layerFromPath(":memory:")],
@@ -398,6 +409,51 @@ describe("GET /api/session/:id/config over a real parent and child", () => {
     expect(() => Schema.decodeUnknownSync(success as never)(data)).not.toThrow()
   })
 
+  test("🔴 a real `novaclaw.json` reaches the wire as `source`, file and all", async () => {
+    // ⚠️ THE case this endpoint's `source` field exists for, and the one a unit test of
+    // `resolvedConfigView` cannot make: everything between the file on disk and the decoded
+    // response has to work. Three separate things could silently drop it and all three look
+    // identical from the outside — the handler passing the shipped defaults instead of the folded
+    // layer (what it did until 2026-08-13), the fold refusing the switch as unwired, and the
+    // protocol's success schema not declaring `source`, which makes the encoder delete it on the
+    // way out and reads exactly like a stale backend.
+    const { success } = configEndpoint()
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "novaclaw-project-"))
+    fs.writeFileSync(
+      path.join(root, "novaclaw.json"),
+      JSON.stringify({ version: 1, tune: { features: { memory: false } } }),
+      "utf8",
+    )
+    try {
+      const data = await withHandler((call) =>
+        Effect.gen(function* () {
+          const sessions = yield* SessionV2.Service
+          const session = yield* sessions.create({ location: { directory: AbsolutePath.make(root) } })
+          return yield* call({ params: { sessionID: session.id } })
+        }),
+      )
+      // Decoded, not read raw: a field the schema does not declare is dropped HERE, which is the
+      // whole point of checking the decoded value rather than the handler's return.
+      const decoded = Schema.decodeUnknownSync(success as never)(data) as {
+        readonly data: {
+          readonly fields: Record<string, { readonly value?: unknown; readonly source?: Record<string, unknown> }>
+          readonly project?: { readonly file: string; readonly applied: readonly string[] }
+        }
+      }
+      expect(decoded.data.fields["memory"]?.value, "the folder's switch did not reach the resolution").toBe(false)
+      expect(decoded.data.fields["memory"]?.source).toEqual({
+        kind: "project",
+        file: path.join(root, "novaclaw.json"),
+      })
+      expect(decoded.data.project?.applied).toContain("memory")
+      // A component the folder did NOT supply must still read as the instance, or "project" would
+      // just be what this endpoint says whenever a project file exists.
+      expect(decoded.data.fields["permissionMode"]?.source).toEqual({ kind: "instance" })
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test("a session that does not exist is a 404, not a page of defaults", async () => {
     // The worst possible answer from this endpoint is a confident one about a session that is not
     // there: every field present, every origin absent, reading exactly like a real root session.
@@ -419,7 +475,14 @@ describe("GET /api/session/:id/config over a real parent and child", () => {
 describe("provenance beneath the entity", () => {
   const layerWithProject = {
     defaults: { ...EFFECTIVE_CONFIG_DEFAULTS, memory: false, safeMode: true },
-    project: { file: "C:/work/app/novaclaw.json", applied: ["memory"] },
+    project: {
+      root: "C:/work/app",
+      file: "C:/work/app/novaclaw.json",
+      applied: ["memory"],
+      // Declared and refused: a folder may raise a supervision switch, never lower one. Carried on
+      // the layer so the surface can say what the file asked for and did not get.
+      refused: ["askBeforeChanges"],
+    },
   }
 
   test("a component the folder supplied names the file", () => {

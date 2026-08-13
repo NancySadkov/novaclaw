@@ -30,6 +30,7 @@ import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attemp
 import { SessionReceipt } from "@novaclaw/core/session/receipt"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionSchema } from "@novaclaw/core/session/schema"
+import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
 import { resolveConfigView } from "./session-config"
 
 const DefaultSessionsLimit = 50
@@ -43,6 +44,7 @@ const SessionCatalogHandler = handlerLayer(
       const attempts = yield* SessionExecutionAttempt.Service
       const receipts = yield* SessionReceipt.Service
       const execution = yield* SessionExecution.Service
+      const effective = yield* SessionEffectiveConfig.Service
 
       return (
         handlers
@@ -233,13 +235,33 @@ const SessionCatalogHandler = handlerLayer(
                     }),
                 ),
               )
+              // The layer the TURN resolves against, from the one place the folder's tune is folded
+              // in. Passing the shipped defaults here (what this handler did until 2026-08-13) made
+              // every `source` say `instance`, including for values a `novaclaw.json` supplied —
+              // the endpoint answering its own question wrongly rather than not at all.
+              const layer = yield* effective.resolution(ctx.params.sessionID)
               return {
-                data: yield* resolveConfigView(ctx.params.sessionID, (id) =>
-                  // The same feeder the runner passes to `resolveSessionConfig`: a missing row is
-                  // `undefined`, which the walk reads as "the chain ends here".
-                  session
-                    .get(id as SessionSchema.ID)
-                    .pipe(Effect.catchTag("Session.NotFoundError", () => Effect.succeed(undefined))),
+                data: yield* resolveConfigView(
+                  ctx.params.sessionID,
+                  (id) =>
+                    // The same feeder the runner passes to `resolveSessionConfig`: a missing row is
+                    // `undefined`, which the walk reads as "the chain ends here".
+                    session
+                      .get(id as SessionSchema.ID)
+                      .pipe(Effect.catchTag("Session.NotFoundError", () => Effect.succeed(undefined))),
+                  {
+                    defaults: layer.defaults,
+                    ...(layer.project === undefined
+                      ? {}
+                      : {
+                          project: {
+                            root: layer.project.root,
+                            file: layer.project.file,
+                            applied: layer.applied,
+                            refused: layer.refused,
+                          },
+                        }),
+                  },
                 ),
               }
             }),

@@ -63,7 +63,15 @@ export type DefaultSource =
 /** What the entity resolves against: the folded defaults, and which components the folder supplied. */
 export interface DefaultsLayer {
   readonly defaults: EffectiveConfig
-  readonly project?: { readonly file: string; readonly applied: readonly string[] }
+  readonly project?: ProjectLayer
+}
+
+/** The folder's contribution, reported so the surface can name the file and what it did. */
+export interface ProjectLayer {
+  readonly root: string
+  readonly file: string
+  readonly applied: readonly string[]
+  readonly refused: readonly string[]
 }
 
 /** Mirrors `SessionConfigResolved` in `packages/protocol`. */
@@ -73,6 +81,7 @@ export interface ResolvedConfigView<ID extends string = string> {
   readonly defaults: Record<string, unknown>
   readonly resolved: Record<string, unknown>
   readonly fields: Record<string, FieldResolution<ID>>
+  readonly project?: ProjectLayer
 }
 
 /**
@@ -153,6 +162,7 @@ export const resolvedConfigView = <ID extends string>(
     defaults: projectFields(base),
     resolved: projectFields(resolved),
     fields,
+    ...(layer.project === undefined ? {} : { project: layer.project }),
   }
 }
 
@@ -168,6 +178,19 @@ export const resolvedConfigView = <ID extends string>(
 export const resolveConfigView = <ID extends string, E, R>(
   sessionID: ID,
   getSession: (id: ID) => Effect.Effect<SessionLike | undefined, E, R>,
+  /**
+   * What the chain resolves against.
+   *
+   * ⚠️ The caller supplies it rather than this module resolving it, and that is not indirection for
+   * its own sake: the layer must be the one the TURN used, which means it comes from
+   * `SessionEffectiveConfig` — the single place the folder's tune is folded in. Resolving a second
+   * one here would be a second fold, free to disagree with the first, and this endpoint's entire
+   * value is that it cannot disagree with what the session runs with.
+   *
+   * Defaulted so the pure half stays drivable without a service, and so an omission degrades to the
+   * shipped defaults rather than to a wrong answer.
+   */
+  layer: DefaultsLayer = { defaults: EFFECTIVE_CONFIG_DEFAULTS },
 ): Effect.Effect<ResolvedConfigView<ID>, E, R> =>
   Effect.gen(function* () {
     const visited: ID[] = []
@@ -196,5 +219,5 @@ export const resolveConfigView = <ID extends string, E, R>(
         ),
       )
     }
-    return resolvedConfigView(sessionID, layerIDs, chain)
+    return resolvedConfigView(sessionID, layerIDs, chain, layer)
   })

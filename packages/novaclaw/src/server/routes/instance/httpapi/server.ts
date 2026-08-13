@@ -74,6 +74,7 @@ import { Ripgrep } from "@novaclaw/core/ripgrep"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionComponentRegistry } from "@novaclaw/core/session/component-registry"
+import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
 import { SessionTags } from "@novaclaw/core/session/tags"
 import { lazy } from "@/util/lazy"
 import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@novaclaw/server/cors"
@@ -297,6 +298,10 @@ const app = LayerNode.group([
   // "Service not found: @novaclaw/v2/SessionComponentRegistry" on every call. The session TOOL
   // reaches this registry through the location-scoped graph, so nothing here had needed it before.
   SessionComponentRegistry.node,
+  // Same reason as the registry above: the resolved-config handler reads it, and the typecheck
+  // cannot tell you when it is missing from THIS graph. It resolves the layer a turn actually runs
+  // against — the folder's tune folded in — so the view cannot disagree with the runner.
+  SessionEffectiveConfig.node,
   SessionTags.node,
   ProjectV2.node,
   PtyTicket.node,

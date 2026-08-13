@@ -165,14 +165,47 @@ const SessionConfigFieldResolution = Schema.Struct({
   origin: Session.ID.pipe(Schema.optional),
   /** Every chain layer that declared this field, root-first. */
   declaredBy: Schema.Array(Session.ID),
+  /**
+   * Where the value came from when NO chain layer supplied it — i.e. whenever `origin` is absent
+   * but a `value` is present.
+   *
+   * 🔴 `origin` can only ever name a SESSION, so every layer beneath the entity collapsed into "no
+   * origin": a component the instance ships and one this folder's `novaclaw.json` asked for looked
+   * identical on the wire. That is the one question a person opening this surface is asking — *did I
+   * set this, or did my project?* — and answering it with silence is the confident-falsehood shape,
+   * not a missing feature.
+   *
+   * `project` carries the FILE, because the useful next action is opening it.
+   */
+  source: Schema.optional(
+    Schema.Union([
+      Schema.Struct({ kind: Schema.Literal("instance") }),
+      Schema.Struct({ kind: Schema.Literal("project"), file: Schema.String }),
+    ]),
+  ),
 }).annotate({ identifier: "SessionConfigFieldResolution" })
 
 export const SessionConfigResolved = Schema.Struct({
   sessionID: Session.ID,
   /** The `[root … session]` chain the walk actually followed, root-first. */
   chain: Schema.Array(Session.ID),
-  /** `EFFECTIVE_CONFIG_DEFAULTS` — what an absent `origin` points at. */
+  /**
+   * The layer the chain resolved against — what an absent `origin` points at. The shipped defaults
+   * with this folder's applied tune folded on top, so it is the base the TURN used, not a generic one.
+   */
   defaults: Schema.Record(Schema.String, Schema.Unknown),
+  /** The `novaclaw.json` governing the session's folder, when one does. */
+  project: Schema.optional(
+    Schema.Struct({
+      /** The directory holding the file. */
+      root: Schema.String,
+      file: Schema.String,
+      /** The switches the file supplied — every one of them shows as `source.kind === "project"`. */
+      applied: Schema.Array(Schema.String),
+      /** Declared and refused: a folder may raise a supervision switch, never lower one. */
+      refused: Schema.Array(Schema.String),
+    }),
+  ),
   /** The merged effective config, flat. Every entry equals its `fields[key].value`. */
   resolved: Schema.Record(Schema.String, Schema.Unknown),
   /** Per-field provenance, keyed by `SessionConfig` field name (see the block above). */

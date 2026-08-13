@@ -761,6 +761,9 @@
                     "level": {
                       "type": "string"
                     },
+                    "memoryLevel": {
+                      "type": "string"
+                    },
                     "ram": {
                       "type": "array",
                       "items": {
@@ -1328,7 +1331,7 @@
                       "additionalProperties": false
                     }
                   },
-                  "required": ["measuredAt", "memory", "disks", "level", "ram", "disk", "localModel"],
+                  "required": ["measuredAt", "memory", "disks", "level", "memoryLevel", "ram", "disk", "localModel"],
                   "additionalProperties": false,
                   "description": "Live instance RAM and disk usage"
                 }
@@ -26754,6 +26757,35 @@
               "type": "string",
               "pattern": "^ses"
             }
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": ["instance"]
+                  }
+                },
+                "required": ["kind"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": ["project"]
+                  },
+                  "file": {
+                    "type": "string"
+                  }
+                },
+                "required": ["kind", "file"],
+                "additionalProperties": false
+              }
+            ]
           }
         },
         "required": ["merge", "declaredBy"],
@@ -26775,6 +26807,31 @@
           },
           "defaults": {
             "type": "object"
+          },
+          "project": {
+            "type": "object",
+            "properties": {
+              "root": {
+                "type": "string"
+              },
+              "file": {
+                "type": "string"
+              },
+              "applied": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "refused": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["root", "file", "applied", "refused"],
+            "additionalProperties": false
           },
           "resolved": {
             "type": "object"

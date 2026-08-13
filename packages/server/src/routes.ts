@@ -8,6 +8,7 @@ import { Credential } from "@novaclaw/core/credential"
 import { PermissionSaved } from "@novaclaw/core/permission/saved"
 import { PtyTicket } from "@novaclaw/core/pty/ticket"
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
 import { SessionTags } from "@novaclaw/core/session/tags"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
@@ -40,6 +41,8 @@ const applicationServices = LayerNode.group([
   ToolOutputStore.cleanupNode,
   SessionV2.node,
   SessionTags.node,
+  // The resolved-config view resolves against the layer the TURN uses, folder tune included.
+  SessionEffectiveConfig.node,
   SessionExecutionAttempt.node,
   SessionReceipt.node,
   SessionExecution.node,

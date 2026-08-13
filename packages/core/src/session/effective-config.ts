@@ -37,6 +37,15 @@ import { SessionStore } from "./store"
 export interface Resolution {
   /** The effective config: the folder's tune folded under the parent chain and the session's row. */
   readonly config: EffectiveConfig
+  /**
+   * The layer the chain resolved AGAINST — the shipped defaults with the folder's applied tune on
+   * top, before any session declared anything.
+   *
+   * Reported because the introspection view resolves every PREFIX of the chain to find where each
+   * value last moved, and it must run that against the same base the turn did. Handed the shipped
+   * defaults instead, it would report a folder-supplied value as coming from the instance.
+   */
+  readonly defaults: EffectiveConfig
   /** The tune components the folder actually contributed. */
   readonly applied: readonly ProjectFile.TuneFeature[]
   /** Declared and refused, because the folder may not loosen what a lower layer already set. */
@@ -74,6 +83,7 @@ export const layer = Layer.effect(
       )
       return {
         config,
+        defaults: folded.defaults,
         applied: folded.applied,
         refused: folded.refused,
         deferred: folded.deferred,
