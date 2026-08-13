@@ -218,6 +218,31 @@ export const toolKind = (owner: string, name: string): ToolKind =>
 export const kernelDefinition = <A>(input: Omit<Definition<A>, "owner"> & { readonly kind: KernelKind }) =>
   ({ ...input, owner: "kernel" }) satisfies Definition<A>
 
+/**
+ * The composer's Tuning panel as one component value.
+ *
+ * ⚠️ Every key is OPTIONAL and absent means INHERIT, never "off" — the same tri-state the columns
+ * carry (`session-feature.ts`). A struct that required all ten would turn "I have not decided" into
+ * "I decided no" for nine of them the first time an agent wrote one.
+ *
+ * ⚠️ The key set is re-typed here rather than generated from `SessionFeature.Name`, because Drizzle
+ * needs real column objects and the schema needs literal keys to stay precisely typed. That makes it
+ * a THIRD copy of the list, so `session-tuning-component.test.ts` pins all three against each other.
+ */
+export const Tuning = Schema.Struct({
+  introspection: Schema.optional(Schema.Boolean),
+  quality: Schema.optional(Schema.Boolean),
+  affective: Schema.optional(Schema.Boolean),
+  thinkingBudget: Schema.optional(Schema.Boolean),
+  surgicalEdits: Schema.optional(Schema.Boolean),
+  askBeforeChanges: Schema.optional(Schema.Boolean),
+  safeMode: Schema.optional(Schema.Boolean),
+  contextBudget: Schema.optional(Schema.Boolean),
+  memory: Schema.optional(Schema.Boolean),
+  shortChat: Schema.optional(Schema.Boolean),
+}).annotate({ identifier: "SessionComponent.Tuning" })
+export type Tuning = typeof Tuning.Type
+
 export const ObservationDefinition = kernelDefinition({
   kind: "observation",
   description:
@@ -679,6 +704,38 @@ const compiledDefinitions = Effect.gen(function* () {
       timestamp: DateTime.nowUnsafe(),
       priority,
     })
+  // The ten Tuning columns, keyed by feature name. Drizzle needs the column objects themselves, so
+  // this cannot be derived from the descriptor; `session-tuning-component.test.ts` pins it.
+  const TUNING_COLUMNS = {
+    introspection: SessionTable.introspection,
+    quality: SessionTable.quality,
+    affective: SessionTable.affective,
+    thinkingBudget: SessionTable.thinking_budget,
+    surgicalEdits: SessionTable.surgical_edits,
+    askBeforeChanges: SessionTable.ask_before_changes,
+    safeMode: SessionTable.safe_mode,
+    contextBudget: SessionTable.context_budget,
+    memory: SessionTable.memory,
+    shortChat: SessionTable.short_chat,
+  } as const
+  const TUNING_NAMES = Object.keys(TUNING_COLUMNS) as (keyof typeof TUNING_COLUMNS)[]
+
+  const currentTuning = (sessionID: SessionSchema.ID) =>
+    db.select(TUNING_COLUMNS).from(SessionTable).where(eq(SessionTable.id, sessionID)).get().pipe(Effect.orDie)
+
+  const publishFeature = (
+    sessionID: SessionSchema.ID,
+    feature: (typeof TUNING_NAMES)[number],
+    enabled: boolean | null,
+  ) =>
+    events.publish(SessionEvent.FeatureSwitched, {
+      sessionID,
+      messageID: SessionMessage.ID.create(),
+      timestamp: DateTime.nowUnsafe(),
+      feature,
+      enabled,
+    })
+
   const publishControlBinding = (sessionID: SessionSchema.ID, controlBinding: string | null) =>
     events.publish(SessionEvent.ControlBindingSwitched, {
       sessionID,
@@ -752,6 +809,61 @@ const compiledDefinitions = Effect.gen(function* () {
             if (row.device === null) return false
             yield* publishDevice(sessionID, null)
             return true
+          }),
+      },
+    }),
+    kernelDefinition({
+      kind: "tuning",
+      description:
+        "This chat's harness-helper switches — the composer's Tuning panel. Each is a tri-state: true or " +
+        "false is this chat's explicit stance, and an absent key INHERITS (the parent chain, then the " +
+        "matching global block). Writing replaces the whole set, so a key you leave out returns to inherit; " +
+        "remove returns every switch to inherit at once.",
+      cardinality: "singleton",
+      lifetime: "entity",
+      version: 1,
+      codec: Tuning,
+      removable: true,
+      projection: {
+        // Absent rather than `{}` when nothing is set: "this chat takes no stance" is the same
+        // answer as having no component, and two spellings of it would make callers test for both.
+        get: (sessionID) =>
+          currentTuning(sessionID).pipe(
+            Effect.map((row) => {
+              if (row === undefined) return undefined
+              const value: Record<string, boolean> = {}
+              for (const name of TUNING_NAMES) {
+                const held = row[name]
+                if (held !== null && held !== undefined) value[name] = held
+              }
+              return Object.keys(value).length === 0 ? undefined : (value as Tuning)
+            }),
+          ),
+        put: (sessionID, value) =>
+          Effect.gen(function* () {
+            const row = yield* currentTuning(sessionID)
+            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            // One event per CHANGED switch, not one per key: the projector writes a column per
+            // event, and re-publishing an unchanged value would put a no-op in the transcript that
+            // reads as the user having flipped something.
+            for (const name of TUNING_NAMES) {
+              const desired = value[name] ?? null
+              if ((row[name] ?? null) === desired) continue
+              yield* publishFeature(sessionID, name, desired)
+            }
+            return undefined
+          }),
+        remove: (sessionID) =>
+          Effect.gen(function* () {
+            const row = yield* currentTuning(sessionID)
+            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            let cleared = false
+            for (const name of TUNING_NAMES) {
+              if ((row[name] ?? null) === null) continue
+              yield* publishFeature(sessionID, name, null)
+              cleared = true
+            }
+            return cleared
           }),
       },
     }),

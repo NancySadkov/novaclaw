@@ -28,26 +28,28 @@ const EXPOSED: Readonly<Record<string, SessionComponentRegistry.KernelKind>> = {
   systemPromptOverride: "system_prompt_override",
   priority: "priority",
   permissionMode: "permission_mode",
+  // The ten switches of the composer's Tuning panel share ONE singleton component; a component kind
+  // is not required to be one-per-field.
+  introspection: "tuning",
+  quality: "tuning",
+  affective: "tuning",
+  thinkingBudget: "tuning",
+  surgicalEdits: "tuning",
+  askBeforeChanges: "tuning",
+  safeMode: "tuning",
+  contextBudget: "tuning",
+  shortChat: "tuning",
+  memory: "tuning",
 }
 
 /**
  * Config fields with no component kind, and why. ⛔ SHRINK ONLY.
  *
- * The `tuning` group is the largest and the most mechanical: `tuning` is already a reserved name in
- * `KERNEL_KIND_NAMES` with a privilege tier and NO definition, so the composer's Tuning panel is the
- * one surface a user drives constantly that an agent cannot read or write as a component.
+ * What remains are the five that each need a decision about their VALUE, not a projection: two
+ * resolve through another registry (catalog, agents), two are kernel identity, and one is a nested
+ * document rather than a scalar.
  */
 const NOT_YET_A_COMPONENT: Readonly<Record<string, string>> = {
-  introspection: "belongs to the reserved `tuning` kind",
-  quality: "belongs to the reserved `tuning` kind",
-  affective: "belongs to the reserved `tuning` kind",
-  thinkingBudget: "belongs to the reserved `tuning` kind",
-  surgicalEdits: "belongs to the reserved `tuning` kind",
-  askBeforeChanges: "belongs to the reserved `tuning` kind",
-  safeMode: "belongs to the reserved `tuning` kind",
-  contextBudget: "belongs to the reserved `tuning` kind",
-  shortChat: "belongs to the reserved `tuning` kind",
-  memory: "belongs to the reserved `tuning` kind",
   model: "a model ref needs a codec and resolves through the catalog",
   agent: "resolves through the agent registry",
   type: "the kernel thread type; changing it mid-session is not a component write today",
@@ -88,17 +90,21 @@ describe("every per-session fact is a component", () => {
   })
 
   test("⛔ the gap ledger shrinks only", () => {
-    // 15 of 20 config fields are not reachable as components. Lower this when you close one; a
+    // 5 of 20 config fields are not reachable as components. Lower this when you close one; a
     // raise means a per-session fact was added outside the component model on purpose.
-    expect(Object.keys(NOT_YET_A_COMPONENT).length).toBeLessThanOrEqual(15)
+    expect(Object.keys(NOT_YET_A_COMPONENT).length).toBeLessThanOrEqual(5)
   })
 
-  test("`tuning` is reserved and still undefined — the largest single gap", () => {
-    // Reserved names may precede their storage adapter by design. This pins that the reservation is
-    // still outstanding, so closing it is a visible event rather than a quiet one.
-    expect(SessionComponentRegistry.KERNEL_KIND_NAMES).toContain("tuning")
-    const belongsToTuning = Object.entries(NOT_YET_A_COMPONENT).filter(([, why]) => why.includes("`tuning`"))
-    expect(belongsToTuning.length).toBe(10)
+  test("`tuning` carries every switch that claims it", () => {
+    // It was a reserved name with a tier and no definition until 2026-08-13. Now that it exists, the
+    // claim each of the ten switches makes above has to be true of the codec — otherwise a field
+    // would be marked covered by a component that does not actually carry it.
+    const claiming = Object.entries(EXPOSED)
+      .filter(([, kind]) => kind === "tuning")
+      .map(([field]) => field)
+      .sort()
+    expect(claiming.length).toBe(10)
+    expect(Object.keys(SessionComponentRegistry.Tuning.fields).sort()).toEqual(claiming)
   })
 
   test("the components that are NOT config fields stay reachable", () => {
