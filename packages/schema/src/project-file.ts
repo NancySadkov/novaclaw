@@ -85,6 +85,38 @@ export type Tune = typeof Tune.Type
  */
 export const SUPERVISION_FEATURES = ["safeMode", "askBeforeChanges"] as const
 
+/**
+ * Every switch a project file may declare, as a list.
+ *
+ * ⚠️ Named rather than dug out of the schema. The struct above is wrapped in `Schema.optional`,
+ * which makes it a union member two levels down — a shape a consumer can only reach by schema
+ * archaeology, and one that changes when the schema library does. Two consumers need to enumerate
+ * these (`ProjectDefaults.WIRED`'s ledger, and any surface listing what a folder may set), so the
+ * list is an export with a compile-time tie to the struct instead of a second copy that can drift.
+ */
+export const TUNE_FEATURES = [
+  "safeMode",
+  "askBeforeChanges",
+  "surgicalEdits",
+  "contextBudget",
+  "memory",
+  "introspection",
+  "quality",
+  "affective",
+] as const
+
+/**
+ * The tie. A feature added to `Tune.features` and not to `TUNE_FEATURES` (or the reverse) is a type
+ * error naming the missing keys, rather than a list that silently answers for the wrong set.
+ */
+type TuneFeaturesMatchSchema = [TuneFeature] extends [(typeof TUNE_FEATURES)[number]]
+  ? [(typeof TUNE_FEATURES)[number]] extends [TuneFeature]
+    ? true
+    : ["TUNE_FEATURES has entries Tune.features does not", Exclude<(typeof TUNE_FEATURES)[number], TuneFeature>]
+  : ["TUNE_FEATURES is missing", Exclude<TuneFeature, (typeof TUNE_FEATURES)[number]>]
+const _tuneFeaturesMatchSchema: TuneFeaturesMatchSchema = true
+void _tuneFeaturesMatchSchema
+
 /** What a folder may declare about itself. Every section optional: an empty project is still valid. */
 export const Info = Schema.Struct({
   version: Schema.Number,

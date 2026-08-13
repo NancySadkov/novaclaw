@@ -29,19 +29,43 @@ import type { EffectiveConfig } from "./config-resolve"
  */
 
 /**
- * The components a folder may actually influence today. ⛔ GROWS ONLY as readers are wired.
+ * The components a folder may actually influence. ⛔ GROWS ONLY as readers are wired.
  *
- * 🔴 **The half-wired hazard is worse than the missing feature.** Eleven call sites resolve session
- * config, each passing the shipped defaults directly, and a layer folded in reaches only the ones
- * that were edited. If a folder could set `safeMode` while just one of its two readers saw the fold,
- * the same chat would be confined for one decision and not the next — a supervision switch that is
- * half on, which is indistinguishable from a bug and worse than not offering it.
+ * 🔴 **The half-wired hazard is worse than the missing feature.** If a folder could set `safeMode`
+ * while just one of its two readers saw the fold, the same chat would be confined for one decision
+ * and not the next — a supervision switch that is half on, which is indistinguishable from a bug and
+ * worse than not offering it.
  *
  * So a component is listed here only once EVERY kernel reader of it resolves through a folded layer.
- * `surgicalEdits` and `askBeforeChanges` qualify because `permission.ts` is their only reader, and it
- * folds. `safeMode` does not: `tool/bash.ts` and the strict drain read it independently.
+ * That used to be a claim about eleven call sites, each passing the shipped defaults to
+ * `resolveSessionConfig` itself; it is now a claim about ONE — `session/effective-config.ts` — and
+ * `project-defaults-entry-point.test.ts` is the ledger that keeps it one.
+ *
+ * ⭐ **The full set, as measured 2026-08-13.** Every reader below resolves through the entry point:
+ *
+ *  · `surgicalEdits`, `askBeforeChanges` — `permission.ts`'s rule overlay.
+ *  · `safeMode` — `tool/bash.ts`'s jail decision, and `runner/strict-drain.ts` via the runner's
+ *    handoff resolution (`host-exec.ts`/`agent-jail.ts` take it as an argument from those two).
+ *  · `contextBudget` — the runner's turn config, and the strict drain's two profile sites.
+ *  · `memory` — the runner's recall gate, post-drain auto-extraction, and the `kb` tool's stand-down.
+ *  · `introspection`, `quality` — the runner's per-drain `introspectionOn`/`qualityOn`, and the
+ *    strict drain's quality overlay.
+ *  · `affective` — the runner's mood appraisal.
+ *
+ * ⚠️ The FORK path (`session.ts`, via `forkSessionConfig`) is deliberately not in that list. It
+ * materialises only what the CHAIN declares, so a folder's tune is never stamped onto a fork's row —
+ * the fork keeps resolving it from the folder, exactly as its source did.
  */
-export const WIRED: readonly ProjectFile.TuneFeature[] = ["surgicalEdits", "askBeforeChanges"]
+export const WIRED: readonly ProjectFile.TuneFeature[] = [
+  "surgicalEdits",
+  "askBeforeChanges",
+  "safeMode",
+  "contextBudget",
+  "memory",
+  "introspection",
+  "quality",
+  "affective",
+]
 
 /**
  * Fold a folder's declared tune into the defaults a session resolves against.

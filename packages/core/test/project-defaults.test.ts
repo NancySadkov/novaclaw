@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import type { ProjectFile } from "@novaclaw/schema/project-file"
 import { ProjectDefaults } from "@novaclaw/core/session/project-defaults"
 import {
   EFFECTIVE_CONFIG_DEFAULTS,
@@ -105,12 +106,26 @@ describe("a folder's tune as a defaults layer", () => {
 
 describe("the wired set", () => {
   test("a component with an unwired reader is DEFERRED, not applied", () => {
-    // safeMode is read by `tool/bash.ts` and the strict drain, neither of which folds. Applying it
-    // here would confine one decision in a chat and not the next — a supervision switch half on.
-    const folded = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, tune({ safeMode: true }))
-    expect(folded.defaults.safeMode).toBeUndefined()
-    expect(folded.deferred).toEqual(["safeMode"])
+    // ⚠️ Synthetic, because every declared switch IS wired now (2026-08-13) — the whole set moved
+    // once `SessionEffectiveConfig` became the single place the fold happens. Pinning the mechanism
+    // against a real unwired feature was only possible while one existed; asserting it against a
+    // name outside `WIRED` keeps the DEFERRED arm covered for the next switch someone adds. A
+    // reader that resolves the chain itself is still the hazard this arm exists for
+    // (`project-defaults-entry-point.test.ts` is what notices one appearing).
+    const unwired = "notAFeature" as ProjectFile.TuneFeature
+    const folded = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, tune({ [unwired]: true }))
+    expect(folded.deferred).toEqual([unwired])
     expect(folded.applied).toEqual([])
+    expect(folded.defaults).toEqual(EFFECTIVE_CONFIG_DEFAULTS)
+  })
+
+  test("safeMode reaches BOTH its readers now, so it applies", () => {
+    // The case the arm above used to pin. `tool/bash.ts` and the strict drain both resolve through
+    // the entry point, which is what makes applying it honest rather than half on.
+    const folded = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, tune({ safeMode: true }))
+    expect(resolveConfig(folded.defaults, []).safeMode).toBe(true)
+    expect(folded.applied).toEqual(["safeMode"])
+    expect(folded.deferred).toEqual([])
   })
 
   test("a wired component applies and is reported as applied", () => {
