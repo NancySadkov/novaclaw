@@ -17,6 +17,7 @@ import { InstanceHttpApi } from "../api"
 import type { ProbePayload } from "../groups/provider"
 import { ConfigProviderPreset } from "@novaclaw/core/config/provider-preset"
 import { ProviderCapability } from "@novaclaw/core/provider-capability"
+import { ProviderCapabilityStore } from "@novaclaw/core/provider-capability-store"
 import { ProviderV2 } from "@novaclaw/core/provider"
 
 /** How long one probe may take end to end (connect + headers + body). */
@@ -490,6 +491,10 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     // compiled `app` graph that `httpapi/server.ts` provides to the whole route tree (the
     // workspace-routing middleware already resolves it the same way).
     const http = yield* HttpClient.HttpClient
+    // Where a measured verdict survives the request that produced it. Deliberately NOT the provider
+    // config: a measurement and an operator's choice must stay distinguishable, and a re-test that
+    // overwrote a deliberate decision would be the worse half of merging them.
+    const capabilityStore = yield* ProviderCapabilityStore.Service
 
     // F1-final: the provider catalog now comes from the V2 `Catalog` (config +
     // ModelsDev, seeded into CatalogStore), projected onto the V1 wire shape the
@@ -632,15 +637,43 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       let capabilities: ProviderCapability.Report | undefined
       if (ctx.payload.capabilities === true && ctx.payload.modelID) {
         const savedModel = entry?.models?.[ctx.payload.modelID] as { api?: { id?: string } } | undefined
+        const wireModel = savedModel?.api?.id ?? ctx.payload.modelID
         capabilities = yield* probeCapabilities(http, {
           baseURL,
-          modelID: savedModel?.api?.id ?? ctx.payload.modelID,
+          modelID: wireModel,
           authStyle,
           headers: authHeaders,
           // Chat is not re-asked: `probeCompletion` above already proved it, and a second identical
           // request would be a second chance to disagree with the first.
           chat: { kind: "supported" },
         })
+        // 🔴 Remembered, or the measurement dies with the request that made it: the screen would
+        // tell the user this endpoint needs prompted tools and the very next turn would go out
+        // native again. Keyed on the fingerprint, so a server reloaded with a different chat
+        // template simply has no entry rather than a stale one.
+        //
+        // ⚠️ NOT written when this probed an UNSAVED endpoint (`payload.baseURL` is the New-Model
+        // discovery flow), for the same reason `ProbeWindow.remember` is skipped there: recording it
+        // against the saved provider id would attribute a measurement to an endpoint it was never
+        // taken from.
+        if (ctx.payload.baseURL === undefined)
+          yield* capabilityStore
+            .put(
+              ProviderCapability.fingerprint({
+                endpoint: baseURL,
+                model: wireModel,
+                protocol: authStyle === "anthropic" ? "anthropic-messages" : "openai-chat",
+              }),
+              {
+                choice: capabilities.choice,
+                rationale: capabilities.rationale,
+                measuredAt: Date.now(),
+              },
+            )
+            // A store that will not write must not fail the probe: the user asked what this endpoint
+            // can do, and they get that answer either way. The cost of the failure is that the next
+            // turn re-measures, which is the behaviour before this store existed.
+            .pipe(Effect.catchCause(() => Effect.void))
       }
       // T3 — remember the honored window so model resolution sizes the 1M context pack from
       // live truth, but only when this probed the SAVED provider endpoint: a payload baseURL

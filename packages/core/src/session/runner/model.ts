@@ -18,6 +18,8 @@ import { LocalModelManager } from "../../local-model-manager"
 import { ModelV2 } from "../../model"
 import { PluginV2 } from "../../plugin"
 import { ProbeWindow } from "../../probe-window"
+import { ProviderCapability } from "../../provider-capability"
+import { ProviderCapabilityStore } from "../../provider-capability-store"
 import { ProviderV2 } from "../../provider"
 import { DeviceRegistry } from "../device-registry"
 import { SessionSchema } from "../schema"
@@ -292,7 +294,6 @@ const withDefaults = (model: ModelV2.Info, route: AnyRoute) => {
   // ⚠️ Anything other than the two known values is IGNORED rather than passed through. A typo must
   // leave the model on its native channel — the working default — instead of silently selecting a
   // third behaviour or sending `toolChannel` to a server that will reject the whole request.
-  const toolChannel = configuredToolChannel(body)
   const httpBody = Object.fromEntries(
     Object.entries(body).filter(([key]) => key !== "apiKey" && key !== "thinkingBudget" && key !== "toolChannel"),
   )
@@ -306,7 +307,6 @@ const withDefaults = (model: ModelV2.Info, route: AnyRoute) => {
     provider: model.providerID,
     endpoint: model.api.url === undefined ? undefined : { baseURL: model.api.url },
     headers: model.request.headers,
-    ...(toolChannel === undefined ? {} : { compatibility: { toolChannel } }),
     ...(Object.keys(split.generation).length > 0 ? { generation: split.generation } : {}),
     http: { body: split.http },
     // B15/T3 — a live probe's server-reported window (vLLM max_model_len) is the HONORED
@@ -375,6 +375,14 @@ const apiName = (model: ModelV2.Info) =>
 export const fromCatalogModel = (
   model: ModelV2.Info,
   credential?: Credential.Value,
+  /**
+   * What the capability probe measured for this endpoint, when anything was.
+   *
+   * ⚠️ A FALLBACK, never an override: the model's own config still wins (see `withDefaults`). Absent
+   * — nothing measured, or a fingerprint that no longer matches — leaves the protocol's native
+   * default, which is the behaviour before any of this existed.
+   */
+  measuredToolChannel?: "native" | "prompted",
 ): Effect.Effect<Model, UnsupportedApiError> => {
   const resolved =
     credential?.type !== "key" || credential.metadata === undefined
@@ -383,18 +391,30 @@ export const fromCatalogModel = (
           Object.assign(draft.request.body, credential.metadata)
         })
   const key = apiKey(resolved, credential)
+  // 🔴 The precedence the self-healing law asks for, in one line: what an OPERATOR wrote beats what
+  // we MEASURED, and both beat the protocol's native default. Reversed, a re-test would silently
+  // undo a deliberate decision, and the operator would have no way to make one stick.
+  //
+  // ⚠️ It rides `.model()`, NOT `route.with()`. Route defaults carry no `compatibility`, so a value
+  // put there is spread into the defaults object and then dropped on the floor by `Model.make` —
+  // silently, with the config read, the strip and the plumbing all working. The tests below catch
+  // it; nothing else does.
+  const modelInput = (id: ModelV2.ID) => {
+    const toolChannel = configuredToolChannel(resolved.request.body) ?? measuredToolChannel
+    return toolChannel === undefined ? { id } : { id, compatibility: { toolChannel } }
+  }
   if (resolved.api.type === "aisdk" && resolved.api.package === "@ai-sdk/openai") {
     return Effect.succeed(
       withDefaults(resolved, OpenAIResponses.route)
         .with({ auth: key === undefined ? Auth.none : Auth.bearer(key) })
-        .model({ id: resolved.api.id }),
+        .model(modelInput(resolved.api.id)),
     )
   }
   if (resolved.api.type === "aisdk" && resolved.api.package === "@ai-sdk/anthropic") {
     return Effect.succeed(
       withDefaults(resolved, AnthropicMessages.route)
         .with({ auth: key === undefined ? Auth.none : Auth.header("x-api-key", key) })
-        .model({ id: resolved.api.id }),
+        .model(modelInput(resolved.api.id)),
     )
   }
   if (resolved.api.type === "aisdk" && resolved.api.package === "@ai-sdk/openai-compatible" && resolved.api.url) {
@@ -404,7 +424,7 @@ export const fromCatalogModel = (
     return Effect.succeed(
       withDefaults(withRepetitionFloor(resolved), OpenAICompatibleChat.route)
         .with({ auth: key === undefined ? Auth.none : Auth.bearer(key) })
-        .model({ id: resolved.api.id }),
+        .model(modelInput(resolved.api.id)),
     )
   }
   return Effect.fail(
@@ -416,8 +436,15 @@ export const fromCatalogModel = (
   )
 }
 
-export const resolve = (session: SessionSchema.Info, model: ModelV2.Info, credential?: Credential.Value) =>
-  withVariant(model, session.model?.variant).pipe(Effect.flatMap((model) => fromCatalogModel(model, credential)))
+export const resolve = (
+  session: SessionSchema.Info,
+  model: ModelV2.Info,
+  credential?: Credential.Value,
+  measuredToolChannel?: "native" | "prompted",
+) =>
+  withVariant(model, session.model?.variant).pipe(
+    Effect.flatMap((model) => fromCatalogModel(model, credential, measuredToolChannel)),
+  )
 
 export const supported = (model: ModelV2.Info) =>
   model.api.type === "aisdk" &&
@@ -451,6 +478,7 @@ export const locationLayer = Layer.effect(
     const integrations = yield* Integration.Service
     const localModels = yield* LocalModelManager.Service
     const plugins = yield* PluginV2.Service
+    const capabilities = yield* ProviderCapabilityStore.Service
 
     const select = Effect.fnUntraced(function* (session: SessionSchema.Info) {
       const defaultModel = session.model ? undefined : yield* catalog.model.default()
@@ -461,6 +489,36 @@ export const locationLayer = Layer.effect(
         : defaultModel && supported(defaultModel)
           ? defaultModel
           : (yield* catalog.model.available()).find(supported)
+    })
+
+    /**
+     * What the capability probe measured for this model, if anything, and if it still applies.
+     *
+     * ⚠️ Only `native` and `prompted` are ACTED on. A stored `chat-only` says the endpoint has no
+     * usable tool channel at all — a real answer, but not one this seam can express, and forcing
+     * `prompted` on it would offer tools we measured as unusable. A stored `unknown` is by
+     * definition not a decision. Both fall through to the protocol default, which is what the
+     * runner did before any of this existed.
+     *
+     * ⚠️ Never fails the turn. A store that will not read means no measurement, not a broken model:
+     * the cost is a channel chosen the old way, and the alternative is a turn that dies over a
+     * question about tool formats.
+     */
+    const measuredChannel = Effect.fn("SessionRunnerModel.measuredChannel")(function* (model: ModelV2.Info) {
+      const url = model.api.url
+      if (url === undefined) return undefined
+      const entry = yield* capabilities
+        .get(
+          ProviderCapability.fingerprint({
+            endpoint: url,
+            model: model.api.type === "aisdk" ? model.api.id : model.id,
+            protocol: model.api.type === "aisdk" && model.api.package === "@ai-sdk/anthropic"
+              ? "anthropic-messages"
+              : "openai-chat",
+          }),
+        )
+        .pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+      return entry?.choice === "native" || entry?.choice === "prompted" ? entry.choice : undefined
     })
 
     return Service.of({
@@ -490,6 +548,7 @@ export const locationLayer = Layer.effect(
           session,
           selected,
           connection ? yield* integrations.connection.resolve(connection) : undefined,
+          yield* measuredChannel(selected),
         )
       }),
       /**
@@ -573,5 +632,15 @@ export const locationLayer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer: locationLayer,
-  deps: [Catalog.node, Config.node, DeviceRegistry.node, Integration.node, LocalModelManager.node, PluginV2.node],
+  deps: [
+    Catalog.node,
+    Config.node,
+    DeviceRegistry.node,
+    Integration.node,
+    LocalModelManager.node,
+    PluginV2.node,
+    // What the capability probe measured. A global node, so this adds a reference rather than a
+    // per-location subsystem.
+    ProviderCapabilityStore.node,
+  ],
 })

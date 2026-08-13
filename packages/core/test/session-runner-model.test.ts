@@ -95,6 +95,61 @@ describe("SessionRunnerModel", () => {
     }),
   )
 
+  // ── THE TOOL CHANNEL, and the precedence it resolves by ────────────────────────────────────────
+  //
+  // Three layers can have an opinion about how a model is offered tools, and the order is the whole
+  // point (AGENTS.md's self-healing law: "defaults ship in code, but a store override always wins"):
+  //
+  //     the protocol's native default  <  what the probe MEASURED  <  what the OPERATOR configured
+  //
+  // Get it backwards and a re-test silently undoes a deliberate decision, with no way to make one
+  // stick.
+
+  it.effect("nothing measured and nothing configured leaves the model on its native channel", () =>
+    Effect.gen(function* () {
+      const resolved = yield* SessionRunnerModel.fromCatalogModel(
+        model({ type: "aisdk", package: "@ai-sdk/openai", url: "https://openai.example/v1" }),
+      )
+      expect(resolved.compatibility?.toolChannel).toBeUndefined()
+    }),
+  )
+
+  it.effect("a measurement selects the channel when the operator has said nothing", () =>
+    Effect.gen(function* () {
+      const resolved = yield* SessionRunnerModel.fromCatalogModel(
+        model({ type: "aisdk", package: "@ai-sdk/openai", url: "https://openai.example/v1" }),
+        undefined,
+        "prompted",
+      )
+      expect(resolved.compatibility?.toolChannel).toBe("prompted")
+    }),
+  )
+
+  it.effect("🔴 the OPERATOR's configured channel beats the measurement", () =>
+    Effect.gen(function* () {
+      const configured = ModelV2.Info.make({
+        ...model({ type: "aisdk", package: "@ai-sdk/openai", url: "https://openai.example/v1" }),
+        request: { headers: {}, body: { toolChannel: "native" } },
+      })
+      const resolved = yield* SessionRunnerModel.fromCatalogModel(configured, undefined, "prompted")
+      expect(resolved.compatibility?.toolChannel).toBe("native")
+    }),
+  )
+
+  it.effect("🔴 the knob never reaches the wire as a provider parameter", () =>
+    Effect.gen(function* () {
+      // It is a harness-side statement about the endpoint, like `thinkingBudget`. Left in the body
+      // it would be sent to a server that has no such parameter, and a strict one rejects the whole
+      // request — turning a repair into a dead model.
+      const configured = ModelV2.Info.make({
+        ...model({ type: "aisdk", package: "@ai-sdk/openai", url: "https://openai.example/v1" }),
+        request: { headers: {}, body: { toolChannel: "prompted", custom_extension: { enabled: true } } },
+      })
+      const resolved = yield* SessionRunnerModel.fromCatalogModel(configured)
+      expect(resolved.route.defaults.http?.body).toEqual({ custom_extension: { enabled: true } })
+    }),
+  )
+
   it.effect("prefers a live probed window over the catalog context limit", () =>
     Effect.gen(function* () {
       ProbeWindow.clear()

@@ -74,6 +74,7 @@ import { Ripgrep } from "@novaclaw/core/ripgrep"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionComponentRegistry } from "@novaclaw/core/session/component-registry"
+import { ProviderCapabilityStore } from "@novaclaw/core/provider-capability-store"
 import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
 import { SessionTags } from "@novaclaw/core/session/tags"
 import { lazy } from "@/util/lazy"
@@ -298,6 +299,9 @@ const app = LayerNode.group([
   // "Service not found: @novaclaw/v2/SessionComponentRegistry" on every call. The session TOOL
   // reaches this registry through the location-scoped graph, so nothing here had needed it before.
   SessionComponentRegistry.node,
+  // The provider probe writes its measured verdict here. Same trap as the two above: a missing
+  // node compiles green and answers 500 on every capability probe.
+  ProviderCapabilityStore.node,
   // Same reason as the registry above: the resolved-config handler reads it, and the typecheck
   // cannot tell you when it is missing from THIS graph. It resolves the layer a turn actually runs
   // against — the folder's tune folded in — so the view cannot disagree with the runner.
