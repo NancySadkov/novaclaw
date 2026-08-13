@@ -129,6 +129,17 @@ export type Error =
 export interface Interface {
   readonly resolve: (session: SessionSchema.Info) => Effect.Effect<Model, Error>
   /**
+   * Report WHICH process served a live turn, so a verdict measured on another is discarded.
+   *
+   * The case a URL cannot see: a server restarted or reloaded behind the same address. Best-effort
+   * and infallible by construction — it runs while a response streams, and no capability record is
+   * worth failing a turn for.
+   */
+  readonly observeServing: (
+    model: { readonly providerID: string; readonly id: string },
+    servedBy: string,
+  ) => Effect.Effect<void>
+  /**
    * The instance's DEFAULT model, resolved without a session.
    *
    * For work that has no conversation behind it — document ingestion is the case this exists for.
@@ -194,7 +205,13 @@ export const layerWith = (
   /** Seams that never do session-free work leave this alone; calling it then says so by name. */
   resolveDefault: Interface["resolveDefault"] = () =>
     Effect.fail(new NoDefaultModelError({ reason: "this SessionRunnerModel seam provides no default resolver" })),
-) => Layer.succeed(Service, Service.of({ resolve, resolveDefault, tier, prePrompt, retryAttempts, capabilities, ref, device }))
+  /** ⚠️ Added LAST for the reason above. A seam with no capability store simply observes nothing. */
+  observeServing: Interface["observeServing"] = () => Effect.void,
+) =>
+  Layer.succeed(
+    Service,
+    Service.of({ resolve, resolveDefault, tier, prePrompt, retryAttempts, capabilities, ref, device, observeServing }),
+  )
 
 /**
  * THE SCHEDULER'S NOTION OF A DEVICE — one physical backend, not one model on it.
@@ -525,6 +542,22 @@ export const locationLayer = Layer.effect(
     })
 
     return Service.of({
+      /**
+       * A live turn reported WHICH process served it — discard a verdict measured on another.
+       *
+       * ⚠️ Best-effort and never fails a turn. This runs while a response streams; a store that will
+       * not write means the verdict stays and is re-checked next turn, which is the behaviour before
+       * this existed. Failing the turn to keep a capability record tidy would be the wrong trade by
+       * a wide margin.
+       */
+      observeServing: Effect.fn("SessionRunnerModel.observeServing")(function* (
+        model: { readonly providerID: string; readonly id: string },
+        servedBy: string,
+      ) {
+        yield* capabilities
+          .forgetIfMoved(model.providerID, model.id, servedBy)
+          .pipe(Effect.catchCause(() => Effect.succeed(false)))
+      }),
       resolve: Effect.fn("SessionRunnerModel.resolve")(function* (session) {
         // Location plugins populate and filter the catalog asynchronously during layer startup
         // (plugin-internal's forked boot batch) — a prompt issued right after boot can read an

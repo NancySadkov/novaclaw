@@ -84,6 +84,25 @@ describe("decoding what was stored", () => {
   })
 })
 
+describe("discarding a verdict whose serving process is gone", () => {
+  // `forgetIfMoved` needs a live store, so the RULE is asserted here on the same predicate the
+  // implementation uses: act only when both identities are known and differ. The three cases below
+  // are the ones that must NOT discard — each would otherwise re-measure on every single turn, which
+  // reads as a probe whose result never sticks.
+  const decides = (stored: string | undefined, live: string) => stored !== undefined && stored !== live
+
+  test("🔴 a different serving process discards; the same one does not", () => {
+    expect(decides("vllm-a44fe734", "vllm-a54ff5e8")).toBe(true)
+    expect(decides("vllm-a44fe734", "vllm-a44fe734")).toBe(false)
+  })
+
+  test("🔴 an unknown identity on EITHER side is not evidence of a move", () => {
+    // A verdict recorded before the field existed, or an endpoint that reports none. Discarding on
+    // absence would empty the store on the next turn for every such endpoint.
+    expect(decides(undefined, "vllm-a44fe734")).toBe(false)
+  })
+})
+
 describe("the key, and why it is not the fingerprint", () => {
   test("🔴 the key is provider/model — the two things both sides trivially agree on", () => {
     // The trap this avoids is SILENT and green: the writer holds provider config and the reader

@@ -1224,6 +1224,16 @@ export const layer = Layer.effect(
         Stream.runForEach((event) =>
           Effect.gen(function* () {
             if (event.type === "tool-call") sawToolCall = true
+            // WHICH process served this turn. A server restarted behind the same URL keeps its
+            // address, so this is the only signal that a stored capability verdict describes a
+            // process that is gone. Best-effort: `observeServing` cannot fail, because no capability
+            // record is worth failing a turn for.
+            if (event.type === "finish") {
+              const reported = (event.providerMetadata?.["openai"] as { system_fingerprint?: unknown } | undefined)
+                ?.system_fingerprint
+              if (typeof reported === "string" && reported.length > 0)
+                yield* models.observeServing({ providerID: model.provider, id: model.id }, reported)
+            }
             if (
               shouldCheckForSteer({
                 sawToolCall,

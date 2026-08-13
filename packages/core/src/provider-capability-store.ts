@@ -96,6 +96,19 @@ export interface Interface {
    */
   readonly get: (providerID: string, modelID: string, fingerprint: string) => Effect.Effect<Entry | undefined>
   readonly put: (providerID: string, modelID: string, entry: Entry) => Effect.Effect<void>
+  /**
+   * Discard this model's verdict if a live turn was served by a DIFFERENT process.
+   *
+   * 🔴 The case `endpoint` cannot see: a server restarted or reloaded under the same URL. Its tool
+   * channel may have changed with its chat template, and a verdict measured before it is a claim
+   * about a process that is gone. Discarding is the conservative direction — the model falls back to
+   * the protocol default and Settings says "not tested", which is true.
+   *
+   * ⚠️ Only acts when BOTH identities are known and DIFFER. An endpoint that reports none, or a
+   * verdict recorded before the field existed, must not be discarded on every turn — that would
+   * re-measure forever and read as a probe that never sticks.
+   */
+  readonly forgetIfMoved: (providerID: string, modelID: string, servedBy: string) => Effect.Effect<boolean>
   /** Everything recorded, for a surface that lists what this instance knows. */
   readonly all: () => Effect.Effect<Record<string, Entry>>
 }
@@ -159,6 +172,20 @@ export const layer = Layer.effect(
       ) {
         const entry = (yield* all())[key(providerID, modelID)]
         return entry?.fingerprint === fingerprint ? entry : undefined
+      }),
+      forgetIfMoved: Effect.fn("ProviderCapabilityStore.forgetIfMoved")(function* (
+        providerID: string,
+        modelID: string,
+        servedBy: string,
+      ) {
+        const rowKey = key(providerID, modelID)
+        const stored = yield* all()
+        const entry = stored[rowKey]
+        // Unknown on either side is not evidence of a move. Equal is not a move either.
+        if (entry?.servedBy === undefined || entry.servedBy === servedBy) return false
+        const { [rowKey]: _dropped, ...rest } = stored
+        yield* settings.set(KEY, rest)
+        return true
       }),
       put: Effect.fn("ProviderCapabilityStore.put")(function* (providerID: string, modelID: string, entry: Entry) {
         // Read-modify-write of the whole map. The map holds one row per model an instance has
