@@ -704,29 +704,25 @@ function waitForCommitFloor(name: string, kind: Kind) {
   if (first === undefined || first < COMMIT_FLOOR_PCT) return
   const deadline = Date.now() + COMMIT_FLOOR_WAIT_MS
   process.stderr.write(
-    `
-[33mhost commit ${first}% is at or above the ${COMMIT_FLOOR_PCT}% FLOOR — holding ${kind} unit ${name}[0m
-` +
-      `  Waiting up to ${COMMIT_FLOOR_WAIT_MS / 1000}s for the previous unit's memory to be reclaimed.
-` +
-      topConsumers().map((line) => `  ${line}
-`).join(""),
+    `\n\x1b[33mhost commit ${first}% is at or above the ${COMMIT_FLOOR_PCT}% FLOOR — holding ${kind} unit ${name}\x1b[0m\n` +
+      `  Waiting up to ${COMMIT_FLOOR_WAIT_MS / 1000}s for the previous unit's memory to be reclaimed.\n` +
+      topConsumers()
+        .map((line) => `  ${line}\n`)
+        .join(""),
   )
   while (Date.now() < deadline) {
     Bun.sleepSync(2_000)
     const now = read()
     if (now === undefined || now < COMMIT_FLOOR_PCT) {
-      process.stderr.write(`  host commit fell to ${now ?? "unknown"}% — starting ${name}
-`)
+      process.stderr.write(`  host commit fell to ${now ?? "unknown"}% — starting ${name}\n`)
       return
     }
   }
   // Said loudly, and it is NOT a failure: the run continues, but a reader comparing this unit against
   // its history has to know the host was under pressure the whole time it ran.
   process.stderr.write(
-    `  [33mstill at or above the floor after ${COMMIT_FLOOR_WAIT_MS / 1000}s — starting ${name} anyway; ` +
-      `treat its timings and peak as measured under PRESSURE[0m
-`,
+    `  \x1b[33mstill at or above the floor after ${COMMIT_FLOOR_WAIT_MS / 1000}s — starting ${name} anyway; ` +
+      `treat its timings and peak as measured under PRESSURE\x1b[0m\n`,
   )
 }
 
@@ -1015,7 +1011,7 @@ if (measured.length) {
     // shards, so the next measurement is inflated again. `core`'s profile says 17,958 MB against a
     // whole-run maximum of 10,822. Recording it is still what closes the bootstrap for an unprofiled
     // unit — but a sharded reading must never be promoted as if it were the unit's own demand.
-    const from = r.shards ? `  [33m(from a SHARDED run — reads high; do not promote it)[0m` : ""
+    const from = r.shards ? `  \x1b[33m(from a SHARDED run — reads high; do not promote it)\x1b[0m` : ""
     // ⚠️ A peak taken from one or two samples is a LOWER BOUND, and saying so is the cheap half of
     // the fix that item 4 of todo/test-speed.md makes structural. A 300 ms unit gets 2–4 ticks at a
     // 200 ms interval and its child may be visible in none of them.
