@@ -4,6 +4,7 @@ import { useGlobal } from "@/context/global"
 import { useServer } from "@/context/server"
 import { useLanguage } from "@/context/language"
 import { fsMkdir, fsWrite } from "@/utils/fs-api"
+import { AppPage } from "@/components/app-page"
 
 // The Notes app (B6 v1 — plan.md M5). One shared server-side `notes/` folder under the server's
 // data root (Global.Path.data/notes) that agents can also read/append (the B3 base prompt states
@@ -199,7 +200,7 @@ export function NotesPage() {
     "rounded-md px-2.5 py-1 text-xs font-medium text-v2-text-text-muted transition-colors hover:bg-v2-background-bg-layer-02 disabled:pointer-events-none disabled:opacity-40"
 
   return (
-    <div class="flex min-h-0 flex-1 flex-col self-stretch m-2 rounded-[10px] overflow-hidden bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)] text-v2-text-text-base">
+    <AppPage class="flex flex-col overflow-hidden">
       <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5">
         <GoldGlyph name="notes" class="size-6" />
         <span class="text-[15px] font-semibold">{language.t("notes.title")}</span>
@@ -297,6 +298,6 @@ export function NotesPage() {
           </Show>
         </div>
       </div>
-    </div>
+    </AppPage>
   )
 }

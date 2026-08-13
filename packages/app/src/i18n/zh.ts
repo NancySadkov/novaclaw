@@ -685,8 +685,11 @@ export const dict = {
   "session.error.toolFailure": "工具执行失败。",
   "session.error.unknown": "本轮在完成前失败。",
   // Home launcher tiles — `home.app.<id>.{name,subtitle}`, one per built-in tile.
-  "home.app.chats.name": "聊天",
-  "home.app.chats.subtitle": "你的对话，以及仍在运行的一切",
+  "home.app.tasks.name": "任务",
+  "home.app.tasks.subtitle": "你的智能体正在运行的一切，以及已经完成的一切",
+  "home.app.tasks.stat.running": "运行中",
+  "home.app.tasks.stat.throughput": "t/s",
+  "home.app.tasks.stat.memory": "内存",
   "home.app.notes.name": "笔记",
   "home.app.notes.subtitle": "日常笔记，与你的智能体共享",
   "home.app.calendar.name": "日历",

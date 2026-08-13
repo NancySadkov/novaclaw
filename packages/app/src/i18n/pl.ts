@@ -615,8 +615,11 @@ export const dict = {
   "session.error.toolFailure": "Narzędzie zakończyło się niepowodzeniem.",
   "session.error.unknown": "Tura zakończyła się niepowodzeniem przed ukończeniem.",
   // Home launcher tiles — `home.app.<id>.{name,subtitle}`, one per built-in tile.
-  "home.app.chats.name": "Czaty",
-  "home.app.chats.subtitle": "Twoje rozmowy i wszystko, co wciąż działa",
+  "home.app.tasks.name": "Zadania",
+  "home.app.tasks.subtitle": "Wszystko, co wykonują twoi agenci, i wszystko, co ukończyli",
+  "home.app.tasks.stat.running": "w toku",
+  "home.app.tasks.stat.throughput": "t/s",
+  "home.app.tasks.stat.memory": "pamięć",
   "home.app.notes.name": "Notatki",
   "home.app.notes.subtitle": "Codzienne notatki, współdzielone z agentami",
   "home.app.calendar.name": "Kalendarz",

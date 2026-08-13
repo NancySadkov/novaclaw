@@ -707,7 +707,10 @@ function Routes() {
   return (
     <>
       <Route path="/" component={HomeScreen} />
-      <Route path="/chats" component={NewHome} />
+      <Route path="/tasks" component={NewHome} />
+      {/* The app was renamed Chats → Tasks on 2026-08-13. A dead address is a dead end, and the
+          catch-all below would otherwise try to base64-decode "chats" as a directory. */}
+      <Route path="/chats" component={() => <Navigate href="/tasks" />} />
       <Route path="/files" component={FilesPage} />
       <Route path="/notes" component={NotesPage} />
       <Route path="/calendar" component={CalendarPage} />

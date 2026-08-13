@@ -694,8 +694,11 @@ export const dict = {
   "session.error.toolFailure": "Bir araç başarısız oldu.",
   "session.error.unknown": "Tur tamamlanmadan başarısız oldu.",
   // Home launcher tiles — `home.app.<id>.{name,subtitle}`, one per built-in tile.
-  "home.app.chats.name": "Sohbetler",
-  "home.app.chats.subtitle": "Konuşmalarınız ve hâlâ çalışan her şey",
+  "home.app.tasks.name": "Görevler",
+  "home.app.tasks.subtitle": "Aracılarınızın çalıştırdığı ve tamamladığı her şey",
+  "home.app.tasks.stat.running": "çalışıyor",
+  "home.app.tasks.stat.throughput": "t/s",
+  "home.app.tasks.stat.memory": "bellek",
   "home.app.notes.name": "Notlar",
   "home.app.notes.subtitle": "Günlük notlar, ajanlarınızla paylaşılır",
   "home.app.calendar.name": "Takvim",

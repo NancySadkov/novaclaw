@@ -614,8 +614,11 @@ export const dict = {
   "session.error.toolFailure": "ツールが失敗しました。",
   "session.error.unknown": "ターンは完了する前に失敗しました。",
   // Home launcher tiles — `home.app.<id>.{name,subtitle}`, one per built-in tile.
-  "home.app.chats.name": "チャット",
-  "home.app.chats.subtitle": "会話と、実行中のものすべて",
+  "home.app.tasks.name": "タスク",
+  "home.app.tasks.subtitle": "エージェントが実行中のもの、そして完了したものすべて",
+  "home.app.tasks.stat.running": "実行中",
+  "home.app.tasks.stat.throughput": "t/s",
+  "home.app.tasks.stat.memory": "メモリ",
   "home.app.notes.name": "ノート",
   "home.app.notes.subtitle": "日々のメモをエージェントと共有",
   "home.app.calendar.name": "カレンダー",

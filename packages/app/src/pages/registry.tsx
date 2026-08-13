@@ -13,6 +13,7 @@ import {
   registryUpdateRow,
   type RegistryRow,
 } from "@/utils/registry-api"
+import { AppPage } from "@/components/app-page"
 
 // The Registry app (owner directive 2026-07-15) — a Regedit-style editor over the instance
 // SQLite database. Developer expertise only (the home tile is minLevel-gated); this is the
@@ -192,7 +193,7 @@ export function RegistryPage() {
     "rounded-md px-2.5 py-1 text-xs font-medium text-v2-text-text-muted transition-colors hover:bg-v2-background-bg-layer-02 disabled:pointer-events-none disabled:opacity-40"
 
   return (
-    <div class="rounded-[10px] shadow-[var(--v2-elevation-raised)] m-2 min-h-0 overflow-hidden bg-v2-background-bg-base self-stretch flex-1 flex flex-col">
+    <AppPage class="flex flex-col overflow-hidden">
       <div class="flex items-center gap-2 border-b border-v2-border-border-base px-4 py-3">
         <GoldGlyph name="registry" class="size-5" />
         <span class="text-[14px] font-semibold text-v2-text-text-base">Registry</span>
@@ -373,6 +374,6 @@ export function RegistryPage() {
           </Show>
         </div>
       </div>
-    </div>
+    </AppPage>
   )
 }

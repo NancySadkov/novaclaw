@@ -688,8 +688,11 @@ export const dict = {
   "session.error.toolFailure": "Et værktøj fejlede.",
   "session.error.unknown": "Turen fejlede, før den blev færdig.",
   // Home launcher tiles — `home.app.<id>.{name,subtitle}`, one per built-in tile.
-  "home.app.chats.name": "Chats",
-  "home.app.chats.subtitle": "Dine samtaler og alt, der stadig kører",
+  "home.app.tasks.name": "Opgaver",
+  "home.app.tasks.subtitle": "Alt dine agenter kører, og alt de har afsluttet",
+  "home.app.tasks.stat.running": "kører",
+  "home.app.tasks.stat.throughput": "t/s",
+  "home.app.tasks.stat.memory": "hukommelse",
   "home.app.notes.name": "Noter",
   "home.app.notes.subtitle": "Hverdagsnoter, delt med dine agenter",
   "home.app.calendar.name": "Kalender",

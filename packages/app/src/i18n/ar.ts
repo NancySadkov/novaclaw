@@ -605,8 +605,11 @@ export const dict = {
   "session.error.toolFailure": "فشلت إحدى الأدوات.",
   "session.error.unknown": "فشلت الجولة قبل أن تكتمل.",
   // Home launcher tiles — `home.app.<id>.{name,subtitle}`, one per built-in tile.
-  "home.app.chats.name": "المحادثات",
-  "home.app.chats.subtitle": "محادثاتك، وكل ما لا يزال قيد التشغيل",
+  "home.app.tasks.name": "المهام",
+  "home.app.tasks.subtitle": "كل ما تنفّذه وكلاؤك، وكل ما أنجزوه",
+  "home.app.tasks.stat.running": "قيد التشغيل",
+  "home.app.tasks.stat.throughput": "t/s",
+  "home.app.tasks.stat.memory": "الذاكرة",
   "home.app.notes.name": "الملاحظات",
   "home.app.notes.subtitle": "ملاحظات يومية، مشتركة مع وكلائك",
   "home.app.calendar.name": "التقويم",

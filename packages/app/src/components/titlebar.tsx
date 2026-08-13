@@ -270,7 +270,13 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
           if (index !== -1) tabsStoreActions.removeTab(index)
         }
 
-        const toggleHome = () => tabs.toggleHome({ home: layout.route().type === "home", current: currentTab() })
+        // ⚠️ "Am I on the launcher" is the PATHNAME, not `layout.route().type` (owner, 2026-08-13:
+        // Home switched to the last task instead of leaving the app). `currentRoute` only classifies
+        // session-shaped URLs, so every app page — /notes, /files, /recipes, … — falls through to
+        // `{type: "home"}`. The toggle then believed it was already home and ran the other half of
+        // its contract: jump to the most recent task. From inside an app the Home button therefore
+        // did the one thing it must never do — go somewhere that is not home.
+        const toggleHome = () => tabs.toggleHome({ home: location.pathname === "/", current: currentTab() })
 
         command.register("titlebar-home", () => [
           {
@@ -347,21 +353,21 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
             }}
           >
             <BrandBadge onToggle={toggleHome} />
-            {/* Chats is hidden on the launcher ("/") — you launch apps from the tiles there — and
-                also INSIDE a chat (owner, 2026-08-12): the tab strip beside it already lists your
-                chats, so the button only competes with them for the same click. It remains on the
+            {/* Tasks is hidden on the launcher ("/") — you launch apps from the tiles there — and
+                also INSIDE a task (owner, 2026-08-12): the tab strip beside it already lists your
+                tasks, so the button only competes with them for the same click. It remains on the
                 other app pages (Notes, Files, Settings…), where nothing else leads back. */}
             {/* Home lives on the brand badge now (Start-button style) — no separate Home button. */}
             <Show when={location.pathname !== "/" && layout.route().type !== "session"}>
-              <TooltipV2 placement="bottom" value={language.t("nav.chats")} class="shrink-0">
+              <TooltipV2 placement="bottom" value={language.t("home.app.tasks.name")} class="shrink-0">
                 <IconButtonV2
                   type="button"
                   variant="ghost-muted"
                   size="large"
                   class="!w-9 shrink-0"
                   icon={<IconV2 name="tab" />}
-                  onClick={() => navigate("/chats")}
-                  aria-label={language.t("nav.chats")}
+                  onClick={() => navigate("/tasks")}
+                  aria-label={language.t("home.app.tasks.name")}
                 />
               </TooltipV2>
             </Show>

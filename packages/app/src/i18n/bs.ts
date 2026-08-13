@@ -697,8 +697,11 @@ export const dict = {
   "session.error.toolFailure": "Alat nije uspio.",
   "session.error.unknown": "Potez nije uspio prije nego što je dovršen.",
   // Home launcher tiles — `home.app.<id>.{name,subtitle}`, one per built-in tile.
-  "home.app.chats.name": "Razgovori",
-  "home.app.chats.subtitle": "Vaši razgovori i sve što još radi",
+  "home.app.tasks.name": "Zadaci",
+  "home.app.tasks.subtitle": "Sve što vaši agenti izvršavaju i sve što su završili",
+  "home.app.tasks.stat.running": "u toku",
+  "home.app.tasks.stat.throughput": "t/s",
+  "home.app.tasks.stat.memory": "memorija",
   "home.app.notes.name": "Bilješke",
   "home.app.notes.subtitle": "Svakodnevne bilješke, dijeljene s vašim agentima",
   "home.app.calendar.name": "Kalendar",

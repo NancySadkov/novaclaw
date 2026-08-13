@@ -2,7 +2,7 @@ import { useNavigate } from "@solidjs/router"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useChatsAttention } from "@/apps/chats-attention"
-import { activityLabel, useChatsActivity } from "@/apps/chats-activity"
+import { systemLoadStats, useSystemLoad } from "@/apps/system-load"
 import { useSettingsDialog } from "@/components/settings-dialog"
 import { HelpTour } from "@/pages/home-screen/help-tour"
 import { SocialPanel } from "@/pages/home-screen/social-panel"
@@ -33,7 +33,7 @@ export function useBuiltinApps(): () => HomeApp[] {
   const language = useLanguage()
   const openSettings = useSettingsDialog()
   const chatsAttention = useChatsAttention()
-  const chatsActivity = useChatsActivity()
+  const systemLoad = useSystemLoad()
 
   // `t` is typed to the literal key union; `home.app.<id>.*` is assembled at runtime because a
   // contributed app's id is not known at build time. Same bridge `help-tour.tsx` uses per step.
@@ -46,24 +46,23 @@ export function useBuiltinApps(): () => HomeApp[] {
 
   return () => [
     {
-      id: "chats",
-      title: name("chats"),
+      id: "tasks",
+      title: name("tasks"),
       icon: "speech-bubble",
-      tile: "/assets/skin/tiles/chats.png",
+      tile: "/assets/skin/tiles/tasks.png",
       // The hero's accent IS the preset's primary accent, so the one eye-anchor re-themes with the
       // color scheme (gold on Nova, amber on Autumn, coral on Summer). uix.md §7.
       accent: "var(--nc-accent-solid)",
       glyphTone: "dark",
       hero: true,
-      // Describes what the tile OPENS — a list of your conversations. The old line ("Ask anything — your
-      // agents do the work") described the composer at the bottom of the home screen, not this tile, so it
-      // promised something tapping here does not do (owner 2026-07-26).
-      subtitle: sub("chats"),
+      // Not rendered ON the hero any more — the tile shows live numbers instead — but still the
+      // tile's accessible description and its tooltip, so it stays a sentence about what opens.
+      subtitle: sub("tasks"),
       source: "builtin",
-      // While agents are working the tile reports it instead: "2 agents working · ~47 t/s".
-      status: () => activityLabel(chatsActivity()),
-      open: () => navigate("/chats"),
-      // Chats wanting attention (pending permission/question + unseen) — uix-improvement slice 2.
+      // The hero IS the system monitor: threads running, combined throughput, memory pressure.
+      stats: () => systemLoadStats(systemLoad(), language.t),
+      open: () => navigate("/tasks"),
+      // Threads wanting attention (pending permission/question + unseen) — uix-improvement slice 2.
       badge: () => chatsAttention().length || undefined,
     },
     {

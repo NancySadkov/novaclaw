@@ -624,8 +624,11 @@ export const dict = {
   "session.error.toolFailure": "Ein Werkzeug ist fehlgeschlagen.",
   "session.error.unknown": "Der Durchgang ist fehlgeschlagen, bevor er abgeschlossen war.",
   // Home launcher tiles — `home.app.<id>.{name,subtitle}`, one per built-in tile.
-  "home.app.chats.name": "Chats",
-  "home.app.chats.subtitle": "Deine Unterhaltungen und alles, was noch läuft",
+  "home.app.tasks.name": "Aufgaben",
+  "home.app.tasks.subtitle": "Alles, was deine Agenten ausführen, und alles, was sie erledigt haben",
+  "home.app.tasks.stat.running": "aktiv",
+  "home.app.tasks.stat.throughput": "t/s",
+  "home.app.tasks.stat.memory": "Speicher",
   "home.app.notes.name": "Notizen",
   "home.app.notes.subtitle": "Alltägliche Notizen, geteilt mit deinen Agenten",
   "home.app.calendar.name": "Kalender",

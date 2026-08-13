@@ -244,7 +244,11 @@ export function SessionSidePanel(props: {
           "pointer-events-none": !open(),
           "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
             !props.size.active() && !props.reviewSnap && !asModal(),
-          "rounded-[10px] shadow-[var(--v2-elevation-raised)] overflow-hidden": true,
+          "overflow-hidden": true,
+          // Rounding + elevation ONLY as the centred overlay, where the panel really does float over
+          // the conversation. Docked, it is a pane of the window like the chat beside it, and a
+          // rounded shadowed sibling next to a square one just looks like a mistake.
+          "rounded-[10px] shadow-[var(--v2-elevation-raised)]": asModal(),
           "flex-1": reviewOpen() && !asModal(),
           // Centred overlay rather than a flex sibling. `h-[88vh]` leaves the conversation visible
           // behind it, which is the point of a modal here: you are reviewing something you can

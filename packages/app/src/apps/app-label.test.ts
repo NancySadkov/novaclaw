@@ -59,10 +59,29 @@ describe("home tile labels", () => {
 
     // The other direction, so this is a ratchet and not a checklist: a `home.app.*` key whose tile
     // was deleted is dead weight 19 bundles would carry forever.
+    //
+    // ⚠️ Ownership is by ID, not by the two label fields. A tile may carry more than a name and a
+    // subtitle — the hero's readout ships `home.app.tasks.stat.*` — and pinning the field list here
+    // would mean every new hero string had to edit this test, which is how a ratchet turns into a
+    // rubber stamp. What must never happen is a key for a tile that no longer exists, and that is
+    // exactly what this checks: the id segment has to be one the launcher registers.
     test("every `home.app.*` key in en belongs to a built-in tile", () => {
-      const owned = new Set(BUILTIN_IDS.flatMap((id) => [appLabelKey(id, "name"), appLabelKey(id, "subtitle")]))
-      const orphans = Object.keys(en).filter((key) => key.startsWith("home.app.") && !owned.has(key))
+      const ids = new Set<string>(BUILTIN_IDS)
+      const orphans = Object.keys(en)
+        .filter((key) => key.startsWith("home.app."))
+        .filter((key) => !ids.has(key.split(".")[2] ?? ""))
       expect(orphans).toEqual([])
+    })
+
+    // The pairing the rule above no longer implies: both label fields still have to exist for every
+    // tile (checked against `en` two tests up), and `appLabelKey` stays the one speller of the key.
+    test("every built-in tile ships both label keys", () => {
+      const missing = BUILTIN_IDS.flatMap((id) =>
+        (["name", "subtitle"] as const)
+          .map((field) => appLabelKey(id, field))
+          .filter((key) => !(key in (en as Record<string, string>))),
+      )
+      expect(missing).toEqual([])
     })
 
     // …and the id set itself, against the file that actually registers the tiles. Without this the
@@ -77,14 +96,14 @@ describe("home tile labels", () => {
 
   describe("resolution", () => {
     test("a built-in renders the active locale's text", () => {
-      const { t } = translator(merged({ "home.app.chats.name": "Чаты", "home.app.chats.subtitle": "Ваши разговоры" }))
-      expect(appName(t, "chats", BUILTIN_APP_LABELS.chats.name)).toBe("Чаты")
-      expect(appSubtitle(t, "chats", BUILTIN_APP_LABELS.chats.subtitle)).toBe("Ваши разговоры")
+      const { t } = translator(merged({ "home.app.tasks.name": "Задачи", "home.app.tasks.subtitle": "Ваши задачи" }))
+      expect(appName(t, "tasks", BUILTIN_APP_LABELS.tasks.name)).toBe("Задачи")
+      expect(appSubtitle(t, "tasks", BUILTIN_APP_LABELS.tasks.subtitle)).toBe("Ваши задачи")
     })
 
     test("a locale that has not translated the tile falls back to English, not to a key", () => {
       const { t } = translator(merged({}))
-      expect(appName(t, "chats", BUILTIN_APP_LABELS.chats.name)).toBe("Chats")
+      expect(appName(t, "tasks", BUILTIN_APP_LABELS.tasks.name)).toBe("Tasks")
       expect(appSubtitle(t, "memory-graph", BUILTIN_APP_LABELS["memory-graph"].subtitle)).toBe(
         "What NovaClaw remembers about you, and how it connects",
       )
@@ -112,8 +131,8 @@ describe("home tile labels", () => {
 
     test("starts translating for free the day someone contributes a key for it", () => {
       // `hasAppLabel` is membership in `en`, so this is what would happen after a key is added.
-      const { t } = translator(merged({ "home.app.chats.name": "Sohbetler" }))
-      expect(appName(t, "chats", "Chats")).toBe("Sohbetler")
+      const { t } = translator(merged({ "home.app.tasks.name": "Görevler" }))
+      expect(appName(t, "tasks", "Tasks")).toBe("Görevler")
     })
 
     test("a title that is really an i18n key degrades to a legible name, never renders raw", () => {

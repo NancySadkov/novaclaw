@@ -30,10 +30,18 @@ const PER_PAGE = 24
 // newly registered agent app still shows up without wiping the arrangement.
 const ORDER_KEY = "novaclaw.home.order"
 
+// Tiles that changed id, old → new. `applyOrder` drops ids it does not recognise and appends ids it
+// has never seen, so without this a rename would silently move the renamed tile to the END of an
+// existing user's launcher — the hero landing last is not a thing anyone would ask for.
+const RENAMED_IDS: Readonly<Record<string, string>> = { chats: "tasks" }
+
 function loadOrder(): string[] {
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(ORDER_KEY) ?? "[]")
-    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : []
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((id): id is string => typeof id === "string")
+      .map((id) => RENAMED_IDS[id] ?? id)
   } catch {
     return []
   }

@@ -1,4 +1,4 @@
-import { Component, Show, type ComponentProps } from "solid-js"
+import { Component, For, Show, type ComponentProps } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import type { HomeApp } from "@/apps/registry"
 
@@ -109,14 +109,16 @@ const RegularTile: Component<TileProps> = (props) => (
   </button>
 )
 
-// The hero is the skin's hero panel, not a solid gold slab: dark panel glass (gradient + grain)
-// inside a gold frame, the circuit motif as atmosphere, the NOVA mark centered in the free space,
-// a gold eyebrow + tagline below — and, while agents work, a live status line with a calm pulsing
-// dot. Gold is spent on the FRAME and the words, so the tile stays the eye anchor without shouting.
-// The brand mark lives here by design: the hero IS the flagship tile (owner, 2026-08-13), so it
-// carries the logo rather than a per-app glyph — no registry field needed.
+// The hero is the skin's hero panel AND the system monitor: dark panel glass (gradient + grain)
+// inside a gold frame, the circuit motif as atmosphere, the NOVA mark centered, and a row of live
+// numbers along the bottom — threads running, combined throughput, memory pressure.
+//
+// ⚠️ **No app label, deliberately** (owner, 2026-08-13). The tile used to spend its headline on the
+// word "Chats" over a fixed tagline; the artwork and the mark already say which app this is, so the
+// words went to the one thing a launcher cannot otherwise tell you — whether this machine is busy.
+// The title survives as `aria-label` (and the tooltip), so nothing is lost to a screen reader.
 const HeroTile: Component<TileProps> = (props) => {
-  const status = () => props.app.status?.()
+  const stats = () => props.app.stats?.() ?? []
   return (
     <button
       type="button"
@@ -150,22 +152,35 @@ const HeroTile: Component<TileProps> = (props) => {
           />
         </div>
         <TileBadge app={props.app} />
-        <div class="relative flex flex-col items-start gap-1.5">
-          <span class="text-[11px] font-bold uppercase tracking-[0.13em] text-v2-text-text-accent">
-            {props.app.title}
-          </span>
-          <Show when={props.app.subtitle}>
-            <span class="text-[16px] font-semibold leading-snug text-v2-text-text-base">{props.app.subtitle}</span>
-          </Show>
-          {/* Live line: what the agents are DOING right now, with the skin's calm status pulse. */}
-          <Show when={status()}>
-            {(line) => (
-              <span class="flex items-center gap-2 text-[12px] font-medium leading-snug text-v2-text-text-muted">
-                <span class="size-2 shrink-0 animate-pulse rounded-full bg-v2-state-fg-success shadow-[0_0_10px_var(--color-v2-state-fg-success)] motion-reduce:animate-none" />
-                {line()}
-              </span>
+        {/* The readout. A hairline lifts it off the panel the way the skin's status strip does. */}
+        {/* `justify-between`, NOT three equal columns: the tile is ~176px wide in a narrow window,
+            and equal thirds gave each label 42px for a 45px word — so the longest one ellipsised
+            while its neighbours sat on empty space. Sizing to content spends the width where it is
+            actually needed. */}
+        <div class="relative flex items-end justify-between gap-1.5 border-t border-[color-mix(in_srgb,var(--nc-accent-solid,#d8ab4b)_28%,transparent)] pt-3">
+          <For each={stats()}>
+            {(stat) => (
+              <div class="flex min-w-0 flex-col items-center gap-0.5">
+                <span
+                  class="text-[17px] font-semibold leading-none tabular-nums transition-colors"
+                  classList={{
+                    "text-v2-text-text-base": !stat.tone,
+                    // Dimmed, not hidden: an idle machine still reports, it just does not ask for
+                    // attention. `faint` is the same token the empty states use.
+                    "text-v2-text-text-faint": stat.tone === "idle",
+                    "text-v2-state-fg-danger": stat.tone === "warn",
+                  }}
+                >
+                  {stat.value}
+                </span>
+                {/* Tight tracking + a nowrap ellipsis backstop: three columns share ~200px on a
+                    phone-width tile, and a label that truncates to "TOKE…" is worse than none. */}
+                <span class="max-w-full truncate text-[9px] font-medium uppercase tracking-[0.04em] text-v2-text-text-muted">
+                  {stat.label}
+                </span>
+              </div>
             )}
-          </Show>
+          </For>
         </div>
       </div>
     </button>

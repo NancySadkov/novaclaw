@@ -617,8 +617,11 @@ export const dict = {
   "session.error.toolFailure": "Uma ferramenta falhou.",
   "session.error.unknown": "O turno falhou antes de terminar.",
   // Home launcher tiles — `home.app.<id>.{name,subtitle}`, one per built-in tile.
-  "home.app.chats.name": "Conversas",
-  "home.app.chats.subtitle": "Suas conversas, e tudo que ainda está rodando",
+  "home.app.tasks.name": "Tarefas",
+  "home.app.tasks.subtitle": "Tudo que seus agentes estão executando, e tudo que já concluíram",
+  "home.app.tasks.stat.running": "em execução",
+  "home.app.tasks.stat.throughput": "t/s",
+  "home.app.tasks.stat.memory": "memória",
   "home.app.notes.name": "Notas",
   "home.app.notes.subtitle": "Notas do dia a dia, compartilhadas com seus agentes",
   "home.app.calendar.name": "Calendário",

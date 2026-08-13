@@ -6,6 +6,7 @@ import { useServer } from "@/context/server"
 import { useLanguage, type Translator } from "@/context/language"
 import { showToast } from "@/utils/toast"
 import { fsTrashList, fsTrashRestore, type TrashEntry } from "@/utils/fs-api"
+import { AppPage } from "@/components/app-page"
 
 // The Trash app (B8 surface — plan.md M6). A home tile over the M4 endpoints: list every trashed
 // entry (the store is GLOBAL — deletions from any root land here), restore with one click, and show
@@ -70,7 +71,7 @@ export function TrashPage() {
     "rounded-md px-2.5 py-1 text-xs font-medium text-v2-text-text-muted transition-colors hover:bg-v2-background-bg-layer-02 disabled:pointer-events-none disabled:opacity-40"
 
   return (
-    <div class="flex min-h-0 flex-1 flex-col self-stretch m-2 rounded-[10px] overflow-hidden bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)] text-v2-text-text-base">
+    <AppPage class="flex flex-col overflow-hidden">
       <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5">
         <GoldGlyph name="trash" class="size-6" />
         <span class="text-[15px] font-semibold">{language.t("trash.title")}</span>
@@ -122,6 +123,6 @@ export function TrashPage() {
           </Show>
         </Show>
       </div>
-    </div>
+    </AppPage>
   )
 }

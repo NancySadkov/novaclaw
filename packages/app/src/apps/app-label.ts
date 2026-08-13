@@ -100,7 +100,10 @@ export function appSubtitle(t: Translate, id: string, supplied?: string): string
  * and this id set equals the ids `builtins.tsx` actually registers.
  */
 export const BUILTIN_APP_LABELS = {
-  chats: { name: "Chats", subtitle: "Your conversations, and everything still running" },
+  // ⚠️ `tasks`, not `chats` (owner, 2026-08-13): "many of these could be running unattended". The
+  // app lists agent threads — a conversation is only the ones you happen to be watching — and the
+  // tab strip already called them tasks (`nav.tasks.*`), so this settles the split name.
+  tasks: { name: "Tasks", subtitle: "Everything your agents are running, and everything they have finished" },
   notes: { name: "Notes", subtitle: "Everyday notes, shared with your agents" },
   calendar: { name: "Calendar", subtitle: "Schedule agents to run on a repeating date" },
   recipes: { name: "Recipes", subtitle: "Ready-made prompts your agents can cook" },

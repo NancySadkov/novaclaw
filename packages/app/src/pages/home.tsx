@@ -74,6 +74,7 @@ import { DialogSessionInfo } from "@/components/dialog-session-info"
 import { sessionPermissionRequest, sessionQuestionRequest } from "@/pages/session/composer/session-request-tree"
 import { showToast } from "@/utils/toast"
 import { exportSessionMarkdown } from "@/utils/fs-api"
+import { AppPage } from "@/components/app-page"
 
 const HOME_SESSION_LIMIT = 64
 const HOME_SESSION_HEADER_STICKY_TOP = 12
@@ -810,10 +811,11 @@ export function NewHome() {
     })
   }
 
+  // Below `lg` this page scrolls itself, so it opts out of AppPage's shared clip.
   return (
-    <div class="rounded-[10px] shadow-[var(--v2-elevation-raised)] m-2 min-h-0 lg:overflow-hidden bg-v2-background-bg-base self-stretch flex-1">
-      {/* T1 (notes/entities.md): NO project column — the Chats app is logo → spawn box → the flat
-          list of chat processes. Projects are just working folders; the spawn box targets the safe
+    <AppPage class="lg:overflow-hidden">
+      {/* T1 (notes/entities.md): NO project column — the Tasks app is logo → spawn box → the flat
+          list of agent threads. Projects are just working folders; the spawn box targets the safe
           scratch dir by default with an optional folder override. */}
       <div class="mx-auto flex h-full w-full max-w-[720px] flex-col px-3 lg:px-6">
         <section
@@ -1070,7 +1072,7 @@ export function NewHome() {
           </ScrollView>
         </section>
       </div>
-    </div>
+    </AppPage>
   )
 }
 

@@ -608,8 +608,11 @@ export const dict = {
   "session.error.toolFailure": "도구가 실패했습니다.",
   "session.error.unknown": "턴이 완료되기 전에 실패했습니다.",
   // Home launcher tiles — `home.app.<id>.{name,subtitle}`, one per built-in tile.
-  "home.app.chats.name": "채팅",
-  "home.app.chats.subtitle": "대화와 아직 실행 중인 모든 것",
+  "home.app.tasks.name": "작업",
+  "home.app.tasks.subtitle": "에이전트가 실행 중인 모든 것과 완료한 모든 것",
+  "home.app.tasks.stat.running": "실행 중",
+  "home.app.tasks.stat.throughput": "t/s",
+  "home.app.tasks.stat.memory": "메모리",
   "home.app.notes.name": "노트",
   "home.app.notes.subtitle": "에이전트와 공유하는 일상 메모",
   "home.app.calendar.name": "캘린더",

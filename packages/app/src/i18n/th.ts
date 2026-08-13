@@ -685,8 +685,11 @@ export const dict = {
   "session.error.toolFailure": "เครื่องมือทำงานล้มเหลว",
   "session.error.unknown": "เทิร์นล้มเหลวก่อนที่จะเสร็จสิ้น",
   // Home launcher tiles — `home.app.<id>.{name,subtitle}`, one per built-in tile.
-  "home.app.chats.name": "แชท",
-  "home.app.chats.subtitle": "บทสนทนาของคุณ และทุกอย่างที่ยังทำงานอยู่",
+  "home.app.tasks.name": "งาน",
+  "home.app.tasks.subtitle": "ทุกอย่างที่เอเจนต์ของคุณกำลังทำงาน และทุกอย่างที่ทำเสร็จแล้ว",
+  "home.app.tasks.stat.running": "กำลังทำงาน",
+  "home.app.tasks.stat.throughput": "t/s",
+  "home.app.tasks.stat.memory": "หน่วยความจำ",
   "home.app.notes.name": "บันทึก",
   "home.app.notes.subtitle": "บันทึกประจำวัน แชร์กับเอเจนต์ของคุณ",
   "home.app.calendar.name": "ปฏิทิน",

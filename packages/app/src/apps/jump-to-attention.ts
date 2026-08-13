@@ -44,7 +44,7 @@ export function useJumpToAttention(): () => void {
     }
 
     if (!id || !directory) {
-      navigate("/chats")
+      navigate("/tasks")
       return
     }
     navigate(`/${base64Encode(directory)}/session/${id}`)

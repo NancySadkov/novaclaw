@@ -1018,7 +1018,9 @@ export default function Page() {
           </Show>
         )}
       </Show>
-      <div class="flex-1 min-h-0 flex flex-col md:flex-row gap-2 p-2">
+      {/* `gap-2` but no padding: the gap separates two PANES, which is real information, while the
+          padding only inset the whole chat from the window's own edge (owner, 2026-08-13). */}
+      <div class="flex-1 min-h-0 flex flex-col md:flex-row gap-2">
         <div
           classList={{
             "@container relative shrink-0 flex flex-col min-h-0 h-full flex-1 md:flex-none transition-[width]": true,
@@ -1029,12 +1031,9 @@ export default function Page() {
             width: sessionPanelWidth(),
           }}
         >
-          <div
-            classList={{
-              "flex-1 min-h-0 flex flex-col bg-v2-background-bg-base rounded-[10px] overflow-hidden": true,
-              "shadow-[var(--v2-elevation-raised)]": !!params.id,
-            }}
-          >
+          {/* The conversation IS the window here — no rounding, no elevation. A radius and a drop
+              shadow describe something lying on top of a surface; the chat is the surface. */}
+          <div class="flex-1 min-h-0 flex flex-col bg-v2-background-bg-base overflow-hidden">
             <div class="flex-1 min-h-0 overflow-hidden">
               <Switch>
                 <Match when={params.id}>

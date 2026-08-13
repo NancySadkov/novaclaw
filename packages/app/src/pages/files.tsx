@@ -9,6 +9,7 @@ import { showToast } from "@/utils/toast"
 import { fsTrashList, fsTrashRestore } from "@/utils/fs-api"
 import { useFilesystemOperations, type FilesystemTarget } from "@/components/filesystem-operations"
 import { filesystemShortcut, isEditableFilesystemTarget } from "@/components/filesystem-domain"
+import { AppPage } from "@/components/app-page"
 
 // The Files app (B7 + the B8 Trash surface — plan.md M3/M4). Browses the SERVER host's filesystem
 // via the same V1 /file endpoints the directory picker uses (sdk.client.file.list / .read,
@@ -291,8 +292,8 @@ export function FilesPage() {
     "rounded-md px-2.5 py-1 text-xs font-medium text-v2-text-text-muted transition-colors hover:bg-v2-background-bg-layer-02 disabled:pointer-events-none disabled:opacity-40"
 
   return (
-    <div
-      class="flex min-h-0 flex-1 flex-col self-stretch m-2 rounded-[10px] overflow-hidden bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)] text-v2-text-text-base"
+    <AppPage
+      class="flex flex-col overflow-hidden"
       tabIndex={0}
       onKeyDown={handleShortcut}
       onPointerDown={(event) => {
@@ -628,6 +629,6 @@ export function FilesPage() {
           </div>
         )}
       </Show>
-    </div>
+    </AppPage>
   )
 }

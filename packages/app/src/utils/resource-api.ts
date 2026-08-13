@@ -11,9 +11,14 @@ export interface ResourceUsageItem {
   readonly path?: string
 }
 
+export type ResourceLevel = "ok" | "warning" | "floor" | "unknown"
+
 export interface InstanceResources {
   readonly measuredAt: number
-  readonly level: "ok" | "warning" | "floor" | "unknown"
+  /** The worst verdict across every probe — memory AND disks. */
+  readonly level: ResourceLevel
+  /** Memory's own verdict. Use this, not `level`, to describe memory: `level` may be a disk's. */
+  readonly memoryLevel: ResourceLevel
   readonly memory:
     | { readonly known: true; readonly usedBytes: number; readonly limitBytes: number; readonly crosscheck: string }
     | { readonly known: false; readonly reason: string }

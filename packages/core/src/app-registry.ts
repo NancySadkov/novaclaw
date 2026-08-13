@@ -56,6 +56,10 @@ export const isValidId = (id: string) => ID_PATTERN.test(id)
 // explicitly), so a squatted `debug` takes away the screen a user needs precisely when nothing
 // else works. `processes` is deliberately here without being a tile: it is a route.
 const RESERVED_IDS = new Set([
+  "tasks",
+  // `chats` is the RETIRED id of the tile now called `tasks` (2026-08-13) and stays reserved for the
+  // same reason `processes` and `search` do: a name a user's muscle memory still reaches for must
+  // not become squattable the moment we stop shipping it.
   "chats",
   "notes",
   "files",

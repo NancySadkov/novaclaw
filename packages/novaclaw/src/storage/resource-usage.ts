@@ -124,6 +124,11 @@ export async function collect(input: { readonly pressure: Pressure.Report; reado
     memory: input.pressure.memory,
     disks: input.pressure.disks,
     level: input.pressure.level,
+    // ⚠️ `level` is the WORST of every probe, so a filling disk makes it say "warning" while memory
+    // is fine. A caller that wants to colour a memory readout needs the memory verdict specifically,
+    // and it must come from HERE — the thresholds live server-side (and now weigh absolute headroom,
+    // not just the fraction), so a client restating the rule would light up on healthy hosts.
+    memoryLevel: PressureProbe.memoryLevel(input.pressure.memory, input.pressure.thresholds),
     ram,
     disk,
     localModel: input.localModel,

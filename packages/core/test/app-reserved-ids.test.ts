@@ -78,7 +78,13 @@ describe("the reader found all three declarations", () => {
     // the same asymmetry `processes` has. These bounds only guard against a parser that silently
     // returns nothing; the real comparisons are below.
     expect(tiles!.length).toBeGreaterThanOrEqual(13)
-    for (const list of [core!, app!, tiles!]) expect(list).toContain("chats")
+    // `tasks` is the canary: a live tile, so it must appear in all three lists.
+    for (const list of [core!, app!, tiles!]) expect(list).toContain("tasks")
+    // …and `chats`, its id before 2026-08-13, must stay reserved on BOTH halves while being a tile
+    // on neither. A retired id that quietly stops being reserved is squattable by a plugin, which
+    // is the whole failure this file exists to prevent.
+    for (const list of [core!, app!]) expect(list).toContain("chats")
+    expect(tiles!).not.toContain("chats")
   })
 
   test("no duplicates in either list", () => {

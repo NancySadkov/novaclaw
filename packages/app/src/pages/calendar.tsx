@@ -15,6 +15,7 @@ import {
   type Recurrence,
   type Schedule,
 } from "@/utils/calendar-api"
+import { AppPage } from "@/components/app-page"
 
 // Calendar app (notes/calendar-cron-plan.md, P4): the home tile's page. Shows the live date/time, the next
 // scheduled run, the list of schedules with their next-fire, and a form to add one. Data comes from the
@@ -321,7 +322,7 @@ export function CalendarPage() {
   )
 
   return (
-    <div class="flex min-h-0 flex-1 flex-col self-stretch m-2 rounded-[10px] overflow-hidden bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)] text-v2-text-text-base">
+    <AppPage class="flex flex-col overflow-hidden">
       <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5">
         <GoldGlyph name="calendar" class="size-6" />
         <span class="text-[15px] font-semibold">Calendar</span>
@@ -619,6 +620,6 @@ export function CalendarPage() {
           </div>
         </form>
       </div>
-    </div>
+    </AppPage>
   )
 }

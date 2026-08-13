@@ -34,7 +34,7 @@ export interface HomeApp {
   readonly tile?: string
   readonly source: "builtin" | "plugin" | "agent"
   readonly open: () => void
-  /** Renders as the 2×2 anchor tile that guides the eye (one per home — Chats). */
+  /** Renders as the 2×2 anchor tile that guides the eye (one per home — Tasks). */
   readonly hero?: boolean
   /** One-line description, already translated; shown on the hero tile and in hover tooltips. */
   readonly subtitle?: string
@@ -45,15 +45,28 @@ export interface HomeApp {
   /**
    * Reactive attention count for the tile's badge (evaluated in the tile's render scope, so it
    * may close over signals/memos). Render a badge when > 0 — the iOS vocabulary for "this app
-   * wants you". Built-in example: Chats = chats with a pending permission/question or unseen output.
+   * wants you". Built-in example: Tasks = threads with a pending permission/question or unseen output.
    */
   readonly badge?: () => number | undefined
   /**
-   * A live one-liner for the HERO tile, replacing the subtitle while it returns something. Lets the tile
-   * report what is actually happening ("2 agents working · ~47 t/s") instead of a fixed tagline. Returns
-   * undefined when there is nothing to say, so the tile falls back to its subtitle.
+   * The HERO tile's readout: a few live numbers instead of a tagline (owner, 2026-08-13 — the tile
+   * reports system load, and carries no app label because the artwork already names the app).
+   *
+   * Hero-only, like `hero` itself: `registerApp` strips `hero` from contributed apps, so a plugin
+   * cannot claim this surface either. Reactive — evaluated in the tile's render scope.
    */
-  readonly status?: () => string | undefined
+  readonly stats?: () => readonly HeroStat[]
+}
+
+/** One number on the hero tile: a short value, the word under it, and how alarmed to look. */
+export interface HeroStat {
+  readonly id: string
+  /** Already formatted and localized — "3", "47", "63%", or an em dash when unknown. */
+  readonly value: string
+  /** The word under the value, already translated ("running", "tokens/s", "memory"). */
+  readonly label: string
+  /** `idle` dims a zero so the eye skips it; `warn` is the instance's own pressure verdict. */
+  readonly tone?: "idle" | "warn"
 }
 
 // A plain module-level signal is the whole registry — global reactive state, no provider to wire.
@@ -74,6 +87,8 @@ export const registeredApps = apps
 // they cannot be one constant; `packages/core/test/app-reserved-ids.test.ts` reads both files and
 // fails on any divergence, and on any built-in tile that is not listed.
 const RESERVED_IDS = new Set([
+  "tasks",
+  // Retired id of the tile now called `tasks` (2026-08-13) — reserved, like `processes`/`search`.
   "chats",
   "notes",
   "files",

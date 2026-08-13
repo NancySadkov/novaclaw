@@ -701,8 +701,11 @@ export const dict = {
   "session.error.toolFailure": "Инструмент завершился с ошибкой.",
   "session.error.unknown": "Ход завершился ошибкой, не дойдя до конца.",
   // Home launcher tiles — `home.app.<id>.{name,subtitle}`, one per built-in tile.
-  "home.app.chats.name": "Чаты",
-  "home.app.chats.subtitle": "Ваши беседы и всё, что ещё выполняется",
+  "home.app.tasks.name": "Задачи",
+  "home.app.tasks.subtitle": "Всё, что выполняют ваши агенты, и всё, что они завершили",
+  "home.app.tasks.stat.running": "выполняется",
+  "home.app.tasks.stat.throughput": "t/s",
+  "home.app.tasks.stat.memory": "память",
   "home.app.notes.name": "Заметки",
   "home.app.notes.subtitle": "Повседневные заметки, доступные вашим агентам",
   "home.app.calendar.name": "Календарь",

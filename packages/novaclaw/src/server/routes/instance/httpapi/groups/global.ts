@@ -62,7 +62,15 @@ const GlobalResources = Schema.Struct({
   measuredAt: Schema.Number,
   memory: MemoryReading,
   disks: Schema.Array(DiskReading),
+  /** The WORST verdict across every probe — memory and each disk. */
   level: Schema.String,
+  /**
+   * Memory's own verdict, so a caller describing memory does not have to borrow `level` (which may
+   * be a disk's). ⚠️ This schema ENCODES the response: a field the handler returns but this struct
+   * omits is silently dropped on the wire, which is exactly how the first attempt at this shipped a
+   * server that computed the value and a client that never saw it.
+   */
+  memoryLevel: Schema.String,
   ram: Schema.Array(UsageItem),
   disk: Schema.Array(UsageItem),
   localModel: LocalModel.Status,

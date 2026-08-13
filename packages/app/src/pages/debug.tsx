@@ -15,6 +15,7 @@ import { capabilities, retryCapability } from "@/utils/capability-api"
 import { retrySessionExecution, sessionExecutions, stopSessionExecution } from "@/utils/session-execution-api"
 import { contextTurns, formatContextFinding, formatContextTokens } from "./debug-context"
 import { useSettingsDialog } from "@/components/settings-dialog"
+import { AppPage } from "@/components/app-page"
 
 // The Debug app (dependability P5) — the Developer-mode diagnostic surface. Most panels are
 // observational; the capability panel has one explicit recovery action that retries a cached startup
@@ -343,7 +344,7 @@ export function DebugPage() {
     "rounded-md px-2.5 py-1 text-xs font-medium text-v2-text-text-muted transition-colors hover:bg-v2-background-bg-layer-02 disabled:pointer-events-none disabled:opacity-40"
 
   return (
-    <div class="rounded-[10px] shadow-[var(--v2-elevation-raised)] m-2 min-h-0 overflow-hidden bg-v2-background-bg-base self-stretch flex-1 flex flex-col">
+    <AppPage class="flex flex-col overflow-hidden">
       <div class="flex items-center gap-2 border-b border-v2-border-border-base px-4 py-3">
         <GoldGlyph name="debug" class="size-5" />
         <span class="text-[14px] font-semibold text-v2-text-text-base">Debug</span>
@@ -933,6 +934,6 @@ export function DebugPage() {
           </pre>
         </div>
       </div>
-    </div>
+    </AppPage>
   )
 }
