@@ -15,6 +15,9 @@ body[data-new-layout][data-app-theme="summer"] {
   /* Panel frame (Nova's gold hairline ring + specular top edge) retinted to the sea-teal field. */
   --nc-panel-line: rgba(160, 230, 215, 0.3);
   --nc-panel-line-top: rgba(233, 246, 243, 0.16);
+  /* No Nova nebula on the teal field; dialogs get a sea-glass gradient instead. */
+  --nc-wallpaper-image: none;
+  --nc-panel-gradient: linear-gradient(180deg, rgba(22, 62, 57, 0.94), rgba(7, 27, 25, 0.96));
 
   --v2-background-bg-deep: #08211f;
   --v2-background-bg-base: #0e2e2b;

@@ -15,6 +15,9 @@ body[data-new-layout][data-app-theme="autumn"] {
   /* Panel frame (Nova's gold hairline ring + specular top edge) retinted to the russet field. */
   --nc-panel-line: rgba(232, 180, 140, 0.34);
   --nc-panel-line-top: rgba(246, 233, 226, 0.16);
+  /* No Nova nebula on the russet field; dialogs get an ember-glass gradient instead. */
+  --nc-wallpaper-image: none;
+  --nc-panel-gradient: linear-gradient(180deg, rgba(62, 32, 39, 0.94), rgba(23, 11, 14, 0.96));
 
   --v2-background-bg-deep: #1c0f12;
   --v2-background-bg-base: #2a1519;

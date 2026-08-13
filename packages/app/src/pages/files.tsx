@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createResource, createSignal, For, Match, Show, Switch } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
+import { GoldGlyph } from "@/components/gold-glyph"
 import { useGlobal } from "@/context/global"
 import { ServerConnection, useServer } from "@/context/server"
 import { useTabs } from "@/context/tabs"
@@ -300,7 +301,7 @@ export function FilesPage() {
       }}
     >
       <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5">
-        <Icon name="folder-add-left" size="large" class="shrink-0 text-v2-text-text-muted" />
+        <GoldGlyph name="files" class="size-6" />
         <span class="text-[15px] font-semibold">{language.t("files.title")}</span>
         <button type="button" class={btn} onClick={up} disabled={!parentDir(dir())}>
           {language.t("files.up")}

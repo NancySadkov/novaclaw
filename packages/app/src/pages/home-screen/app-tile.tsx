@@ -15,9 +15,8 @@ import type { HomeApp } from "@/apps/registry"
 //     the single eye-anchor of the home screen (Chats).
 
 const tileStyle = (app: HomeApp) =>
-  // The hero is always the brushed-gold gradient card (artwork is a regular-tile treatment) — without
-  // the `!app.hero` guard, Chats carrying artwork for its non-hero form would strip the hero's gold.
-  app.tile && !app.hero
+  // Only regular tiles reach this — the hero renders its own glass-panel recipe below.
+  app.tile
     ? // Artwork carries its own colors; only the hover glow is themed (the skin's contained warm-gold).
       { "--tile-glow": "color-mix(in srgb, var(--nc-accent-solid, #d8ab4b) 45%, transparent)" }
     : {
@@ -110,38 +109,74 @@ const RegularTile: Component<TileProps> = (props) => (
   </button>
 )
 
-const HeroTile: Component<TileProps> = (props) => (
-  <button
-    type="button"
-    class="group flex flex-col w-full h-full select-none focus:outline-none"
-    onClick={() => openUnlessDragged(props)}
-    onContextMenu={contextMenu(props)}
-    aria-label={props.app.title}
-  >
-    {/* The grid span (col-span/row-span) lives on the SortableTile wrapper — this inner button just
-        fills it (w-full h-full). Don't re-declare the span here (dead classes — L7). */}
-    <div
-      class="relative flex flex-col items-start justify-between w-full h-full min-h-[11.5rem] rounded-[1.75rem] p-6 shadow-[var(--v2-elevation-floating)] ring-1 ring-white/20 transition-all duration-150 group-hover:-translate-y-1 group-hover:shadow-[0_14px_40px_var(--tile-glow),var(--v2-elevation-floating)] group-active:scale-[0.98] group-focus-visible:ring-2 group-focus-visible:ring-[var(--v2-border-border-focus)] after:absolute after:inset-0 after:rounded-[inherit] after:bg-gradient-to-b after:from-white/25 after:via-white/0 after:to-black/10 after:pointer-events-none"
-      style={tileStyle(props.app)}
+// The hero is the skin's hero panel, not a solid gold slab: dark panel glass (gradient + grain)
+// inside a gold frame, the circuit motif as atmosphere, a gold eyebrow, the app's gold glyph as
+// ornament, the tagline as the headline — and, while agents work, a live status line with a calm
+// pulsing dot. Gold is spent on the FRAME and the words, so the tile stays the eye anchor without
+// shouting; the glyph derives from the tile artwork path (tiles/ → glyphs/), no extra registry field.
+const HeroTile: Component<TileProps> = (props) => {
+  const glyph = () => props.app.tile?.replace("/tiles/", "/glyphs/")
+  const status = () => props.app.status?.()
+  return (
+    <button
+      type="button"
+      class="group flex flex-col w-full h-full select-none focus:outline-none"
+      onClick={() => openUnlessDragged(props)}
+      onContextMenu={contextMenu(props)}
+      aria-label={props.app.title}
     >
-      <Icon name={props.app.icon as ComponentProps<typeof Icon>["name"]} class="size-14" />
-      <TileBadge app={props.app} />
+      {/* The grid span (col-span/row-span) lives on the SortableTile wrapper — this inner button just
+          fills it (w-full h-full). Don't re-declare the span here (dead classes — L7). */}
       <div
-        class="flex flex-col items-start gap-1 text-left"
+        class="relative flex flex-col items-start justify-end w-full h-full min-h-[11.5rem] overflow-hidden rounded-[1.75rem] p-5 text-left shadow-[var(--v2-elevation-floating)] transition-all duration-150 group-hover:-translate-y-1 group-hover:shadow-[0_14px_40px_var(--tile-glow),var(--v2-elevation-floating)] group-active:scale-[0.98] group-focus-visible:ring-2 group-focus-visible:ring-[var(--v2-border-border-focus)]"
         style={{
-          color:
-            props.app.glyphTone === "dark" ? "color-mix(in srgb, var(--nc-ink, #1a0e11) 94%, transparent)" : "#ffffff",
+          "background-image": "var(--nc-panel-gradient), var(--nc-grain-image)",
+          "background-size": "auto, 420px 420px",
+          border: "1px solid color-mix(in srgb, var(--nc-accent-solid, #d8ab4b) 55%, transparent)",
+          "--tile-glow": "color-mix(in srgb, var(--nc-accent-solid, #d8ab4b) 45%, transparent)",
         }}
       >
-        <span class="text-[19px] font-semibold leading-tight [text-shadow:0_1px_2px_rgba(255,255,255,0.12)]">
-          {props.app.title}
-        </span>
-        {/* Live status wins over the tagline: while agents are running, what they are DOING is the most
-            useful thing this tile can say. Falls back to the subtitle when there is nothing to report. */}
-        <Show when={props.app.status?.() ?? props.app.subtitle}>
-          {(line) => <span class="text-[13px] font-medium leading-snug opacity-85">{line()}</span>}
+        {/* atmosphere: the circuit motif, screened low — never behind the copy's corner */}
+        <div class="pointer-events-none absolute inset-0 rounded-[inherit] bg-cover bg-top opacity-[0.16] mix-blend-screen [background-image:var(--nc-ambient-image)]" />
+        {/* the skin panel's top gold hairline */}
+        <div class="pointer-events-none absolute inset-x-[14%] top-0 h-px opacity-40 [background:linear-gradient(90deg,transparent,var(--v2-text-text-accent),transparent)]" />
+        <Show
+          when={glyph()}
+          fallback={
+            <Icon
+              name={props.app.icon as ComponentProps<typeof Icon>["name"]}
+              class="absolute right-5 top-5 size-12 text-v2-icon-icon-accent"
+            />
+          }
+        >
+          {(src) => (
+            <img
+              src={src()}
+              alt=""
+              draggable={false}
+              class="pointer-events-none absolute right-5 top-5 size-12 select-none object-contain [filter:drop-shadow(0_0_12px_var(--tile-glow))]"
+            />
+          )}
         </Show>
+        <TileBadge app={props.app} />
+        <div class="relative flex flex-col items-start gap-1.5">
+          <span class="text-[11px] font-bold uppercase tracking-[0.13em] text-v2-text-text-accent">
+            {props.app.title}
+          </span>
+          <Show when={props.app.subtitle}>
+            <span class="text-[16px] font-semibold leading-snug text-v2-text-text-base">{props.app.subtitle}</span>
+          </Show>
+          {/* Live line: what the agents are DOING right now, with the skin's calm status pulse. */}
+          <Show when={status()}>
+            {(line) => (
+              <span class="flex items-center gap-2 text-[12px] font-medium leading-snug text-v2-text-text-muted">
+                <span class="size-2 shrink-0 animate-pulse rounded-full bg-v2-state-fg-success shadow-[0_0_10px_var(--color-v2-state-fg-success)] motion-reduce:animate-none" />
+                {line()}
+              </span>
+            )}
+          </Show>
+        </div>
       </div>
-    </div>
-  </button>
-)
+    </button>
+  )
+}

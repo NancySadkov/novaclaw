@@ -201,10 +201,14 @@ body[data-new-layout] {
      feed the elevation recipe below so presets can retint the frame in one place. */
   --nc-panel-line: rgba(216, 171, 75, 0.34);
   --nc-panel-line-top: rgba(255, 241, 175, 0.18);
-  /* UI-kit textures (public/assets/skin/): fine monochrome grain for panels, and the transparent
-     circuit/orbital overlay composited over the field at low opacity (never over content). */
+  /* UI-kit textures (public/assets/skin/): fine monochrome grain for panels, the transparent
+     circuit/orbital overlay composited over the field at low opacity (never over content), the
+     NOVA wallpaper under a heavy dark veil, and the skin's panel-glass gradient. Presets override
+     the wallpaper (Nova nebula art) and the panel gradient; grain and circuit are hue-neutral. */
   --nc-grain-image: url("/assets/skin/panel-grain.png");
   --nc-ambient-image: url("/assets/skin/circuit-overlay.png");
+  --nc-wallpaper-image: url("/assets/skin/wallpaper.png");
+  --nc-panel-gradient: linear-gradient(180deg, rgba(44, 23, 57, 0.94), rgba(20, 10, 31, 0.96));
 
   /* Backgrounds — deep aubergine, layered (kit: bg_0/bg_1/surface_0/1/2/violet) */
   --v2-background-bg-deep: #09050f;
@@ -388,24 +392,45 @@ body[data-new-layout] {
   --color-v2-text-text-muted: var(--v2-text-text-muted);
 }
 
-/* The lit field: a violet bloom from above + a much fainter gold return over the deep base, with the
-   kit's circuit/orbital overlay screened on top at low opacity — atmosphere, never content. On `main`
-   (which is `contain: strict`, hence a stacking context) so the z-index:-1 pseudo-element sits above
-   the field but below every child. */
+/* The lit field, three layers deep — all atmosphere, never content. On `main` (which is
+   `contain: strict`, hence a stacking context) so the z-index:-1 pseudo-elements sit above the
+   field but below every child:
+     main's own background — the aurora (violet bloom + faint gold return over the deep base)
+     ::before             — the NOVA wallpaper under a heavy dark veil (the skin's .wallpaper)
+     ::after              — the circuit/orbital overlay, screened at low opacity (the skin's .ambient)
+   ::after paints after ::before at equal z-index, which is exactly the skin's stacking. */
 body[data-new-layout] main {
   position: relative;
   background-image: var(--nc-aurora);
 }
 
-body[data-new-layout] main::before {
+body[data-new-layout] main::before,
+body[data-new-layout] main::after {
   content: "";
   position: absolute;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background-image: var(--nc-ambient-image);
   background-size: cover;
   background-position: center top;
+}
+
+body[data-new-layout] main::before {
+  background-image: linear-gradient(180deg, rgba(8, 4, 14, 0.75), rgba(8, 4, 14, 0.94)), var(--nc-wallpaper-image);
+  opacity: 0.35;
+}
+
+body[data-new-layout] main::after {
+  background-image: var(--nc-ambient-image);
   opacity: 0.1;
   mix-blend-mode: screen;
+}
+
+/* Dialogs are the skin's glass panels: the panel gradient over fine grain, on top of the token
+   background (which stays as the fallback ground), with the skin's generous rounding. The gold
+   frame already comes from --v2-elevation-overlay. */
+body[data-new-layout] [data-slot="dialog-container"] {
+  background-image: var(--nc-panel-gradient), var(--nc-grain-image);
+  background-size: auto, 420px 420px;
+  border-radius: 16px;
 }

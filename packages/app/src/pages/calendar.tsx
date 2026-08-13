@@ -1,6 +1,7 @@
 import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
+import { GoldGlyph } from "@/components/gold-glyph"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServer } from "@/context/server"
 import { useDirectoryPicker } from "@/components/directory-picker"
@@ -322,7 +323,7 @@ export function CalendarPage() {
   return (
     <div class="flex min-h-0 flex-1 flex-col self-stretch m-2 rounded-[10px] overflow-hidden bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)] text-v2-text-text-base">
       <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5">
-        <Icon name="calendar" size="large" class="shrink-0 text-v2-text-text-muted" />
+        <GoldGlyph name="calendar" class="size-6" />
         <span class="text-[15px] font-semibold">Calendar</span>
         <span class="min-w-0 flex-1 truncate text-xs text-v2-text-text-faint">
           Schedule agents to run on a repeating date — daily, weekly, monthly, or yearly.

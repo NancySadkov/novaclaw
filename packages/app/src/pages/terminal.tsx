@@ -51,7 +51,11 @@ export function TerminalPage() {
     <RequiresLevel
       min="advanced"
       fallback={
-        <ExpertiseGate title={language.t("terminal.title")} description={language.t("terminal.gate.description")} />
+        <ExpertiseGate
+          glyph="terminal"
+          title={language.t("terminal.title")}
+          description={language.t("terminal.gate.description")}
+        />
       }
     >
       <Show

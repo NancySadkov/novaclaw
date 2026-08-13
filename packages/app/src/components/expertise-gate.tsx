@@ -6,8 +6,9 @@ import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 // (`settings-gear` here; v2 has no `sliders`), never raising the pin.
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import type { Component } from "solid-js"
+import { Show, type Component } from "solid-js"
 import { DialogExpertise } from "@/components/settings-v2/dialog-expertise"
+import { GoldGlyph } from "@/components/gold-glyph"
 import { useLanguage } from "@/context/language"
 
 // The deep-link half of the expertise gate (uix.md §6, terminal.md T4).
@@ -31,6 +32,8 @@ export const ExpertiseGate: Component<{
   title: string
   /** What it does and why it sits behind a level — written for someone who has never used one. */
   description: string
+  /** UI-kit gold glyph for the gated app (assets/skin/glyphs/<name>.png); falls back to a gear. */
+  glyph?: string
 }> = (props) => {
   const language = useLanguage()
   const dialog = useDialog()
@@ -38,7 +41,9 @@ export const ExpertiseGate: Component<{
 
   return (
     <div class="flex h-full w-full flex-1 flex-col items-center justify-center gap-4 self-stretch px-8 text-center">
-      <Icon name="settings-gear" size="large" class="text-text-weak" />
+      <Show when={props.glyph} fallback={<Icon name="settings-gear" size="large" class="text-text-weak" />}>
+        {(name) => <GoldGlyph name={name()} class="size-12 opacity-80" />}
+      </Show>
       <h1 class="text-lg text-text-base">{props.title}</h1>
       <p class="max-w-prose text-sm text-text-weak">{props.description}</p>
       <p class="max-w-prose text-sm text-text-weak">{language.t("expertise.gate.hint")}</p>

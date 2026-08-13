@@ -1,6 +1,6 @@
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
-import { Icon } from "@novaclaw/ui/v2/icon"
+import { GoldGlyph } from "@/components/gold-glyph"
 import { useConfirm } from "@/components/dialog-confirm"
 import { useGlobal } from "@/context/global"
 import { useServer } from "@/context/server"
@@ -194,7 +194,7 @@ export function RegistryPage() {
   return (
     <div class="rounded-[10px] shadow-[var(--v2-elevation-raised)] m-2 min-h-0 overflow-hidden bg-v2-background-bg-base self-stretch flex-1 flex flex-col">
       <div class="flex items-center gap-2 border-b border-v2-border-border-base px-4 py-3">
-        <Icon name="cpu" size="normal" class="text-v2-icon-icon-muted" />
+        <GoldGlyph name="registry" class="size-5" />
         <span class="text-[14px] font-semibold text-v2-text-text-base">Registry</span>
         <span class="text-[12px] text-v2-text-text-faint">
           the instance database, editable — changes are immediate and unguarded

@@ -2,6 +2,7 @@ import { A } from "@solidjs/router"
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
 import type { LogReadResult } from "@novaclaw/sdk/v2/types"
 import { Icon } from "@novaclaw/ui/v2/icon"
+import { GoldGlyph } from "@/components/gold-glyph"
 import { instanceFetch } from "@/utils/instance-fetch"
 import { useGlobal } from "@/context/global"
 import { useServer, ServerConnection } from "@/context/server"
@@ -344,7 +345,7 @@ export function DebugPage() {
   return (
     <div class="rounded-[10px] shadow-[var(--v2-elevation-raised)] m-2 min-h-0 overflow-hidden bg-v2-background-bg-base self-stretch flex-1 flex flex-col">
       <div class="flex items-center gap-2 border-b border-v2-border-border-base px-4 py-3">
-        <Icon name="console" size="normal" class="text-v2-icon-icon-muted" />
+        <GoldGlyph name="debug" class="size-5" />
         <span class="text-[14px] font-semibold text-v2-text-text-base">Debug</span>
         <span class="text-[12px] text-v2-text-text-faint">diagnostics and recovery</span>
       </div>
