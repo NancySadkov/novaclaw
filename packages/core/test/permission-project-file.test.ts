@@ -214,3 +214,48 @@ describe("a project file constrains the live evaluator", () => {
     }),
   )
 })
+
+describe("a project file's TUNE reaches the live evaluator", () => {
+  it.effect("🔴 `askBeforeChanges` in the folder turns a write into an ask", () =>
+    Effect.gen(function* () {
+      // The payoff claim for the whole layer: a component NO session declared, supplied by the
+      // folder, changing a real verdict. Unit tests pin the fold; only this pins that anything
+      // calls it — the same distinction this file's header draws for the permissions half.
+      fs.writeFileSync(
+        path.join(root, "novaclaw.json"),
+        JSON.stringify({ version: 1, tune: { features: { askBeforeChanges: true } } }),
+      )
+      yield* seed([{ action: "write", resource: "*", effect: "allow" }])
+      const service = yield* PermissionV2.Service
+      // The operator allows every write; the folder asks to be consulted first, which NARROWS it.
+      expect((yield* service.ask(assertion("write", "notes.md"))).effect).toBe("ask")
+    }),
+  )
+
+  it.effect("⚠️ NEGATIVE CONTROL — the same write with no tune is allowed", () =>
+    Effect.gen(function* () {
+      // Without this the test above passes against a build that never read the tune: `ask` is also
+      // what an unmatched write returns, so "ask" alone proves nothing about the folder.
+      fs.writeFileSync(path.join(root, "novaclaw.json"), JSON.stringify({ version: 1 }))
+      yield* seed([{ action: "write", resource: "*", effect: "allow" }])
+      const service = yield* PermissionV2.Service
+      expect((yield* service.ask(assertion("write", "notes.md"))).effect).toBe("allow")
+    }),
+  )
+
+  it.effect("a switch whose readers do not fold yet is NOT applied", () =>
+    Effect.gen(function* () {
+      // `safeMode` is deferred (`ProjectDefaults.WIRED`): `tool/bash.ts` reads it without folding,
+      // so applying it here would confine one decision in a chat and not the next. The negative
+      // control is the point — this must not quietly start passing when someone widens the set
+      // without wiring the readers.
+      fs.writeFileSync(
+        path.join(root, "novaclaw.json"),
+        JSON.stringify({ version: 1, tune: { features: { safeMode: true } } }),
+      )
+      yield* seed([{ action: "bash", resource: "*", effect: "allow" }])
+      const service = yield* PermissionV2.Service
+      expect((yield* service.ask(assertion("bash", "ls"))).effect).toBe("allow")
+    }),
+  )
+})

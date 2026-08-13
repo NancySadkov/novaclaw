@@ -29,6 +29,21 @@ import type { EffectiveConfig } from "./config-resolve"
  */
 
 /**
+ * The components a folder may actually influence today. ⛔ GROWS ONLY as readers are wired.
+ *
+ * 🔴 **The half-wired hazard is worse than the missing feature.** Eleven call sites resolve session
+ * config, each passing the shipped defaults directly, and a layer folded in reaches only the ones
+ * that were edited. If a folder could set `safeMode` while just one of its two readers saw the fold,
+ * the same chat would be confined for one decision and not the next — a supervision switch that is
+ * half on, which is indistinguishable from a bug and worse than not offering it.
+ *
+ * So a component is listed here only once EVERY kernel reader of it resolves through a folded layer.
+ * `surgicalEdits` and `askBeforeChanges` qualify because `permission.ts` is their only reader, and it
+ * folds. `safeMode` does not: `tool/bash.ts` and the strict drain read it independently.
+ */
+export const WIRED: readonly ProjectFile.TuneFeature[] = ["surgicalEdits", "askBeforeChanges"]
+
+/**
  * Fold a folder's declared tune into the defaults a session resolves against.
  *
  * 🔴 **The structure is the security property here, and `narrowTune` is the backstop.** Because this
@@ -53,8 +68,14 @@ export function fold(
    */
   readonly applied: readonly ProjectFile.TuneFeature[]
   readonly refused: readonly ProjectFile.TuneFeature[]
+  /**
+   * Declared, allowed, and NOT applied because a reader of it does not see this layer yet — see
+   * {@link WIRED}. Reported rather than dropped: a folder asking for something that quietly does
+   * nothing is the failure the Project surface exists to make visible.
+   */
+  readonly deferred: readonly ProjectFile.TuneFeature[]
 } {
-  if (!tune?.features) return { defaults: base, applied: [], refused: [] }
+  if (!tune?.features) return { defaults: base, applied: [], refused: [], deferred: [] }
   // The baseline is what is in force WITHOUT the project — everything below this layer.
   const baseline: Partial<Record<ProjectFile.TuneFeature, boolean>> = {}
   for (const feature of ProjectFile.SUPERVISION_FEATURES) {
@@ -62,7 +83,19 @@ export function fold(
     if (typeof value === "boolean") baseline[feature] = value
   }
   const { features, refused } = ProjectFile.narrowTune(tune, baseline)
-  // `applied` is the keys that SURVIVED narrowing, not the keys the file declared — a refused switch
-  // must never be reported as something the folder contributed.
-  return { defaults: { ...base, ...features }, applied: Object.keys(features) as ProjectFile.TuneFeature[], refused }
+  // `applied` is the keys that survived BOTH narrowing and the wired check — a refused or deferred
+  // switch must never be reported as something the folder contributed.
+  const effective: Record<string, boolean> = {}
+  const applied: ProjectFile.TuneFeature[] = []
+  const deferred: ProjectFile.TuneFeature[] = []
+  for (const [key, value] of Object.entries(features)) {
+    const feature = key as ProjectFile.TuneFeature
+    if (!WIRED.includes(feature)) {
+      deferred.push(feature)
+      continue
+    }
+    effective[feature] = value
+    applied.push(feature)
+  }
+  return { defaults: { ...base, ...effective }, applied, refused, deferred }
 }

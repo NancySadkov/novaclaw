@@ -18,23 +18,23 @@ const tune = (features: Record<string, boolean>) => ({ features }) as never
 
 describe("a folder's tune as a defaults layer", () => {
   test("supplies a component no session row declares", () => {
-    const { defaults } = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, tune({ memory: false }))
-    expect(resolveConfig(defaults, []).memory).toBe(false)
+    const { defaults } = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, tune({ surgicalEdits: true }))
+    expect(resolveConfig(defaults, []).surgicalEdits).toBe(true)
   })
 
   test("🔴 the session's own row outranks it — the whole point of the ordering", () => {
-    const { defaults } = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, tune({ memory: false }))
-    const own: SessionConfig = { memory: true }
-    expect(resolveConfig(defaults, [own]).memory).toBe(true)
+    const { defaults } = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, tune({ surgicalEdits: true }))
+    const own: SessionConfig = { surgicalEdits: false }
+    expect(resolveConfig(defaults, [own]).surgicalEdits).toBe(false)
   })
 
   test("🔴 a parent's stance outranks it too", () => {
-    const { defaults } = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, tune({ safeMode: false }))
-    const parent: SessionConfig = { safeMode: true }
+    const { defaults } = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, tune({ askBeforeChanges: false }))
+    const parent: SessionConfig = { askBeforeChanges: true }
     const child: SessionConfig = {}
-    // A repository that says "no safe mode" cannot shed a parent session's safe mode: the chain is
+    // A repository saying "do not ask" cannot shed a parent session's ask-before-changes: the chain is
     // above this layer, so the narrowing is structural rather than a check that has to fire.
-    expect(resolveConfig(defaults, [parent, child]).safeMode).toBe(true)
+    expect(resolveConfig(defaults, [parent, child]).askBeforeChanges).toBe(true)
   })
 
   test("an absent tune changes nothing at all", () => {
@@ -47,10 +47,10 @@ describe("a folder's tune as a defaults layer", () => {
     // The ECS discipline architecture.md states: "only divergent values create rows". The fold
     // produces DEFAULTS; nothing here may end up looking like a session's own declaration, because
     // a fork copies declared columns and the composer renders "you chose this" for them.
-    const { defaults } = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, tune({ memory: false, quality: true }))
+    const { defaults } = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, tune({ surgicalEdits: true }))
     const chain: SessionConfig[] = [{}]
     const resolved = resolveConfig(defaults, chain)
-    expect(resolved.memory).toBe(false)
+    expect(resolved.surgicalEdits).toBe(true)
     // The layer that represents the session declared nothing, and still declares nothing.
     expect(chain[0]).toEqual({})
   })
@@ -66,9 +66,9 @@ describe("a folder's tune as a defaults layer", () => {
   })
 
   test("a preference switch may still be lowered by the folder", () => {
-    const base: EffectiveConfig = { ...EFFECTIVE_CONFIG_DEFAULTS, memory: true }
-    const folded = ProjectDefaults.fold(base, tune({ memory: false }))
-    expect(folded.defaults.memory).toBe(false)
+    const base: EffectiveConfig = { ...EFFECTIVE_CONFIG_DEFAULTS, surgicalEdits: true }
+    const folded = ProjectDefaults.fold(base, tune({ surgicalEdits: false }))
+    expect(folded.defaults.surgicalEdits).toBe(false)
     expect(folded.refused).toEqual([])
   })
 
@@ -77,7 +77,7 @@ describe("a folder's tune as a defaults layer", () => {
     // layers. If the folder had been prepended to the chain instead of folded into the defaults,
     // the session root would land at index 1 and its own permission mode would be clamped.
     expect(SESSION_CONFIG_FIELDS.permissionMode.merge).toBe("narrow")
-    const { defaults } = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, tune({ memory: false }))
+    const { defaults } = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, tune({ surgicalEdits: true }))
     const root: SessionConfig = { permissionMode: "yolo" }
     expect(resolveConfig(defaults, [root]).permissionMode).toBe("yolo")
   })
@@ -90,11 +90,50 @@ describe("a folder's tune as a defaults layer", () => {
     for (const feature of declared) {
       expect(SESSION_CONFIG_FIELDS[feature], `${feature} is not a session component`).toBeDefined()
     }
+    // Survival through resolution is asserted only for the WIRED ones — the rest are deferred by
+    // design until their readers fold, and asserting otherwise would pin the bug this prevents.
     const { defaults } = ProjectDefaults.fold(
       EFFECTIVE_CONFIG_DEFAULTS,
       tune(Object.fromEntries(declared.map((name) => [name, true]))),
     )
     const resolved = resolveConfig(defaults, [])
-    for (const feature of declared) expect(resolved[feature], `${feature} did not survive resolution`).toBe(true)
+    for (const feature of ProjectDefaults.WIRED) {
+      expect(resolved[feature], `${feature} is wired but did not survive resolution`).toBe(true)
+    }
+  })
+})
+
+describe("the wired set", () => {
+  test("a component with an unwired reader is DEFERRED, not applied", () => {
+    // safeMode is read by `tool/bash.ts` and the strict drain, neither of which folds. Applying it
+    // here would confine one decision in a chat and not the next — a supervision switch half on.
+    const folded = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, tune({ safeMode: true }))
+    expect(folded.defaults.safeMode).toBeUndefined()
+    expect(folded.deferred).toEqual(["safeMode"])
+    expect(folded.applied).toEqual([])
+  })
+
+  test("a wired component applies and is reported as applied", () => {
+    const folded = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, tune({ surgicalEdits: true }))
+    expect(resolveConfig(folded.defaults, []).surgicalEdits).toBe(true)
+    expect(folded.applied).toEqual(["surgicalEdits"])
+    expect(folded.deferred).toEqual([])
+  })
+
+  test("🔴 every wired component is a real session component", () => {
+    // A name in the wired set that is not a config field would fold into defaults and be dropped by
+    // `resolveConfig`, which reads only descriptor keys — a switch that silently does nothing.
+    for (const feature of ProjectDefaults.WIRED) {
+      expect(SESSION_CONFIG_FIELDS[feature], `${feature} is wired but is not a component`).toBeDefined()
+    }
+  })
+
+  test("a refused switch is never also reported as applied or deferred", () => {
+    const base: EffectiveConfig = { ...EFFECTIVE_CONFIG_DEFAULTS, askBeforeChanges: true }
+    const folded = ProjectDefaults.fold(base, tune({ askBeforeChanges: false }))
+    expect(folded.refused).toEqual(["askBeforeChanges"])
+    expect(folded.applied).toEqual([])
+    expect(folded.deferred).toEqual([])
+    expect(folded.defaults.askBeforeChanges).toBe(true)
   })
 })

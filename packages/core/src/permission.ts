@@ -13,6 +13,8 @@ import { SessionV2 } from "./session"
 import { SessionStore } from "./session/store"
 import { FSUtil } from "./fs-util"
 import { ProjectFileResolve } from "./project-file"
+import { ProjectDefaults } from "./session/project-defaults"
+import { ProjectFile } from "@novaclaw/schema/project-file"
 import { Wildcard } from "./util/wildcard"
 import {
   ASK_BEFORE_CHANGES_RULES,
@@ -563,21 +565,31 @@ export const layer = Layer.effect(
     // R of every method on this service, which must be `never` — a service that leaks a requirement
     // is one no caller can hold.
     const fsUtil = yield* FSUtil.Service
-    let projectCache: { readonly at: number; readonly rules: Permission.Ruleset } | undefined
-    const projectPermissions = EffectRuntime.fnUntraced(function* () {
-      if (projectCache && Date.now() - projectCache.at < PROJECT_TTL_MS) return projectCache.rules
-      const rules = yield* ProjectFileResolve.resolve(location.directory).pipe(
+    // ⚠️ ONE cache entry for the whole resolution, not one per consumer. The permissions and the
+    // tune come from the same file, so two caches would read it twice a second and — worse — could
+    // disagree across a mid-window edit, applying a folder's rules without its stance.
+    let projectCache:
+      | { readonly at: number; readonly rules: Permission.Ruleset; readonly tune: ProjectFile.Tune | undefined }
+      | undefined
+    const projectFile = EffectRuntime.fnUntraced(function* () {
+      if (projectCache && Date.now() - projectCache.at < PROJECT_TTL_MS) return projectCache
+      const found = yield* ProjectFileResolve.resolve(location.directory).pipe(
         EffectRuntime.provideService(FSUtil.Service, fsUtil),
         EffectRuntime.map((resolution) =>
-          resolution.kind === "project" ? (resolution.info.permissions ?? []) : ([] as Permission.Ruleset),
+          resolution.kind === "project"
+            ? { rules: resolution.info.permissions ?? ([] as Permission.Ruleset), tune: resolution.info.tune }
+            : { rules: [] as Permission.Ruleset, tune: undefined },
         ),
         // A project that cannot be read must not take the location down. Unresolvable means NO
         // constraint, the same posture as no file — and the resolver still distinguishes "missing"
         // from "malformed" for the surface that reports it.
-        EffectRuntime.orElseSucceed(() => [] as Permission.Ruleset),
+        EffectRuntime.orElseSucceed(() => ({ rules: [] as Permission.Ruleset, tune: undefined })),
       )
-      projectCache = { at: Date.now(), rules }
-      return rules
+      projectCache = { at: Date.now(), ...found }
+      return projectCache
+    })
+    const projectPermissions = EffectRuntime.fnUntraced(function* () {
+      return (yield* projectFile()).rules
     })
 
     const agents = yield* AgentV2.Service
@@ -740,7 +752,11 @@ export const layer = Layer.effect(
 
     // The whole resolved config, not just the mode: the evaluator also needs the surgical-edits switch.
     const sessionConfig = EffectRuntime.fnUntraced(function* (sessionID: SessionV2.ID) {
-      return yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, sessionID, (id) => sessions.get(id as SessionV2.ID))
+      // The folder's stance is a layer BENEATH the entity: it supplies a component no session on the
+      // chain declared, and loses to every one that does. `fold` applies only the components whose
+      // every reader resolves through a folded layer (`ProjectDefaults.WIRED`).
+      const { defaults } = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, (yield* projectFile()).tune)
+      return yield* resolveSessionConfig(defaults, sessionID, (id) => sessions.get(id as SessionV2.ID))
     })
 
     const evaluateInput = EffectRuntime.fnUntraced(function* (input: AssertInput) {
