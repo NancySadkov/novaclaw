@@ -1221,8 +1221,9 @@ export const dict = {
   "settings.health.recheck": "Check again",
   "settings.health.testProvider": "Test the connection to my model provider",
   "settings.storage.resources.title": "This instance's resources",
+  // Shown as a hover/tap hint on the Host memory row, not as an always-on paragraph (owner, 2026-08-13).
   "settings.storage.resources.description":
-    "Live memory pressure and disk use on the machine running this instance. RAM figures are resident memory; SQLite and the vector knowledge base share NovaClaw's process, so Nova reports that honestly instead of inventing a split.",
+    "How much memory the whole machine has promised to programs, against its commit limit — the number that predicts running out. The RAM figures below are resident memory; SQLite and the knowledge base live inside NovaClaw's process.",
   "settings.storage.resources.loading": "Measuring this instance…",
   "settings.storage.resources.hostMemory": "Host memory pressure",
   "settings.storage.resources.memoryValue": "{{used}} committed of {{total}} commit limit",

@@ -11,8 +11,8 @@ import type { HomeApp } from "@/apps/registry"
 //     without artwork. The gradient derives from the app's accent hue; a top inner highlight +
 //     accent glow on hover give the glassmorphic depth. `--icon-base` is overridden to white
 //     because the themed default washes out on saturated tiles.
-//   • hero tile (app.hero) — a 2×2 grid-span brushed-gold card with a 56px glyph, title + subtitle;
-//     the single eye-anchor of the home screen (Chats).
+//   • hero tile (app.hero) — a 2×2 grid-span glass panel with the NOVA brand mark centered,
+//     title + subtitle below; the single eye-anchor of the home screen (Chats).
 
 const tileStyle = (app: HomeApp) =>
   // Only regular tiles reach this — the hero renders its own glass-panel recipe below.
@@ -110,12 +110,12 @@ const RegularTile: Component<TileProps> = (props) => (
 )
 
 // The hero is the skin's hero panel, not a solid gold slab: dark panel glass (gradient + grain)
-// inside a gold frame, the circuit motif as atmosphere, a gold eyebrow, the app's gold glyph as
-// ornament, the tagline as the headline — and, while agents work, a live status line with a calm
-// pulsing dot. Gold is spent on the FRAME and the words, so the tile stays the eye anchor without
-// shouting; the glyph derives from the tile artwork path (tiles/ → glyphs/), no extra registry field.
+// inside a gold frame, the circuit motif as atmosphere, the NOVA mark centered in the free space,
+// a gold eyebrow + tagline below — and, while agents work, a live status line with a calm pulsing
+// dot. Gold is spent on the FRAME and the words, so the tile stays the eye anchor without shouting.
+// The brand mark lives here by design: the hero IS the flagship tile (owner, 2026-08-13), so it
+// carries the logo rather than a per-app glyph — no registry field needed.
 const HeroTile: Component<TileProps> = (props) => {
-  const glyph = () => props.app.tile?.replace("/tiles/", "/glyphs/")
   const status = () => props.app.status?.()
   return (
     <button
@@ -128,7 +128,7 @@ const HeroTile: Component<TileProps> = (props) => {
       {/* The grid span (col-span/row-span) lives on the SortableTile wrapper — this inner button just
           fills it (w-full h-full). Don't re-declare the span here (dead classes — L7). */}
       <div
-        class="relative flex flex-col items-start justify-end w-full h-full min-h-[11.5rem] overflow-hidden rounded-[1.75rem] p-5 text-left shadow-[var(--v2-elevation-floating)] transition-all duration-150 group-hover:-translate-y-1 group-hover:shadow-[0_14px_40px_var(--tile-glow),var(--v2-elevation-floating)] group-active:scale-[0.98] group-focus-visible:ring-2 group-focus-visible:ring-[var(--v2-border-border-focus)]"
+        class="relative flex flex-col w-full h-full min-h-[11.5rem] overflow-hidden rounded-[1.75rem] p-5 text-left shadow-[var(--v2-elevation-floating)] transition-all duration-150 group-hover:-translate-y-1 group-hover:shadow-[0_14px_40px_var(--tile-glow),var(--v2-elevation-floating)] group-active:scale-[0.98] group-focus-visible:ring-2 group-focus-visible:ring-[var(--v2-border-border-focus)]"
         style={{
           "background-image": "var(--nc-panel-gradient), var(--nc-grain-image)",
           "background-size": "auto, 420px 420px",
@@ -140,24 +140,15 @@ const HeroTile: Component<TileProps> = (props) => {
         <div class="pointer-events-none absolute inset-0 rounded-[inherit] bg-cover bg-top opacity-[0.16] mix-blend-screen [background-image:var(--nc-ambient-image)]" />
         {/* the skin panel's top gold hairline */}
         <div class="pointer-events-none absolute inset-x-[14%] top-0 h-px opacity-40 [background:linear-gradient(90deg,transparent,var(--v2-text-text-accent),transparent)]" />
-        <Show
-          when={glyph()}
-          fallback={
-            <Icon
-              name={props.app.icon as ComponentProps<typeof Icon>["name"]}
-              class="absolute right-5 top-5 size-12 text-v2-icon-icon-accent"
-            />
-          }
-        >
-          {(src) => (
-            <img
-              src={src()}
-              alt=""
-              draggable={false}
-              class="pointer-events-none absolute right-5 top-5 size-12 select-none object-contain [filter:drop-shadow(0_0_12px_var(--tile-glow))]"
-            />
-          )}
-        </Show>
+        {/* the NOVA mark, centered in the flexible space above the copy */}
+        <div class="relative flex min-h-0 flex-1 items-center justify-center py-1">
+          <img
+            src="/assets/skin/logo-nobg.png"
+            alt=""
+            draggable={false}
+            class="pointer-events-none h-28 max-h-full w-auto select-none object-contain [filter:drop-shadow(0_0_14px_var(--tile-glow))]"
+          />
+        </div>
         <TileBadge app={props.app} />
         <div class="relative flex flex-col items-start gap-1.5">
           <span class="text-[11px] font-bold uppercase tracking-[0.13em] text-v2-text-text-accent">

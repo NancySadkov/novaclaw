@@ -54,17 +54,22 @@ export const InstanceResources: Component = () => {
 
   return (
     <section class="flex flex-col gap-2" data-slot="instance-resources">
-      <div>
-        <h3 class="settings-v2-section-title">{language.t("settings.storage.resources.title")}</h3>
-        <p class="settings-v2-tab-description">{language.t("settings.storage.resources.description")}</p>
-      </div>
+      {/* No section blurb: the rows carry their own detail as hover/tap hints (owner, 2026-08-13 —
+          "descriptions pop when the user hovers or taps these indicators"). */}
+      <h3 class="settings-v2-section-title">{language.t("settings.storage.resources.title")}</h3>
       <SettingsListV2>
-        <SettingsRowV2 title={language.t("settings.storage.resources.hostMemory")} description={hostMemory()}>
+        <SettingsRowV2
+          title={language.t("settings.storage.resources.hostMemory")}
+          description={hostMemory()}
+          hint={language.t("settings.storage.resources.description")}
+        >
           <span class="select-text text-[12px] text-v2-text-text-muted">{usage()?.level ?? "…"}</span>
         </SettingsRowV2>
+        {/* Row descriptions stay empty: the value column already carries state-or-bytes, and the
+            prose detail pops on hover — printing state in the description would say it twice. */}
         <For each={usage()?.ram ?? []}>
           {(item) => (
-            <SettingsRowV2 title={item.label} description={item.detail ?? item.state ?? ""}>
+            <SettingsRowV2 title={item.label} description="" hint={item.detail}>
               <span class="select-text text-[12px] text-v2-text-text-muted">
                 {item.bytes === undefined
                   ? (item.state ?? language.t("settings.storage.resources.unknown"))
@@ -81,7 +86,7 @@ export const InstanceResources: Component = () => {
       <SettingsListV2>
         <For each={usage()?.disk ?? []}>
           {(item) => (
-            <SettingsRowV2 title={item.label} description={item.path ?? item.detail ?? item.state ?? ""}>
+            <SettingsRowV2 title={item.label} description={item.path ?? item.state ?? ""} hint={item.detail}>
               <span class="select-text text-[12px] text-v2-text-text-muted">
                 {item.bytes === undefined
                   ? language.t("settings.storage.resources.unknown")
