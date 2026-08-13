@@ -161,3 +161,74 @@ describe("openai-chat — structured tool-name canonicalization (A1)", () => {
     expect(toolCalls(events).map((c) => c.name)).toEqual(["frobnicate"])
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// A RECOVERED CALL IS AN ORDINARY CALL — the property the permission model rests on.
+//
+// Recovery happens in the DECODER, below the runner, and emits the same `toolCall` event a native
+// call does. That is what makes "a text-dumped call cannot bypass permissions" true by CONSTRUCTION
+// rather than by every consumer remembering to check: there is no second path to forget.
+//
+// ⚠️ The failure this guards is a refactor that special-cases recovered calls — tagging them, routing
+// them, executing them directly. Nothing would fail: the calls would still work, and the gate would
+// simply stop applying to them, which is the one class of bug you cannot see from the outside.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+describe("a recovered call is indistinguishable from a native one", () => {
+  const ARGS = '{"filePath":"a.ts"}'
+
+  test("🔴 the same event shape, field for field, apart from the id", () => {
+    const native = toolCalls(decode(["read"], [structuredCall("read", ARGS), stop]))
+    const recovered = toolCalls(
+      decode(["read"], [text(`<tool_call>{"name":"read","arguments":${ARGS}}</tool_call>`), stop]),
+    )
+    expect(native.length).toBe(1)
+    expect(recovered.length).toBe(1)
+    // Ids differ by design (`call_recovered_*` is traceable); everything a consumer routes or gates
+    // on must not.
+    const shape = (call: (typeof native)[number]) => ({ ...call, id: undefined })
+    expect(shape(recovered[0]!)).toEqual(shape(native[0]!))
+  })
+
+  test("🔴 no marker rides along with a VALUE a consumer could branch on", () => {
+    // If a recovered call ever carried "this came from text", something downstream would eventually
+    // treat it differently — and the difference that matters is the permission assert.
+    //
+    // ⚠️ Key PRESENCE is deliberately not the assertion. A native call carries `providerExecuted` and
+    // `providerMetadata` as undefined-valued keys and a recovered one omits them; both read as
+    // `undefined` at every consumer, so that difference is invisible and harmless. What must not
+    // exist is a key with a DEFINED value on one and not the other.
+    const [recovered] = toolCalls(
+      decode(["read"], [text(`<tool_call>{"name":"read","arguments":${ARGS}}</tool_call>`), stop]),
+    )
+    const [native] = toolCalls(decode(["read"], [structuredCall("read", ARGS), stop]))
+    const defined = (call: object) =>
+      Object.entries(call)
+        .filter(([key, value]) => key !== "id" && value !== undefined)
+        .map(([key]) => key)
+        .sort()
+    expect(defined(recovered!)).toEqual(defined(native!))
+    // ⚠️ The ID is the ONE deliberate difference — `call_recovered_*` is traceable in a transcript,
+    // which is worth having. Everything else must be silent about provenance, and nothing may branch
+    // on the id: it is a label for a human reading a log, not a routing key.
+    const { id: _id, ...rest } = recovered as unknown as Record<string, unknown>
+    expect(JSON.stringify(rest)).not.toMatch(/recovered|fromText|provenance/i)
+  })
+
+  test("🔴 an unoffered name is recovered as NOTHING — not as a call for the gate to refuse", () => {
+    // The whitelist is the first line: a hallucinated name never becomes a call at all, so nothing
+    // downstream has to recognise it. `read` is offered; `rm` is not.
+    const events = decode(["read"], [text('<tool_call>{"name":"rm","arguments":{"path":"/"}}</tool_call>'), stop])
+    expect(toolCalls(events)).toHaveLength(0)
+  })
+
+  test("a structured call WINS — recovery never adds a second call to the same turn", () => {
+    // Both channels carrying a call would otherwise execute it twice, which for a write tool is a
+    // duplicated side effect rather than a duplicated answer.
+    const events = decode(
+      ["read"],
+      [structuredCall("read", ARGS), text(`<tool_call>{"name":"read","arguments":${ARGS}}</tool_call>`), stop],
+    )
+    expect(toolCalls(events)).toHaveLength(1)
+  })
+})
