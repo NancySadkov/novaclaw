@@ -299,6 +299,20 @@ export class LLMRequest extends Schema.Class<LLMRequest>("LLM.Request")({
    *  request bodies must never serialize this field or re-add those schemas to `tools`. */
   callableTools: Schema.optional(Schema.Array(Schema.String)),
   toolChoice: Schema.optional(ToolChoice),
+  /**
+   * HOW the tools are offered. Absent = `native` — the provider's own tool channel.
+   *
+   * `prompted` is for an endpoint whose native channel does not work: the body carries no `tools`
+   * at all and the tools are described in the system prompt instead, with calls recovered from
+   * text by the same whitelist-gated `recoverToolCallsFromText` the decoder already runs. What it
+   * is NOT is a second way to say "no tools": `tools` still carries the full set, because that
+   * array is what the recovery whitelist is built from, and emptying it would let a model name
+   * anything it liked.
+   *
+   * ⚠️ Which channel an endpoint needs is a MEASURED property (`ProviderCapability`), not a guess.
+   * Nothing sets this automatically yet; it is a request option and a config override.
+   */
+  toolChannel: Schema.optional(Schema.Literals(["native", "prompted"])),
   generation: Schema.optional(GenerationOptions),
   providerOptions: Schema.optional(ProviderOptions),
   http: Schema.optional(HttpOptions),
@@ -318,6 +332,7 @@ export namespace LLMRequest {
     tools: request.tools,
     callableTools: request.callableTools,
     toolChoice: request.toolChoice,
+    toolChannel: request.toolChannel,
     generation: request.generation,
     providerOptions: request.providerOptions,
     http: request.http,

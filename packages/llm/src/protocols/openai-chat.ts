@@ -22,6 +22,7 @@ import { OpenAIOptions } from "./utils/openai-options"
 import { Lifecycle } from "./utils/lifecycle"
 import { ToolSchemaProjection } from "./utils/tool-schema"
 import { ToolStream } from "./utils/tool-stream"
+import { PromptedTools } from "./utils/prompted-tools"
 import { recoverToolCallsFromText, resolveToolName } from "./utils/tool-recovery"
 import { truncatedArgsInput } from "./utils/truncated-args"
 
@@ -457,8 +458,12 @@ const lowerMessage = Effect.fn("OpenAIChat.lowerMessage")(function* (message: Op
 })
 
 const lowerMessages = Effect.fn("OpenAIChat.lowerMessages")(function* (request: LLMRequest) {
-  const system: OpenAIChatMessage[] =
-    request.system.length === 0 ? [] : [{ role: "system", content: ProviderShared.joinText(request.system) }]
+  // On the prompted channel the tools are DESCRIBED here, because the body will not carry them.
+  // Appended to the system text rather than pushed as an extra message: a second system message is
+  // a shape several endpoints reject outright, and one an alternating-role template can drop.
+  const toolsSection = request.toolChannel === "prompted" ? PromptedTools.promptedToolsSection(request.tools) : undefined
+  const systemText = [ProviderShared.joinText(request.system), toolsSection].filter(Boolean).join("\n\n")
+  const system: OpenAIChatMessage[] = systemText.length === 0 ? [] : [{ role: "system", content: systemText }]
   const messages = [...system]
   const pendingImages: Array<Schema.Schema.Type<typeof OpenAIChatUserContent>> = []
   const flushImages = () => {
@@ -524,16 +529,21 @@ const fromRequest = Effect.fn("OpenAIChat.fromRequest")(function* (request: LLMR
   // validation, and HTTP execution are composed by `Route.make`.
   const generation = request.generation
   const toolSchemaCompatibility = request.model.compatibility?.toolSchema
+  const prompted = request.toolChannel === "prompted"
   return {
     model: request.model.id,
     messages: yield* lowerMessages(request),
+    // 🔴 ONE branch decides both halves. On the prompted channel the body carries no `tools` and no
+    // `tool_choice`, and `lowerMessages` adds the description section instead — and it is the same
+    // `prompted` test that drives both, so a body can never go out having omitted the array while
+    // saying nothing about the tools, which is a turn where the agent simply cannot act.
     tools:
-      request.tools.length === 0
+      prompted || request.tools.length === 0
         ? undefined
         : request.tools.map((tool) =>
             lowerTool(tool, ToolSchemaProjection.modelCompatibility(tool.inputSchema, toolSchemaCompatibility)),
           ),
-    tool_choice: request.toolChoice ? yield* lowerToolChoice(request.toolChoice) : undefined,
+    tool_choice: prompted || !request.toolChoice ? undefined : yield* lowerToolChoice(request.toolChoice),
     // Spread, not `key: undefined`: an unrequested constraint leaves the key ABSENT from the body.
     ...(request.responseFormat === undefined
       ? {}
