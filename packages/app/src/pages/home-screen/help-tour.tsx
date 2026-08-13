@@ -55,7 +55,7 @@ export const HelpTour: Component = () => {
                 "background-image": `linear-gradient(155deg, color-mix(in oklab, ${step().accent} 88%, white) -8%, ${step().accent} 42%, color-mix(in oklab, ${step().accent} 58%, black) 105%)`,
                 color:
                   step().glyphTone === "dark"
-                    ? "color-mix(in srgb, var(--nc-ink, #1a1135) 92%, transparent)"
+                    ? "color-mix(in srgb, var(--nc-ink, #1a0e11) 92%, transparent)"
                     : "rgba(255,255,255,0.96)",
               }}
             >

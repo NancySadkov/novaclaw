@@ -58,13 +58,18 @@ export function useManifestApps(): () => HomeApp[] {
   return () =>
     persistedManifests().map((manifest): HomeApp => {
       const subtitle = appSubtitle(t, manifest.id, manifest.subtitle)
+      const icon = manifest.icon && isIconName(manifest.icon) ? manifest.icon : undefined
       return {
         id: manifest.id,
         title: appName(t, manifest.id, manifest.title),
         // Validate the agent-supplied icon against the sprite — an unknown name would render a silent
         // blank glyph, so fall back to a sensible default instead (L3).
-        icon: manifest.icon && isIconName(manifest.icon) ? manifest.icon : DEFAULT_ICON,
+        icon: icon ?? DEFAULT_ICON,
         accent: manifest.accent || DEFAULT_ACCENT,
+        // A manifest that customized NOTHING (no valid icon, no accent) gets the UI kit's generic
+        // app artwork so it sits in the launcher's visual language; one that chose an icon or accent
+        // keeps the gradient tile — its customization stays visible.
+        ...(icon || manifest.accent ? {} : { tile: "/assets/skin/tiles/generic_app.png" }),
         ...(subtitle ? { subtitle } : {}),
         source: "agent",
         open: () => open(manifest),

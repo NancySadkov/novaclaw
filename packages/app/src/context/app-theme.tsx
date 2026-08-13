@@ -14,7 +14,7 @@ export type AppThemeId = "nova" | "summer" | "autumn"
 // hatch; widening it back re-opens that hole (see `i18n/key-typing.test.ts`).
 // The import is type-only, so it adds no module edge at runtime.
 export const APP_THEME_PRESETS: { id: AppThemeId; nameKey: TranslationKey; accent: string; bg: string }[] = [
-  { id: "nova", nameKey: "settings.appearance.theme.nova", accent: "#e7b62f", bg: "#201748" },
+  { id: "nova", nameKey: "settings.appearance.theme.nova", accent: "#d8ab4b", bg: "#12091e" },
   { id: "summer", nameKey: "settings.appearance.theme.summer", accent: "#ff7a59", bg: "#0e2e2b" },
   { id: "autumn", nameKey: "settings.appearance.theme.autumn", accent: "#e8933a", bg: "#2a1519" },
 ]

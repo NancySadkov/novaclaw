@@ -12,6 +12,9 @@ body[data-new-layout][data-app-theme="summer"] {
   --nc-aurora:
     radial-gradient(110% 75% at 12% -8%, rgba(45, 180, 170, 0.26), transparent 62%),
     radial-gradient(85% 70% at 100% 4%, rgba(255, 122, 89, 0.12), transparent 58%);
+  /* Panel frame (Nova's gold hairline ring + specular top edge) retinted to the sea-teal field. */
+  --nc-panel-line: rgba(160, 230, 215, 0.3);
+  --nc-panel-line-top: rgba(233, 246, 243, 0.16);
 
   --v2-background-bg-deep: #08211f;
   --v2-background-bg-base: #0e2e2b;

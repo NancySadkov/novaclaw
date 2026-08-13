@@ -157,7 +157,9 @@ export function NewAgentBar() {
       data-slot="home-new-agent"
       class="flex w-full items-center gap-2 rounded-[12px] bg-v2-background-bg-layer-01 px-3.5 py-3 ring-1 ring-v2-border-border-base transition-shadow focus-within:ring-2 focus-within:ring-[var(--v2-border-border-focus)]"
     >
-      <Icon name="edit" size="normal" class="shrink-0 text-v2-icon-icon-muted" />
+      {/* Gold lead-in glyph — the skin's command bar opens with a gold mark (one accent, spent on
+          the primary action; the hero + this bar are the home screen's two gold anchors). */}
+      <Icon name="edit" size="normal" class="shrink-0 text-v2-icon-icon-accent" />
       <input
         data-slot="home-new-agent-input"
         type="text"

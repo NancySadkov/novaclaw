@@ -49,6 +49,7 @@ export function useBuiltinApps(): () => HomeApp[] {
       id: "chats",
       title: name("chats"),
       icon: "speech-bubble",
+      tile: "/assets/skin/tiles/chats.png",
       // The hero's accent IS the preset's primary accent, so the one eye-anchor re-themes with the
       // color scheme (gold on Nova, amber on Autumn, coral on Summer). uix.md §7.
       accent: "var(--nc-accent-solid)",
@@ -69,6 +70,7 @@ export function useBuiltinApps(): () => HomeApp[] {
       id: "notes",
       title: name("notes"),
       icon: "edit",
+      tile: "/assets/skin/tiles/notes.png",
       accent: "#8b5cf6",
       subtitle: sub("notes"),
       source: "builtin",
@@ -78,6 +80,7 @@ export function useBuiltinApps(): () => HomeApp[] {
       id: "calendar",
       title: name("calendar"),
       icon: "calendar",
+      tile: "/assets/skin/tiles/calendar.png",
       accent: "#6366f1",
       subtitle: sub("calendar"),
       source: "builtin",
@@ -87,6 +90,7 @@ export function useBuiltinApps(): () => HomeApp[] {
       id: "recipes",
       title: name("recipes"),
       icon: "checklist",
+      tile: "/assets/skin/tiles/recipes.png",
       accent: "#f97316",
       subtitle: sub("recipes"),
       source: "builtin",
@@ -96,6 +100,7 @@ export function useBuiltinApps(): () => HomeApp[] {
       id: "files",
       title: name("files"),
       icon: "folder",
+      tile: "/assets/skin/tiles/files.png",
       accent: "#3b82f6",
       subtitle: sub("files"),
       source: "builtin",
@@ -114,6 +119,7 @@ export function useBuiltinApps(): () => HomeApp[] {
       id: "terminal",
       title: name("terminal"),
       icon: "terminal",
+      tile: "/assets/skin/tiles/terminal.png",
       accent: "#64748b",
       subtitle: sub("terminal"),
       source: "builtin",
@@ -126,6 +132,7 @@ export function useBuiltinApps(): () => HomeApp[] {
       id: "registry",
       title: name("registry"),
       icon: "cpu",
+      tile: "/assets/skin/tiles/registry.png",
       accent: "#0ea5e9",
       subtitle: sub("registry"),
       source: "builtin",
@@ -138,6 +145,7 @@ export function useBuiltinApps(): () => HomeApp[] {
       id: "debug",
       title: name("debug"),
       icon: "console",
+      tile: "/assets/skin/tiles/debug.png",
       accent: "#a78bfa",
       subtitle: sub("debug"),
       source: "builtin",
@@ -150,6 +158,7 @@ export function useBuiltinApps(): () => HomeApp[] {
       id: "memory-graph",
       title: name("memory-graph"),
       icon: "branch",
+      tile: "/assets/skin/tiles/memory.png",
       accent: "#8b5cf6",
       subtitle: sub("memory-graph"),
       source: "builtin",
@@ -163,6 +172,7 @@ export function useBuiltinApps(): () => HomeApp[] {
       id: "trash",
       title: name("trash"),
       icon: "trash",
+      tile: "/assets/skin/tiles/trash.png",
       // Cool teal, not the old saturated red — gold is the ONLY warm accent (the hero). uix.md §3/P3.
       accent: "#14b8a6",
       subtitle: sub("trash"),
@@ -176,6 +186,7 @@ export function useBuiltinApps(): () => HomeApp[] {
       // wearing one company's trademark both misdescribes it and borrows a mark we have no licence to use as
       // our own iconography. The Discord ROW inside the panel keeps its logo — that one really is Discord.
       icon: "community",
+      tile: "/assets/skin/tiles/community.png",
       // Cool indigo-blue, so it doesn't compete with the gold hero (uix.md §3/P3).
       accent: "#5865f2",
       subtitle: sub("social"),
@@ -187,6 +198,7 @@ export function useBuiltinApps(): () => HomeApp[] {
       id: "help",
       title: name("help"),
       icon: "help",
+      tile: "/assets/skin/tiles/help.png",
       // Cool indigo, not the old pink — keeps the single-warm-accent discipline. uix.md §3/P3.
       accent: "#6366f1",
       subtitle: sub("help"),
@@ -197,6 +209,7 @@ export function useBuiltinApps(): () => HomeApp[] {
       id: "settings",
       title: name("settings"),
       icon: "settings-gear",
+      tile: "/assets/skin/tiles/settings.png",
       accent: "#8d8fa6",
       subtitle: sub("settings"),
       source: "builtin",

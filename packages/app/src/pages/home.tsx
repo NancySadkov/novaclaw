@@ -1107,7 +1107,7 @@ function ChatEntry(props: { onSubmit: (prompt: string) => void; disabled?: boole
               class="flex size-9 shrink-0 items-center justify-center rounded-[0.7rem] ring-1 ring-white/15"
               style={{
                 "background-image": "linear-gradient(155deg, #f4d06a -8%, #e7b62f 42%, #c99a2e 105%)",
-                color: "color-mix(in srgb, var(--nc-ink, #1a1135) 92%, transparent)",
+                color: "color-mix(in srgb, var(--nc-ink, #1a0e11) 92%, transparent)",
               }}
             >
               <IconV2 name="folder-add-left" />

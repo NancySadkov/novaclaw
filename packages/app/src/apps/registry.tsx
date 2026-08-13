@@ -26,6 +26,12 @@ export interface HomeApp {
   readonly title: string
   readonly icon: string // sprite icon name (@novaclaw/ui/v2/icon)
   readonly accent: string // CSS color for the tile gradient/glow
+  /**
+   * Finished tile artwork (URL) from the NOVA UI kit — a complete purple/gold app icon that replaces
+   * the generated gradient+glyph square. Built-ins ship one; contributed apps without artwork keep
+   * the gradient recipe, so `icon`/`accent` stay the fallback and the registry needs no asset.
+   */
+  readonly tile?: string
   readonly source: "builtin" | "plugin" | "agent"
   readonly open: () => void
   /** Renders as the 2×2 anchor tile that guides the eye (one per home — Chats). */
