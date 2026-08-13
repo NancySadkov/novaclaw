@@ -44,8 +44,17 @@ import type { EffectiveConfig } from "./config-resolve"
 export function fold(
   base: EffectiveConfig,
   tune: ProjectFile.Tune | undefined,
-): { readonly defaults: EffectiveConfig; readonly refused: readonly ProjectFile.TuneFeature[] } {
-  if (!tune?.features) return { defaults: base, refused: [] }
+): {
+  readonly defaults: EffectiveConfig
+  /**
+   * The components the folder actually supplied. Reported because a value's ORIGIN is a question the
+   * introspection surface has to answer — "you chose this" and "this folder suggests it" look
+   * identical in the resolved config, and only the layer that produced it knows which.
+   */
+  readonly applied: readonly ProjectFile.TuneFeature[]
+  readonly refused: readonly ProjectFile.TuneFeature[]
+} {
+  if (!tune?.features) return { defaults: base, applied: [], refused: [] }
   // The baseline is what is in force WITHOUT the project — everything below this layer.
   const baseline: Partial<Record<ProjectFile.TuneFeature, boolean>> = {}
   for (const feature of ProjectFile.SUPERVISION_FEATURES) {
@@ -53,5 +62,7 @@ export function fold(
     if (typeof value === "boolean") baseline[feature] = value
   }
   const { features, refused } = ProjectFile.narrowTune(tune, baseline)
-  return { defaults: { ...base, ...features }, refused }
+  // `applied` is the keys that SURVIVED narrowing, not the keys the file declared — a refused switch
+  // must never be reported as something the folder contributed.
+  return { defaults: { ...base, ...features }, applied: Object.keys(features) as ProjectFile.TuneFeature[], refused }
 }

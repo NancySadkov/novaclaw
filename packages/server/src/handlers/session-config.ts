@@ -44,6 +44,26 @@ export interface FieldResolution<ID extends string = string> {
   readonly merge: SessionConfigMerge
   readonly origin?: ID
   readonly declaredBy: readonly ID[]
+  /**
+   * Where a value came from when NO session declared it.
+   *
+   * ⚠️ `origin` can only ever name a session, so a component supplied by a layer beneath the entity
+   * — a folder's `novaclaw.json`, or the shipped defaults — read as having no origin at all, and the
+   * UI could not tell "nobody set this" from "your project set this". That is the one question a
+   * person opening this surface is actually asking.
+   */
+  readonly source?: DefaultSource
+}
+
+/** The non-session layers that can supply a component. */
+export type DefaultSource =
+  | { readonly kind: "instance" }
+  | { readonly kind: "project"; readonly file: string }
+
+/** What the entity resolves against: the folded defaults, and which components the folder supplied. */
+export interface DefaultsLayer {
+  readonly defaults: EffectiveConfig
+  readonly project?: { readonly file: string; readonly applied: readonly string[] }
 }
 
 /** Mirrors `SessionConfigResolved` in `packages/protocol`. */
@@ -82,11 +102,13 @@ export const resolvedConfigView = <ID extends string>(
   sessionID: ID,
   layerIDs: readonly ID[],
   chain: readonly SessionConfig[],
+  layer: DefaultsLayer = { defaults: EFFECTIVE_CONFIG_DEFAULTS },
 ): ResolvedConfigView<ID> => {
+  const base = layer.defaults
   // `prefixes[i]` = the resolution of the first `i` layers. `prefixes[0]` is the bare defaults, and
   // `prefixes[chain.length]` is what the session actually runs with.
   const prefixes: EffectiveConfig[] = []
-  for (let i = 0; i <= chain.length; i++) prefixes.push(resolveConfig(EFFECTIVE_CONFIG_DEFAULTS, chain.slice(0, i)))
+  for (let i = 0; i <= chain.length; i++) prefixes.push(resolveConfig(base, chain.slice(0, i)))
   const resolved = prefixes[chain.length]!
 
   const fields: Record<string, FieldResolution<ID>> = {}
@@ -102,21 +124,33 @@ export const resolvedConfigView = <ID extends string>(
       if (!Object.is(prefixes[i]![key], prefixes[i - 1]![key])) originIndex = i - 1
     }
     const declaredBy: ID[] = []
-    chain.forEach((layer, index) => {
-      if (layer[key] !== undefined) declaredBy.push(layerIDs[index]!)
+    // `entry`, not `layer`: the enclosing `layer` is the defaults BENEATH the entity, and shadowing
+    // it here would make the `source` decision below read as if it were about a chain element.
+    chain.forEach((entry, index) => {
+      if (entry[key] !== undefined) declaredBy.push(layerIDs[index]!)
     })
+    // A component no session layer moved got its value from beneath the entity: the folder if it
+    // supplied this key, otherwise the shipped defaults. Only reported when there IS a value —
+    // "nothing set it and it has no default" is absence, not a source.
+    const source: DefaultSource | undefined =
+      originIndex !== undefined || resolved[key] === undefined
+        ? undefined
+        : layer.project?.applied.includes(key)
+          ? { kind: "project", file: layer.project.file }
+          : { kind: "instance" }
     fields[key] = {
       ...(resolved[key] === undefined ? {} : { value: resolved[key] }),
       merge: SESSION_CONFIG_FIELDS[key].merge,
       ...(originIndex === undefined ? {} : { origin: layerIDs[originIndex]! }),
       declaredBy,
+      ...(source === undefined ? {} : { source }),
     }
   }
 
   return {
     sessionID,
     chain: layerIDs,
-    defaults: projectFields(EFFECTIVE_CONFIG_DEFAULTS),
+    defaults: projectFields(base),
     resolved: projectFields(resolved),
     fields,
   }

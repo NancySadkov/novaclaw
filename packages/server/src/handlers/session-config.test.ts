@@ -37,6 +37,7 @@ import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionSchema } from "@novaclaw/core/session/schema"
+import { SessionReceipt } from "@novaclaw/core/session/receipt"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SessionTags } from "@novaclaw/core/session/tags"
 import {
@@ -234,6 +235,9 @@ const kernel = AppNodeBuilder.build(
     SessionV2.node,
     SessionExecution.node,
     SessionExecutionAttempt.node,
+    // The session routes reach the receipt service; without its node the three tests that drive a
+    // real HTTP request fail with `Service not found` rather than anything about config resolution.
+    SessionReceipt.node,
   ]),
   [
     [Database.node, Database.layerFromPath(":memory:")],
@@ -403,5 +407,52 @@ describe("GET /api/session/:id/config over a real parent and child", () => {
     expect((failure as { _tag?: string })._tag, "an unknown session did not produce SessionNotFoundError").toBe(
       "SessionNotFoundError",
     )
+  })
+})
+
+/**
+ * Where a component's value came from when no session declared it.
+ *
+ * `origin` can only name a session, so before this the folder layer and the shipped defaults were
+ * indistinguishable from "nothing set it" — which is the one question this surface exists to answer.
+ */
+describe("provenance beneath the entity", () => {
+  const layerWithProject = {
+    defaults: { ...EFFECTIVE_CONFIG_DEFAULTS, memory: false, safeMode: true },
+    project: { file: "C:/work/app/novaclaw.json", applied: ["memory"] },
+  }
+
+  test("a component the folder supplied names the file", () => {
+    const view = resolvedConfigView("s1", ["s1"], [{}], layerWithProject)
+    expect(view.fields.memory?.source).toEqual({ kind: "project", file: "C:/work/app/novaclaw.json" })
+    expect(view.fields.memory?.origin).toBeUndefined()
+    expect(view.fields.memory?.value).toBe(false)
+  })
+
+  test("a default the folder did NOT supply reads as the instance", () => {
+    // `safeMode` is in the folded defaults but not in `applied`, so it came from below the folder.
+    const view = resolvedConfigView("s1", ["s1"], [{}], layerWithProject)
+    expect(view.fields.safeMode?.source).toEqual({ kind: "instance" })
+  })
+
+  test("🔴 a session that declares the component OUTRANKS the folder, and says so", () => {
+    const view = resolvedConfigView("s1", ["s1"], [{ memory: true }], layerWithProject)
+    expect(view.fields.memory?.value).toBe(true)
+    expect(view.fields.memory?.origin).toBe("s1")
+    // No source: a session set it, so "where did the default come from" is not the answer to give.
+    expect(view.fields.memory?.source).toBeUndefined()
+  })
+
+  test("a component nothing supplies has neither an origin nor a source", () => {
+    const view = resolvedConfigView("s1", ["s1"], [{}], layerWithProject)
+    expect(view.fields.quality?.value).toBeUndefined()
+    expect(view.fields.quality?.origin).toBeUndefined()
+    expect(view.fields.quality?.source).toBeUndefined()
+  })
+
+  test("without a project layer every default reads as the instance", () => {
+    const view = resolvedConfigView("s1", ["s1"], [{}])
+    expect(view.fields.permissionMode?.source).toEqual({ kind: "instance" })
+    expect(view.fields.memory?.source).toBeUndefined()
   })
 })
