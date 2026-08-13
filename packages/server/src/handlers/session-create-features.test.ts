@@ -48,7 +48,11 @@ import { ProjectV2 } from "@novaclaw/core/project"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
+import { FSUtil } from "@novaclaw/core/fs-util"
+import { ProjectFileCache } from "@novaclaw/core/project-file-cache"
+import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
 import { SessionProjector } from "@novaclaw/core/session/projector"
+import { SessionReceipt } from "@novaclaw/core/session/receipt"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SessionTags } from "@novaclaw/core/session/tags"
@@ -84,11 +88,25 @@ const kernel = AppNodeBuilder.build(
     SessionStore.node,
     SessionTags.node,
     SessionV2.node,
-    // ⚠️ Both of these are listed because the HANDLER reads them out of the ambient context
-    // (`handlers/session.ts` yields both before returning), not because the kernel needs them —
+    // ⚠️ These are listed because the HANDLER reads them out of the ambient context
+    // (`handlers/session.ts` yields each before returning), not because the kernel needs them —
     // a node that is only replaced is provided INWARD, and the handler is outside that graph.
+    //
+    // 🔴 **This list is a liability the typecheck cannot cover, and it has now bitten twice in one
+    // day.** The handler group's `Effect.gen` yields its services at BUILD time, so a service the
+    // group reads and this graph omits fails at run time with `Service not found` — every case in
+    // the file, none of them about what the file tests. `SessionReceipt` went missing when the
+    // receipt endpoint landed, and `SessionEffectiveConfig` when the resolved-config view started
+    // resolving through the one entry point. Whoever adds the next `yield*` to that group adds a
+    // line here.
     SessionExecution.node,
     SessionExecutionAttempt.node,
+    SessionReceipt.node,
+    // The config view resolves the layer the TURN uses — the session folder's tune folded in — so
+    // its project-file cache (and the filesystem behind it) come with it.
+    FSUtil.node,
+    ProjectFileCache.node,
+    SessionEffectiveConfig.node,
   ]),
   [
     [Database.node, Database.layerFromPath(":memory:")],

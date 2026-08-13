@@ -369,7 +369,14 @@ describe("SessionRunnerLLM — steering", () => {
           resume: false,
         })
         yield* (yield* SessionExecution.Service).wake(HARNESS_SESSION)
-        yield* Effect.yieldNow
+        // ⚠️ `waitForRequests`, not a bare `Effect.yieldNow`. A single tick is not a synchronisation
+        // primitive for "the wake produced a request" — it happened to be enough while the wake path
+        // reached the provider in one turn of the scheduler, and stopped being enough on 2026-08-13
+        // when config resolution began folding the session folder's `novaclaw.json` (a bounded,
+        // 1s-cached filesystem walk). The claim is that a wake promotes queued input, not that it
+        // does so within one tick; the busy-yield is bounded by `runBounded`, so a runner that never
+        // issues the request still fails by name rather than spinning.
+        yield* waitForRequests(harness, 1)
       }),
       "claim — a wake while idle promotes the first queued input",
     )

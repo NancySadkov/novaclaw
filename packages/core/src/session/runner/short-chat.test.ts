@@ -70,7 +70,12 @@ describe("ShortChat policy", () => {
     expect(runner).toContain("!ShortChat.enabled(handoff.shortChat) && (handoff.quality")
     expect(runner).toContain("if (ShortChat.enabled(driveConfig.shortChat)) break")
 
+    // ⚠️ The maintenance gate stopped spelling its own stances on 2026-08-13. `config.shortChat ===
+    // true` became `ShortChat.enabled(...)` — the same predicate this file's whole subject is — and
+    // the memory half became `stanceOf("memory", ...)`, which reads the fallback off the descriptor
+    // instead of carrying a private copy of it. What matters here is unchanged: post-drain
+    // extraction is gated on BOTH, before any engine or model work.
     const maintenance = readFileSync(path.join(import.meta.dir, "maintenance.ts"), "utf8")
-    expect(maintenance).toContain("config.shortChat === true || config.memory === false")
+    expect(maintenance).toContain('ShortChat.enabled(config.shortChat) || !stanceOf("memory", config.memory)')
   })
 })
