@@ -52,12 +52,11 @@ describe("a default can be read off the descriptor", () => {
       keysOf(EFFECTIVE_CONFIG_DEFAULTS),
       "the shipped defaults and the descriptor's `base` fallbacks name different fields — one of them is a second list",
     ).toEqual(base.map(String).sort())
-    for (const key of base) {
+    const disagreed = base.filter((key) => {
       const fallback = SESSION_CONFIG_FIELDS[key].fallback
-      expect(EFFECTIVE_CONFIG_DEFAULTS[key], `${String(key)} resolves to a value the descriptor does not declare`).toBe(
-        (fallback as { readonly value: unknown }).value,
-      )
-    }
+      return !Object.is(EFFECTIVE_CONFIG_DEFAULTS[key], (fallback as { readonly value: unknown }).value)
+    })
+    expect(disagreed.map(String), "a shipped default differs from the value its descriptor declares").toEqual([])
   })
 
   test("🔴 a `stance` field is ABSENT from the resolved config, not defaulted into it", () => {
