@@ -3,6 +3,7 @@ import { useSearchParams } from "@solidjs/router"
 import { type Accessor, createMemo, createResource, onCleanup, onMount } from "solid-js"
 import type { PromptInputControls } from "@/components/prompt-input"
 import type { ComposerRemoteChatState } from "@/components/composer"
+import * as ConfigProvenance from "./config-provenance"
 import { useSettingsDialog } from "@/components/settings-dialog"
 import {
   MessengerApiError,
@@ -111,7 +112,10 @@ export function createPromptInputController(input: {
     const draft = local.features.current()
     const override = (feature: SessionFeatureName): boolean | undefined =>
       draft && Object.prototype.hasOwnProperty.call(draft, feature) ? draft[feature] : record?.[feature]
-    const baseline = (feature: SessionFeatureName) =>
+    // The kernel's answer, when we have it. It outranks the derived baseline below and loses to this
+    // chat's own stance — see `resolvedStances` for what the derivation cannot see.
+    const resolvedStance = ConfigProvenance.resolvedStances(resolvedConfig.latest)
+    const derived = (feature: SessionFeatureName) =>
       // `thinkingBudget` has no global `{ enabled }` block to fall back on — its instance default IS the
       // model's own budget, which the browser cannot know per-model. Default it ON (enforced) so the
       // control matches the runner's `config.thinkingBudget ?? true`; flipping it writes this chat's off.
@@ -124,6 +128,7 @@ export function createPromptInputController(input: {
             : feature === "shortChat"
               ? false
               : config[feature]?.enabled === true
+    const baseline = (feature: SessionFeatureName) => resolvedStance[feature] ?? derived(feature)
     const overrides: Record<SessionFeatureName, boolean | undefined> = {
       introspection: override("introspection"),
       quality: override("quality"),
@@ -158,6 +163,31 @@ export function createPromptInputController(input: {
   const serverSDK = useServerSDK()
   const openMessengerSettings = useSettingsDialog("messengers")
   const messengerServer = () => serverSDK().server.http
+  /**
+   * WHERE each switch's value came from, straight from the kernel's own resolution.
+   *
+   * ⚠️ Asked of the server rather than derived here, and that is the point. The browser already
+   * re-derives a BASELINE for each switch (`featureState` below), which is a second copy of a rule
+   * the kernel owns; provenance cannot be re-derived at all — a folder's `novaclaw.json` is not
+   * something the client can see. `GET /api/session/:id/config` reports the resolution the TURN
+   * runs with, including the folder layer, so the panel and the runner cannot disagree.
+   *
+   * Keyed on the session id, so a draft (no id) simply has no provenance and the panel keeps its
+   * previous wording. Failures degrade to `undefined` for the same reason: a line explaining where a
+   * value came from is worth having and never worth a toast.
+   */
+  const [resolvedConfig, resolvedConfigRes] = createResource(
+    () => input.sessionID(),
+    async (sessionID: string) => {
+      const response = await sdk().client.v2.session.config({ sessionID })
+      if (response.error) throw response.error
+      return response.data?.data
+    },
+  )
+
+  const featureOrigins = createMemo(() => ConfigProvenance.featureOrigins(resolvedConfig.latest))
+  const projectLayer = createMemo(() => ConfigProvenance.projectLayer(resolvedConfig.latest))
+
   const [remoteDrivers] = createResource(() => messengerServer(), messengerDrivers, { initialValue: [] })
   const [remoteAccounts, remoteAccountsRes] = createResource(() => messengerServer(), messengerAccounts, {
     initialValue: [],
@@ -332,6 +362,8 @@ export function createPromptInputController(input: {
     features: {
       current: featureState().current,
       override: featureState().overrides,
+      origin: featureOrigins(),
+      project: projectLayer(),
       set: (feature, enabled) => {
         // The draft signal is the instant UI truth (and the create-time payload); a live session
         // ALSO persists the stance server-side so the runner reads it on the next turn.
@@ -340,9 +372,11 @@ export function createPromptInputController(input: {
         const conn = server.current
         const directory = sessionView.directory()
         if (id && conn && directory)
-          void switchFeature(conn.http, { directory, sessionID: id, feature, enabled }).catch((error) =>
-            console.error("switchFeature failed", error),
-          )
+          void switchFeature(conn.http, { directory, sessionID: id, feature, enabled })
+            // Re-ask who supplied each value. Without this the provenance line keeps describing the
+            // resolution from before the flip — the panel explaining a state it no longer shows.
+            .then(() => void resolvedConfigRes.refetch())
+            .catch((error) => console.error("switchFeature failed", error))
       },
       inherit: (feature) => {
         // An own property with `undefined` is an intentional local reset marker: it bypasses a
@@ -353,9 +387,11 @@ export function createPromptInputController(input: {
         const conn = server.current
         const directory = sessionView.directory()
         if (id && conn && directory)
-          void switchFeature(conn.http, { directory, sessionID: id, feature, enabled: null }).catch((error) =>
-            console.error("switchFeature reset failed", error),
-          )
+          void switchFeature(conn.http, { directory, sessionID: id, feature, enabled: null })
+            // Clearing a stance is exactly when the origin CHANGES — the folder or the instance
+            // takes back over — so this refetch is the one that matters most.
+            .then(() => void resolvedConfigRes.refetch())
+            .catch((error) => console.error("switchFeature reset failed", error))
       },
     },
     remote: remoteCurrent(),

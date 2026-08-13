@@ -111,7 +111,10 @@ export type PromptInputControls = {
   // also carries `mode`/`remote`/`style`/`setMode`/`onClose`, which this prop deliberately does not
   // require. Widening it to the full state was tried and is a compile error at the one call site that
   // builds this object — the narrowness is load-bearing, only the duplicated key union was not.
-  features: Pick<ComposerFeaturesControlState, "current" | "override" | "set" | "inherit">
+  features: Pick<
+    ComposerFeaturesControlState,
+    "current" | "override" | "origin" | "project" | "set" | "inherit"
+  >
 
   // The per-chat Mode control (kernel thread type): interactive, or the unattended pair
   // (auto-prompting · goal-oriented — asks auto-allow, bash confined by the Agent Jail).
@@ -811,6 +814,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const featuresControlState = createMemo<ComposerFeaturesControlState>(() => ({
     current: props.controls.features.current,
     override: props.controls.features.override,
+    origin: props.controls.features.origin,
+    project: props.controls.features.project,
     mode: props.controls.mode.current,
     remote: props.controls.remote,
     style: control(),

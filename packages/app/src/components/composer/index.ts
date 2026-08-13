@@ -7,7 +7,9 @@ export { ComposerStrictControl, type ComposerStrictControlState } from "./strict
 export {
   ComposerFeaturesControl,
   type ComposerFeature,
+  type ComposerFeatureOrigin,
   type ComposerFeaturesControlState,
+  type ComposerProjectLayer,
   type ComposerRemoteChatState,
   type ComposerRemoteTrust,
 } from "./features-control"

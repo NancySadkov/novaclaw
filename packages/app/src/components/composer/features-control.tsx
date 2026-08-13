@@ -19,6 +19,45 @@ export type ComposerFeature =
   | "shortChat"
 export type ComposerMode = "interactive" | "auto-prompting" | "goal-oriented"
 
+/**
+ * Where a switch's value came from when THIS chat did not set it.
+ *
+ * The panel used to say only "Using Settings default" for every such switch, which is the honest
+ * answer for exactly one of the three cases below. A user whose repository ships a `novaclaw.json`
+ * saw "Settings default" for a value Settings never chose, and had nothing to read that would tell
+ * them otherwise — the shape of question this whole surface exists to answer.
+ */
+export type ComposerFeatureOrigin =
+  /**
+   * An ancestor chat declared it, and this chat inherits down the spawn chain.
+   *
+   * ⚠️ Measured 2026-08-13: this arm is CORRECT and currently unreachable from this panel. A session
+   * with a parent renders as a helper ("you can't message it directly") and has no composer, so the
+   * only chats that open this dialog are roots. It is kept rather than dropped because the
+   * distinction is real on the wire — `config-provenance.ts` pins that a chain layer outranks the
+   * default source — and the day a parented chat gets a composer, the wrong answer would be the
+   * silent one.
+   */
+  | { kind: "session" }
+  /** The folder's `novaclaw.json` supplied it. `file` is the path, because opening it is the next move. */
+  | { kind: "project"; file: string }
+  /** Nothing above the instance chose it — the app's own default. */
+  | { kind: "instance" }
+
+/** The project governing this chat's folder, and what its file actually did. */
+export type ComposerProjectLayer = {
+  root: string
+  file: string
+  /** Switches the file supplied. */
+  applied: readonly string[]
+  /**
+   * Switches it asked for and did not get. A folder may RAISE a supervision switch, never lower
+   * one, so a cloned repository cannot disarm the user's own rails — and saying so is better than
+   * a file that silently half-applies.
+   */
+  refused: readonly string[]
+}
+
 // The Remote-chat section (messenger-plan §6.2): where does THIS chat live remotely? The trust
 // tier is a REQUIRED, user-chosen step of every connect (§0.1) — three plain-language cards, never
 // inferred, never skippable.
@@ -63,6 +102,10 @@ export type ComposerRemoteChatState = {
 export type ComposerFeaturesControlState = {
   current: Record<ComposerFeature, boolean>
   override: Partial<Record<ComposerFeature, boolean>>
+  /** Per switch, where the value came from when this chat did not set it. Absent = not yet known. */
+  origin: Partial<Record<ComposerFeature, ComposerFeatureOrigin>>
+  /** The `novaclaw.json` governing this chat's folder, when one does. */
+  project: ComposerProjectLayer | undefined
   mode: ComposerMode
   remote: ComposerRemoteChatState
   style: JSX.CSSProperties | undefined
@@ -382,6 +425,7 @@ export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlS
   const language = useLanguage()
   const dialog = useDialog()
   const enabledCount = () => COMPOSER_FEATURES.filter((feature) => props.state.current[feature]).length
+
   const unattended = () => props.state.mode !== "interactive"
   // The enabled-COUNT is deliberately not shown (owner 2026-07-26): "Tune · 2" spends width on a number
   // that tells you nothing actionable — you still have to open it to see WHICH two. The unattended-mode
@@ -433,6 +477,29 @@ export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlS
  * tall is unusable. A centered dialog scrolls and can be dismissed the ordinary way.
  */
 function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: () => void }) {
+  /**
+   * The one line under each switch that says WHY it reads the way it does.
+   *
+   * Order matters and is not arbitrary: this chat's own choice outranks everything, so it is checked
+   * first; below that the folder outranks the instance, matching the resolution the kernel actually
+   * runs (`session/effective-config.ts`). Falling back to the instance wording when the origin is
+   * not loaded yet is deliberate — it is what the panel said before, so a slow request degrades to
+   * the previous behaviour instead of to a blank line.
+   */
+  const featureSource = (feature: ComposerFeature) => {
+    const state = language.t(`prompt.features.state.${props.state.current[feature] ? "on" : "off"}`)
+    if (props.state.override[feature] !== undefined) return language.t("prompt.features.source.override")
+    const origin = props.state.origin[feature]
+    if (origin?.kind === "project") return language.t("prompt.features.source.project", { state })
+    if (origin?.kind === "session") return language.t("prompt.features.source.parent", { state })
+    return language.t("prompt.features.source.inherit", { state })
+  }
+
+  /** A switch's title, for the project section's lists. Unknown names render as themselves. */
+  const featureTitle = (name: string) =>
+    (COMPOSER_FEATURES as readonly string[]).includes(name)
+      ? language.t(`prompt.features.${name as ComposerFeature}.title`)
+      : name
   const language = useLanguage()
   return (
     <Dialog size="content">
@@ -534,6 +601,43 @@ function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: ()
           </div>
         </div>
         <RemoteChatSection remote={props.state.remote} />
+        {/*
+          THE FOLDER'S OWN LAYER, named. `notes/spec` calls a project file a layer BENEATH the chat:
+          it supplies what no chat declared and loses to every chat that did. That is invisible in a
+          list of switches, so the panel says it out loud — the file, what it set, and what it asked
+          for and did not get.
+        */}
+        <Show when={props.state.project}>
+          {(project) => (
+            <div class="flex flex-col gap-0.5" data-section="project-tune">
+              <span class="text-[13px] font-[560] text-v2-text-text-base">{language.t("prompt.project.title")}</span>
+              <span class="text-[12px] leading-4 break-all text-v2-text-text-faint" data-project-file>
+                {project().file}
+              </span>
+              <Show
+                when={project().applied.length > 0}
+                fallback={
+                  <span class="text-[11px] leading-4 text-v2-text-text-faint">
+                    {language.t("prompt.project.none")}
+                  </span>
+                }
+              >
+                <span class="text-[11px] leading-4 text-v2-text-text-faint" data-project-applied>
+                  {language.t("prompt.project.applied", {
+                    list: project().applied.map(featureTitle).join(", "),
+                  })}
+                </span>
+              </Show>
+              <Show when={project().refused.length > 0}>
+                <span class="text-[11px] leading-4 text-v2-text-text-faint" data-project-refused>
+                  {language.t("prompt.project.refused", {
+                    list: project().refused.map(featureTitle).join(", "),
+                  })}
+                </span>
+              </Show>
+            </div>
+          )}
+        </Show>
         {COMPOSER_FEATURES.map((feature) => (
           <div class="flex items-start justify-between gap-3" data-feature={feature}>
             <div class="flex flex-col gap-0.5">
@@ -542,11 +646,7 @@ function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: ()
                 {language.t(`prompt.features.${feature}.description`)}
               </span>
               <span class="text-[11px] leading-4 text-v2-text-text-faint" data-feature-source>
-                {props.state.override[feature] === undefined
-                  ? language.t("prompt.features.source.inherit", {
-                      state: language.t(`prompt.features.state.${props.state.current[feature] ? "on" : "off"}`),
-                    })
-                  : language.t("prompt.features.source.override")}
+                {featureSource(feature)}
               </span>
             </div>
             <div class="flex shrink-0 flex-col items-end gap-1">
