@@ -86,6 +86,8 @@ export type Level = "ok" | "warning" | "floor" | "unknown"
 
 export interface Line {
   readonly memoryUsedFraction: number
+  /** A memory level fires only when the fraction is crossed AND free commit is at/below this. */
+  readonly memoryFreeBytes: number
   readonly diskFreeBytes: number
 }
 export interface Thresholds {
@@ -104,13 +106,24 @@ const GIB = 1024 ** 3
  * was at 99.9% and the 2026-07-27 false failure at 130% of the limit, so 0.90 still leaves the room a
  * settle-and-flush needs.
  *
+ * ⚠️ **The fraction alone fired on a HEALTHY box, so each memory line also carries an absolute
+ * free-bytes gate and a level needs BOTH** (measured 2026-08-13). The Windows commit limit GROWS
+ * under load — the pagefile expands — so this machine crossed 75% used while ~35 GB stayed free, and
+ * the ambient warning told the model to avoid memory-intensive work on a box with room for anything.
+ * 75% is also this box's healthy MEDIAN under a test run (todo/test-speed.md's history rows), and a
+ * threshold that fires on normal is not a threshold. The absolute gates say what a task can actually
+ * feel: warning needs free ≤ 8 GiB (a model load or a build run is 2–13 GB here, so past that a
+ * normal heavy task may not fit), floor needs free ≤ 2 GiB (the settle-and-flush room). A small
+ * cgroup still warns — 80% of a 2 GB container is 400 MB free, well under both gates — while a big
+ * host with tens of GB free never does, whatever its fraction says.
+ *
  * The disk lines are absolute: 2 GiB warns (a model download is multi-GB — `todo/sidecar-inference.md`),
  * 512 MiB floors (enough for a SQLite WAL checkpoint, a log flush and a session record to land rather
  * than tear).
  */
 export const DEFAULT_THRESHOLDS: Thresholds = {
-  warning: { memoryUsedFraction: 0.75, diskFreeBytes: 2 * GIB },
-  floor: { memoryUsedFraction: 0.9, diskFreeBytes: 512 * 1024 * 1024 },
+  warning: { memoryUsedFraction: 0.75, memoryFreeBytes: 8 * GIB, diskFreeBytes: 2 * GIB },
+  floor: { memoryUsedFraction: 0.9, memoryFreeBytes: 2 * GIB, diskFreeBytes: 512 * 1024 * 1024 },
 }
 
 const decodeConfigured = Schema.decodeUnknownOption(ResourcePressure.Info)
@@ -144,6 +157,7 @@ export function resolveThresholds(stored: unknown): ResolvedThresholds {
   const value = decoded !== undefined && decoded._tag === "Some" ? decoded.value : undefined
   const line = (over: ResourcePressure.Level | undefined, base: Line): Line => ({
     memoryUsedFraction: over?.memory_used_fraction ?? base.memoryUsedFraction,
+    memoryFreeBytes: over?.memory_free_bytes ?? base.memoryFreeBytes,
     diskFreeBytes: over?.disk_free_bytes ?? base.diskFreeBytes,
   })
   return {
@@ -549,8 +563,12 @@ export function memoryLevel(reading: MemoryReading, thresholds: Thresholds): Lev
   if (!reading.known) return "unknown"
   if (reading.limitBytes <= 0) return "unknown"
   const used = reading.usedBytes / reading.limitBytes
-  if (used >= thresholds.floor.memoryUsedFraction) return "floor"
-  if (used >= thresholds.warning.memoryUsedFraction) return "warning"
+  const free = Math.max(0, reading.limitBytes - reading.usedBytes)
+  // BOTH conditions, per line: a high fraction with tens of GB free is a grown pagefile, not
+  // scarcity, and a warning that fires on a healthy host trains the model to ignore it (the
+  // 2026-08-13 incident — see DEFAULT_THRESHOLDS). Free bytes are what a task can actually feel.
+  if (used >= thresholds.floor.memoryUsedFraction && free <= thresholds.floor.memoryFreeBytes) return "floor"
+  if (used >= thresholds.warning.memoryUsedFraction && free <= thresholds.warning.memoryFreeBytes) return "warning"
   return "ok"
 }
 

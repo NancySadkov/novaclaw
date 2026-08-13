@@ -39,6 +39,16 @@ export const Level = Schema.Struct({
    */
   memory_used_fraction: Fraction.pipe(Schema.optional),
   /**
+   * Memory line, as absolute free commit bytes remaining. A level fires only when BOTH memory
+   * conditions hold — the fraction is high AND the absolute headroom is at/below this many bytes.
+   *
+   * ⚠️ The fraction alone is not a scarcity signal (measured 2026-08-13): the Windows commit limit
+   * GROWS under load (the pagefile expands), so a box crossed 75% used while ~35 GB stayed free and
+   * the model was told to avoid memory-intensive work on a perfectly healthy machine. What a task
+   * needs is bytes — the same argument `disk_free_bytes` already makes below.
+   */
+  memory_free_bytes: NonNegativeInt.pipe(Schema.optional),
+  /**
    * Disk line, as free bytes remaining on the volume holding an instance path. Absolute rather than a
    * fraction because what a download needs is bytes: "you have 400 MB" is actionable, "you have 3%" is not.
    */

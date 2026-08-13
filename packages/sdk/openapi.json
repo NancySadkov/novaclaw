@@ -25534,6 +25534,10 @@
                 "exclusiveMinimum": 0,
                 "maximum": 1
               },
+              "memory_free_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
               "disk_free_bytes": {
                 "type": "integer",
                 "minimum": 0
@@ -25548,6 +25552,10 @@
                 "type": "number",
                 "exclusiveMinimum": 0,
                 "maximum": 1
+              },
+              "memory_free_bytes": {
+                "type": "integer",
+                "minimum": 0
               },
               "disk_free_bytes": {
                 "type": "integer",

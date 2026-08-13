@@ -40,12 +40,15 @@ describe("StorageResourcePressureContext", () => {
   })
 
   test("ambient context names only the resource that is actually low", () => {
+    // 34 of 40 GiB committed = 85% used AND only 6 GiB free — low by BOTH memory gates. The fixture
+    // used to sit at 30/40 (75%, 10 GiB free), which is precisely the healthy-box false positive the
+    // 2026-08-13 incident removed: the fraction crossed while absolute room remained plentiful.
     const report: Pressure.Report = {
       memory: {
         known: true,
         source: "windows-commit",
         crosscheck: "Get-CimInstance Win32_OperatingSystem",
-        usedBytes: 30 * GIB,
+        usedBytes: 34 * GIB,
         limitBytes: 40 * GIB,
       },
       disks: [
@@ -63,7 +66,7 @@ describe("StorageResourcePressureContext", () => {
       // nothing to reason with — it cannot tell whether a 2 GB test run is fine or fatal. The exact
       // committed/total figures let it decide. Exception-only, so this line is absent on a healthy
       // machine and the churn from moving byte counts is confined to the pressured case.
-      "Memory headroom is low: 30720 MB of 40960 MB committed. Avoid memory-intensive work.",
+      "Memory headroom is low: 34816 MB of 40960 MB committed. Avoid memory-intensive work.",
       "Use tool_search for resource status, then resource_status to inspect and confirm recovery.",
     ])
     // 🔴 **This assertion previously required the OPPOSITE and is superseded deliberately.** It pinned
@@ -77,15 +80,15 @@ describe("StorageResourcePressureContext", () => {
     expect(
       StorageResourcePressureContext.lines({
         ...report,
-        memory: { ...(report.memory as Pressure.MemoryKnown), usedBytes: 31 * GIB },
+        memory: { ...(report.memory as Pressure.MemoryKnown), usedBytes: 35 * GIB },
       }),
     ).toEqual([
-      "Memory headroom is low: 31744 MB of 40960 MB committed. Avoid memory-intensive work.",
+      "Memory headroom is low: 35840 MB of 40960 MB committed. Avoid memory-intensive work.",
       "Use tool_search for resource status, then resource_status to inspect and confirm recovery.",
     ])
     expect(StorageResourcePressureContext.details(report)).toEqual([
       "Resource pressure: warning — plan memory- and disk-intensive work conservatively.",
-      "Memory headroom: 10.0 GiB free of 40.0 GiB commit.",
+      "Memory headroom: 6.0 GiB free of 40.0 GiB commit.",
       "Disk headroom: 5.0 GiB free of 20.0 GiB on the lowest-free instance volume (D:/).",
     ])
   })

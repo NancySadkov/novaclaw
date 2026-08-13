@@ -209,6 +209,10 @@ describe("Pressure — thresholds", () => {
     expect(Pressure.DEFAULT_THRESHOLDS.floor.memoryUsedFraction).toBeGreaterThan(
       Pressure.DEFAULT_THRESHOLDS.warning.memoryUsedFraction,
     )
+    // the floor's absolute gate is stricter (smaller) than the warning's, same shape as disk
+    expect(Pressure.DEFAULT_THRESHOLDS.floor.memoryFreeBytes).toBeLessThan(
+      Pressure.DEFAULT_THRESHOLDS.warning.memoryFreeBytes,
+    )
     expect(Pressure.DEFAULT_THRESHOLDS.floor.diskFreeBytes).toBeLessThan(
       Pressure.DEFAULT_THRESHOLDS.warning.diskFreeBytes,
     )
@@ -260,6 +264,38 @@ describe("Pressure — verdict", () => {
     expect(Pressure.memoryLevel(known(0.5), okThresholds)).toBe("ok")
     expect(Pressure.memoryLevel(known(0.8), okThresholds)).toBe("warning")
     expect(Pressure.memoryLevel(known(0.95), okThresholds)).toBe("floor")
+  })
+
+  // The 2026-08-13 incident, pinned: the Windows commit limit grows under load, so a box crossed 75%
+  // used with ~35 GB free and the model was told to avoid memory-intensive work on a healthy machine.
+  // A memory level needs BOTH the fraction and small absolute headroom.
+  test("a high fraction with tens of GB free is ok — the fraction alone is not scarcity", () => {
+    const GIB = 1024 ** 3
+    const bigBox = (usedFraction: number, limitBytes: number): Pressure.MemoryReading => ({
+      known: true,
+      source: "windows-commit",
+      crosscheck: "x",
+      usedBytes: usedFraction * limitBytes,
+      limitBytes,
+    })
+    // ~35 GB free at 76% used (140 GB grown commit limit): healthy, says nothing.
+    expect(Pressure.memoryLevel(bigBox(0.76, 140 * GIB), okThresholds)).toBe("ok")
+    // even past the floor fraction, 12 GB free is not a floor
+    expect(Pressure.memoryLevel(bigBox(0.91, 140 * GIB), okThresholds)).toBe("ok")
+    // but the same fractions on a small limit ARE the emergency they claim
+    expect(Pressure.memoryLevel(bigBox(0.8, 2 * GIB), okThresholds)).toBe("warning")
+    expect(Pressure.memoryLevel(bigBox(0.95, 2 * GIB), okThresholds)).toBe("floor")
+    // and a big box still floors when the absolute room is truly gone
+    expect(Pressure.memoryLevel(bigBox(0.99, 140 * GIB), okThresholds)).toBe("floor")
+  })
+
+  test("memory_free_bytes folds per-field like the other threshold overrides", () => {
+    const GIB = 1024 ** 3
+    const resolved = Pressure.resolveThresholds({ warning: { memory_free_bytes: 16 * GIB } })
+    expect(resolved.source).toBe("config")
+    expect(resolved.thresholds.warning.memoryFreeBytes).toBe(16 * GIB)
+    expect(resolved.thresholds.warning.memoryUsedFraction).toBe(Pressure.DEFAULT_THRESHOLDS.warning.memoryUsedFraction)
+    expect(resolved.thresholds.floor.memoryFreeBytes).toBe(Pressure.DEFAULT_THRESHOLDS.floor.memoryFreeBytes)
   })
 
   test("an unknown probe does not vote 'ok' — it withdraws and names itself", () => {

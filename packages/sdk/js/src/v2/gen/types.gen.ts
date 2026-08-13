@@ -1355,10 +1355,12 @@ export type GlobalEvent = {
 export type ResourcePressure = {
   warning?: {
     memory_used_fraction?: number
+    memory_free_bytes?: number
     disk_free_bytes?: number
   }
   floor?: {
     memory_used_fraction?: number
+    memory_free_bytes?: number
     disk_free_bytes?: number
   }
 }
