@@ -168,8 +168,23 @@ export namespace ModelDefaults {
 export const ModelToolSchemaCompatibility = Schema.Literals(["gemini", "moonshot"])
 export type ModelToolSchemaCompatibility = Schema.Schema.Type<typeof ModelToolSchemaCompatibility>
 
+export const ModelToolChannel = Schema.Literals(["native", "prompted"])
+export type ModelToolChannel = Schema.Schema.Type<typeof ModelToolChannel>
+
 export class ModelCompatibility extends Schema.Class<ModelCompatibility>("LLM.ModelCompatibility")({
   toolSchema: Schema.optional(ModelToolSchemaCompatibility),
+  /**
+   * HOW this model is offered tools. Absent = `native`.
+   *
+   * It lives on COMPATIBILITY rather than on defaults because that is what it is: a statement about
+   * what this endpoint can do, not a preference about how to use it. Which value is right is a
+   * MEASURED property (`ProviderCapability`); this is where the measurement — or an operator who
+   * knows better — writes its answer down.
+   *
+   * ⚠️ It is per MODEL, not per provider. One server can front several models with different chat
+   * templates, and the template is what decides whether the tool channel works.
+   */
+  toolChannel: Schema.optional(ModelToolChannel),
 }) {}
 
 export namespace ModelCompatibility {

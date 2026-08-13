@@ -461,7 +461,7 @@ const lowerMessages = Effect.fn("OpenAIChat.lowerMessages")(function* (request: 
   // On the prompted channel the tools are DESCRIBED here, because the body will not carry them.
   // Appended to the system text rather than pushed as an extra message: a second system message is
   // a shape several endpoints reject outright, and one an alternating-role template can drop.
-  const toolsSection = request.toolChannel === "prompted" ? PromptedTools.promptedToolsSection(request.tools) : undefined
+  const toolsSection = PromptedTools.isPrompted(request) ? PromptedTools.promptedToolsSection(request.tools) : undefined
   const systemText = [ProviderShared.joinText(request.system), toolsSection].filter(Boolean).join("\n\n")
   const system: OpenAIChatMessage[] = systemText.length === 0 ? [] : [{ role: "system", content: systemText }]
   const messages = [...system]
@@ -529,7 +529,7 @@ const fromRequest = Effect.fn("OpenAIChat.fromRequest")(function* (request: LLMR
   // validation, and HTTP execution are composed by `Route.make`.
   const generation = request.generation
   const toolSchemaCompatibility = request.model.compatibility?.toolSchema
-  const prompted = request.toolChannel === "prompted"
+  const prompted = PromptedTools.isPrompted(request)
   return {
     model: request.model.id,
     messages: yield* lowerMessages(request),

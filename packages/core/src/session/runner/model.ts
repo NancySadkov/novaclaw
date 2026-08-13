@@ -266,14 +266,35 @@ const apiKey = (model: ModelV2.Info, credential?: Credential.Value) => {
   if (typeof value === "string") return Auth.value(value)
 }
 
+/**
+ * The per-model tool channel an operator (or a measurement) wrote into `request.body`.
+ *
+ * ⚠️ Anything other than the two known values is IGNORED rather than passed through, and that is the
+ * whole content of this function. A typo must leave the model on its NATIVE channel — the working
+ * default — instead of selecting a third behaviour, or reaching the wire as a `toolChannel`
+ * parameter a server will reject, which turns a misspelt repair into a dead model.
+ */
+export const configuredToolChannel = (body: Record<string, unknown>): "native" | "prompted" | undefined => {
+  const raw = body["toolChannel"]
+  return raw === "prompted" || raw === "native" ? raw : undefined
+}
+
 const withDefaults = (model: ModelV2.Info, route: AnyRoute) => {
   const body = model.request.body
   // `thinkingBudget` is a harness-side knob carried in `request.body` (see the config seeder), not
   // a sampling param — pull it out before the split so it never reaches the wire.
   const rawBudget = body.thinkingBudget
   const configuredBudget = typeof rawBudget === "number" ? rawBudget : undefined
+  // `toolChannel` is the same kind of knob: a harness-side statement about what this endpoint can
+  // do, carried in `request.body` because that is the per-model config surface, and pulled out
+  // before the split so it never reaches the wire as a provider parameter.
+  //
+  // ⚠️ Anything other than the two known values is IGNORED rather than passed through. A typo must
+  // leave the model on its native channel — the working default — instead of silently selecting a
+  // third behaviour or sending `toolChannel` to a server that will reject the whole request.
+  const toolChannel = configuredToolChannel(body)
   const httpBody = Object.fromEntries(
-    Object.entries(body).filter(([key]) => key !== "apiKey" && key !== "thinkingBudget"),
+    Object.entries(body).filter(([key]) => key !== "apiKey" && key !== "thinkingBudget" && key !== "toolChannel"),
   )
   // Protocol-owned sampling (temperature/top_p/top_k/penalties/…) must go through the
   // canonical `generation` options, not the http.body overlay — the native transport
@@ -285,6 +306,7 @@ const withDefaults = (model: ModelV2.Info, route: AnyRoute) => {
     provider: model.providerID,
     endpoint: model.api.url === undefined ? undefined : { baseURL: model.api.url },
     headers: model.request.headers,
+    ...(toolChannel === undefined ? {} : { compatibility: { toolChannel } }),
     ...(Object.keys(split.generation).length > 0 ? { generation: split.generation } : {}),
     http: { body: split.http },
     // B15/T3 — a live probe's server-reported window (vLLM max_model_len) is the HONORED

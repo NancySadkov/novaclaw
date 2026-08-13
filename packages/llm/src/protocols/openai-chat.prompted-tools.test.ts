@@ -97,6 +97,37 @@ describe("the prompted tool channel", () => {
     expect(JSON.parse(call!.arguments)).toEqual({ path: "a.txt", content: "hi" })
   })
 
+  test("🔴 the MODEL can carry the channel, so a config override reaches it", () => {
+    // The self-healing path: an operator (or a measurement) writes the channel onto the model entry
+    // and every turn picks it up, with no code change and no restart. Without this the probe could
+    // only ever recommend.
+    const prompted = body({
+      model: Model.make({
+        id: 'qwen3.6-35b',
+        provider: 'dgx-spark',
+        route: OpenAIChat.route,
+        compatibility: { toolChannel: 'prompted' },
+      }),
+    })
+    expect(prompted['tools']).toBeUndefined()
+    expect((prompted['messages'] as Array<{ content: string }>)[0]?.content).toContain('# Tools')
+  })
+
+  test("🔴 an explicit request channel BEATS the model's — one call, one way", () => {
+    // A probe or a repair says "this call, this way"; the model's value is the standing answer for
+    // every other turn. Reversed, a single diagnostic call could not escape a wrong recorded value.
+    const native = body({
+      model: Model.make({
+        id: 'qwen3.6-35b',
+        provider: 'dgx-spark',
+        route: OpenAIChat.route,
+        compatibility: { toolChannel: 'prompted' },
+      }),
+      toolChannel: 'native',
+    })
+    expect(Array.isArray(native['tools'])).toBe(true)
+  })
+
   test("🔴 `tools` stays populated on the request — it IS the recovery whitelist", () => {
     // Emptying it would look equivalent (the wire body omits them either way) and would quietly let
     // a model name anything at all, since the decoder builds `allowedToolNames` from this array.

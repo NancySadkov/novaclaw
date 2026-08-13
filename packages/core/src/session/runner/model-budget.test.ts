@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { defaultThinkingBudget } from "./model"
+import { configuredToolChannel, defaultThinkingBudget } from "./model"
 
 // The reasoning-token ceiling. The trap this pins: a CONFIGURED value used to be returned raw, so a budget
 // larger than the model could ever emit meant no checkpoint could fire and the whole controller went inert
@@ -42,5 +42,25 @@ describe("defaultThinkingBudget", () => {
   test("-1 is the DISABLED sentinel the model dialog writes, and it means off", () => {
     expect(defaultThinkingBudget(-1, CONTEXT, OUTPUT)).toBe(0)
     expect(defaultThinkingBudget(-1, 0, 0)).toBe(0)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// The per-model TOOL CHANNEL — the other harness-side knob carried in `request.body`.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+describe("configuredToolChannel", () => {
+  test("the two known values are honoured", () => {
+    expect(configuredToolChannel({ toolChannel: "prompted" })).toBe("prompted")
+    expect(configuredToolChannel({ toolChannel: "native" })).toBe("native")
+  })
+
+  test("🔴 anything else is IGNORED, so a typo leaves the model on its working default", () => {
+    // The alternative is worse in both directions: a third behaviour nobody defined, or the string
+    // reaching the wire as a provider parameter and the server rejecting the whole request — which
+    // turns a misspelt repair into a dead model, on the surface someone opened to fix one.
+    for (const value of ["Prompted", "text", "", 1, true, null, undefined])
+      expect(configuredToolChannel({ toolChannel: value })).toBeUndefined()
+    expect(configuredToolChannel({})).toBeUndefined()
   })
 })

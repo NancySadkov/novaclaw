@@ -19,7 +19,7 @@
 // ⚠️ This changes what we ASK for, never what we ACCEPT. The recovery still reads hermes, XML and
 // call syntax, so a model that answers in one of those anyway is still understood.
 
-import type { ToolDefinition } from "../../schema/messages"
+import type { LLMRequest, ToolDefinition } from "../../schema/messages"
 
 /**
  * One tool, as the model will see it.
@@ -46,5 +46,17 @@ export const INSTRUCTION =
  */
 export const promptedToolsSection = (tools: ReadonlyArray<ToolDefinition>): string | undefined =>
   tools.length === 0 ? undefined : `# Tools\n\n${INSTRUCTION}\n\n${tools.map(describe).join("\n")}`
+
+/**
+ * Which channel this request runs on — asked in ONE place.
+ *
+ * 🔴 Two things decide it and the precedence matters: an explicit `request.toolChannel` is a caller
+ * saying "this call, this way" (a probe, a repair, a test), and it beats the model's recorded
+ * compatibility, which is the standing answer for every other turn. Re-deriving this at each site
+ * would let the body omit `tools` while the prompt says nothing about them — a turn where the agent
+ * cannot act, and which reads from the outside as a model refusing.
+ */
+export const isPrompted = (request: LLMRequest): boolean =>
+  (request.toolChannel ?? request.model.compatibility?.toolChannel) === "prompted"
 
 export * as PromptedTools from "./prompted-tools"
