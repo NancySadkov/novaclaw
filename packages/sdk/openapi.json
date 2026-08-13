@@ -7773,6 +7773,41 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "capabilities": {
+                      "type": "object",
+                      "properties": {
+                        "choice": {
+                          "type": "string",
+                          "enum": ["native", "prompted", "chat-only", "unknown"]
+                        },
+                        "rationale": {
+                          "type": "string"
+                        },
+                        "outcomes": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": ["supported", "unsupported", "unknown"]
+                              },
+                              "fault": {
+                                "type": "string",
+                                "enum": ["transport", "auth", "http", "malformed", "not-attempted"]
+                              },
+                              "detail": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["kind"],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": ["choice", "rationale", "outcomes"],
+                      "additionalProperties": false
                     }
                   },
                   "required": ["status"],
@@ -7793,7 +7828,7 @@
             }
           }
         },
-        "description": "One-shot health probe: validates the provider URL, key, and (optionally) that a model is listed, in one GET /models round trip. Reports the server's honored context window where available.",
+        "description": "One-shot health probe: validates the provider URL, key, and (optionally) that a model is listed, in one GET /models round trip. Reports the server's honored context window where available. Pass capabilities:true to additionally negotiate what the endpoint can do — JSON mode, native tool calls, and prompted text tool calls — which costs three completions.",
         "summary": "Probe a provider endpoint",
         "requestBody": {
           "content": {
@@ -7813,6 +7848,9 @@
                   "authStyle": {
                     "type": "string",
                     "enum": ["bearer", "anthropic"]
+                  },
+                  "capabilities": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false

@@ -41,8 +41,56 @@ export const ProbeResult = Schema.Struct({
   ),
   detail: Schema.optional(Schema.String),
   models: Schema.optional(Schema.Array(Schema.String)),
+  /**
+   * What this endpoint can actually DO, when the probe was asked for it.
+   *
+   * ⚠️ Three answers per rung, never two: `supported`, `unsupported`, and `unknown` WITH the fault
+   * that stopped us. A 401 or a dropped socket says nothing about the model, and recorded as
+   * "unsupported" it would permanently demote a capable endpoint on the strength of a blip. `choice`
+   * carries the same discipline — `unknown` is not a synonym for `chat-only`.
+   */
+  capabilities: Schema.optional(
+    Schema.Struct({
+      choice: Schema.Literals(["native", "prompted", "chat-only", "unknown"]),
+      /** One sentence a settings screen can show verbatim. */
+      rationale: Schema.String,
+      outcomes: Schema.Record(
+        Schema.String,
+        Schema.Struct({
+          kind: Schema.Literals(["supported", "unsupported", "unknown"]),
+          fault: Schema.optional(
+            Schema.Literals(["transport", "auth", "http", "malformed", "not-attempted"]),
+          ),
+          detail: Schema.optional(Schema.String),
+        }),
+      ),
+    }),
+  ),
 })
 export type ProbeResult = Schema.Schema.Type<typeof ProbeResult>
+
+/**
+ * What the probe accepts.
+ *
+ * ⚠️ **Declared here and IMPORTED by the handler**, which used to re-type it by hand. That second
+ * copy is what made adding `capabilities` compile green in the schema and fail in the handler: the
+ * wire accepted a field the implementation could not see. One declaration, read from both ends.
+ */
+export const ProbePayload = Schema.Struct({
+  modelID: Schema.optional(Schema.String),
+  // baseURL/apiKey let the client probe an UNSAVED endpoint (the "New Model" discovery flow) —
+  // when absent, the probe resolves them from the saved provider config as before.
+  baseURL: Schema.optional(Schema.String),
+  apiKey: Schema.optional(Schema.String),
+  // Discovery auth style (provider-import presets): "anthropic" sends x-api-key +
+  // anthropic-version instead of a Bearer header. Absent = inferred from the saved
+  // provider's API channel, defaulting to bearer.
+  authStyle: Schema.optional(ConfigProviderPreset.AuthStyle),
+  // ⚠️ OPT-IN, because it costs generation: discovery is one GET, this is three completions.
+  // Opening Settings must never spend tokens.
+  capabilities: Schema.optional(Schema.Boolean),
+})
+export type ProbePayload = Schema.Schema.Type<typeof ProbePayload>
 
 export const ProviderApi = HttpApi.make("provider")
   .add(
@@ -61,24 +109,14 @@ export const ProviderApi = HttpApi.make("provider")
         HttpApiEndpoint.post("probe", `${root}/:providerID/probe`, {
           params: { providerID: ProviderV2.ID },
           query: WorkspaceRoutingQuery,
-          // baseURL/apiKey let the client probe an UNSAVED endpoint (the "New Model" discovery flow) —
-          // when absent, the probe resolves them from the saved provider config as before.
-          payload: Schema.Struct({
-            modelID: Schema.optional(Schema.String),
-            baseURL: Schema.optional(Schema.String),
-            apiKey: Schema.optional(Schema.String),
-            // Discovery auth style (provider-import presets): "anthropic" sends x-api-key +
-            // anthropic-version instead of a Bearer header. Absent = inferred from the saved
-            // provider's API channel, defaulting to bearer.
-            authStyle: Schema.optional(ConfigProviderPreset.AuthStyle),
-          }),
+          payload: ProbePayload,
           success: described(ProbeResult, "Provider probe result"),
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "provider.probe",
             summary: "Probe a provider endpoint",
             description:
-              "One-shot health probe: validates the provider URL, key, and (optionally) that a model is listed, in one GET /models round trip. Reports the server's honored context window where available.",
+              "One-shot health probe: validates the provider URL, key, and (optionally) that a model is listed, in one GET /models round trip. Reports the server's honored context window where available. Pass capabilities:true to additionally negotiate what the endpoint can do — JSON mode, native tool calls, and prompted text tool calls — which costs three completions.",
           }),
         ),
         HttpApiEndpoint.get("presets", `${root}/presets`, {

@@ -10731,6 +10731,7 @@ export type ProviderProbeData = {
     baseURL?: string
     apiKey?: string
     authStyle?: "bearer" | "anthropic"
+    capabilities?: boolean
   }
   path: {
     providerID: string
@@ -10771,6 +10772,17 @@ export type ProviderProbeResponses = {
     }
     detail?: string
     models?: Array<string>
+    capabilities?: {
+      choice: "native" | "prompted" | "chat-only" | "unknown"
+      rationale: string
+      outcomes: {
+        [key: string]: {
+          kind: "supported" | "unsupported" | "unknown"
+          fault?: "transport" | "auth" | "http" | "malformed" | "not-attempted"
+          detail?: string
+        }
+      }
+    }
   }
 }
 

@@ -9,12 +9,14 @@ import { Location } from "@novaclaw/core/location"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { InstanceState } from "@/effect/instance-state"
 
-import { Effect, Layer } from "effect"
+import { Duration, Effect, Layer } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { HttpBody, HttpClient, HttpClientError, HttpClientRequest } from "effect/unstable/http"
 import { isEgressBlocked } from "@novaclaw/llm"
 import { InstanceHttpApi } from "../api"
+import type { ProbePayload } from "../groups/provider"
 import { ConfigProviderPreset } from "@novaclaw/core/config/provider-preset"
+import { ProviderCapability } from "@novaclaw/core/provider-capability"
 import { ProviderV2 } from "@novaclaw/core/provider"
 
 /** How long one probe may take end to end (connect + headers + body). */
@@ -124,6 +126,204 @@ export const probeEndpoint = (
       })
     }),
   )
+
+/**
+ * CAPABILITY NEGOTIATION — three more bounded requests that answer *what can this endpoint do*.
+ *
+ * `probeCompletion` below proves a generation comes back. That is not enough to decide how the
+ * harness should talk to a model: an endpoint that silently ignores `tools` produces a turn reading
+ * as the agent refusing to act, and nothing tells the user that apart from a broken instance.
+ *
+ * ⚠️ **Opt-in, because it COSTS generation.** Discovery is one GET; this is three completions. The
+ * probe payload asks for it explicitly, so opening Settings never spends tokens.
+ *
+ * ⚠️ **No side effects by construction.** The tool offered is capture-only (`ProviderCapability`):
+ * it exists to be called and does nothing when it is. There is no executor here to forget that.
+ *
+ * ⚠️ **Only the OpenAI-chat wire shape.** The Anthropic channel puts tools in a different envelope,
+ * and sending the wrong one would measure our own request rather than the endpoint. It reports
+ * `not-attempted` with that reason instead of guessing — an honest gap beats a wrong verdict, which
+ * `ProviderCapability` is built around.
+ */
+const CAPABILITY_TIMEOUT = Duration.seconds(30)
+
+const capabilityAsk = (
+  client: HttpClient.HttpClient,
+  input: { baseURL: string; headers: Record<string, string>; body: Record<string, unknown> },
+): Effect.Effect<ProviderCapability.Response> =>
+  client
+    .execute(
+      HttpClientRequest.post(`${input.baseURL.replace(/\/+$/, "")}/chat/completions`, {
+        headers: new Headers({ ...input.headers, "content-type": "application/json" }),
+        body: HttpBody.jsonUnsafe(input.body),
+      }),
+    )
+    .pipe(
+      Effect.flatMap((response) =>
+        response.status < 200 || response.status >= 300
+          ? response.text.pipe(
+              Effect.map((body): ProviderCapability.Response => ({ kind: "http", status: response.status, body })),
+              Effect.catch(() =>
+                Effect.succeed<ProviderCapability.Response>({ kind: "http", status: response.status, body: "" }),
+              ),
+            )
+          : response.json.pipe(
+              Effect.map((payload): ProviderCapability.Response => ({ kind: "body", payload })),
+              // A success whose body is not JSON is a proxy or a gateway answering for the endpoint.
+              // That says nothing about the model, so it must land as a fault, not as a capability.
+              Effect.catch(() =>
+                Effect.succeed<ProviderCapability.Response>({
+                  kind: "http",
+                  status: response.status,
+                  body: "The endpoint answered 2xx with a body that is not JSON.",
+                }),
+              ),
+            ),
+      ),
+      Effect.timeoutOrElse({
+        duration: CAPABILITY_TIMEOUT,
+        orElse: () =>
+          Effect.succeed<ProviderCapability.Response>({
+            kind: "transport",
+            detail: `no answer within ${Duration.toSeconds(CAPABILITY_TIMEOUT)}s`,
+          }),
+      }),
+      Effect.catch((error) =>
+        Effect.succeed<ProviderCapability.Response>({ kind: "transport", detail: transportDetail(error).slice(0, 200) }),
+      ),
+    )
+
+/** `choices[0].message` for the OpenAI-chat shape, or undefined when the envelope is not that. */
+const firstMessage = (payload: unknown): Record<string, unknown> | undefined => {
+  const choices = (payload as { choices?: unknown } | null)?.choices
+  if (!Array.isArray(choices) || choices.length === 0) return undefined
+  const message = (choices[0] as { message?: unknown } | undefined)?.message
+  return typeof message === "object" && message !== null ? (message as Record<string, unknown>) : undefined
+}
+
+const firstToolCall = (payload: unknown): ProviderCapability.ToolCall | undefined => {
+  const calls = firstMessage(payload)?.["tool_calls"]
+  if (!Array.isArray(calls) || calls.length === 0) return undefined
+  const fn = (calls[0] as { function?: unknown } | undefined)?.function as
+    | { name?: unknown; arguments?: unknown }
+    | undefined
+  if (fn === undefined) return undefined
+  return {
+    name: typeof fn.name === "string" ? fn.name : "",
+    rawArguments: typeof fn.arguments === "string" ? fn.arguments : JSON.stringify(fn.arguments ?? {}),
+  }
+}
+
+const messageContent = (payload: unknown): string => {
+  const content = firstMessage(payload)?.["content"]
+  return typeof content === "string" ? content : ""
+}
+
+/** An envelope we cannot read is a fault, never "the model cannot do this". */
+const malformed = (): ProviderCapability.Outcome => ({
+  kind: "unknown",
+  fault: "malformed",
+  detail: "The response did not match this endpoint's chat-completions shape.",
+})
+
+export const probeCapabilities = (
+  client: HttpClient.HttpClient,
+  input: {
+    baseURL: string
+    modelID: string
+    authStyle: ConfigProviderPreset.AuthStyle
+    headers: Record<string, string>
+    chat: ProviderCapability.Outcome
+  },
+): Effect.Effect<ProviderCapability.Report> =>
+  Effect.gen(function* () {
+    const skip = (why: string) =>
+      ProviderCapability.report({
+        chat: input.chat,
+        json: ProviderCapability.notAttempted(why),
+        "native-tools": ProviderCapability.notAttempted(why),
+        "text-tools": ProviderCapability.notAttempted(why),
+      })
+    if (input.authStyle === "anthropic")
+      return skip("this probe speaks the OpenAI chat-completions shape, and this endpoint does not")
+    // Every rung below asks the model to GENERATE. Without chat there is nothing to read, and asking
+    // anyway would measure the same failure three more times and report it as three capabilities.
+    if (input.chat.kind !== "supported") return skip("the endpoint did not return a plain completion")
+
+    const base = { model: input.modelID, temperature: 0, stream: false }
+
+    const json = ProviderCapability.outcomeOf(
+      yield* capabilityAsk(client, {
+        ...input,
+        body: {
+          ...base,
+          max_tokens: 64,
+          response_format: { type: "json_object" },
+          messages: [{ role: "user", content: 'Reply with only this JSON object: {"ok":true}' }],
+        },
+      }),
+      {
+        parameter: "response_format",
+        read: (payload) => {
+          const content = messageContent(payload)
+          if (firstMessage(payload) === undefined) return malformed()
+          try {
+            JSON.parse(content)
+            return { kind: "supported" }
+          } catch {
+            return { kind: "unsupported", detail: "The endpoint accepted a JSON response format and answered prose." }
+          }
+        },
+      },
+    )
+
+    const nativeTools = ProviderCapability.outcomeOf(
+      yield* capabilityAsk(client, {
+        ...input,
+        body: {
+          ...base,
+          // Room for the whole call. A budget too small truncates the arguments, and this probe
+          // would then measure OUR budget and record it as the endpoint's failure.
+          max_tokens: 256,
+          tools: [{ type: "function", function: ProviderCapability.CAPTURE_TOOL }],
+          messages: [
+            {
+              role: "user",
+              content: `Call ${ProviderCapability.CAPTURE_TOOL.name} once with all three arguments filled in.`,
+            },
+          ],
+        },
+      }),
+      {
+        parameter: "tools",
+        read: (payload) =>
+          firstMessage(payload) === undefined
+            ? malformed()
+            : ProviderCapability.readToolCall(firstToolCall(payload), [ProviderCapability.CAPTURE_TOOL.name]),
+      },
+    )
+
+    const textTools = ProviderCapability.outcomeOf(
+      yield* capabilityAsk(client, {
+        ...input,
+        body: {
+          ...base,
+          max_tokens: 256,
+          messages: [{ role: "user", content: ProviderCapability.TEXT_TOOL_PROMPT }],
+        },
+      }),
+      {
+        read: (payload) =>
+          firstMessage(payload) === undefined
+            ? malformed()
+            : ProviderCapability.readToolCall(ProviderCapability.recoverTextToolCall(messageContent(payload)), [
+                ProviderCapability.CAPTURE_TOOL.name,
+              ]),
+      },
+    )
+
+    return ProviderCapability.report({ chat: input.chat, json, "native-tools": nativeTools, "text-tools": textTools })
+  })
 
 type CompletionProbe =
   | { readonly kind: "ok"; readonly latencyMs: number }
@@ -319,14 +519,12 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       return ConfigProviderPreset.effective(config.provider_presets)
     })
 
+    // ⚠️ `ProbePayload`, not a hand-written twin. The shape used to be re-typed here, so the schema
+    // and the implementation were two lists that had to agree — and when `capabilities` was added to
+    // the wire, the handler simply could not see it while everything still compiled.
     const probe = Effect.fn("ProviderHttpApi.probe")(function* (ctx: {
       params: { providerID: ProviderV2.ID }
-      payload: {
-        modelID?: string | undefined
-        baseURL?: string | undefined
-        apiKey?: string | undefined
-        authStyle?: ConfigProviderPreset.AuthStyle | undefined
-      }
+      payload: ProbePayload
     }) {
       const config = yield* cfg.get()
       const entry = config.providers?.[ctx.params.providerID]
@@ -425,6 +623,22 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
               : {}),
           }
       }
+      // CAPABILITY NEGOTIATION, only when asked and only once a plain completion has come back:
+      // every rung generates, so without chat there is nothing to read and asking would measure the
+      // same failure three more times under three different names.
+      let capabilities: ProviderCapability.Report | undefined
+      if (ctx.payload.capabilities === true && ctx.payload.modelID) {
+        const savedModel = entry?.models?.[ctx.payload.modelID] as { api?: { id?: string } } | undefined
+        capabilities = yield* probeCapabilities(http, {
+          baseURL,
+          modelID: savedModel?.api?.id ?? ctx.payload.modelID,
+          authStyle,
+          headers: authHeaders,
+          // Chat is not re-asked: `probeCompletion` above already proved it, and a second identical
+          // request would be a second chance to disagree with the first.
+          chat: { kind: "supported" },
+        })
+      }
       // T3 — remember the honored window so model resolution sizes the 1M context pack from
       // live truth, but only when this probed the SAVED provider endpoint: a payload baseURL
       // is the New-Model discovery flow probing an UNSAVED endpoint, and caching that against
@@ -438,6 +652,24 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
         ...(completionLatencyMs === undefined ? {} : { completionLatencyMs }),
         ...(completionAttempts === undefined ? {} : { completionAttempts }),
         ...(ctx.payload.modelID === undefined ? {} : { completed: true }),
+        ...(capabilities === undefined
+          ? {}
+          : {
+              capabilities: {
+                choice: capabilities.choice,
+                rationale: capabilities.rationale,
+                outcomes: Object.fromEntries(
+                  Object.entries(capabilities.outcomes).map(([name, outcome]) => [
+                    name,
+                    {
+                      kind: outcome.kind,
+                      ...(outcome.kind === "unknown" ? { fault: outcome.fault } : {}),
+                      ...(outcome.detail === undefined ? {} : { detail: outcome.detail }),
+                    },
+                  ]),
+                ),
+              },
+            }),
         ...(configuredIDUnlisted
           ? {
               detail: `Generation succeeded with configured id "${ctx.payload.modelID}", although /models advertises ${models.length ? models.map((id) => `"${id}"`).join(", ") : "no model ids"}. The server is accepting an alias.`,

@@ -1,0 +1,197 @@
+import { describe, expect, test } from "bun:test"
+import { ProviderCapability } from "@novaclaw/core/provider-capability"
+
+/**
+ * The negotiator's whole job is telling three answers apart — *it can*, *it cannot*, *we could not
+ * find out* — and every case below is a way to get that wrong.
+ *
+ * The stakes are asymmetric, which is why the tests lean where they do: a wrong `unsupported` is
+ * PERMANENT (an endpoint demoted to prompted tools on the strength of a network blip, with nothing
+ * downstream able to tell), while a wrong `unknown` costs one more probe.
+ */
+
+const OFFERED = [ProviderCapability.CAPTURE_TOOL.name]
+
+const wellFormed = {
+  name: ProviderCapability.CAPTURE_TOOL.name,
+  rawArguments: JSON.stringify({ label: "x", count: 3, nested: { left: "a", right: "b" } }),
+}
+
+describe("judging a tool call", () => {
+  test("a complete call with its nested object intact is supported", () => {
+    expect(ProviderCapability.readToolCall(wellFormed, OFFERED).kind).toBe("supported")
+  })
+
+  test("🔴 a call naming a tool that was never offered is UNSUPPORTED, and says why", () => {
+    // The clearest evidence a tool channel invents names. An offered-tools whitelist is the only
+    // thing between that and a runner executing something nobody granted, so measuring it here is
+    // what lets the negotiator refuse the native rung on evidence instead of on a later incident.
+    const outcome = ProviderCapability.readToolCall({ ...wellFormed, name: "get_weather" }, OFFERED)
+    expect(outcome.kind).toBe("unsupported")
+    expect(outcome.kind === "unsupported" && outcome.detail).toContain("never offered")
+  })
+
+  test("no call at all is unsupported, not a fault", () => {
+    // The model answered — the endpoint worked. It simply did not use the channel.
+    expect(ProviderCapability.readToolCall(undefined, OFFERED).kind).toBe("unsupported")
+  })
+
+  test("a truncated call is unsupported", () => {
+    const truncated = { ...wellFormed, rawArguments: '{"label":"x","count":3,"nes' }
+    const outcome = ProviderCapability.readToolCall(truncated, OFFERED)
+    expect(outcome.kind).toBe("unsupported")
+    expect(outcome.kind === "unsupported" && outcome.detail).toContain("JSON")
+  })
+
+  test("🔴 a call that drops arguments is caught — the multi-argument failure", () => {
+    // A one-argument probe calls this endpoint healthy. That is why the capture tool takes three.
+    const outcome = ProviderCapability.readToolCall(
+      { ...wellFormed, rawArguments: JSON.stringify({ label: "x" }) },
+      OFFERED,
+    )
+    expect(outcome.kind).toBe("unsupported")
+    expect(outcome.kind === "unsupported" && outcome.detail).toContain("count")
+  })
+
+  test("🔴 a FLATTENED nested argument is caught — a required-keys check alone calls it healthy", () => {
+    const flattened = { ...wellFormed, rawArguments: JSON.stringify({ label: "x", count: 3, nested: "left=a" }) }
+    const outcome = ProviderCapability.readToolCall(flattened, OFFERED)
+    expect(outcome.kind).toBe("unsupported")
+    expect(outcome.kind === "unsupported" && outcome.detail).toContain("flattened")
+  })
+
+  test("a nested object that lost a field is caught", () => {
+    const partial = { ...wellFormed, rawArguments: JSON.stringify({ label: "x", count: 3, nested: { left: "a" } }) }
+    expect(ProviderCapability.readToolCall(partial, OFFERED).kind).toBe("unsupported")
+  })
+})
+
+describe("recovering a tool call from text", () => {
+  test("lenient about the wrapper, strict about the payload", () => {
+    // A code fence and a sentence before the line say nothing about whether the endpoint can carry a
+    // call; the JSON does.
+    const content = 'Sure, here you go:\n```\n<tool>{"name":"nova_probe_capture","arguments":{"label":"x","count":1,"nested":{"left":"a","right":"b"}}}</tool>\n```'
+    const call = ProviderCapability.recoverTextToolCall(content)
+    expect(call?.name).toBe("nova_probe_capture")
+    expect(ProviderCapability.readToolCall(call, OFFERED).kind).toBe("supported")
+  })
+
+  test("prose with no tag recovers nothing", () => {
+    expect(ProviderCapability.recoverTextToolCall("I would call the tool but here is a poem instead")).toBeUndefined()
+  })
+
+  test("a tag with unparseable content recovers a nameless call, which fails the whitelist", () => {
+    // Not silently dropped: a malformed call is evidence, and reporting nothing would read as "the
+    // model ignored the instruction", which is a different thing.
+    const call = ProviderCapability.recoverTextToolCall("<tool>{name: nova_probe_capture}</tool>")
+    expect(call).toBeDefined()
+    expect(ProviderCapability.readToolCall(call, OFFERED).kind).toBe("unsupported")
+  })
+})
+
+describe("a failure is not a capability", () => {
+  const read = (): ProviderCapability.Outcome => ({ kind: "supported" })
+
+  test("🔴 auth, transport and an opaque HTTP error are UNKNOWN, each with its own fault", () => {
+    const auth = ProviderCapability.outcomeOf({ kind: "http", status: 401, body: "nope" }, { read })
+    const transport = ProviderCapability.outcomeOf({ kind: "transport", detail: "ECONNRESET" }, { read })
+    const http = ProviderCapability.outcomeOf({ kind: "http", status: 502, body: "<html>proxy</html>" }, { read })
+    expect(auth).toMatchObject({ kind: "unknown", fault: "auth" })
+    expect(transport).toMatchObject({ kind: "unknown", fault: "transport" })
+    expect(http).toMatchObject({ kind: "unknown", fault: "http" })
+  })
+
+  test("🔴 a 4xx that NAMES the rejected parameter is evidence, and is unsupported", () => {
+    // The one case where a failure says something about the endpoint. Left as `unknown` it would be
+    // re-probed forever against a server that already answered.
+    const outcome = ProviderCapability.outcomeOf(
+      { kind: "http", status: 400, body: '{"error":"unknown parameter: tools"}' },
+      { parameter: "tools", read },
+    )
+    expect(outcome).toMatchObject({ kind: "unsupported" })
+  })
+
+  test("a 4xx that merely mentions the parameter is NOT evidence", () => {
+    // A wrong `unsupported` is permanent; a wrong `unknown` costs one probe. The bar sits there.
+    const outcome = ProviderCapability.outcomeOf(
+      { kind: "http", status: 400, body: "your tools request had a bad message role" },
+      { parameter: "tools", read },
+    )
+    expect(outcome).toMatchObject({ kind: "unknown", fault: "http" })
+  })
+})
+
+describe("choosing the rung", () => {
+  const outcomes = (
+    over: Partial<Record<ProviderCapability.Capability, ProviderCapability.Outcome>>,
+  ): Record<ProviderCapability.Capability, ProviderCapability.Outcome> => ({
+    chat: { kind: "supported" },
+    json: { kind: "supported" },
+    "native-tools": { kind: "supported" },
+    "text-tools": { kind: "supported" },
+    ...over,
+  })
+
+  test("native when the native channel works", () => {
+    expect(ProviderCapability.report(outcomes({})).choice).toBe("native")
+  })
+
+  test("prompted when native is measured unusable and text works", () => {
+    const result = ProviderCapability.report(
+      outcomes({ "native-tools": { kind: "unsupported", detail: "dropped count" } }),
+    )
+    expect(result.choice).toBe("prompted")
+    expect(result.rationale).toContain("dropped count")
+  })
+
+  test("chat-only ONLY when both tool rungs were measured", () => {
+    const result = ProviderCapability.report(
+      outcomes({
+        "native-tools": { kind: "unsupported", detail: "no call" },
+        "text-tools": { kind: "unsupported", detail: "no call" },
+      }),
+    )
+    expect(result.choice).toBe("chat-only")
+  })
+
+  test("🔴 an unmeasured tool rung is UNKNOWN, never chat-only", () => {
+    // The failure this forbids: one auth blip on the tool probe permanently records "this endpoint
+    // has no tools", and nothing downstream can tell that from a real measurement.
+    const result = ProviderCapability.report(
+      outcomes({
+        "native-tools": { kind: "unknown", fault: "auth", detail: "401" },
+        "text-tools": { kind: "unsupported", detail: "no call" },
+      }),
+    )
+    expect(result.choice).toBe("unknown")
+    expect(result.rationale).toContain("could not be measured")
+  })
+
+  test("no chat means nothing was measured at all", () => {
+    const result = ProviderCapability.report(
+      outcomes({
+        chat: { kind: "unknown", fault: "transport", detail: "timeout" },
+        "native-tools": { kind: "unknown", fault: "not-attempted", detail: "x" },
+        "text-tools": { kind: "unknown", fault: "not-attempted", detail: "x" },
+      }),
+    )
+    expect(result.choice).toBe("unknown")
+  })
+})
+
+describe("the fingerprint", () => {
+  test("🔴 the TEMPLATE is part of it — same URL, same model, different tool channel", () => {
+    // The case stale evidence gets wrong: a server reloaded with a different chat template is the
+    // same endpoint by every other measure, and its tool channel may have changed underneath.
+    const base = { endpoint: "http://host:8010/v1", model: "holo3.1", protocol: "openai-chat" }
+    expect(ProviderCapability.fingerprint({ ...base, template: "a" })).not.toBe(
+      ProviderCapability.fingerprint({ ...base, template: "b" }),
+    )
+  })
+
+  test("a trailing slash is not a different endpoint", () => {
+    const a = ProviderCapability.fingerprint({ endpoint: "http://h/v1/", model: "m", protocol: "p" })
+    const b = ProviderCapability.fingerprint({ endpoint: "http://h/v1", model: "m", protocol: "p" })
+    expect(a).toBe(b)
+  })
+})
