@@ -6,6 +6,9 @@ import { Effect } from "effect"
 import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityMessage } from "@novaclaw/core/community/message"
+import { CommunityPost } from "@novaclaw/core/community/post"
+import { CommunityTransport } from "@novaclaw/core/community/transport"
+import { Offline } from "@novaclaw/core/offline"
 import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -31,7 +34,14 @@ const instance = (label: string) => {
   // "exchange" messages by reading their own rows, proving nothing.
   const database = Database.layerFromPath(file)
   const graph = AppNodeBuilder.build(
-    LayerNode.group([InstanceIdentityStore.node, CommunityContacts.node, CommunityChannels.node]),
+    LayerNode.group([
+      InstanceIdentityStore.node,
+      CommunityContacts.node,
+      CommunityChannels.node,
+      Offline.node,
+      CommunityTransport.node,
+      CommunityPost.node,
+    ]),
     [[Database.node, database]],
   )
   return { home, graph }
@@ -50,12 +60,25 @@ describe("two instances", () => {
     const alice = instance("alice")
     const bob = instance("bob")
     try {
-      // Alice signs, knowing nothing about Bob.
+      // Alice says something through the REAL send path, not by hand-signing. That is what a user
+      // action actually runs, so it is what the contract has to cover: an earlier version signed
+      // directly and never exercised `post` across instances at all.
       const { message, aliceKey } = await Effect.runPromise(
         Effect.gen(function* () {
           const identity = yield* InstanceIdentityStore.Service.pipe(Effect.flatMap((s) => s.identity()))
-          const signed = yield* CommunityMessage.sign({ channel: "#NovaClaw", body: "hello from alice" })
-          return { message: signed, aliceKey: identity.networkID }
+          const channels = yield* CommunityChannels.Service
+          const posts = yield* CommunityPost.Service
+          yield* channels.join("#NovaClaw")
+
+          const posted = yield* posts.post("#NovaClaw", "hello from alice")
+          // Stored on Alice's side even with nothing to carry it, and NOT delivered — the state
+          // every install is in until a transport exists.
+          expect(posted.stored).toBe(true)
+          expect(posted.delivered).toBe(false)
+          // And it is in her OWN log: a sender who cannot see what they said would assume it failed.
+          expect((yield* channels.history("#NovaClaw")).map((m) => m.body)).toEqual(["hello from alice"])
+
+          return { message: posted.message, aliceKey: identity.networkID }
         }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
       )
 
