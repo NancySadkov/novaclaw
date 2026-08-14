@@ -38,6 +38,7 @@ import { ComputerTool } from "./computer"
 import { WebFetchTool } from "./webfetch"
 import { WebSearchTool } from "./websearch"
 import { SpawnTool } from "./spawn"
+import { CommunityTool } from "./community"
 import { ExitTool } from "./exit"
 import { WaitTool } from "./wait"
 import { WriteTool } from "./write"
@@ -163,6 +164,7 @@ export const node = makeLocationNode({
     WriteTool.node,
     WriteHexTool.node,
     SpawnTool.node,
+    CommunityTool.node,
     ExitTool.node,
     WaitTool.node,
     UpgradeChatTool.node,
