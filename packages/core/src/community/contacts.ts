@@ -67,6 +67,18 @@ export interface Interface {
    * stranger could enter the address book by presenting a statement about a key nobody knows.
    */
   readonly follow: (statement: CommunitySuccession.Statement) => Effect.Effect<boolean>
+  /**
+   * Apply a BAG of statements, walking each contact to the end of its proven chain.
+   *
+   * 🔴 `follow` alone is order-dependent, and statements arrive from a gossip mesh in no order at
+   * all. Given `B→C` before `A→B`, the first is dropped (predecessor unknown) and never retried, so
+   * a contact who rotated twice while we were away would be stranded on their oldest key while the
+   * proof of where they went sat in memory, already verified. This resolves the whole chain first
+   * and moves once.
+   *
+   * Returns how many contacts moved.
+   */
+  readonly followAll: (statements: readonly CommunitySuccession.Statement[]) => Effect.Effect<number>
   /** Contacts usable as bootstrap entries: not blocked, and with at least one known route. */
   readonly bootstrap: () => Effect.Effect<ReadonlyArray<Contact>>
 }
@@ -95,6 +107,37 @@ export const layer = Layer.effect(
         .get()
         .pipe(Effect.orDie)
       return row === undefined ? undefined : rowContact(row)
+    })
+
+    const follow = Effect.fn("CommunityContacts.follow")(function* (statement: CommunitySuccession.Statement) {
+        // Verified BEFORE anything is read or written: an unsigned claim about someone else's key is
+        // exactly the shape an identity theft would take.
+        if (!CommunitySuccession.verify(statement)) return false
+        const existing = yield* get(statement.predecessor)
+        if (existing === undefined) return false
+
+        // Already followed, or the successor is someone we separately know: leave both alone rather
+        // than merging two people's entries into one.
+        if ((yield* get(statement.successor)) !== undefined) return false
+
+        yield* db
+          .insert(CommunityContactTable)
+          .values({
+            network_id: statement.successor,
+            ...(existing.petname === undefined ? {} : { petname: existing.petname }),
+            routes: [...existing.routes],
+            // 🔴 Carried, not reset. See the interface note: otherwise rotation is a block bypass.
+            blocked: existing.blocked,
+            ...(existing.lastSeenAt === undefined ? {} : { last_seen_at: existing.lastSeenAt }),
+          })
+          .run()
+          .pipe(Effect.orDie)
+        yield* db
+          .delete(CommunityContactTable)
+          .where(eq(CommunityContactTable.network_id, statement.predecessor))
+          .run()
+          .pipe(Effect.orDie)
+        return true
     })
 
     return Service.of({
@@ -175,35 +218,37 @@ export const layer = Layer.effect(
         return updated.length > 0
       }),
 
-      follow: Effect.fn("CommunityContacts.follow")(function* (statement: CommunitySuccession.Statement) {
-        // Verified BEFORE anything is read or written: an unsigned claim about someone else's key is
-        // exactly the shape an identity theft would take.
-        if (!CommunitySuccession.verify(statement)) return false
-        const existing = yield* get(statement.predecessor)
-        if (existing === undefined) return false
-
-        // Already followed, or the successor is someone we separately know: leave both alone rather
-        // than merging two people's entries into one.
-        if ((yield* get(statement.successor)) !== undefined) return false
-
-        yield* db
-          .insert(CommunityContactTable)
-          .values({
-            network_id: statement.successor,
-            ...(existing.petname === undefined ? {} : { petname: existing.petname }),
-            routes: [...existing.routes],
-            // 🔴 Carried, not reset. See the interface note: otherwise rotation is a block bypass.
-            blocked: existing.blocked,
-            ...(existing.lastSeenAt === undefined ? {} : { last_seen_at: existing.lastSeenAt }),
-          })
-          .run()
-          .pipe(Effect.orDie)
-        yield* db
-          .delete(CommunityContactTable)
-          .where(eq(CommunityContactTable.network_id, statement.predecessor))
-          .run()
-          .pipe(Effect.orDie)
-        return true
+      follow,
+      followAll: Effect.fn("CommunityContacts.followAll")(function* (
+        statements: readonly CommunitySuccession.Statement[],
+      ) {
+        const rows = yield* db.select().from(CommunityContactTable).all().pipe(Effect.orDie)
+        let moved = 0
+        for (const row of rows) {
+          // `resolve` verifies every link and stops at the last PROVEN key, so an unsigned or
+          // missing link leaves the contact where it was rather than guessing forward.
+          const destination = CommunitySuccession.resolve(row.network_id, statements)
+          if (destination === row.network_id) continue
+          /**
+           * Walk link by link with the REAL statements. An earlier draft handed `follow` a
+           * statement with a rewritten `predecessor`, which is a forgery: changing a signed field
+           * invalidates the signature, so it would have verified as false and moved nothing while
+           * looking like it should work.
+           */
+          let current = row.network_id
+          let stepped = false
+          while (current !== destination) {
+            const link = statements.find(
+              (candidate) => candidate.predecessor === current && CommunitySuccession.verify(candidate),
+            )
+            if (link === undefined) break
+            if (!(yield* follow(link))) break
+            current = link.successor
+            stepped = true
+          }
+          if (stepped) moved++
+        }
+        return moved
       }),
 
       bootstrap: Effect.fn("CommunityContacts.bootstrap")(function* () {

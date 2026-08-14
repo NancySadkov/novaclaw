@@ -156,6 +156,50 @@ describe("CommunityContacts", () => {
     }).pipe(Effect.provide(InstanceIdentityStore.defaultLayer)),
   )
 
+  it.effect("🔴 two rotations arriving OUT OF ORDER still land the contact on the current key", () =>
+    Effect.gen(function* () {
+      const contacts = yield* CommunityContacts.Service
+      const store = yield* InstanceIdentityStore.Service
+      const original = (yield* store.identity()).networkID
+      yield* contacts.add({ networkID: original, petname: "wanderer", routes: ["/ip4/10.0.0.1/udp/1/quic-v1"] })
+
+      const first = yield* store.rotate()
+      const second = yield* store.rotate()
+
+      // Statements come off a gossip mesh in no order at all. Fed the LAST link first, single-step
+      // following drops it (predecessor unknown) and never retries — stranding the contact on a key
+      // its owner abandoned, while the proof sat in memory already verified.
+      expect(yield* contacts.followAll([second.statement, first.statement])).toBe(1)
+
+      const moved = yield* contacts.get(second.identity.networkID)
+      expect(moved?.petname).toBe("wanderer")
+      expect(moved?.routes).toEqual(["/ip4/10.0.0.1/udp/1/quic-v1"])
+      // Both older keys are gone — one entry per person, not a trail of them.
+      expect(yield* contacts.get(original)).toBeUndefined()
+      expect(yield* contacts.get(first.identity.networkID)).toBeUndefined()
+    }).pipe(Effect.provide(InstanceIdentityStore.defaultLayer)),
+  )
+
+  it.effect("🔴 a chain with a MISSING link stops at the last proven key", () =>
+    Effect.gen(function* () {
+      const contacts = yield* CommunityContacts.Service
+      const store = yield* InstanceIdentityStore.Service
+      const original = (yield* store.identity()).networkID
+      yield* contacts.add({ networkID: original, routes: ["/ip4/10.0.0.1/udp/1/quic-v1"] })
+
+      const first = yield* store.rotate()
+      const second = yield* store.rotate()
+      // Only the SECOND link is known: nothing connects it to the key we hold, so following it would
+      // be a guess — and guessing here means pointing a contact at a key nobody proved they own.
+      expect(yield* contacts.followAll([second.statement])).toBe(0)
+      expect(yield* contacts.get(original)).toBeDefined()
+
+      // Once the missing link turns up, the contact goes all the way to the end in one pass.
+      expect(yield* contacts.followAll([second.statement, first.statement])).toBe(1)
+      expect(yield* contacts.get(second.identity.networkID)).toBeDefined()
+    }).pipe(Effect.provide(InstanceIdentityStore.defaultLayer)),
+  )
+
   it.effect("a contact's id round-trips as a verifiable key", () =>
     Effect.gen(function* () {
       // Ties the list back to identity: what is stored is exactly what `verifySignature` consumes,
