@@ -74,7 +74,15 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     const bridge = yield* EffectBridge.make()
 
     const health = Effect.fn("GlobalHttpApi.health")(function* () {
-      return { healthy: true as const, version: InstallationVersion, instanceID: yield* identity.get() }
+      // `identity()` rather than `get()`: both read the same row, so reporting the network identity
+      // alongside the handle costs nothing extra on an endpoint that gets polled hard.
+      const self = yield* identity.identity()
+      return {
+        healthy: true as const,
+        version: InstallationVersion,
+        instanceID: self.id,
+        networkID: self.networkID,
+      }
     })
 
     // Remote-access R7: a bounded LAN scan for NovaClaw instances advertising via serve --mdns.

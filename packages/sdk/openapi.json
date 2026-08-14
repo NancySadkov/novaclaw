@@ -294,9 +294,12 @@
                     },
                     "instanceID": {
                       "type": "string"
+                    },
+                    "networkID": {
+                      "type": "string"
                     }
                   },
-                  "required": ["healthy", "version", "instanceID"],
+                  "required": ["healthy", "version", "instanceID", "networkID"],
                   "additionalProperties": false,
                   "description": "Health information"
                 }

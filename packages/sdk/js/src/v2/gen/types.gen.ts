@@ -8172,6 +8172,7 @@ export type GlobalHealthResponses = {
     healthy: true
     version: string
     instanceID: string
+    networkID: string
   }
 }
 

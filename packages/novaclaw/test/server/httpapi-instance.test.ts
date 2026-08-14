@@ -1,5 +1,6 @@
 import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { Flag } from "@novaclaw/core/flag/flag"
+import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { describe, expect } from "bun:test"
 import { Config, Context, Effect, FileSystem, Layer, Path } from "effect"
 import { HttpClient, HttpClientRequest, HttpRouter, HttpServer } from "effect/unstable/http"
@@ -79,6 +80,29 @@ describe("instance HttpApi", () => {
       ).pipe(HttpClient.execute)
       expect(retry.status).toBe(400)
       expect(yield* retry.json).toMatchObject({ message: "Unknown capability: not-declared" })
+    }),
+  )
+
+  it.live("🔴 health reports the VERIFIABLE identity, not just the claimable one", () =>
+    Effect.gen(function* () {
+      const response = yield* HttpClient.get("/global/health")
+      expect(response.status).toBe(200)
+      const body = (yield* response.json) as { instanceID: string; networkID: string }
+
+      // `instanceID` is a random ULID: it recognises one install across mDNS name, LAN IP and
+      // tunnel, and a stranger can claim the same string. `networkID` is the public key, which is
+      // the half a peer can actually verify and the string a user shares to be added as a contact.
+      expect(body.instanceID).toStartWith("ins_")
+      expect(body.networkID).toStartWith("nid_")
+
+      // ⚠️ Asserted over the WIRE, not the handler's return: a field missing from the response
+      // schema is dropped silently however correct the handler is.
+      expect(InstanceIdentityStore.parseNetworkID(body.networkID)).toHaveLength(32)
+
+      // And the SECRET never crosses this wire, in any encoding.
+      const raw = JSON.stringify(body)
+      expect(raw).not.toContain("secret")
+      expect(raw.length).toBeLessThan(500)
     }),
   )
 

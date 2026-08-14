@@ -14,6 +14,16 @@ const GlobalHealth = Schema.Struct({
   // Remote-access R7: the instance's stable identity — lets a client recognize the SAME
   // instance behind different URLs (mDNS name vs LAN IP vs tunnel).
   instanceID: Schema.String,
+  /**
+   * Community P1: the instance's PUBLIC KEY identity, `nid_…`.
+   *
+   * `instanceID` is a random ULID — fine for recognising one install across routes, and worthless
+   * against a stranger who simply claims the same string. This is the half a peer can verify, and
+   * it is what a user shares to be added as someone's contact.
+   *
+   * ⚠️ Public by definition, and only the public half: the secret never crosses this wire.
+   */
+  networkID: Schema.String,
 })
 
 // Remote-access R7: a point-in-time LAN scan for advertised NovaClaw instances (serve --mdns).
