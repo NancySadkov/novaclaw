@@ -8707,6 +8707,250 @@ export type CapabilityRetryResponses = {
 
 export type CapabilityRetryResponse = CapabilityRetryResponses[keyof CapabilityRetryResponses]
 
+export type CommunityContactListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/community/contact"
+}
+
+export type CommunityContactListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityContactListError = CommunityContactListErrors[keyof CommunityContactListErrors]
+
+export type CommunityContactListResponses = {
+  /**
+   * Every known contact, blocked ones included
+   */
+  200: Array<{
+    networkID: string
+    petname?: string
+    routes: Array<string>
+    lastSeenAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    blocked: boolean
+    addedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }>
+}
+
+export type CommunityContactListResponse = CommunityContactListResponses[keyof CommunityContactListResponses]
+
+export type CommunityContactAddData = {
+  body: {
+    networkID: string
+    petname?: string
+    routes?: Array<string>
+  }
+  path?: never
+  query?: never
+  url: "/api/community/contact"
+}
+
+export type CommunityContactAddErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError | InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityContactAddError = CommunityContactAddErrors[keyof CommunityContactAddErrors]
+
+export type CommunityContactAddResponses = {
+  /**
+   * The stored contact
+   */
+  200: {
+    networkID: string
+    petname?: string
+    routes: Array<string>
+    lastSeenAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    blocked: boolean
+    addedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type CommunityContactAddResponse = CommunityContactAddResponses[keyof CommunityContactAddResponses]
+
+export type CommunityContactForgetData = {
+  body?: never
+  path: {
+    networkID: string
+  }
+  query?: never
+  url: "/api/community/contact/{networkID}"
+}
+
+export type CommunityContactForgetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityContactForgetError = CommunityContactForgetErrors[keyof CommunityContactForgetErrors]
+
+export type CommunityContactForgetResponses = {
+  /**
+   * True when a contact was removed
+   */
+  200: boolean
+}
+
+export type CommunityContactForgetResponse = CommunityContactForgetResponses[keyof CommunityContactForgetResponses]
+
+export type CommunityContactBlockData = {
+  body: {
+    blocked: boolean
+  }
+  path: {
+    networkID: string
+  }
+  query?: never
+  url: "/api/community/contact/{networkID}/block"
+}
+
+export type CommunityContactBlockErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityContactBlockError = CommunityContactBlockErrors[keyof CommunityContactBlockErrors]
+
+export type CommunityContactBlockResponses = {
+  /**
+   * True when the contact's blocked state changed
+   */
+  200: boolean
+}
+
+export type CommunityContactBlockResponse = CommunityContactBlockResponses[keyof CommunityContactBlockResponses]
+
+export type CommunityChannelListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/community/channel"
+}
+
+export type CommunityChannelListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityChannelListError = CommunityChannelListErrors[keyof CommunityChannelListErrors]
+
+export type CommunityChannelListResponses = {
+  /**
+   * Channels this instance has joined
+   */
+  200: Array<{
+    name: string
+    muted: boolean
+  }>
+}
+
+export type CommunityChannelListResponse = CommunityChannelListResponses[keyof CommunityChannelListResponses]
+
+export type CommunityChannelJoinData = {
+  body: {
+    name: string
+  }
+  path?: never
+  query?: never
+  url: "/api/community/channel"
+}
+
+export type CommunityChannelJoinErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityChannelJoinError = CommunityChannelJoinErrors[keyof CommunityChannelJoinErrors]
+
+export type CommunityChannelJoinResponses = {
+  /**
+   * Channels after joining
+   */
+  200: Array<{
+    name: string
+    muted: boolean
+  }>
+}
+
+export type CommunityChannelJoinResponse = CommunityChannelJoinResponses[keyof CommunityChannelJoinResponses]
+
+export type CommunityChannelHistoryData = {
+  body?: never
+  path: {
+    name: string
+  }
+  query?: never
+  url: "/api/community/channel/{name}/history"
+}
+
+export type CommunityChannelHistoryErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityChannelHistoryError = CommunityChannelHistoryErrors[keyof CommunityChannelHistoryErrors]
+
+export type CommunityChannelHistoryResponses = {
+  /**
+   * Stored messages, most recently RECEIVED first
+   */
+  200: Array<{
+    id: string
+    channel: string
+    author: string
+    at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    receivedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    body: string
+  }>
+}
+
+export type CommunityChannelHistoryResponse = CommunityChannelHistoryResponses[keyof CommunityChannelHistoryResponses]
+
 export type ConfigGetData = {
   body?: never
   path?: never

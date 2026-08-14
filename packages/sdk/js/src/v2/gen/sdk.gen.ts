@@ -717,6 +717,181 @@ class ApiCapability extends NovaClawApiClient {
   }
 }
 
+class ApiCommunityContact extends NovaClawApiClient {
+  /**
+   * List contacts
+   *
+   * The instance's address book. It doubles as the bootstrap set: any one live contact is a complete entry point to the network, which is why it needs no seed list from us.
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.CommunityContactListResponses,
+      T.CommunityContactListErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/contact",
+      ...options,
+    })
+  }
+
+  /**
+   * Add a contact
+   *
+   * Add a peer by its network identity. Rejected unless the id parses as a public key: a contact that cannot verify a signature is one that silently never will.
+   */
+  public add<ThrowOnError extends boolean = false>(
+    parameters: {
+      networkID: string
+      petname?: string
+      routes?: Array<string>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = {
+      networkID: parameters?.["networkID"],
+      petname: parameters?.["petname"],
+      routes: parameters?.["routes"],
+    }
+    return (options?.client ?? this.client).post<
+      T.CommunityContactAddResponses,
+      T.CommunityContactAddErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/contact",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Forget a contact
+   *
+   * Remove a peer from the address book. Does not delete anything they said.
+   */
+  public forget<ThrowOnError extends boolean = false>(
+    parameters: {
+      networkID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { networkID: parameters?.["networkID"] }
+    return (options?.client ?? this.client).delete<
+      T.CommunityContactForgetResponses,
+      T.CommunityContactForgetErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/contact/{networkID}",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Block or unblock a contact
+   *
+   * With no moderator anywhere, blocking is the only power a user has over what they receive. Blocked authors are dropped as messages arrive, not hidden after being stored.
+   */
+  public block<ThrowOnError extends boolean = false>(
+    parameters: {
+      networkID: string
+      blocked: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { networkID: parameters?.["networkID"] }
+    const body = { blocked: parameters?.["blocked"] }
+    return (options?.client ?? this.client).post<
+      T.CommunityContactBlockResponses,
+      T.CommunityContactBlockErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/contact/{networkID}/block",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+}
+
+class ApiCommunityChannel extends NovaClawApiClient {
+  /**
+   * List joined channels
+   *
+   * The channels this instance subscribes to.
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.CommunityChannelListResponses,
+      T.CommunityChannelListErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/channel",
+      ...options,
+    })
+  }
+
+  /**
+   * Join a channel
+   *
+   * Subscribe to a channel by name. A name is only a hash — nobody owns one, and joining grants nothing but a topic to listen on.
+   */
+  public join<ThrowOnError extends boolean = false>(
+    parameters: {
+      name: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { name: parameters?.["name"] }
+    return (options?.client ?? this.client).post<
+      T.CommunityChannelJoinResponses,
+      T.CommunityChannelJoinErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/channel",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Read a channel's history
+   *
+   * Gossip only reaches whoever is online, so this local log is what makes a channel readable by someone who was away. Ordered by receive time, never by the author's own claimed timestamp.
+   */
+  public history<ThrowOnError extends boolean = false>(
+    parameters: {
+      name: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { name: parameters?.["name"] }
+    return (options?.client ?? this.client).get<
+      T.CommunityChannelHistoryResponses,
+      T.CommunityChannelHistoryErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/channel/{name}/history",
+      ...options,
+      path,
+    })
+  }
+}
+
+class ApiCommunity extends NovaClawApiClient {
+  private _contact?: ApiCommunityContact
+  get contact(): ApiCommunityContact {
+    return (this._contact ??= new ApiCommunityContact({ client: this.client }))
+  }
+
+  private _channel?: ApiCommunityChannel
+  get channel(): ApiCommunityChannel {
+    return (this._channel ??= new ApiCommunityChannel({ client: this.client }))
+  }
+}
+
 class ApiConfig extends NovaClawApiClient {
   /**
    * Get configuration
@@ -5798,6 +5973,10 @@ export class NovaclawClient extends NovaClawApiClient {
   private _capability?: ApiCapability
   get capability(): ApiCapability {
     return (this._capability ??= new ApiCapability({ client: this.client }))
+  }
+  private _community?: ApiCommunity
+  get community(): ApiCommunity {
+    return (this._community ??= new ApiCommunity({ client: this.client }))
   }
   private _config?: ApiConfig
   get config(): ApiConfig {

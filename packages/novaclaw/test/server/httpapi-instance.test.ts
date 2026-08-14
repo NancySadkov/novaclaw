@@ -130,6 +130,46 @@ describe("instance HttpApi", () => {
     }),
   )
 
+  it.live("🔴 the community surface answers — a missing node compiles green and 500s", () =>
+    Effect.gen(function* () {
+      // This is the failure mode the group could not be trusted to avoid on types alone: the API
+      // composes, the handler typechecks, and every call returns 500 because the services were never
+      // put in the instance-global graph.
+      const empty = yield* HttpClient.get("/api/community/contact")
+      expect(empty.status).toBe(200)
+      expect(yield* empty.json).toEqual([])
+
+      // A contact whose id is not a public key is refused by the STORE's rule, surfaced as a 400
+      // rather than re-decided in the handler.
+      const bogus = yield* HttpClientRequest.post("/api/community/contact").pipe(
+        HttpClientRequest.bodyJson({ networkID: "alice" }),
+        Effect.flatMap(HttpClient.execute),
+      )
+      expect(bogus.status).toBe(400)
+
+      const peer = `nid_${Buffer.alloc(32, 4).toString("base64url")}`
+      const added = yield* HttpClientRequest.post("/api/community/contact").pipe(
+        HttpClientRequest.bodyJson({ networkID: peer, petname: "spark", routes: ["/ip4/10.0.0.1/udp/1/quic-v1"] }),
+        Effect.flatMap(HttpClient.execute),
+      )
+      expect(added.status).toBe(200)
+      expect(yield* added.json).toMatchObject({ networkID: peer, petname: "spark", blocked: false })
+
+      // Channels: joining is subscribing to a hashed name nobody owns, and history is empty until a
+      // transport delivers something — which is honest, not broken.
+      const joined = yield* HttpClientRequest.post("/api/community/channel").pipe(
+        HttpClientRequest.bodyJson({ name: "#NovaClaw" }),
+        Effect.flatMap(HttpClient.execute),
+      )
+      expect(joined.status).toBe(200)
+      expect(yield* joined.json).toEqual([{ name: "#NovaClaw", muted: false }])
+
+      const history = yield* HttpClient.get(`/api/community/channel/${encodeURIComponent("#NovaClaw")}/history`)
+      expect(history.status).toBe(200)
+      expect(yield* history.json).toEqual([])
+    }),
+  )
+
   it.live("serves the OpenAPI document", () =>
     Effect.gen(function* () {
       const response = yield* HttpClient.get("/doc")

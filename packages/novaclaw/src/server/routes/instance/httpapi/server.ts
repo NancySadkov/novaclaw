@@ -16,6 +16,8 @@ import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
 import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
+import { CommunityChannels } from "@novaclaw/core/community/channels"
+import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
@@ -92,6 +94,7 @@ import { controlHandlers } from "./handlers/control"
 import { controlPlaneHandlers } from "./handlers/control-plane"
 import { adhocHandlers } from "./handlers/adhoc"
 import { capabilityHandlers } from "./handlers/capability"
+import { communityHandlers } from "./handlers/community"
 import { experimentalHandlers } from "./handlers/experimental"
 import { fileHandlers } from "./handlers/file"
 import { globalHandlers } from "./handlers/global"
@@ -162,6 +165,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
   Layer.provide([
     adhocHandlers,
     capabilityHandlers,
+    communityHandlers,
     configHandlers,
     experimentalHandlers,
     fileHandlers,
@@ -234,6 +238,10 @@ const app = LayerNode.group([
   PluginConfigStore.node,
   SettingsConfigStore.node,
   InstanceIdentityStore.node,
+  // Community P3/P4: contacts and channels are INSTANCE state, like the identity beside them. A
+  // group whose services are missing here compiles green and answers 500 on every call.
+  CommunityContacts.node,
+  CommunityChannels.node,
   SkillConfigStore.node,
   ReferenceConfigStore.node,
   Database.node,
