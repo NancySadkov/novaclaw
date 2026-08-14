@@ -33,6 +33,21 @@ export interface CommunityMessage {
   readonly body: string
 }
 
+/**
+ * Whether anything can carry a message right now.
+ *
+ * ⚠️ `off` names its reason, and the screen must use it: "still being built" and "you switched the
+ * network off" are different things to tell a person.
+ */
+export type CommunityTransportState =
+  | { readonly kind: "off"; readonly reason: "none" | "airgap" }
+  | { readonly kind: "connecting" }
+  | { readonly kind: "online"; readonly peers: number }
+
+export function communityTransportState(server: ServerConnection.HttpBase) {
+  return instanceFetch<CommunityTransportState>(server, { route: "api/community/transport" })
+}
+
 export function communityContacts(server: ServerConnection.HttpBase) {
   return instanceFetch<CommunityContact[]>(server, { route: "api/community/contact" })
 }

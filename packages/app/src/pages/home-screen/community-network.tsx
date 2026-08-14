@@ -3,7 +3,13 @@ import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { For, Show, createMemo, createResource, createSignal, type Component } from "solid-js"
 import { useGlobal } from "@/context/global"
 import { useServer } from "@/context/server"
-import { communityAddContact, communityChannelHistory, communityContacts, communityJoinChannel } from "@/utils/community-api"
+import {
+  communityAddContact,
+  communityChannelHistory,
+  communityContacts,
+  communityJoinChannel,
+  communityTransportState,
+} from "@/utils/community-api"
 import { instanceIdentity } from "@/utils/identity-api"
 
 /**
@@ -28,6 +34,20 @@ export const CommunityNetwork: Component = () => {
   const [identity] = createResource(connection, (value) => instanceIdentity(value.http))
   const [contacts, contactActions] = createResource(connection, (value) => communityContacts(value.http))
   const [history] = createResource(connection, (value) => communityChannelHistory(value.http, DEFAULT_CHANNEL))
+  const [transport] = createResource(connection, (value) => communityTransportState(value.http))
+
+  /**
+   * ⚠️ Read from the instance, never asserted here. This copy used to say "still being built"
+   * unconditionally, which would have LIED to anyone who turned airgap on — telling them a feature
+   * was unfinished when in fact they had switched the network off themselves.
+   */
+  const emptyReason = createMemo(() => {
+    const state = transport()
+    if (state?.kind === "online") return "No messages yet."
+    if (state?.kind === "off" && state.reason === "airgap")
+      return "Offline mode is on, so nothing goes in or out. Your key and contacts are saved; turn it off in Settings to reach people."
+    return "Nothing here yet — the piece that carries messages between instances is still being built. Your key and your contacts are already saved, and this fills in when it lands."
+  })
 
   const [adding, setAdding] = createSignal("")
   const [problem, setProblem] = createSignal("")
@@ -123,12 +143,9 @@ export const CommunityNetwork: Component = () => {
         <Show
           when={(history()?.length ?? 0) > 0}
           fallback={
-            /* ⚠️ Says WHY it is empty. "No messages" would read as a broken screen; the truth is
-               that the part which carries messages between instances is still being built. */
-            <span class="text-[11px] leading-snug text-v2-text-text-muted">
-              Nothing here yet — the piece that carries messages between instances is still being built. Your key and
-              your contacts are already saved, and this fills in when it lands.
-            </span>
+            /* ⚠️ Says WHY it is empty, in the INSTANCE's terms. "No messages" would read as a
+               broken screen, and a hardcoded reason would misreport an airgapped instance. */
+            <span class="text-[11px] leading-snug text-v2-text-text-muted">{emptyReason()}</span>
           }
         >
           <For each={history() ?? []}>
