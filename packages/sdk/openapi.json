@@ -33425,6 +33425,26 @@
             "type": "integer",
             "minimum": 30000,
             "maximum": 1800000
+          },
+          "discovery_timeout_ms": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 120000
+          },
+          "completion_timeout_ms": {
+            "type": "integer",
+            "minimum": 5000,
+            "maximum": 900000
+          },
+          "capability_probe_timeout_ms": {
+            "type": "integer",
+            "minimum": 10000,
+            "maximum": 900000
+          },
+          "capability_probe_max_tokens": {
+            "type": "integer",
+            "minimum": 128,
+            "maximum": 8192
           }
         },
         "additionalProperties": false

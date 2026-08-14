@@ -1,4 +1,5 @@
 import { Config } from "@/config/config"
+import { ConfigProviderConnection } from "@novaclaw/core/config/provider-connection"
 import { ModelsDev } from "@novaclaw/core/models-dev"
 import { ProbeWindow } from "@novaclaw/core/probe-window"
 import { ProviderCatalogResult } from "@/provider/catalog-result"
@@ -21,8 +22,6 @@ import { ProviderCapabilityStore } from "@novaclaw/core/provider-capability-stor
 import { ProviderV2 } from "@novaclaw/core/provider"
 
 /** How long one probe may take end to end (connect + headers + body). */
-const PROBE_TIMEOUT = "5 seconds"
-const COMPLETION_TIMEOUT = "45 seconds"
 
 /**
  * The airgap verdict's headline, kept SHORT and FIRST so it survives any downstream truncation.
@@ -83,6 +82,8 @@ export const probeEndpoint = (
   client: HttpClient.HttpClient,
   url: string,
   headers: Record<string, string>,
+  /** From `provider_connection.discovery_timeout_ms`; defaulted when a caller has no config. */
+  timeoutMs: number = ConfigProviderConnection.DEFAULT_DISCOVERY_TIMEOUT_MS,
 ): Effect.Effect<ProbeTransport> =>
   client.execute(HttpClientRequest.get(url).pipe(HttpClientRequest.setHeaders(headers))).pipe(
     Effect.flatMap((response) => {
@@ -96,12 +97,13 @@ export const probeEndpoint = (
       )
     }),
     Effect.timeoutOrElse({
-      duration: PROBE_TIMEOUT,
+      duration: Duration.millis(timeoutMs),
       orElse: () =>
         Effect.succeed<ProbeTransport>({
           kind: "unreachable",
           status: "unreachable",
-          detail: `No answer within ${PROBE_TIMEOUT}.`,
+          // Names the bound in seconds, because the fix is a number the reader can raise.
+          detail: `No answer within ${Duration.toSeconds(Duration.millis(timeoutMs))} seconds.`,
         }),
     }),
     Effect.catch((error) => {
@@ -147,19 +149,27 @@ export const probeEndpoint = (
  */
 
 /**
- * How long ONE rung may take.
+ * How long ONE rung may take, and how much room it is given.
  *
- * ⚠️ Measured, and generous on purpose. A 4B thinking model on a laptop's Vulkan build took **26.8 s**
- * to think and then emit the capture call — against the old 30 s bound the rung timed out, and a
- * model that plainly supports native tools was recorded as unmeasured, which durably routes it to
- * the prompted channel. That is the same failure as scoring our own token budget as a missing
- * capability: the probe measuring ITSELF.
+ * ⚠️ Both are READ FROM THE STORE at the point of use, never compiled in. Each is a property of the
+ * user's slowest model and their hardware, which we cannot see from here: a 4B thinking model on a
+ * laptop's Vulkan build needs 26.8 s for the native rung, and a bigger model on a weaker box needs
+ * more than any figure we could pick. When the bound is too small the rung is recorded as unmeasured
+ * and the model is durably routed to the prompted channel — a permanent wrong answer, with no error
+ * to see. Self-healing law: a value an outage hinges on has to be repairable from inside the OS.
  *
- * The generosity is safe because a rung is only ever asked after the chat rung already returned a
- * completion, so the endpoint is known to be alive and answering. This bound is for a slow model,
- * not for a dead host — discovery and the completion probe keep their own tighter limits.
+ * A generous timeout is safe because a rung is only ever asked after the chat rung already returned a
+ * completion, so the endpoint is known alive; this waits on a slow MODEL, never a dead host.
  */
-export const CAPABILITY_TIMEOUT = Duration.seconds(120)
+export interface ProbeLimits {
+  readonly timeout: Duration.Duration
+  readonly maxTokens: number
+}
+
+export const probeLimits = (connection: ConfigProviderConnection.Info | undefined): ProbeLimits => ({
+  timeout: Duration.millis(ConfigProviderConnection.capabilityProbeTimeoutMs(connection)),
+  maxTokens: ConfigProviderConnection.capabilityProbeMaxTokens(connection),
+})
 
 /**
  * Room for a reasoning pass AND the answer.
@@ -168,7 +178,6 @@ export const CAPABILITY_TIMEOUT = Duration.seconds(120)
  * thinking model spends before it starts. Measured 2026-08-13: at 64 the JSON rung returned nothing
  * at all on Holo3.1.
  */
-const PROBE_TOKENS = 512
 
 /**
  * WHICH serving process answered, remembered across the rungs of one negotiation.
@@ -181,7 +190,13 @@ let seenFingerprint: string | undefined
 
 const capabilityAsk = (
   client: HttpClient.HttpClient,
-  input: { baseURL: string; path: string; headers: Record<string, string>; body: Record<string, unknown> },
+  input: {
+    baseURL: string
+    path: string
+    headers: Record<string, string>
+    body: Record<string, unknown>
+    timeout: Duration.Duration
+  },
 ): Effect.Effect<ProviderCapability.Response> =>
   client
     .execute(
@@ -220,11 +235,12 @@ const capabilityAsk = (
             ),
       ),
       Effect.timeoutOrElse({
-        duration: CAPABILITY_TIMEOUT,
+        duration: input.timeout,
         orElse: () =>
           Effect.succeed<ProviderCapability.Response>({
             kind: "transport",
-            detail: `no answer within ${Duration.toSeconds(CAPABILITY_TIMEOUT)}s`,
+            // Names the bound that stopped it, because the fix is a setting the reader can change.
+            detail: `no answer within ${Duration.toSeconds(input.timeout)}s`,
           }),
       }),
       Effect.catch((error) =>
@@ -280,6 +296,8 @@ export const probeCapabilities = (
     authStyle: ConfigProviderPreset.AuthStyle
     headers: Record<string, string>
     chat: ProviderCapability.Outcome
+    /** Read from `provider_connection` by the caller — see `probeLimits`. */
+    limits?: ProbeLimits
   },
 ): Effect.Effect<ProviderCapability.Report & { readonly servedBy?: string }> =>
   Effect.gen(function* () {
@@ -300,8 +318,10 @@ export const probeCapabilities = (
     // JSON rung came back empty and scored `unsupported` for a format the endpoint handles. It is
     // also the room the whole tool call needs: a budget too small truncates the arguments, and the
     // probe would then measure OUR budget and record it as the endpoint's failure.
-    const base = wire.base(input.modelID, PROBE_TOKENS)
-    const ask = (body: Record<string, unknown>) => capabilityAsk(client, { ...input, path: wire.path, body })
+    const limits = input.limits ?? probeLimits(undefined)
+    const base = wire.base(input.modelID, limits.maxTokens)
+    const ask = (body: Record<string, unknown>) =>
+      capabilityAsk(client, { ...input, path: wire.path, body, timeout: limits.timeout })
 
     const json =
       wire.jsonMode === undefined
@@ -397,8 +417,11 @@ export const probeCompletion = (
     modelID: string
     authStyle: ConfigProviderPreset.AuthStyle
     headers: Record<string, string>
+    /** From `provider_connection.completion_timeout_ms`; defaulted when a caller has no config. */
+    timeoutMs?: number
   },
 ): Effect.Effect<CompletionProbe> => {
+  const timeoutMs = input.timeoutMs ?? ConfigProviderConnection.DEFAULT_COMPLETION_TIMEOUT_MS
   const anthropic = input.authStyle === "anthropic"
   const url = `${input.baseURL.replace(/\/+$/, "")}/${anthropic ? "messages" : "chat/completions"}`
   const body = anthropic
@@ -464,13 +487,20 @@ export const probeCompletion = (
         )
       }),
       Effect.timeoutOrElse({
-        duration: COMPLETION_TIMEOUT,
+        duration: Duration.millis(timeoutMs),
         orElse: () =>
           Effect.succeed<CompletionProbe>({
             kind: "failed",
             status: "unreachable",
             latencyMs: Date.now() - started,
-            detail: `The model accepted discovery but did not generate within ${COMPLETION_TIMEOUT}. It may be loading or overloaded; try again or increase its connection timeout.`,
+            // ⚠️ This sentence used to end "increase its connection timeout" while the bound it hit
+            // was compiled in — pointing at `stall_timeout_ms`, which governs a streaming turn and
+            // never this. A repair instruction naming a knob that cannot repair it is worse than
+            // none, so the knob now exists and the sentence names it.
+            detail:
+              `The model accepted discovery but did not generate within ` +
+              `${Duration.toSeconds(Duration.millis(timeoutMs))} seconds. It may be loading or overloaded; ` +
+              `try again, or raise provider_connection.completion_timeout_ms.`,
           }),
       }),
       Effect.catch((error) =>
@@ -625,8 +655,16 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
         : authStyle === "anthropic"
           ? { "anthropic-version": "2023-06-01" }
           : {}
+      // Read THROUGH to the store, once per probe: every bound below is a property of the user's
+      // hardware, and a settings change must not need a restart to take effect (ruling 3).
+      const connection = (yield* cfg.get()).provider_connection
       const started = Date.now()
-      const transport = yield* probeEndpoint(http, url, authHeaders)
+      const transport = yield* probeEndpoint(
+        http,
+        url,
+        authHeaders,
+        ConfigProviderConnection.discoveryTimeoutMs(connection),
+      )
       const latencyMs = Date.now() - started
       // Every non-`ok` arm already carries the status the wire schema will show, including the
       // airgap refusal — which is `error` + an airgap-shaped detail, deliberately NOT `unreachable`.
@@ -658,7 +696,13 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
         let completion: CompletionProbe | undefined
         for (let attempt = 1; attempt <= attempts; attempt++) {
           completionAttempts = attempt
-          completion = yield* probeCompletion(http, { baseURL, modelID: wireModelID, authStyle, headers: authHeaders })
+          completion = yield* probeCompletion(http, {
+            baseURL,
+            modelID: wireModelID,
+            authStyle,
+            headers: authHeaders,
+            timeoutMs: ConfigProviderConnection.completionTimeoutMs(connection),
+          })
           completionLatencyMs = (completionLatencyMs ?? 0) + completion.latencyMs
           if (completion.kind === "ok" || completion.status === "auth" || completion.status === "error") break
         }
@@ -696,6 +740,10 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
           // Chat is not re-asked: `probeCompletion` above already proved it, and a second identical
           // request would be a second chance to disagree with the first.
           chat: { kind: "supported" },
+          // Read THROUGH to the store here, at the point of use — a user who raised the bound
+          // because their local model is slow must not have to restart the instance for the very
+          // next Re-test to honour it.
+          limits: probeLimits(connection),
         })
         // 🔴 Remembered, or the measurement dies with the request that made it: the screen would
         // tell the user this endpoint needs prompted tools and the very next turn would go out

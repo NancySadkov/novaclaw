@@ -522,7 +522,13 @@ describe("authored annotations cannot drift", () => {
       ConfigProjection.renderKey("provider_connection", 1)
         .split("\n")
         .filter((line) => line.trim().startsWith("default:")),
-    ).toEqual(["    default: 300000 (from config/provider-connection.ts DEFAULT_STALL_TIMEOUT_MS)"])
+    ).toEqual([
+      "    default: 300000 (from config/provider-connection.ts DEFAULT_STALL_TIMEOUT_MS)",
+      "    default: 5000 (from config/provider-connection.ts DEFAULT_DISCOVERY_TIMEOUT_MS)",
+      "    default: 45000 (from config/provider-connection.ts DEFAULT_COMPLETION_TIMEOUT_MS)",
+      "    default: 120000 (from config/provider-connection.ts DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS)",
+      "    default: 512 (from config/provider-connection.ts DEFAULT_CAPABILITY_PROBE_MAX_TOKENS)",
+    ])
   })
 
   test("legal values and constraints come off the schema's own checks", () => {
@@ -565,36 +571,34 @@ const stores = AppNodeBuilder.build(
 >
 
 describe("a repair the projection describes actually lands", () => {
-  it.effect(
-    "a complete capability service declaration persists through the PATCH /config write path",
-    () =>
-      Effect.gen(function* () {
-        const declaration = {
-          capabilities: ["document.parse.native"],
-          transport: {
-            type: "streamable-http" as const,
-            url: "http://127.0.0.1:9010/mcp",
-            audience: "novaclaw-local",
-          },
-          locality: "local" as const,
-          protocol_revision: "2025-06-18",
-          types: ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
-          limits: { input_bytes: 16_777_216, handle_bytes: 33_554_432 },
-          resources: { estimated_resident_bytes: 1_073_741_824, estimated_peak_bytes: 1_610_612_736 },
-          warmup_timeout_ms: 120_000,
-          idle_timeout_ms: 300_000,
-          health: { interval_ms: 30_000, timeout_ms: 5_000 },
-          device: "spark-services",
-        }
-        const consumed = yield* ConfigStoreWrite.apply(
-          Schema.decodeUnknownSync(Config.Info)({ capability_services: { anydoc: declaration } }),
-        )
-        expect([...consumed]).toEqual(["capability_services"])
-        const stored = (yield* ConfigStoreWrite.overlay({})) as {
-          capability_services: Record<string, typeof declaration>
-        }
-        expect(stored.capability_services.anydoc).toEqual(declaration)
-      }).pipe(Effect.provide(stores)),
+  it.effect("a complete capability service declaration persists through the PATCH /config write path", () =>
+    Effect.gen(function* () {
+      const declaration = {
+        capabilities: ["document.parse.native"],
+        transport: {
+          type: "streamable-http" as const,
+          url: "http://127.0.0.1:9010/mcp",
+          audience: "novaclaw-local",
+        },
+        locality: "local" as const,
+        protocol_revision: "2025-06-18",
+        types: ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+        limits: { input_bytes: 16_777_216, handle_bytes: 33_554_432 },
+        resources: { estimated_resident_bytes: 1_073_741_824, estimated_peak_bytes: 1_610_612_736 },
+        warmup_timeout_ms: 120_000,
+        idle_timeout_ms: 300_000,
+        health: { interval_ms: 30_000, timeout_ms: 5_000 },
+        device: "spark-services",
+      }
+      const consumed = yield* ConfigStoreWrite.apply(
+        Schema.decodeUnknownSync(Config.Info)({ capability_services: { anydoc: declaration } }),
+      )
+      expect([...consumed]).toEqual(["capability_services"])
+      const stored = (yield* ConfigStoreWrite.overlay({})) as {
+        capability_services: Record<string, typeof declaration>
+      }
+      expect(stored.capability_services.anydoc).toEqual(declaration)
+    }).pipe(Effect.provide(stores)),
   )
 
   it.effect(

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Duration, Effect } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/unstable/http"
 import { ProviderCapability } from "@novaclaw/core/provider-capability"
-import { CAPABILITY_TIMEOUT, probeCapabilities } from "../../src/server/routes/instance/httpapi/handlers/provider"
+import { probeCapabilities, probeLimits } from "../../src/server/routes/instance/httpapi/handlers/provider"
 
 /**
  * CAPABILITY NEGOTIATION over recorded endpoint responses.
@@ -16,7 +16,11 @@ import { CAPABILITY_TIMEOUT, probeCapabilities } from "../../src/server/routes/i
 /** Replies in the order the rungs are asked, and records what was sent. */
 const run = async (
   replies: ReadonlyArray<Response>,
-  options: { readonly authStyle?: "bearer" | "anthropic"; readonly chat?: ProviderCapability.Outcome } = {},
+  options: {
+    readonly authStyle?: "bearer" | "anthropic"
+    readonly chat?: ProviderCapability.Outcome
+    readonly limits?: { readonly timeout: Duration.Duration; readonly maxTokens: number }
+  } = {},
 ) => {
   const sent: Array<Record<string, unknown>> = []
   const urls: Array<string> = []
@@ -47,6 +51,7 @@ const run = async (
       authStyle: options.authStyle ?? "bearer",
       headers: {},
       chat: options.chat ?? { kind: "supported" },
+      ...(options.limits === undefined ? {} : { limits: options.limits }),
     }),
   )
   return { report, sent, urls }
@@ -348,13 +353,32 @@ describe("the Anthropic messages wire", () => {
   })
 })
 
-describe("how long a rung may take", () => {
-  test("🔴 the bound clears a MEASURED slow local model, with headroom", () => {
+describe("the probe's own limits are a SETTING, not a constant", () => {
+  test("🔴 the shipped defaults clear a MEASURED slow local model, with headroom", () => {
     // 26.8s: a 4B thinking model on a laptop Vulkan build, thinking and then emitting the capture
     // call. At the old 30s bound that rung timed out and a natively-capable model was recorded as
     // unmeasured — the probe measuring itself, exactly like the token-budget defect before it.
-    // A rung is only asked after chat already returned a completion, so a generous bound here waits
-    // on a slow MODEL, never on a dead host.
-    expect(Duration.toSeconds(CAPABILITY_TIMEOUT)).toBeGreaterThanOrEqual(90)
+    const shipped = probeLimits(undefined)
+    expect(Duration.toSeconds(shipped.timeout)).toBeGreaterThanOrEqual(90)
+    expect(shipped.maxTokens).toBeGreaterThanOrEqual(256)
+  })
+
+  test("🔴 a stored value WINS over the shipped default, in both directions", () => {
+    // The self-healing law's actual test: the number is a property of the user's slowest model and
+    // their hardware, so an operator whose probe times out must be able to raise it from inside the
+    // OS. A default that could not be overridden would make a wrong channel permanent.
+    const raised = probeLimits({ capability_probe_timeout_ms: 600_000, capability_probe_max_tokens: 4096 } as never)
+    expect(Duration.toMillis(raised.timeout)).toBe(600_000)
+    expect(raised.maxTokens).toBe(4096)
+  })
+
+  test("the configured budget is what every rung actually asks for", () => {
+    // A knob nothing reads is worse than no knob: the screen would accept the value and the probe
+    // would keep using its own.
+    return run([message('{"ok":true}'), nativeCall(GOOD_ARGS), message("{}")], {
+      limits: { timeout: Duration.seconds(120), maxTokens: 1234 },
+    }).then(({ sent }) => {
+      for (const body of sent) expect(body["max_tokens"]).toBe(1234)
+    })
   })
 })
