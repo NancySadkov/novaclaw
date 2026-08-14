@@ -40,6 +40,31 @@ const GlobalDiscovery = Schema.Struct({
   ),
 })
 
+/**
+ * Community P1 — the instance's identity INCLUDING its secret, for backup.
+ *
+ * 🔴 This response IS the instance. Anyone holding it can sign as this peer, in a network with no
+ * authority to appeal to and no way to revoke.
+ *
+ * It exists because the alternative is worse: with no registry there is no password reset, so a dead
+ * disk without a backup loses the identity, its contacts and its history permanently — the "breaks
+ * in your hands" failure a normal person must never meet. That is also why the surface belongs in
+ * ordinary Settings rather than Developer mode: hiding it there means the users who most need a
+ * backup are exactly the ones who never take one.
+ *
+ * ⚠️ Honest limit: this is not, and cannot be, unreachable by an agent. An agent with shell access
+ * on this host can read the database and the credential key directly. What is enforceable — and
+ * what is done — is that NO agent-facing TOOL and no config path exposes it, so obtaining it takes
+ * a deliberate act rather than an ordinary capability.
+ */
+const GlobalIdentityBackup = Schema.Struct({
+  version: Schema.Literal(1),
+  id: Schema.String,
+  networkID: Schema.String,
+  /** The Ed25519 secret, base64url. The whole reason this endpoint is a POST and not a GET. */
+  secretKey: Schema.String,
+})
+
 const UsageItem = Schema.Struct({
   id: Schema.String,
   label: Schema.String,
@@ -127,6 +152,7 @@ export const GlobalPaths = {
   dispose: "/global/dispose",
   discovery: "/global/discovery",
   resources: "/global/resources",
+  identityBackup: "/global/identity/backup",
 } as const
 
 export const GlobalApi = HttpApi.make("global").add(
@@ -186,6 +212,19 @@ export const GlobalApi = HttpApi.make("global").add(
           identifier: "global.discovery",
           summary: "Discover LAN instances",
           description: "Scan the local network (mDNS) for NovaClaw instances advertising themselves via serve --mdns.",
+        }),
+      ),
+      // POST rather than GET, deliberately: a secret does not belong in a URL that proxies, browser
+      // history and access logs will happily record, and the method makes taking a copy an act
+      // rather than a page load.
+      HttpApiEndpoint.post("identityBackup", GlobalPaths.identityBackup, {
+        success: described(GlobalIdentityBackup, "The instance identity, including its secret key"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "global.identity.backup",
+          summary: "Export the instance identity",
+          description:
+            "Export this instance's cryptographic identity INCLUDING its secret key, so it can be restored after a disk failure. Anyone holding the result can sign as this instance; there is no revocation.",
         }),
       ),
       HttpApiEndpoint.get("resources", GlobalPaths.resources, {

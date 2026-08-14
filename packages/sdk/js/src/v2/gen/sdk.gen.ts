@@ -487,6 +487,24 @@ class ApiGlobalConfig extends NovaClawApiClient {
   }
 }
 
+class ApiGlobalIdentity extends NovaClawApiClient {
+  /**
+   * Export the instance identity
+   *
+   * Export this instance's cryptographic identity INCLUDING its secret key, so it can be restored after a disk failure. Anyone holding the result can sign as this instance; there is no revocation.
+   */
+  public backup<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).post<
+      T.GlobalIdentityBackupResponses,
+      T.GlobalIdentityBackupErrors,
+      ThrowOnError
+    >({
+      url: "/global/identity/backup",
+      ...options,
+    })
+  }
+}
+
 class ApiGlobal extends NovaClawApiClient {
   /**
    * Get health
@@ -551,6 +569,11 @@ class ApiGlobal extends NovaClawApiClient {
   private _config?: ApiGlobalConfig
   get config(): ApiGlobalConfig {
     return (this._config ??= new ApiGlobalConfig({ client: this.client }))
+  }
+
+  private _identity?: ApiGlobalIdentity
+  get identity(): ApiGlobalIdentity {
+    return (this._identity ??= new ApiGlobalIdentity({ client: this.client }))
   }
 }
 

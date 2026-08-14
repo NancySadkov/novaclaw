@@ -85,6 +85,11 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       }
     })
 
+    const identityBackup = Effect.fn("GlobalHttpApi.identityBackup")(function* () {
+      // The store owns the shape and the encryption; this handler only carries it to the wire.
+      return yield* identity.backup()
+    })
+
     // Remote-access R7: a bounded LAN scan for NovaClaw instances advertising via serve --mdns.
     // Discovery is an INSTANCE capability (the UI is a thin client and may not be on the LAN or
     // able to open multicast sockets at all — the web build cannot); the scanning instance is.
@@ -164,5 +169,6 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       .handle("dispose", dispose)
       .handle("discovery", discovery)
       .handle("resources", resources)
+      .handle("identityBackup", identityBackup)
   }),
 )

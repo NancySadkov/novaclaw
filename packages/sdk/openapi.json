@@ -557,6 +557,61 @@
         ]
       }
     },
+    "/global/identity/backup": {
+      "post": {
+        "tags": ["global"],
+        "operationId": "global.identity.backup",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The instance identity, including its secret key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "type": "number",
+                      "enum": [1]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "networkID": {
+                      "type": "string"
+                    },
+                    "secretKey": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["version", "id", "networkID", "secretKey"],
+                  "additionalProperties": false,
+                  "description": "The instance identity, including its secret key"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Export this instance's cryptographic identity INCLUDING its secret key, so it can be restored after a disk failure. Anyone holding the result can sign as this instance; there is no revocation.",
+        "summary": "Export the instance identity",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.global.identity.backup({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/global/resources": {
       "get": {
         "tags": ["global"],

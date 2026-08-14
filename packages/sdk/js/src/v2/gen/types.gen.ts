@@ -8311,6 +8311,36 @@ export type GlobalDiscoveryResponses = {
 
 export type GlobalDiscoveryResponse = GlobalDiscoveryResponses[keyof GlobalDiscoveryResponses]
 
+export type GlobalIdentityBackupData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/global/identity/backup"
+}
+
+export type GlobalIdentityBackupErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type GlobalIdentityBackupError = GlobalIdentityBackupErrors[keyof GlobalIdentityBackupErrors]
+
+export type GlobalIdentityBackupResponses = {
+  /**
+   * The instance identity, including its secret key
+   */
+  200: {
+    version: 1
+    id: string
+    networkID: string
+    secretKey: string
+  }
+}
+
+export type GlobalIdentityBackupResponse = GlobalIdentityBackupResponses[keyof GlobalIdentityBackupResponses]
+
 export type GlobalResourcesData = {
   body?: never
   path?: never

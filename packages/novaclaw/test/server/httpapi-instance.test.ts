@@ -106,6 +106,30 @@ describe("instance HttpApi", () => {
     }),
   )
 
+  it.live("🔴 the identity backup carries the secret, and only this endpoint does", () =>
+    Effect.gen(function* () {
+      const health = (yield* (yield* HttpClient.get("/global/health")).json) as { networkID: string }
+      const response = yield* HttpClientRequest.post("/global/identity/backup").pipe(HttpClient.execute)
+      expect(response.status).toBe(200)
+      const backup = (yield* response.json) as { version: number; networkID: string; secretKey: string }
+
+      // It must be the SAME instance, or a restore would install a different peer than the one the
+      // user thought they were backing up.
+      expect(backup.networkID).toBe(health.networkID)
+      expect(backup.version).toBe(1)
+
+      // The secret is a real 32-byte key — the point of the whole endpoint. A backup that carried
+      // only public material would restore an instance that cannot sign, and the failure would not
+      // surface until the day it was needed.
+      expect(Buffer.from(backup.secretKey, "base64url")).toHaveLength(32)
+
+      // ⚠️ And the ordinary, frequently-polled endpoint still leaks nothing: a secret that also
+      // appeared on /global/health would be handed to every client that ever checked liveness.
+      const raw = JSON.stringify(yield* (yield* HttpClient.get("/global/health")).json)
+      expect(raw).not.toContain(backup.secretKey)
+    }),
+  )
+
   it.live("serves the OpenAPI document", () =>
     Effect.gen(function* () {
       const response = yield* HttpClient.get("/doc")
