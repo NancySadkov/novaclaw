@@ -141,12 +141,25 @@ export const probeEndpoint = (
  * ⚠️ **No side effects by construction.** The tool offered is capture-only (`ProviderCapability`):
  * it exists to be called and does nothing when it is. There is no executor here to forget that.
  *
- * ⚠️ **Only the OpenAI-chat wire shape.** The Anthropic channel puts tools in a different envelope,
- * and sending the wrong one would measure our own request rather than the endpoint. It reports
- * `not-attempted` with that reason instead of guessing — an honest gap beats a wrong verdict, which
- * `ProviderCapability` is built around.
+ * ⚠️ **Two wire shapes, chosen by auth style.** Tools live in a different envelope on the Anthropic
+ * messages wire, and sending the wrong one would measure our own request rather than the endpoint —
+ * so the shape comes from `ProviderCapability.WIRES` and the rung logic is written once above it.
  */
-const CAPABILITY_TIMEOUT = Duration.seconds(30)
+
+/**
+ * How long ONE rung may take.
+ *
+ * ⚠️ Measured, and generous on purpose. A 4B thinking model on a laptop's Vulkan build took **26.8 s**
+ * to think and then emit the capture call — against the old 30 s bound the rung timed out, and a
+ * model that plainly supports native tools was recorded as unmeasured, which durably routes it to
+ * the prompted channel. That is the same failure as scoring our own token budget as a missing
+ * capability: the probe measuring ITSELF.
+ *
+ * The generosity is safe because a rung is only ever asked after the chat rung already returned a
+ * completion, so the endpoint is known to be alive and answering. This bound is for a slow model,
+ * not for a dead host — discovery and the completion probe keep their own tighter limits.
+ */
+export const CAPABILITY_TIMEOUT = Duration.seconds(120)
 
 /**
  * Room for a reasoning pass AND the answer.

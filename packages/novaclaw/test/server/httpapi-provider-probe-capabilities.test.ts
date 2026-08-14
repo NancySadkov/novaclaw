@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Duration, Effect } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/unstable/http"
 import { ProviderCapability } from "@novaclaw/core/provider-capability"
-import { probeCapabilities } from "../../src/server/routes/instance/httpapi/handlers/provider"
+import { CAPABILITY_TIMEOUT, probeCapabilities } from "../../src/server/routes/instance/httpapi/handlers/provider"
 
 /**
  * CAPABILITY NEGOTIATION over recorded endpoint responses.
@@ -345,5 +345,16 @@ describe("the Anthropic messages wire", () => {
     const { report, sent } = await run([], { ...anth, chat: { kind: "unknown", fault: "transport", detail: "x" } })
     expect(sent).toHaveLength(0)
     expect(report.choice).toBe("unknown")
+  })
+})
+
+describe("how long a rung may take", () => {
+  test("🔴 the bound clears a MEASURED slow local model, with headroom", () => {
+    // 26.8s: a 4B thinking model on a laptop Vulkan build, thinking and then emitting the capture
+    // call. At the old 30s bound that rung timed out and a natively-capable model was recorded as
+    // unmeasured — the probe measuring itself, exactly like the token-budget defect before it.
+    // A rung is only asked after chat already returned a completion, so a generous bound here waits
+    // on a slow MODEL, never on a dead host.
+    expect(Duration.toSeconds(CAPABILITY_TIMEOUT)).toBeGreaterThanOrEqual(90)
   })
 })

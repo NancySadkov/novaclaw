@@ -400,12 +400,15 @@ const anthropicBlocks = (payload: unknown): ReadonlyArray<Record<string, unknown
 /**
  * The two wires a probe can speak.
  *
- * ⚠️ `anthropic-messages` is ASSEMBLY-verified only. Its shapes are the ones the shipped
- * `anthropic-messages` protocol encodes and decodes, and the ones the completion probe already posts
- * to `/messages`; its rungs are covered against recorded responses, asserting the path, the tool
- * shape and every field read. What that does NOT establish is how a live Anthropic endpoint answers
- * — no verdict here has come from one, and that is a different claim. Treat a surprising verdict
- * from this wire as evidence about the wire, not about the model, until one has.
+ * `anthropic-messages` has been driven end to end against a REAL server speaking this envelope:
+ * `llama-server` serves `/v1/messages` alongside the OpenAI path, and every designed behaviour fired
+ * correctly there — a `supported` native verdict off a real `tool_use` block, a `budget` fault off a
+ * real `stop_reason: "max_tokens"`, and the `not-attempted` JSON rung. See
+ * `packages/novaclaw/test/live/anthropic-probe-live.ts`.
+ *
+ * ⚠️ What that still does not establish is how **api.anthropic.com** answers. It is unreachable from
+ * here, so no verdict has come from the vendor's own server — a different claim, and the one the
+ * ledger still tracks.
  */
 export const WIRES: Readonly<Record<"openai-chat" | "anthropic-messages", Wire>> = {
   "openai-chat": {
