@@ -84,6 +84,38 @@ export class RestoreError extends Schema.TaggedErrorClass<RestoreError>()("Insta
   message: Schema.String,
 }) {}
 
+/** Its own domain, so a succession can never be replayed as a channel message or the reverse. */
+const SUCCESSION_DOMAIN = "novaclaw/community/succession/1"
+
+/**
+ * The bytes a successor statement is signed over.
+ *
+ * Lives HERE rather than beside the statement type purely to keep the dependency one-way:
+ * `succession.ts` needs this module's key helpers to verify, so this module must not import it back.
+ * Length-prefixed for the same reason as every other signed thing — two adjacent variable-length
+ * fields concatenated are ambiguous, and one signature would attest to a statement never made.
+ */
+export const successionBytes = (input: {
+  readonly predecessor: string
+  readonly successor: string
+  readonly at: number
+}): Uint8Array => {
+  const parts: Buffer[] = []
+  const push = (value: string) => {
+    const bytes = Buffer.from(value, "utf8")
+    const length = Buffer.alloc(4)
+    length.writeUInt32BE(bytes.length, 0)
+    parts.push(length, bytes)
+  }
+  push(SUCCESSION_DOMAIN)
+  push(input.predecessor)
+  push(input.successor)
+  const at = Buffer.alloc(8)
+  at.writeBigUInt64BE(BigInt(Math.trunc(input.at)), 0)
+  parts.push(at)
+  return Buffer.concat(parts)
+}
+
 export interface Identity {
   /** The local handle, minted once (`ins_…`). What mDNS and /global/health already advertise. */
   readonly id: string
@@ -117,6 +149,22 @@ export interface Interface {
     backup: Backup,
     options?: { readonly replace?: boolean },
   ) => Effect.Effect<Identity, RestoreError>
+  /**
+   * Rotate to a fresh keypair, returning the new identity and a statement the OLD key signed.
+   *
+   * 🔴 For PLANNED moves only. A thief holding the secret can rotate exactly as easily as the owner,
+   * so this cannot recover a compromised key and must never be offered as if it could — recovery
+   * needs contacts re-verifying out of band, which is a different feature with a human in it.
+   */
+  readonly rotate: () => Effect.Effect<{ readonly identity: Identity; readonly statement: SuccessorStatement }>
+}
+
+/** What `rotate` hands back: the retiring key's own signature over the handover. */
+export interface SuccessorStatement {
+  readonly predecessor: string
+  readonly successor: string
+  readonly at: number
+  readonly signature: string
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/InstanceIdentityStore") {}
@@ -190,6 +238,47 @@ export const layer = Layer.effect(
         const stored = yield* ensure()
         const secret = yield* cipher.decrypt(stored.secret_key ?? "", AAD).pipe(Effect.orDie)
         return sign(null, Buffer.from(message), privateKeyFromRaw(Buffer.from(secret, "base64url")))
+      }),
+      rotate: Effect.fn("InstanceIdentityStore.rotate")(function* () {
+        const stored = yield* ensure()
+        const previousPublic = Buffer.from(stored.public_key ?? "", "base64url")
+        const previousSecret = yield* cipher.decrypt(stored.secret_key ?? "", AAD).pipe(Effect.orDie)
+
+        const { publicKey, privateKey } = generateKeyPairSync("ed25519")
+        const nextPublic = rawPublicKey(publicKey.export({ type: "spki", format: "der" }) as Buffer)
+        const nextSecret = (privateKey.export({ type: "pkcs8", format: "der" }) as Buffer).subarray(
+          PKCS8_PREFIX.length,
+        )
+
+        const statement = {
+          predecessor: networkID(previousPublic),
+          successor: networkID(nextPublic),
+          at: Date.now(),
+        }
+        /**
+         * ⚠️ Signed with the OLD key, and it has to be: the whole claim is "the peer you already
+         * trust says this new key is also them". A statement signed by the NEW key would prove
+         * nothing to anyone — the successor is a stranger until the predecessor vouches for it.
+         */
+        const signature = sign(
+          null,
+          Buffer.from(successionBytes(statement)),
+          privateKeyFromRaw(Buffer.from(previousSecret, "base64url")),
+        )
+
+        yield* db
+          .update(InstanceIdentityTable)
+          .set({
+            public_key: nextPublic.toString("base64url"),
+            secret_key: cipher.encrypt(nextSecret.toString("base64url"), AAD),
+          })
+          .run()
+          .pipe(Effect.orDie)
+
+        return {
+          identity: { id: stored.id, networkID: networkID(nextPublic), publicKey: nextPublic },
+          statement: { ...statement, signature: signature.toString("base64url") },
+        }
       }),
       backup: Effect.fn("InstanceIdentityStore.backup")(function* () {
         const stored = yield* ensure()
