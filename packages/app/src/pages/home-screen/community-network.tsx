@@ -46,6 +46,21 @@ export const CommunityNetwork: Component = () => {
    * unconditionally, which would have LIED to anyone who turned airgap on — telling them a feature
    * was unfinished when in fact they had switched the network off themselves.
    */
+  /**
+   * The connection state, in one line, ALWAYS on screen.
+   *
+   * 🔴 It used to live only in the empty-channel copy, which meant it vanished the moment a channel
+   * had any messages — exactly when "why is nothing new arriving?" becomes the question. A status a
+   * user can only see while there is nothing to see is not a status.
+   */
+  const status = createMemo(() => {
+    const state = transport()
+    if (state === undefined) return "Checking…"
+    if (state.kind === "online") return `Connected · ${state.peers} ${state.peers === 1 ? "peer" : "peers"}`
+    if (state.kind === "connecting") return "Connecting…"
+    return state.reason === "airgap" ? "Offline mode is on — nothing goes in or out" : "Not connected yet"
+  })
+
   const emptyReason = createMemo(() => {
     const state = transport()
     if (state?.kind === "online") return "No messages yet."
@@ -129,6 +144,18 @@ export const CommunityNetwork: Component = () => {
         <span class="text-[12px] leading-snug text-v2-text-text-muted">
           Runs between NovaClaw instances — no company in the middle, and nobody who can switch it off.
         </span>
+        <div class="mt-1 flex items-center gap-2">
+          {/* A dot, not a warning triangle: not being connected yet is the ORDINARY state of a fresh
+              install, and dressing it as an error would teach people to distrust a working screen. */}
+          <span
+            class="size-1.5 shrink-0 rounded-full"
+            classList={{
+              "bg-v2-text-text-muted": transport()?.kind !== "online",
+              "bg-emerald-400": transport()?.kind === "online",
+            }}
+          />
+          <span class="text-[11px] text-v2-text-text-muted">{status()}</span>
+        </div>
       </div>
 
       <div class="flex flex-col gap-1 rounded-xl bg-v2-background-bg-layer-02 px-3 py-3">
