@@ -14,6 +14,7 @@ import { discoverInstances } from "@/utils/instance-discovery"
 import { useServerManagementController } from "../dialog-select-server"
 import { DialogServerV2 } from "./dialog-server-v2"
 import { InstancesAccess } from "./instances-access"
+import { SettingsIdentityV2 } from "./identity"
 import { SettingsListV2 } from "./parts/list"
 import { AddServerMenu, isWslServer, useFilteredWslServers, WslServerSettings } from "@/wsl/settings"
 
@@ -109,6 +110,10 @@ export const SettingsServersV2: Component = () => {
       </div>
 
       <div class="settings-v2-tab-body settings-v2-servers">
+        {/* This instance's own identity sits above the list of others, because that is what the tab
+            is about: who we are, then who we know. It is also where a user finds the key to hand
+            someone so they can be added as a contact. */}
+        <SettingsIdentityV2 />
         <InstancesAccess />
         <Show
           when={filtered().length > 0 || wslServers().length > 0}

@@ -1226,6 +1226,24 @@ export const dict = {
   "settings.health.unreachable": "This instance could not be reached, so nothing below was checked.",
   "settings.health.recheck": "Check again",
   "settings.health.testProvider": "Test the connection to my model provider",
+  // Community P1 — the instance identity. Plain language on purpose: a user who does not grasp that
+  // the backup file IS their instance will store it carelessly, and there is no reset if they do.
+  "settings.identity.title": "This instance's identity",
+  "settings.identity.networkID": "Instance key",
+  "settings.identity.networkIDDescription": "Share this so others can add you",
+  "settings.identity.networkIDHint":
+    "Your instance's public key. It is how other people's NovaClaw recognises yours — the address behind it can change, this cannot.",
+  "settings.identity.copy": "Copy",
+  "settings.identity.copied": "Copied",
+  "settings.identity.backupTitle": "Back up this identity",
+  "settings.identity.backupDescription": "Save a copy you can restore after a disk failure",
+  "settings.identity.backupHint":
+    "The saved file IS this instance: anyone who has it can act as you, and nobody can undo that. Keep it somewhere private. Without it, a lost disk loses your identity, your contacts and your history for good — there is no way to reset it.",
+  "settings.identity.backupAction": "Back up…",
+  "settings.identity.backupConfirm": "Save the file somewhere private.",
+  "settings.identity.backupProceed": "Save backup",
+  "settings.identity.backupBusy": "Saving…",
+  "settings.identity.backupCancel": "Cancel",
   "settings.storage.resources.title": "This instance's resources",
   // Shown as a hover/tap hint on the Host memory row, not as an always-on paragraph (owner, 2026-08-13).
   "settings.storage.resources.description":
