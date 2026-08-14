@@ -30,6 +30,19 @@ const communityDir = path.join(root, "community")
 const EXTRA_MODULES = [path.join(root, "instance-identity-store.ts")]
 
 /**
+ * Exported FUNCTIONS of a module that has no `Interface` — the other shape a capability takes.
+ *
+ * ⚠️ Added after this ledger missed three modules in a row. `search.ts`, `work.ts` and
+ * `reconcile.ts` export plain functions rather than a service, so a guard that only read
+ * `export interface Interface` could not see them, and all three sat with zero consumers while the
+ * guard reported green. A guard that checks ONE shape proves things about that shape.
+ */
+const exportedFunctions = (source: string): string[] => {
+  if (source.includes("export interface Interface {")) return []
+  return [...source.matchAll(/export const (\w+) = \(/g)].map((match) => match[1]!)
+}
+
+/**
  * Method names on a module's `Interface` — members typed as a FUNCTION.
  *
  * ⚠️ Matching `readonly (\w+):` alone also caught plain data fields (`networkID`, `muted`,
@@ -86,6 +99,22 @@ const EXPECTED_ORPHANS: Record<string, string> = {
   // silently strand themselves: new key, nobody told, and the proof undeliverable. The capability is
   // built and tested; exposing it is P2's job, not P1's.
   "instance-identity-store.ts#rotate": "waiting for P2: a successor statement nobody can receive strands the user",
+  // Queries and summaries arrive FROM PEERS. Built ahead of the transport deliberately — these are
+  // the controls whose absence collapsed Gnutella, and they are cheaper to get right in a test than
+  // in a mesh — but nothing local can call them until something carries a query.
+  "search.ts#consider": "waiting for P2: queries arrive over the network",
+  "search.ts#widen": "waiting for P2: widening is a decision about which PEERS to ask next",
+  "reconcile.ts#bucketOf": "waiting for P2: reconciliation is a conversation with another instance",
+  "reconcile.ts#summarize": "waiting for P2: the summary is sent TO a peer",
+  "reconcile.ts#differing": "waiting for P2: compares OUR summary against a peer's",
+  "reconcile.ts#idsIn": "waiting for P2: answers a peer's request for a bucket",
+  "reconcile.ts#missing": "waiting for P2: decides what to request FROM a peer",
+  // 🔴 The one that is NOT transport-blocked. Proof-of-work is computed on send and checked on
+  // receive, both local. Wiring it means the signed envelope carries a nonce, `post` solves before
+  // returning, and `record` refuses work that does not clear the difficulty — a change to the wire
+  // format, which is free NOW and expensive after anything ships. That is the next concrete task in
+  // this program that needs no transport and no decision from anyone.
+  "work.ts#solve": "NOT blocked — wiring PoW into post/record is the next task; see the note above",
 }
 
 describe("community capabilities have callers", () => {
@@ -100,7 +129,7 @@ describe("community capabilities have callers", () => {
   for (const file of modules) {
     const moduleName = path.basename(file)
     const source = fs.readFileSync(file, "utf8")
-    const methods = declaredMethods(source)
+    const methods = [...declaredMethods(source), ...exportedFunctions(source)]
     if (methods.length === 0) continue
 
     test(`${moduleName}: ${methods.length} capability(ies) are each used somewhere`, () => {

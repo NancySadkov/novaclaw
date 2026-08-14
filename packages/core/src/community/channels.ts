@@ -161,8 +161,15 @@ export const layer = Layer.effect(
         // Order matters: the cheapest and most decisive checks first, and nothing touches the disk
         // until the message has proved it deserves to.
         if ((yield* subscribed(channel)) === undefined) return { rejected: "not-subscribed" as const }
+        /**
+         * ⚠️ The channel check is kept SEPARATE from `verifyOn` only to name the two rejections
+         * apart — a caller needs to know whether a message was forged or merely misdelivered. The
+         * combined `verifyOn` is then used for the verdict itself, so the rule that "a valid
+         * signature on another channel's message is not valid HERE" lives in one place rather than
+         * being re-derived by every reader of a channel.
+         */
         if (message.channel !== channel) return { rejected: "wrong-channel" as const }
-        if (!CommunityMessage.verify(message)) return { rejected: "unverified" as const }
+        if (!CommunityMessage.verifyOn(channel, message)) return { rejected: "unverified" as const }
 
         /**
          * 🔴 A blocked author is dropped at INGRESS, not filtered at read.
