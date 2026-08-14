@@ -9,6 +9,7 @@ import {
   communityContacts,
   communityJoinChannel,
   communityPost,
+  communitySetBlocked,
   communityTransportState,
 } from "@/utils/community-api"
 import { instanceIdentity } from "@/utils/identity-api"
@@ -79,6 +80,13 @@ export const CommunityNetwork: Component = () => {
     }
   }
 
+  const toggleBlock = async (networkID: string, blocked: boolean) => {
+    const current = connection()
+    if (!current) return
+    await communitySetBlocked(current.http, networkID, blocked)
+    await contactActions.refetch()
+  }
+
   const say = async () => {
     const current = connection()
     const body = draft().trim()
@@ -139,9 +147,20 @@ export const CommunityNetwork: Component = () => {
                 <span class="min-w-0 truncate text-[12px] text-v2-text-text-base">
                   {contact.petname ?? contact.networkID}
                 </span>
-                <span class="shrink-0 text-[11px] text-v2-text-text-muted">
-                  {contact.blocked ? "blocked" : contact.routes.length > 0 ? "known address" : "no address yet"}
-                </span>
+                <div class="flex shrink-0 items-center gap-2">
+                  <span class="text-[11px] text-v2-text-text-muted">
+                    {contact.blocked ? "blocked" : contact.routes.length > 0 ? "known address" : "no address yet"}
+                  </span>
+                  {/* The only power a user has here, so it belongs on the row rather than behind a
+                      menu — and it acts at ingress, not as a display filter. */}
+                  <ButtonV2
+                    variant="ghost"
+                    size="small"
+                    onClick={() => void toggleBlock(contact.networkID, !contact.blocked)}
+                  >
+                    {contact.blocked ? "Unblock" : "Block"}
+                  </ButtonV2>
+                </div>
               </div>
             )}
           </For>

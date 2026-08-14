@@ -59,6 +59,21 @@ export function communityAddContact(
   return instanceFetch<CommunityContact>(server, { route: "api/community/contact", method: "POST", body: input })
 }
 
+/**
+ * Block or unblock a peer.
+ *
+ * 🔴 With no moderator anywhere in this network, this is the ONLY power a user has over what they
+ * receive — and it acts at ingress, so a blocked peer's messages are refused as they arrive rather
+ * than stored and hidden.
+ */
+export function communitySetBlocked(server: ServerConnection.HttpBase, networkID: string, blocked: boolean) {
+  return instanceFetch<boolean>(server, {
+    route: `api/community/contact/${encodeURIComponent(networkID)}/block`,
+    method: "POST",
+    body: { blocked },
+  })
+}
+
 export function communityChannels(server: ServerConnection.HttpBase) {
   return instanceFetch<CommunityChannel[]>(server, { route: "api/community/channel" })
 }
