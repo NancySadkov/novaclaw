@@ -21,6 +21,15 @@ const root = path.join(import.meta.dir, "..", "src")
 const communityDir = path.join(root, "community")
 
 /**
+ * Modules outside `community/` that this program owns and that must obey the same rule.
+ *
+ * ⚠️ Added after the ledger caught its own blind spot: `InstanceIdentityStore.rotate` had no caller
+ * at all, and P1 had been declared CLOSED on the strength of the capability existing rather than
+ * being reachable. A guard scoped to one directory only proves things about that directory.
+ */
+const EXTRA_MODULES = [path.join(root, "instance-identity-store.ts")]
+
+/**
  * Method names on a module's `Interface` — members typed as a FUNCTION.
  *
  * ⚠️ Matching `readonly (\w+):` alone also caught plain data fields (`networkID`, `muted`,
@@ -72,15 +81,24 @@ const EXPECTED_ORPHANS: Record<string, string> = {
   // channel discovery in P5; shipping the controls first would be UI for a situation nobody is in.
   "channels.ts#leave": "deliberate: meaningless until P5 lets a user join more than one channel",
   "channels.ts#setMuted": "deliberate: meaningless until P5 lets a user join more than one channel",
+  // 🔴 Deliberately unreachable, and it must STAY that way until P2. Rotating issues a successor
+  // statement that no peer can receive without a transport, so a user who rotated today would
+  // silently strand themselves: new key, nobody told, and the proof undeliverable. The capability is
+  // built and tested; exposing it is P2's job, not P1's.
+  "instance-identity-store.ts#rotate": "waiting for P2: a successor statement nobody can receive strands the user",
 }
 
 describe("community capabilities have callers", () => {
-  const modules = fs
-    .readdirSync(communityDir)
-    .filter((name) => name.endsWith(".ts") && !name.endsWith(".sql.ts") && !name.endsWith(".test.ts"))
+  const modules = [
+    ...fs
+      .readdirSync(communityDir)
+      .filter((name) => name.endsWith(".ts") && !name.endsWith(".sql.ts") && !name.endsWith(".test.ts"))
+      .map((name) => path.join(communityDir, name)),
+    ...EXTRA_MODULES,
+  ]
 
-  for (const moduleName of modules) {
-    const file = path.join(communityDir, moduleName)
+  for (const file of modules) {
+    const moduleName = path.basename(file)
     const source = fs.readFileSync(file, "utf8")
     const methods = declaredMethods(source)
     if (methods.length === 0) continue
