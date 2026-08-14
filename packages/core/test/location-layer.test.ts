@@ -75,6 +75,9 @@ const residentTools = [
 ].sort()
 
 const deferredCoreTools = [
+  // DEFERRED for the same reason as `log` and the raw DB surface: reading the P2P community is a
+  // thing a user asks for occasionally, not a capability every turn's prefix should carry.
+  "community",
   "computer",
   "configure",
   "kb",

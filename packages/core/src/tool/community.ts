@@ -82,7 +82,13 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.make({
+        // 🔴 DEFERRED, not resident. `location-layer.test.ts` pins the resident set because residency
+        // is paid on EVERY provider request, and this tool is niche — a user asks about their
+        // community occasionally, not each turn. Registering it like `exit` made it resident by
+        // accident and taxed every agent turn with its schema; `tool_search` discloses it when
+        // somebody actually wants it.
+        [name]: Tool.withDeferred(
+          Tool.make({
           description:
             "Read this instance's peer-to-peer community: joined channels, recent messages, known contacts, and " +
             "whether the network can currently carry anything. READ-ONLY — it cannot post, block, or add contacts, " +
@@ -137,7 +143,8 @@ export const layer = Layer.effectDiscard(
               const messages = yield* channels.history(channel, input.limit ?? 50)
               return { message: formatHistory(channel, messages) }
             }).pipe(Effect.mapError(() => new ToolFailure({ message: "Unable to read the community." }))),
-        }),
+          }),
+        ),
       })
       .pipe(Effect.orDie)
   }),
