@@ -274,7 +274,11 @@ export const outcomeOf = (
     return { kind: "unknown", fault: "transport", detail: `The request did not complete: ${response.detail}` }
   if (response.kind === "http") {
     if (response.status === 401 || response.status === 403)
-      return { kind: "unknown", fault: "auth", detail: `The endpoint rejected the credentials (HTTP ${response.status}).` }
+      return {
+        kind: "unknown",
+        fault: "auth",
+        detail: `The endpoint rejected the credentials (HTTP ${response.status}).`,
+      }
     if (input.parameter !== undefined && rejectsParameter(response.body, input.parameter))
       return {
         kind: "unsupported",
@@ -322,8 +326,7 @@ export const choose = (outcomes: Readonly<Record<Capability, Outcome>>): { choic
   // Chat works and BOTH tool rungs failed. Only call that chat-only when they failed as
   // capabilities: if either is `unknown`, we are guessing, and a guess persisted as a decision is
   // how an endpoint gets stuck without tools for reasons nobody can reconstruct.
-  const measured =
-    outcomes["native-tools"].kind === "unsupported" && outcomes["text-tools"].kind === "unsupported"
+  const measured = outcomes["native-tools"].kind === "unsupported" && outcomes["text-tools"].kind === "unsupported"
   return measured
     ? { choice: "chat-only", rationale: "The endpoint answers, and neither tool channel produced a usable call." }
     : { choice: "unknown", rationale: "The endpoint answers, but its tool channels could not be measured." }
@@ -334,6 +337,139 @@ export const report = (outcomes: Readonly<Record<Capability, Outcome>>): Report 
   outcomes,
   ...choose(outcomes),
 })
+
+/**
+ * The SHAPE half of a negotiation: where to post, and how to read what comes back.
+ *
+ * The rungs' verdicts — what counts as supported, what is a budget fault, what a call naming an
+ * unoffered tool means — are written once against this interface. Only the envelope differs between
+ * wires, and keeping the two apart is what stops a second wire from quietly acquiring a second,
+ * subtly different definition of "supported".
+ */
+export interface Wire {
+  /** Appended to the provider's base URL. */
+  readonly path: string
+  /** The request fields every rung shares, given the model and the token budget. */
+  readonly base: (modelID: string, maxTokens: number) => Record<string, unknown>
+  /** A user turn in this wire's message shape. */
+  readonly ask: (text: string) => Record<string, unknown>
+  /**
+   * Did the endpoint answer in THIS wire's envelope at all?
+   *
+   * ⚠️ Not "was it a good answer". A 2xx in the wrong envelope is a proxy or a gateway answering for
+   * the endpoint, which says nothing about the model and must not be scored as a capability.
+   */
+  readonly answered: (payload: unknown) => boolean
+  readonly text: (payload: unknown) => string
+  readonly toolCall: (payload: unknown) => ToolCall | undefined
+  /** The model stopped because it hit the ceiling, having said nothing. */
+  readonly exhausted: (payload: unknown) => boolean
+  /** How this wire is asked to offer the capture tool, and the parameter a refusal would name. */
+  readonly toolsParameter: string
+  readonly offerCaptureTool: () => Record<string, unknown>
+  /**
+   * How this wire is asked for machine-readable output — ABSENT where the wire has no such
+   * parameter.
+   *
+   * ⚠️ Absent is not `unsupported`. "This endpoint rejects JSON mode" is a claim about the endpoint;
+   * "this wire has no JSON-mode parameter" is a fact about the protocol, and recording the first
+   * when the second is true would blame a server for its wire's vocabulary.
+   */
+  readonly jsonMode?: { readonly parameter: string; readonly request: Record<string, unknown> }
+}
+
+const openAIMessage = (payload: unknown): Record<string, unknown> | undefined => {
+  const choices = (payload as { choices?: unknown } | null)?.choices
+  if (!Array.isArray(choices) || choices.length === 0) return undefined
+  const message = (choices[0] as { message?: unknown } | undefined)?.message
+  return typeof message === "object" && message !== null ? (message as Record<string, unknown>) : undefined
+}
+
+const openAIFinishReason = (payload: unknown): string | undefined => {
+  const choices = (payload as { choices?: unknown } | null)?.choices
+  if (!Array.isArray(choices) || choices.length === 0) return undefined
+  const reason = (choices[0] as { finish_reason?: unknown } | undefined)?.finish_reason
+  return typeof reason === "string" ? reason : undefined
+}
+
+const anthropicBlocks = (payload: unknown): ReadonlyArray<Record<string, unknown>> => {
+  const content = (payload as { content?: unknown } | null)?.content
+  return Array.isArray(content) ? (content.filter((b) => typeof b === "object" && b !== null) as never) : []
+}
+
+/**
+ * The two wires a probe can speak.
+ *
+ * ⚠️ `anthropic-messages` is ASSEMBLY-verified only. Its shapes are the ones the shipped
+ * `anthropic-messages` protocol encodes and decodes, and the ones the completion probe already posts
+ * to `/messages`; its rungs are covered against recorded responses, asserting the path, the tool
+ * shape and every field read. What that does NOT establish is how a live Anthropic endpoint answers
+ * — no verdict here has come from one, and that is a different claim. Treat a surprising verdict
+ * from this wire as evidence about the wire, not about the model, until one has.
+ */
+export const WIRES: Readonly<Record<"openai-chat" | "anthropic-messages", Wire>> = {
+  "openai-chat": {
+    path: "chat/completions",
+    base: (modelID, maxTokens) => ({ model: modelID, temperature: 0, stream: false, max_tokens: maxTokens }),
+    ask: (text) => ({ messages: [{ role: "user", content: text }] }),
+    answered: (payload) => openAIMessage(payload) !== undefined,
+    text: (payload) => {
+      const content = openAIMessage(payload)?.["content"]
+      return typeof content === "string" ? content : ""
+    },
+    toolCall: (payload) => {
+      const calls = openAIMessage(payload)?.["tool_calls"]
+      if (!Array.isArray(calls) || calls.length === 0) return undefined
+      const fn = (calls[0] as { function?: unknown } | undefined)?.function as
+        | { name?: unknown; arguments?: unknown }
+        | undefined
+      if (fn === undefined) return undefined
+      return {
+        name: typeof fn.name === "string" ? fn.name : "",
+        rawArguments: typeof fn.arguments === "string" ? fn.arguments : JSON.stringify(fn.arguments ?? {}),
+      }
+    },
+    exhausted: (payload) => openAIFinishReason(payload) === "length",
+    toolsParameter: "tools",
+    offerCaptureTool: () => ({ tools: [{ type: "function", function: CAPTURE_TOOL }] }),
+    jsonMode: { parameter: "response_format", request: { response_format: { type: "json_object" } } },
+  },
+  "anthropic-messages": {
+    path: "messages",
+    // ⚠️ `max_tokens` is REQUIRED here, not an optional guard as on the OpenAI wire: omitting it is a
+    // 400, so a rung that forgot it would measure our own request and record it as the endpoint's.
+    base: (modelID, maxTokens) => ({ model: modelID, stream: false, max_tokens: maxTokens }),
+    ask: (text) => ({ messages: [{ role: "user", content: text }] }),
+    answered: (payload) => Array.isArray((payload as { content?: unknown } | null)?.content),
+    text: (payload) =>
+      anthropicBlocks(payload)
+        .filter((block) => block["type"] === "text" && typeof block["text"] === "string")
+        .map((block) => block["text"] as string)
+        .join(""),
+    toolCall: (payload) => {
+      const block = anthropicBlocks(payload).find((b) => b["type"] === "tool_use")
+      if (block === undefined) return undefined
+      return {
+        name: typeof block["name"] === "string" ? block["name"] : "",
+        // The arguments arrive already parsed on this wire; re-encoding keeps ONE argument reader
+        // for both wires rather than a second path that could disagree about what is valid.
+        rawArguments: JSON.stringify(block["input"] ?? {}),
+      }
+    },
+    exhausted: (payload) => (payload as { stop_reason?: unknown } | null)?.stop_reason === "max_tokens",
+    toolsParameter: "tools",
+    offerCaptureTool: () => ({
+      tools: [
+        {
+          name: CAPTURE_TOOL.name,
+          description: CAPTURE_TOOL.description,
+          input_schema: CAPTURE_TOOL.parameters,
+        },
+      ],
+    }),
+    // No JSON-mode parameter exists on this wire.
+  },
+}
 
 /**
  * WHICH serving process answered, read off a finished turn's provider metadata.

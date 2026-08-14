@@ -168,11 +168,11 @@ let seenFingerprint: string | undefined
 
 const capabilityAsk = (
   client: HttpClient.HttpClient,
-  input: { baseURL: string; headers: Record<string, string>; body: Record<string, unknown> },
+  input: { baseURL: string; path: string; headers: Record<string, string>; body: Record<string, unknown> },
 ): Effect.Effect<ProviderCapability.Response> =>
   client
     .execute(
-      HttpClientRequest.post(`${input.baseURL.replace(/\/+$/, "")}/chat/completions`, {
+      HttpClientRequest.post(`${input.baseURL.replace(/\/+$/, "")}/${input.path}`, {
         headers: new Headers({ ...input.headers, "content-type": "application/json" }),
         body: HttpBody.jsonUnsafe(input.body),
       }),
@@ -215,52 +215,23 @@ const capabilityAsk = (
           }),
       }),
       Effect.catch((error) =>
-        Effect.succeed<ProviderCapability.Response>({ kind: "transport", detail: transportDetail(error).slice(0, 200) }),
+        Effect.succeed<ProviderCapability.Response>({
+          kind: "transport",
+          detail: transportDetail(error).slice(0, 200),
+        }),
       ),
     )
-
-/** `choices[0].message` for the OpenAI-chat shape, or undefined when the envelope is not that. */
-const firstMessage = (payload: unknown): Record<string, unknown> | undefined => {
-  const choices = (payload as { choices?: unknown } | null)?.choices
-  if (!Array.isArray(choices) || choices.length === 0) return undefined
-  const message = (choices[0] as { message?: unknown } | undefined)?.message
-  return typeof message === "object" && message !== null ? (message as Record<string, unknown>) : undefined
-}
-
-const firstToolCall = (payload: unknown): ProviderCapability.ToolCall | undefined => {
-  const calls = firstMessage(payload)?.["tool_calls"]
-  if (!Array.isArray(calls) || calls.length === 0) return undefined
-  const fn = (calls[0] as { function?: unknown } | undefined)?.function as
-    | { name?: unknown; arguments?: unknown }
-    | undefined
-  if (fn === undefined) return undefined
-  return {
-    name: typeof fn.name === "string" ? fn.name : "",
-    rawArguments: typeof fn.arguments === "string" ? fn.arguments : JSON.stringify(fn.arguments ?? {}),
-  }
-}
-
-const messageContent = (payload: unknown): string => {
-  const content = firstMessage(payload)?.["content"]
-  return typeof content === "string" ? content : ""
-}
-
-const finishReason = (payload: unknown): string | undefined => {
-  const choices = (payload as { choices?: unknown } | null)?.choices
-  if (!Array.isArray(choices) || choices.length === 0) return undefined
-  const reason = (choices[0] as { finish_reason?: unknown } | undefined)?.finish_reason
-  return typeof reason === "string" ? reason : undefined
-}
 
 /**
  * A completion that spent its whole budget saying nothing teaches us about OUR REQUEST, not the
  * endpoint. Checked before every rung's reader so no rung can score it as a capability.
+ *
+ * The RULE — stopped at the ceiling AND said nothing — is one rule for both wires; only the word for
+ * "stopped at the ceiling" differs (`length` on one, `max_tokens` on the other), which is why that
+ * word lives in the wire and this does not.
  */
-const budgetFault = (payload: unknown): ProviderCapability.Outcome | undefined =>
-  ProviderCapability.spentWithoutAnswering({
-    content: messageContent(payload),
-    ...(finishReason(payload) === undefined ? {} : { finishReason: finishReason(payload) }),
-  })
+const budgetFault = (wire: ProviderCapability.Wire, payload: unknown): ProviderCapability.Outcome | undefined =>
+  wire.exhausted(payload) && wire.text(payload).trim().length === 0
     ? {
         kind: "unknown",
         fault: "budget",
@@ -272,8 +243,21 @@ const budgetFault = (payload: unknown): ProviderCapability.Outcome | undefined =
 const malformed = (): ProviderCapability.Outcome => ({
   kind: "unknown",
   fault: "malformed",
-  detail: "The response did not match this endpoint's chat-completions shape.",
+  detail: "The response did not match this endpoint's expected response shape.",
 })
+
+/**
+ * Which wire each auth style speaks.
+ *
+ * ⚠️ A TOTAL record, not a ternary. Auth style is how this handler learns which protocol an endpoint
+ * expects, so a third style added later must be given a wire deliberately — with a ternary it would
+ * silently inherit the OpenAI envelope and every rung would measure our own wrong request. The
+ * exhaustiveness is the guard; the compiler names the omission.
+ */
+const WIRE_FOR_AUTH: Readonly<Record<ConfigProviderPreset.AuthStyle, keyof typeof ProviderCapability.WIRES>> = {
+  bearer: "openai-chat",
+  anthropic: "anthropic-messages",
+}
 
 export const probeCapabilities = (
   client: HttpClient.HttpClient,
@@ -294,69 +278,64 @@ export const probeCapabilities = (
         "native-tools": ProviderCapability.notAttempted(why),
         "text-tools": ProviderCapability.notAttempted(why),
       })
-    if (input.authStyle === "anthropic")
-      return skip("this probe speaks the OpenAI chat-completions shape, and this endpoint does not")
     // Every rung below asks the model to GENERATE. Without chat there is nothing to read, and asking
     // anyway would measure the same failure three more times and report it as three capabilities.
     if (input.chat.kind !== "supported") return skip("the endpoint did not return a plain completion")
 
-    const base = { model: input.modelID, temperature: 0, stream: false }
+    const wire = ProviderCapability.WIRES[WIRE_FOR_AUTH[input.authStyle]]
+    // ⚠️ Not 64. A reasoning model spends its budget BEFORE the first content token, and at 64 the
+    // JSON rung came back empty and scored `unsupported` for a format the endpoint handles. It is
+    // also the room the whole tool call needs: a budget too small truncates the arguments, and the
+    // probe would then measure OUR budget and record it as the endpoint's failure.
+    const base = wire.base(input.modelID, PROBE_TOKENS)
+    const ask = (body: Record<string, unknown>) => capabilityAsk(client, { ...input, path: wire.path, body })
 
-    const json = ProviderCapability.outcomeOf(
-      yield* capabilityAsk(client, {
-        ...input,
-        body: {
-          ...base,
-          // ⚠️ Not 64. A reasoning model spends its budget BEFORE the first content token, and at 64
-          // this rung came back empty and scored `unsupported` for a format the endpoint handles.
-          // The budget fault above catches the class; this keeps the common case off it.
-          max_tokens: PROBE_TOKENS,
-          response_format: { type: "json_object" },
-          messages: [{ role: "user", content: 'Reply with only this JSON object: {"ok":true}' }],
-        },
-      }),
-      {
-        parameter: "response_format",
-        read: (payload) => {
-          if (firstMessage(payload) === undefined) return malformed()
-          const spent = budgetFault(payload)
-          if (spent) return spent
-          try {
-            JSON.parse(messageContent(payload))
-            return { kind: "supported" }
-          } catch {
-            return { kind: "unsupported", detail: "The endpoint accepted a JSON response format and answered prose." }
-          }
-        },
-      },
-    )
+    const json =
+      wire.jsonMode === undefined
+        ? // Not `unsupported`: this wire has no response-format parameter, so there is nothing for the
+          // endpoint to have refused. Blaming a server for its wire's vocabulary would be a permanent
+          // wrong verdict about a capability nobody asked it for.
+          ProviderCapability.notAttempted(`the ${wire.path} wire has no response-format parameter to ask with`)
+        : ProviderCapability.outcomeOf(
+            yield* ask({
+              ...base,
+              ...wire.jsonMode.request,
+              ...wire.ask('Reply with only this JSON object: {"ok":true}'),
+            }),
+            {
+              parameter: wire.jsonMode.parameter,
+              read: (payload) => {
+                if (!wire.answered(payload)) return malformed()
+                const spent = budgetFault(wire, payload)
+                if (spent) return spent
+                try {
+                  JSON.parse(wire.text(payload))
+                  return { kind: "supported" }
+                } catch {
+                  return {
+                    kind: "unsupported",
+                    detail: "The endpoint accepted a JSON response format and answered prose.",
+                  }
+                }
+              },
+            },
+          )
 
     const nativeTools = ProviderCapability.outcomeOf(
-      yield* capabilityAsk(client, {
-        ...input,
-        body: {
-          ...base,
-          // Room for the whole call. A budget too small truncates the arguments, and this probe
-          // would then measure OUR budget and record it as the endpoint's failure.
-          max_tokens: PROBE_TOKENS,
-          tools: [{ type: "function", function: ProviderCapability.CAPTURE_TOOL }],
-          messages: [
-            {
-              role: "user",
-              content: `Call ${ProviderCapability.CAPTURE_TOOL.name} once with all three arguments filled in.`,
-            },
-          ],
-        },
+      yield* ask({
+        ...base,
+        ...wire.offerCaptureTool(),
+        ...wire.ask(`Call ${ProviderCapability.CAPTURE_TOOL.name} once with all three arguments filled in.`),
       }),
       {
-        parameter: "tools",
+        parameter: wire.toolsParameter,
         read: (payload) => {
-          if (firstMessage(payload) === undefined) return malformed()
-          // ⚠️ AFTER the tool-call check, not before: a native call arrives in `tool_calls` with empty
-          // content, so a budget test first would score every healthy native answer as a fault.
-          const call = firstToolCall(payload)
+          if (!wire.answered(payload)) return malformed()
+          // ⚠️ AFTER the tool-call check, not before: a native call arrives with empty text on both
+          // wires, so a budget test first would score every healthy native answer as a fault.
+          const call = wire.toolCall(payload)
           if (call === undefined) {
-            const spent = budgetFault(payload)
+            const spent = budgetFault(wire, payload)
             if (spent) return spent
           }
           return ProviderCapability.readToolCall(call, [ProviderCapability.CAPTURE_TOOL.name])
@@ -365,21 +344,14 @@ export const probeCapabilities = (
     )
 
     const textTools = ProviderCapability.outcomeOf(
-      yield* capabilityAsk(client, {
-        ...input,
-        body: {
-          ...base,
-          max_tokens: PROBE_TOKENS,
-          messages: [{ role: "user", content: ProviderCapability.TEXT_TOOL_PROMPT }],
-        },
-      }),
+      yield* ask({ ...base, ...wire.ask(ProviderCapability.TEXT_TOOL_PROMPT) }),
       {
         read: (payload) => {
-          if (firstMessage(payload) === undefined) return malformed()
-          const spent = budgetFault(payload)
+          if (!wire.answered(payload)) return malformed()
+          const spent = budgetFault(wire, payload)
           if (spent) return spent
           return ProviderCapability.readToolCall(
-            ProviderCapability.recoverTextToolCall(messageContent(payload), [ProviderCapability.CAPTURE_TOOL.name]),
+            ProviderCapability.recoverTextToolCall(wire.text(payload), [ProviderCapability.CAPTURE_TOOL.name]),
             [ProviderCapability.CAPTURE_TOOL.name],
           )
         },
@@ -732,7 +704,9 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
               fingerprint: ProviderCapability.fingerprint({
                 endpoint: baseURL,
                 model: wireModel,
-                protocol: authStyle === "anthropic" ? "anthropic-messages" : "openai-chat",
+                // The SAME table the rungs used — a verdict recorded under one protocol name and
+                // measured over another would compare as stale on every later lookup.
+                protocol: WIRE_FOR_AUTH[authStyle],
               }),
             })
             // A store that will not write must not fail the probe: the user asked what this endpoint

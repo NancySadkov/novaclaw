@@ -92,7 +92,9 @@ describe("recovering a tool call from text", () => {
   test("🔴 prose with angle brackets is NOT a call", () => {
     // The whitelist gate is what keeps `#include <vector>` and markdown out. Losing it here would
     // make every endpoint look capable of prompted tools.
-    expect(ProviderCapability.recoverTextToolCall("I would call it, but here is `<vector>` instead", OFFERED)).toBeUndefined()
+    expect(
+      ProviderCapability.recoverTextToolCall("I would call it, but here is `<vector>` instead", OFFERED),
+    ).toBeUndefined()
   })
 
   test("a call naming a tool that was never offered recovers NOTHING", () => {
@@ -268,5 +270,61 @@ describe("reading the serving identity off a finished turn", () => {
     expect(ProviderCapability.servingIdentityOf({ anthropic: { system_fingerprint: "x" } })).toBeUndefined()
     expect(ProviderCapability.servingIdentityOf({ openai: { system_fingerprint: 42 } })).toBeUndefined()
     expect(ProviderCapability.servingIdentityOf({ openai: {} })).toBeUndefined()
+  })
+})
+
+describe("the two wires read their own envelope and nobody else's", () => {
+  const openai = ProviderCapability.WIRES["openai-chat"]
+  const anthropic = ProviderCapability.WIRES["anthropic-messages"]
+  const chatBody = { choices: [{ message: { content: "hi" }, finish_reason: "stop" }] }
+  const messagesBody = { content: [{ type: "text", text: "hi" }], stop_reason: "end_turn" }
+
+  test("🔴 each wire REFUSES the other's envelope — a gateway's reply is not the model's answer", () => {
+    // If either accepted the other's shape, a proxy answering in the wrong format would be scored as
+    // a capability instead of landing as `malformed`.
+    expect(openai.answered(chatBody)).toBe(true)
+    expect(openai.answered(messagesBody)).toBe(false)
+    expect(anthropic.answered(messagesBody)).toBe(true)
+    expect(anthropic.answered(chatBody)).toBe(false)
+  })
+
+  test("🔴 'stopped at the ceiling' is a different WORD on each wire", () => {
+    // One rule, two vocabularies. Reading `length` on the Anthropic wire would miss every budget
+    // fault there and record it as a missing capability instead.
+    expect(openai.exhausted({ choices: [{ message: {}, finish_reason: "length" }] })).toBe(true)
+    expect(openai.exhausted({ choices: [{ message: {}, finish_reason: "max_tokens" }] })).toBe(false)
+    expect(anthropic.exhausted({ content: [], stop_reason: "max_tokens" })).toBe(true)
+    expect(anthropic.exhausted({ content: [], stop_reason: "length" })).toBe(false)
+  })
+
+  test("Anthropic text is JOINED across blocks — one block is not the answer", () => {
+    const split = {
+      content: [
+        { type: "text", text: '{"ok":' },
+        { type: "text", text: "true}" },
+      ],
+    }
+    expect(anthropic.text(split)).toBe('{"ok":true}')
+    // Thinking blocks are not the answer and must not be spliced into it.
+    const thought = {
+      content: [
+        { type: "thinking", thinking: "hmm" },
+        { type: "text", text: "answer" },
+      ],
+    }
+    expect(anthropic.text(thought)).toBe("answer")
+  })
+
+  test("a parsed Anthropic tool input is re-encoded for the ONE argument reader", () => {
+    const call = anthropic.toolCall({
+      content: [{ type: "tool_use", id: "tu_1", name: "nova_probe_capture", input: { label: "x" } }],
+    })
+    expect(call?.name).toBe("nova_probe_capture")
+    expect(JSON.parse(call?.rawArguments ?? "{}")).toEqual({ label: "x" })
+  })
+
+  test("🔴 only ONE wire has a JSON-mode parameter, and that asymmetry is the point", () => {
+    expect(openai.jsonMode?.parameter).toBe("response_format")
+    expect(anthropic.jsonMode).toBeUndefined()
   })
 })

@@ -19,9 +19,11 @@ const run = async (
   options: { readonly authStyle?: "bearer" | "anthropic"; readonly chat?: ProviderCapability.Outcome } = {},
 ) => {
   const sent: Array<Record<string, unknown>> = []
+  const urls: Array<string> = []
   let next = 0
   const client = HttpClient.make((request) =>
     Effect.gen(function* () {
+      urls.push(request.url)
       const body = yield* Effect.promise(async () => {
         const raw = (request as { body?: { body?: unknown } }).body?.body
         try {
@@ -47,13 +49,14 @@ const run = async (
       chat: options.chat ?? { kind: "supported" },
     }),
   )
-  return { report, sent }
+  return { report, sent, urls }
 }
 
 const json = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } })
 
-const message = (content: string, finish = "stop") => json({ choices: [{ message: { content }, finish_reason: finish }] })
+const message = (content: string, finish = "stop") =>
+  json({ choices: [{ message: { content }, finish_reason: finish }] })
 
 const nativeCall = (args: unknown) =>
   json({
@@ -187,7 +190,10 @@ describe("which serving process answered", () => {
     // Asking again would spend a generation to learn something three responses already said.
     // (Assertion is on the request count; the value itself is checked below.)
     return run([
-      json({ choices: [{ message: { content: '{"ok":true}' }, finish_reason: "stop" }], system_fingerprint: "vllm-x-a44fe734" }),
+      json({
+        choices: [{ message: { content: '{"ok":true}' }, finish_reason: "stop" }],
+        system_fingerprint: "vllm-x-a44fe734",
+      }),
       nativeCall(GOOD_ARGS),
       message("{}"),
     ]).then(({ report, sent }) => {
@@ -206,7 +212,9 @@ describe("which serving process answered", () => {
           {
             message: {
               content: null,
-              tool_calls: [{ function: { name: ProviderCapability.CAPTURE_TOOL.name, arguments: JSON.stringify(GOOD_ARGS) } }],
+              tool_calls: [
+                { function: { name: ProviderCapability.CAPTURE_TOOL.name, arguments: JSON.stringify(GOOD_ARGS) } },
+              ],
             },
             finish_reason: "tool_calls",
           },
@@ -237,15 +245,105 @@ describe("what it refuses to guess", () => {
       expect(report.outcomes[rung]).toMatchObject({ kind: "unknown", fault: "not-attempted" })
     expect(report.choice).toBe("unknown")
   })
+})
 
-  test("🔴 an Anthropic endpoint is not probed with an OpenAI body", async () => {
-    // Sending the wrong envelope would measure OUR request, not the endpoint. `not-attempted` WITH
-    // the reason is the honest answer.
-    const { report, sent } = await run([], { authStyle: "anthropic" })
-    expect(sent).toHaveLength(0)
-    expect(report.outcomes["native-tools"]).toMatchObject({ kind: "unknown", fault: "not-attempted" })
-    expect(report.outcomes["native-tools"].kind === "unknown" && report.outcomes["native-tools"].detail).toContain(
-      "chat-completions",
+/**
+ * THE SECOND WIRE. Every verdict below is decided by the same rung code as the OpenAI arm — only the
+ * envelope differs, which is the whole point of the split.
+ *
+ * ⚠️ Assembly only. These fixtures are the shapes the shipped `anthropic-messages` protocol encodes
+ * and decodes, and they prove the probe builds the right request and reads the right fields. No
+ * verdict here has been taken from a live Anthropic endpoint, which is a different claim and is
+ * recorded as such in `todo/sidecar-inference.md`.
+ */
+describe("the Anthropic messages wire", () => {
+  const block = (blocks: ReadonlyArray<unknown>, stop = "end_turn") =>
+    new Response(JSON.stringify({ content: blocks, stop_reason: stop }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })
+  const say = (text: string, stop = "end_turn") => block([{ type: "text", text }], stop)
+  const useTool = (name: string, input: unknown) => block([{ type: "tool_use", id: "tu_1", name, input }], "tool_use")
+  const anth = { authStyle: "anthropic" as const }
+
+  test("🔴 it posts to /messages — the OpenAI path would 404 and read as a dead endpoint", async () => {
+    const { urls } = await run([useTool(ProviderCapability.CAPTURE_TOOL.name, GOOD_ARGS), say("{}")], anth)
+    expect(urls).toHaveLength(2)
+    for (const url of urls) expect(url).toBe("http://model.test/v1/messages")
+  })
+
+  test("🔴 the JSON rung is NOT ASKED and NOT unsupported — this wire has no such parameter", async () => {
+    // "The endpoint rejects JSON mode" is a claim about the endpoint; "the wire has no JSON-mode
+    // parameter" is a fact about the protocol. Recording the first would blame a server for its
+    // wire's vocabulary, permanently.
+    const { report, sent } = await run([useTool(ProviderCapability.CAPTURE_TOOL.name, GOOD_ARGS), say("{}")], anth)
+    expect(sent).toHaveLength(2)
+    expect(report.outcomes.json).toMatchObject({ kind: "unknown", fault: "not-attempted" })
+    expect(report.outcomes.json.kind === "unknown" && report.outcomes.json.detail).toContain("response-format")
+    // And a rung nobody could ask does not drag the choice down.
+    expect(report.choice).toBe("native")
+  })
+
+  test("the capture tool is offered in THIS wire's tool shape, and max_tokens is always present", async () => {
+    const { sent } = await run([useTool(ProviderCapability.CAPTURE_TOOL.name, GOOD_ARGS), say("{}")], anth)
+    const tools = sent[0]?.["tools"] as Array<Record<string, unknown>>
+    expect(tools).toHaveLength(1)
+    expect(tools[0]?.["name"]).toBe(ProviderCapability.CAPTURE_TOOL.name)
+    // `input_schema`, not `function.parameters` — and nothing nested under `function`.
+    expect(tools[0]?.["input_schema"]).toEqual(ProviderCapability.CAPTURE_TOOL.parameters)
+    expect(tools[0]?.["function"]).toBeUndefined()
+    // ⚠️ Required on this wire: omitting it is a 400, and the rung would then measure our request.
+    for (const body of sent) expect(body["max_tokens"]).toBeGreaterThanOrEqual(256)
+    // The prompted rung offers no tools at all — it measures what the model does UNPROMPTED by them.
+    expect(sent[1]?.["tools"]).toBeUndefined()
+  })
+
+  test("a tool_use block reads as native support", async () => {
+    const { report } = await run([useTool(ProviderCapability.CAPTURE_TOOL.name, GOOD_ARGS), say("{}")], anth)
+    expect(report.outcomes["native-tools"].kind).toBe("supported")
+    expect(report.choice).toBe("native")
+  })
+
+  test("🔴 arguments arrive PARSED on this wire and still face the same argument reader", async () => {
+    // The OpenAI wire delivers a JSON string; this one delivers an object. A second argument reader
+    // for the second shape is a second definition of "a well-formed call".
+    const { report } = await run([useTool(ProviderCapability.CAPTURE_TOOL.name, { label: "x" }), say("{}")], anth)
+    expect(report.outcomes["native-tools"].kind).toBe("unsupported")
+  })
+
+  test("🔴 `max_tokens` is this wire's word for exhausted — a spent turn is a FAULT, not a verdict", async () => {
+    const { report } = await run([block([], "max_tokens"), say("{}")], anth)
+    expect(report.outcomes["native-tools"]).toMatchObject({ kind: "unknown", fault: "budget" })
+  })
+
+  test("the prompted rung recovers a bare-JSON call out of the text blocks", async () => {
+    const { report } = await run(
+      [
+        say("I would rather not."),
+        say(`{"name":"${ProviderCapability.CAPTURE_TOOL.name}","arguments":${JSON.stringify(GOOD_ARGS)}}`),
+      ],
+      anth,
     )
+    expect(report.outcomes["native-tools"].kind).toBe("unsupported")
+    expect(report.outcomes["text-tools"].kind).toBe("supported")
+    expect(report.choice).toBe("prompted")
+  })
+
+  test("🔴 an OpenAI-shaped body from an Anthropic endpoint is MALFORMED, not a missing capability", async () => {
+    // A gateway answering for the endpoint in the other wire's envelope says nothing about the
+    // model. Scoring it as "no tools" would be a permanent wrong verdict from a proxy's reply.
+    const openAIShaped = new Response(
+      JSON.stringify({ choices: [{ message: { content: "hi" }, finish_reason: "stop" }] }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    )
+    const { report } = await run([openAIShaped, openAIShaped], anth)
+    expect(report.outcomes["native-tools"]).toMatchObject({ kind: "unknown", fault: "malformed" })
+    expect(report.choice).toBe("unknown")
+  })
+
+  test("no chat still means the rungs are not asked, on this wire too", async () => {
+    const { report, sent } = await run([], { ...anth, chat: { kind: "unknown", fault: "transport", detail: "x" } })
+    expect(sent).toHaveLength(0)
+    expect(report.choice).toBe("unknown")
   })
 })
