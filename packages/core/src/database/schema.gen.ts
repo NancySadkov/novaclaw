@@ -5,6 +5,25 @@ export default {
   up(tx) {
     return Effect.gen(function* () {
       yield* tx.run(`
+        CREATE TABLE \`community_channel\` (
+          \`name\` text PRIMARY KEY,
+          \`muted\` integer NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`community_message\` (
+          \`id\` text PRIMARY KEY,
+          \`channel\` text NOT NULL,
+          \`author\` text NOT NULL,
+          \`claimed_at\` integer NOT NULL,
+          \`received_at\` integer NOT NULL,
+          \`body\` text NOT NULL,
+          \`signature\` text NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`workspace\` (
           \`id\` text PRIMARY KEY,
           \`type\` text NOT NULL,
@@ -562,6 +581,9 @@ export default {
           CONSTRAINT \`tool_catalogue_pk\` PRIMARY KEY(\`scope\`, \`name\`)
         );
       `)
+      yield* tx.run(
+        `CREATE INDEX \`community_message_channel_idx\` ON \`community_message\` (\`channel\`,\`received_at\`);`,
+      )
       yield* tx.run(
         `CREATE UNIQUE INDEX \`calendar_fire_occurrence_idx\` ON \`calendar_fire\` (\`schedule_id\`,\`occurrence_millis\`);`,
       )
