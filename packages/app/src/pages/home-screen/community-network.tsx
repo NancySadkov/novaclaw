@@ -9,6 +9,7 @@ import {
   communityContacts,
   communityJoinChannel,
   communityPost,
+  communityForgetContact,
   communitySetBlocked,
   communityTransportState,
 } from "@/utils/community-api"
@@ -56,6 +57,7 @@ export const CommunityNetwork: Component = () => {
   const [draft, setDraft] = createSignal("")
   const [sendNote, setSendNote] = createSignal("")
   const [adding, setAdding] = createSignal("")
+  const [addingName, setAddingName] = createSignal("")
   const [problem, setProblem] = createSignal("")
   const [busy, setBusy] = createSignal(false)
 
@@ -66,11 +68,15 @@ export const CommunityNetwork: Component = () => {
     setBusy(true)
     setProblem("")
     try {
-      await communityAddContact(current.http, { networkID: key })
+      await communityAddContact(current.http, {
+        networkID: key,
+        ...(addingName().trim() === "" ? {} : { petname: addingName().trim() }),
+      })
       // Joining the default channel here rather than at boot: a user who has added nobody has no
       // network to be in, and subscribing to a topic they cannot reach teaches them nothing.
       await communityJoinChannel(current.http, DEFAULT_CHANNEL)
       setAdding("")
+      setAddingName("")
       await contactActions.refetch()
     } catch (error) {
       // The instance's own words — it knows why a key was refused; this screen must not guess.
@@ -78,6 +84,13 @@ export const CommunityNetwork: Component = () => {
     } finally {
       setBusy(false)
     }
+  }
+
+  const forget = async (networkID: string) => {
+    const current = connection()
+    if (!current) return
+    await communityForgetContact(current.http, networkID)
+    await contactActions.refetch()
   }
 
   const toggleBlock = async (networkID: string, blocked: boolean) => {
@@ -160,6 +173,11 @@ export const CommunityNetwork: Component = () => {
                   >
                     {contact.blocked ? "Unblock" : "Block"}
                   </ButtonV2>
+                  {/* A wrong key pasted once must not be permanent — with no registry there is no
+                      support desk to undo it for you. */}
+                  <ButtonV2 variant="ghost" size="small" onClick={() => void forget(contact.networkID)}>
+                    Forget
+                  </ButtonV2>
                 </div>
               </div>
             )}
@@ -174,6 +192,15 @@ export const CommunityNetwork: Component = () => {
             spellcheck={false}
             autocapitalize="off"
             autocorrect="off"
+          />
+          {/* A name YOU chose, not one they claim. There is no registry, so nothing stops two peers
+              calling themselves the same thing — only the key tells them apart, and a list of raw
+              keys is unreadable to anyone. Adding an existing peer with a name renames them. */}
+          <TextInputV2
+            appearance="base"
+            value={addingName()}
+            onInput={(event) => setAddingName(event.currentTarget.value)}
+            placeholder="Name them (optional)"
           />
           <ButtonV2 variant="neutral" size="small" disabled={busy() || !adding().trim()} onClick={() => void add()}>
             {busy() ? "Adding…" : "Add"}

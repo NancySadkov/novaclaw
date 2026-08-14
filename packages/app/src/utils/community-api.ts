@@ -74,6 +74,19 @@ export function communitySetBlocked(server: ServerConnection.HttpBase, networkID
   })
 }
 
+/**
+ * Remove a peer from the address book.
+ *
+ * ⚠️ Does NOT delete anything they said — their messages stay in the log, because forgetting who
+ * someone is and erasing what happened are different acts, and only one of them was asked for.
+ */
+export function communityForgetContact(server: ServerConnection.HttpBase, networkID: string) {
+  return instanceFetch<boolean>(server, {
+    route: `api/community/contact/${encodeURIComponent(networkID)}`,
+    method: "DELETE",
+  })
+}
+
 export function communityChannels(server: ServerConnection.HttpBase) {
   return instanceFetch<CommunityChannel[]>(server, { route: "api/community/channel" })
 }
