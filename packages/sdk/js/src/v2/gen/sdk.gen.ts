@@ -499,7 +499,7 @@ class ApiGlobalIdentity extends NovaClawApiClient {
       T.GlobalIdentityBackupErrors,
       ThrowOnError
     >({
-      url: "/global/identity/backup",
+      url: "/api/identity/backup",
       ...options,
     })
   }

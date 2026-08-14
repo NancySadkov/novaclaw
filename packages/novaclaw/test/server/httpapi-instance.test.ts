@@ -109,7 +109,7 @@ describe("instance HttpApi", () => {
   it.live("🔴 the identity backup carries the secret, and only this endpoint does", () =>
     Effect.gen(function* () {
       const health = (yield* (yield* HttpClient.get("/global/health")).json) as { networkID: string }
-      const response = yield* HttpClientRequest.post("/global/identity/backup").pipe(HttpClient.execute)
+      const response = yield* HttpClientRequest.post("/api/identity/backup").pipe(HttpClient.execute)
       expect(response.status).toBe(200)
       const backup = (yield* response.json) as { version: number; networkID: string; secretKey: string }
 

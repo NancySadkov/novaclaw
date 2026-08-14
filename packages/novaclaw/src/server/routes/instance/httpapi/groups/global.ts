@@ -152,7 +152,13 @@ export const GlobalPaths = {
   dispose: "/global/dispose",
   discovery: "/global/discovery",
   resources: "/global/resources",
-  identityBackup: "/global/identity/backup",
+  /**
+   * ⚠️ Under `/api/*`, not `/global/*` like its neighbours. Ruling 11: `/api/*` is the ONE contract
+   * and the only half free to grow; the `/global/*` paths around it are a legacy surface pinned by
+   * a shrink-only ledger. This shipped at `/global/identity/backup` and the sdk-js ledger caught it
+   * — a guard the targeted suites I was running never touch.
+   */
+  identityBackup: "/api/identity/backup",
 } as const
 
 export const GlobalApi = HttpApi.make("global").add(

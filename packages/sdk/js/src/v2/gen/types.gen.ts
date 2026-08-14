@@ -8315,14 +8315,18 @@ export type GlobalIdentityBackupData = {
   body?: never
   path?: never
   query?: never
-  url: "/global/identity/backup"
+  url: "/api/identity/backup"
 }
 
 export type GlobalIdentityBackupErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
 }
 
 export type GlobalIdentityBackupError = GlobalIdentityBackupErrors[keyof GlobalIdentityBackupErrors]

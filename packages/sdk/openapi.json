@@ -557,11 +557,12 @@
         ]
       }
     },
-    "/global/identity/backup": {
+    "/api/identity/backup": {
       "post": {
         "tags": ["global"],
         "operationId": "global.identity.backup",
         "parameters": [],
+        "security": [],
         "responses": {
           "200": {
             "description": "The instance identity, including its secret key",
@@ -592,14 +593,17 @@
             }
           },
           "400": {
-            "description": "Bad request",
+            "description": "InvalidRequestError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
+                  "$ref": "#/components/schemas/InvalidRequestError"
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized"
           }
         },
         "description": "Export this instance's cryptographic identity INCLUDING its secret key, so it can be restored after a disk failure. Anyone holding the result can sign as this instance; there is no revocation.",

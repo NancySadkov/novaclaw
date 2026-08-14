@@ -36,5 +36,5 @@ export function instanceIdentity(server: ServerConnection.HttpBase, options?: { 
  * access logs record. Only ever called from a deliberate user action — never on page load.
  */
 export function instanceIdentityBackup(server: ServerConnection.HttpBase) {
-  return instanceFetch<IdentityBackup>(server, { route: "global/identity/backup", method: "POST" })
+  return instanceFetch<IdentityBackup>(server, { route: "api/identity/backup", method: "POST" })
 }
