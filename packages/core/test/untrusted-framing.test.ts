@@ -646,6 +646,9 @@ const FRAMED = [
   // The instance database is where OTHER parties' words are STORED — a messenger row holds what a
   // provider sent, a session row what a model and its MCP servers said — and nothing framed them on
   // the way in. Row VALUES are framed; table names and counts are our own schema and are not.
+  // Channel messages are strangers' words by construction — the network exists to carry them from
+  // anyone to everyone — and this tool hands them to a model.
+  "community.ts",
   "db-registry.ts",
   "log.ts",
   "mcp-external.ts",
