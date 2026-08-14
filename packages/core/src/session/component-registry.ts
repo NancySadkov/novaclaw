@@ -225,7 +225,13 @@ export interface Interface {
   readonly get: (input: ReadInput) => Effect.Effect<Entry | undefined, ComponentError>
   readonly list: (input: Omit<ReadInput, "id">) => Effect.Effect<ReadonlyArray<Entry>, ComponentError>
   readonly put: (input: PutInput) => Effect.Effect<Entry, ComponentError>
-  readonly remove: (input: Omit<ReadInput, "attempt" | "now">) => Effect.Effect<boolean, ComponentError>
+  /**
+   * `system` claims kernel authority, exactly as `put` does — and it defaults to FALSE, so the
+   * agent-facing component tool (which passes no flag) cannot clear a system-owned component.
+   */
+  readonly remove: (
+    input: Omit<ReadInput, "attempt" | "now"> & { readonly system?: boolean },
+  ) => Effect.Effect<boolean, ComponentError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/SessionComponentRegistry") {}

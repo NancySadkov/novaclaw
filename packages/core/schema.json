@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "84d2ced2-3294-4f47-8a3c-f6f6edcdf9ad",
+  "id": "9ae20881-fc75-43c5-ae7d-3d1f95efe22c",
   "prevIds": [
-    "c81f656d-90c1-4043-8864-7c6e03c5a8b4"
+    "84d2ced2-3294-4f47-8a3c-f6f6edcdf9ad"
   ],
   "ddl": [
     {
@@ -1287,6 +1287,26 @@
       "default": null,
       "generated": null,
       "name": "id",
+      "entityType": "columns",
+      "table": "instance_identity"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "public_key",
+      "entityType": "columns",
+      "table": "instance_identity"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "secret_key",
       "entityType": "columns",
       "table": "instance_identity"
     },

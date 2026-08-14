@@ -191,6 +191,8 @@ export default {
       yield* tx.run(`
         CREATE TABLE \`instance_identity\` (
           \`id\` text PRIMARY KEY,
+          \`public_key\` text,
+          \`secret_key\` text,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL
         );
