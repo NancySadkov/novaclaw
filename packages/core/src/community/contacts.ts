@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
+import { CommunitySuccession } from "./succession"
 import { InstanceIdentityStore } from "../instance-identity-store"
 import { CommunityContactTable } from "./sql"
 
@@ -53,6 +54,19 @@ export interface Interface {
    * into the address book, which is a trust decision wearing a maintenance disguise.
    */
   readonly observe: (networkID: string, routes: readonly string[]) => Effect.Effect<boolean>
+  /**
+   * A known contact proved it moved to a new key. Move the entry, keeping everything about them.
+   *
+   * 🔴 `blocked` MUST survive, and this is the security point rather than a nicety: if rotation
+   * cleared the block, then "rotate your key" would be the standard way to walk back into a channel
+   * you were blocked from — and the person who blocked you would have no idea. Blocking is already
+   * weak against a peer who rotates SILENTLY (they arrive as a stranger), so the one case we can
+   * hold is the one where they hand us the proof themselves.
+   *
+   * ⚠️ Like `observe`, it cannot create a contact: an unknown predecessor returns false. Otherwise a
+   * stranger could enter the address book by presenting a statement about a key nobody knows.
+   */
+  readonly follow: (statement: CommunitySuccession.Statement) => Effect.Effect<boolean>
   /** Contacts usable as bootstrap entries: not blocked, and with at least one known route. */
   readonly bootstrap: () => Effect.Effect<ReadonlyArray<Contact>>
 }
@@ -159,6 +173,37 @@ export const layer = Layer.effect(
           .pipe(Effect.orDie)
         // No row updated = we do not know this peer. Not an error, and deliberately not an insert.
         return updated.length > 0
+      }),
+
+      follow: Effect.fn("CommunityContacts.follow")(function* (statement: CommunitySuccession.Statement) {
+        // Verified BEFORE anything is read or written: an unsigned claim about someone else's key is
+        // exactly the shape an identity theft would take.
+        if (!CommunitySuccession.verify(statement)) return false
+        const existing = yield* get(statement.predecessor)
+        if (existing === undefined) return false
+
+        // Already followed, or the successor is someone we separately know: leave both alone rather
+        // than merging two people's entries into one.
+        if ((yield* get(statement.successor)) !== undefined) return false
+
+        yield* db
+          .insert(CommunityContactTable)
+          .values({
+            network_id: statement.successor,
+            ...(existing.petname === undefined ? {} : { petname: existing.petname }),
+            routes: [...existing.routes],
+            // 🔴 Carried, not reset. See the interface note: otherwise rotation is a block bypass.
+            blocked: existing.blocked,
+            ...(existing.lastSeenAt === undefined ? {} : { last_seen_at: existing.lastSeenAt }),
+          })
+          .run()
+          .pipe(Effect.orDie)
+        yield* db
+          .delete(CommunityContactTable)
+          .where(eq(CommunityContactTable.network_id, statement.predecessor))
+          .run()
+          .pipe(Effect.orDie)
+        return true
       }),
 
       bootstrap: Effect.fn("CommunityContacts.bootstrap")(function* () {

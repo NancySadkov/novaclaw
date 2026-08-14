@@ -3,6 +3,7 @@ import { Effect } from "effect"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
+import { CommunitySuccession } from "@novaclaw/core/community/succession"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { testEffect } from "./lib/effect"
 
@@ -103,6 +104,56 @@ describe("CommunityContacts", () => {
       // them on every single start.
       expect(entries).toEqual([usable])
     }),
+  )
+
+  it.effect("🔴 following a rotation moves the entry and CARRIES THE BLOCK", () =>
+    Effect.gen(function* () {
+      const contacts = yield* CommunityContacts.Service
+      const store = yield* InstanceIdentityStore.Service
+      const before = (yield* store.identity()).networkID
+
+      yield* contacts.add({ networkID: before, petname: "noisy", routes: ["/ip4/10.0.0.1/udp/1/quic-v1"] })
+      yield* contacts.setBlocked(before, true)
+
+      const { statement, identity: after } = yield* store.rotate()
+      expect(yield* contacts.follow(statement)).toBe(true)
+
+      // The old entry is gone and the new one keeps everything we knew.
+      expect(yield* contacts.get(before)).toBeUndefined()
+      const moved = yield* contacts.get(after.networkID)
+      expect(moved?.petname).toBe("noisy")
+      expect(moved?.routes).toEqual(["/ip4/10.0.0.1/udp/1/quic-v1"])
+      // 🔴 THE point: if rotation cleared the block, "rotate your key" would be the standard way
+      // back into a channel you were blocked from, and the person who blocked you would never know.
+      expect(moved?.blocked).toBe(true)
+    }).pipe(Effect.provide(InstanceIdentityStore.defaultLayer)),
+  )
+
+  it.effect("🔴 an unsigned claim, or one about a stranger, moves nothing", () =>
+    Effect.gen(function* () {
+      const contacts = yield* CommunityContacts.Service
+      const store = yield* InstanceIdentityStore.Service
+      const known = (yield* store.identity()).networkID
+      yield* contacts.add({ networkID: known, routes: ["/ip4/10.0.0.1/udp/1/quic-v1"] })
+
+      // Forged: the right predecessor, a signature that is not theirs. Exactly how an identity theft
+      // would present itself.
+      const forged: CommunitySuccession.Statement = {
+        predecessor: known,
+        successor: `nid_${Buffer.alloc(32, 8).toString("base64url")}`,
+        at: Date.now(),
+        signature: Buffer.alloc(64).toString("base64url"),
+      }
+      expect(yield* contacts.follow(forged)).toBe(false)
+      expect(yield* contacts.get(known)).toBeDefined()
+
+      // Genuine, but about somebody we have never met: it must not create an entry, or presenting a
+      // statement would be a way into the address book.
+      const { statement } = yield* store.rotate()
+      yield* contacts.forget(known)
+      expect(yield* contacts.follow(statement)).toBe(false)
+      expect(yield* contacts.list()).toEqual([])
+    }).pipe(Effect.provide(InstanceIdentityStore.defaultLayer)),
   )
 
   it.effect("a contact's id round-trips as a verifiable key", () =>
