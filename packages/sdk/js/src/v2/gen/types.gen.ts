@@ -8953,6 +8953,43 @@ export type CommunityChannelJoinResponses = {
 
 export type CommunityChannelJoinResponse = CommunityChannelJoinResponses[keyof CommunityChannelJoinResponses]
 
+export type CommunityChannelPostData = {
+  body: {
+    body: string
+  }
+  path: {
+    name: string
+  }
+  query?: never
+  url: "/api/community/channel/{name}/post"
+}
+
+export type CommunityChannelPostErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityChannelPostError = CommunityChannelPostErrors[keyof CommunityChannelPostErrors]
+
+export type CommunityChannelPostResponses = {
+  /**
+   * Whether the message was stored, and whether anything took it
+   */
+  200: {
+    id: string
+    stored: boolean
+    delivered: boolean
+  }
+}
+
+export type CommunityChannelPostResponse = CommunityChannelPostResponses[keyof CommunityChannelPostResponses]
+
 export type CommunityChannelHistoryData = {
   body?: never
   path: {

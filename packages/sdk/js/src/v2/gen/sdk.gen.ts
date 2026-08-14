@@ -875,6 +875,33 @@ class ApiCommunityChannel extends NovaClawApiClient {
   }
 
   /**
+   * Say something in a channel
+   *
+   * Sign a message as this instance, store it locally, then offer it to the transport. Storing happens FIRST, so a missing or offline transport costs an audience and never the message.
+   */
+  public post<ThrowOnError extends boolean = false>(
+    parameters: {
+      name: string
+      body: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { name: parameters?.["name"] }
+    const body = { body: parameters?.["body"] }
+    return (options?.client ?? this.client).post<
+      T.CommunityChannelPostResponses,
+      T.CommunityChannelPostErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/channel/{name}/post",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
    * Read a channel's history
    *
    * Gossip only reaches whoever is online, so this local log is what makes a channel readable by someone who was away. Ordered by receive time, never by the author's own claimed timestamp.

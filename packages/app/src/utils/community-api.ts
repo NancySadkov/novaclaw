@@ -67,6 +67,18 @@ export function communityJoinChannel(server: ServerConnection.HttpBase, name: st
   return instanceFetch<CommunityChannel[]>(server, { route: "api/community/channel", method: "POST", body: { name } })
 }
 
+/**
+ * Say something. `delivered` reports whether a transport took it — never whether it was read, since
+ * nothing in a serverless network can promise that.
+ */
+export function communityPost(server: ServerConnection.HttpBase, channel: string, body: string) {
+  return instanceFetch<{ id: string; stored: boolean; delivered: boolean }>(server, {
+    route: `api/community/channel/${encodeURIComponent(channel)}/post`,
+    method: "POST",
+    body: { body },
+  })
+}
+
 export function communityChannelHistory(server: ServerConnection.HttpBase, name: string) {
   return instanceFetch<CommunityMessage[]>(server, {
     route: `api/community/channel/${encodeURIComponent(name)}/history`,

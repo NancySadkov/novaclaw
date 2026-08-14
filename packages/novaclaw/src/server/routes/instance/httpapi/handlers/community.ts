@@ -1,5 +1,6 @@
 import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
+import { CommunityPost } from "@novaclaw/core/community/post"
 import { CommunityTransport } from "@novaclaw/core/community/transport"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
@@ -17,6 +18,7 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
     const contacts = yield* CommunityContacts.Service
     const channels = yield* CommunityChannels.Service
     const transport = yield* CommunityTransport.Service
+    const posts = yield* CommunityPost.Service
 
     return handlers
       .handle(
@@ -72,6 +74,13 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
         Effect.fn("CommunityHttpApi.channelJoin")(function* (ctx) {
           yield* channels.join(ctx.payload.name)
           return yield* channels.channels()
+        }),
+      )
+      .handle(
+        "channelPost",
+        Effect.fn("CommunityHttpApi.channelPost")(function* (ctx) {
+          const result = yield* posts.post(ctx.params.name, ctx.payload.body)
+          return { id: result.message.signature, stored: result.stored, delivered: result.delivered }
         }),
       )
       .handle(

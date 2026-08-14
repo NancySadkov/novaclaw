@@ -2786,6 +2786,87 @@
         ]
       }
     },
+    "/api/community/channel/{name}/post": {
+      "post": {
+        "tags": ["community"],
+        "operationId": "community.channel.post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Whether the message was stored, and whether anything took it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "stored": {
+                      "type": "boolean"
+                    },
+                    "delivered": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": ["id", "stored", "delivered"],
+                  "additionalProperties": false,
+                  "description": "Whether the message was stored, and whether anything took it"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Sign a message as this instance, store it locally, then offer it to the transport. Storing happens FIRST, so a missing or offline transport costs an audience and never the message.",
+        "summary": "Say something in a channel",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "body": {
+                    "type": "string"
+                  }
+                },
+                "required": ["body"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.channel.post({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/community/channel/{name}/history": {
       "get": {
         "tags": ["community"],

@@ -8,6 +8,7 @@ import {
   communityChannelHistory,
   communityContacts,
   communityJoinChannel,
+  communityPost,
   communityTransportState,
 } from "@/utils/community-api"
 import { instanceIdentity } from "@/utils/identity-api"
@@ -33,7 +34,9 @@ export const CommunityNetwork: Component = () => {
 
   const [identity] = createResource(connection, (value) => instanceIdentity(value.http))
   const [contacts, contactActions] = createResource(connection, (value) => communityContacts(value.http))
-  const [history] = createResource(connection, (value) => communityChannelHistory(value.http, DEFAULT_CHANNEL))
+  const [history, historyActions] = createResource(connection, (value) =>
+    communityChannelHistory(value.http, DEFAULT_CHANNEL),
+  )
   const [transport] = createResource(connection, (value) => communityTransportState(value.http))
 
   /**
@@ -49,6 +52,8 @@ export const CommunityNetwork: Component = () => {
     return "Nothing here yet — the piece that carries messages between instances is still being built. Your key and your contacts are already saved, and this fills in when it lands."
   })
 
+  const [draft, setDraft] = createSignal("")
+  const [sendNote, setSendNote] = createSignal("")
   const [adding, setAdding] = createSignal("")
   const [problem, setProblem] = createSignal("")
   const [busy, setBusy] = createSignal(false)
@@ -71,6 +76,28 @@ export const CommunityNetwork: Component = () => {
       setProblem(error instanceof Error ? error.message : String(error))
     } finally {
       setBusy(false)
+    }
+  }
+
+  const say = async () => {
+    const current = connection()
+    const body = draft().trim()
+    if (!current || !body) return
+    setSendNote("")
+    try {
+      await communityJoinChannel(current.http, DEFAULT_CHANNEL)
+      const result = await communityPost(current.http, DEFAULT_CHANNEL, body)
+      setDraft("")
+      // ⚠️ Says which of the two things happened. "Sent" would be a lie while nothing can carry it,
+      // and silence would leave the user unsure whether their words went anywhere at all.
+      setSendNote(
+        result.delivered
+          ? "Sent."
+          : "Saved to your own copy — nobody can receive it yet, so it will not reach anyone until the network part lands.",
+      )
+      await historyActions.refetch()
+    } catch (error) {
+      setSendNote(error instanceof Error ? error.message : String(error))
     }
   }
 
@@ -156,6 +183,21 @@ export const CommunityNetwork: Component = () => {
               </div>
             )}
           </For>
+        </Show>
+        <div class="mt-2 flex items-center gap-2">
+          <TextInputV2
+            appearance="base"
+            value={draft()}
+            onInput={(event) => setDraft(event.currentTarget.value)}
+            placeholder={`Say something in ${DEFAULT_CHANNEL}`}
+            spellcheck={true}
+          />
+          <ButtonV2 variant="neutral" size="small" disabled={!draft().trim()} onClick={() => void say()}>
+            Say
+          </ButtonV2>
+        </div>
+        <Show when={sendNote()}>
+          <span class="text-[11px] leading-snug text-v2-text-text-muted">{sendNote()}</span>
         </Show>
       </div>
     </section>

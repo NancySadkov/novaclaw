@@ -63,6 +63,19 @@ const AddContact = Schema.Struct({
   routes: Schema.optional(Schema.Array(Schema.String)),
 })
 
+/**
+ * The result of saying something.
+ *
+ * ⚠️ `delivered` is NOT "was it read" — nobody can promise delivery in a network with no server. It
+ * says only that a transport accepted it. False means the message is in the author's own log and has
+ * no audience yet, which is every install until P2 lands.
+ */
+const PostResult = Schema.Struct({
+  id: Schema.String,
+  stored: Schema.Boolean,
+  delivered: Schema.Boolean,
+})
+
 const ContactParams = Schema.Struct({ networkID: Schema.String })
 const BlockPayload = Schema.Struct({ blocked: Schema.Boolean })
 const ChannelParams = Schema.Struct({ name: Schema.String })
@@ -74,6 +87,7 @@ export const CommunityPaths = {
   transport: "/api/community/transport",
   channels: "/api/community/channel",
   channelHistory: "/api/community/channel/:name/history",
+  channelPost: "/api/community/channel/:name/post",
 } as const
 
 export const CommunityApi = HttpApi.make("community").add(
@@ -151,6 +165,18 @@ export const CommunityApi = HttpApi.make("community").add(
           summary: "Join a channel",
           description:
             "Subscribe to a channel by name. A name is only a hash — nobody owns one, and joining grants nothing but a topic to listen on.",
+        }),
+      ),
+      HttpApiEndpoint.post("channelPost", CommunityPaths.channelPost, {
+        params: ChannelParams,
+        payload: Schema.Struct({ body: Schema.String }),
+        success: described(PostResult, "Whether the message was stored, and whether anything took it"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.channel.post",
+          summary: "Say something in a channel",
+          description:
+            "Sign a message as this instance, store it locally, then offer it to the transport. Storing happens FIRST, so a missing or offline transport costs an audience and never the message.",
         }),
       ),
       HttpApiEndpoint.get("channelHistory", CommunityPaths.channelHistory, {
