@@ -187,6 +187,13 @@ describe("instance HttpApi", () => {
       const ids = (yield* response.json) as string[]
       expect(ids).toContain("community")
     }),
+    // ⚠️ An EXPLICIT limit, because this endpoint materialises the WHOLE tool catalogue — every
+    // tool's location node is constructed to answer it — which costs 5-8 s here, either side of
+    // bun's 5 s default. Measured: it times out at the default and passes in 7.8 s with room.
+    // Declaring the real cost is honest; leaving it to flip with machine load is not, and raising a
+    // limit to hide a REGRESSION would be different again — nothing here changed in cost, the test
+    // was simply written without checking what it was asking for.
+    30_000,
   )
 
   it.live("serves the OpenAPI document", () =>
