@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "9ae20881-fc75-43c5-ae7d-3d1f95efe22c",
+  "id": "65c2f789-3f0d-408c-8746-0485139c8686",
   "prevIds": [
-    "84d2ced2-3294-4f47-8a3c-f6f6edcdf9ad"
+    "9ae20881-fc75-43c5-ae7d-3d1f95efe22c"
   ],
   "ddl": [
     {
@@ -64,6 +64,10 @@
     },
     {
       "name": "command_config",
+      "entityType": "tables"
+    },
+    {
+      "name": "community_contact",
       "entityType": "tables"
     },
     {
@@ -1109,6 +1113,76 @@
       "name": "time_updated",
       "entityType": "columns",
       "table": "command_config"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "network_id",
+      "entityType": "columns",
+      "table": "community_contact"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "petname",
+      "entityType": "columns",
+      "table": "community_contact"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "routes",
+      "entityType": "columns",
+      "table": "community_contact"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_seen_at",
+      "entityType": "columns",
+      "table": "community_contact"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "blocked",
+      "entityType": "columns",
+      "table": "community_contact"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "community_contact"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "community_contact"
     },
     {
       "type": "text",
@@ -4000,6 +4074,15 @@
       "nameExplicit": false,
       "name": "command_config_pk",
       "table": "command_config",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "network_id"
+      ],
+      "nameExplicit": false,
+      "name": "community_contact_pk",
+      "table": "community_contact",
       "entityType": "pks"
     },
     {

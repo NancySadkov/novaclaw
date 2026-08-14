@@ -159,6 +159,17 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`community_contact\` (
+          \`network_id\` text PRIMARY KEY,
+          \`petname\` text,
+          \`routes\` text NOT NULL,
+          \`last_seen_at\` integer,
+          \`blocked\` integer NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`credential\` (
           \`id\` text PRIMARY KEY,
           \`integration_id\` text,
