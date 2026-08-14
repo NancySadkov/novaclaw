@@ -3,6 +3,7 @@ import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { usePlatform } from "@/context/platform"
 import { DISCORD_INVITE_URL } from "@/constants/links"
+import { CommunityNetwork } from "./community-network"
 
 // The Social app: where the other humans are. A normal person who gets stuck at 11pm should be one
 // click from someone who can help — that is the whole tile. It teaches rather than dumps links:
@@ -50,6 +51,14 @@ export const SocialPanel: Component = () => {
           <span class="text-[13px] font-medium text-v2-text-text-muted">
             Stuck, or want to show what you built? Other people run NovaClaw too.
           </span>
+        </div>
+        {/* The instance-hosted community comes FIRST: it is the one that cannot be switched off by
+            anyone, including us. The third-party links stay below it until a transport exists —
+            replacing links that reach real people with an empty room would be a regression. */}
+        <CommunityNetwork />
+
+        <div class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-v2-text-text-base">Where people are today</span>
         </div>
         <div class="flex flex-col gap-2">
           <For each={PLACES}>
