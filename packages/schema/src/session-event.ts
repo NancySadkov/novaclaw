@@ -63,13 +63,18 @@ const compactionSettlementOptions = {
 export const UnknownError = SessionMessage.UnknownError
 export type UnknownError = SessionMessage.UnknownError
 
+// ⚠️ `null` CLEARS the override back to inherit (parent chain, then the instance default) — the
+// same idiom `StrictSwitched` and `FeatureSwitched` already use. Widening these four was the ECS
+// lens applied to its own kernel: `resolveSessionConfig` treats `undefined` as inherit, so a
+// component that can only ever be SET is a sparse-override column with no way back to sparse.
+// The session columns were nullable all along; only the event vocabulary was missing.
 export const AgentSwitched = Event.define({
   type: "session.next.agent.switched",
   ...options,
   schema: {
     ...Base,
     messageID: SessionMessage.ID,
-    agent: Schema.String,
+    agent: Schema.NullOr(Schema.String),
   },
 })
 export type AgentSwitched = typeof AgentSwitched.Type
@@ -80,7 +85,7 @@ export const ModelSwitched = Event.define({
   schema: {
     ...Base,
     messageID: SessionMessage.ID,
-    model: Model.Ref,
+    model: Schema.NullOr(Model.Ref),
   },
 })
 export type ModelSwitched = typeof ModelSwitched.Type
@@ -94,7 +99,7 @@ export const ResponderSwitched = Event.define({
   schema: {
     ...Base,
     messageID: SessionMessage.ID,
-    responder: Schema.Literals(["nova", "operator"]),
+    responder: Schema.NullOr(Schema.Literals(["nova", "operator"])),
   },
 })
 export type ResponderSwitched = typeof ResponderSwitched.Type
@@ -171,7 +176,7 @@ export const TypeSwitched = Event.define({
   schema: {
     ...Base,
     messageID: SessionMessage.ID,
-    sessionType: SessionType.Info,
+    sessionType: Schema.NullOr(SessionType.Info),
   },
 })
 export type TypeSwitched = typeof TypeSwitched.Type

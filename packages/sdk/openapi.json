@@ -22126,7 +22126,14 @@
                         "pattern": "^msg_"
                       },
                       "agent": {
-                        "type": "string"
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": ["timestamp", "sessionID", "messageID", "agent"],
@@ -22162,7 +22169,14 @@
                         "pattern": "^msg_"
                       },
                       "model": {
-                        "$ref": "#/components/schemas/ModelRef"
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/ModelRef"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": ["timestamp", "sessionID", "messageID", "model"],
@@ -22198,8 +22212,15 @@
                         "pattern": "^msg_"
                       },
                       "responder": {
-                        "type": "string",
-                        "enum": ["nova", "operator"]
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": ["nova", "operator"]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": ["timestamp", "sessionID", "messageID", "responder"],
@@ -22435,8 +22456,15 @@
                         "pattern": "^msg_"
                       },
                       "sessionType": {
-                        "type": "string",
-                        "enum": ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": ["timestamp", "sessionID", "messageID", "sessionType"],
@@ -28504,7 +28532,14 @@
             "enum": ["agent-switched"]
           },
           "agent": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": ["id", "time", "type", "agent"],
@@ -28539,7 +28574,14 @@
             "enum": ["model-switched"]
           },
           "model": {
-            "$ref": "#/components/schemas/ModelRef"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": ["id", "time", "type", "model"],
@@ -29952,7 +29994,14 @@
                     "pattern": "^msg_"
                   },
                   "agent": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": ["timestamp", "sessionID", "messageID", "agent"],
@@ -30009,7 +30058,14 @@
                     "pattern": "^msg_"
                   },
                   "model": {
-                    "$ref": "#/components/schemas/ModelRef"
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/ModelRef"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": ["timestamp", "sessionID", "messageID", "model"],
@@ -30066,8 +30122,15 @@
                     "pattern": "^msg_"
                   },
                   "responder": {
-                    "type": "string",
-                    "enum": ["nova", "operator"]
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": ["nova", "operator"]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": ["timestamp", "sessionID", "messageID", "responder"],
@@ -30408,8 +30471,15 @@
                     "pattern": "^msg_"
                   },
                   "sessionType": {
-                    "type": "string",
-                    "enum": ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": ["timestamp", "sessionID", "messageID", "sessionType"],
@@ -35911,7 +35981,14 @@
                 "pattern": "^msg_"
               },
               "agent": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "agent"],
@@ -35969,7 +36046,14 @@
                 "pattern": "^msg_"
               },
               "model": {
-                "$ref": "#/components/schemas/ModelRef"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ModelRef"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "model"],
@@ -36027,8 +36111,15 @@
                 "pattern": "^msg_"
               },
               "responder": {
-                "type": "string",
-                "enum": ["nova", "operator"]
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": ["nova", "operator"]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "responder"],
@@ -36365,8 +36456,15 @@
                 "pattern": "^msg_"
               },
               "sessionType": {
-                "type": "string",
-                "enum": ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "sessionType"],
@@ -43731,7 +43829,14 @@
                 "pattern": "^msg_"
               },
               "agent": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "agent"],
@@ -43767,7 +43872,14 @@
                 "pattern": "^msg_"
               },
               "model": {
-                "$ref": "#/components/schemas/ModelRef"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ModelRef"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "model"],
@@ -43803,8 +43915,15 @@
                 "pattern": "^msg_"
               },
               "responder": {
-                "type": "string",
-                "enum": ["nova", "operator"]
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": ["nova", "operator"]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "responder"],
@@ -44031,8 +44150,15 @@
                 "pattern": "^msg_"
               },
               "sessionType": {
-                "type": "string",
-                "enum": ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "sessionType"],

@@ -127,6 +127,18 @@ export interface Definition<A = any> {
     readonly value: A
     readonly system: boolean
   }) => Effect.Effect<void, unknown>
+  /**
+   * 🔴 The same authority question asked of a REMOVAL, and it needs its own hook because
+   * `validateWrite` takes a decoded value and a removal has none.
+   *
+   * Without this, making a system-owned component removable would hand an agent the exact move its
+   * write gate refuses: clearing `responder` undoes a human's takeover, and clearing `session_type`
+   * changes attendance. A gate on one door only is not a gate.
+   */
+  readonly validateRemove?: (input: {
+    readonly id?: string
+    readonly system: boolean
+  }) => Effect.Effect<void, unknown>
   /** Decode an older stored version into the current typed value. Absence makes drift explicit. */
   readonly migrate?: (input: { readonly version: number; readonly value: Schema.Json }) => Effect.Effect<A>
 }
@@ -660,11 +672,19 @@ export const make = (kernelDefinitions: ReadonlyArray<AnyDefinition> = []) =>
       }))!
     })
 
-    const remove = Effect.fn("SessionComponent.remove")(function* (input: Omit<ReadInput, "attempt" | "now">) {
+    const remove = Effect.fn("SessionComponent.remove")(function* (
+      input: Omit<ReadInput, "attempt" | "now"> & { readonly system?: boolean },
+    ) {
       const definition = yield* definitionOf(input.kind)
       const componentID = yield* storedID(definition, input.id)
       if (definition.removable === false)
         return yield* new RegistryError({ message: `${definition.kind} cannot be removed` })
+      // ⚠️ Defaults to NOT system, matching `put`. The agent-facing component tool passes no flag,
+      // so a kind that gates removal refuses it unless a caller deliberately claims authority.
+      if (definition.validateRemove)
+        yield* definition
+          .validateRemove({ ...(input.id === undefined ? {} : { id: input.id }), system: input.system === true })
+          .pipe(Effect.mapError((cause) => projectionFailure(definition, "Removing", cause)))
       if (definition.projection) {
         if (!definition.projection.remove)
           return yield* new RegistryError({ message: `${definition.kind} has no removal adapter` })
@@ -795,28 +815,28 @@ const compiledDefinitions = Effect.gen(function* () {
       enabled,
     })
 
-  const publishModel = (sessionID: SessionSchema.ID, model: Model.Ref) =>
+  const publishModel = (sessionID: SessionSchema.ID, model: Model.Ref | null) =>
     events.publish(SessionEvent.ModelSwitched, {
       sessionID,
       messageID: SessionMessage.ID.create(),
       timestamp: DateTime.nowUnsafe(),
       model,
     })
-  const publishAgent = (sessionID: SessionSchema.ID, agent: string) =>
+  const publishAgent = (sessionID: SessionSchema.ID, agent: string | null) =>
     events.publish(SessionEvent.AgentSwitched, {
       sessionID,
       messageID: SessionMessage.ID.create(),
       timestamp: DateTime.nowUnsafe(),
       agent,
     })
-  const publishType = (sessionID: SessionSchema.ID, sessionType: SessionType.Info) =>
+  const publishType = (sessionID: SessionSchema.ID, sessionType: SessionType.Info | null) =>
     events.publish(SessionEvent.TypeSwitched, {
       sessionID,
       messageID: SessionMessage.ID.create(),
       timestamp: DateTime.nowUnsafe(),
       sessionType,
     })
-  const publishResponder = (sessionID: SessionSchema.ID, responder: "nova" | "operator") =>
+  const publishResponder = (sessionID: SessionSchema.ID, responder: "nova" | "operator" | null) =>
     events.publish(SessionEvent.ResponderSwitched, {
       sessionID,
       messageID: SessionMessage.ID.create(),
@@ -1023,11 +1043,10 @@ const compiledDefinitions = Effect.gen(function* () {
       lifetime: "entity",
       version: 1,
       codec: Model.Ref,
-      // ⚠️ NOT removable, and the reason is mechanical rather than a policy: `ModelSwitched` carries
-      // a non-null `model`, so the kernel has no event that means "go back to inheriting". Adding
-      // one widens a durable wire event, its projector arm and the SDK — a change with its own
-      // migration, not a side effect of exposing this component. Filed in `todo/ecs.md`.
-      removable: false,
+      // Clearable since 2026-08-14: `ModelSwitched.model` is nullable, so the kernel has an event
+      // meaning "go back to inheriting". No migration was needed — `session.model` was always a
+      // nullable column, because a session that never overrode the model has exactly this state.
+      removable: true,
       projection: {
         // The column is a plain JSON object; `Model.Ref` is branded. The codec re-decodes it either
         // way, so the cast is at the boundary where the shapes are known to match rather than spread
@@ -1056,6 +1075,15 @@ const compiledDefinitions = Effect.gen(function* () {
             if (!same) yield* publishModel(sessionID, value)
             return undefined
           }),
+        remove: (sessionID) =>
+          Effect.gen(function* () {
+            const row = yield* current(sessionID)
+            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            // `false` = nothing to clear, which is not a failure: the session already inherits.
+            if (row.model === null || row.model === undefined) return false
+            yield* publishModel(sessionID, null)
+            return true
+          }),
       },
     }),
     kernelDefinition({
@@ -1066,8 +1094,8 @@ const compiledDefinitions = Effect.gen(function* () {
       lifetime: "entity",
       version: 1,
       codec: Schema.NonEmptyString,
-      // Same mechanical reason as `model`: `AgentSwitched` carries a non-null `agent`.
-      removable: false,
+      // Clearable for the same reason as `model`: `AgentSwitched.agent` is nullable.
+      removable: true,
       projection: {
         get: (sessionID) => current(sessionID).pipe(Effect.map((row) => row?.agent ?? undefined)),
         put: (sessionID, value) =>
@@ -1076,6 +1104,14 @@ const compiledDefinitions = Effect.gen(function* () {
             if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
             if (row.agent !== value) yield* publishAgent(sessionID, value)
             return undefined
+          }),
+        remove: (sessionID) =>
+          Effect.gen(function* () {
+            const row = yield* current(sessionID)
+            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            if (row.agent === null || row.agent === undefined) return false
+            yield* publishAgent(sessionID, null)
+            return true
           }),
       },
     }),
@@ -1087,7 +1123,7 @@ const compiledDefinitions = Effect.gen(function* () {
       lifetime: "entity",
       version: 1,
       codec: SessionType.Info,
-      removable: false,
+      removable: true,
       // 🔴 SYSTEM-ONLY, and this is a security decision rather than a missing feature. Attendance
       // derives from the chain ROOT's type (`rootAttendance`, agent-jail doctrine): an UNATTENDED
       // root has out-of-folder writes DENIED outright and its bash confined, because nobody is there
@@ -1103,6 +1139,18 @@ const compiledDefinitions = Effect.gen(function* () {
                 "A session's type is set by the person driving the chat, not by the agent: declaring yourself attended would lift the unattended confinement stance.",
               ),
             ),
+      // 🔴 The SAME ruling on the other door. Clearing is not a neutral act here: a root chat's type
+      // IS its attendance, so an agent clearing it would drop an unattended designation back to the
+      // inherited default and lift its own confinement — the write gate's escalation, reached by
+      // removal instead. Reading stays free; changing it stays the human's.
+      validateRemove: ({ system }) =>
+        system
+          ? Effect.void
+          : Effect.fail(
+              new Error(
+                "A session's type is set by the person driving the chat, not by the agent: clearing it would lift the unattended confinement stance.",
+              ),
+            ),
       projection: {
         get: (sessionID) => current(sessionID).pipe(Effect.map((row) => row?.sessionType ?? undefined)),
         put: (sessionID, value) =>
@@ -1111,6 +1159,14 @@ const compiledDefinitions = Effect.gen(function* () {
             if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
             if (row.sessionType !== value) yield* publishType(sessionID, value)
             return undefined
+          }),
+        remove: (sessionID) =>
+          Effect.gen(function* () {
+            const row = yield* current(sessionID)
+            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            if (row.sessionType === null || row.sessionType === undefined) return false
+            yield* publishType(sessionID, null)
+            return true
           }),
       },
     }),
@@ -1122,14 +1178,26 @@ const compiledDefinitions = Effect.gen(function* () {
       lifetime: "entity",
       version: 1,
       codec: Schema.Literals(["nova", "operator"]),
-      // Same mechanical reason as `model`: `ResponderSwitched` carries a non-null responder.
-      removable: false,
+      // Clearable since 2026-08-14: `ResponderSwitched.responder` is nullable. The one-way ruling
+      // below governs WHO may clear it.
+      removable: true,
       // 🔴 ONE-WAY for an agent, mirroring the narrowing keystone on `permissionMode`. Standing down
       // is always allowed — an agent deciding a human should take this conversation is the product
       // working. Taking control BACK is not the agent's to decide: a human took over for a reason,
       // and an agent that could set `nova` would overrule them silently, on their own account.
       validateWrite: ({ value, system }) =>
         system || value === "operator"
+          ? Effect.void
+          : Effect.fail(
+              new Error(
+                "A human has taken over this chat. You can hand control to a person, but only a person hands it back.",
+              ),
+            ),
+      // 🔴 Removal is the same move as writing `nova`, because clearing falls back to the inherited
+      // default — which is the agent answering. An agent allowed to clear this would take control
+      // back from the human by another name, so the one-way rule has to hold on both doors.
+      validateRemove: ({ system }) =>
+        system
           ? Effect.void
           : Effect.fail(
               new Error(
@@ -1144,6 +1212,14 @@ const compiledDefinitions = Effect.gen(function* () {
             if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
             if (row.responder !== value) yield* publishResponder(sessionID, value)
             return undefined
+          }),
+        remove: (sessionID) =>
+          Effect.gen(function* () {
+            const row = yield* current(sessionID)
+            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            if (row.responder === null || row.responder === undefined) return false
+            yield* publishResponder(sessionID, null)
+            return true
           }),
       },
     }),

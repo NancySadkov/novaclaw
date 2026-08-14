@@ -126,21 +126,56 @@ describe("the five fields that were not components", () => {
     expect(written.value).toEqual({ providerID: "local", id: "tiny-1" })
   })
 
-  test("`strict` clears back to inherit; `model` cannot", async () => {
-    // ⚠️ The asymmetry is mechanical, not a policy: `StrictSwitched` carries a nullable value and
-    // `ModelSwitched` does not, so the kernel has no event meaning "go back to inheriting" for the
-    // other four. Asserted rather than commented, so widening those events shows up here.
+  test("every switchable component clears back to inherit", async () => {
+    // The asymmetry this used to pin is GONE (2026-08-14): four of the five events carried non-null
+    // values, so the kernel had no way to say "go back to inheriting" and a sparse-override column
+    // could never return to sparse. Widening them was the ECS lens applied to its own kernel.
     const cleared = await withRegistry(({ registry, sessionID }) =>
       Effect.gen(function* () {
+        const catalog = yield* CatalogStore.Service
+        yield* catalog.setLayers(ProviderV2.ID.make("local"), [{ id: "local", models: { "tiny-1": {} } } as never])
         yield* registry.put({ sessionID, kind: "strict", value: { enabled: true } })
-        return yield* registry.remove({ sessionID, kind: "strict" })
+        yield* registry.put({ sessionID, kind: "model", value: { providerID: "local", id: "tiny-1" } })
+        yield* registry.put({ sessionID, kind: "agent", value: "build" })
+        return {
+          strict: yield* registry.remove({ sessionID, kind: "strict" }),
+          model: yield* registry.remove({ sessionID, kind: "model" }),
+          agent: yield* registry.remove({ sessionID, kind: "agent" }),
+          // Clearing what was never set is `false` — nothing changed — rather than a failure. The
+          // session already inherits, which is the state the caller asked for.
+          again: yield* registry.remove({ sessionID, kind: "agent" }),
+        }
       }),
     )
-    expect(cleared).toBe(true)
+    expect(cleared).toEqual({ strict: true, model: true, agent: true, again: false })
+  })
 
-    const refused = await withRegistry(({ registry, sessionID }) =>
-      registry.remove({ sessionID, kind: "model" }).pipe(Effect.flip),
+  test("🔴 the system-only and one-way rulings hold on the REMOVAL door too", async () => {
+    // The hazard the widening created: `session_type` and `responder` refuse an agent's WRITE, and
+    // removal reaches the same end by falling back to the inherited default — an agent clearing
+    // `responder` takes control back from the human who took over, and clearing `session_type`
+    // drops an unattended root's confinement. A gate on one door only is not a gate.
+    const refusals = await withRegistry(({ registry, sessionID }) =>
+      Effect.gen(function* () {
+        yield* registry.put({ sessionID, kind: "session_type", value: "interactive", system: true })
+        yield* registry.put({ sessionID, kind: "responder", value: "operator" })
+        return {
+          type: yield* registry.remove({ sessionID, kind: "session_type" }).pipe(Effect.flip),
+          responder: yield* registry.remove({ sessionID, kind: "responder" }).pipe(Effect.flip),
+        }
+      }),
     )
-    expect(String((refused as { message?: string }).message)).toMatch(/cannot be removed/)
+    expect(String((refusals.type as { message?: string }).message)).toMatch(/person driving the chat/)
+    expect(String((refusals.responder as { message?: string }).message)).toMatch(/only a person hands it back/)
+
+    // And the other half: the system CAN clear both, or the gate would be a permanent lock rather
+    // than an authority check.
+    const allowed = await withRegistry(({ registry, sessionID }) =>
+      Effect.gen(function* () {
+        yield* registry.put({ sessionID, kind: "responder", value: "operator" })
+        return yield* registry.remove({ sessionID, kind: "responder", system: true })
+      }),
+    )
+    expect(allowed).toBe(true)
   })
 })

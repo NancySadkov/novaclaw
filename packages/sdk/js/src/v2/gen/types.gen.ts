@@ -371,7 +371,7 @@ export type GlobalEvent = {
           timestamp: number
           sessionID: string
           messageID: string
-          agent: string
+          agent: string | null
         }
       }
     | {
@@ -381,7 +381,7 @@ export type GlobalEvent = {
           timestamp: number
           sessionID: string
           messageID: string
-          model: ModelRef
+          model: ModelRef | null
         }
       }
     | {
@@ -391,7 +391,7 @@ export type GlobalEvent = {
           timestamp: number
           sessionID: string
           messageID: string
-          responder: "nova" | "operator"
+          responder: "nova" | "operator" | null
         }
       }
     | {
@@ -456,7 +456,7 @@ export type GlobalEvent = {
           timestamp: number
           sessionID: string
           messageID: string
-          sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+          sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented" | null
         }
       }
     | {
@@ -2314,7 +2314,7 @@ export type SessionMessageAgentSwitched = {
   }
   seq?: number
   type: "agent-switched"
-  agent: string
+  agent: string | null
 }
 
 export type SessionMessageModelSwitched = {
@@ -2327,7 +2327,7 @@ export type SessionMessageModelSwitched = {
   }
   seq?: number
   type: "model-switched"
-  model: ModelRef
+  model: ModelRef | null
 }
 
 export type SessionMessagePermissionChanged = {
@@ -2808,7 +2808,7 @@ export type SyncEventSessionNextAgentSwitched = {
       timestamp: number
       sessionID: string
       messageID: string
-      agent: string
+      agent: string | null
     }
   }
 }
@@ -2825,7 +2825,7 @@ export type SyncEventSessionNextModelSwitched = {
       timestamp: number
       sessionID: string
       messageID: string
-      model: ModelRef
+      model: ModelRef | null
     }
   }
 }
@@ -2842,7 +2842,7 @@ export type SyncEventSessionNextResponderSwitched = {
       timestamp: number
       sessionID: string
       messageID: string
-      responder: "nova" | "operator"
+      responder: "nova" | "operator" | null
     }
   }
 }
@@ -2942,7 +2942,7 @@ export type SyncEventSessionNextTypeSwitched = {
       timestamp: number
       sessionID: string
       messageID: string
-      sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+      sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented" | null
     }
   }
 }
@@ -4582,7 +4582,7 @@ export type SessionNextAgentSwitched = {
     timestamp: number
     sessionID: string
     messageID: string
-    agent: string
+    agent: string | null
   }
 }
 
@@ -4602,7 +4602,7 @@ export type SessionNextModelSwitched = {
     timestamp: number
     sessionID: string
     messageID: string
-    model: ModelRef
+    model: ModelRef | null
   }
 }
 
@@ -4622,7 +4622,7 @@ export type SessionNextResponderSwitched = {
     timestamp: number
     sessionID: string
     messageID: string
-    responder: "nova" | "operator"
+    responder: "nova" | "operator" | null
   }
 }
 
@@ -4737,7 +4737,7 @@ export type SessionNextTypeSwitched = {
     timestamp: number
     sessionID: string
     messageID: string
-    sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+    sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented" | null
   }
 }
 
@@ -6959,7 +6959,7 @@ export type EventSessionNextAgentSwitched = {
     timestamp: number
     sessionID: string
     messageID: string
-    agent: string
+    agent: string | null
   }
 }
 
@@ -6970,7 +6970,7 @@ export type EventSessionNextModelSwitched = {
     timestamp: number
     sessionID: string
     messageID: string
-    model: ModelRef
+    model: ModelRef | null
   }
 }
 
@@ -6981,7 +6981,7 @@ export type EventSessionNextResponderSwitched = {
     timestamp: number
     sessionID: string
     messageID: string
-    responder: "nova" | "operator"
+    responder: "nova" | "operator" | null
   }
 }
 
@@ -7051,7 +7051,7 @@ export type EventSessionNextTypeSwitched = {
     timestamp: number
     sessionID: string
     messageID: string
-    sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+    sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented" | null
   }
 }
 

@@ -119,14 +119,16 @@ export interface AgentSwitched extends Schema.Schema.Type<typeof AgentSwitched> 
 export const AgentSwitched = Schema.Struct({
   ...Base,
   type: Schema.Literal("agent-switched"),
-  agent: Schema.String,
+  /** `null` = the override was cleared; the session went back to inheriting. */
+  agent: Schema.NullOr(Schema.String),
 }).annotate({ identifier: "Session.Message.AgentSwitched" })
 
 export interface ModelSwitched extends Schema.Schema.Type<typeof ModelSwitched> {}
 export const ModelSwitched = Schema.Struct({
   ...Base,
   type: Schema.Literal("model-switched"),
-  model: Model.Ref,
+  /** `null` = the override was cleared; the session went back to inheriting. */
+  model: Schema.NullOr(Model.Ref),
 }).annotate({ identifier: "Session.Message.ModelSwitched" })
 
 export const PermissionMode = Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"])
