@@ -1,6 +1,8 @@
+import { generateKeyPairSync, sign as nodeSign } from "node:crypto"
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { CommunityChannels } from "@novaclaw/core/community/channels"
+import { CommunityMessageTable } from "@novaclaw/core/community/channel.sql"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityMessage } from "@novaclaw/core/community/message"
 import { Database } from "@novaclaw/core/database/database"
@@ -30,6 +32,28 @@ const it = testEffect(
 )
 
 const CHANNEL = CommunityChannels.DEFAULT_CHANNEL
+
+/**
+ * A message from SOMEONE ELSE — the case a forum consists of.
+ *
+ * ⚠️ Every other test here signs with this instance's own identity, which exercises the loop back to
+ * ourselves and never the path that actually matters: bytes from a stranger's key. This mints a
+ * fresh keypair and signs through the SAME `canonicalBytes` the product uses, because a second
+ * encoder in the test would be a second protocol and would agree with itself while disagreeing with
+ * every real peer.
+ */
+const fromStranger = (input: { channel: string; body: string; at?: number }) => {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519")
+  const raw = (publicKey.export({ type: "spki", format: "der" }) as Buffer).subarray(12)
+  const unsigned = {
+    channel: input.channel,
+    author: `nid_${raw.toString("base64url")}`,
+    at: input.at ?? Date.now(),
+    body: input.body,
+  }
+  const signature = nodeSign(null, Buffer.from(CommunityMessage.canonicalBytes(unsigned)), privateKey)
+  return { ...unsigned, signature: signature.toString("base64url") } satisfies CommunityMessage.Signed
+}
 
 describe("CommunityChannels", () => {
   it.effect("a joined channel records a verified message, and history reads it back", () =>
@@ -118,6 +142,58 @@ describe("CommunityChannels", () => {
       expect(yield* channels.channels()).toEqual([])
       // Rejoining must not show an empty room the user knows had messages.
       expect((yield* channels.history(CHANNEL)).map((m) => m.body)).toEqual(["kept"])
+    }),
+  )
+
+  it.effect("🔴 a message from a STRANGER's key verifies and records — the forum's whole point", () =>
+    Effect.gen(function* () {
+      const channels = yield* CommunityChannels.Service
+      yield* channels.join(CHANNEL)
+
+      // Not a contact, not us: exactly what arrives on an open channel from someone you have never
+      // met. Nothing about verification may depend on knowing the author beforehand.
+      const stranger = fromStranger({ channel: CHANNEL, body: "hello from outside" })
+      expect(CommunityMessage.verify(stranger)).toBe(true)
+      expect("stored" in (yield* channels.record(CHANNEL, stranger))).toBe(true)
+      expect((yield* channels.history(CHANNEL)).map((m) => m.body)).toEqual(["hello from outside"])
+
+      // And a forged one from that same author is refused: an attacker who knows a stranger's
+      // public key must not be able to speak as them.
+      const forged = { ...stranger, body: "words they never wrote" }
+      expect(CommunityMessage.verify(forged)).toBe(false)
+      expect(yield* channels.record(CHANNEL, forged)).toEqual({ rejected: "unverified" })
+    }),
+  )
+
+  it.effect("🔴 the retention bound holds when every message shares one millisecond", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      // Exactly the flood's shape: ~10 messages per millisecond means ties are the NORMAL case, and
+      // here every row shares one timestamp. The first prune deleted `received_at < cutoff`, so the
+      // cutoff equalled every row's value, `<` matched nothing, and the bound deleted ZERO rows
+      // while the table grew without limit — failing precisely where it was needed.
+      const frozen = 1_700_000_000_000
+      for (let i = 0; i < 40; i++)
+        yield* db
+          .insert(CommunityMessageTable)
+          .values({
+            id: `id-${i}`,
+            channel: CHANNEL,
+            author: `nid_${Buffer.alloc(32, 1).toString("base64url")}`,
+            claimed_at: frozen,
+            received_at: frozen,
+            body: `m${i}`,
+            signature: "x",
+          })
+          .run()
+
+      yield* CommunityChannels.prune(db, CHANNEL, 10)
+      const left = yield* db.select().from(CommunityMessageTable).all()
+      expect(left).toHaveLength(10)
+      // And it kept the NEWEST ten, deterministically, rather than an arbitrary ten.
+      expect(left.map((r) => r.body).sort()).toEqual(
+        ["m30", "m31", "m32", "m33", "m34", "m35", "m36", "m37", "m38", "m39"].sort(),
+      )
     }),
   )
 

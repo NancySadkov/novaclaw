@@ -63,6 +63,38 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 export const messageID = (message: CommunityMessage.Signed): string =>
   createHash("sha256").update(CommunityMessage.canonicalBytes(message)).digest("hex")
 
+/**
+ * Keep only the newest `keep` messages of a channel.
+ *
+ * 🔴 Selects the survivors by IDENTITY, not by a timestamp cutoff. The first version deleted
+ * `received_at < cutoff`, which fails on TIES — and ties are the normal case under exactly the
+ * attack this bound exists for: the flood test delivered ~10 messages per millisecond, and a burst
+ * landing entirely inside one millisecond makes the cutoff equal to every row's value, so `<`
+ * matches nothing and the "bound" deletes zero rows while the table grows without limit.
+ *
+ * `rowid` breaks the remaining ties, so the survivor set is deterministic rather than whatever
+ * order SQLite happened to return.
+ *
+ * Exported and parameterised because a bound is only real if it has been watched to hold; testing it
+ * through `record` alone would need 5,000 signed messages per case.
+ */
+export const prune = (db: Database.Interface["db"], channel: string, keep: number) =>
+  db
+    .delete(CommunityMessageTable)
+    .where(
+      and(
+        eq(CommunityMessageTable.channel, channel),
+        sql`${CommunityMessageTable.id} NOT IN (
+          SELECT id FROM ${CommunityMessageTable}
+          WHERE channel = ${channel}
+          ORDER BY received_at DESC, rowid DESC
+          LIMIT ${keep}
+        )`,
+      ),
+    )
+    .run()
+    .pipe(Effect.orDie)
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -164,27 +196,7 @@ export const layer = Layer.effect(
           .pipe(Effect.orDie)
         if (inserted.length === 0) return { rejected: "duplicate" as const }
 
-        // Prune past the retention bound, oldest RECEIVED first.
-        const cutoff = yield* db
-          .select({ received_at: CommunityMessageTable.received_at })
-          .from(CommunityMessageTable)
-          .where(eq(CommunityMessageTable.channel, channel))
-          .orderBy(desc(CommunityMessageTable.received_at))
-          .limit(1)
-          .offset(RETAIN_PER_CHANNEL - 1)
-          .get()
-          .pipe(Effect.orDie)
-        if (cutoff !== undefined)
-          yield* db
-            .delete(CommunityMessageTable)
-            .where(
-              and(
-                eq(CommunityMessageTable.channel, channel),
-                lt(CommunityMessageTable.received_at, cutoff.received_at),
-              ),
-            )
-            .run()
-            .pipe(Effect.orDie)
+        yield* prune(db, channel, RETAIN_PER_CHANNEL)
 
         return {
           stored: { ...message, id, receivedAt } satisfies Stored,
