@@ -2,7 +2,7 @@ export * as InstanceIdentityStore from "./instance-identity-store"
 
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } from "node:crypto"
 import { isNull, or } from "drizzle-orm"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { CredentialCipher } from "./credential-cipher"
 import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
@@ -60,6 +60,30 @@ export const verifySignature = (peer: string, message: Uint8Array, signature: Ui
   }
 }
 
+/**
+ * A portable copy of the whole identity — **the secret included**.
+ *
+ * 🔴 THIS FILE IS THE INSTANCE. Anyone holding it can sign as this peer, in a network with no
+ * authority to appeal to and no way to revoke. It is a backup in the same sense a house key is: the
+ * point is to keep it, and keeping it badly is the risk.
+ *
+ * It exists because the alternative is worse. With no registry there is no password reset, so a dead
+ * disk without a backup means the identity, its contacts and its history are gone permanently — the
+ * "breaks in your hands" failure that `AGENTS.md` says a normal person must never meet.
+ */
+export interface Backup {
+  /** Bumped only when the shape changes; a restore refuses a version it does not know. */
+  readonly version: 1
+  readonly id: string
+  readonly networkID: string
+  /** Raw 32-byte Ed25519 seed, base64url. */
+  readonly secretKey: string
+}
+
+export class RestoreError extends Schema.TaggedErrorClass<RestoreError>()("InstanceIdentityStore.RestoreError", {
+  message: Schema.String,
+}) {}
+
 export interface Identity {
   /** The local handle, minted once (`ins_…`). What mDNS and /global/health already advertise. */
   readonly id: string
@@ -75,6 +99,24 @@ export interface Interface {
   readonly identity: () => Effect.Effect<Identity>
   /** Sign as this instance. The secret is decrypted per call and never leaves this service. */
   readonly sign: (message: Uint8Array) => Effect.Effect<Buffer>
+  /**
+   * Export the identity INCLUDING its secret, for backup.
+   *
+   * ⚠️ Not agent-reachable. Whatever surfaces this must be a deliberate human action behind a
+   * consent card — an agent that can call it can exfiltrate the instance.
+   */
+  readonly backup: () => Effect.Effect<Backup>
+  /**
+   * Restore a backup onto this instance.
+   *
+   * ⚠️ `replace` must be passed to overwrite an identity that already exists. Silently replacing one
+   * would orphan every contact and channel that knows this peer, which is unrecoverable and looks
+   * from the outside exactly like the instance being replaced by an impostor.
+   */
+  readonly restore: (
+    backup: Backup,
+    options?: { readonly replace?: boolean },
+  ) => Effect.Effect<Identity, RestoreError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/InstanceIdentityStore") {}
@@ -148,6 +190,63 @@ export const layer = Layer.effect(
         const stored = yield* ensure()
         const secret = yield* cipher.decrypt(stored.secret_key ?? "", AAD).pipe(Effect.orDie)
         return sign(null, Buffer.from(message), privateKeyFromRaw(Buffer.from(secret, "base64url")))
+      }),
+      backup: Effect.fn("InstanceIdentityStore.backup")(function* () {
+        const stored = yield* ensure()
+        const secret = yield* cipher.decrypt(stored.secret_key ?? "", AAD).pipe(Effect.orDie)
+        const publicKey = Buffer.from(stored.public_key ?? "", "base64url")
+        return { version: 1, id: stored.id, networkID: networkID(publicKey), secretKey: secret } satisfies Backup
+      }),
+      restore: Effect.fn("InstanceIdentityStore.restore")(function* (
+        backup: Backup,
+        options?: { readonly replace?: boolean },
+      ) {
+        if (backup.version !== 1)
+          return yield* new RestoreError({ message: `This backup is version ${backup.version}; this build reads version 1.` })
+
+        const secretRaw = Buffer.from(backup.secretKey ?? "", "base64url")
+        if (secretRaw.length !== 32)
+          return yield* new RestoreError({ message: "The backup's secret key is not 32 bytes — it is truncated or not a NovaClaw backup." })
+
+        /**
+         * 🔴 DERIVE the public key from the secret rather than trusting the file's own `networkID`.
+         *
+         * The two fields in a backup can disagree — through corruption, or because someone edited the
+         * identity they claim while keeping a key they hold. Trusting the label would restore an
+         * instance that signs with one key while announcing another: every signature it sends fails
+         * verification, and the symptom is "peers ignore me", nowhere near the cause.
+         */
+        const derived = rawPublicKey(
+          createPublicKey(privateKeyFromRaw(secretRaw)).export({ type: "spki", format: "der" }) as Buffer,
+        )
+        if (networkID(derived) !== backup.networkID)
+          return yield* new RestoreError({
+            message: "This backup's key does not match the identity it claims; it is corrupt or was edited.",
+          })
+
+        const existing = yield* row()
+        if (existing?.public_key && options?.replace !== true)
+          return yield* new RestoreError({
+            message:
+              "This instance already has an identity. Restoring would orphan every contact that knows it, so it must be confirmed explicitly.",
+          })
+
+        const encrypted = cipher.encrypt(secretRaw.toString("base64url"), AAD)
+        const publicEncoded = derived.toString("base64url")
+        if (existing === undefined)
+          yield* db
+            .insert(InstanceIdentityTable)
+            .values({ id: backup.id, public_key: publicEncoded, secret_key: encrypted })
+            .run()
+            .pipe(Effect.orDie)
+        else
+          yield* db
+            .update(InstanceIdentityTable)
+            .set({ id: backup.id, public_key: publicEncoded, secret_key: encrypted })
+            .run()
+            .pipe(Effect.orDie)
+
+        return { id: backup.id, networkID: backup.networkID, publicKey: derived }
       }),
     })
   }),
