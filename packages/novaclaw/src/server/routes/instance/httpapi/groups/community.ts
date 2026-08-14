@@ -28,6 +28,19 @@ export const CommunityContact = Schema.Struct({
   addedAt: Schema.Number,
 })
 
+/**
+ * Whether anything can currently carry a message, and why not when it cannot.
+ *
+ * ⚠️ `off` carries a REASON because the two cases are different things to tell a person: "the part
+ * that carries messages is still being built" versus "you switched the network off". A single
+ * disconnected state would make an airgapped instance look broken.
+ */
+export const CommunityTransportState = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("off"), reason: Schema.Literals(["none", "airgap"]) }),
+  Schema.Struct({ kind: Schema.Literal("connecting") }),
+  Schema.Struct({ kind: Schema.Literal("online"), peers: Schema.Number }),
+])
+
 export const CommunityChannel = Schema.Struct({
   name: Schema.String,
   muted: Schema.Boolean,
@@ -58,6 +71,7 @@ export const CommunityPaths = {
   contacts: "/api/community/contact",
   contact: "/api/community/contact/:networkID",
   contactBlock: "/api/community/contact/:networkID/block",
+  transport: "/api/community/transport",
   channels: "/api/community/channel",
   channelHistory: "/api/community/channel/:name/history",
 } as const
@@ -107,6 +121,16 @@ export const CommunityApi = HttpApi.make("community").add(
           summary: "Block or unblock a contact",
           description:
             "With no moderator anywhere, blocking is the only power a user has over what they receive. Blocked authors are dropped as messages arrive, not hidden after being stored.",
+        }),
+      ),
+      HttpApiEndpoint.get("transportState", CommunityPaths.transport, {
+        success: described(CommunityTransportState, "Whether a transport can currently carry messages"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.transport.state",
+          summary: "Transport state",
+          description:
+            "Report whether the community network can carry messages. `off` names its reason so the UI can distinguish a transport that does not exist yet from one airgap has switched off.",
         }),
       ),
       HttpApiEndpoint.get("channelList", CommunityPaths.channels, {

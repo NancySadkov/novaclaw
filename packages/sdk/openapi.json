@@ -2558,6 +2558,109 @@
         ]
       }
     },
+    "/api/community/transport": {
+      "get": {
+        "tags": ["community"],
+        "operationId": "community.transport.state",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Whether a transport can currently carry messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": ["off"]
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": ["none", "airgap"]
+                        }
+                      },
+                      "required": ["kind", "reason"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": ["connecting"]
+                        }
+                      },
+                      "required": ["kind"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": ["online"]
+                        },
+                        "peers": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["kind", "peers"],
+                      "additionalProperties": false
+                    }
+                  ],
+                  "description": "Whether a transport can currently carry messages"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Report whether the community network can carry messages. `off` names its reason so the UI can distinguish a transport that does not exist yet from one airgap has switched off.",
+        "summary": "Transport state",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.transport.state({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/community/channel": {
       "get": {
         "tags": ["community"],

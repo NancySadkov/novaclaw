@@ -8847,6 +8847,46 @@ export type CommunityContactBlockResponses = {
 
 export type CommunityContactBlockResponse = CommunityContactBlockResponses[keyof CommunityContactBlockResponses]
 
+export type CommunityTransportStateData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/community/transport"
+}
+
+export type CommunityTransportStateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityTransportStateError = CommunityTransportStateErrors[keyof CommunityTransportStateErrors]
+
+export type CommunityTransportStateResponses = {
+  /**
+   * Whether a transport can currently carry messages
+   */
+  200:
+    | {
+        kind: "off"
+        reason: "none" | "airgap"
+      }
+    | {
+        kind: "connecting"
+      }
+    | {
+        kind: "online"
+        peers: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }
+}
+
+export type CommunityTransportStateResponse = CommunityTransportStateResponses[keyof CommunityTransportStateResponses]
+
 export type CommunityChannelListData = {
   body?: never
   path?: never

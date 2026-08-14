@@ -167,6 +167,12 @@ describe("instance HttpApi", () => {
       const history = yield* HttpClient.get(`/api/community/channel/${encodeURIComponent("#NovaClaw")}/history`)
       expect(history.status).toBe(200)
       expect(yield* history.json).toEqual([])
+
+      // The transport seam reports OFF with a REASON, so the screen can say "still being built"
+      // rather than "disconnected" — which would read as broken on every fresh install.
+      const transport = yield* HttpClient.get("/api/community/transport")
+      expect(transport.status).toBe(200)
+      expect(yield* transport.json).toEqual({ kind: "off", reason: "none" })
     }),
   )
 

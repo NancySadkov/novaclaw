@@ -1,0 +1,70 @@
+import { describe, expect } from "bun:test"
+import { Effect } from "effect"
+import { CommunityTransport } from "@novaclaw/core/community/transport"
+import { Database } from "@novaclaw/core/database/database"
+import { LayerNode } from "@novaclaw/core/effect/layer-node"
+import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
+import { CommunityMessage } from "@novaclaw/core/community/message"
+import { Offline } from "@novaclaw/core/offline"
+import { testEffect } from "./lib/effect"
+
+/**
+ * Community P2 — the transport seam (`todo/community-p2p.md`).
+ *
+ * There is no transport yet, and that is the point: these pin the behaviour of an instance whose
+ * community has nowhere to go, because that is every install today and every airgapped one forever.
+ */
+
+const it = testEffect(
+  // Offline is listed explicitly as well as being a dependency of the transport: the airgap case
+  // drives it directly, and a service that is only a transitive dep is not in scope for the test.
+  LayerNode.compile(
+    LayerNode.group([Database.node, InstanceIdentityStore.node, Offline.node, CommunityTransport.node]),
+  ),
+)
+
+describe("CommunityTransport", () => {
+  it.effect("reports OFF with a reason, not a failure", () =>
+    Effect.gen(function* () {
+      const transport = yield* CommunityTransport.Service
+      const state = yield* transport.state()
+      // "No network yet" is the ordinary state of a fresh install. Modelling it as an error would
+      // make the Community screen a red one on first open.
+      expect(state).toEqual({ kind: "off", reason: "none" })
+    }),
+  )
+
+  it.effect("🔴 publishing returns false rather than failing", () =>
+    Effect.gen(function* () {
+      const transport = yield* CommunityTransport.Service
+      const message = yield* CommunityMessage.sign({ channel: "#NovaClaw", body: "into the void" })
+      // The caller keeps its own copy either way, so the user's words are never lost — they simply
+      // have no audience yet. A failing effect here would surface as a crash on a normal action.
+      expect(yield* transport.publish(message)).toBe(false)
+    }),
+  )
+
+  it.effect("🔴 AIRGAP is reported distinctly from 'not built yet'", () =>
+    Effect.gen(function* () {
+      const transport = yield* CommunityTransport.Service
+      const before = yield* transport.state()
+      expect(before).toEqual({ kind: "off", reason: "none" })
+
+      // A community is egress the user chose, so airgap must be able to withdraw that choice — and
+      // the reason has to survive to the UI, because "off because you turned the network off" and
+      // "off because it does not exist yet" are different things to tell someone.
+      const offline = yield* Offline.Service
+      const original = offline.policy.enabled
+      try {
+        Object.defineProperty(offline.policy, "enabled", { value: true, configurable: true })
+        expect(yield* transport.state()).toEqual({ kind: "off", reason: "airgap" })
+      } finally {
+        Object.defineProperty(offline.policy, "enabled", { value: original, configurable: true })
+      }
+
+      // And it follows the flag back down without a restart: the policy is read per call, so a
+      // Settings change takes effect immediately rather than reporting stale.
+      expect(yield* transport.state()).toEqual({ kind: "off", reason: "none" })
+    }),
+  )
+})

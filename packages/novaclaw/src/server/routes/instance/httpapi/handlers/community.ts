@@ -1,5 +1,6 @@
 import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
+import { CommunityTransport } from "@novaclaw/core/community/transport"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
@@ -15,6 +16,7 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
   Effect.gen(function* () {
     const contacts = yield* CommunityContacts.Service
     const channels = yield* CommunityChannels.Service
+    const transport = yield* CommunityTransport.Service
 
     return handlers
       .handle(
@@ -51,6 +53,12 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
         "contactBlock",
         Effect.fn("CommunityHttpApi.contactBlock")(function* (ctx) {
           return yield* contacts.setBlocked(ctx.params.networkID, ctx.payload.blocked)
+        }),
+      )
+      .handle(
+        "transportState",
+        Effect.fn("CommunityHttpApi.transportState")(function* () {
+          return yield* transport.state()
         }),
       )
       .handle(

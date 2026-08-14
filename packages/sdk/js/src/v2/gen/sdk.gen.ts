@@ -815,6 +815,24 @@ class ApiCommunityContact extends NovaClawApiClient {
   }
 }
 
+class ApiCommunityTransport extends NovaClawApiClient {
+  /**
+   * Transport state
+   *
+   * Report whether the community network can carry messages. `off` names its reason so the UI can distinguish a transport that does not exist yet from one airgap has switched off.
+   */
+  public state<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.CommunityTransportStateResponses,
+      T.CommunityTransportStateErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/transport",
+      ...options,
+    })
+  }
+}
+
 class ApiCommunityChannel extends NovaClawApiClient {
   /**
    * List joined channels
@@ -884,6 +902,11 @@ class ApiCommunity extends NovaClawApiClient {
   private _contact?: ApiCommunityContact
   get contact(): ApiCommunityContact {
     return (this._contact ??= new ApiCommunityContact({ client: this.client }))
+  }
+
+  private _transport?: ApiCommunityTransport
+  get transport(): ApiCommunityTransport {
+    return (this._transport ??= new ApiCommunityTransport({ client: this.client }))
   }
 
   private _channel?: ApiCommunityChannel
