@@ -176,6 +176,19 @@ describe("instance HttpApi", () => {
     }),
   )
 
+  it.live("🔴 the community tool is REGISTERED, not merely written", () =>
+    Effect.gen(function* () {
+      // A tool can compile, be listed in builtins, and still never reach an agent if its node fails
+      // to construct — the same class as an HttpApi group whose services are missing. Registration
+      // is the only thing that proves the dependency graph actually resolved.
+      const dir = yield* tmpdirScoped({ git: true })
+      const response = yield* HttpClient.get(`/experimental/tool/ids?directory=${encodeURIComponent(dir)}`)
+      expect(response.status).toBe(200)
+      const ids = (yield* response.json) as string[]
+      expect(ids).toContain("community")
+    }),
+  )
+
   it.live("serves the OpenAPI document", () =>
     Effect.gen(function* () {
       const response = yield* HttpClient.get("/doc")
