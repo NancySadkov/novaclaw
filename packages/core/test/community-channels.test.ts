@@ -382,4 +382,39 @@ describe("CommunityChannels", () => {
     }),
   )
 
+
+  it.effect("🔴 leaving leaves the history REACHABLE, not just retained", () =>
+    Effect.gen(function* () {
+      /**
+       * Principle 12: a setting may never require a value the user has no way to know. Leaving keeps
+       * a channel's messages on purpose — and used to remove the only route back to them, so the way
+       * to read your own history was to retype the name exactly, from memory. The room is not gone;
+       * we are holding its messages.
+       */
+      const channels = yield* CommunityChannels.Service
+      yield* channels.join(CHANNEL)
+      yield* channels.join("#recipes")
+      yield* channels.record("#recipes", proven(fromStranger({ channel: "#recipes", body: "lavalamp" })))
+
+      // While subscribed, it is a CHANNEL, never an archive entry.
+      expect(yield* channels.archived()).toEqual([])
+
+      expect(yield* channels.leave("#recipes")).toBe(true)
+      expect(yield* channels.archived()).toEqual([{ name: "#recipes", messages: 1 }])
+      // The messages are still there — leaving was never a delete.
+      expect((yield* channels.history("#recipes")).map((m) => m.body)).toEqual(["lavalamp"])
+
+      // Rejoining from the archive restores the room, and the archive no longer offers it.
+      yield* channels.join("#recipes")
+      expect((yield* channels.channels()).map((entry) => entry.name)).toEqual([CHANNEL, "#recipes"])
+      expect(yield* channels.archived()).toEqual([])
+
+      // ⚠️ And by TOPIC, not by name: rejoining under a different spelling is the SAME room, so the
+      // old spelling must not be offered as somewhere else to go.
+      yield* channels.leave("#recipes")
+      yield* channels.join("#Recipes")
+      expect(yield* channels.archived()).toEqual([])
+    }),
+  )
+
 })

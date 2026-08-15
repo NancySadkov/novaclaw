@@ -97,6 +97,7 @@ export const CommunityPaths = {
   channels: "/api/community/channel",
   channel: "/api/community/channel/:name",
   channelMute: "/api/community/channel/:name/mute",
+  channelsArchived: "/api/community/channel/archived",
   channelHistory: "/api/community/channel/:name/history",
   channelPost: "/api/community/channel/:name/post",
 } as const
@@ -165,6 +166,19 @@ export const CommunityApi = HttpApi.make("community").add(
           identifier: "community.channel.list",
           summary: "List joined channels",
           description: "The channels this instance subscribes to.",
+        }),
+      ),
+      HttpApiEndpoint.get("channelArchived", CommunityPaths.channelsArchived, {
+        success: described(
+          Schema.Array(Schema.Struct({ name: Schema.String, messages: Schema.Number })),
+          "Channels whose messages we hold but no longer subscribe to",
+        ),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.channel.archived",
+          summary: "Channels you left but still have history for",
+          description:
+            "Leaving keeps a channel's messages. Without this the only way back to them is to retype the name exactly — a value the user has no way to know, for a room we are still holding on disk.",
         }),
       ),
       HttpApiEndpoint.post("channelJoin", CommunityPaths.channels, {

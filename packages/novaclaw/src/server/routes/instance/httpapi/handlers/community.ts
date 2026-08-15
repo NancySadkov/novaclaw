@@ -77,6 +77,12 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
         }),
       )
       .handle(
+        "channelArchived",
+        Effect.fn("CommunityHttpApi.channelArchived")(function* () {
+          return yield* channels.archived()
+        }),
+      )
+      .handle(
         "channelLeave",
         Effect.fn("CommunityHttpApi.channelLeave")(function* (ctx) {
           // ⚠️ The store deliberately keeps the history. Leaving is a subscription change, not a

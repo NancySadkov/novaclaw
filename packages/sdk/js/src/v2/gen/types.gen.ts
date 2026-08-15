@@ -8959,6 +8959,39 @@ export type CommunityChannelJoinResponses = {
 
 export type CommunityChannelJoinResponse = CommunityChannelJoinResponses[keyof CommunityChannelJoinResponses]
 
+export type CommunityChannelArchivedData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/community/channel/archived"
+}
+
+export type CommunityChannelArchivedErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityChannelArchivedError = CommunityChannelArchivedErrors[keyof CommunityChannelArchivedErrors]
+
+export type CommunityChannelArchivedResponses = {
+  /**
+   * Channels whose messages we hold but no longer subscribe to
+   */
+  200: Array<{
+    name: string
+    messages: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }>
+}
+
+export type CommunityChannelArchivedResponse =
+  CommunityChannelArchivedResponses[keyof CommunityChannelArchivedResponses]
+
 export type CommunityChannelLeaveData = {
   body?: never
   path: {

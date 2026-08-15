@@ -106,6 +106,13 @@ export function communityJoinChannel(server: ServerConnection.HttpBase, name: st
  * Say something. `delivered` reports whether a transport took it — never whether it was read, since
  * nothing in a serverless network can promise that.
  */
+/** Channels this instance left but still holds messages for. */
+export function communityArchivedChannels(server: ServerConnection.HttpBase) {
+  return instanceFetch<{ readonly name: string; readonly messages: number }[]>(server, {
+    route: "api/community/channel/archived",
+  })
+}
+
 /**
  * Stop subscribing. The instance KEEPS the history — see the endpoint's note.
  */

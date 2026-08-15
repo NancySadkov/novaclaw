@@ -7,6 +7,7 @@ import {
   communityAddContact,
   communityChannelHistory,
   communityChannels,
+  communityArchivedChannels,
   communityContacts,
   communityJoinChannel,
   communityLeaveChannel,
@@ -40,6 +41,17 @@ export const CommunityNetwork: Component = () => {
   const [identity] = createResource(connection, (value) => instanceIdentity(value.http))
   const [contacts, contactActions] = createResource(connection, (value) => communityContacts(value.http))
   const [channels, channelActions] = createResource(connection, (value) => communityChannels(value.http))
+  /**
+   * Channels the user left, whose messages this instance still holds.
+   *
+   * 🔴 Principle 12: leaving keeps the history on purpose, and without this the only route back to
+   * it is retyping the name exactly — a value the user has no way to know, for a room sitting on
+   * their own disk. Discovering channels never seen before is a different problem and needs the
+   * network; this is the half already here.
+   */
+  const [archived, archivedActions] = createResource(connection, (value) =>
+    communityArchivedChannels(value.http),
+  )
 
   /**
    * Which channel is on screen.
@@ -181,11 +193,20 @@ export const CommunityNetwork: Component = () => {
       // two would eventually disagree about which room a user is in.
       await communityJoinChannel(current.http, name)
       setJoining("")
-      await channelActions.refetch()
+      await Promise.all([channelActions.refetch(), archivedActions.refetch()])
       setSelected(name)
     } catch (error) {
       setProblem(error instanceof Error ? error.message : String(error))
     }
+  }
+
+  /** Rejoin a room we already hold messages for — the same door as `join`, without the typing. */
+  const rejoin = async (name: string) => {
+    const current = connection()
+    if (!current) return
+    await communityJoinChannel(current.http, name)
+    await Promise.all([channelActions.refetch(), archivedActions.refetch()])
+    setSelected(name)
   }
 
   const leave = async (name: string) => {
@@ -194,8 +215,7 @@ export const CommunityNetwork: Component = () => {
     await communityLeaveChannel(current.http, name)
     // The selection is resolved against the joined list, so dropping the channel being read falls
     // back to whatever remains rather than leaving the screen pointed at nothing.
-    await channelActions.refetch()
-    await historyActions.refetch()
+    await Promise.all([channelActions.refetch(), archivedActions.refetch(), historyActions.refetch()])
   }
 
   const mute = async (name: string, muted: boolean) => {
@@ -399,6 +419,27 @@ export const CommunityNetwork: Component = () => {
         </div>
         <Show when={sendNote()}>
           <span class="text-[11px] leading-snug text-v2-text-text-muted">{sendNote()}</span>
+        </Show>
+        {/*
+          ⚠️ Offered BEFORE the free-text box, because principle 12 makes free text the fallback for
+          what discovery missed rather than the front door. These are rooms whose messages are on
+          this disk right now — the user has already met them.
+        */}
+        <Show when={(archived() ?? []).length > 0}>
+          <div class="mt-2 flex flex-col gap-1 border-t border-white/5 pt-2">
+            <span class="text-[11px] text-v2-text-text-muted">
+              You left these, and still have what was said in them:
+            </span>
+            <div class="flex flex-wrap items-center gap-1">
+              <For each={archived() ?? []}>
+                {(entry) => (
+                  <ButtonV2 variant="ghost" size="small" onClick={() => void rejoin(entry.name)}>
+                    {`${entry.name} · ${entry.messages} ${entry.messages === 1 ? "message" : "messages"}`}
+                  </ButtonV2>
+                )}
+              </For>
+            </div>
+          </div>
         </Show>
         <div class="mt-2 flex items-center gap-2 border-t border-white/5 pt-2">
           <TextInputV2

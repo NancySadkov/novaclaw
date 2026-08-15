@@ -70,6 +70,16 @@ export interface Interface {
     message: CommunityMessage.Proven,
   ) => Effect.Effect<{ readonly stored: Stored } | { readonly rejected: Rejection | "unknown-topic" }>
   /** Most recent first, by RECEIVED time. */
+  /**
+   * Channels we hold MESSAGES for but no longer subscribe to — what leaving leaves behind.
+   *
+   * 🔴 Exists because of principle 12: leaving keeps the history (deliberately) while removing the
+   * only route back to it, so rejoining meant retyping a name from memory. A name the user cannot
+   * see is a value they have no way to know, and the room is not gone — we are holding its
+   * messages. Discovery of channels we have NEVER seen is a different problem and needs the network;
+   * this is the part that is already sitting on disk.
+   */
+  readonly archived: () => Effect.Effect<ReadonlyArray<{ readonly name: string; readonly messages: number }>>
   readonly history: (channel: string, limit?: number) => Effect.Effect<ReadonlyArray<Stored>>
 }
 
@@ -273,6 +283,24 @@ export const layer = Layer.effect(
         // that nothing we subscribe to has that id.
         if (channel === undefined) return { rejected: "unknown-topic" as const }
         return yield* record(channel, message)
+      }),
+
+      archived: Effect.fn("CommunityChannels.archived")(function* () {
+        const counts = yield* db
+          .select({ name: CommunityMessageTable.channel, messages: sql<number>`count(*)` })
+          .from(CommunityMessageTable)
+          .groupBy(CommunityMessageTable.channel)
+          .all()
+          .pipe(Effect.orDie)
+        const joined = (yield* db.select().from(CommunityChannelTable).all().pipe(Effect.orDie)).map(
+          (row) => row.name,
+        )
+        // ⚠️ Excluded by TOPIC, not by name. A user who left `#recipes` and rejoined as `#Recipes` is
+        // in that room right now; listing their own history as something to "rejoin" would offer them
+        // a door into the room they are standing in.
+        return counts.filter(
+          (entry) => CommunityTopic.channelFor(CommunityTopic.topicOf(entry.name), joined) === undefined,
+        )
       }),
 
       history: Effect.fn("CommunityChannels.history")(function* (channel: string, limit = 200) {

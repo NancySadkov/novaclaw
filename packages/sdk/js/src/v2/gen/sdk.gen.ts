@@ -875,6 +875,22 @@ class ApiCommunityChannel extends NovaClawApiClient {
   }
 
   /**
+   * Channels you left but still have history for
+   *
+   * Leaving keeps a channel's messages. Without this the only way back to them is to retype the name exactly — a value the user has no way to know, for a room we are still holding on disk.
+   */
+  public archived<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.CommunityChannelArchivedResponses,
+      T.CommunityChannelArchivedErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/channel/archived",
+      ...options,
+    })
+  }
+
+  /**
    * Leave a channel
    *
    * Stop subscribing. History SURVIVES: deleting it would make leaving a destructive act nobody asked for, and rejoining would show an empty room the user knows had messages in it.

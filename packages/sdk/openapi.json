@@ -2802,6 +2802,81 @@
         ]
       }
     },
+    "/api/community/channel/archived": {
+      "get": {
+        "tags": ["community"],
+        "operationId": "community.channel.archived",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Channels whose messages we hold but no longer subscribe to",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "messages": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["NaN"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["-Infinity"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity", "-Infinity", "NaN"]
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["name", "messages"],
+                    "additionalProperties": false
+                  },
+                  "description": "Channels whose messages we hold but no longer subscribe to"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Leaving keeps a channel's messages. Without this the only way back to them is to retype the name exactly — a value the user has no way to know, for a room we are still holding on disk.",
+        "summary": "Channels you left but still have history for",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.channel.archived({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/community/channel/{name}": {
       "delete": {
         "tags": ["community"],
