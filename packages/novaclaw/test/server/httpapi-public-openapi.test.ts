@@ -140,22 +140,29 @@ describe("PublicApi OpenAPI v2 errors", () => {
   test("preserves /api auth responses", () => {
     const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
 
-    let openSeen = 0
+    const openSeen = new Set<string>()
     for (const route of v2Operations(spec)) {
       const name = `${route.method.toUpperCase()} ${route.path}`
       if (openByDesign.has(route.path)) {
         // ⚠️ Asserted to be open, not merely skipped: a route that quietly gained auth would leave
         // this exemption silently untrue, which is how a guard turns into decoration.
         expect(route.operation.responses?.["401"], `${name} is open by design but now declares 401`).toBeUndefined()
-        openSeen++
+        openSeen.add(route.path)
         continue
       }
       expect(route.operation.responses?.["401"], name).toBeDefined()
       expect(route.operation.security, name).toEqual([])
     }
-    // Every declared peer path is actually served: a typo in the group would otherwise make this
-    // exemption cover nothing while looking thorough.
-    expect(openSeen).toBe(openByDesign.size)
+    /**
+     * Every declared peer path is actually served — a typo in the group would otherwise make this
+     * exemption cover nothing while looking thorough.
+     *
+     * ⚠️ Compares the SET of paths, not a count. The first version counted OPERATIONS against the
+     * number of paths, which was the same number right up until one path served two methods — the
+     * succession endpoint is POST to tell and GET to ask — and then failed on work that was entirely
+     * correct. A guard that miscounts is a guard people learn to silence.
+     */
+    expect([...openSeen].sort()).toEqual([...openByDesign].sort())
   })
 
   test("documents references separately from filesystem routes", () => {
