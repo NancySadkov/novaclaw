@@ -241,6 +241,18 @@ export const layer = Layer.effect(
 )
 
 export const node = makeGlobalNode({ service: Service, layer, deps: [
+    /**
+     * 🔴 Installs the consent gate wherever the transport is BUILT, not only in the server graph.
+     *
+     * Found by driving a real agent on another machine: the instance had joined — the row was in its
+     * database — and `novaclaw run` still refused, because the gate was registered in the HTTP
+     * server's graph alone. Any process that did not build that graph read the safe default and
+     * reported "has not joined", which is indistinguishable from a user who never accepted.
+     *
+     * ⚠️ Here rather than on each caller: the transport is what every outbound path goes through, so
+     * a graph that can speak necessarily installs the gate that decides whether it may.
+     */
+    CommunityConsent.node,
   Offline.node,
   CommunityChannels.node,
   CommunityContacts.node,
