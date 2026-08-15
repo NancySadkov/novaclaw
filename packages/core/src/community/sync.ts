@@ -61,6 +61,15 @@ export const OFFER_PATH = "/api/community/offer"
  * name all 5,000 retained ids and have us build the response in memory — cheap for them, expensive
  * for us, and repeatable. A sync simply takes more rounds; each round still makes progress.
  */
+/**
+ * How many distinct peers ONE sync operation may reach out to.
+ *
+ * 16, against `search`'s 32: search is concurrent and its cost is other people's throttle budget,
+ * while these loops are sequential and their cost is the user waiting. Sixteen unreachable peers at
+ * the 8 s timeout is about two minutes — bad, but bounded and survivable, where 500 is not.
+ */
+export const MAX_PEERS_ASKED = 16
+
 export const MAX_MESSAGES_PER_REQUEST = 256
 
 export interface Result {
@@ -280,7 +289,21 @@ export const layer = Layer.effect(
             already.add(route)
             out.push({ networkID: entry.networkID, route })
           }
-      return out
+      /**
+       * 🔴 BREADTH CAP, and its absence was the seventh finding surviving in the paths that fix
+       * never reached. `transport.publish` and `search.broadcast` both cap fan-out at 8; every loop
+       * in this file walked the WHOLE table.
+       *
+       * ⚠️ Worse here than a socket storm, because these loops are SEQUENTIAL with an 8 s per-peer
+       * timeout: a peer table filled to its allowed 500 turns one press of "look for instances" into
+       * up to 66 minutes of waiting. A user action that never returns is indistinguishable from a
+       * frozen app, and nothing a stranger sent was even wrong — they only had to be reachable.
+       *
+       * ⚠️ Sliced AFTER de-duplication by route, so the cap counts distinct boxes rather than
+       * spellings of the same one. Contacts come first in the list this is built from, so the
+       * people the user actually added are the ones that survive the cut.
+       */
+      return out.slice(0, MAX_PEERS_ASKED)
     })
 
     return Service.of({

@@ -1,7 +1,9 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
 import { Effect } from "effect"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityPeers } from "@novaclaw/core/community/peers"
+import { CommunitySync } from "@novaclaw/core/community/sync"
 import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
@@ -138,5 +140,33 @@ describe("CommunityPeers", () => {
       expect((yield* peers.list()).map((peer) => peer.networkID).sort()).toEqual([after, elsewhere].sort())
     }),
   )
+
+
+  test("🔴 one sync operation reaches a BOUNDED number of peers", () => {
+    /**
+     * The seventh finding surviving in the paths its fix never reached. `transport.publish` and
+     * `search.broadcast` cap fan-out at 8; every loop in `sync.ts` walked the whole table.
+     *
+     * ⚠️ Worse than a socket storm, because those loops are SEQUENTIAL with an 8 s per-peer timeout:
+     * a table filled to its allowed 500 turns one press of "look for instances" into up to 66
+     * minutes of waiting, and a user action that never returns is a frozen app. Nothing a stranger
+     * sent was wrong — they only had to be REACHABLE, which is what peer exchange is for.
+     *
+     * ⚠️ **A SOURCE check, and the weaker kind on purpose.** My first version asserted only that the
+     * constant existed and was sane — it passed with the cap deleted, which is no test at all.
+     * Exercising the real sweep needs sixty dials to fail before anything can be counted, and a test
+     * that takes minutes to restate a number is one nobody runs. This reads the one line that makes
+     * the number bind.
+     */
+    const source = readFileSync(new URL("../src/community/sync.ts", import.meta.url), "utf8")
+    const reachable = source.slice(source.indexOf("const reachable = Effect.gen"))
+    const body = reachable.slice(0, reachable.indexOf("\n    })"))
+
+    expect(body).toContain("slice(0, MAX_PEERS_ASKED)")
+    // The cap must be the LAST thing that happens to the list — slicing before de-duplication would
+    // count spellings of one box rather than distinct boxes.
+    expect(body.indexOf("slice(0, MAX_PEERS_ASKED)")).toBeGreaterThan(body.indexOf("already.add(route)"))
+    expect(CommunitySync.MAX_PEERS_ASKED).toBeLessThanOrEqual(32)
+  })
 
 })
