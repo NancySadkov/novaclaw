@@ -2802,6 +2802,125 @@
         ]
       }
     },
+    "/api/community/channel/{name}": {
+      "delete": {
+        "tags": ["community"],
+        "operationId": "community.channel.leave",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "True when this instance was subscribed and now is not",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "True when this instance was subscribed and now is not"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Stop subscribing. History SURVIVES: deleting it would make leaving a destructive act nobody asked for, and rejoining would show an empty room the user knows had messages in it.",
+        "summary": "Leave a channel",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.channel.leave({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/community/channel/{name}/mute": {
+      "post": {
+        "tags": ["community"],
+        "operationId": "community.channel.mute",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "True when the channel's muted state changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "True when the channel's muted state changed"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Muting keeps the subscription and quiets the UI — distinct from leaving. With no moderator, a user's own attention is the only thing they control, and a channel worth keeping is not always a channel worth being interrupted by.",
+        "summary": "Mute or unmute a channel",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "muted": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["muted"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.channel.mute({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/community/channel/{name}/post": {
       "post": {
         "tags": ["community"],

@@ -336,4 +336,50 @@ describe("CommunityChannels", () => {
     }),
   )
 
+
+  it.effect("🔴 a peer who SPELLS the channel differently is in the SAME room", () =>
+    Effect.gen(function* () {
+      /**
+       * `topic.ts` settled that `#NovaClaw` and `#novaclaw` are one channel, because a network with
+       * no directory would never tell a user they were sitting alone in a room that looks right.
+       * That rule lived only in the hashing, and the log compared channel names LITERALLY — so a
+       * peer who typed the name differently had every message rejected as `wrong-channel`, on a
+       * channel both sides are genuinely in.
+       *
+       * Nothing local could show it: the sender and receiver were always the same string. It takes a
+       * message whose author spelled the room their own way.
+       */
+      const channels = yield* CommunityChannels.Service
+      yield* channels.join(CHANNEL)
+
+      const theirSpelling = fromStranger({ channel: CHANNEL.toLowerCase(), body: "same room, other caps" })
+      expect(theirSpelling.channel).not.toBe(CHANNEL)
+      const result = yield* channels.record(CHANNEL, proven(theirSpelling))
+      expect("stored" in result).toBe(true)
+      expect((yield* channels.history(CHANNEL)).map((m) => m.body)).toEqual(["same room, other caps"])
+
+      // ⚠️ And the guard it must NOT weaken: a different channel is still refused. Canonicalising
+      // the comparison would be worthless if it also let `#elsewhere` through.
+      expect(yield* channels.record(CHANNEL, proven(fromStranger({ channel: "#elsewhere", body: "no" })))).toEqual({
+        rejected: "wrong-channel",
+      })
+    }),
+  )
+
+  it.effect("🔴 joining a channel you are already in under another spelling adds NO second room", () =>
+    Effect.gen(function* () {
+      const channels = yield* CommunityChannels.Service
+      yield* channels.join(CHANNEL)
+      // The user typed it differently the second time. One topic, so one room — and the spelling
+      // they already had on screen is the one that survives.
+      yield* channels.join(CHANNEL.toLowerCase())
+      yield* channels.join(` ${CHANNEL} `)
+      expect((yield* channels.channels()).map((entry) => entry.name)).toEqual([CHANNEL])
+
+      // A genuinely different channel still joins.
+      yield* channels.join("#recipes")
+      expect((yield* channels.channels()).map((entry) => entry.name)).toEqual([CHANNEL, "#recipes"])
+    }),
+  )
+
 })

@@ -150,7 +150,11 @@ export const layer = Layer.effect(
          * signature on another channel's message is not valid HERE" lives in one place rather than
          * being re-derived by every reader of a channel.
          */
-        if (message.channel !== channel) return { rejected: "wrong-channel" as const }
+        // ⚠️ CANONICAL, like `verifyOn`'s — and it has to be, because it runs FIRST. A literal
+        // comparison here would reject a peer who spelled the room differently before the combined
+        // check ever ran, which is the same defect one layer earlier.
+        if (CommunityTopic.canonical(message.channel) !== CommunityTopic.canonical(channel))
+          return { rejected: "wrong-channel" as const }
         if (!CommunityMessage.verifyOn(channel, message)) return { rejected: "unverified" as const }
 
         /**
@@ -205,6 +209,20 @@ export const layer = Layer.effect(
 
     return Service.of({
       join: Effect.fn("CommunityChannels.join")(function* (channel: string) {
+        /**
+         * 🔴 One row per TOPIC, not per spelling. `onConflictDoNothing` keys on the literal name, so
+         * joining `#Recipes` while already in `#recipes` used to add a SECOND row — two entries in
+         * the user's channel list that are one room on the network. Delivery resolves a topic to
+         * whichever spelling it finds first, so the other would sit there permanently empty while
+         * looking perfectly correct, which is precisely the failure the canonical form exists to
+         * prevent (see `topic.ts`).
+         *
+         * The spelling ALREADY JOINED wins: renaming a room under the user because they typed it
+         * differently the second time would be a stranger outcome than keeping what they first saw.
+         */
+        const joined = yield* db.select().from(CommunityChannelTable).all().pipe(Effect.orDie)
+        if (CommunityTopic.channelFor(CommunityTopic.topicOf(channel), joined.map((row) => row.name)) !== undefined)
+          return
         yield* db
           .insert(CommunityChannelTable)
           .values({ name: channel })

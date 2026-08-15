@@ -95,6 +95,8 @@ export const CommunityPaths = {
   contactBlock: "/api/community/contact/:networkID/block",
   transport: "/api/community/transport",
   channels: "/api/community/channel",
+  channel: "/api/community/channel/:name",
+  channelMute: "/api/community/channel/:name/mute",
   channelHistory: "/api/community/channel/:name/history",
   channelPost: "/api/community/channel/:name/post",
 } as const
@@ -174,6 +176,29 @@ export const CommunityApi = HttpApi.make("community").add(
           summary: "Join a channel",
           description:
             "Subscribe to a channel by name. A name is only a hash — nobody owns one, and joining grants nothing but a topic to listen on.",
+        }),
+      ),
+      HttpApiEndpoint.delete("channelLeave", CommunityPaths.channel, {
+        params: ChannelParams,
+        success: described(Schema.Boolean, "True when this instance was subscribed and now is not"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.channel.leave",
+          summary: "Leave a channel",
+          description:
+            "Stop subscribing. History SURVIVES: deleting it would make leaving a destructive act nobody asked for, and rejoining would show an empty room the user knows had messages in it.",
+        }),
+      ),
+      HttpApiEndpoint.post("channelMute", CommunityPaths.channelMute, {
+        params: ChannelParams,
+        payload: Schema.Struct({ muted: Schema.Boolean }),
+        success: described(Schema.Boolean, "True when the channel's muted state changed"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.channel.mute",
+          summary: "Mute or unmute a channel",
+          description:
+            "Muting keeps the subscription and quiets the UI — distinct from leaving. With no moderator, a user's own attention is the only thing they control, and a channel worth keeping is not always a channel worth being interrupted by.",
         }),
       ),
       HttpApiEndpoint.post("channelPost", CommunityPaths.channelPost, {

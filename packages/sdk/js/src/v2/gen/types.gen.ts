@@ -8959,6 +8959,70 @@ export type CommunityChannelJoinResponses = {
 
 export type CommunityChannelJoinResponse = CommunityChannelJoinResponses[keyof CommunityChannelJoinResponses]
 
+export type CommunityChannelLeaveData = {
+  body?: never
+  path: {
+    name: string
+  }
+  query?: never
+  url: "/api/community/channel/{name}"
+}
+
+export type CommunityChannelLeaveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityChannelLeaveError = CommunityChannelLeaveErrors[keyof CommunityChannelLeaveErrors]
+
+export type CommunityChannelLeaveResponses = {
+  /**
+   * True when this instance was subscribed and now is not
+   */
+  200: boolean
+}
+
+export type CommunityChannelLeaveResponse = CommunityChannelLeaveResponses[keyof CommunityChannelLeaveResponses]
+
+export type CommunityChannelMuteData = {
+  body: {
+    muted: boolean
+  }
+  path: {
+    name: string
+  }
+  query?: never
+  url: "/api/community/channel/{name}/mute"
+}
+
+export type CommunityChannelMuteErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityChannelMuteError = CommunityChannelMuteErrors[keyof CommunityChannelMuteErrors]
+
+export type CommunityChannelMuteResponses = {
+  /**
+   * True when the channel's muted state changed
+   */
+  200: boolean
+}
+
+export type CommunityChannelMuteResponse = CommunityChannelMuteResponses[keyof CommunityChannelMuteResponses]
+
 export type CommunityChannelPostData = {
   body: {
     body: string

@@ -875,6 +875,56 @@ class ApiCommunityChannel extends NovaClawApiClient {
   }
 
   /**
+   * Leave a channel
+   *
+   * Stop subscribing. History SURVIVES: deleting it would make leaving a destructive act nobody asked for, and rejoining would show an empty room the user knows had messages in it.
+   */
+  public leave<ThrowOnError extends boolean = false>(
+    parameters: {
+      name: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { name: parameters?.["name"] }
+    return (options?.client ?? this.client).delete<
+      T.CommunityChannelLeaveResponses,
+      T.CommunityChannelLeaveErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/channel/{name}",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Mute or unmute a channel
+   *
+   * Muting keeps the subscription and quiets the UI — distinct from leaving. With no moderator, a user's own attention is the only thing they control, and a channel worth keeping is not always a channel worth being interrupted by.
+   */
+  public mute<ThrowOnError extends boolean = false>(
+    parameters: {
+      name: string
+      muted: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { name: parameters?.["name"] }
+    const body = { muted: parameters?.["muted"] }
+    return (options?.client ?? this.client).post<
+      T.CommunityChannelMuteResponses,
+      T.CommunityChannelMuteErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/channel/{name}/mute",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
    * Say something in a channel
    *
    * Sign a message as this instance, store it locally, then offer it to the transport. Storing happens FIRST, so a missing or offline transport costs an audience and never the message.

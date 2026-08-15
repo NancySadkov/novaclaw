@@ -106,6 +106,25 @@ export function communityJoinChannel(server: ServerConnection.HttpBase, name: st
  * Say something. `delivered` reports whether a transport took it — never whether it was read, since
  * nothing in a serverless network can promise that.
  */
+/**
+ * Stop subscribing. The instance KEEPS the history — see the endpoint's note.
+ */
+export function communityLeaveChannel(server: ServerConnection.HttpBase, name: string) {
+  return instanceFetch<boolean>(server, {
+    route: `api/community/channel/${encodeURIComponent(name)}`,
+    method: "DELETE",
+  })
+}
+
+/** Muting keeps the subscription and quiets the channel — deliberately not the same as leaving. */
+export function communityMuteChannel(server: ServerConnection.HttpBase, name: string, muted: boolean) {
+  return instanceFetch<boolean>(server, {
+    route: `api/community/channel/${encodeURIComponent(name)}/mute`,
+    method: "POST",
+    body: { muted },
+  })
+}
+
 export function communityPost(server: ServerConnection.HttpBase, channel: string, body: string) {
   return instanceFetch<{ id: string; stored: boolean; delivered: boolean }>(server, {
     route: `api/community/channel/${encodeURIComponent(channel)}/post`,

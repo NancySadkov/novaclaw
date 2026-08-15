@@ -92,8 +92,6 @@ const EXPECTED_ORPHANS: Record<string, string> = {
   // Deliberately NOT exposed. With one channel and no way to join others, a Leave button's only
   // effect is to empty the screen, and Mute has nothing to mute against. Both become real with
   // channel discovery in P5; shipping the controls first would be UI for a situation nobody is in.
-  "channels.ts#leave": "deliberate: meaningless until P5 lets a user join more than one channel",
-  "channels.ts#setMuted": "deliberate: meaningless until P5 lets a user join more than one channel",
   // 🔴 Deliberately unreachable, and it must STAY that way until P2. Rotating issues a successor
   // statement that no peer can receive without a transport, so a user who rotated today would
   // silently strand themselves: new key, nobody told, and the proof undeliverable. The capability is
@@ -125,8 +123,6 @@ const EXPECTED_ORPHANS: Record<string, string> = {
   // The transport needs `topicOf` to know which topic to publish to; until one exists, its only
   // caller is `channelFor` beside it. `canonical` is `topicOf`'s own helper, exported so the
   // normalisation decision — that #NovaClaw and #novaclaw are ONE room — is directly testable.
-  "topic.ts#topicOf": "waiting for P2: the transport addresses by topic",
-  "topic.ts#canonical": "internal helper called by topicOf in the same file; exported to test the rule",
 }
 
 describe("community capabilities have callers", () => {

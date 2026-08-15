@@ -77,6 +77,20 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
         }),
       )
       .handle(
+        "channelLeave",
+        Effect.fn("CommunityHttpApi.channelLeave")(function* (ctx) {
+          // ⚠️ The store deliberately keeps the history. Leaving is a subscription change, not a
+          // deletion, and rejoining must not present an empty room the user knows had messages.
+          return yield* channels.leave(ctx.params.name)
+        }),
+      )
+      .handle(
+        "channelMute",
+        Effect.fn("CommunityHttpApi.channelMute")(function* (ctx) {
+          return yield* channels.setMuted(ctx.params.name, ctx.payload.muted)
+        }),
+      )
+      .handle(
         "channelPost",
         Effect.fn("CommunityHttpApi.channelPost")(function* (ctx) {
           const result = yield* posts.post(ctx.params.name, ctx.payload.body)

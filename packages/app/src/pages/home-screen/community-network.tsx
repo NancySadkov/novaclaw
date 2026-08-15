@@ -6,8 +6,11 @@ import { useServer } from "@/context/server"
 import {
   communityAddContact,
   communityChannelHistory,
+  communityChannels,
   communityContacts,
   communityJoinChannel,
+  communityLeaveChannel,
+  communityMuteChannel,
   communityPost,
   communityForgetContact,
   communitySetBlocked,
@@ -36,8 +39,30 @@ export const CommunityNetwork: Component = () => {
 
   const [identity] = createResource(connection, (value) => instanceIdentity(value.http))
   const [contacts, contactActions] = createResource(connection, (value) => communityContacts(value.http))
-  const [history, historyActions] = createResource(connection, (value) =>
-    communityChannelHistory(value.http, DEFAULT_CHANNEL),
+  const [channels, channelActions] = createResource(connection, (value) => communityChannels(value.http))
+
+  /**
+   * Which channel is on screen.
+   *
+   * ⚠️ A signal that may be empty, resolved against the JOINED list rather than trusted. A selection
+   * can outlive its channel — leaving the one you are reading is the obvious way — and a screen
+   * pinned to a channel this instance no longer subscribes to would sit there asking for history it
+   * will never be sent.
+   */
+  const [selected, setSelected] = createSignal("")
+  const channel = createMemo(() => {
+    const joined = channels() ?? []
+    const wanted = selected()
+    if (wanted !== "" && joined.some((entry) => entry.name === wanted)) return wanted
+    return joined[0]?.name ?? DEFAULT_CHANNEL
+  })
+
+  const [history, historyActions] = createResource(
+    () => {
+      const value = connection()
+      return value === undefined ? undefined : ([value, channel()] as const)
+    },
+    ([value, name]) => communityChannelHistory(value.http, name),
   )
   const [transport] = createResource(connection, (value) => communityTransportState(value.http))
 
@@ -143,14 +168,51 @@ export const CommunityNetwork: Component = () => {
     await contactActions.refetch()
   }
 
+  const [joining, setJoining] = createSignal("")
+
+  const join = async () => {
+    const current = connection()
+    const name = joining().trim()
+    if (!current || !name) return
+    setProblem("")
+    try {
+      // ⚠️ Sent as TYPED. The store canonicalises (case, a leading `#`) when it hashes the name to a
+      // topic, so normalising here as well would be a second implementation of that rule — and the
+      // two would eventually disagree about which room a user is in.
+      await communityJoinChannel(current.http, name)
+      setJoining("")
+      await channelActions.refetch()
+      setSelected(name)
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const leave = async (name: string) => {
+    const current = connection()
+    if (!current) return
+    await communityLeaveChannel(current.http, name)
+    // The selection is resolved against the joined list, so dropping the channel being read falls
+    // back to whatever remains rather than leaving the screen pointed at nothing.
+    await channelActions.refetch()
+    await historyActions.refetch()
+  }
+
+  const mute = async (name: string, muted: boolean) => {
+    const current = connection()
+    if (!current) return
+    await communityMuteChannel(current.http, name, muted)
+    await channelActions.refetch()
+  }
+
   const say = async () => {
     const current = connection()
     const body = draft().trim()
     if (!current || !body) return
     setSendNote("")
     try {
-      await communityJoinChannel(current.http, DEFAULT_CHANNEL)
-      const result = await communityPost(current.http, DEFAULT_CHANNEL, body)
+      await communityJoinChannel(current.http, channel())
+      const result = await communityPost(current.http, channel(), body)
       setDraft("")
       // ⚠️ Says which of the two things happened. "Sent" would be a lie while nothing can carry it,
       // and silence would leave the user unsure whether their words went anywhere at all.
@@ -267,7 +329,43 @@ export const CommunityNetwork: Component = () => {
       </div>
 
       <div class="flex flex-col gap-1 rounded-xl bg-v2-background-bg-layer-02 px-3 py-3">
-        <span class="text-[12px] font-medium text-v2-text-text-base">{DEFAULT_CHANNEL}</span>
+        {/*
+          🔴 A channel SWITCHER, not a label. `#NovaClaw` is where everyone starts, and a forum with
+          exactly one room forever is a mailing list — the whole point of a name being nothing but a
+          hash is that anyone can make a room without asking us for it.
+        */}
+        <div class="flex flex-wrap items-center gap-1">
+          <For each={channels() ?? []}>
+            {(entry) => (
+              <ButtonV2
+                variant={entry.name === channel() ? "neutral" : "ghost"}
+                size="small"
+                onClick={() => setSelected(entry.name)}
+              >
+                {/* ⚠️ Muted is shown, never hidden: a channel you silenced and then forgot you
+                    silenced looks exactly like a channel nobody posts in. */}
+                {entry.muted ? `${entry.name} · muted` : entry.name}
+              </ButtonV2>
+            )}
+          </For>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-[12px] font-medium text-v2-text-text-base">{channel()}</span>
+          <Show when={(channels() ?? []).find((entry) => entry.name === channel())}>
+            {(entry) => (
+              <>
+                <ButtonV2 variant="ghost" size="small" onClick={() => void mute(entry().name, !entry().muted)}>
+                  {entry().muted ? "Unmute" : "Mute"}
+                </ButtonV2>
+                {/* Leaving KEEPS the history — the store refuses to delete it, so this is a
+                    subscription change and not a destructive act needing a confirmation. */}
+                <ButtonV2 variant="ghost" size="small" onClick={() => void leave(entry().name)}>
+                  Leave
+                </ButtonV2>
+              </>
+            )}
+          </Show>
+        </div>
         <Show
           when={(history()?.length ?? 0) > 0}
           fallback={
@@ -292,7 +390,7 @@ export const CommunityNetwork: Component = () => {
             appearance="base"
             value={draft()}
             onInput={(event) => setDraft(event.currentTarget.value)}
-            placeholder={`Say something in ${DEFAULT_CHANNEL}`}
+            placeholder={`Say something in ${channel()}`}
             spellcheck={true}
           />
           <ButtonV2 variant="neutral" size="small" disabled={!draft().trim()} onClick={() => void say()}>
@@ -302,6 +400,24 @@ export const CommunityNetwork: Component = () => {
         <Show when={sendNote()}>
           <span class="text-[11px] leading-snug text-v2-text-text-muted">{sendNote()}</span>
         </Show>
+        <div class="mt-2 flex items-center gap-2 border-t border-white/5 pt-2">
+          <TextInputV2
+            appearance="base"
+            value={joining()}
+            onInput={(event) => setJoining(event.currentTarget.value)}
+            placeholder="Join a channel by name, e.g. #recipes"
+          />
+          <ButtonV2 variant="neutral" size="small" disabled={!joining().trim()} onClick={() => void join()}>
+            Join
+          </ButtonV2>
+        </div>
+        {/* ⚠️ Says plainly that there is no directory yet. Without this, an empty switcher reads as
+            "there are no other channels", when the truth is that FINDING them is the part still
+            being built — the names themselves have always been free to make up. */}
+        <span class="text-[11px] leading-snug text-v2-text-text-muted">
+          Anyone can make a channel — a name is only a hash, so nobody owns one. Finding channels you
+          were not told about needs the network part that is still being built.
+        </span>
       </div>
     </section>
   )

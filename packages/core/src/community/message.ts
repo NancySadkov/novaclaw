@@ -1,5 +1,6 @@
 export * as CommunityMessage from "./message"
 
+import { CommunityTopic } from "./topic"
 import { Effect, Schema } from "effect"
 import { InstanceIdentityStore } from "../instance-identity-store"
 
@@ -142,6 +143,17 @@ export const verify = (message: Signed): boolean => {
  * signed bytes, so a valid signature already binds it — but a reader that skips this check will
  * happily accept a correctly-signed message from `#other` that a hostile peer replayed onto
  * `#NovaClaw`'s topic, and display it as if it were said here.
+ *
+ * 🔴 The comparison is CANONICAL, and that is a cross-peer correctness rule, not tidiness.
+ *
+ * A message carries the channel name its author typed. Two instances that joined the same room with
+ * different capitalisation hold different strings for it, while the network addresses it by ONE
+ * topic — so a literal `!==` here rejects every message from the peer who typed it differently, as
+ * `wrong-channel`, on a channel both sides are genuinely in. Nothing local can show this: it needs
+ * two instances that disagree about spelling.
+ *
+ * ⚠️ The SIGNATURE still covers the author's literal spelling, which is unchanged and must be — it
+ * is their bytes. Only the "is this the room I asked about" question is asked canonically.
  */
 export const verifyOn = (channel: string, message: Signed): boolean =>
-  message.channel === channel && verify(message)
+  CommunityTopic.canonical(message.channel) === CommunityTopic.canonical(channel) && verify(message)
