@@ -3322,6 +3322,298 @@
         ]
       }
     },
+    "/api/community/sync/summary": {
+      "post": {
+        "tags": ["community-peer"],
+        "operationId": "community.peer.sync.summary",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "One digest per bucket — ~4 KB whatever the log size",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "buckets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": ["buckets"],
+                  "additionalProperties": false,
+                  "description": "One digest per bucket — ~4 KB whatever the log size"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Step 1 of catching up. Bucketed digests, so two instances that already agree exchange ~4 KB and stop, instead of the ~320 KB their full id lists would cost. An unknown topic answers empty.",
+        "summary": "Summarise a channel for reconciliation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "topic": {
+                    "type": "string"
+                  }
+                },
+                "required": ["topic"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.peer.sync.summary({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/community/sync/ids": {
+      "post": {
+        "tags": ["community-peer"],
+        "operationId": "community.peer.sync.ids",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The ids held in the named buckets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": ["ids"],
+                  "additionalProperties": false,
+                  "description": "The ids held in the named buckets"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Step 2. Only buckets whose digests differ need their ids exchanged, so the cost tracks the DIFFERENCE rather than the size of either log.",
+        "summary": "List message ids in specific buckets",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "topic": {
+                    "type": "string"
+                  },
+                  "buckets": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    }
+                  }
+                },
+                "required": ["topic", "buckets"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.peer.sync.ids({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/community/sync/messages": {
+      "post": {
+        "tags": ["community-peer"],
+        "operationId": "community.peer.sync.messages",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The requested messages this instance holds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "messages": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "channel": {
+                            "type": "string"
+                          },
+                          "author": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
+                          },
+                          "body": {
+                            "type": "string"
+                          },
+                          "signature": {
+                            "type": "string"
+                          },
+                          "nonce": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
+                          }
+                        },
+                        "required": ["channel", "author", "at", "body", "signature", "nonce"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["messages"],
+                  "additionalProperties": false,
+                  "description": "The requested messages this instance holds"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Step 3. The asker decides what it wants, and everything it receives still passes its own ingress door — a peer that answers a sync earns no more trust than a stranger pushing a message.",
+        "summary": "Fetch messages by id",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "topic": {
+                    "type": "string"
+                  },
+                  "ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": ["topic", "ids"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.peer.sync.messages({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/config": {
       "get": {
         "tags": ["config"],

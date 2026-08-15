@@ -991,6 +991,82 @@ class ApiCommunityChannel extends NovaClawApiClient {
   }
 }
 
+class ApiCommunityPeerSync extends NovaClawApiClient {
+  /**
+   * Summarise a channel for reconciliation
+   *
+   * Step 1 of catching up. Bucketed digests, so two instances that already agree exchange ~4 KB and stop, instead of the ~320 KB their full id lists would cost. An unknown topic answers empty.
+   */
+  public summary<ThrowOnError extends boolean = false>(
+    parameters: {
+      topic: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { topic: parameters?.["topic"] }
+    return (options?.client ?? this.client).post<
+      T.CommunityPeerSyncSummaryResponses,
+      T.CommunityPeerSyncSummaryErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/sync/summary",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * List message ids in specific buckets
+   *
+   * Step 2. Only buckets whose digests differ need their ids exchanged, so the cost tracks the DIFFERENCE rather than the size of either log.
+   */
+  public ids<ThrowOnError extends boolean = false>(
+    parameters: {
+      topic: string
+      buckets: Array<number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN">
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { topic: parameters?.["topic"], buckets: parameters?.["buckets"] }
+    return (options?.client ?? this.client).post<
+      T.CommunityPeerSyncIdsResponses,
+      T.CommunityPeerSyncIdsErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/sync/ids",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Fetch messages by id
+   *
+   * Step 3. The asker decides what it wants, and everything it receives still passes its own ingress door — a peer that answers a sync earns no more trust than a stranger pushing a message.
+   */
+  public messages<ThrowOnError extends boolean = false>(
+    parameters: {
+      topic: string
+      ids: Array<string>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { topic: parameters?.["topic"], ids: parameters?.["ids"] }
+    return (options?.client ?? this.client).post<
+      T.CommunityPeerSyncMessagesResponses,
+      T.CommunityPeerSyncMessagesErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/sync/messages",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+}
+
 class ApiCommunityPeer extends NovaClawApiClient {
   /**
    * Accept a community message from a peer
@@ -1022,6 +1098,11 @@ class ApiCommunityPeer extends NovaClawApiClient {
       body,
       headers: { "Content-Type": "application/json", ...options?.headers },
     })
+  }
+
+  private _sync?: ApiCommunityPeerSync
+  get sync(): ApiCommunityPeerSync {
+    return (this._sync ??= new ApiCommunityPeerSync({ client: this.client }))
   }
 }
 

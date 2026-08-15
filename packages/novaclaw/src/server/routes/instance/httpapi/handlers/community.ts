@@ -1,6 +1,9 @@
 import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityPost } from "@novaclaw/core/community/post"
+import { CommunityReconcile } from "@novaclaw/core/community/reconcile"
+import { CommunitySync } from "@novaclaw/core/community/sync"
+import { CommunityTopic } from "@novaclaw/core/community/topic"
 import { CommunityTransport } from "@novaclaw/core/community/transport"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
@@ -124,8 +127,70 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
   Effect.gen(function* () {
     const channels = yield* CommunityChannels.Service
 
-    return handlers.handle(
-      "communityInbound",
+    /**
+     * Resolve a topic to one of OUR channels, or nothing.
+     *
+     * ⚠️ Every sync handler answers empty for an unresolvable topic rather than erroring. A hash
+     * cannot be inverted, so "not one of ours" and "ours but empty" look identical to the asker —
+     * which is deliberate: a peer must not be able to map this instance's rooms by walking topics.
+     */
+    const roomFor = Effect.fn("CommunityHttpApi.roomFor")(function* (topic: string) {
+      const joined = yield* channels.channels()
+      return CommunityTopic.channelFor(
+        topic,
+        joined.map((entry) => entry.name),
+      )
+    })
+
+    return handlers
+      .handle(
+        "communitySyncSummary",
+        Effect.fn("CommunityHttpApi.communitySyncSummary")(function* (ctx) {
+          const room = yield* roomFor(ctx.payload.topic)
+          /**
+           * 🔴 `summarize([])`, NOT `[]`. Caught by probing the running instance, against a comment
+           * three lines up that claimed the two were indistinguishable: an empty ARRAY is 0 buckets
+           * while a joined-but-empty channel is 64 empty digests, so a prober could tell "not
+           * subscribed" from "subscribed, nothing said" at a glance — exactly the map this endpoint
+           * refuses to draw. It is also wrong functionally: `differing` treats a summary of another
+           * LENGTH as wholly different, so every sync against a peer outside the room would request
+           * all 64 buckets.
+           */
+          const ids = room === undefined ? [] : yield* channels.ids(room)
+          return { buckets: CommunityReconcile.summarize(ids) }
+        }),
+      )
+      .handle(
+        "communitySyncIds",
+        Effect.fn("CommunityHttpApi.communitySyncIds")(function* (ctx) {
+          const room = yield* roomFor(ctx.payload.topic)
+          if (room === undefined) return { ids: [] }
+          return { ids: CommunityReconcile.idsIn(yield* channels.ids(room), ctx.payload.buckets) }
+        }),
+      )
+      .handle(
+        "communitySyncMessages",
+        Effect.fn("CommunityHttpApi.communitySyncMessages")(function* (ctx) {
+          const room = yield* roomFor(ctx.payload.topic)
+          if (room === undefined) return { messages: [] }
+          // ⚠️ Bounded here as well as by the asker: a request naming every retained id would have us
+          // assemble it all in memory, which is cheap for them and repeatable.
+          const wanted = ctx.payload.ids.slice(0, CommunitySync.MAX_MESSAGES_PER_REQUEST)
+          const found = yield* channels.byIDs(room, wanted)
+          return {
+            messages: found.map((message) => ({
+              channel: message.channel,
+              author: message.author,
+              at: message.at,
+              body: message.body,
+              signature: message.signature,
+              nonce: message.nonce,
+            })),
+          }
+        }),
+      )
+      .handle(
+        "communityInbound",
       Effect.fn("CommunityHttpApi.communityInbound")(function* (ctx) {
         // The verdict is deliberately dropped rather than returned — see `PeerAck`. It is not lost:
         // a stored message appears in the channel, and a rejected one is the door doing its job.

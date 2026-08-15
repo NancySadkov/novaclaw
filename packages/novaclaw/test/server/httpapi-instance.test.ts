@@ -1,5 +1,7 @@
 import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { Flag } from "@novaclaw/core/flag/flag"
+import { CommunityReconcile } from "@novaclaw/core/community/reconcile"
+import { CommunityTopic } from "@novaclaw/core/community/topic"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { describe, expect } from "bun:test"
 import { Config, Context, Effect, FileSystem, Layer, Path } from "effect"
@@ -194,6 +196,26 @@ describe("instance HttpApi", () => {
 
       const afterForgery = yield* HttpClient.get(`/api/community/channel/${encodeURIComponent("#NovaClaw")}/history`)
       expect(yield* afterForgery.json).toEqual([])
+
+      /**
+       * 🔴 Reconciliation must not let a stranger MAP which rooms this instance is in.
+       *
+       * A joined-but-empty channel and a topic we never joined have to look identical, and the first
+       * implementation failed exactly here — an unknown topic answered with a zero-length bucket list
+       * while a real room answered with 64 empty digests, which a prober can tell apart at a glance.
+       * A comment asserted they were indistinguishable; only probing the running server showed they
+       * were not, so it is pinned from the outside where the difference was visible.
+       */
+      const summaryFor = (topic: string) =>
+        HttpClientRequest.post("/api/community/sync/summary").pipe(
+          HttpClientRequest.bodyJson({ topic }),
+          Effect.flatMap(HttpClient.execute),
+          Effect.flatMap((response) => response.json),
+        )
+      const joinedTopic = yield* summaryFor(CommunityTopic.topicOf("#NovaClaw"))
+      const strangerTopic = yield* summaryFor(CommunityTopic.topicOf("#a-room-this-instance-never-joined"))
+      expect(joinedTopic).toEqual(strangerTopic)
+      expect((joinedTopic as { buckets: string[] }).buckets).toHaveLength(CommunityReconcile.BUCKETS)
     }),
   )
 

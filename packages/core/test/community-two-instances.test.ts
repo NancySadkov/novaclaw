@@ -7,6 +7,8 @@ import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityMessage } from "@novaclaw/core/community/message"
 import { CommunityPost } from "@novaclaw/core/community/post"
+import { CommunityReconcile } from "@novaclaw/core/community/reconcile"
+import { CommunitySync } from "@novaclaw/core/community/sync"
 import { CommunityTopic } from "@novaclaw/core/community/topic"
 import { CommunityTransport } from "@novaclaw/core/community/transport"
 import { Offline } from "@novaclaw/core/offline"
@@ -41,6 +43,7 @@ const instance = (label: string) => {
       CommunityChannels.node,
       Offline.node,
       CommunityTransport.node,
+      CommunitySync.node,
       CommunityPost.node,
     ]),
     [[Database.node, database]],
@@ -255,6 +258,115 @@ describe("two instances", () => {
       // ⚠️ Addressed by TOPIC: the hash, never the channel name, so a peer spelling the room
       // differently still resolves it and a peer who never joined it cannot store it at all.
       expect(bobDelivered).toEqual([CommunityTopic.topicOf("#NovaClaw"), CommunityTopic.topicOf("#NovaClaw")])
+    } finally {
+      server?.stop(true)
+      cleanup(alice.home)
+      cleanup(bob.home)
+    }
+  })
+
+
+  test("🔴 an instance that was AWAY catches up on what it missed", async () => {
+    /**
+     * The largest design risk in the program, finally exercised. Delivery reaches whoever is ONLINE,
+     * so an instance that was closed misses that time permanently — and a forum whose messages vanish
+     * for anyone who was away is not a forum. `reconcile.ts` has held the algorithm since it was
+     * written and had no wire; this is the wire.
+     *
+     * Bob talks while Alice is not listening. Alice then reconciles against him and ends up holding
+     * everything, having asked for precisely what she lacked.
+     */
+    const alice = instance("alice-sync")
+    const bob = instance("bob-sync")
+    let server: ReturnType<typeof Bun.serve> | undefined
+    try {
+      const said = ["one", "two", "three", "four", "five"]
+      const bobKey = await Effect.runPromise(
+        Effect.gen(function* () {
+          const channels = yield* CommunityChannels.Service
+          const posts = yield* CommunityPost.Service
+          const identity = yield* InstanceIdentityStore.Service.pipe(Effect.flatMap((store) => store.identity()))
+          yield* channels.join("#NovaClaw")
+          // Bob's log, built while Alice knows nothing about it.
+          for (const body of said) yield* posts.post("#NovaClaw", body)
+          return identity.networkID
+        }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+
+      // Bob serves the three catch-up steps, exactly as the instance's peer routes do.
+      const asked: string[] = []
+      server = Bun.serve({
+        port: 0,
+        fetch: async (request) => {
+          const url = new URL(request.url)
+          asked.push(url.pathname)
+          const body = (await request.json()) as { topic: string; buckets?: number[]; ids?: string[] }
+          const answer = await Effect.runPromise(
+            Effect.gen(function* () {
+              const channels = yield* CommunityChannels.Service
+              const joined = yield* channels.channels()
+              const room = CommunityTopic.channelFor(
+                body.topic,
+                joined.map((entry) => entry.name),
+              )
+              // ⚠️ An unknown topic answers like an EMPTY ROOM — `summarize([])`, 64 empty digests —
+              // never a shorter body. A peer must not be able to tell "not subscribed" from "nothing
+              // said here" by counting buckets, which is how the real handler was caught getting it
+              // wrong against a comment claiming otherwise.
+              const ids = room === undefined ? [] : yield* channels.ids(room)
+              if (url.pathname === CommunitySync.SYNC_SUMMARY_PATH)
+                return { buckets: CommunityReconcile.summarize(ids) }
+              if (url.pathname === CommunitySync.SYNC_IDS_PATH)
+                return { ids: CommunityReconcile.idsIn(ids, body.buckets ?? []) }
+              // Same rule for the message step: an unjoined room yields nothing, not an error.
+              return { messages: room === undefined ? [] : yield* channels.byIDs(room, body.ids ?? []) }
+            }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+          )
+          return Response.json(answer)
+        },
+      })
+
+      const caught = await Effect.runPromise(
+        Effect.gen(function* () {
+          const channels = yield* CommunityChannels.Service
+          const contacts = yield* CommunityContacts.Service
+          const sync = yield* CommunitySync.Service
+          yield* channels.join("#NovaClaw")
+          yield* contacts
+            .add({ networkID: bobKey, petname: "bob", routes: [`http://127.0.0.1:${server!.port}`] })
+            .pipe(Effect.orDie)
+
+          // She has nothing, and received none of it — she was away.
+          expect(yield* channels.history("#NovaClaw")).toEqual([])
+
+          expect(yield* sync.sync("#NovaClaw")).toEqual({ peers: 1, fetched: said.length })
+          return yield* channels.history("#NovaClaw")
+        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+
+      expect(caught.map((message) => message.body).sort()).toEqual([...said].sort())
+      // Every one attributed to Bob and verified from its signature — she never met him before today.
+      expect(new Set(caught.map((message) => message.author))).toEqual(new Set([bobKey]))
+
+      /**
+       * 🔴 Syncing again fetches NOTHING, and — the claim that actually justifies the design — stops
+       * after the SUMMARY. Two instances that agree exchange ~4 KB whatever their logs hold.
+       *
+       * ⚠️ Asserted on the round trips, not only on the count. A sync that re-downloaded everything
+       * and discarded it as duplicates would also report `fetched: 0`, look correct, and cost the
+       * ~320 KB per channel that bucketing exists to avoid. Verified by breaking `differing` to claim
+       * every bucket disagrees: the counts stay right and this assertion is what fails.
+       */
+      asked.length = 0
+      const again = await Effect.runPromise(
+        CommunitySync.Service.pipe(
+          Effect.flatMap((sync) => sync.sync("#NovaClaw")),
+          Effect.provide(alice.graph),
+          Effect.provide(CredentialCipher.defaultLayer),
+        ),
+      )
+      expect(again).toEqual({ peers: 1, fetched: 0 })
+      expect(asked).toEqual([CommunitySync.SYNC_SUMMARY_PATH])
     } finally {
       server?.stop(true)
       cleanup(alice.home)

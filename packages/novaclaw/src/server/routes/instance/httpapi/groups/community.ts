@@ -263,7 +263,12 @@ export const CommunityApi = HttpApi.make("community").add(
  * the instance was already exposed — LAN for a normal install, the internet for one the user chose to
  * publish.
  */
-export const CommunityPeerPaths = { inbound: "/api/community/inbound" } as const
+export const CommunityPeerPaths = {
+  inbound: "/api/community/inbound",
+  syncSummary: "/api/community/sync/summary",
+  syncIds: "/api/community/sync/ids",
+  syncMessages: "/api/community/sync/messages",
+} as const
 
 /** A `Proven` message on the wire. Shape only — every rule about it lives at the ingress door. */
 const PeerMessage = Schema.Struct({
@@ -292,6 +297,21 @@ const PeerDelivery = Schema.Struct({ topic: Schema.String, message: PeerMessage 
  */
 const PeerAck = Schema.Struct({ received: Schema.Literal(true) })
 
+/**
+ * Community P4 — the three steps of a catch-up, served to whoever asks.
+ *
+ * 🔴 Addressed by TOPIC throughout, and an unknown topic answers EMPTY rather than "no such channel".
+ * The two are indistinguishable to the asker, which is the point: a peer must not be able to map
+ * which rooms this instance is in by walking topic hashes, and reconciliation needs no such answer to
+ * work — an empty summary simply means there is nothing here to catch up on.
+ */
+const SyncTopic = Schema.Struct({ topic: Schema.String })
+const SyncSummary = Schema.Struct({ buckets: Schema.Array(Schema.String) })
+const SyncIdsRequest = Schema.Struct({ topic: Schema.String, buckets: Schema.Array(Schema.Number) })
+const SyncIds = Schema.Struct({ ids: Schema.Array(Schema.String) })
+const SyncMessagesRequest = Schema.Struct({ topic: Schema.String, ids: Schema.Array(Schema.String) })
+const SyncMessages = Schema.Struct({ messages: Schema.Array(PeerMessage) })
+
 export const CommunityPeerApi = HttpApi.make("communityPeer").add(
   HttpApiGroup.make("communityPeer")
     .add(
@@ -304,6 +324,39 @@ export const CommunityPeerApi = HttpApi.make("communityPeer").add(
           summary: "Accept a community message from a peer",
           description:
             "The open door of the P2P network: any instance may hand this one a signed, work-proven message. Unauthenticated by design — a node that required a token would be a private federation, not a community. The answer is always the same so that probing reveals neither our subscriptions nor our block list.",
+        }),
+      ),
+      HttpApiEndpoint.post("communitySyncSummary", CommunityPeerPaths.syncSummary, {
+        payload: SyncTopic,
+        success: described(SyncSummary, "One digest per bucket — ~4 KB whatever the log size"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.peer.sync.summary",
+          summary: "Summarise a channel for reconciliation",
+          description:
+            "Step 1 of catching up. Bucketed digests, so two instances that already agree exchange ~4 KB and stop, instead of the ~320 KB their full id lists would cost. An unknown topic answers empty.",
+        }),
+      ),
+      HttpApiEndpoint.post("communitySyncIds", CommunityPeerPaths.syncIds, {
+        payload: SyncIdsRequest,
+        success: described(SyncIds, "The ids held in the named buckets"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.peer.sync.ids",
+          summary: "List message ids in specific buckets",
+          description:
+            "Step 2. Only buckets whose digests differ need their ids exchanged, so the cost tracks the DIFFERENCE rather than the size of either log.",
+        }),
+      ),
+      HttpApiEndpoint.post("communitySyncMessages", CommunityPeerPaths.syncMessages, {
+        payload: SyncMessagesRequest,
+        success: described(SyncMessages, "The requested messages this instance holds"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.peer.sync.messages",
+          summary: "Fetch messages by id",
+          description:
+            "Step 3. The asker decides what it wants, and everything it receives still passes its own ingress door — a peer that answers a sync earns no more trust than a stranger pushing a message.",
         }),
       ),
     )

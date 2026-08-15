@@ -102,6 +102,21 @@ export interface Interface {
    * this is the part that is already sitting on disk.
    */
   readonly archived: () => Effect.Effect<ReadonlyArray<{ readonly name: string; readonly messages: number }>>
+  /**
+   * EVERY message id in a room — what reconciliation summarises.
+   *
+   * ⚠️ Deliberately not `history`: that one is a reader's view, capped at a page and ordered for
+   * display. A summary computed over a page would tell a peer we hold 200 messages when we hold
+   * 5,000, and every sync would then "discover" a difference that is not there.
+   */
+  readonly ids: (channel: string) => Effect.Effect<ReadonlyArray<string>>
+  /**
+   * The messages behind a set of ids — what we hand a peer that asked for them.
+   *
+   * ⚠️ Scoped to a channel rather than global, so an id learned from one room cannot be used to read
+   * a message out of another that the asker never joined.
+   */
+  readonly byIDs: (channel: string, ids: readonly string[]) => Effect.Effect<ReadonlyArray<Stored>>
   readonly history: (channel: string, limit?: number) => Effect.Effect<ReadonlyArray<Stored>>
 }
 
@@ -401,6 +416,32 @@ export const layer = Layer.effect(
           })
         }
         return [...rooms.values()].map(({ name, messages }) => ({ name, messages }))
+      }),
+
+      ids: Effect.fn("CommunityChannels.ids")(function* (channel: string) {
+        const rows = yield* db
+          .select({ id: CommunityMessageTable.id })
+          .from(CommunityMessageTable)
+          .where(inArray(CommunityMessageTable.channel, yield* spellingsOf(channel)))
+          .all()
+          .pipe(Effect.orDie)
+        return rows.map((row) => row.id)
+      }),
+
+      byIDs: Effect.fn("CommunityChannels.byIDs")(function* (channel: string, wanted: readonly string[]) {
+        if (wanted.length === 0) return []
+        const rows = yield* db
+          .select()
+          .from(CommunityMessageTable)
+          .where(
+            and(
+              inArray(CommunityMessageTable.channel, yield* spellingsOf(channel)),
+              inArray(CommunityMessageTable.id, [...wanted]),
+            ),
+          )
+          .all()
+          .pipe(Effect.orDie)
+        return rows.map(rowStored)
       }),
 
       history: Effect.fn("CommunityChannels.history")(function* (channel: string, limit = 200) {

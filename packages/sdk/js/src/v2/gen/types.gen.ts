@@ -9168,6 +9168,104 @@ export type CommunityPeerInboundResponses = {
 
 export type CommunityPeerInboundResponse = CommunityPeerInboundResponses[keyof CommunityPeerInboundResponses]
 
+export type CommunityPeerSyncSummaryData = {
+  body: {
+    topic: string
+  }
+  path?: never
+  query?: never
+  url: "/api/community/sync/summary"
+}
+
+export type CommunityPeerSyncSummaryErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type CommunityPeerSyncSummaryError = CommunityPeerSyncSummaryErrors[keyof CommunityPeerSyncSummaryErrors]
+
+export type CommunityPeerSyncSummaryResponses = {
+  /**
+   * One digest per bucket — ~4 KB whatever the log size
+   */
+  200: {
+    buckets: Array<string>
+  }
+}
+
+export type CommunityPeerSyncSummaryResponse =
+  CommunityPeerSyncSummaryResponses[keyof CommunityPeerSyncSummaryResponses]
+
+export type CommunityPeerSyncIdsData = {
+  body: {
+    topic: string
+    buckets: Array<number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN">
+  }
+  path?: never
+  query?: never
+  url: "/api/community/sync/ids"
+}
+
+export type CommunityPeerSyncIdsErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type CommunityPeerSyncIdsError = CommunityPeerSyncIdsErrors[keyof CommunityPeerSyncIdsErrors]
+
+export type CommunityPeerSyncIdsResponses = {
+  /**
+   * The ids held in the named buckets
+   */
+  200: {
+    ids: Array<string>
+  }
+}
+
+export type CommunityPeerSyncIdsResponse = CommunityPeerSyncIdsResponses[keyof CommunityPeerSyncIdsResponses]
+
+export type CommunityPeerSyncMessagesData = {
+  body: {
+    topic: string
+    ids: Array<string>
+  }
+  path?: never
+  query?: never
+  url: "/api/community/sync/messages"
+}
+
+export type CommunityPeerSyncMessagesErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type CommunityPeerSyncMessagesError = CommunityPeerSyncMessagesErrors[keyof CommunityPeerSyncMessagesErrors]
+
+export type CommunityPeerSyncMessagesResponses = {
+  /**
+   * The requested messages this instance holds
+   */
+  200: {
+    messages: Array<{
+      channel: string
+      author: string
+      at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      body: string
+      signature: string
+      nonce: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }>
+  }
+}
+
+export type CommunityPeerSyncMessagesResponse =
+  CommunityPeerSyncMessagesResponses[keyof CommunityPeerSyncMessagesResponses]
+
 export type ConfigGetData = {
   body?: never
   path?: never

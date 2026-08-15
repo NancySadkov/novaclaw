@@ -102,11 +102,7 @@ const EXPECTED_ORPHANS: Record<string, string> = {
   // in a mesh — but nothing local can call them until something carries a query.
   "search.ts#consider": "waiting for P2: queries arrive over the network",
   "search.ts#widen": "waiting for P2: widening is a decision about which PEERS to ask next",
-  "reconcile.ts#bucketOf": "waiting for P2: reconciliation is a conversation with another instance",
-  "reconcile.ts#summarize": "waiting for P2: the summary is sent TO a peer",
-  "reconcile.ts#differing": "waiting for P2: compares OUR summary against a peer's",
-  "reconcile.ts#idsIn": "waiting for P2: answers a peer's request for a bucket",
-  "reconcile.ts#missing": "waiting for P2: decides what to request FROM a peer",
+  "reconcile.ts#bucketOf": "internal helper called by summarize/idsIn in the same file; exported to test the both-sides-agree rule",
   // ✅ WIRED since the note above was written: `post` calls `prove`, `record` calls `verify`, and
   // the signed envelope carries a nonce. `solve` remains listed only because this guard counts
   // callers OUTSIDE the declaring file, and `solve`'s caller is `prove` in the same module — it is
@@ -119,7 +115,6 @@ const EXPECTED_ORPHANS: Record<string, string> = {
   // THE inbound door. A sidecar is a separate process holding only a topic id, so it calls this —
   // and nothing in-process does, by design: an in-process caller already knows the channel name and
   // should use `record`.
-  "channels.ts#deliver": "waiting for P2: the sidecar's entry point, addressed by topic",
   // The transport needs `topicOf` to know which topic to publish to; until one exists, its only
   // caller is `channelFor` beside it. `canonical` is `topicOf`'s own helper, exported so the
   // normalisation decision — that #NovaClaw and #novaclaw are ONE room — is directly testable.
