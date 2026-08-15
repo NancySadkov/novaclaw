@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "38228b83-8bc7-4f8b-8d0a-3126a4584dfd",
+  "id": "e55ade10-97ab-4cc2-ba54-d5a654739da1",
   "prevIds": [
-    "596ca45d-4704-417a-9706-92557cf0e42b"
+    "38228b83-8bc7-4f8b-8d0a-3126a4584dfd"
   ],
   "ddl": [
     {
@@ -80,6 +80,10 @@
     },
     {
       "name": "community_peer",
+      "entityType": "tables"
+    },
+    {
+      "name": "community_succession",
       "entityType": "tables"
     },
     {
@@ -1395,6 +1399,66 @@
       "name": "time_updated",
       "entityType": "columns",
       "table": "community_peer"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "network_id",
+      "entityType": "columns",
+      "table": "community_succession"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "successor_id",
+      "entityType": "columns",
+      "table": "community_succession"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "claimed_at",
+      "entityType": "columns",
+      "table": "community_succession"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "signature",
+      "entityType": "columns",
+      "table": "community_succession"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "community_succession"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "community_succession"
     },
     {
       "type": "text",
@@ -4322,6 +4386,15 @@
       "nameExplicit": false,
       "name": "community_peer_pk",
       "table": "community_peer",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "network_id"
+      ],
+      "nameExplicit": false,
+      "name": "community_succession_pk",
+      "table": "community_succession",
       "entityType": "pks"
     },
     {

@@ -2808,6 +2808,78 @@
         ]
       }
     },
+    "/api/community/rotate": {
+      "post": {
+        "tags": ["community"],
+        "operationId": "community.rotate",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The new identity, and how many peers were told",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "networkID": {
+                      "type": "string"
+                    },
+                    "told": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    }
+                  },
+                  "required": ["networkID", "told"],
+                  "additionalProperties": false,
+                  "description": "The new identity, and how many peers were told"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Issues a new identity plus a successor statement signed by the OLD key, then tells every reachable peer and collects the rotations they know. Contacts follow the statement, so people who know you keep knowing you and your history keeps its author. ⚠️ It CANNOT recover a stolen key: whoever holds the secret can rotate exactly as easily as you, and faster, since they need not notice the theft first. This is for planned moves.",
+        "summary": "Move to a new key, and tell everyone",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.rotate({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/community/discover": {
       "post": {
         "tags": ["community"],
@@ -3442,6 +3514,182 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.channel.history({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/community/succession": {
+      "post": {
+        "tags": ["community-peer"],
+        "operationId": "community.peer.succession.tell",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Always true — a forgery is refused silently, like any other",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "received": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["received"],
+                  "additionalProperties": false,
+                  "description": "Always true — a forgery is refused silently, like any other"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Someone moved to a new key and proved it with the old one. Verified before it is stored, because an unverified store would hand forgeries to other people on request — worse than believing one ourselves.",
+        "summary": "Tell this instance a peer rotated its key",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "predecessor": {
+                    "type": "string"
+                  },
+                  "successor": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  },
+                  "signature": {
+                    "type": "string"
+                  }
+                },
+                "required": ["predecessor", "successor", "at", "signature"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.peer.succession.tell({\n  ...\n})"
+          }
+        ]
+      },
+      "get": {
+        "tags": ["community-peer"],
+        "operationId": "community.peer.succession.known",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Rotations this instance can vouch for, each self-verifying",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statements": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "predecessor": {
+                            "type": "string"
+                          },
+                          "successor": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
+                          },
+                          "signature": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["predecessor", "successor", "at", "signature"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["statements"],
+                  "additionalProperties": false,
+                  "description": "Rotations this instance can vouch for, each self-verifying"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "How a peer that was OFFLINE when someone rotated still finds them. A statement pushed once reaches whoever was listening; keeping and re-serving it is what stops rotation stranding a user against everybody who happened to be closed.",
+        "summary": "Rotations this instance knows about",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.peer.succession.known({\n  ...\n})"
           }
         ]
       }

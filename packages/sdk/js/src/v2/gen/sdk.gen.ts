@@ -1034,6 +1034,56 @@ class ApiCommunityChannel extends NovaClawApiClient {
   }
 }
 
+class ApiCommunityPeerSuccession extends NovaClawApiClient {
+  /**
+   * Tell this instance a peer rotated its key
+   *
+   * Someone moved to a new key and proved it with the old one. Verified before it is stored, because an unverified store would hand forgeries to other people on request — worse than believing one ourselves.
+   */
+  public tell<ThrowOnError extends boolean = false>(
+    parameters: {
+      predecessor: string
+      successor: string
+      at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      signature: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = {
+      predecessor: parameters?.["predecessor"],
+      successor: parameters?.["successor"],
+      at: parameters?.["at"],
+      signature: parameters?.["signature"],
+    }
+    return (options?.client ?? this.client).post<
+      T.CommunityPeerSuccessionTellResponses,
+      T.CommunityPeerSuccessionTellErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/succession",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Rotations this instance knows about
+   *
+   * How a peer that was OFFLINE when someone rotated still finds them. A statement pushed once reaches whoever was listening; keeping and re-serving it is what stops rotation stranding a user against everybody who happened to be closed.
+   */
+  public known<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.CommunityPeerSuccessionKnownResponses,
+      T.CommunityPeerSuccessionKnownErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/succession",
+      ...options,
+    })
+  }
+}
+
 class ApiCommunityPeerSync extends NovaClawApiClient {
   /**
    * Summarise a channel for reconciliation
@@ -1175,6 +1225,11 @@ class ApiCommunityPeer extends NovaClawApiClient {
     })
   }
 
+  private _succession?: ApiCommunityPeerSuccession
+  get succession(): ApiCommunityPeerSuccession {
+    return (this._succession ??= new ApiCommunityPeerSuccession({ client: this.client }))
+  }
+
   private _sync?: ApiCommunityPeerSync
   get sync(): ApiCommunityPeerSync {
     return (this._sync ??= new ApiCommunityPeerSync({ client: this.client }))
@@ -1182,6 +1237,18 @@ class ApiCommunityPeer extends NovaClawApiClient {
 }
 
 class ApiCommunity extends NovaClawApiClient {
+  /**
+   * Move to a new key, and tell everyone
+   *
+   * Issues a new identity plus a successor statement signed by the OLD key, then tells every reachable peer and collects the rotations they know. Contacts follow the statement, so people who know you keep knowing you and your history keeps its author. ⚠️ It CANNOT recover a stolen key: whoever holds the secret can rotate exactly as easily as you, and faster, since they need not notice the theft first. This is for planned moves.
+   */
+  public rotate<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).post<T.CommunityRotateResponses, T.CommunityRotateErrors, ThrowOnError>({
+      url: "/api/community/rotate",
+      ...options,
+    })
+  }
+
   /**
    * Find other instances
    *

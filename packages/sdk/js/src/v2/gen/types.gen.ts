@@ -8961,6 +8961,38 @@ export type CommunityChannelJoinResponses = {
 
 export type CommunityChannelJoinResponse = CommunityChannelJoinResponses[keyof CommunityChannelJoinResponses]
 
+export type CommunityRotateData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/community/rotate"
+}
+
+export type CommunityRotateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityRotateError = CommunityRotateErrors[keyof CommunityRotateErrors]
+
+export type CommunityRotateResponses = {
+  /**
+   * The new identity, and how many peers were told
+   */
+  200: {
+    networkID: string
+    told: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type CommunityRotateResponse = CommunityRotateResponses[keyof CommunityRotateResponses]
+
 export type CommunityDiscoverData = {
   body: {
     addresses?: Array<string>
@@ -9229,6 +9261,74 @@ export type CommunityChannelHistoryResponses = {
 }
 
 export type CommunityChannelHistoryResponse = CommunityChannelHistoryResponses[keyof CommunityChannelHistoryResponses]
+
+export type CommunityPeerSuccessionTellData = {
+  body: {
+    predecessor: string
+    successor: string
+    at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    signature: string
+  }
+  path?: never
+  query?: never
+  url: "/api/community/succession"
+}
+
+export type CommunityPeerSuccessionTellErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type CommunityPeerSuccessionTellError =
+  CommunityPeerSuccessionTellErrors[keyof CommunityPeerSuccessionTellErrors]
+
+export type CommunityPeerSuccessionTellResponses = {
+  /**
+   * Always true — a forgery is refused silently, like any other
+   */
+  200: {
+    received: true
+  }
+}
+
+export type CommunityPeerSuccessionTellResponse =
+  CommunityPeerSuccessionTellResponses[keyof CommunityPeerSuccessionTellResponses]
+
+export type CommunityPeerSuccessionKnownData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/community/succession"
+}
+
+export type CommunityPeerSuccessionKnownErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type CommunityPeerSuccessionKnownError =
+  CommunityPeerSuccessionKnownErrors[keyof CommunityPeerSuccessionKnownErrors]
+
+export type CommunityPeerSuccessionKnownResponses = {
+  /**
+   * Rotations this instance can vouch for, each self-verifying
+   */
+  200: {
+    statements: Array<{
+      predecessor: string
+      successor: string
+      at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      signature: string
+    }>
+  }
+}
+
+export type CommunityPeerSuccessionKnownResponse =
+  CommunityPeerSuccessionKnownResponses[keyof CommunityPeerSuccessionKnownResponses]
 
 export type CommunityPeerListedData = {
   body?: never

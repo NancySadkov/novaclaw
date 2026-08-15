@@ -99,5 +99,6 @@ export const migrations = (
     import("./migration/20260815004815_contact_successor"),
     import("./migration/20260815041249_add_community_peer"),
     import("./migration/20260815050952_add_channel_listed"),
+    import("./migration/20260815054456_add_community_succession"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

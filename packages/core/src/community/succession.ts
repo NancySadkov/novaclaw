@@ -1,5 +1,9 @@
 export * as CommunitySuccession from "./succession"
 
+import { Context, Effect, Layer } from "effect"
+import { CommunitySuccessionTable } from "./sql"
+import { Database } from "../database/database"
+import { makeGlobalNode } from "../effect/app-node"
 import { InstanceIdentityStore } from "../instance-identity-store"
 
 /**
@@ -71,3 +75,60 @@ export const resolve = (from: string, statements: readonly Statement[]): string 
     current = next.successor
   }
 }
+
+/**
+ * The statements this instance has seen, and can hand on.
+ *
+ * 🔴 The half that makes rotation survivable. Pushing a statement reaches whoever happens to be
+ * online; keeping it means a peer that was closed can ask later and still find its way to the user's
+ * current key instead of holding an identity that answers nothing.
+ */
+export interface StoreInterface {
+  /** Verify and keep. Returns false for a forgery, or for a key that already rotated. */
+  readonly remember: (statement: Statement) => Effect.Effect<boolean>
+  /** Everything we can hand on — each one self-verifying, so passing it on grants nothing. */
+  readonly known: () => Effect.Effect<ReadonlyArray<Statement>>
+}
+
+export class Store extends Context.Service<Store, StoreInterface>()("@novaclaw/v2/CommunitySuccessionStore") {}
+
+export const layer = Layer.effect(
+  Store,
+  Effect.gen(function* () {
+    const { db } = yield* Database.Service
+
+    return Store.of({
+      remember: Effect.fn("CommunitySuccession.remember")(function* (statement: Statement) {
+        // ⚠️ Verified BEFORE it is written, not when it is used. An unverified store would hand
+        // forgeries to other people on request, which is worse than believing one ourselves.
+        if (!verify(statement)) return false
+        const inserted = yield* db
+          .insert(CommunitySuccessionTable)
+          .values({
+            network_id: statement.predecessor,
+            successor_id: statement.successor,
+            claimed_at: statement.at,
+            signature: statement.signature,
+          })
+          // A key rotates once: the first proven chain wins, and a later fork changes nothing.
+          .onConflictDoNothing()
+          .returning({ id: CommunitySuccessionTable.network_id })
+          .all()
+          .pipe(Effect.orDie)
+        return inserted.length > 0
+      }),
+
+      known: Effect.fn("CommunitySuccession.known")(function* () {
+        const rows = yield* db.select().from(CommunitySuccessionTable).all().pipe(Effect.orDie)
+        return rows.map((row) => ({
+          predecessor: row.network_id,
+          successor: row.successor_id,
+          at: row.claimed_at,
+          signature: row.signature,
+        }))
+      }),
+    })
+  }),
+)
+
+export const node = makeGlobalNode({ service: Store, layer, deps: [Database.node] })

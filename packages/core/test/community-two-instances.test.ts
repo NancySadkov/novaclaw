@@ -9,6 +9,7 @@ import { CommunityMessage } from "@novaclaw/core/community/message"
 import { CommunityPost } from "@novaclaw/core/community/post"
 import { CommunityPeers } from "@novaclaw/core/community/peers"
 import { CommunityReconcile } from "@novaclaw/core/community/reconcile"
+import { CommunitySuccession } from "@novaclaw/core/community/succession"
 import { CommunitySync } from "@novaclaw/core/community/sync"
 import { CommunityTopic } from "@novaclaw/core/community/topic"
 import { CommunityTransport } from "@novaclaw/core/community/transport"
@@ -45,6 +46,7 @@ const instance = (label: string) => {
       Offline.node,
       CommunityTransport.node,
       CommunityPeers.node,
+      CommunitySuccession.node,
       CommunitySync.node,
       CommunityPost.node,
     ]),
@@ -459,6 +461,88 @@ describe("two instances", () => {
       server?.stop(true)
       cleanup(alice.home)
       cleanup(bob.home)
+    }
+  })
+
+
+  test("🔴 a peer that was OFFLINE when someone rotated still finds them", async () => {
+    /**
+     * The reason rotation stayed unexposed until a transport existed: *a successor statement no peer
+     * can receive would strand the user.* Pushing one reaches whoever is online at that instant,
+     * which in a network of home machines is a minority — so a push-only design strands the user
+     * against everybody who happened to be closed, which is the majority.
+     *
+     * Carol is that majority. Nobody ever tells her anything; she asks Bob later and finds Alice.
+     */
+    const alice = instance("alice-rot")
+    const bob = instance("bob-rot")
+    const carol = instance("carol-rot")
+    let server: ReturnType<typeof Bun.serve> | undefined
+    try {
+      const rotation = await Effect.runPromise(
+        Effect.gen(function* () {
+          const store = yield* InstanceIdentityStore.Service
+          const before = (yield* store.identity()).networkID
+          const rotated = yield* store.rotate()
+          return { before, after: rotated.identity.networkID, statement: rotated.statement }
+        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+      expect(rotation.after).not.toBe(rotation.before)
+
+      // Bob was ONLINE: he hears it directly and follows.
+      const bobKey = await Effect.runPromise(
+        Effect.gen(function* () {
+          const contacts = yield* CommunityContacts.Service
+          const successions = yield* CommunitySuccession.Store
+          const store = yield* InstanceIdentityStore.Service
+          yield* contacts.add({ networkID: rotation.before, petname: "alice" }).pipe(Effect.orDie)
+          expect(yield* successions.remember(rotation.statement)).toBe(true)
+          expect(yield* contacts.followAll([rotation.statement])).toBe(1)
+          expect((yield* contacts.list()).map((entry) => entry.networkID)).toEqual([rotation.after])
+          return (yield* store.identity()).networkID
+        }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+
+      // Bob re-serves what he was told. Storing it is what makes him able to.
+      server = Bun.serve({
+        port: 0,
+        fetch: async () =>
+          Response.json(
+            await Effect.runPromise(
+              CommunitySuccession.Store.pipe(
+                Effect.flatMap((store) => store.known()),
+                Effect.map((statements) => ({ statements })),
+                Effect.provide(bob.graph),
+                Effect.provide(CredentialCipher.defaultLayer),
+              ),
+            ),
+          ),
+      })
+
+      const landed = await Effect.runPromise(
+        Effect.gen(function* () {
+          const contacts = yield* CommunityContacts.Service
+          const sync = yield* CommunitySync.Service
+          // Carol knew Alice at the old key too, and was CLOSED when the rotation happened.
+          yield* contacts.add({ networkID: rotation.before, petname: "alice" }).pipe(Effect.orDie)
+          yield* contacts
+            .add({ networkID: bobKey, petname: "bob", routes: [`http://127.0.0.1:${server!.port}`] })
+            .pipe(Effect.orDie)
+
+          const spread = yield* sync.successions()
+          expect(spread.learned).toBe(1)
+          return (yield* contacts.list()).map((entry) => entry.networkID)
+        }).pipe(Effect.provide(carol.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+
+      // 🔴 Carol followed Alice without ever being told: she asked, and the statement proved itself.
+      expect(landed).toContain(rotation.after)
+      expect(landed).not.toContain(rotation.before)
+    } finally {
+      server?.stop(true)
+      cleanup(alice.home)
+      cleanup(bob.home)
+      cleanup(carol.home)
     }
   })
 

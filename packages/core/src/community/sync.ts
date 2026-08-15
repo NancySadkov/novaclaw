@@ -7,6 +7,7 @@ import { CommunityContacts } from "./contacts"
 import { CommunityMessage } from "./message"
 import { CommunityPeers } from "./peers"
 import { CommunityReconcile } from "./reconcile"
+import { CommunitySuccession } from "./succession"
 import { CommunityTopic } from "./topic"
 import { httpRoutes } from "./transport"
 import { makeGlobalNode } from "../effect/app-node"
@@ -43,6 +44,8 @@ export const SYNC_MESSAGES_PATH = "/api/community/sync/messages"
 export const PEERS_PATH = "/api/community/peers"
 /** Channel discovery — what each peer chose to disclose, never what it is actually in. */
 export const LISTED_PATH = "/api/community/listed"
+/** Successor statements — told to peers on rotation, and asked for by peers that were away. */
+export const SUCCESSION_PATH = "/api/community/succession"
 
 /**
  * The most messages one request may ask for.
@@ -97,6 +100,20 @@ export interface Interface {
    * is honest about its reach instead of implying the whole network answered.
    */
   readonly channelsNearby: () => Effect.Effect<ReadonlyArray<string>>
+  /**
+   * Tell every reachable peer that a key rotated, and collect the rotations they know.
+   *
+   * 🔴 Both directions, and the second is the one that makes rotation survivable. Pushing reaches
+   * whoever is online at that moment — in a network of home machines, that is a minority. Asking is
+   * how an instance that was CLOSED when someone rotated still finds them, instead of holding an
+   * identity that answers nothing forever.
+   *
+   * ⚠️ Statements are self-verifying, so both directions are safe with strangers: `remember` refuses
+   * a forgery before storing it, and `followAll` moves only contacts whose whole chain is proven.
+   */
+  readonly successions: (
+    announce?: CommunitySuccession.Statement,
+  ) => Effect.Effect<{ readonly told: number; readonly learned: number }>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/CommunitySync") {}
@@ -107,6 +124,16 @@ const Ids = Schema.Struct({ ids: Schema.Array(Schema.String) })
 /** Enough of `/global/health` to identify a peer. Every instance already serves it. */
 const Health = Schema.Struct({ networkID: Schema.String })
 const Listed = Schema.Struct({ channels: Schema.Array(Schema.String) })
+const Successions = Schema.Struct({
+  statements: Schema.Array(
+    Schema.Struct({
+      predecessor: Schema.String,
+      successor: Schema.String,
+      at: Schema.Number,
+      signature: Schema.String,
+    }),
+  ),
+})
 
 const PeerList = Schema.Struct({
   peers: Schema.Array(Schema.Struct({ networkID: Schema.String, routes: Schema.Array(Schema.String) })),
@@ -124,6 +151,8 @@ const Messages = Schema.Struct({
   ),
 })
 
+const Ack = Schema.Struct({ received: Schema.Boolean })
+
 const PER_REQUEST_TIMEOUT_MS = 10_000
 
 export const layer = Layer.effect(
@@ -133,6 +162,7 @@ export const layer = Layer.effect(
     const contacts = yield* CommunityContacts.Service
     const channels = yield* CommunityChannels.Service
     const peers = yield* CommunityPeers.Service
+    const successions = yield* CommunitySuccession.Store
     const http = yield* HttpClient.HttpClient
 
     /**
@@ -187,6 +217,26 @@ export const layer = Layer.effect(
     })
 
     return Service.of({
+      successions: Effect.fn("CommunitySync.successions")(function* (announce) {
+        if (offline.policy.enabled) return { told: 0, learned: 0 }
+        let told = 0
+        let learned = 0
+        for (const peer of yield* reachable) {
+          if (announce !== undefined) {
+            const ack = yield* ask(peer.route, SUCCESSION_PATH, announce, Ack, "POST")
+            if (ack !== undefined) told++
+          }
+          const theirs = yield* ask(peer.route, SUCCESSION_PATH, undefined, Successions, "GET")
+          if (theirs === undefined) continue
+          yield* peers.seen(peer.networkID)
+          for (const statement of theirs.statements) if (yield* successions.remember(statement)) learned++
+          // ⚠️ `followAll` and not a loop of `follow`: statements arrive from a mesh in no order, and
+          // single-stepping drops a link whose predecessor has not been seen yet and never retries.
+          yield* contacts.followAll([...theirs.statements])
+        }
+        return { told, learned }
+      }),
+
       channelsNearby: Effect.fn("CommunitySync.channelsNearby")(function* () {
         if (offline.policy.enabled) return []
         const joined = (yield* channels.channels()).map((entry) => CommunityTopic.canonical(entry.name))
@@ -297,5 +347,12 @@ export const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: Service,
   layer,
-  deps: [Offline.node, CommunityContacts.node, CommunityChannels.node, CommunityPeers.node, httpClient],
+  deps: [
+    Offline.node,
+    CommunityContacts.node,
+    CommunityChannels.node,
+    CommunityPeers.node,
+    CommunitySuccession.node,
+    httpClient,
+  ],
 })

@@ -1,9 +1,11 @@
 import { CommunityChannels } from "@novaclaw/core/community/channels"
+import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityPost } from "@novaclaw/core/community/post"
 import { CommunityPeers } from "@novaclaw/core/community/peers"
 import { MDNS } from "@/server/mdns"
 import { CommunityReconcile } from "@novaclaw/core/community/reconcile"
+import { CommunitySuccession } from "@novaclaw/core/community/succession"
 import { CommunitySync } from "@novaclaw/core/community/sync"
 import { CommunityTopic } from "@novaclaw/core/community/topic"
 import { CommunityTransport } from "@novaclaw/core/community/transport"
@@ -23,6 +25,7 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
     const contacts = yield* CommunityContacts.Service
     const channels = yield* CommunityChannels.Service
     const sync = yield* CommunitySync.Service
+    const identity = yield* InstanceIdentityStore.Service
     const peersStore = yield* CommunityPeers.Service
     const transport = yield* CommunityTransport.Service
     const posts = yield* CommunityPost.Service
@@ -81,6 +84,21 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
         Effect.fn("CommunityHttpApi.channelJoin")(function* (ctx) {
           yield* channels.join(ctx.payload.name)
           return yield* channels.channels()
+        }),
+      )
+      .handle(
+        "communityRotate",
+        Effect.fn("CommunityHttpApi.communityRotate")(function* () {
+          /**
+           * 🔴 Exposed only now that a transport exists. The ledger held rotation back precisely
+           * because "a successor statement no peer can receive would strand the user" — until P2
+           * there was nobody to receive it, so issuing one would have quietly orphaned the user from
+           * everyone who knew them.
+           */
+          const rotated = yield* identity.rotate()
+          // Announce AND collect in one pass: the peers worth telling are the ones worth asking.
+          const spread = yield* sync.successions(rotated.statement)
+          return { networkID: rotated.identity.networkID, told: spread.told }
         }),
       )
       .handle(
@@ -162,6 +180,8 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
   Effect.gen(function* () {
     const channels = yield* CommunityChannels.Service
     const peers = yield* CommunityPeers.Service
+    const contacts = yield* CommunityContacts.Service
+    const successions = yield* CommunitySuccession.Store
 
     /**
      * Resolve a topic to one of OUR channels, or nothing.
@@ -179,6 +199,21 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
     })
 
     return handlers
+      .handle(
+        "communitySuccessionTell",
+        Effect.fn("CommunityHttpApi.communitySuccessionTell")(function* (ctx) {
+          // Kept AND applied: remembering lets us tell others, following moves our own contact.
+          yield* successions.remember(ctx.payload)
+          yield* contacts.followAll([ctx.payload])
+          return { received: true } as const
+        }),
+      )
+      .handle(
+        "communitySuccessionKnown",
+        Effect.fn("CommunityHttpApi.communitySuccessionKnown")(function* () {
+          return { statements: yield* successions.known() }
+        }),
+      )
       .handle(
         "communityListed",
         Effect.fn("CommunityHttpApi.communityListed")(function* () {

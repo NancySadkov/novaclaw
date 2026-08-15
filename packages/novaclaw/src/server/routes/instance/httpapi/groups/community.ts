@@ -106,6 +106,7 @@ export const CommunityPaths = {
   channelListed: "/api/community/channel/:name/listed",
   channelsNearby: "/api/community/nearby",
   discover: "/api/community/discover",
+  rotate: "/api/community/rotate",
   channelsArchived: "/api/community/channel/archived",
   channelHistory: "/api/community/channel/:name/history",
   channelPost: "/api/community/channel/:name/post",
@@ -175,6 +176,19 @@ export const CommunityApi = HttpApi.make("community").add(
           identifier: "community.channel.list",
           summary: "List joined channels",
           description: "The channels this instance subscribes to.",
+        }),
+      ),
+      HttpApiEndpoint.post("communityRotate", CommunityPaths.rotate, {
+        success: described(
+          Schema.Struct({ networkID: Schema.String, told: Schema.Number }),
+          "The new identity, and how many peers were told",
+        ),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.rotate",
+          summary: "Move to a new key, and tell everyone",
+          description:
+            "Issues a new identity plus a successor statement signed by the OLD key, then tells every reachable peer and collects the rotations they know. Contacts follow the statement, so people who know you keep knowing you and your history keeps its author. ⚠️ It CANNOT recover a stolen key: whoever holds the secret can rotate exactly as easily as you, and faster, since they need not notice the theft first. This is for planned moves.",
         }),
       ),
       HttpApiEndpoint.post("communityDiscover", CommunityPaths.discover, {
@@ -315,6 +329,7 @@ export const CommunityPeerPaths = {
   syncMessages: "/api/community/sync/messages",
   peers: "/api/community/peers",
   listedChannels: "/api/community/listed",
+  succession: "/api/community/succession",
 } as const
 
 /** A `Proven` message on the wire. Shape only — every rule about it lives at the ingress door. */
@@ -371,6 +386,17 @@ const SyncMessages = Schema.Struct({ messages: Schema.Array(PeerMessage) })
  * is the only power a user has here, and an instance that still handed out a blocked peer's address
  * would be a distributor for someone its owner refuses to hear.
  */
+/**
+ * 🔴 A successor statement: the old key saying, in its own signature, "the peer you knew as me is now
+ * this other key". Self-verifying, so passing it on grants nothing that could not be checked.
+ */
+const PeerSuccession = Schema.Struct({
+  predecessor: Schema.String,
+  successor: Schema.String,
+  at: Schema.Number,
+  signature: Schema.String,
+})
+
 const PeerList = Schema.Struct({
   peers: Schema.Array(Schema.Struct({ networkID: Schema.String, routes: Schema.Array(Schema.String) })),
 })
@@ -378,6 +404,30 @@ const PeerList = Schema.Struct({
 export const CommunityPeerApi = HttpApi.make("communityPeer").add(
   HttpApiGroup.make("communityPeer")
     .add(
+      HttpApiEndpoint.post("communitySuccessionTell", CommunityPeerPaths.succession, {
+        payload: PeerSuccession,
+        success: described(PeerAck, "Always true — a forgery is refused silently, like any other"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.peer.succession.tell",
+          summary: "Tell this instance a peer rotated its key",
+          description:
+            "Someone moved to a new key and proved it with the old one. Verified before it is stored, because an unverified store would hand forgeries to other people on request — worse than believing one ourselves.",
+        }),
+      ),
+      HttpApiEndpoint.get("communitySuccessionKnown", CommunityPeerPaths.succession, {
+        success: described(
+          Schema.Struct({ statements: Schema.Array(PeerSuccession) }),
+          "Rotations this instance can vouch for, each self-verifying",
+        ),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.peer.succession.known",
+          summary: "Rotations this instance knows about",
+          description:
+            "How a peer that was OFFLINE when someone rotated still finds them. A statement pushed once reaches whoever was listening; keeping and re-serving it is what stops rotation stranding a user against everybody who happened to be closed.",
+        }),
+      ),
       HttpApiEndpoint.get("communityListed", CommunityPeerPaths.listedChannels, {
         success: described(
           Schema.Struct({ channels: Schema.Array(Schema.String) }),

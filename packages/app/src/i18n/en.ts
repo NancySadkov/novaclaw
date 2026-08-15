@@ -1244,6 +1244,18 @@ export const dict = {
   "settings.identity.backupProceed": "Save backup",
   "settings.identity.backupBusy": "Saving…",
   "settings.identity.backupCancel": "Cancel",
+  "settings.identity.rotateTitle": "Move to a new key",
+  "settings.identity.rotateDescription": "Keep your name and history when you change machines or keys",
+  // ⚠️ States the limit FIRST, because the wrong reason to press this is the one people arrive with.
+  // A stolen key can rotate itself, faster than its owner, who has to notice the theft first.
+  "settings.identity.rotateHint":
+    "Your instance gets a new key, signed by the old one, and everyone who can reach you follows it — so people who know you keep knowing you, and what you have already said keeps its author. This does NOT undo a stolen key: whoever has your old key can do exactly this, sooner than you can. It is for planned moves.",
+  "settings.identity.rotateAction": "Move to a new key…",
+  "settings.identity.rotateConfirm": "Your old key stops being you. Peers that never hear about it lose you.",
+  "settings.identity.rotateProceed": "Move",
+  "settings.identity.rotateBusy": "Moving…",
+  "settings.identity.rotateCancel": "Cancel",
+  "settings.identity.rotateDone": "Moved. {count} reachable peer(s) were told; others find out when they next ask.",
   "settings.storage.resources.title": "This instance's resources",
   // Shown as a hover/tap hint on the Host memory row, not as an always-on paragraph (owner, 2026-08-13).
   "settings.storage.resources.description":

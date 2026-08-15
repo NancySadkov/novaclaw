@@ -1,4 +1,5 @@
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
+import { communityRotate } from "@/utils/community-api"
 import { Show, createMemo, createResource, createSignal, type Component } from "solid-js"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
@@ -41,8 +42,10 @@ export const SettingsIdentityV2: Component = () => {
   // Same connection derivation as the sibling panels — `useSDK()` throws outside its provider, and
   // a settings dialog is outside it.
   const connection = createMemo(() => server.current ?? global.servers.list()[0])
-  const [identity] = createResource(connection, (value) => instanceIdentity(value.http))
+  const [identity, identityActions] = createResource(connection, (value) => instanceIdentity(value.http))
   const [confirming, setConfirming] = createSignal(false)
+  const [rotating, setRotating] = createSignal(false)
+  const [rotated, setRotated] = createSignal("")
   const [busy, setBusy] = createSignal(false)
   const [copied, setCopied] = createSignal(false)
 
@@ -65,6 +68,26 @@ export const SettingsIdentityV2: Component = () => {
       const bundle = await instanceIdentityBackup(current.http)
       downloadText(BACKUP_FILENAME, JSON.stringify(bundle, null, 2))
       setConfirming(false)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * 🔴 Exposed only now that a transport exists. The plan held rotation back on purpose: "a successor
+   * statement no peer can receive would strand the user", and until instances could talk there was
+   * nobody to receive it — so issuing one would have quietly orphaned the user from everyone who
+   * knew them, with nothing on screen to say so.
+   */
+  const rotate = async () => {
+    const current = connection()
+    if (!current) return
+    setBusy(true)
+    try {
+      const result = await communityRotate(current.http)
+      setRotated(language.t("settings.identity.rotateDone").replace("{count}", String(result.told)))
+      setRotating(false)
+      await identityActions.refetch()
     } finally {
       setBusy(false)
     }
@@ -112,6 +135,37 @@ export const SettingsIdentityV2: Component = () => {
               </ButtonV2>
               <ButtonV2 variant="ghost" size="small" disabled={busy()} onClick={() => setConfirming(false)}>
                 {language.t("settings.identity.backupCancel")}
+              </ButtonV2>
+            </div>
+          </Show>
+        </SettingsRowV2>
+        <SettingsRowV2
+          title={language.t("settings.identity.rotateTitle")}
+          description={language.t("settings.identity.rotateDescription")}
+          hint={language.t("settings.identity.rotateHint")}
+        >
+          <Show
+            when={rotating()}
+            fallback={
+              <div class="flex items-center gap-2">
+                <ButtonV2 variant="neutral" size="small" onClick={() => setRotating(true)}>
+                  {language.t("settings.identity.rotateAction")}
+                </ButtonV2>
+                <Show when={rotated()}>
+                  <span class="text-[11px] text-v2-text-text-muted">{rotated()}</span>
+                </Show>
+              </div>
+            }
+          >
+            {/* A second, explicit press — like the backup beside it, and for a heavier reason: this
+                one cannot be undone by pressing it again, and the confirm is where that is said. */}
+            <div class="flex items-center gap-2">
+              <span class="text-[11px] text-v2-text-text-muted">{language.t("settings.identity.rotateConfirm")}</span>
+              <ButtonV2 variant="neutral" size="small" disabled={busy()} onClick={() => void rotate()}>
+                {busy() ? language.t("settings.identity.rotateBusy") : language.t("settings.identity.rotateProceed")}
+              </ButtonV2>
+              <ButtonV2 variant="ghost" size="small" disabled={busy()} onClick={() => setRotating(false)}>
+                {language.t("settings.identity.rotateCancel")}
               </ButtonV2>
             </div>
           </Show>

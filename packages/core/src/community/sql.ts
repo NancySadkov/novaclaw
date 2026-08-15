@@ -103,3 +103,28 @@ export const CommunityPeerTable = sqliteTable("community_peer", {
   source: text().notNull().default("px"),
   ...Timestamps,
 })
+
+/**
+ * Community P1 — successor statements we have seen, kept so they can be RE-SERVED.
+ *
+ * 🔴 Without this, rotation strands the user against anyone who was offline at the moment it
+ * happened — which is most peers, most of the time, in a network of home machines. A statement
+ * pushed once and never stored reaches whoever was listening and nobody else, and the ledger named
+ * that exact failure as the reason rotation stayed unexposed until a transport existed.
+ *
+ * ⚠️ Storing one confers nothing: a statement is self-verifying (signed by the key it retires), so
+ * holding it is holding a fact anyone can check rather than a claim anyone must trust. That is
+ * precisely why it is safe to pass on for someone else.
+ *
+ * ⚠️ `predecessor` is the PRIMARY KEY because a key rotates ONCE. Two statements from one predecessor
+ * naming different successors is a fork, which needs that key to sign both — so it means the key is
+ * compromised or its holder is equivocating, and the chain we already proved is the one we keep.
+ */
+export const CommunitySuccessionTable = sqliteTable("community_succession", {
+  network_id: text().primaryKey(),
+  successor_id: text().notNull(),
+  /** The author's claimed time, signed. Retained because it is inside the signed bytes. */
+  claimed_at: integer().notNull(),
+  signature: text().notNull(),
+  ...Timestamps,
+})

@@ -121,6 +121,18 @@ export function communityDiscover(server: ServerConnection.HttpBase, addresses?:
   })
 }
 
+/**
+ * Move this instance to a new key and tell every reachable peer.
+ *
+ * ⚠️ Cannot undo a stolen key — whoever holds the secret can do this too, and sooner. Planned moves.
+ */
+export function communityRotate(server: ServerConnection.HttpBase) {
+  return instanceFetch<{ readonly networkID: string; readonly told: number }>(server, {
+    route: "api/community/rotate",
+    method: "POST",
+  })
+}
+
 /** Channels this instance left but still holds messages for. */
 export function communityArchivedChannels(server: ServerConnection.HttpBase) {
   return instanceFetch<{ readonly name: string; readonly messages: number }[]>(server, {
