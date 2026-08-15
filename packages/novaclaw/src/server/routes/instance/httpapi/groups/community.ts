@@ -45,7 +45,7 @@ export const CommunityContact = Schema.Struct({
  * disconnected state would make an airgapped instance look broken.
  */
 export const CommunityTransportState = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("off"), reason: Schema.Literals(["none", "airgap"]) }),
+  Schema.Struct({ kind: Schema.Literal("off"), reason: Schema.Literals(["airgap", "no-peers"]) }),
   Schema.Struct({ kind: Schema.Literal("connecting") }),
   Schema.Struct({ kind: Schema.Literal("online"), peers: Schema.Number }),
 ])
@@ -246,4 +246,71 @@ export const CommunityApi = HttpApi.make("community").add(
       }),
     )
     .middleware(Authorization),
+)
+
+/**
+ * Community P2 — the PEER-facing surface, and the one group here with **no `Authorization`**.
+ *
+ * 🔴 That is the design, not an oversight. A node that only accepts messages from callers holding
+ * this instance's token is a private federation with extra steps; an open community means strangers
+ * can hand us bytes. What protects it is not a credential but the ingress door those bytes must pass:
+ * proof-of-work FIRST (0.83 µs to check, ~49 ms for them to produce), then signature, subscription,
+ * block, size and duplicate rules — every one of them measured, and all of them in
+ * `CommunityChannels.record`.
+ *
+ * ⚠️ Reachability is not granted by this route. An instance behind a NAT with no port forwarded is
+ * not addressable from outside no matter what it serves, so this widens the surface exactly as far as
+ * the instance was already exposed — LAN for a normal install, the internet for one the user chose to
+ * publish.
+ */
+export const CommunityPeerPaths = { inbound: "/api/community/inbound" } as const
+
+/** A `Proven` message on the wire. Shape only — every rule about it lives at the ingress door. */
+const PeerMessage = Schema.Struct({
+  channel: Schema.String,
+  author: Schema.String,
+  at: Schema.Number,
+  body: Schema.String,
+  signature: Schema.String,
+  nonce: Schema.Number,
+})
+
+/**
+ * ⚠️ Addressed by TOPIC. The receiver resolves it against the channels IT joined, so a hash it does
+ * not recognise is unresolvable rather than merely unwanted — "we are not subscribed" holds by
+ * arithmetic instead of by trusting the sender's channel name.
+ */
+const PeerDelivery = Schema.Struct({ topic: Schema.String, message: PeerMessage })
+
+/**
+ * 🔴 Deliberately UNIFORM: `received` is always true, and the verdict is never disclosed.
+ *
+ * Reporting `blocked` would tell a peer they are blocked; `not-subscribed` would let anyone map which
+ * channels this instance is in by probing topics. Neither is information a stranger is owed, and both
+ * are cheap to harvest at scale. This costs the sender nothing real — `delivered` has always meant
+ * "a transport accepted it", never "it was stored", let alone "it was read".
+ */
+const PeerAck = Schema.Struct({ received: Schema.Literal(true) })
+
+export const CommunityPeerApi = HttpApi.make("communityPeer").add(
+  HttpApiGroup.make("communityPeer")
+    .add(
+      HttpApiEndpoint.post("communityInbound", CommunityPeerPaths.inbound, {
+        payload: PeerDelivery,
+        success: described(PeerAck, "Always true — the verdict is deliberately not disclosed"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.peer.inbound",
+          summary: "Accept a community message from a peer",
+          description:
+            "The open door of the P2P network: any instance may hand this one a signed, work-proven message. Unauthenticated by design — a node that required a token would be a private federation, not a community. The answer is always the same so that probing reveals neither our subscriptions nor our block list.",
+        }),
+      ),
+    )
+    .annotateMerge(
+      OpenApi.annotations({
+        title: "community-peer",
+        description: "Peer-to-peer ingress. Open to strangers on purpose; guarded by proof-of-work and signatures.",
+      }),
+    ),
 )

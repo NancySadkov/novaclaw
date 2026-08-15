@@ -2596,7 +2596,7 @@
                         },
                         "reason": {
                           "type": "string",
-                          "enum": ["none", "airgap"]
+                          "enum": ["airgap", "no-peers"]
                         }
                       },
                       "required": ["kind", "reason"],
@@ -3189,6 +3189,135 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.channel.history({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/community/inbound": {
+      "post": {
+        "tags": ["community-peer"],
+        "operationId": "community.peer.inbound",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Always true — the verdict is deliberately not disclosed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "received": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["received"],
+                  "additionalProperties": false,
+                  "description": "Always true — the verdict is deliberately not disclosed"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "The open door of the P2P network: any instance may hand this one a signed, work-proven message. Unauthenticated by design — a node that required a token would be a private federation, not a community. The answer is always the same so that probing reveals neither our subscriptions nor our block list.",
+        "summary": "Accept a community message from a peer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "topic": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "object",
+                    "properties": {
+                      "channel": {
+                        "type": "string"
+                      },
+                      "author": {
+                        "type": "string"
+                      },
+                      "at": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["NaN"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["-Infinity"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity", "-Infinity", "NaN"]
+                          }
+                        ]
+                      },
+                      "body": {
+                        "type": "string"
+                      },
+                      "signature": {
+                        "type": "string"
+                      },
+                      "nonce": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["NaN"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["-Infinity"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity", "-Infinity", "NaN"]
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["channel", "author", "at", "body", "signature", "nonce"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["topic", "message"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.peer.inbound({\n  ...\n})"
           }
         ]
       }
@@ -48316,6 +48445,10 @@
     {
       "name": "community",
       "description": "The instance-hosted P2P community: contacts, channels and their local history."
+    },
+    {
+      "name": "community-peer",
+      "description": "Peer-to-peer ingress. Open to strangers on purpose; guarded by proof-of-work and signatures."
     },
     {
       "name": "config",

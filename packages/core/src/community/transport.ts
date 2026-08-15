@@ -1,9 +1,13 @@
 export * as CommunityTransport from "./transport"
 
 import { Context, Effect, Layer } from "effect"
+import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { CommunityChannels } from "./channels"
+import { CommunityContacts } from "./contacts"
+import { CommunityTopic } from "./topic"
 import { CommunityMessage } from "./message"
 import { makeGlobalNode } from "../effect/app-node"
+import { httpClient } from "../effect/app-node-platform"
 import { Offline } from "../offline"
 
 /**
@@ -21,8 +25,18 @@ import { Offline } from "../offline"
  */
 
 export type State =
-  /** No transport is installed. The community is local-only, and the UI says so plainly. */
-  | { readonly kind: "off"; readonly reason: "none" | "airgap" }
+  /**
+   * Nothing can carry a message, and the REASON is the whole point of this being a union.
+   *
+   * `airgap` — the user switched the network off. `no-peers` — the transport works; we simply know
+   * nobody with an address to dial. Two different sentences to a person, and one "disconnected" state
+   * would tell a user whose contact list is empty that the software is broken.
+   *
+   * ⚠️ There was a third, `none` — "no transport installed" — and it is GONE rather than retained for
+   * symmetry. A transport now always exists, so `none` became a state nothing could return, and a
+   * state that cannot occur is a branch every reader has to reason about for nothing.
+   */
+  | { readonly kind: "off"; readonly reason: "airgap" | "no-peers" }
   | { readonly kind: "connecting" }
   | { readonly kind: "online"; readonly peers: number }
 
@@ -44,37 +58,140 @@ export interface Interface {
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/CommunityTransport") {}
 
 /**
- * The transport that does nothing — and the ONLY implementation until P0 picks one.
+ * The transport, and it speaks **plain HTTPS to instances that are reachable**.
  *
- * 🔴 It also enforces the airgap rule, which is why the offline check lives here rather than in a
- * future sidecar: *"telemetry is scrubbed of user content and forced off in offline/airgap mode"*
- * applies with more force to a peer-to-peer network. A community feature is egress the user chose,
- * so airgap has to be able to withdraw that choice — and if the gate lived only in the real
- * transport, the airgap promise would be true exactly until someone wrote a second one.
+ * 🔴 Chosen by the owner (2026-08-15), and it is a decision about censorship rather than performance:
+ * *"we can't expect end users having unblocked UDP"*, *"strange UDP traffic attracts attention. It is
+ * also easy to censor UDP."* A meaningful share of real networks pass only TCP 80/443, where QUIC is
+ * not slower but ABSENT; sustained UDP to residential peers on odd ports is legible to whoever
+ * watches the link; and dropping UDP costs an operator nothing while dropping 443 breaks the web.
+ *
+ * ⚠️ **This does NOT traverse NAT and does not pretend to.** An unreachable peer dials OUT to a
+ * reachable one; two peers with nobody reachable between them cannot meet this way. That is the
+ * accepted cost — §6's *relays should be instances*, §2's Nostr shape, where "no servers at all"
+ * weakens into "anyone can be the server" and health depends on a PLURALITY of reachable instances.
+ * The overlay bake-off stays ⛔ and is now an optimisation for the direct/LAN case.
+ *
+ * 🔴 It also keeps the airgap rule that made this seam the right home for it: a community feature is
+ * egress the user chose, so airgap must be able to withdraw that choice — checked explicitly here AND
+ * again by the shared `httpClient` node, which is the OFF-A chokepoint.
  */
+/** Where a peer accepts community traffic. Every instance already serves this shape. */
+export const INBOUND_PATH = "/api/community/inbound"
+
+/**
+ * Is this route something we can POST to?
+ *
+ * ⚠️ Routes are deliberately free-form because a peer is reachable in more ways than one — the
+ * overlay arms use multiaddrs (`/ip4/…/udp/…/quic-v1`), which this must ignore rather than choke on.
+ * A contact can therefore carry both kinds at once and each transport takes the ones it understands.
+ */
+export const httpRoutes = (routes: readonly string[]): string[] =>
+  routes.filter((route) => {
+    try {
+      const protocol = new URL(route).protocol
+      return protocol === "https:" || protocol === "http:"
+    } catch {
+      return false
+    }
+  })
+
+/** How long to wait on one peer. A slow peer must never hold up the others. */
+const PER_PEER_TIMEOUT_MS = 8_000
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const offline = yield* Offline.Service
+    const contacts = yield* CommunityContacts.Service
+    const http = yield* HttpClient.HttpClient
 
-    const state = Effect.fn("CommunityTransport.state")(function* () {
-      // `policy` is a live getter over the process-wide ref, so this follows a Settings change
-      // without a restart. Capturing `policy.enabled` at construction would produce a gate that
-      // reports itself as on while being off — the exact failure that made it a getter.
-      return offline.policy.enabled
-        ? ({ kind: "off", reason: "airgap" } as const)
-        : ({ kind: "off", reason: "none" } as const)
+    /**
+     * Peers we could actually dial: known, not blocked, and carrying an HTTP route.
+     *
+     * ⚠️ Blocked contacts are excluded from SENDING too, not only from receiving. Publishing to
+     * someone whose messages you refuse tells them you are online and hands them your traffic — the
+     * block would be one-directional in the direction that helps them.
+     */
+    const reachable = Effect.fn("CommunityTransportHttp.reachable")(function* () {
+      const known = yield* contacts.bootstrap()
+      return known.flatMap((contact) =>
+        httpRoutes(contact.routes).map((route) => ({ networkID: contact.networkID, route })),
+      )
+    })
+
+    const state = Effect.fn("CommunityTransportHttp.state")(function* () {
+      // A live getter over the process-wide ref, so a Settings change takes effect without a restart.
+      // The airgap gate stays FIRST: a community feature is egress the user chose, and airgap has to
+      // be able to withdraw that choice before anything else is considered.
+      if (offline.policy.enabled) return { kind: "off", reason: "airgap" } as const
+      const peers = yield* reachable()
+      // ⚠️ Not `off/none`: the transport exists and works. "We know nobody to dial" is a different
+      // sentence to a person than "this is not built yet", and it is one they can fix in a minute.
+      return peers.length === 0
+        ? ({ kind: "off", reason: "no-peers" } as const)
+        : ({ kind: "online", peers: peers.length } as const)
     })
 
     return Service.of({
       state,
-      publish: Effect.fn("CommunityTransport.publish")(function* (_message: CommunityMessage.Proven) {
-        // Nothing to publish through. The caller stores its own copy either way, so a user's message
-        // is never lost — it simply has no audience until a transport lands.
-        return false
+
+      publish: Effect.fn("CommunityTransportHttp.publish")(function* (message: CommunityMessage.Proven) {
+        if (offline.policy.enabled) return false
+        const peers = yield* reachable()
+        if (peers.length === 0) return false
+
+        /**
+         * ⚠️ Addressed by TOPIC, never by the channel NAME. The receiver resolves a topic against the
+         * channels IT joined, so a peer that spells the room differently still resolves it — and a
+         * peer that never joined it cannot store it at all, which is the `not-subscribed` rule
+         * holding by arithmetic rather than by trust in the sender.
+         */
+        const body = { topic: CommunityTopic.topicOf(message.channel), message }
+
+        /**
+         * 🔴 Every peer is attempted, and one peer's failure is not the publish's failure. Offline
+         * peers are the NORMAL case in a network of home machines, so an unreachable contact must
+         * cost this call a timeout and nothing else. Each attempt is made total BEFORE `Effect.all`
+         * sees it, so one refused connection cannot cancel its siblings.
+         */
+        const attempts = yield* Effect.all(
+          peers.map((peer) =>
+            http
+              .execute(
+                HttpClientRequest.post(`${peer.route.replace(/\/+$/, "")}${INBOUND_PATH}`).pipe(
+                  HttpClientRequest.bodyJsonUnsafe(body),
+                ),
+              )
+              .pipe(
+                Effect.timeout(PER_PEER_TIMEOUT_MS),
+                Effect.map((response) => response.status >= 200 && response.status < 300),
+                /**
+                 * 🔴 Each attempt is made TOTAL here rather than at the end, and that is what keeps
+                 * `publish` unable to fail. An unreachable contact is the ordinary state of a network
+                 * of home machines — a refused connection, a DNS miss, an expired certificate — and
+                 * none of those is an error the user should ever see. They are one peer that did not
+                 * answer.
+                 */
+                Effect.catchCause(() => Effect.succeed(false)),
+              ),
+          ),
+          { concurrency: "unbounded" },
+        )
+
+        // True when ANY peer took it. The caller has already stored its own copy, so this reports
+        // whether the message found an audience — never whether it survived.
+        return attempts.some((accepted) => accepted)
       }),
     })
   }),
 )
 
-export const node = makeGlobalNode({ service: Service, layer, deps: [Offline.node, CommunityChannels.node] })
+export const node = makeGlobalNode({ service: Service, layer, deps: [
+  Offline.node,
+  CommunityChannels.node,
+  CommunityContacts.node,
+  // ⚠️ The SHARED httpClient node, never a private fetch client: it is the OFF-A offline chokepoint,
+  // so airgap is enforced a second time and independently of the explicit check above.
+  httpClient,
+] })

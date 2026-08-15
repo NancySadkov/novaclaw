@@ -9,7 +9,7 @@ import { InstanceDisposed } from "@/server/event"
 import { Question } from "@/question"
 import { AdhocApi } from "./groups/adhoc"
 import { CapabilityApi } from "./groups/capability"
-import { CommunityApi } from "./groups/community"
+import { CommunityApi, CommunityPeerApi } from "./groups/community"
 import { ConfigApi } from "./groups/config"
 import { ControlApi } from "./groups/control"
 import { ControlPlaneApi } from "./groups/control-plane"
@@ -66,6 +66,7 @@ export const InstanceHttpApi = HttpApi.make("novaclaw-instance")
   .addHttpApi(AdhocApi)
   .addHttpApi(CapabilityApi)
   .addHttpApi(CommunityApi)
+  .addHttpApi(CommunityPeerApi)
   .addHttpApi(ConfigApi)
   .addHttpApi(ExperimentalApi)
   .addHttpApi(FileApi)

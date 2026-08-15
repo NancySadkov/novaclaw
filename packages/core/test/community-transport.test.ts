@@ -12,8 +12,9 @@ import { testEffect } from "./lib/effect"
 /**
  * Community P2 — the transport seam (`todo/community-p2p.md`).
  *
- * There is no transport yet, and that is the point: these pin the behaviour of an instance whose
- * community has nowhere to go, because that is every install today and every airgapped one forever.
+ * The transport is now real — plain HTTPS to reachable instances — so these pin the states of an
+ * instance that HAS one and still cannot send: nobody to dial, or airgap. Both are ordinary, and
+ * neither may be reported as a failure.
  */
 
 const it = testEffect(
@@ -29,9 +30,10 @@ describe("CommunityTransport", () => {
     Effect.gen(function* () {
       const transport = yield* CommunityTransport.Service
       const state = yield* transport.state()
-      // "No network yet" is the ordinary state of a fresh install. Modelling it as an error would
-      // make the Community screen a red one on first open.
-      expect(state).toEqual({ kind: "off", reason: "none" })
+      // ⚠️ `no-peers`, not `none`. A transport exists and works; this instance simply knows nobody
+      // with an address to dial, which is a fresh install and is something the user can fix in a
+      // minute. Modelling either as an error would make the Community screen red on first open.
+      expect(state).toEqual({ kind: "off", reason: "no-peers" })
     }),
   )
 
@@ -47,15 +49,15 @@ describe("CommunityTransport", () => {
     }),
   )
 
-  it.effect("🔴 AIRGAP is reported distinctly from 'not built yet'", () =>
+  it.effect("🔴 AIRGAP is reported distinctly from 'nobody to dial'", () =>
     Effect.gen(function* () {
       const transport = yield* CommunityTransport.Service
       const before = yield* transport.state()
-      expect(before).toEqual({ kind: "off", reason: "none" })
+      expect(before).toEqual({ kind: "off", reason: "no-peers" })
 
       // A community is egress the user chose, so airgap must be able to withdraw that choice — and
       // the reason has to survive to the UI, because "off because you turned the network off" and
-      // "off because it does not exist yet" are different things to tell someone.
+      // "off because you have not added anyone yet" are different things to tell someone.
       const offline = yield* Offline.Service
       const original = offline.policy.enabled
       try {
@@ -67,7 +69,7 @@ describe("CommunityTransport", () => {
 
       // And it follows the flag back down without a restart: the policy is read per call, so a
       // Settings change takes effect immediately rather than reporting stale.
-      expect(yield* transport.state()).toEqual({ kind: "off", reason: "none" })
+      expect(yield* transport.state()).toEqual({ kind: "off", reason: "no-peers" })
     }),
   )
 })

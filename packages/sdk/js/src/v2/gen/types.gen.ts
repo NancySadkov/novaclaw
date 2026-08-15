@@ -8880,7 +8880,7 @@ export type CommunityTransportStateResponses = {
   200:
     | {
         kind: "off"
-        reason: "none" | "airgap"
+        reason: "airgap" | "no-peers"
       }
     | {
         kind: "connecting"
@@ -9130,6 +9130,43 @@ export type CommunityChannelHistoryResponses = {
 }
 
 export type CommunityChannelHistoryResponse = CommunityChannelHistoryResponses[keyof CommunityChannelHistoryResponses]
+
+export type CommunityPeerInboundData = {
+  body: {
+    topic: string
+    message: {
+      channel: string
+      author: string
+      at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      body: string
+      signature: string
+      nonce: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }
+  }
+  path?: never
+  query?: never
+  url: "/api/community/inbound"
+}
+
+export type CommunityPeerInboundErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type CommunityPeerInboundError = CommunityPeerInboundErrors[keyof CommunityPeerInboundErrors]
+
+export type CommunityPeerInboundResponses = {
+  /**
+   * Always true — the verdict is deliberately not disclosed
+   */
+  200: {
+    received: true
+  }
+}
+
+export type CommunityPeerInboundResponse = CommunityPeerInboundResponses[keyof CommunityPeerInboundResponses]
 
 export type ConfigGetData = {
   body?: never

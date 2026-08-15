@@ -31,6 +31,21 @@ export const DEFAULT_CHANNEL = "#NovaClaw"
  */
 export const RETAIN_PER_CHANNEL = 5_000
 
+/**
+ * 🔴 The largest message body we accept, in BYTES of UTF-8.
+ *
+ * Retention bounds the COUNT of messages, and proof-of-work binds to the signature rather than to the
+ * body — so without this, a peer willing to pay ~49 ms per message could attach ten megabytes to each
+ * one and the two defences that look like disk protection would both hold while the disk filled. The
+ * count is bounded, the size was not, and 5,000 × unbounded is unbounded.
+ *
+ * ⚠️ A PROTOCOL rule, not a local preference: it is enforced on what arrives, so a peer with a larger
+ * limit simply finds its long messages refused here. 8 KiB is far past any forum post and far short of
+ * a payload worth abusing. Raising it later is compatible; lowering it silently drops other people's
+ * messages, so it should not move without a reason.
+ */
+export const MAX_BODY_BYTES = 8 * 1024
+
 export interface Stored extends CommunityMessage.Proven {
   readonly id: string
   /** When THIS instance received it — the only time we can vouch for. */
@@ -38,7 +53,14 @@ export interface Stored extends CommunityMessage.Proven {
 }
 
 /** Why an incoming message was not stored. Recorded because "nothing appeared" is unreadable. */
-export type Rejection = "unverified" | "unproven" | "wrong-channel" | "blocked" | "duplicate" | "not-subscribed"
+export type Rejection =
+  | "unverified"
+  | "unproven"
+  | "wrong-channel"
+  | "blocked"
+  | "duplicate"
+  | "not-subscribed"
+  | "too-large"
 
 export interface Interface {
   readonly join: (channel: string) => Effect.Effect<void>
@@ -207,17 +229,33 @@ export const layer = Layer.effect(
         // check ever ran, which is the same defect one layer earlier.
         if (CommunityTopic.canonical(message.channel) !== CommunityTopic.canonical(channel))
           return { rejected: "wrong-channel" as const }
-        if (!CommunityMessage.verifyOn(channel, message)) return { rejected: "unverified" as const }
+        /**
+         * ⚠️ FREE to check, so it runs before anything that costs us — see the ordering note below.
+         * `Buffer.byteLength` measures the encoded bytes rather than the string length, because a
+         * body of emoji or CJK is several bytes per character and a character bound would let the
+         * same message be three times the size it claimed.
+         */
+        if (Buffer.byteLength(message.body, "utf8") > MAX_BODY_BYTES) return { rejected: "too-large" as const }
 
         /**
-         * 🔴 The flood defence, at the one door everything enters by.
+         * 🔴 The flood defence, at the one door everything enters by — and BEFORE the signature.
          *
          * Measured: peer scoring does NOT stop a flood (it scored the flooder at the cap), so the
          * cost has to be imposed here. Checking is ONE hash whatever the difficulty, so a receiver
          * spends the same trivial amount rejecting a hostile message as accepting an honest one —
          * verification can never itself become the flood.
+         *
+         * ⚠️ **The ORDER is the defence, and it was wrong until the door faced strangers.** Measured
+         * 2026-08-15: verifying a garbage signature costs us 41.3 µs, verifying work costs 0.83 µs —
+         * 50×. A garbage signature is FREE to produce, so signature-first let anyone spend nothing to
+         * make us spend 41 µs each, unbounded. Work-first means they must spend ~49 ms solving for
+         * the very signature string they want us to look at, so the exchange runs ~1,200:1 in our
+         * favour instead of 1:1. The work check needs no crypto — it hashes the signature STRING —
+         * which is precisely why it can go first.
          */
         if (!CommunityWork.verify(message.signature, message.nonce)) return { rejected: "unproven" as const }
+
+        if (!CommunityMessage.verifyOn(channel, message)) return { rejected: "unverified" as const }
 
         /**
          * 🔴 A blocked author is dropped at INGRESS, not filtered at read.

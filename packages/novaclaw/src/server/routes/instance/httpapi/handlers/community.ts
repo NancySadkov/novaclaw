@@ -111,3 +111,27 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
       )
   }),
 )
+
+/**
+ * Community P2 — the peer ingress handler.
+ *
+ * 🔴 Everything it does is hand the payload to `CommunityChannels.deliver` and answer the same way
+ * regardless. `deliver` is the ONE door where work, signature, subscription, block, size and
+ * duplicate rules live; a handler that pre-screened here would be a second door with a subset of
+ * them, and the subset is what gets forgotten.
+ */
+export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "communityPeer", (handlers) =>
+  Effect.gen(function* () {
+    const channels = yield* CommunityChannels.Service
+
+    return handlers.handle(
+      "communityInbound",
+      Effect.fn("CommunityHttpApi.communityInbound")(function* (ctx) {
+        // The verdict is deliberately dropped rather than returned — see `PeerAck`. It is not lost:
+        // a stored message appears in the channel, and a rejected one is the door doing its job.
+        yield* channels.deliver(ctx.payload.topic, ctx.payload.message)
+        return { received: true } as const
+      }),
+    )
+  }),
+)

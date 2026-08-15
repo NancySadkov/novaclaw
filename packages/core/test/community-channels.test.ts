@@ -476,4 +476,58 @@ describe("CommunityChannels", () => {
     }),
   )
 
+
+  it.effect("🔴 unpaid work is refused BEFORE the signature is ever verified", () =>
+    Effect.gen(function* () {
+      /**
+       * Order as a defence, not as tidiness. Measured 2026-08-15: verifying a garbage signature costs
+       * 41.3 µs, verifying work costs 0.83 µs. A garbage signature is free to produce, so checking
+       * the signature first let anyone spend NOTHING to make this instance spend 41 µs per message,
+       * unbounded — and that door now faces strangers over HTTP.
+       *
+       * The verdict is the observable proof of the order: a message that fails BOTH checks must come
+       * back `unproven`, because the cheap one ran and the expensive one never did.
+       */
+      const channels = yield* CommunityChannels.Service
+      yield* channels.join(CHANNEL)
+
+      const junk = {
+        ...fromStranger({ channel: CHANNEL, body: "costs me nothing to send" }),
+        signature: Buffer.alloc(64, 7).toString("base64url"),
+      }
+      expect(yield* channels.record(CHANNEL, { ...junk, nonce: 0 })).toEqual({ rejected: "unproven" })
+
+      // ⚠️ And work alone is NOT enough: paying for a forged signature still fails. The reorder
+      // must not have turned the cheap check into a substitute for the decisive one.
+      const paidForJunk = CommunityWork.prove(junk)!
+      expect(yield* channels.record(CHANNEL, paidForJunk)).toEqual({ rejected: "unverified" })
+    }),
+  )
+
+
+  it.effect("🔴 an oversized body is refused — retention bounds COUNT, not bytes", () =>
+    Effect.gen(function* () {
+      /**
+       * The two defences that look like disk protection both hold here and neither one is: retention
+       * caps the number of messages, and proof-of-work binds to the SIGNATURE rather than the body.
+       * So a peer willing to pay ~49 ms could attach megabytes to each message and 5,000 × unbounded
+       * is unbounded. This became reachable the moment the ingress door faced strangers over HTTP.
+       */
+      const channels = yield* CommunityChannels.Service
+      yield* channels.join(CHANNEL)
+
+      const huge = proven(fromStranger({ channel: CHANNEL, body: "x".repeat(CommunityChannels.MAX_BODY_BYTES + 1) }))
+      expect(yield* channels.record(CHANNEL, huge)).toEqual({ rejected: "too-large" })
+
+      // Right at the limit is fine: the bound is a rule, not a suggestion to stay well clear of.
+      const atLimit = proven(fromStranger({ channel: CHANNEL, body: "x".repeat(CommunityChannels.MAX_BODY_BYTES) }))
+      expect("stored" in (yield* channels.record(CHANNEL, atLimit))).toBe(true)
+
+      // ⚠️ BYTES, not characters. A four-byte emoji per character would otherwise slip four times the
+      // intended payload past a length check that looked correct.
+      const wide = proven(fromStranger({ channel: CHANNEL, body: "🔴".repeat(CommunityChannels.MAX_BODY_BYTES / 2) }))
+      expect(yield* channels.record(CHANNEL, wide)).toEqual({ rejected: "too-large" })
+    }),
+  )
+
 })

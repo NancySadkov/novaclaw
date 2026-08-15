@@ -96,7 +96,7 @@ import { controlHandlers } from "./handlers/control"
 import { controlPlaneHandlers } from "./handlers/control-plane"
 import { adhocHandlers } from "./handlers/adhoc"
 import { capabilityHandlers } from "./handlers/capability"
-import { communityHandlers } from "./handlers/community"
+import { communityHandlers, communityPeerHandlers } from "./handlers/community"
 import { experimentalHandlers } from "./handlers/experimental"
 import { fileHandlers } from "./handlers/file"
 import { globalHandlers } from "./handlers/global"
@@ -168,6 +168,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     adhocHandlers,
     capabilityHandlers,
     communityHandlers,
+    communityPeerHandlers,
     configHandlers,
     experimentalHandlers,
     fileHandlers,

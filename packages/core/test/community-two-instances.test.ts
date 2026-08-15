@@ -7,6 +7,7 @@ import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityMessage } from "@novaclaw/core/community/message"
 import { CommunityPost } from "@novaclaw/core/community/post"
+import { CommunityTopic } from "@novaclaw/core/community/topic"
 import { CommunityTransport } from "@novaclaw/core/community/transport"
 import { Offline } from "@novaclaw/core/offline"
 import { CredentialCipher } from "@novaclaw/core/credential-cipher"
@@ -148,4 +149,117 @@ describe("two instances", () => {
       cleanup(bob.home)
     }
   })
+
+  test("🔴 a message crosses over a REAL HTTP socket, dialled by the transport", async () => {
+    /**
+     * P2's stated deliverable: the two-instance test over a real network. Everything before this
+     * handed Bob the message by calling his ingress door directly, which proves the door and nothing
+     * about the wire — the transport was a null implementation returning `false`.
+     *
+     * Bob here is a real HTTP server on a real port. Alice's transport discovers him the only way it
+     * ever will (a contact with an `http://` route), addresses him by TOPIC rather than by channel
+     * name, and POSTs. Nothing in the test tells Alice where to send: it is read from her contacts.
+     */
+    const alice = instance("alice-http")
+    const bob = instance("bob-http")
+    let server: ReturnType<typeof Bun.serve> | undefined
+    try {
+      const bobDelivered: unknown[] = []
+      // Stands in for the instance's `communityInbound` route, doing exactly what it does: hand the
+      // payload to the ONE ingress door and answer uniformly, disclosing no verdict.
+      server = Bun.serve({
+        port: 0,
+        fetch: async (request) => {
+          const body = (await request.json()) as { topic: string; message: CommunityMessage.Proven }
+          bobDelivered.push(body.topic)
+          await Effect.runPromise(
+            Effect.gen(function* () {
+              const channels = yield* CommunityChannels.Service
+              yield* channels.deliver(body.topic, body.message)
+            }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+          )
+          return Response.json({ received: true })
+        },
+      })
+      const bobURL = `http://127.0.0.1:${server.port}`
+      // Bob's REAL key: a contact is an identity plus routes, and `add` refuses an id that is not a
+      // public key — so a placeholder would fail the very check that makes contacts meaningful.
+      const bobKey = await Effect.runPromise(
+        InstanceIdentityStore.Service.pipe(
+          Effect.flatMap((store) => store.identity()),
+          Effect.map((identity) => identity.networkID),
+        ).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+
+      const aliceKey = await Effect.runPromise(
+        Effect.gen(function* () {
+          const contacts = yield* CommunityContacts.Service
+          const channels = yield* CommunityChannels.Service
+          const posts = yield* CommunityPost.Service
+          const transport = yield* CommunityTransport.Service
+          const identity = yield* InstanceIdentityStore.Service.pipe(Effect.flatMap((s) => s.identity()))
+
+          yield* channels.join("#NovaClaw")
+          // Before Alice knows anybody reachable: the transport works and has nowhere to send.
+          expect(yield* transport.state()).toEqual({ kind: "off", reason: "no-peers" })
+
+          yield* contacts.add({ networkID: bobKey, petname: "bob", routes: [bobURL] })
+          expect(yield* transport.state()).toEqual({ kind: "online", peers: 1 })
+
+          /**
+           * 🔴 First, to a Bob who has NOT joined the channel. `delivered` is true — he took the
+           * bytes — and he stores nothing, because a topic is a hash he cannot invert and nothing he
+           * subscribes to has that id. The rule holds by arithmetic across the wire, not by trusting
+           * the sender, and it is worth pinning that "the peer answered" never means "the peer kept
+           * it".
+           */
+          const ignored = yield* posts.post("#NovaClaw", "before bob joined")
+          expect(ignored.delivered).toBe(true)
+
+          return identity.networkID
+        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+
+      const ignoredByBob = await Effect.runPromise(
+        CommunityChannels.Service.pipe(
+          Effect.flatMap((channels) => channels.history("#NovaClaw")),
+        ).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+      expect(ignoredByBob).toEqual([])
+
+      // Now Bob joins, and Alice says something else. Nothing about Alice changes.
+      await Effect.runPromise(
+        CommunityChannels.Service.pipe(Effect.flatMap((channels) => channels.join("#NovaClaw"))).pipe(
+          Effect.provide(bob.graph),
+          Effect.provide(CredentialCipher.defaultLayer),
+        ),
+      )
+      await Effect.runPromise(
+        CommunityPost.Service.pipe(
+          Effect.flatMap((posts) => posts.post("#NovaClaw", "over the wire")),
+          Effect.tap((posted) => Effect.sync(() => expect(posted.delivered).toBe(true))),
+        ).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+
+      const seen = await Effect.runPromise(
+        Effect.gen(function* () {
+          const channels = yield* CommunityChannels.Service
+          return yield* channels.history("#NovaClaw")
+        }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+
+      // Bob has it, attributed to Alice, whom he has never met — over a socket.
+      expect(seen.map((m) => m.body)).toEqual(["over the wire"])
+      expect(seen[0]?.author).toBe(aliceKey)
+      expect(CommunityMessage.verify(seen[0]!)).toBe(true)
+      // ⚠️ Addressed by TOPIC: the hash, never the channel name, so a peer spelling the room
+      // differently still resolves it and a peer who never joined it cannot store it at all.
+      expect(bobDelivered).toEqual([CommunityTopic.topicOf("#NovaClaw"), CommunityTopic.topicOf("#NovaClaw")])
+    } finally {
+      server?.stop(true)
+      cleanup(alice.home)
+      cleanup(bob.home)
+    }
+  })
+
 })

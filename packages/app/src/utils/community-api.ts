@@ -47,7 +47,7 @@ export interface CommunityMessage {
  * network off" are different things to tell a person.
  */
 export type CommunityTransportState =
-  | { readonly kind: "off"; readonly reason: "none" | "airgap" }
+  | { readonly kind: "off"; readonly reason: "airgap" | "no-peers" }
   | { readonly kind: "connecting" }
   | { readonly kind: "online"; readonly peers: number }
 

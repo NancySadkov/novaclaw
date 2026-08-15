@@ -991,6 +991,40 @@ class ApiCommunityChannel extends NovaClawApiClient {
   }
 }
 
+class ApiCommunityPeer extends NovaClawApiClient {
+  /**
+   * Accept a community message from a peer
+   *
+   * The open door of the P2P network: any instance may hand this one a signed, work-proven message. Unauthenticated by design — a node that required a token would be a private federation, not a community. The answer is always the same so that probing reveals neither our subscriptions nor our block list.
+   */
+  public inbound<ThrowOnError extends boolean = false>(
+    parameters: {
+      topic: string
+      message: {
+        channel: string
+        author: string
+        at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        body: string
+        signature: string
+        nonce: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { topic: parameters?.["topic"], message: parameters?.["message"] }
+    return (options?.client ?? this.client).post<
+      T.CommunityPeerInboundResponses,
+      T.CommunityPeerInboundErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/inbound",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+}
+
 class ApiCommunity extends NovaClawApiClient {
   private _contact?: ApiCommunityContact
   get contact(): ApiCommunityContact {
@@ -1005,6 +1039,11 @@ class ApiCommunity extends NovaClawApiClient {
   private _channel?: ApiCommunityChannel
   get channel(): ApiCommunityChannel {
     return (this._channel ??= new ApiCommunityChannel({ client: this.client }))
+  }
+
+  private _peer?: ApiCommunityPeer
+  get peer(): ApiCommunityPeer {
+    return (this._peer ??= new ApiCommunityPeer({ client: this.client }))
   }
 }
 

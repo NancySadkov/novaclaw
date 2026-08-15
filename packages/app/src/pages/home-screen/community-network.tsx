@@ -95,7 +95,10 @@ export const CommunityNetwork: Component = () => {
     if (state === undefined) return "Checking…"
     if (state.kind === "online") return `Connected · ${state.peers} ${state.peers === 1 ? "peer" : "peers"}`
     if (state.kind === "connecting") return "Connecting…"
-    return state.reason === "airgap" ? "Offline mode is on — nothing goes in or out" : "Not connected yet"
+    if (state.reason === "airgap") return "Offline mode is on — nothing goes in or out"
+    // ⚠️ Three different sentences, because they are three different situations for the person
+    // reading them: one they chose, one we have not built, and one they can fix in the next minute.
+    return "Ready — add someone with an address to reach anybody"
   })
 
   /**
