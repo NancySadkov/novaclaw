@@ -378,4 +378,52 @@ describe("CommunityOffer", () => {
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
 
+
+  it.effect("🔴 an endpoint that READS as one host and REACHES another is refused", () =>
+    Effect.gen(function* () {
+      /**
+       * The panel shows the raw string; the runtime connects to what `URL` parses. Unicode and
+       * userinfo make those two different things — measured against the runtime:
+       *
+       *   `https://spark.example@evil.example/v1`  reads as spark.example, connects to evil.example
+       *   `https://\u0455park.example/v1`           reads as spark.example, resolves xn--park-f9d.example
+       *   `https://spark\uFF0Eexample/v1`           a fullwidth dot, resolving to spark.example
+       *   `https://spark.example\u200B/v1`          a zero-width space, invisible in the panel
+       *
+       * ⚠️ The userinfo one is the sharpest: it is already canonical AND pure ASCII, and it passed
+       * the scheme rule written one commit earlier. No care by the reader defeats any of them.
+       */
+      const offers = yield* CommunityOffer.Service
+      const disguised = [
+        "https://spark.example@evil.example/v1",
+        "https://user:pw@evil.example/v1",
+        `https://${"\u0455"}park.example/v1`,
+        `https://spark${"\uFF0E"}example/v1`,
+        `https://spark.example${"\u200B"}/v1`,
+        `https://${"\u202E"}krovten.live/v1`,
+      ]
+      for (const endpoint of disguised) {
+        expect(CommunityOffer.isServableEndpoint(endpoint)).toBe(false)
+        const published = yield* offers.publish({ ...terms, endpoint })
+        expect(CommunityOffer.verify(published)).toBe(false)
+      }
+
+      /**
+       * 🔴 THE CONTROL, and it is what ruled out the first design. Requiring `url.href === endpoint`
+       * would also refuse these two — a missing trailing slash and an uppercase host — both of which
+       * a person may reasonably type. **A rule that rejects honest input to stop a trick is a bad
+       * trade when a narrower one exists.**
+       */
+      for (const endpoint of [
+        "https://spark.example:8010/v1",
+        "http://192.168.178.40:8000/v1",
+        "https://a.example",
+        "http://Spark.Example/v1",
+      ]) {
+        expect(CommunityOffer.isServableEndpoint(endpoint)).toBe(true)
+        expect(CommunityOffer.verify(yield* offers.publish({ ...terms, endpoint }))).toBe(true)
+      }
+    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+  )
+
 })

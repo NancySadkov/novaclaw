@@ -165,9 +165,38 @@ export const canonicalBytes = (offer: Unsigned): Uint8Array => {
  * oddly. Both directions matter — a checker that is merely strict rejects legitimate configuration.
  */
 export const isServableEndpoint = (endpoint: string): boolean => {
+  /**
+   * 🔴 ASCII only, and this is the rule that makes the DISPLAYED endpoint the one we dial.
+   *
+   * The panel shows the raw string; the runtime connects to what `URL` parses. Unicode makes those
+   * two different things, measured: `https://\u0455park.example/v1` shows as `spark.example` and
+   * resolves to `xn--park-f9d.example`; a fullwidth dot shows as `spark\uFF0Eexample` and resolves to
+   * `spark.example`; a zero-width space vanishes entirely. **Every one of those is a URL that reads
+   * as one host and reaches another** — which is the whole trick, and no amount of care by the
+   * reader defeats it.
+   *
+   * ⚠️ Not canonicalisation, which was the first idea and was wrong: requiring `url.href === endpoint`
+   * also refuses `https://a.example` (no trailing slash) and `http://Spark.Example/v1` (an uppercase
+   * host), both of which a person may reasonably type. A rule that rejects honest input to stop a
+   * trick is a bad trade when a narrower one exists.
+   *
+   * The cost is an internationalised domain name, which is refused and told why. For the address of
+   * a model server that is a trade worth making.
+   */
+  // eslint-disable-next-line no-control-regex
+  if (!/^[!-~]+$/.test(endpoint)) return false
   try {
     const url = new URL(endpoint)
-    return (url.protocol === "http:" || url.protocol === "https:") && url.hostname !== ""
+    if (url.protocol !== "http:" && url.protocol !== "https:") return false
+    if (url.hostname === "") return false
+    /**
+     * 🔴 No credentials in the URL — the sharpest of these, because it survives every other check.
+     * `https://spark.example@evil.example/v1` is already canonical, is pure ASCII, and connects to
+     * **evil.example** while reading as `spark.example`. It passed the scheme rule that was written
+     * one commit earlier. A model server endpoint never legitimately carries userinfo.
+     */
+    if (url.username !== "" || url.password !== "") return false
+    return true
   } catch {
     return false
   }
