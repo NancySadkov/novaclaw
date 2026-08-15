@@ -6,6 +6,7 @@ import { Context, Effect, Layer } from "effect"
 import { CommunityDirectMessageTable } from "./dm.sql"
 import { CommunitySeal } from "./seal"
 import { CommunityWork } from "./work"
+import { CommunityContacts } from "./contacts"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { InstanceIdentityStore } from "../instance-identity-store"
@@ -56,7 +57,14 @@ export interface Stored {
 }
 
 /** Why an incoming DM was not stored. */
-export type Rejection = "unverified" | "unproven" | "not-for-us" | "unreadable" | "duplicate" | "too-large"
+export type Rejection =
+  | "unverified"
+  | "unproven"
+  | "not-for-us"
+  | "unreadable"
+  | "duplicate"
+  | "too-large"
+  | "blocked"
 
 /** Same bound as a channel message: the door is open to strangers, so the body cannot be unbounded. */
 export const MAX_BODY_BYTES = 8 * 1024
@@ -180,6 +188,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const { db } = yield* Database.Service
     const identity = yield* InstanceIdentityStore.Service
+    const contacts = yield* CommunityContacts.Service
 
     const rowStored = (row: typeof CommunityDirectMessageTable.$inferSelect): Stored => ({
       id: row.id,
@@ -295,6 +304,24 @@ export const layer = Layer.effect(
         // Not addressed to us: refuse rather than store something we cannot read and were not sent.
         if (message.to !== self) return { rejected: "not-for-us" as const }
 
+        /**
+         * 🔴 Blocking applies HERE too, and it did not until this was probed on two live instances:
+         * a blocked sender's message arrived `{"sent":true}` and appeared in the recipient's history.
+         * The handler above already drops the verdict so a stranger cannot learn whether they are
+         * blocked — it was written for a check that had never been implemented. **A comment is not
+         * evidence.**
+         *
+         * ⚠️ Of every door here this is the one that most needed it. A blocked person could not
+         * reach the user in a room, and could still reach them privately — which is the opposite way
+         * round from what "blocking" means to the person who clicked it.
+         *
+         * Refused BEFORE unsealing, so a blocked sender does not even cost us the decryption; and
+         * before `keep`, for the reason the channel door records — storing then hiding leaves a
+         * blocked spammer paying nothing while we pay every cost of receiving.
+         */
+        const contact = yield* contacts.get(message.from)
+        if (contact?.blocked === true) return { rejected: "blocked" as const }
+
         const body = yield* identity.openSealed(message.sealed)
         // Addressed to us and yet unreadable means it was sealed to a key we do not hold — an old
         // key, or a substitution. Either way it is not something to keep as if it were a message.
@@ -329,4 +356,8 @@ export const layer = Layer.effect(
   }),
 )
 
-export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node, InstanceIdentityStore.node] })
+export const node = makeGlobalNode({
+  service: Service,
+  layer,
+  deps: [Database.node, InstanceIdentityStore.node, CommunityContacts.node],
+})

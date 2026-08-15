@@ -296,4 +296,39 @@ describe("CommunityOffer", () => {
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
 
+
+  it.effect("🔴 an offer from a BLOCKED peer is not collected", () =>
+    Effect.gen(function* () {
+      /**
+       * Probed live: an instance that had blocked a peer still collected that peer's offer and put
+       * it on the user's screen — endpoint, models and Lightning address included. An offer is
+       * content a stranger wrote, displayed in the user's own window, so "I do not want to hear from
+       * this person" has to cover it.
+       *
+       * ⚠️ Blocking was consulted in exactly three places out of the subsystem's many doors. The
+       * shape is the airgap's: a cross-cutting rule applied service by service, where each service
+       * had to remember.
+       */
+      const offers = yield* CommunityOffer.Service
+      const contacts = yield* CommunityContacts.Service
+      const theirs = stranger("https://theirs.example/v1")
+
+      // THE CONTROL FIRST — a refusal means nothing unless the same call succeeds unblocked.
+      expect(yield* offers.learn(theirs)).toBe(true)
+      expect((yield* offers.known()).map((o) => o.endpoint)).toEqual(["https://theirs.example/v1"])
+
+      yield* contacts.add({ networkID: theirs.from, petname: "them" }).pipe(Effect.orDie)
+      yield* contacts.setBlocked(theirs.from, true)
+
+      /**
+       * ⚠️ The SAME offer, byte for byte, so it still verifies. My first version of this changed the
+       * endpoint to make it "a new offer" — which breaks the signature, so `learn` returned false
+       * from `verify` and the test would have passed with the block check deleted. A refusal only
+       * means what you think it means when the ONLY thing changed is the thing under test.
+       */
+      expect(CommunityOffer.verify(theirs)).toBe(true)
+      expect(yield* offers.learn(theirs)).toBe(false)
+    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+  )
+
 })

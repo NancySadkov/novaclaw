@@ -2,6 +2,7 @@ export * as CommunityOffer from "./offer"
 
 import { Context, Effect, Layer } from "effect"
 import { eq, sql } from "drizzle-orm"
+import { CommunityContacts } from "./contacts"
 import { CommunityOfferTable } from "./sql"
 import { Database } from "../database/database"
 import { InstanceIdentityStore } from "../instance-identity-store"
@@ -203,6 +204,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const identity = yield* InstanceIdentityStore.Service
     const { db } = yield* Database.Service
+    const contacts = yield* CommunityContacts.Service
 
     return Service.of({
       publish: Effect.fn("CommunityOffer.publish")(function* (terms: Terms) {
@@ -240,6 +242,14 @@ export const layer = Layer.effect(
        */
       learn: Effect.fn("CommunityOffer.learn")(function* (offer: Signed) {
         if (!verify(offer)) return false
+        /**
+         * 🔴 Blocking applies to advertisements too. Probed live: an instance that had blocked a peer
+         * still collected that peer's offer and displayed it to the user — endpoint, models and
+         * Lightning address included. An offer is content a stranger wrote, shown in the user's own
+         * screen, so "I do not want to hear from this person" has to cover it.
+         */
+        const contact = yield* contacts.get(offer.from)
+        if (contact?.blocked === true) return false
         // ⚠️ Refuses an offer that claims to be OURS. An instance that stored a stranger's offer under
         // its own identity would serve it to everyone as its own, which is the laundering above with
         // one extra step.
@@ -343,5 +353,5 @@ export const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: Service,
   layer,
-  deps: [Database.node, InstanceIdentityStore.node],
+  deps: [Database.node, InstanceIdentityStore.node, CommunityContacts.node],
 })

@@ -937,4 +937,88 @@ describe("two instances", () => {
     }
   })
 
+
+  test("🔴 BLOCKING covers the private door too — a blocked sender's DM is refused", async () => {
+    /**
+     * Found by probing two running instances, not by any test. A blocked sender's direct message
+     * arrived `{"sent":true}` and appeared in the recipient's history — while the HTTP handler above
+     * it already dropped the verdict specifically so a stranger could not learn whether they were
+     * blocked. The handler had been written for a check nobody implemented. **A comment is not
+     * evidence.**
+     *
+     * ⚠️ Of every door here this is the one that most needed it: a blocked person could not reach
+     * the user in a ROOM, and could still reach them PRIVATELY — the opposite way round from what
+     * "block" means to the person who clicked it.
+     */
+    const alice = instance("alice-block")
+    const bob = instance("bob-block")
+    try {
+      const bobPublished = await Effect.runPromise(
+        Effect.gen(function* () {
+          const store = yield* InstanceIdentityStore.Service
+          const sealing = yield* store.sealingKey()
+          return { id: (yield* store.identity()).networkID, ...sealing }
+        }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)) as Effect.Effect<{
+          id: string
+          publicKey: string
+          signature: string
+        }>,
+      )
+
+      const compose = (body: string) =>
+        Effect.runPromise(
+          CommunityDirect.Service.pipe(
+            Effect.flatMap((direct) =>
+              direct.compose({
+                to: bobPublished.id,
+                sealingKey: bobPublished.publicKey,
+                sealingSignature: bobPublished.signature,
+                body,
+              }),
+            ),
+            Effect.provide(alice.graph),
+            Effect.provide(CredentialCipher.defaultLayer),
+          ) as Effect.Effect<{ message: CommunityDirect.Proven } | { rejected: string }>,
+        )
+
+      const aliceKey = await Effect.runPromise(
+        InstanceIdentityStore.Service.pipe(
+          Effect.flatMap((s) => s.identity()),
+          Effect.map((i) => i.networkID),
+          Effect.provide(alice.graph),
+          Effect.provide(CredentialCipher.defaultLayer),
+        ) as Effect.Effect<string>,
+      )
+
+      const first = await compose("the control: not blocked")
+      const second = await compose("you blocked me and here I am")
+      if (!("message" in first) || !("message" in second)) throw new Error("compose failed")
+
+      const held = await Effect.runPromise(
+        Effect.gen(function* () {
+          const direct = yield* CommunityDirect.Service
+          const contacts = yield* CommunityContacts.Service
+
+          // 🔴 THE CONTROL FIRST. Without it a refusal is indistinguishable from a delivery that
+          // failed for an unrelated reason — which is exactly what happened on the first live probe
+          // of this, where a missing route made an unfixed build look correct.
+          expect("stored" in (yield* direct.receive(first.message))).toBe(true)
+
+          yield* contacts.add({ networkID: aliceKey, petname: "alice" }).pipe(Effect.orDie)
+          yield* contacts.setBlocked(aliceKey, true)
+
+          expect(yield* direct.receive(second.message)).toEqual({ rejected: "blocked" })
+          return yield* direct.history(aliceKey)
+        }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)) as Effect.Effect<
+          ReadonlyArray<{ body: string }>
+        >,
+      )
+
+      expect(held.map((m) => m.body)).toEqual(["the control: not blocked"])
+    } finally {
+      cleanup(alice.home)
+      cleanup(bob.home)
+    }
+  })
+
 })
