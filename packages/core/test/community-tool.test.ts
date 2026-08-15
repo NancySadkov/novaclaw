@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import { PermissionV2 } from "@novaclaw/core/permission"
 import { CommunityTool } from "@novaclaw/core/tool/community"
 
 /**
@@ -84,8 +86,22 @@ describe("what the tool deliberately CANNOT do", () => {
     for (const forbidden of ["direct", "dm", "conversations", "mail"]) expect(ops).not.toContain(forbidden)
   })
 
-  test("it cannot post, block, add or forget anybody", () => {
-    for (const forbidden of ["post", "send", "block", "add", "forget", "join", "leave", "rotate"])
+  test("🔴 it cannot block, add, forget, join, leave or rotate — SAY is the one exception", () => {
+    /**
+     * 🔴 This test used to forbid `post` too, under a ruling that read-only was permanent: *"not a
+     * limitation to lift later… acting has to arrive as a HUMAN confirming a specific action."*
+     *
+     * The owner's vision supersedes exactly one word of that. AGENTS.md now records that the
+     * community is a network of AGENTS, where instances of different users talk with no human
+     * present — so speaking is the POINT, not a convenience someone argued for. The rest of the
+     * ruling stands and is why this list barely moved: the danger was never posting as such, it was
+     * an agent that can be DRIVEN by what it reads, and everything that changes the user's
+     * standing — who they trust, who they block, which rooms they are in — stays out of reach.
+     *
+     * ⚠️ And the concession is paid for: `say` asserts `community_say`, scoped per channel, so it is
+     * a thing the user DELEGATES rather than a capability the model holds while reading strangers.
+     */
+    for (const forbidden of ["block", "add", "forget", "join", "leave", "rotate"])
       expect(ops).not.toContain(forbidden)
     /**
      * 🔴 And it cannot reach the user's FILTERS, in either direction.
@@ -98,6 +114,53 @@ describe("what the tool deliberately CANNOT do", () => {
     for (const forbidden of ["filter", "filters", "hide", "mute"]) expect(ops).not.toContain(forbidden)
     // ⚠️ And the list is pinned exactly: an operation added later lands here, where somebody has to
     // decide whether it belongs, rather than slipping in under a rule about names.
-    expect([...ops].sort()).toEqual(["archived", "channels", "contacts", "history", "peers", "status"])
+    expect([...ops].sort()).toEqual(["archived", "channels", "contacts", "history", "peers", "say", "status"])
+  })
+})
+
+describe("what the tool may DO, not just read", () => {
+  /**
+   * 🔴 `say` is the first operation in this tool that speaks, and the vision is why it exists:
+   * AGENTS.md's "the community is a network of AGENTS" makes instances talking without a human
+   * present the destination, not a convenience.
+   *
+   * ⚠️ It is also the operation this tool's own design argued against for good reason — an agent
+   * that reads strangers' words AND can post is drivable by whoever writes them. The resolution is
+   * that speaking is DELEGATED: it asserts a permission the user grants, scoped to one channel.
+   */
+  test("🔴 speaking asserts a permission scoped to the ONE channel", () => {
+    const source = readFileSync(new URL("../src/tool/community.ts", import.meta.url), "utf8")
+
+    // The action exists and is its own, not borrowed from a general-purpose one.
+    expect(source).toContain('action: "community_say"')
+    /**
+     * 🔴 `save: [room]`, never a wildcard. An "always" answer is then a standing grant for that room
+     * and no other — the same per-resource honesty `configure` uses for config keys, and the reason
+     * a user can let an agent chat in one room without letting it broadcast everywhere.
+     */
+    expect(source).toContain("resources: [room]")
+    expect(source).toContain("save: [room]")
+    expect(source).not.toContain('save: ["*"]')
+  })
+
+  test("🔴 the READ operations still assert nothing", () => {
+    /**
+     * ⚠️ Deliberate: making a read cost a card would train people to approve community cards by
+     * reflex, which is exactly how the one that matters gets waved through. Reading is ambient-safe
+     * — it cannot mutate the host, cannot egress, and cannot change what a later session runs.
+     */
+    const source = readFileSync(new URL("../src/tool/community.ts", import.meta.url), "utf8")
+    const asserts = source.split("permission.assert").length - 1
+    expect(asserts).toBe(1)
+  })
+
+  test("🔴 community_say is NOT ambient-safe, so it falls through to ask", () => {
+    /**
+     * The property that makes the grant meaningful. Absent from the baseline means a default install
+     * asks — and under an UNATTENDED chain that ask becomes an immediate refusal rather than a
+     * prompt nobody is present to answer, which is inherited from the evaluator for free.
+     */
+    const baseline = JSON.stringify(PermissionV2.AMBIENT_SAFE_BASELINE)
+    expect(baseline).not.toContain("community_say")
   })
 })
