@@ -106,3 +106,47 @@ describe("CommunitySearch.widen", () => {
     expect(CommunitySearch.widen({ results: 0, wanted: 5, asked: 10, available: 10 })).toBe(0)
   })
 })
+
+describe("a hostile TTL", () => {
+  test("🔴 an incoming hop count is CLAMPED, not trusted", () => {
+    /**
+     * The hop limit is the first of the three controls this module exists to provide — "a query dies
+     * after N hops; without it, throttling only delays a flood". But the hop count arrives INSIDE the
+     * query, written by whoever sent it.
+     *
+     * A peer that sets `ttl: 1_000_000` therefore reaches every instance it can transitively touch
+     * instead of a four-hop neighbourhood. Duplicate suppression stops each node forwarding twice, so
+     * it is not the exponential re-broadcast that killed Gnutella — it is the OTHER half of that
+     * failure: one cheap query conscripting the entire network, repeatable at whatever rate the
+     * per-origin throttle allows. The limit binds only honest senders unless a receiver clamps it.
+     */
+    const seen = new CommunitySearch.Seen()
+    const throttle = new CommunitySearch.Throttle()
+    const hostile = { id: "q1", terms: "anything", ttl: 1_000_000, origin: "nid_them" }
+
+    const verdict = CommunitySearch.consider(hostile, { self: "nid_us", seen, throttle, now: 1 })
+    expect(verdict.forward).toBe(true)
+    if (!verdict.forward) throw new Error("expected a forward")
+    // Clamped to our own limit before the decrement — never `1_000_000 - 1`.
+    expect(verdict.next.ttl).toBeLessThanOrEqual(CommunitySearch.DEFAULT_TTL)
+    expect(verdict.next.ttl).toBe(CommunitySearch.DEFAULT_TTL - 1)
+  })
+
+  test("an honest hop count is left alone, and still dies", () => {
+    const seen = new CommunitySearch.Seen()
+    const throttle = new CommunitySearch.Throttle()
+    // Below our limit: untouched, so a short query is not silently lengthened either.
+    const short = CommunitySearch.consider(
+      { id: "q2", terms: "x", ttl: 2, origin: "nid_them" },
+      { self: "nid_us", seen, throttle, now: 1 },
+    )
+    expect(short.forward && short.next.ttl).toBe(1)
+    // And at the floor it stops.
+    expect(
+      CommunitySearch.consider(
+        { id: "q3", terms: "x", ttl: 1, origin: "nid_them" },
+        { self: "nid_us", seen, throttle, now: 1 },
+      ),
+    ).toEqual({ forward: false, reason: "expired" })
+  })
+})

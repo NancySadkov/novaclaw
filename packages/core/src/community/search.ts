@@ -138,7 +138,20 @@ export const consider = (
   context.seen.remember(query.id, context.now)
   if (query.ttl <= 1) return { forward: false, reason: "expired" }
   if (!context.throttle.allow(query.origin, context.now)) return { forward: false, reason: "throttled" }
-  return { forward: true, next: { ...query, ttl: query.ttl - 1 } }
+  /**
+   * 🔴 CLAMPED to our own limit, because the hop count arrives INSIDE the query — written by whoever
+   * sent it.
+   *
+   * Trusting it makes the hop limit bind honest senders only: a peer that writes `ttl: 1_000_000`
+   * reaches every instance it can transitively touch instead of a four-hop neighbourhood. Duplicate
+   * suppression keeps each node from forwarding twice, so this is not the exponential re-broadcast
+   * that killed Gnutella — it is the other half of that failure, one cheap query conscripting the
+   * whole network, repeatable at whatever rate the per-origin throttle allows.
+   *
+   * ⚠️ `min`, not a rewrite: a query that arrives with a SHORTER hop count keeps it. A sender may ask
+   * for less reach than we would grant; they may not ask for more.
+   */
+  return { forward: true, next: { ...query, ttl: Math.min(query.ttl, DEFAULT_TTL) - 1 } }
 }
 
 /**
