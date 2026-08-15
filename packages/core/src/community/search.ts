@@ -48,7 +48,22 @@ export interface Query {
   readonly terms: string
   /** Remaining hops. Decremented on each forward; at 0 the query stops. */
   readonly ttl: number
-  /** Who asked, so results can be routed back. */
+  /**
+   * Who CLAIMS to have asked — and the wording matters, because the first version of this comment
+   * said "so results can be routed back" and nothing routes anything by it. Results return on the
+   * HTTP response. Its only two uses are the own-query check and the throttle key.
+   *
+   * 🔴 **UNVERIFIED, and no security control may be built on it.** Unlike every other envelope here
+   * it carries no signature, so one byte changed makes a different asker — demonstrated live: a
+   * blocked origin and a one-character variant of it were both answered identically.
+   *
+   * ⚠️ This is why BLOCKING deliberately does not extend to search, though it covers rooms, direct
+   * messages and offers. A block here would cost an attacker one string edit while showing the user
+   * a protection that does not exist, and a false assurance is worse than an honest absence. What
+   * makes that safe is the other half, pinned in `community-search-listed.test.ts`: a search can
+   * only ever return rooms the user explicitly LISTED. **If that ever stops being true, this ruling
+   * is void and search needs a signed origin.**
+   */
   readonly origin: string
   /**
    * 🔴 Proof of work over `workBytes(query)`. Search was the ONE door in this design with no cost
