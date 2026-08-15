@@ -58,6 +58,26 @@ export const name = "community"
  * text after the frame was written by strangers, and a model not told so in band cannot distinguish
  * a message shaped like an instruction from an instruction.
  */
+/**
+ * 🔴 Room NAMES are framed too, and the reason is worth stating because it was missed once.
+ *
+ * `formatHistory` framed message bodies from the start — bodies are obviously strangers' words. A
+ * name looked like the user's own label, and it is not: a room is advertised by a peer through
+ * `listed`, shown in discovery, and joined with one click, so the name a user clicks is the name a
+ * stranger wrote. Control characters are refused at the door now, which stops a name forging turn
+ * structure; this stops it reading as an instruction at all.
+ *
+ * ⚠️ The list is MIXED provenance — some names the user typed, some adopted from the network — and
+ * it is framed WHOLE rather than per entry, because the tool cannot tell which is which and a frame
+ * that is sometimes absent teaches a reader nothing.
+ *
+ * ⚠️ The repo's framing ledger classifies FILES: it sees that this tool calls the shared helper, not
+ * WHICH of its five operations do. That is a cheap ratchet worth keeping, but "this file is FRAMED"
+ * is not the same claim as "this file frames everything foreign it emits".
+ */
+export const framedNames = (lines: readonly string[]): string =>
+  SessionOrigin.externalContentFrame("channel names, some advertised by other instances") + lines.join(NEWLINE)
+
 export const formatHistory = (
   channel: string,
   messages: readonly { readonly author: string; readonly receivedAt: number; readonly body: string }[],
@@ -151,7 +171,7 @@ export const layer = Layer.effectDiscard(
                   message:
                     left.length === 0
                       ? "No archived channels."
-                      : left.map((entry) => `${entry.name} — ${entry.messages} message(s) still held`).join(NEWLINE),
+                      : framedNames(left.map((entry) => `${entry.name} — ${entry.messages} message(s) still held`)),
                 }
               }
 
@@ -161,7 +181,7 @@ export const layer = Layer.effectDiscard(
                   message:
                     joined.length === 0
                       ? "No channels joined."
-                      : joined.map((c) => `${c.name}${c.muted ? " (muted)" : ""}`).join("\n"),
+                      : framedNames(joined.map((c) => `${c.name}${c.muted ? " (muted)" : ""}`)),
                 }
               }
 

@@ -648,6 +648,17 @@ const FRAMED = [
   // the way in. Row VALUES are framed; table names and counts are our own schema and are not.
   // Channel messages are strangers' words by construction — the network exists to carry them from
   // anyone to everyone — and this tool hands them to a model.
+  //
+  // 🔴 This entry is also the standing example of what membership here does NOT prove. The list is
+  // per FILE: it sees that a tool calls the shared helper, never WHICH of its outputs do. This tool
+  // framed message bodies from its first commit and rendered room NAMES unframed for as long —
+  // because a name read as the user's own label, when a room is advertised by a peer, shown in
+  // discovery, and joined with one click. Both are framed now.
+  //
+  // ⚠️ The general shape, for whoever audits the next entry: **a defence scoped by CATEGORY
+  // ("message bodies") rather than by PROVENANCE ("anything a stranger wrote") leaves behind
+  // whatever the category missed.** Ask of a FRAMED file not "does it frame" but "what else does it
+  // emit, and who wrote that".
   "community.ts",
   "db-registry.ts",
   "log.ts",
