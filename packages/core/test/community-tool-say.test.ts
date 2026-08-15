@@ -1,4 +1,5 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
 import { Effect, Layer } from "effect"
 import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
@@ -100,4 +101,29 @@ describe("the community tool is really wired", () => {
       expect(Tool.sideEffect(tool!)).toBeDefined()
     }).pipe(Effect.provide(Layer.mergeAll(captureTools, allowAll, CredentialCipher.defaultLayer))),
   )
+})
+
+describe("say when the module is not running", () => {
+  /**
+   * 🔴 The three refusals are DIFFERENT SENTENCES, and that is the point of testing them.
+   *
+   * An agent that reports "posted" for a message which never left the machine has told its user
+   * something false, and the user has no way to discover it — there is no delivery receipt in a
+   * network with no server. So `say` refuses before it stores, and names the condition precisely
+   * enough that the person can act: turn off offline mode, switch the community back on, or read
+   * the warning and join.
+   */
+  test("🔴 the refusal names WHICH condition, not just that it failed", () => {
+    const source = readFileSync(new URL("../src/tool/community.ts", import.meta.url), "utf8")
+    const say = source.slice(source.indexOf('input.op === "say"'))
+
+    // Refused before the permission card: asking someone to approve a post that cannot leave is
+    // spending their attention on nothing.
+    expect(say.indexOf("participates")).toBeLessThan(say.indexOf("permission.assert"))
+    // And before the post is stored, or it would sit there looking sent.
+    expect(say.indexOf("participates")).toBeLessThan(say.indexOf("posts.post"))
+
+    for (const condition of ["offline mode is on", "switched off", "has not joined"])
+      expect(say).toContain(condition)
+  })
 })

@@ -5,6 +5,7 @@ import { Effect, Layer, Schema } from "effect"
 import { CommunityChannels } from "../community/channels"
 import { CommunityPeers } from "../community/peers"
 import { CommunityContacts } from "../community/contacts"
+import { CommunityConsent } from "../community/consent"
 import { CommunityPost } from "../community/post"
 import { CommunityTransport } from "../community/transport"
 import { PermissionV2 } from "../permission"
@@ -251,6 +252,24 @@ export const layer = Layer.effectDiscard(
                  */
                 const room = input.channel
                 if (room === undefined) return { message: "say needs a channel name (for example #NovaClaw)." }
+                /**
+                 * 🔴 Refused BEFORE the permission card, because asking a user to approve a post that
+                 * cannot leave the machine spends their attention on nothing.
+                 *
+                 * ⚠️ And before `post`, which would otherwise store it and report "it will go out
+                 * when a peer is reachable" — false for an instance that has not joined, because it
+                 * never reaches out at all. A message that looks sent and never leaves is worse than
+                 * a refusal, and the agent is told which condition to name to its user.
+                 */
+                const gate = CommunityConsent.currentGate()
+                if (!CommunityConsent.participates(gate))
+                  return {
+                    message: gate.airgap
+                      ? "Not posted: offline mode is on, so nothing leaves this machine."
+                      : gate.consented
+                        ? "Not posted: the community is switched off. Its owner can turn it back on in the Community app."
+                        : "Not posted: this instance has not joined the community. Its owner turns that on in the Community app, after reading what it involves.",
+                  }
                 const body = input.body?.trim()
                 if (!body) return { message: "say needs a body — what should be posted?" }
 
