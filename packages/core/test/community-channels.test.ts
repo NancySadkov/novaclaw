@@ -5,6 +5,7 @@ import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityMessageTable } from "@novaclaw/core/community/channel.sql"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityMessage } from "@novaclaw/core/community/message"
+import { CommunitySuccession } from "@novaclaw/core/community/succession"
 import { CommunityTopic } from "@novaclaw/core/community/topic"
 import { CommunityWork } from "@novaclaw/core/community/work"
 import { Database } from "@novaclaw/core/database/database"
@@ -266,4 +267,73 @@ describe("CommunityChannels", () => {
       expect(CommunityChannels.messageID(message)).toHaveLength(64)
     }),
   )
+
+  it.effect("🔴 a blocked peer's BACKLOG is still blocked after they rotate", () =>
+    Effect.gen(function* () {
+      /**
+       * The defect this pins: `follow` used to DELETE the predecessor's row. Blocking survived onto
+       * the successor, so the peer could not post anew — but every message they wrote BEFORE
+       * rotating is signed by the deleted key, and reconciliation backfills exactly such messages.
+       * They arrived from an author we knew nothing about and were stored. The user blocked a
+       * person and would receive that person's history anyway.
+       *
+       * Nothing local can produce that sequence: it needs a real rotation and a message that
+       * predates it, which is why this is written end to end through `record` rather than against
+       * the store.
+       */
+      const channels = yield* CommunityChannels.Service
+      const contacts = yield* CommunityContacts.Service
+      yield* channels.join(CHANNEL)
+
+      // The peer's first key, and a message they wrote while using it.
+      const old = generateKeyPairSync("ed25519")
+      const oldID = `nid_${(old.publicKey.export({ type: "spki", format: "der" }) as Buffer).subarray(12).toString("base64url")}`
+      const signWith = (key: typeof old.privateKey, author: string, body: string) => {
+        const unsigned = { channel: CHANNEL, author, at: Date.now(), body }
+        return {
+          ...unsigned,
+          signature: nodeSign(null, Buffer.from(CommunityMessage.canonicalBytes(unsigned)), key).toString("base64url"),
+        } satisfies CommunityMessage.Signed
+      }
+      const backlog = proven(signWith(old.privateKey, oldID, "written before they rotated"))
+
+      yield* contacts.add({ networkID: oldID, petname: "loud one" })
+      expect(yield* contacts.setBlocked(oldID, true)).toBe(true)
+
+      // They rotate, and prove it with a statement signed by the key they are leaving.
+      const fresh = generateKeyPairSync("ed25519")
+      const newID = `nid_${(fresh.publicKey.export({ type: "spki", format: "der" }) as Buffer).subarray(12).toString("base64url")}`
+      const body = { predecessor: oldID, successor: newID, at: Date.now() }
+      const statement = {
+        ...body,
+        signature: nodeSign(null, Buffer.from(CommunitySuccession.canonicalBytes(body)), old.privateKey).toString(
+          "base64url",
+        ),
+      }
+      expect(yield* contacts.follow(statement)).toBe(true)
+
+      // The address book shows ONE person, at their new key, still blocked and still named.
+      const list = yield* contacts.list()
+      expect(list.map((c) => c.networkID)).toEqual([newID])
+      expect(list[0]!.petname).toBe("loud one")
+
+      // 🔴 The old key still resolves to them — the whole point.
+      expect((yield* contacts.get(oldID))?.networkID).toBe(newID)
+      expect((yield* contacts.get(oldID))?.blocked).toBe(true)
+
+      // And so the backlog is refused, exactly as a message at their current key is.
+      expect(yield* channels.record(CHANNEL, backlog)).toEqual({ rejected: "blocked" })
+      expect(yield* channels.record(CHANNEL, proven(signWith(fresh.privateKey, newID, "after")))).toEqual({
+        rejected: "blocked",
+      })
+      expect(yield* channels.history(CHANNEL)).toEqual([])
+
+      // Forgetting them forgets the CHAIN: a leftover old row would keep resolving to someone the
+      // user believes is gone.
+      expect(yield* contacts.forget(newID)).toBe(true)
+      expect(yield* contacts.get(oldID)).toBeUndefined()
+      expect(yield* contacts.list()).toEqual([])
+    }),
+  )
+
 })

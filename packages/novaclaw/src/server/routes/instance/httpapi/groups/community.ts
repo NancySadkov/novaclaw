@@ -19,6 +19,15 @@ export const CommunityContact = Schema.Struct({
   networkID: Schema.String,
   petname: Schema.optional(Schema.String),
   /**
+   * Keys this peer has rotated away from, newest first.
+   *
+   * 🔴 Declared here because attribution needs it: a message is signed by whatever key its author
+   * held AT THE TIME, so history written before a rotation resolves to nobody without this — and an
+   * undeclared field is silently dropped by the response schema, which looks exactly like a backend
+   * that never sent it.
+   */
+  formerIDs: Schema.optional(Schema.Array(Schema.String)),
+  /**
    * Last-known addresses. Plural, and the reason a contact is not just a key: a bare public key is
    * unroutable, so an entry without routes is an identity we cannot reach.
    */

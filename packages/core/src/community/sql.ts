@@ -24,6 +24,26 @@ export const CommunityContactTable = sqliteTable("community_contact", {
    */
   network_id: text().primaryKey(),
   /**
+   * 🔴 Set when this key ROTATED: the key its holder moved to. Null = this is their current key.
+   *
+   * A row is therefore a KEY, and a person is the chain of rows linking their keys — which is the
+   * one change that makes a rotation non-destructive. The first version DELETED the old row, and
+   * that is a defect with two faces, both of which only appear once history replicates:
+   *
+   * 1. **Blocking becomes reversible by rotating.** Carrying `blocked` onto the successor stops the
+   *    peer posting anew, but reconciliation backfills OLD messages — signed by the deleted key,
+   *    from an author we no longer know anything about, so they are stored. The user blocked a
+   *    person and would receive that person's backlog.
+   * 2. Every message they wrote before rotating loses its author, because the key that signed it
+   *    resolves to nobody.
+   *
+   * ⚠️ A pointer, not a JSON list of former keys, because of where the lookup happens: EVERY
+   * incoming message resolves its author at ingress, and a stranger — the common case, and ~9.8k
+   * per second under the measured flood — is a MISS. A miss against a list is a table scan that
+   * degrades as the contact list grows; a miss against a primary key costs the same forever.
+   */
+  successor_id: text(),
+  /**
    * What the USER calls this peer. Petnames, not global names: there is no registry, so nothing
    * stops two peers claiming "alice", and only the key distinguishes them.
    */

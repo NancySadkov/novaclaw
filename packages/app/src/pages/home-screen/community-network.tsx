@@ -72,14 +72,19 @@ export const CommunityNetwork: Component = () => {
    * case in an open channel, and the full string swamps the message it belongs to.
    */
   const nameFor = createMemo(() => {
-    const byKey = new Map((contacts() ?? []).map((contact) => [contact.networkID, contact.petname]))
+    const byKey = new Map<string, string | undefined>()
+    for (const contact of contacts() ?? []) {
+      byKey.set(contact.networkID, contact.petname)
+      // 🔴 Every key they ever held maps to the SAME name. A message carries whichever key signed
+      // it, so without this a contact's whole history goes anonymous the moment they rotate — and
+      // the older the message, the more likely that is.
+      for (const former of contact.formerIDs ?? []) byKey.set(former, contact.petname)
+    }
     return (author: string) => {
       const petname = byKey.get(author)
       if (petname) return petname
-      // ⚠️ Known gap: after a contact ROTATES, their older messages stay signed by the old key and
-      // resolve to nobody. Fixing it needs the contact to remember previous keys — a schema change.
-      // Until then such messages read as an unknown author rather than wrongly as someone else,
-      // which is the safer of the two failures.
+      // A stranger, or a contact with no petname: their key, shortened. Never a guess at who they
+      // might be — attributing a message to the wrong person is the one failure worth avoiding here.
       return author.startsWith("nid_") ? `${author.slice(0, 12)}…` : author
     }
   })

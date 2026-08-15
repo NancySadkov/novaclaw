@@ -114,18 +114,26 @@ describe("CommunityContacts", () => {
 
       yield* contacts.add({ networkID: before, petname: "noisy", routes: ["/ip4/10.0.0.1/udp/1/quic-v1"] })
       yield* contacts.setBlocked(before, true)
+      // Everything known about them has to survive, and this is the field with no other coverage:
+      // it is optional, so losing it looks like "never reached" rather than like a bug.
+      yield* contacts.observe(before, ["/ip4/10.0.0.1/udp/1/quic-v1"])
+      const seenBefore = (yield* contacts.get(before))?.lastSeenAt
+      expect(seenBefore).toBeGreaterThan(0)
 
       const { statement, identity: after } = yield* store.rotate()
       expect(yield* contacts.follow(statement)).toBe(true)
 
-      // The old entry is gone and the new one keeps everything we knew.
-      expect(yield* contacts.get(before)).toBeUndefined()
+      // The old key now RESOLVES to them rather than vanishing, and the entry keeps what we knew.
+      // It used to be deleted, which un-blocked their backlog — see the channels suite, where the
+      // consequence is visible end to end.
+      expect((yield* contacts.get(before))?.networkID).toBe(after.networkID)
       const moved = yield* contacts.get(after.networkID)
       expect(moved?.petname).toBe("noisy")
       expect(moved?.routes).toEqual(["/ip4/10.0.0.1/udp/1/quic-v1"])
       // 🔴 THE point: if rotation cleared the block, "rotate your key" would be the standard way
       // back into a channel you were blocked from, and the person who blocked you would never know.
       expect(moved?.blocked).toBe(true)
+      expect(moved?.lastSeenAt).toBe(seenBefore)
     }).pipe(Effect.provide(InstanceIdentityStore.defaultLayer)),
   )
 
@@ -174,9 +182,20 @@ describe("CommunityContacts", () => {
       const moved = yield* contacts.get(second.identity.networkID)
       expect(moved?.petname).toBe("wanderer")
       expect(moved?.routes).toEqual(["/ip4/10.0.0.1/udp/1/quic-v1"])
-      // Both older keys are gone — one entry per person, not a trail of them.
-      expect(yield* contacts.get(original)).toBeUndefined()
-      expect(yield* contacts.get(first.identity.networkID)).toBeUndefined()
+      // 🔴 ONE entry per person in the address book — but every key they ever held still resolves to
+      // them. A trail of entries would be wrong; forgetting where they have been is a different kind
+      // of wrong, and the one that lets a blocked peer's history back in.
+      const listed = yield* contacts.list()
+      expect(listed.map((c) => c.networkID)).toEqual([second.identity.networkID])
+      expect(listed[0]!.formerIDs).toEqual([first.identity.networkID, original])
+      for (const old of [original, first.identity.networkID])
+        expect((yield* contacts.get(old))?.networkID).toBe(second.identity.networkID)
+
+      // Forgetting takes the whole chain with it: a leftover row would keep resolving to someone the
+      // user believes they have removed.
+      expect(yield* contacts.forget(original)).toBe(true)
+      expect(yield* contacts.get(second.identity.networkID)).toBeUndefined()
+      expect(yield* contacts.list()).toEqual([])
     }).pipe(Effect.provide(InstanceIdentityStore.defaultLayer)),
   )
 

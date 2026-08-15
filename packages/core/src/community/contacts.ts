@@ -1,6 +1,6 @@
 export * as CommunityContacts from "./contacts"
 
-import { eq } from "drizzle-orm"
+import { eq, inArray } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
@@ -17,9 +17,26 @@ import { CommunityContactTable } from "./sql"
  */
 
 export interface Contact {
-  /** `nid_<base64url ed25519 public key>` — the identity, and the primary key. */
+  /**
+   * `nid_<base64url ed25519 public key>` — the identity, and the primary key.
+   *
+   * ⚠️ Always the peer's CURRENT key. Looking a contact up by a key they have since rotated away
+   * from answers with the same person at the key they moved to, so a caller never has to know
+   * whether the key it holds is current.
+   */
   readonly networkID: string
   readonly petname?: string
+  /**
+   * Keys this peer has ROTATED AWAY FROM, oldest last — everything they ever signed as.
+   *
+   * ⚠️ Populated by `list`, and `undefined` (not `[]`) from `get`, because the two are on different
+   * paths and the distinction is "not computed here" rather than "they never rotated". `get` runs at
+   * INGRESS for every arriving message, where a stranger is the common case and the ~9.8k msg/s
+   * flood is the design load; gathering a chain there would trade a primary-key hit for a scan, to
+   * fill in a field the ingress path never reads. Attribution — the one caller that needs it — reads
+   * the list once and answers every message from it.
+   */
+  readonly formerIDs?: readonly string[]
   /** Last-known addresses. Plural: a peer is reachable by LAN address, public address or relay. */
   readonly routes: readonly string[]
   readonly lastSeenAt?: number
@@ -94,27 +111,89 @@ const rowContact = (row: typeof CommunityContactTable.$inferSelect): Contact => 
   addedAt: row.time_created,
 })
 
+/**
+ * The keys a peer held BEFORE `current`, newest first.
+ *
+ * Rows point forward (`successor_id`), so predecessors are found by walking the pointers backwards.
+ * Bounded by the row count and guarded against repeats: a cycle needs a compromised key to sign a
+ * rotation back to an earlier one, and an unbounded walk would be a hang rather than a wrong answer.
+ */
+const formerIDs = (rows: readonly (typeof CommunityContactTable.$inferSelect)[], current: string): string[] => {
+  const backwards = new Map<string, string>()
+  for (const entry of rows) if (entry.successor_id != null) backwards.set(entry.successor_id, entry.network_id)
+  const chain: string[] = []
+  const seen = new Set([current])
+  for (let key = backwards.get(current); key !== undefined && !seen.has(key); key = backwards.get(key)) {
+    seen.add(key)
+    chain.push(key)
+  }
+  return chain
+}
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const { db } = yield* Database.Service
 
-    const get = Effect.fn("CommunityContacts.get")(function* (networkID: string) {
-      const row = yield* db
+    const row = (networkID: string) =>
+      db
         .select()
         .from(CommunityContactTable)
         .where(eq(CommunityContactTable.network_id, networkID))
         .get()
         .pipe(Effect.orDie)
-      return row === undefined ? undefined : rowContact(row)
+
+    /**
+     * Walk a key forward to the row holding its holder's CURRENT key.
+     *
+     * ⚠️ Bounded, and the bound is not paranoia about our own data. A chain is built from statements
+     * signed by each predecessor, so a cycle needs a compromised key to sign a rotation back to an
+     * earlier one — an attacker who has that key can do it, and an unbounded walk would then hang
+     * the ingress path for every message that peer ever sent. `visited` stops at the repeat and
+     * returns the last good row, which degrades to a stale attribution rather than a wedged instance.
+     */
+    const resolveRow = Effect.fn("CommunityContacts.resolveRow")(function* (networkID: string) {
+      let current = yield* row(networkID)
+      const visited = new Set([networkID])
+      while (current?.successor_id != null && !visited.has(current.successor_id)) {
+        visited.add(current.successor_id)
+        const next = yield* row(current.successor_id)
+        // A dangling pointer means the successor row was removed; the person is still this row's
+        // holder as far as we know, so stop here rather than reporting them unknown.
+        if (next === undefined) break
+        current = next
+      }
+      return current
+    })
+
+    const get = Effect.fn("CommunityContacts.get")(function* (networkID: string) {
+      const resolved = yield* resolveRow(networkID)
+      return resolved === undefined ? undefined : rowContact(resolved)
+    })
+
+    /** The current key for `networkID`, or `networkID` itself when we know of no rotation. */
+    const currentID = Effect.fn("CommunityContacts.currentID")(function* (networkID: string) {
+      return (yield* resolveRow(networkID))?.network_id ?? networkID
     })
 
     const follow = Effect.fn("CommunityContacts.follow")(function* (statement: CommunitySuccession.Statement) {
         // Verified BEFORE anything is read or written: an unsigned claim about someone else's key is
         // exactly the shape an identity theft would take.
         if (!CommunitySuccession.verify(statement)) return false
-        const existing = yield* get(statement.predecessor)
+        /**
+         * ⚠️ The predecessor's OWN row, not `get`'s resolved answer. `get` now walks forward, so on
+         * an already-followed chain it would return the SUCCESSOR's row and this would copy that
+         * peer's details onto a new entry.
+         */
+        const existing = yield* row(statement.predecessor)
         if (existing === undefined) return false
+        /**
+         * A key rotates ONCE. Two statements from one predecessor naming different successors is a
+         * fork — it needs the predecessor's key to sign both, so it means that key is compromised or
+         * its holder is equivocating. Neither branch is more true than the other, so we keep the
+         * chain we already proved rather than letting the later arrival redirect the contact.
+         */
+        if (existing.successor_id != null) return false
 
         // Already followed, or the successor is someone we separately know: leave both alone rather
         // than merging two people's entries into one.
@@ -124,16 +203,29 @@ export const layer = Layer.effect(
           .insert(CommunityContactTable)
           .values({
             network_id: statement.successor,
-            ...(existing.petname === undefined ? {} : { petname: existing.petname }),
+            // ⚠️ ROW field names, not `Contact`'s. This reads the stored row directly now, and the
+            // camelCase spellings it used to carry over do not exist on it — `lastSeenAt` silently
+            // read `undefined` and dropped the last-seen time on every rotation. The typechecker
+            // caught it; no test could, because the loss shows up as an absent optional field.
+            ...(existing.petname === null ? {} : { petname: existing.petname }),
             routes: [...existing.routes],
             // 🔴 Carried, not reset. See the interface note: otherwise rotation is a block bypass.
             blocked: existing.blocked,
-            ...(existing.lastSeenAt === undefined ? {} : { last_seen_at: existing.lastSeenAt }),
+            ...(existing.last_seen_at === null ? {} : { last_seen_at: existing.last_seen_at }),
           })
           .run()
           .pipe(Effect.orDie)
+        /**
+         * 🔴 The old row is KEPT and pointed forward, never deleted — see `successor_id`.
+         *
+         * Deleting it un-blocks the peer's backlog: their pre-rotation messages are signed by this
+         * key, reconciliation backfills exactly such messages, and an author we know nothing about
+         * passes the ingress block check. The user blocked a person; they must not receive that
+         * person's history because the person changed keys.
+         */
         yield* db
-          .delete(CommunityContactTable)
+          .update(CommunityContactTable)
+          .set({ successor_id: statement.successor })
           .where(eq(CommunityContactTable.network_id, statement.predecessor))
           .run()
           .pipe(Effect.orDie)
@@ -144,7 +236,11 @@ export const layer = Layer.effect(
       get,
       list: Effect.fn("CommunityContacts.list")(function* () {
         const rows = yield* db.select().from(CommunityContactTable).all().pipe(Effect.orDie)
-        return rows.map(rowContact)
+        // ⚠️ Superseded rows are kept for lookup, never LISTED: they are the same person at an old
+        // key, and showing them would turn every rotation into a duplicate in the user's address book.
+        return rows
+          .filter((entry) => entry.successor_id == null)
+          .map((entry) => ({ ...rowContact(entry), formerIDs: formerIDs(rows, entry.network_id) }))
       }),
 
       add: Effect.fn("CommunityContacts.add")(function* (input) {
@@ -166,8 +262,14 @@ export const layer = Layer.effect(
           ...(input.petname === undefined ? {} : { petname: input.petname }),
           ...(input.routes === undefined ? {} : { routes: [...input.routes] }),
         }
+        /**
+         * ⚠️ Adding someone by a key they have ROTATED AWAY FROM — the normal case when the id came
+         * off an old message — updates the person we already know rather than creating a second
+         * entry for them that would never receive anything.
+         */
+        const networkID = yield* currentID(input.networkID)
         const insert = db.insert(CommunityContactTable).values({
-          network_id: input.networkID,
+          network_id: networkID,
           ...(input.petname === undefined ? {} : { petname: input.petname }),
           routes: [...(input.routes ?? [])],
         })
@@ -181,14 +283,24 @@ export const layer = Layer.effect(
           .run()
           .pipe(Effect.orDie)
 
-        const stored = yield* get(input.networkID)
-        return stored ?? { networkID: input.networkID, routes: [], blocked: false, addedAt: Date.now() }
+        const stored = yield* get(networkID)
+        return stored ?? { networkID, routes: [], blocked: false, addedAt: Date.now() }
       }),
 
       forget: Effect.fn("CommunityContacts.forget")(function* (networkID: string) {
+        /**
+         * 🔴 Forgets the whole CHAIN, not one row. Removing only the current key would leave the
+         * peer's earlier keys behind as rows that still resolve — so a user who forgot someone would
+         * still be attributing that person's old messages to them, and still blocking on an entry
+         * they believe is gone.
+         */
+        const rows = yield* db.select().from(CommunityContactTable).all().pipe(Effect.orDie)
+        const target = (yield* resolveRow(networkID))?.network_id
+        if (target === undefined) return false
+        const chain = [target, ...formerIDs(rows, target)]
         const removed = yield* db
           .delete(CommunityContactTable)
-          .where(eq(CommunityContactTable.network_id, networkID))
+          .where(inArray(CommunityContactTable.network_id, chain))
           .returning({ id: CommunityContactTable.network_id })
           .all()
           .pipe(Effect.orDie)
@@ -196,10 +308,12 @@ export const layer = Layer.effect(
       }),
 
       setBlocked: Effect.fn("CommunityContacts.setBlocked")(function* (networkID: string, blocked: boolean) {
+        // Blocking by a key the peer has rotated away from blocks the PERSON: the decision is about
+        // who you refuse, and it would be worthless if it applied only to the key you happened to hold.
         const updated = yield* db
           .update(CommunityContactTable)
           .set({ blocked })
-          .where(eq(CommunityContactTable.network_id, networkID))
+          .where(eq(CommunityContactTable.network_id, yield* currentID(networkID)))
           .returning({ id: CommunityContactTable.network_id })
           .all()
           .pipe(Effect.orDie)
@@ -210,7 +324,9 @@ export const layer = Layer.effect(
         const updated = yield* db
           .update(CommunityContactTable)
           .set({ routes: [...routes], last_seen_at: Date.now() })
-          .where(eq(CommunityContactTable.network_id, networkID))
+          // Reaching a peer at an old key still tells us where that PERSON is, so the route lands on
+          // their current row rather than on a key nothing will dial again.
+          .where(eq(CommunityContactTable.network_id, yield* currentID(networkID)))
           .returning({ id: CommunityContactTable.network_id })
           .all()
           .pipe(Effect.orDie)
@@ -222,7 +338,10 @@ export const layer = Layer.effect(
       followAll: Effect.fn("CommunityContacts.followAll")(function* (
         statements: readonly CommunitySuccession.Statement[],
       ) {
-        const rows = yield* db.select().from(CommunityContactTable).all().pipe(Effect.orDie)
+        const rows = (yield* db.select().from(CommunityContactTable).all().pipe(Effect.orDie))
+          // Only rows at a peer's CURRENT key: a superseded row is that same person one link back,
+          // and walking it again would re-follow a chain already proved.
+          .filter((entry) => entry.successor_id == null)
         let moved = 0
         for (const row of rows) {
           // `resolve` verifies every link and stops at the last PROVEN key, so an unsigned or
@@ -254,6 +373,9 @@ export const layer = Layer.effect(
       bootstrap: Effect.fn("CommunityContacts.bootstrap")(function* () {
         const rows = yield* db.select().from(CommunityContactTable).all().pipe(Effect.orDie)
         return rows
+          // ⚠️ A superseded row is a key its holder ROTATED AWAY FROM. Its routes may still look
+          // perfectly good, and dialling them bootstraps through an identity nobody answers as.
+          .filter((entry) => entry.successor_id == null)
           .map(rowContact)
           // A blocked peer is not an entry point: bootstrapping through someone whose messages you
           // refuse would reconnect you to them on every start.

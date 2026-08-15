@@ -10,6 +10,13 @@ import { instanceFetch } from "./instance-fetch"
 export interface CommunityContact {
   readonly networkID: string
   readonly petname?: string
+  /**
+   * Keys this peer has rotated away from, newest first — sent by `contactList` only.
+   *
+   * Attribution needs them: a message carries whichever key its author held when they signed it, so
+   * everything written before a rotation is signed by a key that is no longer their identity.
+   */
+  readonly formerIDs?: readonly string[]
   /** Last-known addresses. A key with none is an identity we cannot reach. */
   readonly routes: readonly string[]
   readonly lastSeenAt?: number

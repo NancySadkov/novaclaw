@@ -181,6 +181,7 @@ export default {
       yield* tx.run(`
         CREATE TABLE \`community_contact\` (
           \`network_id\` text PRIMARY KEY,
+          \`successor_id\` text,
           \`petname\` text,
           \`routes\` text NOT NULL,
           \`last_seen_at\` integer,

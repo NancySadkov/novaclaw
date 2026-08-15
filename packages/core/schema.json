@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "9e068422-2365-49b4-9a66-4ff9af4e243c",
+  "id": "e6a2b9d7-bdf4-46c2-a432-c6ae95664255",
   "prevIds": [
-    "779e5589-6619-4ea4-a61a-4abd51983f6f"
+    "9e068422-2365-49b4-9a66-4ff9af4e243c"
   ],
   "ddl": [
     {
@@ -1249,6 +1249,16 @@
       "default": null,
       "generated": null,
       "name": "network_id",
+      "entityType": "columns",
+      "table": "community_contact"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "successor_id",
       "entityType": "columns",
       "table": "community_contact"
     },
