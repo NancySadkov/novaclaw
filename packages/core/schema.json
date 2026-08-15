@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "4b04f5dd-25f9-4a72-885b-907e55fbaecb",
+  "id": "ee6eb220-9ff9-4e05-ba46-ee49057437e3",
   "prevIds": [
-    "e55ade10-97ab-4cc2-ba54-d5a654739da1"
+    "4b04f5dd-25f9-4a72-885b-907e55fbaecb"
   ],
   "ddl": [
     {
@@ -12,6 +12,10 @@
     },
     {
       "name": "community_message",
+      "entityType": "tables"
+    },
+    {
+      "name": "community_direct_message",
       "entityType": "tables"
     },
     {
@@ -339,6 +343,96 @@
       "name": "nonce",
       "entityType": "columns",
       "table": "community_message"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "community_direct_message"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "peer",
+      "entityType": "columns",
+      "table": "community_direct_message"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "direction",
+      "entityType": "columns",
+      "table": "community_direct_message"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "body",
+      "entityType": "columns",
+      "table": "community_direct_message"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "claimed_at",
+      "entityType": "columns",
+      "table": "community_direct_message"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "received_at",
+      "entityType": "columns",
+      "table": "community_direct_message"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "signature",
+      "entityType": "columns",
+      "table": "community_direct_message"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "community_direct_message"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "community_direct_message"
     },
     {
       "type": "text",
@@ -4269,6 +4363,15 @@
         "id"
       ],
       "nameExplicit": false,
+      "name": "community_direct_message_pk",
+      "table": "community_direct_message",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
       "name": "workspace_pk",
       "table": "workspace",
       "entityType": "pks"
@@ -4632,6 +4735,24 @@
       "name": "community_message_channel_idx",
       "entityType": "indexes",
       "table": "community_message"
+    },
+    {
+      "columns": [
+        {
+          "value": "peer",
+          "isExpression": false
+        },
+        {
+          "value": "received_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "community_direct_message_peer_idx",
+      "entityType": "indexes",
+      "table": "community_direct_message"
     },
     {
       "columns": [

@@ -4,6 +4,8 @@ import os from "node:os"
 import path from "node:path"
 import { Effect } from "effect"
 import { CommunityChannels } from "@novaclaw/core/community/channels"
+import { CommunityDirect } from "@novaclaw/core/community/dm"
+import { CommunitySeal } from "@novaclaw/core/community/seal"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityMessage } from "@novaclaw/core/community/message"
 import { CommunityPost } from "@novaclaw/core/community/post"
@@ -44,6 +46,7 @@ const instance = (label: string) => {
       InstanceIdentityStore.node,
       CommunityContacts.node,
       CommunityChannels.node,
+      CommunityDirect.node,
       Offline.node,
       CommunityTransport.node,
       CommunityPeers.node,
@@ -643,6 +646,124 @@ describe("two instances", () => {
       cleanup(alice.home)
       cleanup(bob.home)
       cleanup(carol.home)
+    }
+  })
+
+
+  test("🔴 a direct message is readable ONLY by its recipient — not by the relay carrying it", async () => {
+    /**
+     * §11 said a DM needed no encryption because the transport encrypted to the peer's KEY. Ours
+     * encrypts to an ADDRESS, and relaying through instances is the answer for unreachable peers — so
+     * without this layer the relay reads everything, which is the case the relay exists to serve.
+     *
+     * Mallory here IS that relay: she holds the exact bytes that crossed the wire.
+     */
+    const alice = instance("alice-dm")
+    const bob = instance("bob-dm")
+    const mallory = instance("mallory-dm")
+    try {
+      /**
+       * ⚠️ Generic over the REQUIREMENT, with one cast where the graph satisfies it. The first version
+       * declared `never` there, which does not describe any of these effects — every block needs some
+       * service — and the compiler was right to refuse. The cast asserts exactly what is true and is
+       * confined to this line, rather than an `as never` at each call site hiding what each one needs.
+       */
+      const run = <A, R>(who: { graph: typeof alice.graph }, effect: Effect.Effect<A, never, R>) =>
+        Effect.runPromise(
+          effect.pipe(Effect.provide(who.graph), Effect.provide(CredentialCipher.defaultLayer)) as Effect.Effect<A>,
+        )
+
+      // Bob publishes a sealing key, signed by his identity — what `/global/health` serves.
+      const bobPublished = await run(
+        bob,
+        Effect.gen(function* () {
+          const store = yield* InstanceIdentityStore.Service
+          const self = yield* store.identity()
+          const sealing = yield* store.sealingKey()
+          return { networkID: self.networkID, ...sealing }
+        }),
+      )
+
+      const onTheWire = await run(
+        alice,
+        Effect.gen(function* () {
+          const direct = yield* CommunityDirect.Service
+          const composed = yield* direct.compose({
+            to: bobPublished.networkID,
+            sealingKey: bobPublished.publicKey,
+            sealingSignature: bobPublished.signature,
+            body: "the vote is on thursday",
+          })
+          expect("message" in composed).toBe(true)
+          if (!("message" in composed)) throw new Error("compose refused")
+          // ⚠️ Alice keeps her OWN plaintext: she can never recover it from the envelope, because the
+          // ephemeral key that sealed it is gone. That is the forward secrecy, not a leak.
+          expect(composed.stored.body).toBe("the vote is on thursday")
+          expect(composed.stored.direction).toBe("out")
+          return composed.message
+        }),
+      )
+
+      // 🔴 The plaintext is nowhere in what crossed the wire.
+      expect(JSON.stringify(onTheWire)).not.toContain("thursday")
+
+      // Mallory relays it. She is a full NovaClaw instance holding the real bytes, and gets nothing:
+      // not the text, and not a stored message either.
+      const relayed = await run(mallory, CommunityDirect.Service.pipe(Effect.flatMap((d) => d.receive(onTheWire))))
+      expect(relayed).toEqual({ rejected: "not-for-us" })
+
+      const seen = await run(
+        bob,
+        Effect.gen(function* () {
+          const direct = yield* CommunityDirect.Service
+          const result = yield* direct.receive(onTheWire)
+          expect("stored" in result).toBe(true)
+          return yield* direct.history(bobPublished.networkID === "" ? "" : (onTheWire.from as string))
+        }),
+      )
+      expect(seen.map((message) => message.body)).toEqual(["the vote is on thursday"])
+      expect(seen[0]?.direction).toBe("in")
+
+      // Delivered twice — the ordinary case when a sender retries — stores once.
+      const again = await run(bob, CommunityDirect.Service.pipe(Effect.flatMap((d) => d.receive(onTheWire))))
+      expect(again).toEqual({ rejected: "duplicate" })
+
+      /**
+       * 🔴 A SUBSTITUTED sealing key is refused before anything is sealed to it.
+       *
+       * ⚠️ This case was MISSING when the test was first written, and its absence was invisible: with
+       * the verification deleted the rest of this test still passed, because everything else here
+       * hands over a genuine key. That is exactly the attack's nature — a substituted key produces
+       * valid ciphertext and a successful send, so the only thing that can notice is a check nobody
+       * exercised. Found by removing the check and watching the suite stay green.
+       */
+      const attacker = CommunitySeal.generate()
+      const substituted = await run(
+        alice,
+        CommunityDirect.Service.pipe(
+          Effect.flatMap((direct) =>
+            direct.compose({
+              to: bobPublished.networkID,
+              // Mallory's key, offered in Bob's name, with Bob's real signature attached.
+              sealingKey: attacker.publicKey,
+              sealingSignature: bobPublished.signature,
+              body: "should never be sealed to an attacker",
+            }),
+          ),
+        ),
+      )
+      expect(substituted).toEqual({ rejected: "unverified" })
+
+      // ⚠️ And a TAMPERED envelope is refused: the signature covers the sealed parts, so swapping the
+      // ciphertext cannot keep the author's name on it.
+      const tampered = { ...onTheWire, sealed: { ...onTheWire.sealed, ct: "AAAA" } }
+      expect(await run(bob, CommunityDirect.Service.pipe(Effect.flatMap((d) => d.receive(tampered))))).toEqual({
+        rejected: "unverified",
+      })
+    } finally {
+      cleanup(alice.home)
+      cleanup(bob.home)
+      cleanup(mallory.home)
     }
   })
 

@@ -26,6 +26,19 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`community_direct_message\` (
+          \`id\` text PRIMARY KEY,
+          \`peer\` text NOT NULL,
+          \`direction\` text NOT NULL,
+          \`body\` text NOT NULL,
+          \`claimed_at\` integer NOT NULL,
+          \`received_at\` integer NOT NULL,
+          \`signature\` text NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`workspace\` (
           \`id\` text PRIMARY KEY,
           \`type\` text NOT NULL,
@@ -608,6 +621,9 @@ export default {
       `)
       yield* tx.run(
         `CREATE INDEX \`community_message_channel_idx\` ON \`community_message\` (\`channel\`,\`received_at\`);`,
+      )
+      yield* tx.run(
+        `CREATE INDEX \`community_direct_message_peer_idx\` ON \`community_direct_message\` (\`peer\`,\`received_at\`);`,
       )
       yield* tx.run(
         `CREATE UNIQUE INDEX \`calendar_fire_occurrence_idx\` ON \`calendar_fire\` (\`schedule_id\`,\`occurrence_millis\`);`,

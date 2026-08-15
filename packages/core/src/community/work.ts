@@ -87,13 +87,17 @@ export const verify = (
 /**
  * Attach proof to a signed message — the one way to obtain a `Proven`.
  *
+ * ⚠️ Generic over the message SHAPE, because the work binds to the signature and nothing else. It was
+ * typed to the channel envelope until direct messages needed it too, and narrowing it there was an
+ * accident of which caller came first rather than anything the mechanism requires.
+ *
  * Returns `undefined` when the work could not be found inside `maxAttempts`, so a caller reports
  * failure rather than shipping a message the ingress door will refuse.
  */
-export const prove = (
-  message: CommunityMessage.Signed,
+export const prove = <T extends { readonly signature: string }>(
+  message: T,
   difficulty: number = DEFAULT_DIFFICULTY,
-): CommunityMessage.Proven | undefined => {
+): (T & { readonly nonce: number }) | undefined => {
   const nonce = solve(message.signature, difficulty)
   return nonce === undefined ? undefined : { ...message, nonce }
 }
