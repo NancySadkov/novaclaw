@@ -64,3 +64,43 @@ describe("CommunityConsent", () => {
     expect(gate({ community: { consented: true } }, true).consented).toBe(true)
   })
 })
+
+describe("reading consent off the disk", () => {
+  /**
+   * 🔴 The BOOT path for participation, and the one place a malformed value must not be read
+   * generously. Every branch here has to fail CLOSED: a row that cannot be parsed is not permission
+   * to join a network of strangers, and "we could not tell" must never resolve to "yes".
+   */
+  const gateFor = (stored: unknown) =>
+    CommunityConsent.resolveGate({ config: stored, policy: { enabled: false } })
+
+  test("🔴 garbage in the settings row never grants participation", () => {
+    for (const stored of [
+      undefined,
+      {},
+      { community: undefined },
+      { community: null },
+      { community: "true" },
+      { community: 1 },
+      { community: [] },
+      { community: { consented: "true" } },
+      { community: { consented: 1 } },
+    ])
+      expect(CommunityConsent.participates(gateFor(stored)), `${JSON.stringify(stored)} must not join`).toBe(false)
+  })
+
+  test("🔴 only a real boolean true opens it", () => {
+    // ⚠️ The one shape that counts, so the check above cannot be satisfied by loosening this one.
+    expect(CommunityConsent.participates(gateFor({ community: { consented: true } }))).toBe(true)
+  })
+
+  test("an unreadable database is an unjoined instance, not a crash", () => {
+    /**
+     * ⚠️ A file that does not exist is the pre-first-boot state and the commonest one — reading it
+     * must answer "not joined" rather than throw, because a throw here happens during layer build
+     * and takes the whole instance down with it.
+     */
+    expect(() => CommunityConsent.readStoreConsent("C:/nonexistent/never-created.db")).not.toThrow()
+    expect(CommunityConsent.readStoreConsent("C:/nonexistent/never-created.db")).toBeUndefined()
+  })
+})
