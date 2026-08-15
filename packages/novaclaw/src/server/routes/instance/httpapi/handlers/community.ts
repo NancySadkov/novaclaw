@@ -191,6 +191,15 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
                 message: "An offer's endpoint must be an http:// or https:// URL — that is what peers will connect to.",
               }),
             )
+          // ⚠️ Same reasoning one field over, and this one is money: `payTo` lands on somebody's
+          // clipboard verbatim, so a stray space or a look-alike letter is not a cosmetic problem.
+          if (!CommunityOffer.isPayableAddress(ctx.payload.payTo ?? ""))
+            return yield* Effect.fail(
+              new InvalidRequestError({
+                message:
+                  "A payment address must be plain ASCII with no spaces — it goes on the clipboard exactly as written.",
+              }),
+            )
           return yield* offers.publish({
             kind: "model-server",
             ...ctx.payload,

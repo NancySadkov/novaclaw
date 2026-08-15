@@ -426,4 +426,46 @@ describe("CommunityOffer", () => {
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
 
+
+  it.effect("🔴 the PAYMENT ADDRESS is what the user pastes, so it must read as it copies", () =>
+    Effect.gen(function* () {
+      /**
+       * `payTo` reaches `navigator.clipboard.writeText` verbatim and goes from there into somebody's
+       * wallet. So the string the user READS and the string they PASTE have to be the same one, and
+       * measured they need not be:
+       *
+       *   a zero-width space inside `nancy@getalby` + `.com` renders as the honest address and
+       *   copies as a different one; forty spaces hide a second address off the end of the rendered
+       *   line; and a Cyrillic `a` does not even diverge — it reads as the letter it imitates.
+       *
+       * ⚠️ This field is MONEY, which is why it gets the endpoint's treatment while `price` beside
+       * it does not: `price` is prose a human wrote and may be in any language.
+       */
+      const offers = yield* CommunityOffer.Service
+      const ZWSP = String.fromCharCode(0x200b)
+      const CYRILLIC_A = String.fromCharCode(0x430)
+
+      for (const payTo of [
+        `nancy@getalby${ZWSP}.com`,
+        `n${CYRILLIC_A}ncy@getalby.com`,
+        `nancy@getalby.com${" ".repeat(40)}attacker@evil.example`,
+        `a@b.com${String.fromCharCode(10)}attacker@evil.example`,
+      ]) {
+        const published = yield* offers.publish({ ...terms, payTo })
+        expect(CommunityOffer.verify(published)).toBe(false)
+        expect(yield* offers.mine()).toBeUndefined()
+      }
+
+      /**
+       * 🔴 THE CONTROL: every form this field legitimately takes is ASCII without spaces, so the
+       * narrow rule refuses nothing real — and an EMPTY address stays valid, because free is the
+       * normal case and most offers will carry none.
+       */
+      for (const payTo of ["nancy@getalby.com", "", "LNURL1DP68GURN8GHJ7", "lnbc1p3xyz"]) {
+        const published = yield* offers.publish({ ...terms, payTo })
+        expect(CommunityOffer.verify(published)).toBe(true)
+      }
+    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+  )
+
 })

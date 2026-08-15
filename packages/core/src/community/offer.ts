@@ -202,6 +202,12 @@ export const isServableEndpoint = (endpoint: string): boolean => {
   }
 }
 
+/**
+ * A payment address we are willing to put on someone's clipboard: ASCII, no spaces — or empty,
+ * because free is the normal case. See the note at its call site in `verify` for why.
+ */
+export const isPayableAddress = (payTo: string): boolean => payTo === "" || /^[!-~]+$/.test(payTo)
+
 export const verify = (offer: Signed): boolean => {
   if (typeof offer.signature !== "string" || offer.signature.length === 0) return false
   if (typeof offer.from !== "string" || typeof offer.endpoint !== "string") return false
@@ -234,6 +240,23 @@ export const verify = (offer: Signed): boolean => {
    * part that is never legitimately anything else.
    */
   if (!isServableEndpoint(offer.endpoint)) return false
+  /**
+   * 🔴 The payment address is ASCII with no whitespace, or the offer is not served.
+   *
+   * `payTo` goes to `navigator.clipboard.writeText` verbatim and from there into somebody's wallet,
+   * so what the user READS and what they PASTE have to be the same string. Measured, they need not
+   * be: a zero-width space inside `nancy@getalby` + `.com` renders as the honest address and copies
+   * as a different one, and forty spaces hide a second address off the end of the rendered line. A
+   * Cyrillic `a` does not even diverge — it simply reads as the letter it is imitating.
+   *
+   * ⚠️ Narrow on purpose, like the endpoint rule. Every form this field legitimately takes — a
+   * Lightning address, an LNURL, a bolt11 invoice — is ASCII without spaces, so nothing real is
+   * refused. `price` next door is deliberately NOT held to this: it is prose a human wrote and may
+   * be in any language.
+   *
+   * An EMPTY `payTo` stays valid: most offers will have none, and free is the normal case.
+   */
+  if (!isPayableAddress(offer.payTo)) return false
   const signature = Buffer.from(offer.signature, "base64url")
   if (signature.length !== 64) return false
   return InstanceIdentityStore.verifySignature(offer.from, canonicalBytes(offer), signature)
