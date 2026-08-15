@@ -25,6 +25,7 @@ const terms = {
   endpoint: "https://spark.example:8010/v1",
   models: ["holo3.1", "gemma-4-E4B"],
   price: "free",
+  payTo: "nancy@getalby.com",
 } as const
 
 describe("CommunityOffer", () => {
@@ -152,6 +153,7 @@ describe("CommunityOffer", () => {
         endpoint: "https://attacker.example/v1",
         models: ["holo3.1"],
         price: "free",
+        payTo: "attacker@theirdomain.com",
         from: stranger,
         at: Date.now(),
         signature: Buffer.alloc(64, 1).toString("base64url"),
@@ -167,6 +169,35 @@ describe("CommunityOffer", () => {
       expect(yield* offers.known()).toEqual([])
       // Our own offer is still ours, and is not listed among the peers'.
       expect((yield* offers.mine())?.from).toBe(me)
+    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+  )
+
+
+  it.effect("🔴 the PAYMENT ADDRESS is under the signature — the most profitable edit there is", () =>
+    Effect.gen(function* () {
+      /**
+       * An intermediary who could rewrite where money goes, while leaving the endpoint intact, has the
+       * most profitable edit available in this protocol: the victim keeps getting the service they
+       * expect and never notices the payments went elsewhere. The endpoint is protected for the same
+       * reason and money is the more attractive target, which is why this is a field rather than more
+       * prose inside `price`.
+       */
+      const offers = yield* CommunityOffer.Service
+      const published = yield* offers.publish(terms)
+      expect(published.payTo).toBe("nancy@getalby.com")
+      expect(CommunityOffer.verify(published)).toBe(true)
+
+      expect(CommunityOffer.verify({ ...published, payTo: "attacker@theirdomain.com" })).toBe(false)
+      expect(CommunityOffer.verify({ ...published, payTo: "" })).toBe(false)
+
+      // ⚠️ `price` and `payTo` are NEIGHBOURS in the signed bytes, so this is the case a naive
+      // concatenation cannot tell apart: a character moved across their boundary.
+      const shifted = yield* offers.publish({ ...terms, price: "free", payTo: "x@y.z" })
+      expect(CommunityOffer.verify({ ...shifted, price: "freex", payTo: "@y.z" })).toBe(false)
+
+      // An offer with no payment address is ordinary, not broken — most will have none.
+      const unpaid = yield* offers.publish({ ...terms, payTo: "" })
+      expect(CommunityOffer.verify(unpaid)).toBe(true)
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
 

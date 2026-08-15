@@ -139,6 +139,8 @@ export interface CommunityServiceOffer {
   readonly models: readonly string[]
   /** The offerer's own words. This software moves no money and enforces no terms. */
   readonly price: string
+  /** A Lightning address the offerer published. Copyable; this software never pays it. */
+  readonly payTo: string
   readonly from: string
   readonly at: number
   readonly signature: string
@@ -162,7 +164,12 @@ export function communityMyOffer(server: ServerConnection.HttpBase) {
 /** Offer a model server to the network. `price` is free text — no rails behind it. */
 export function communityPublishOffer(
   server: ServerConnection.HttpBase,
-  input: { readonly endpoint: string; readonly models: readonly string[]; readonly price: string },
+  input: {
+    readonly endpoint: string
+    readonly models: readonly string[]
+    readonly price: string
+    readonly payTo?: string
+  },
 ) {
   return instanceFetch<CommunityServiceOffer>(server, {
     route: "api/community/offer/mine",

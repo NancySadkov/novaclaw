@@ -45,6 +45,21 @@ export interface Terms {
    * could enforce. It can enforce nothing: whatever is agreed happens between two people elsewhere.
    */
   readonly price: string
+  /**
+   * A Lightning address or LNURL the offerer wants paying at — or empty.
+   *
+   * 🔴 Under the SIGNATURE, and that is the entire reason it is a field rather than more prose in
+   * `price`. An intermediary who could rewrite where money goes, while leaving the endpoint intact,
+   * has the most profitable edit available in this whole protocol. The endpoint was protected for the
+   * same reason and money is the more attractive target.
+   *
+   * ⛔ It is a STRING that gets displayed and copied. NovaClaw generates no invoice, tracks no
+   * balance, counts no usage and settles nothing — the moment it held or routed funds it would be a
+   * money transmitter in several jurisdictions, and the pre-launch legal note applies far harder to
+   * money than to messages. The user pays from their own wallet, entirely outside this software, or
+   * does not.
+   */
+  readonly payTo: string
 }
 
 export interface Unsigned extends Terms {
@@ -81,6 +96,9 @@ export const canonicalBytes = (offer: Unsigned): Uint8Array => {
   push(offer.kind)
   push(offer.endpoint)
   push(offer.price)
+  // ⚠️ Appended AFTER `price`, so the two are neighbours — which is what the field-boundary test
+  // exercises. Inserting it earlier would have invalidated every signature made before it existed.
+  push(offer.payTo)
   const at = new Uint8Array(8)
   new DataView(at.buffer).setBigUint64(0, BigInt(Math.trunc(offer.at)), false)
   parts.push(at)
@@ -105,6 +123,7 @@ export const verify = (offer: Signed): boolean => {
   if (typeof offer.signature !== "string" || offer.signature.length === 0) return false
   if (typeof offer.from !== "string" || typeof offer.endpoint !== "string") return false
   if (typeof offer.price !== "string" || offer.kind !== "model-server") return false
+  if (typeof offer.payTo !== "string") return false
   if (!Array.isArray(offer.models) || offer.models.some((model) => typeof model !== "string")) return false
   if (!Number.isFinite(offer.at)) return false
   const signature = Buffer.from(offer.signature, "base64url")
@@ -231,6 +250,7 @@ export const layer = Layer.effect(
             endpoint: parsed.endpoint,
             models: [...parsed.models],
             price: parsed.price,
+            payTo: parsed.payTo,
             from: self,
             at: Date.now(),
           }

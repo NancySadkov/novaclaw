@@ -147,6 +147,18 @@ const OfferAnswer = Schema.Struct({
       endpoint: Schema.String,
       models: Schema.Array(Schema.String),
       price: Schema.String,
+      /**
+       * 🔴 DECLARED, or the decode silently DROPS it and every collected offer stops verifying.
+       *
+       * Caught live: a peer published an offer carrying a payment address, served it correctly, and
+       * this instance collected NOTHING — because the field was stripped here before `verify` saw it,
+       * so a perfectly good signature failed over bytes that had been removed on the way in. It looks
+       * exactly like a peer signing badly, which is the wrong thing to go and investigate.
+       *
+       * ⚠️ The same trap as an undeclared field on a RESPONSE schema, and this program has now been
+       * bitten by both directions of it. Any field added to the offer envelope must be added here too.
+       */
+      payTo: Schema.String,
       from: Schema.String,
       at: Schema.Number,
       signature: Schema.String,

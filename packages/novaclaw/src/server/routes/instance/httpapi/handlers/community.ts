@@ -161,7 +161,11 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
       .handle(
         "offerPublish",
         Effect.fn("CommunityHttpApi.offerPublish")(function* (ctx) {
-          return yield* offers.publish({ kind: "model-server", ...ctx.payload })
+          return yield* offers.publish({
+            kind: "model-server",
+            ...ctx.payload,
+            payTo: ctx.payload.payTo ?? "",
+          })
         }),
       )
       .handle(

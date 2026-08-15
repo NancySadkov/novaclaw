@@ -3356,6 +3356,9 @@
                     "price": {
                       "type": "string"
                     },
+                    "payTo": {
+                      "type": "string"
+                    },
                     "from": {
                       "type": "string"
                     },
@@ -3386,7 +3389,7 @@
                       "type": "string"
                     }
                   },
-                  "required": ["kind", "endpoint", "models", "price", "from", "at", "signature"],
+                  "required": ["kind", "endpoint", "models", "price", "payTo", "from", "at", "signature"],
                   "additionalProperties": false,
                   "description": "The signed offer, as peers will see it"
                 }
@@ -3407,7 +3410,7 @@
             "description": "Unauthorized"
           }
         },
-        "description": "Signs and stores what this instance offers. `price` is your own words — this software moves no money and cannot enforce terms; whatever is agreed happens between you and the other person.",
+        "description": "Signs and stores what this instance offers. `price` is your own words and `payTo` is a Lightning address others can copy — this software generates no invoice, tracks no balance, counts no usage and settles nothing. Whatever is agreed happens between two people, in their own wallets.",
         "summary": "Offer a model server to the network",
         "requestBody": {
           "content": {
@@ -3425,6 +3428,9 @@
                     }
                   },
                   "price": {
+                    "type": "string"
+                  },
+                  "payTo": {
                     "type": "string"
                   }
                 },
@@ -3514,6 +3520,9 @@
                       "price": {
                         "type": "string"
                       },
+                      "payTo": {
+                        "type": "string"
+                      },
                       "from": {
                         "type": "string"
                       },
@@ -3544,7 +3553,7 @@
                         "type": "string"
                       }
                     },
-                    "required": ["kind", "endpoint", "models", "price", "from", "at", "signature"],
+                    "required": ["kind", "endpoint", "models", "price", "payTo", "from", "at", "signature"],
                     "additionalProperties": false
                   },
                   "description": "Offers collected from peers"
@@ -4509,6 +4518,9 @@
                         "price": {
                           "type": "string"
                         },
+                        "payTo": {
+                          "type": "string"
+                        },
                         "from": {
                           "type": "string"
                         },
@@ -4539,7 +4551,7 @@
                           "type": "string"
                         }
                       },
-                      "required": ["kind", "endpoint", "models", "price", "from", "at", "signature"],
+                      "required": ["kind", "endpoint", "models", "price", "payTo", "from", "at", "signature"],
                       "additionalProperties": false
                     }
                   },

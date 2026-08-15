@@ -130,6 +130,7 @@ export const CommunityNetwork: Component = () => {
   const [offerEndpoint, setOfferEndpoint] = createSignal("")
   const [offerModels, setOfferModels] = createSignal("")
   const [offerPrice, setOfferPrice] = createSignal("")
+  const [offerPayTo, setOfferPayTo] = createSignal("")
   const [offerNote, setOfferNote] = createSignal("")
 
   /**
@@ -173,6 +174,7 @@ export const CommunityNetwork: Component = () => {
           .filter((name) => name !== ""),
         // ⚠️ Their words, kept as written. Not parsed into an amount — this software settles nothing.
         price: offerPrice().trim() === "" ? "free" : offerPrice().trim(),
+        payTo: offerPayTo().trim(),
       })
       setOfferNote("Offered. Peers see it next time they look.")
       await Promise.all([offerActions.refetch(), myOfferActions.refetch()])
@@ -593,6 +595,20 @@ export const CommunityNetwork: Component = () => {
                     {offer.models.join(", ") || "models unspecified"} · {offer.price}
                   </span>
                   {/*
+                    ⛔ COPIES the address. There is deliberately no button that pays: NovaClaw
+                    generates no invoice, holds no balance and settles nothing, and a control that
+                    looked like it paid would be the most dangerous thing on this screen.
+                  */}
+                  <Show when={offer.payTo}>
+                    <ButtonV2
+                      variant="ghost"
+                      size="small"
+                      onClick={() => void navigator.clipboard.writeText(offer.payTo)}
+                    >
+                      Copy payment address
+                    </ButtonV2>
+                  </Show>
+                  {/*
                     🔴 COPIES the address; it does not configure anything. Adding it as a provider
                     automatically would point this user's prompts at somebody else's machine — the one
                     thing the data-plane promise is about — off the back of an advertisement. Handing
@@ -658,6 +674,12 @@ export const CommunityNetwork: Component = () => {
               onInput={(event) => setOfferPrice(event.currentTarget.value)}
               placeholder="Terms in your own words — e.g. free, or 500 sats a request"
             />
+            <TextInputV2
+              appearance="base"
+              value={offerPayTo()}
+              onInput={(event) => setOfferPayTo(event.currentTarget.value)}
+              placeholder="Lightning address, if you want paying (optional)"
+            />
             <ButtonV2 variant="neutral" size="small" disabled={!offerEndpoint().trim()} onClick={() => void publishOffer()}>
               Offer
             </ButtonV2>
@@ -668,7 +690,8 @@ export const CommunityNetwork: Component = () => {
           {/* ⚠️ No payment exists. Saying so plainly is better than a user assuming the software will
               collect for them and discovering otherwise after giving away compute. */}
           <span class="text-[11px] leading-snug text-v2-text-text-muted">
-            NovaClaw does not handle money. Terms are yours to state and yours to settle, directly.
+            NovaClaw does not handle money — no invoices, no balances, nothing counted. An address here
+            is shown to others so they can pay you from their own wallet, or not.
           </span>
           <Show when={offerNote()}>
             <span class="text-[11px] leading-snug text-v2-text-text-muted">{offerNote()}</span>

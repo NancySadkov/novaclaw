@@ -9194,6 +9194,7 @@ export type CommunityOfferPublishData = {
     endpoint: string
     models: Array<string>
     price: string
+    payTo?: string
   }
   path?: never
   query?: never
@@ -9222,6 +9223,7 @@ export type CommunityOfferPublishResponses = {
     endpoint: string
     models: Array<string>
     price: string
+    payTo: string
     from: string
     at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     signature: string
@@ -9288,6 +9290,7 @@ export type CommunityOfferKnownResponses = {
     endpoint: string
     models: Array<string>
     price: string
+    payTo: string
     from: string
     at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     signature: string
@@ -9669,6 +9672,7 @@ export type CommunityPeerOfferResponses = {
       endpoint: string
       models: Array<string>
       price: string
+      payTo: string
       from: string
       at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
       signature: string

@@ -60,6 +60,8 @@ const PeerOffer = Schema.Struct({
   endpoint: Schema.String,
   models: Schema.Array(Schema.String),
   price: Schema.String,
+  /** A Lightning address or LNURL, or empty. Displayed and copied — never paid by this software. */
+  payTo: Schema.String,
   from: Schema.String,
   at: Schema.Number,
   signature: Schema.String,
@@ -300,6 +302,7 @@ export const CommunityApi = HttpApi.make("community").add(
           endpoint: Schema.String,
           models: Schema.Array(Schema.String),
           price: Schema.String,
+          payTo: Schema.optional(Schema.String),
         }),
         success: described(PeerOffer, "The signed offer, as peers will see it"),
       }).annotateMerge(
@@ -307,7 +310,7 @@ export const CommunityApi = HttpApi.make("community").add(
           identifier: "community.offer.publish",
           summary: "Offer a model server to the network",
           description:
-            "Signs and stores what this instance offers. `price` is your own words — this software moves no money and cannot enforce terms; whatever is agreed happens between you and the other person.",
+            "Signs and stores what this instance offers. `price` is your own words and `payTo` is a Lightning address others can copy — this software generates no invoice, tracks no balance, counts no usage and settles nothing. Whatever is agreed happens between two people, in their own wallets.",
         }),
       ),
       HttpApiEndpoint.delete("offerWithdraw", CommunityPaths.offerMine, {

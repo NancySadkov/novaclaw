@@ -1038,17 +1038,23 @@ class ApiCommunityOffer extends NovaClawApiClient {
   /**
    * Offer a model server to the network
    *
-   * Signs and stores what this instance offers. `price` is your own words — this software moves no money and cannot enforce terms; whatever is agreed happens between you and the other person.
+   * Signs and stores what this instance offers. `price` is your own words and `payTo` is a Lightning address others can copy — this software generates no invoice, tracks no balance, counts no usage and settles nothing. Whatever is agreed happens between two people, in their own wallets.
    */
   public publish<ThrowOnError extends boolean = false>(
     parameters: {
       endpoint: string
       models: Array<string>
       price: string
+      payTo?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const body = { endpoint: parameters?.["endpoint"], models: parameters?.["models"], price: parameters?.["price"] }
+    const body = {
+      endpoint: parameters?.["endpoint"],
+      models: parameters?.["models"],
+      price: parameters?.["price"],
+      payTo: parameters?.["payTo"],
+    }
     return (options?.client ?? this.client).post<
       T.CommunityOfferPublishResponses,
       T.CommunityOfferPublishErrors,
