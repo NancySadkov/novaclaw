@@ -8,6 +8,7 @@ import {
   communityChannelHistory,
   communityChannels,
   communityArchivedChannels,
+  communityDiscover,
   communityContacts,
   communityJoinChannel,
   communityLeaveChannel,
@@ -184,6 +185,38 @@ export const CommunityNetwork: Component = () => {
   }
 
   const [joining, setJoining] = createSignal("")
+  const [finding, setFinding] = createSignal(false)
+  const [found, setFound] = createSignal("")
+
+  /**
+   * 🔴 Bootstrap, as one button. Looks for instances on this network, then asks everyone reachable
+   * who else they know — so a single address, from any source, reaches a network nobody can switch
+   * off. There is no seed list here to seize.
+   */
+  const find = async () => {
+    const current = connection()
+    if (!current) return
+    setFinding(true)
+    setFound("")
+    try {
+      // ⚠️ The address box doubles as the input: an address is enough, because the instance there
+      // tells us its own key. Asking a person to type 47 characters of base64 is the thing
+      // principle 12 exists to forbid.
+      const typed = adding().trim()
+      const result = await communityDiscover(current.http, typed === "" ? undefined : [typed])
+      setFound(
+        result.peers === 0
+          ? "Found nobody yet. Anyone running NovaClaw on this network shows up here, or paste someone's address above."
+          : `${result.peers} ${result.peers === 1 ? "instance" : "instances"} reachable` +
+              (result.learned > 0 ? ` — ${result.learned} newly discovered` : ""),
+      )
+      await contactActions.refetch()
+    } catch (error) {
+      setFound(error instanceof Error ? error.message : String(error))
+    } finally {
+      setFinding(false)
+    }
+  }
 
   const join = async () => {
     const current = connection()
@@ -348,6 +381,17 @@ export const CommunityNetwork: Component = () => {
         </div>
         <Show when={problem()}>
           <span class="text-[11px] leading-snug text-v2-text-text-muted">{problem()}</span>
+        </Show>
+        <div class="mt-1 flex items-center gap-2">
+          <ButtonV2 variant="ghost" size="small" disabled={finding()} onClick={() => void find()}>
+            {finding() ? "Looking…" : "Find instances"}
+          </ButtonV2>
+          <span class="text-[11px] leading-snug text-v2-text-text-muted">
+            Looks on this network, then asks whoever answers who else they know.
+          </span>
+        </div>
+        <Show when={found()}>
+          <span class="text-[11px] leading-snug text-v2-text-text-muted">{found()}</span>
         </Show>
       </div>
 

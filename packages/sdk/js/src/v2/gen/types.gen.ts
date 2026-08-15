@@ -8959,6 +8959,41 @@ export type CommunityChannelJoinResponses = {
 
 export type CommunityChannelJoinResponse = CommunityChannelJoinResponses[keyof CommunityChannelJoinResponses]
 
+export type CommunityDiscoverData = {
+  body: {
+    addresses?: Array<string>
+  }
+  path?: never
+  query?: never
+  url: "/api/community/discover"
+}
+
+export type CommunityDiscoverErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityDiscoverError = CommunityDiscoverErrors[keyof CommunityDiscoverErrors]
+
+export type CommunityDiscoverResponses = {
+  /**
+   * How many peers were learned, and how many are now known
+   */
+  200: {
+    learned: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    asked: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    peers: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type CommunityDiscoverResponse = CommunityDiscoverResponses[keyof CommunityDiscoverResponses]
+
 export type CommunityChannelArchivedData = {
   body?: never
   path?: never

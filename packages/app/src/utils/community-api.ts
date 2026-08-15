@@ -106,6 +106,19 @@ export function communityJoinChannel(server: ServerConnection.HttpBase, name: st
  * Say something. `delivered` reports whether a transport took it — never whether it was read, since
  * nothing in a serverless network can promise that.
  */
+/**
+ * Find other instances: LAN sightings, any address given, then peer exchange with everyone reachable.
+ *
+ * ⚠️ An ADDRESS is enough — the instance there tells us its own key. Nobody types a `nid_…`.
+ */
+export function communityDiscover(server: ServerConnection.HttpBase, addresses?: readonly string[]) {
+  return instanceFetch<{ readonly learned: number; readonly asked: number; readonly peers: number }>(server, {
+    route: "api/community/discover",
+    method: "POST",
+    body: addresses === undefined ? {} : { addresses },
+  })
+}
+
 /** Channels this instance left but still holds messages for. */
 export function communityArchivedChannels(server: ServerConnection.HttpBase) {
   return instanceFetch<{ readonly name: string; readonly messages: number }[]>(server, {

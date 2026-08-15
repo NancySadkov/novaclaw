@@ -20,6 +20,7 @@ import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityPost } from "@novaclaw/core/community/post"
 import { CommunityPeers } from "@novaclaw/core/community/peers"
+import { CommunitySync } from "@novaclaw/core/community/sync"
 import { CommunityTransport } from "@novaclaw/core/community/transport"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
@@ -247,6 +248,7 @@ const app = LayerNode.group([
   CommunityContacts.node,
   CommunityChannels.node,
   CommunityPeers.node,
+  CommunitySync.node,
   CommunityTransport.node,
   CommunityPost.node,
   SkillConfigStore.node,

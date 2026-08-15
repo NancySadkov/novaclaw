@@ -74,6 +74,19 @@ export interface Interface {
    * user makes, and `observe`/`follow` already refuse it for the same reason.
    */
   readonly discover: () => Effect.Effect<{ readonly asked: number; readonly learned: number }>
+  /**
+   * Learn peers from ADDRESSES ALONE — a LAN sighting, or an address the user pasted.
+   *
+   * 🔴 Principle 12: a setting may never require a value the user has no way to know. Adding a peer
+   * used to mean typing a 47-character `nid_…` key, which is not a thing anyone can read off a
+   * screen and retype — while the instance at that address will simply TELL us its key if asked.
+   * So the address is the input and the identity is discovered, never demanded.
+   *
+   * ⚠️ It also verifies: an address that does not answer as a NovaClaw instance teaches us nothing
+   * and is not stored. A route that was never going to work is worse than no route, because it looks
+   * like a peer that is merely offline.
+   */
+  readonly learnFrom: (addresses: readonly string[], source?: string) => Effect.Effect<number>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/CommunitySync") {}
@@ -81,6 +94,9 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 /** What a peer sends back. Parsed rather than trusted: a peer is an untrusted source of bytes. */
 const Summary = Schema.Struct({ buckets: Schema.Array(Schema.String) })
 const Ids = Schema.Struct({ ids: Schema.Array(Schema.String) })
+/** Enough of `/global/health` to identify a peer. Every instance already serves it. */
+const Health = Schema.Struct({ networkID: Schema.String })
+
 const PeerList = Schema.Struct({
   peers: Schema.Array(Schema.Struct({ networkID: Schema.String, routes: Schema.Array(Schema.String) })),
 })
@@ -160,6 +176,21 @@ export const layer = Layer.effect(
     })
 
     return Service.of({
+      learnFrom: Effect.fn("CommunitySync.learnFrom")(function* (addresses, source = "lan") {
+        if (offline.policy.enabled) return 0
+        let learned = 0
+        for (const address of httpRoutes(addresses)) {
+          // ⚠️ ASK who they are rather than trusting a claim attached to the address. The reply is
+          // only a claim too — anyone can serve a health endpoint — but a peer's key is not a secret
+          // and every message it sends is verified against it anyway. What this buys is that the
+          // route is real and reaches something that speaks our protocol.
+          const health = yield* ask(address, "/global/health", undefined, Health, "GET")
+          if (health === undefined) continue
+          if (yield* peers.learn(health.networkID, [address], source)) learned++
+        }
+        return learned
+      }),
+
       discover: Effect.fn("CommunitySync.discover")(function* () {
         if (offline.policy.enabled) return { asked: 0, learned: 0 }
         let asked = 0

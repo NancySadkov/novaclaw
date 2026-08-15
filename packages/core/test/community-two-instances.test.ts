@@ -437,6 +437,17 @@ describe("two instances", () => {
 
           // 🔴 Carol is now reachable, and is NOT in the address book. Both halves matter.
           expect((yield* contacts.list()).map((entry) => entry.networkID)).toEqual([bobKey])
+
+          /**
+           * 🔴 And the TRANSPORT can reach her. Found by running it: discovery filled the peer table
+           * while `state()` still said `no-peers`, because publishing only ever consulted contacts —
+           * so the network could be discovered and not spoken to, which makes peer exchange
+           * pointless, everything it learns landing in the peer table by design.
+           */
+          const transport = yield* CommunityTransport.Service
+          // ⚠️ TWO reachable identities (Bob and Carol), not a count of routes: one instance with a
+          // LAN address and a loopback address is one peer, and saying "2" would invent a stranger.
+          expect(yield* transport.state()).toEqual({ kind: "online", peers: 2 })
           return yield* peers.list()
         }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
       )

@@ -4,6 +4,7 @@ import { Context, Effect, Layer } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { CommunityChannels } from "./channels"
 import { CommunityContacts } from "./contacts"
+import { CommunityPeers } from "./peers"
 import { CommunityTopic } from "./topic"
 import { CommunityMessage } from "./message"
 import { makeGlobalNode } from "../effect/app-node"
@@ -104,6 +105,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const offline = yield* Offline.Service
     const contacts = yield* CommunityContacts.Service
+    const peers = yield* CommunityPeers.Service
     const http = yield* HttpClient.HttpClient
 
     /**
@@ -114,10 +116,26 @@ export const layer = Layer.effect(
      * block would be one-directional in the direction that helps them.
      */
     const reachable = Effect.fn("CommunityTransportHttp.reachable")(function* () {
+      /**
+       * 🔴 Contacts AND discovered peers. Caught by running it: discovery learned an instance from
+       * its address, the peer table held it, and the transport still reported `no-peers` — so the
+       * network could be found and not spoken to. Publishing only to hand-added contacts would make
+       * peer exchange pointless, since everything it learns lands in the peer table by design.
+       *
+       * ⚠️ A peer is still not a contact. This grants no trust: it is a list of places to send a
+       * signed, work-proven message that every receiver judges on its own terms.
+       */
       const known = yield* contacts.bootstrap()
-      return known.flatMap((contact) =>
-        httpRoutes(contact.routes).map((route) => ({ networkID: contact.networkID, route })),
-      )
+      const learned = yield* peers.list()
+      const out: { networkID: string; route: string }[] = []
+      const already = new Set<string>()
+      for (const entry of [...known, ...learned])
+        for (const route of httpRoutes(entry.routes))
+          if (!already.has(route)) {
+            already.add(route)
+            out.push({ networkID: entry.networkID, route })
+          }
+      return out
     })
 
     const state = Effect.fn("CommunityTransportHttp.state")(function* () {
@@ -128,9 +146,16 @@ export const layer = Layer.effect(
       const peers = yield* reachable()
       // ⚠️ Not `off/none`: the transport exists and works. "We know nobody to dial" is a different
       // sentence to a person than "this is not built yet", and it is one they can fix in a minute.
-      return peers.length === 0
+      /**
+       * ⚠️ Distinct PEOPLE, not routes. One instance reachable at a LAN address and a loopback
+       * address is one peer with two ways in, and reporting "2 peers" would tell a user there are
+       * others out there when there is exactly one — the sort of small lie this UI is not allowed to
+       * tell. Seen live: a single discovered instance reported as two.
+       */
+      const distinct = new Set(peers.map((peer) => peer.networkID))
+      return distinct.size === 0
         ? ({ kind: "off", reason: "no-peers" } as const)
-        : ({ kind: "online", peers: peers.length } as const)
+        : ({ kind: "online", peers: distinct.size } as const)
     })
 
     return Service.of({
@@ -191,6 +216,7 @@ export const node = makeGlobalNode({ service: Service, layer, deps: [
   Offline.node,
   CommunityChannels.node,
   CommunityContacts.node,
+  CommunityPeers.node,
   // ⚠️ The SHARED httpClient node, never a private fetch client: it is the OFF-A offline chokepoint,
   // so airgap is enforced a second time and independently of the explicit check above.
   httpClient,

@@ -2,6 +2,7 @@ import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityPost } from "@novaclaw/core/community/post"
 import { CommunityPeers } from "@novaclaw/core/community/peers"
+import { MDNS } from "@/server/mdns"
 import { CommunityReconcile } from "@novaclaw/core/community/reconcile"
 import { CommunitySync } from "@novaclaw/core/community/sync"
 import { CommunityTopic } from "@novaclaw/core/community/topic"
@@ -21,6 +22,8 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
   Effect.gen(function* () {
     const contacts = yield* CommunityContacts.Service
     const channels = yield* CommunityChannels.Service
+    const sync = yield* CommunitySync.Service
+    const peersStore = yield* CommunityPeers.Service
     const transport = yield* CommunityTransport.Service
     const posts = yield* CommunityPost.Service
 
@@ -78,6 +81,25 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
         Effect.fn("CommunityHttpApi.channelJoin")(function* (ctx) {
           yield* channels.join(ctx.payload.name)
           return yield* channels.channels()
+        }),
+      )
+      .handle(
+        "communityDiscover",
+        Effect.fn("CommunityHttpApi.communityDiscover")(function* (ctx) {
+          /**
+           * 🔴 Every source at once, because plurality IS the anti-shutdown property. The spec: if
+           * everyone ships the same three seeds and they die, new users cannot join a network that is
+           * perfectly alive. LAN costs nothing and needs no seed at all.
+           */
+          const found = yield* Effect.promise(() => MDNS.browse())
+          const lan = found.map((entry) => entry.url)
+          const supplied = ctx.payload.addresses ?? []
+          // ⚠️ Sightings first, PX second, and in that order deliberately: a peer learned from the
+          // LAN this second is someone we can immediately ask for more.
+          yield* sync.learnFrom(lan, "lan")
+          yield* sync.learnFrom(supplied, "manual")
+          const exchange = yield* sync.discover()
+          return { learned: exchange.learned, asked: exchange.asked, peers: (yield* peersStore.list()).length }
         }),
       )
       .handle(

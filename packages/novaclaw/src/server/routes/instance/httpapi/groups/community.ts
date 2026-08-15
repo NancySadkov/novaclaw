@@ -97,6 +97,7 @@ export const CommunityPaths = {
   channels: "/api/community/channel",
   channel: "/api/community/channel/:name",
   channelMute: "/api/community/channel/:name/mute",
+  discover: "/api/community/discover",
   channelsArchived: "/api/community/channel/archived",
   channelHistory: "/api/community/channel/:name/history",
   channelPost: "/api/community/channel/:name/post",
@@ -166,6 +167,20 @@ export const CommunityApi = HttpApi.make("community").add(
           identifier: "community.channel.list",
           summary: "List joined channels",
           description: "The channels this instance subscribes to.",
+        }),
+      ),
+      HttpApiEndpoint.post("communityDiscover", CommunityPaths.discover, {
+        payload: Schema.Struct({ addresses: Schema.optional(Schema.Array(Schema.String)) }),
+        success: described(
+          Schema.Struct({ learned: Schema.Number, asked: Schema.Number, peers: Schema.Number }),
+          "How many peers were learned, and how many are now known",
+        ),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.discover",
+          summary: "Find other instances",
+          description:
+            "Runs every bootstrap source at once: instances advertising on this LAN, any addresses supplied, and peer exchange with everyone already reachable. Plurality is the point — if one source dies, the others still reach a live network, which is why no single seed list can switch this off. Addresses are enough: an instance tells us its own key, so nobody has to type one.",
         }),
       ),
       HttpApiEndpoint.get("channelArchived", CommunityPaths.channelsArchived, {

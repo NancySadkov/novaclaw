@@ -1123,6 +1123,28 @@ class ApiCommunityPeer extends NovaClawApiClient {
 }
 
 class ApiCommunity extends NovaClawApiClient {
+  /**
+   * Find other instances
+   *
+   * Runs every bootstrap source at once: instances advertising on this LAN, any addresses supplied, and peer exchange with everyone already reachable. Plurality is the point — if one source dies, the others still reach a live network, which is why no single seed list can switch this off. Addresses are enough: an instance tells us its own key, so nobody has to type one.
+   */
+  public discover<ThrowOnError extends boolean = false>(
+    parameters?: {
+      addresses?: Array<string>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { addresses: parameters?.["addresses"] }
+    return (options?.client ?? this.client).post<T.CommunityDiscoverResponses, T.CommunityDiscoverErrors, ThrowOnError>(
+      {
+        url: "/api/community/discover",
+        ...options,
+        body,
+        headers: { "Content-Type": "application/json", ...options?.headers },
+      },
+    )
+  }
+
   private _contact?: ApiCommunityContact
   get contact(): ApiCommunityContact {
     return (this._contact ??= new ApiCommunityContact({ client: this.client }))
