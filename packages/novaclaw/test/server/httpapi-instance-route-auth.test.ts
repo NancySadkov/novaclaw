@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { ConfigProvider, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
+import { CommunityPeerPaths } from "../../src/server/routes/instance/httpapi/groups/community"
 import { EventPaths } from "../../src/server/routes/instance/httpapi/groups/event"
 import { PtyPaths } from "@novaclaw/protocol/groups/pty"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
@@ -60,6 +61,78 @@ describe("HttpApi instance route authorization", () => {
     })
     await cancelBody(authed)
     expect(authed.status).toBe(200)
+  })
+
+  /**
+   * 🔴 The community peer paths are the ONE surface in this product that must answer a stranger, and
+   * nothing ran them against a server with a password until now.
+   *
+   * The static guard (`httpapi-public-openapi.test.ts`) proves what the API DECLARES. This proves
+   * what a running server ENFORCES, and they are different claims — a control can be declared
+   * correctly and never execute. It failed to be obvious because every probe of this subsystem ran
+   * against instances started WITHOUT `NOVACLAW_SERVER_PASSWORD`, where every path answers 200 and an
+   * unauthenticated endpoint is indistinguishable from an authenticated one.
+   *
+   * ⚠️ Both directions matter and the first is the one people forget: if a peer path ever starts
+   * demanding auth, PEERS SILENTLY STOP REACHING THIS INSTANCE — the network feature dies quietly
+   * while every screen still works for its owner.
+   */
+  test("🔴 community PEER paths stay reachable without credentials, and the rest do not", async () => {
+    await using tmp = await tmpdir({ git: true, config: { formatter: false } })
+    const server = app({ password: "secret" })
+    const headers = { "x-novaclaw-directory": tmp.path }
+
+    /**
+     * ⚠️ The METHOD matters and cost a false failure to learn: a GET on a POST-only peer path does
+     * not match the route, falls through to an authenticated handler, and answers 401 — which reads
+     * exactly like "this peer path demands credentials". With the right method every one answers 400
+     * (the empty body fails its schema) and never 401, which is the property under test.
+     *
+     * The map is keyed to `CommunityPeerPaths` and asserted complete below, so a peer endpoint added
+     * later fails here until somebody states its method — derived, never hand-listed.
+     */
+    const METHOD: Record<keyof typeof CommunityPeerPaths, "GET" | "POST"> = {
+      inbound: "POST",
+      syncSummary: "POST",
+      syncIds: "POST",
+      syncMessages: "POST",
+      search: "POST",
+      dm: "POST",
+      peers: "GET",
+      listedChannels: "GET",
+      succession: "GET",
+      offer: "GET",
+    }
+    expect(Object.keys(METHOD).sort()).toEqual(Object.keys(CommunityPeerPaths).sort())
+
+    for (const [key, route] of Object.entries(CommunityPeerPaths)) {
+      const method = METHOD[key as keyof typeof CommunityPeerPaths]
+      const anonymous = await server.request(route, {
+        method,
+        headers: method === "POST" ? { ...headers, "content-type": "application/json" } : headers,
+        ...(method === "POST" ? { body: "{}" } : {}),
+      })
+      await cancelBody(anonymous)
+      expect(anonymous.status, `${method} ${route} must not demand credentials — peers cannot supply them`).not.toBe(
+        401,
+      )
+    }
+
+    // ⚠️ The other direction, on the paths that carry the OWNER's data. `offers` is the one that
+    // matters most: it re-verifies every stored offer, so if it were public a stranger would get an
+    // expensive read AND the user's collected advertisements.
+    for (const route of ["/api/community/offers", "/api/community/offer/mine", "/api/community/contact"]) {
+      const anonymous = await server.request(route, { method: "GET", headers })
+      await cancelBody(anonymous)
+      expect(anonymous.status, `${route} carries the owner's data and must demand credentials`).toBe(401)
+
+      const authed = await server.request(route, {
+        method: "GET",
+        headers: { ...headers, authorization: basic("novaclaw", "secret") },
+      })
+      await cancelBody(authed)
+      expect(authed.status, `${route} must answer its own owner`).not.toBe(401)
+    }
   })
 
   test("requires configured auth before resolving the PTY websocket route", async () => {
