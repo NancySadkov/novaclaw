@@ -88,6 +88,22 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
       .handle(
         "channelJoin",
         Effect.fn("CommunityHttpApi.channelJoin")(function* (ctx) {
+          /**
+           * 🔴 A room name is an identifier and cannot carry control characters. The name reaching
+           * here came from a stranger — advertised, shown in discovery, joined with one click — and
+           * only its LENGTH was ever checked, so a peer could advertise a room whose name is three
+           * lines of text that read as a conversation turn.
+           *
+           * ⚠️ Refused rather than cleaned: stripping characters changes the name, the name is
+           * hashed to the topic, and the user would silently join a DIFFERENT room from the one they
+           * clicked on. Told, so they know why.
+           */
+          if (!CommunityChannels.isPlainChannelName(ctx.payload.name))
+            return yield* Effect.fail(
+              new InvalidRequestError({
+                message: "A channel name cannot contain line breaks or control characters.",
+              }),
+            )
           yield* channels.join(ctx.payload.name)
           return yield* channels.channels()
         }),

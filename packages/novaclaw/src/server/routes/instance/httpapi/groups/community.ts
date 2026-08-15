@@ -245,6 +245,9 @@ export const CommunityApi = HttpApi.make("community").add(
       HttpApiEndpoint.post("channelJoin", CommunityPaths.channels, {
         payload: Schema.Struct({ name: Schema.String }),
         success: described(Schema.Array(CommunityChannel), "Channels after joining"),
+        // ⚠️ A name carrying line breaks is refused, not cleaned — see the handler for why cleaning
+        // would silently join a different room than the one the user clicked.
+        error: InvalidRequestError,
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "community.channel.join",
