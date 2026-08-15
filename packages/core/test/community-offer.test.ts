@@ -1,6 +1,9 @@
 import { describe, expect } from "bun:test"
+import { generateKeyPairSync, sign } from "node:crypto"
 import { Effect } from "effect"
+import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityOffer } from "@novaclaw/core/community/offer"
+import { CommunityOfferTable } from "@novaclaw/core/community/sql"
 import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
@@ -17,8 +20,20 @@ import { testEffect } from "./lib/effect"
  */
 
 const it = testEffect(
-  LayerNode.compile(LayerNode.group([Database.node, InstanceIdentityStore.node, CommunityOffer.node])),
+  LayerNode.compile(LayerNode.group([Database.node, InstanceIdentityStore.node, CommunityContacts.node, CommunityOffer.node])),
 )
+
+/**
+ * A genuinely foreign signed offer: a fresh ed25519 keypair, the same construction `publish` uses.
+ * ⚠️ Minting one is free and no proof-of-work is involved anywhere — which is the finding below.
+ */
+const stranger = (endpoint: string) => {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519")
+  const raw = (publicKey.export({ type: "spki", format: "der" }) as Buffer).subarray(-32)
+  const unsigned = { ...terms, models: [...terms.models], endpoint, from: `nid_${raw.toString("base64url")}`, at: 1 }
+  const signature = sign(null, Buffer.from(CommunityOffer.canonicalBytes(unsigned)), privateKey)
+  return { ...unsigned, signature: signature.toString("base64url") }
+}
 
 const terms = {
   kind: "model-server",
@@ -230,6 +245,54 @@ describe("CommunityOffer", () => {
       // ⚠️ And an ordinary offer still passes — a bound that refused real ones would be worse than none.
       const normal = yield* offers.publish(terms)
       expect(CommunityOffer.verify(normal)).toBe(true)
+    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+  )
+
+
+  it.effect("🔴 the offer STORE is bounded — a row costs a keypair and is re-verified on every read", () =>
+    Effect.gen(function* () {
+      /**
+       * The product of two defects each already fixed in its own terms, which is exactly why it
+       * survived both: succession was bounded because minted keys are free, and the offer ENVELOPE
+       * was bounded because `verify` runs on every read. Nobody bounded the offer COUNT — and a row
+       * is keyed on the offerer's identity, so the same free keypair buys one.
+       *
+       * ⚠️ Measured at 46.6 µs to verify, and `GET /api/community/offer` is unauthenticated with no
+       * proof-of-work anywhere on the path: 500,000 rows is 23 SECONDS of CPU for a request that
+       * costs the caller a TCP connection. It also draws the user's own Community panel.
+       */
+      const offers = yield* CommunityOffer.Service
+      const contacts = yield* CommunityContacts.Service
+      const { db } = yield* Database.Service
+
+      // Genuinely foreign offers — signed with keys this instance does not hold, which is the whole
+      // point: minting one is free and there is no work to do.
+      const friend = stranger("https://friend.example/v1")
+      expect(CommunityOffer.verify(friend)).toBe(true)
+      yield* contacts.add({ networkID: friend.from, petname: "a real friend" }).pipe(Effect.orDie)
+      expect(yield* offers.learn(friend)).toBe(true)
+
+      const flood = CommunityOffer.MAX_OFFERS + CommunityOffer.PRUNE_SLACK + 50
+      const rows = Array.from({ length: flood }, (_, index) => {
+        const key = Buffer.alloc(32)
+        key.writeUInt32BE(index + 1000, 0)
+        return { id: `nid_${key.toString("base64url")}`, document: "{}" }
+      })
+      for (let start = 0; start < rows.length; start += 200)
+        yield* db.insert(CommunityOfferTable).values(rows.slice(start, start + 200)).run()
+
+      // One more real offer trips the trim.
+      expect(yield* offers.learn(stranger("https://last.example/v1"))).toBe(true)
+
+      const total = yield* db.$count(CommunityOfferTable).pipe(Effect.orDie)
+      expect(total).toBeLessThanOrEqual(CommunityOffer.MAX_OFFERS + 1)
+
+      /**
+       * 🔴 The friend's offer survived the flood, and it is the OLDEST row here — so recency alone
+       * would have discarded it. A bound that dropped the offer a user was about to accept, to make
+       * room for a flood, is the attack succeeding by a different route.
+       */
+      expect((yield* offers.known()).map((offer) => offer.endpoint)).toContain("https://friend.example/v1")
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
 

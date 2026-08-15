@@ -1,7 +1,7 @@
 export * as CommunityOffer from "./offer"
 
 import { Context, Effect, Layer } from "effect"
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { CommunityOfferTable } from "./sql"
 import { Database } from "../database/database"
 import { InstanceIdentityStore } from "../instance-identity-store"
@@ -85,6 +85,28 @@ export interface Signed extends Unsigned {
  */
 export const MAX_MODELS = 64
 export const MAX_FIELD_BYTES = 512
+
+/**
+ * 🔴 How many peers' offers this instance keeps. Its absence was the PRODUCT of two defects that had
+ * each already been found and fixed in their own terms — which is why it survived both.
+ *
+ * The succession store was bounded because statements arrive from keys an attacker mints for free.
+ * The offer envelope was bounded because `verify` runs on every READ, so one signature buys a cost
+ * we pay forever. Nobody bounded the offer COUNT, and an offer row is keyed on the offerer's
+ * identity — so the same free keypair buys a row, and every row is re-verified on every read.
+ *
+ * ⚠️ Measured: verify costs **46.6 µs** per stored offer, and `GET /api/community/offer` is an
+ * unauthenticated peer endpoint with no proof-of-work anywhere on the path. Unbounded that is 2.3 s
+ * per free request at 50,000 rows and **23 s at 500,000** — for a request that costs the caller a
+ * TCP connection. It is also what draws the user's own Community panel.
+ *
+ * 500 is the peer table's ceiling, chosen for the same reason: it is far more than a person can read
+ * and it bounds a stranger's reach into our CPU. The read then costs 23 ms at worst.
+ */
+export const MAX_OFFERS = 500
+
+/** Slack, so the trim is amortised rather than run on every offer learned — see `MAX_OFFERS`. */
+export const PRUNE_SLACK = 100
 
 const DOMAIN = "novaclaw/community/service-offer/1"
 const encoder = new TextEncoder()
@@ -229,6 +251,32 @@ export const layer = Layer.effect(
           .onConflictDoUpdate({ target: CommunityOfferTable.id, set: { document: JSON.stringify(offer) } })
           .run()
           .pipe(Effect.orDie)
+
+        /**
+         * ⚠️ Guarded by a COUNT first, because enforcing a bound runs on the attacker's path too —
+         * the lesson the channel prune and the DM store both record.
+         *
+         * Eviction keeps CONTACTS, then the most recently offered. A bound that discarded the offer
+         * a user was about to accept, to make room for a flood, would be the attack succeeding by a
+         * different route. `ROW` is our own offer and is never a candidate.
+         */
+        const held = yield* db.$count(CommunityOfferTable).pipe(Effect.orDie)
+        if (held > MAX_OFFERS + PRUNE_SLACK)
+          yield* db
+            .delete(CommunityOfferTable)
+            .where(
+              sql`${CommunityOfferTable.id} != ${ROW} AND ${CommunityOfferTable.id} NOT IN (
+                SELECT id FROM ${CommunityOfferTable} AS o
+                WHERE o.id != ${ROW}
+                ORDER BY
+                  (SELECT COUNT(*) FROM community_contact c WHERE c.network_id = o.id) DESC,
+                  o.time_updated DESC,
+                  o.rowid DESC
+                LIMIT ${MAX_OFFERS}
+              )`,
+            )
+            .run()
+            .pipe(Effect.orDie)
         return true
       }),
 
