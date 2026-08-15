@@ -9,6 +9,10 @@ import {
   communityChannels,
   communityArchivedChannels,
   communityDiscover,
+  communityOffers,
+  communityMyOffer,
+  communityPublishOffer,
+  communityWithdrawOffer,
   communityConversations,
   communityDirectHistory,
   communitySendDirect,
@@ -88,6 +92,59 @@ export const CommunityNetwork: Component = () => {
     },
     ([value, peer]) => communityDirectHistory(value.http, peer),
   )
+  /**
+   * Model servers people offer each other — the owner's motivation for the whole thing: "users may
+   * offer their model servers for free or for btc".
+   *
+   * ⚠️ An offer is a CLAIM, not a promise, and the copy has to say so. The signature proves who wrote
+   * it and that the endpoint was not rewritten in transit; it says nothing about whether the server
+   * exists, serves what it says, or will still be there in an hour. Those are separate questions and
+   * nothing here answers them.
+   */
+  const [offers, offerActions] = createResource(connection, (value) => communityOffers(value.http))
+  /**
+   * 🔴 What the USER is currently offering. Found missing by publishing one and watching the panel
+   * not change: `offers` lists what PEERS advertise and deliberately excludes our own, so a user
+   * could offer their machine and see no evidence of it anywhere — no way to know what they were
+   * advertising, or that it was still live. Principle 12(d): say what is in force, before the control.
+   */
+  const [myOffer, myOfferActions] = createResource(connection, (value) => communityMyOffer(value.http))
+  const [offerEndpoint, setOfferEndpoint] = createSignal("")
+  const [offerModels, setOfferModels] = createSignal("")
+  const [offerPrice, setOfferPrice] = createSignal("")
+  const [offerNote, setOfferNote] = createSignal("")
+
+  const publishOffer = async () => {
+    const current = connection()
+    const endpoint = offerEndpoint().trim()
+    if (!current || !endpoint) return
+    setOfferNote("")
+    try {
+      await communityPublishOffer(current.http, {
+        endpoint,
+        // Comma-separated because a user typing model names should not have to learn a syntax.
+        models: offerModels()
+          .split(",")
+          .map((name) => name.trim())
+          .filter((name) => name !== ""),
+        // ⚠️ Their words, kept as written. Not parsed into an amount — this software settles nothing.
+        price: offerPrice().trim() === "" ? "free" : offerPrice().trim(),
+      })
+      setOfferNote("Offered. Peers see it next time they look.")
+      await Promise.all([offerActions.refetch(), myOfferActions.refetch()])
+    } catch (error) {
+      setOfferNote(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const withdrawOffer = async () => {
+    const current = connection()
+    if (!current) return
+    await communityWithdrawOffer(current.http)
+    setOfferNote("Withdrawn. Peers that already copied it keep theirs until they look again.")
+    await Promise.all([offerActions.refetch(), myOfferActions.refetch()])
+  }
+
   const [dmDraft, setDmDraft] = createSignal("")
   const [dmNote, setDmNote] = createSignal("")
 
@@ -470,6 +527,86 @@ export const CommunityNetwork: Component = () => {
         <Show when={found()}>
           <span class="text-[11px] leading-snug text-v2-text-text-muted">{found()}</span>
         </Show>
+      </div>
+
+      <div class="flex flex-col gap-1 rounded-xl bg-v2-background-bg-layer-02 px-3 py-3">
+        <span class="text-[12px] font-medium text-v2-text-text-base">Model servers</span>
+        <Show
+          when={(offers() ?? []).length > 0}
+          fallback={
+            <span class="text-[11px] leading-snug text-v2-text-text-muted">
+              Nobody you can reach is offering one yet.
+            </span>
+          }
+        >
+          <For each={offers() ?? []}>
+            {(offer) => (
+              <div class="flex flex-col gap-0.5 border-t border-white/5 pt-2 first:border-0 first:pt-0">
+                <span class="truncate text-[10px] text-v2-text-text-muted">{nameFor()(offer.from)}</span>
+                <span class="text-[12px] leading-snug text-v2-text-text-base">{offer.endpoint}</span>
+                <span class="text-[11px] leading-snug text-v2-text-text-muted">
+                  {offer.models.join(", ") || "models unspecified"} · {offer.price}
+                </span>
+              </div>
+            )}
+          </For>
+        </Show>
+        {/* 🔴 Says exactly what the signature buys and what it does not. Someone reading this is about
+            to send their prompts somewhere, and "verified" would be read as "vouched for". */}
+        <span class="mt-1 text-[11px] leading-snug text-v2-text-text-muted">
+          Each one is signed, so the address cannot have been changed on the way to you. Whether it
+          works, serves what it says, or is still there tomorrow is between you and them.
+        </span>
+        <div class="mt-2 flex flex-col gap-2 border-t border-white/5 pt-2">
+          {/* ⚠️ Stated BEFORE the controls, and read from the peer-facing endpoint so the user sees
+              their advertisement exactly as other people see it — not a local echo of what they typed. */}
+          <Show
+            when={myOffer()?.offer}
+            fallback={<span class="text-[11px] text-v2-text-text-muted">You are not offering anything.</span>}
+          >
+            {(mine) => (
+              <span class="text-[11px] leading-snug text-v2-text-text-base">
+                You are offering {mine().endpoint} — {mine().models.join(", ") || "models unspecified"} ·{" "}
+                {mine().price}
+              </span>
+            )}
+          </Show>
+          <span class="text-[11px] text-v2-text-text-muted">Offer your own:</span>
+          <TextInputV2
+            appearance="base"
+            value={offerEndpoint()}
+            onInput={(event) => setOfferEndpoint(event.currentTarget.value)}
+            placeholder="Address, e.g. https://my-box:8010/v1"
+          />
+          <TextInputV2
+            appearance="base"
+            value={offerModels()}
+            onInput={(event) => setOfferModels(event.currentTarget.value)}
+            placeholder="Models, comma separated"
+          />
+          <div class="flex items-center gap-2">
+            <TextInputV2
+              appearance="base"
+              value={offerPrice()}
+              onInput={(event) => setOfferPrice(event.currentTarget.value)}
+              placeholder="Terms in your own words — e.g. free, or 500 sats a request"
+            />
+            <ButtonV2 variant="neutral" size="small" disabled={!offerEndpoint().trim()} onClick={() => void publishOffer()}>
+              Offer
+            </ButtonV2>
+            <ButtonV2 variant="ghost" size="small" onClick={() => void withdrawOffer()}>
+              Withdraw
+            </ButtonV2>
+          </div>
+          {/* ⚠️ No payment exists. Saying so plainly is better than a user assuming the software will
+              collect for them and discovering otherwise after giving away compute. */}
+          <span class="text-[11px] leading-snug text-v2-text-text-muted">
+            NovaClaw does not handle money. Terms are yours to state and yours to settle, directly.
+          </span>
+          <Show when={offerNote()}>
+            <span class="text-[11px] leading-snug text-v2-text-text-muted">{offerNote()}</span>
+          </Show>
+        </div>
       </div>
 
       <Show when={(conversations() ?? []).length > 0 || talkingTo() !== ""}>

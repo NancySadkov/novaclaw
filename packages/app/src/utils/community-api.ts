@@ -133,6 +133,48 @@ export function communityRotate(server: ServerConnection.HttpBase) {
   })
 }
 
+export interface CommunityServiceOffer {
+  readonly kind: string
+  readonly endpoint: string
+  readonly models: readonly string[]
+  /** The offerer's own words. This software moves no money and enforces no terms. */
+  readonly price: string
+  readonly from: string
+  readonly at: number
+  readonly signature: string
+}
+
+/** Model servers other people offer, each verified against its signer. */
+export function communityOffers(server: ServerConnection.HttpBase) {
+  return instanceFetch<CommunityServiceOffer[]>(server, { route: "api/community/offers" })
+}
+
+/**
+ * What THIS instance currently offers, if anything.
+ *
+ * ⚠️ Reads the peer-facing endpoint deliberately — it returns exactly what other people see, so the
+ * user is shown their advertisement as advertised rather than a local echo of what they typed.
+ */
+export function communityMyOffer(server: ServerConnection.HttpBase) {
+  return instanceFetch<{ readonly offer?: CommunityServiceOffer }>(server, { route: "api/community/offer" })
+}
+
+/** Offer a model server to the network. `price` is free text — no rails behind it. */
+export function communityPublishOffer(
+  server: ServerConnection.HttpBase,
+  input: { readonly endpoint: string; readonly models: readonly string[]; readonly price: string },
+) {
+  return instanceFetch<CommunityServiceOffer>(server, {
+    route: "api/community/offer/mine",
+    method: "POST",
+    body: input,
+  })
+}
+
+export function communityWithdrawOffer(server: ServerConnection.HttpBase) {
+  return instanceFetch<boolean>(server, { route: "api/community/offer/mine", method: "DELETE" })
+}
+
 export interface CommunityDirectMessage {
   readonly id: string
   readonly peer: string
