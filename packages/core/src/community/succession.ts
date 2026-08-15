@@ -1,5 +1,6 @@
 export * as CommunitySuccession from "./succession"
 
+import { sql } from "drizzle-orm"
 import { Context, Effect, Layer } from "effect"
 import { CommunitySuccessionTable } from "./sql"
 import { Database } from "../database/database"
@@ -83,6 +84,21 @@ export const resolve = (from: string, statements: readonly Statement[]): string 
  * online; keeping it means a peer that was closed can ask later and still find its way to the user's
  * current key instead of holding an identity that answers nothing.
  */
+/**
+ * 🔴 How many rotations we will remember. A bound, not a preference.
+ *
+ * The succession door is UNAUTHENTICATED and carries no proof-of-work — deliberately, since a
+ * rotation is rare and making people pay to announce one would slow the honest case to protect
+ * against a cheap attack. But that leaves a store a stranger can grow for free: generate a keypair,
+ * sign a statement retiring it to another key you also generated, POST, repeat. Every one VERIFIES,
+ * because they genuinely own the key they are retiring, and every one is a row.
+ *
+ * Eviction is oldest-first, which is right for this shape: a statement's value is that a peer who was
+ * away can still find someone, and the ones worth keeping are the recent rotations people have not
+ * caught up with yet.
+ */
+export const MAX_STATEMENTS = 1_000
+
 export interface StoreInterface {
   /** Verify and keep. Returns false for a forgery, or for a key that already rotated. */
   readonly remember: (statement: Statement) => Effect.Effect<boolean>
@@ -115,7 +131,23 @@ export const layer = Layer.effect(
           .returning({ id: CommunitySuccessionTable.network_id })
           .all()
           .pipe(Effect.orDie)
-        return inserted.length > 0
+        if (inserted.length === 0) return false
+
+        // ⚠️ Trimmed by IDENTITY, not by a time cutoff — the lesson the message log and the peer table
+        // both record: a burst arriving inside one millisecond makes a cutoff match everything or
+        // nothing, and the "bound" then deletes zero rows while the table grows.
+        yield* db
+          .delete(CommunitySuccessionTable)
+          .where(
+            sql`${CommunitySuccessionTable.network_id} NOT IN (
+              SELECT network_id FROM ${CommunitySuccessionTable}
+              ORDER BY time_created DESC, rowid DESC
+              LIMIT ${MAX_STATEMENTS}
+            )`,
+          )
+          .run()
+          .pipe(Effect.orDie)
+        return true
       }),
 
       known: Effect.fn("CommunitySuccession.known")(function* () {

@@ -16,7 +16,9 @@ import { testEffect } from "./lib/effect"
  * into another protocol, or stapled onto by a stranger.
  */
 
-const it = testEffect(LayerNode.compile(LayerNode.group([Database.node, InstanceIdentityStore.node])))
+const it = testEffect(
+  LayerNode.compile(LayerNode.group([Database.node, InstanceIdentityStore.node, CommunitySuccession.node])),
+)
 
 describe("CommunitySuccession", () => {
   it.effect("rotation mints a new identity and the OLD key vouches for it", () =>
@@ -133,6 +135,43 @@ describe("CommunitySuccession", () => {
         { ...statement, at: Number.NaN },
       ])
         expect(CommunitySuccession.verify(broken)).toBe(false)
+    }),
+  )
+})
+
+describe("the statement store is BOUNDED", () => {
+  it.effect("🔴 a stranger cannot grow it for free", () =>
+    Effect.gen(function* () {
+      /**
+       * The succession door is unauthenticated and carries no proof-of-work — a rotation is rare, and
+       * charging for one would slow the honest case to deter a cheap attack. That leaves a store a
+       * stranger can grow for nothing: generate a keypair, sign a statement retiring it to another key
+       * you also generated, POST, repeat. Every one VERIFIES, because they really do own the key they
+       * are retiring, and every one is a row.
+       */
+      const store = yield* CommunitySuccession.Store
+      const mint = () => {
+        const { publicKey, privateKey } = generateKeyPairSync("ed25519")
+        const raw = (publicKey.export({ type: "spki", format: "der" }) as Buffer).subarray(12)
+        return { id: `nid_${raw.toString("base64url")}`, privateKey }
+      }
+
+      for (let index = 0; index < CommunitySuccession.MAX_STATEMENTS + 40; index++) {
+        const from = mint()
+        const to = mint()
+        const body = { predecessor: from.id, successor: to.id, at: Date.now() }
+        const statement = {
+          ...body,
+          signature: nodeSign(null, Buffer.from(CommunitySuccession.canonicalBytes(body)), from.privateKey).toString(
+            "base64url",
+          ),
+        }
+        // Genuinely valid — this is not a forgery, which is exactly why a signature check cannot stop it.
+        expect(CommunitySuccession.verify(statement)).toBe(true)
+        yield* store.remember(statement)
+      }
+
+      expect((yield* store.known()).length).toBeLessThanOrEqual(CommunitySuccession.MAX_STATEMENTS)
     }),
   )
 })
