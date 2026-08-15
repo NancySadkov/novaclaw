@@ -50,7 +50,13 @@ export const CommunityMessageTable = sqliteTable(
      * perfectly valid locally and REJECTED by every peer they are offered to — replication failing
      * silently and completely, with each side believing the other was at fault.
      */
-    nonce: integer().notNull().$default(() => 0),
+    /**
+     * ⚠️ `.default(0)`, NOT `$default(() => 0)`. The `$` form is a JAVASCRIPT default applied on
+     * insert; it emits no `DEFAULT` in the DDL, and SQLite refuses `ADD COLUMN ... NOT NULL` without
+     * one. That shipped and BRICKED a real instance: every test passed because test databases are
+     * built fresh from the full schema and never take the incremental path a real upgrade takes.
+     */
+    nonce: integer().notNull().default(0),
   },
   (table) => [index("community_message_channel_idx").on(table.channel, table.received_at)],
 )

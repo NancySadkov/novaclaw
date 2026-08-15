@@ -21,7 +21,7 @@ export default {
           \`received_at\` integer NOT NULL,
           \`body\` text NOT NULL,
           \`signature\` text NOT NULL,
-          \`nonce\` integer NOT NULL
+          \`nonce\` integer DEFAULT 0 NOT NULL
         );
       `)
       yield* tx.run(`

@@ -61,6 +61,29 @@ export const CommunityNetwork: Component = () => {
     return state.reason === "airgap" ? "Offline mode is on — nothing goes in or out" : "Not connected yet"
   })
 
+  /**
+   * Who said this, in words.
+   *
+   * 🔴 The channel used to print the raw `nid_…` key on every message. A wall of base64 is exactly
+   * the unreadability this product rejects — and it matters more here than in the contact list,
+   * because messages are what people actually read.
+   *
+   * ⚠️ Falls back to a SHORTENED key, never the full 47 characters: an unknown author is the common
+   * case in an open channel, and the full string swamps the message it belongs to.
+   */
+  const nameFor = createMemo(() => {
+    const byKey = new Map((contacts() ?? []).map((contact) => [contact.networkID, contact.petname]))
+    return (author: string) => {
+      const petname = byKey.get(author)
+      if (petname) return petname
+      // ⚠️ Known gap: after a contact ROTATES, their older messages stay signed by the old key and
+      // resolve to nobody. Fixing it needs the contact to remember previous keys — a schema change.
+      // Until then such messages read as an unknown author rather than wrongly as someone else,
+      // which is the safer of the two failures.
+      return author.startsWith("nid_") ? `${author.slice(0, 12)}…` : author
+    }
+  })
+
   const emptyReason = createMemo(() => {
     const state = transport()
     if (state?.kind === "online") return "No messages yet."
@@ -251,7 +274,9 @@ export const CommunityNetwork: Component = () => {
           <For each={history() ?? []}>
             {(message) => (
               <div class="flex flex-col gap-0.5 border-t border-white/5 pt-2 first:border-0 first:pt-0">
-                <span class="truncate font-mono text-[10px] text-v2-text-text-muted">{message.author}</span>
+                <span class="truncate text-[10px] text-v2-text-text-muted" title={message.author}>
+                  {nameFor()(message.author)}
+                </span>
                 <span class="text-[12px] leading-snug text-v2-text-text-base">{message.body}</span>
               </div>
             )}

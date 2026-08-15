@@ -95,6 +95,6 @@ export const migrations = (
     import("./migration/20260814172542_add_instance_identity_keypair"),
     import("./migration/20260814182155_add_community_contact"),
     import("./migration/20260814183208_add_community_channel"),
-    import("./migration/20260815001946_add_community_message_nonce"),
+    import("./migration/20260815003907_add_community_message_nonce"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]
