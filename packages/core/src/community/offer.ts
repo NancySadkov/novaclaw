@@ -156,6 +156,23 @@ export const canonicalBytes = (offer: Unsigned): Uint8Array => {
 }
 
 /** Is this offer really from the instance it names? Pure and total — an offer arrives from a peer. */
+/**
+ * An endpoint we would be willing to point a probe at: absolute, http or https, with a host.
+ *
+ * `URL` does the parsing so this cannot drift from what the runtime actually resolves. A hand-rolled
+ * `startsWith("http")` would wave through `httpx://a.example`; and in the other direction the parse
+ * correctly ACCEPTS `http:evil`, which normalises to `http://evil/` and is an ordinary URL written
+ * oddly. Both directions matter — a checker that is merely strict rejects legitimate configuration.
+ */
+export const isServableEndpoint = (endpoint: string): boolean => {
+  try {
+    const url = new URL(endpoint)
+    return (url.protocol === "http:" || url.protocol === "https:") && url.hostname !== ""
+  } catch {
+    return false
+  }
+}
+
 export const verify = (offer: Signed): boolean => {
   if (typeof offer.signature !== "string" || offer.signature.length === 0) return false
   if (typeof offer.from !== "string" || typeof offer.endpoint !== "string") return false
@@ -170,6 +187,24 @@ export const verify = (offer: Signed): boolean => {
   if (offer.models.some((model) => Buffer.byteLength(model, "utf8") > MAX_FIELD_BYTES)) return false
   for (const field of [offer.endpoint, offer.price, offer.payTo, offer.from])
     if (Buffer.byteLength(field, "utf8") > MAX_FIELD_BYTES) return false
+  /**
+   * 🔴 The endpoint must be an http(s) URL, and until this it was any string up to 512 bytes.
+   *
+   * An offer is an advertisement for a model SERVER, so nothing else was ever meaningful — but the
+   * string does not merely sit on screen. "Use this" prefills the add-model dialog, and that dialog
+   * probes through `POST /provider/:id/probe`, which runs **server-side**. So a scheme a stranger
+   * chose would decide what the user's own server opens: `file://` reads the disk it runs on.
+   *
+   * ⚠️ Checked INSIDE `verify` rather than at the door, for the reason the size bounds are — this
+   * runs on every read, so an offer stored by an older build stops being SERVED rather than being
+   * trusted because it is already on disk.
+   *
+   * ⚠️ Deliberately NOT an address filter. A LAN model server is a first-class use here — the
+   * offline policy exists partly to keep `http://192.168.x.x:8000/v1` reachable while airgapped —
+   * so refusing private ranges would break the configuration this feature is FOR. The scheme is the
+   * part that is never legitimately anything else.
+   */
+  if (!isServableEndpoint(offer.endpoint)) return false
   const signature = Buffer.from(offer.signature, "base64url")
   if (signature.length !== 64) return false
   return InstanceIdentityStore.verifySignature(offer.from, canonicalBytes(offer), signature)

@@ -337,6 +337,13 @@ export const CommunityApi = HttpApi.make("community").add(
           payTo: Schema.optional(Schema.String),
         }),
         success: described(PeerOffer, "The signed offer, as peers will see it"),
+        /**
+         * ⚠️ An unservable endpoint is REFUSED here rather than stored and quietly never served.
+         * Before this the POST answered 200 with the offer echoed back — indistinguishable from
+         * success — while `verify` dropped it on every read, so a user could believe they were
+         * advertising a server for as long as they cared to look.
+         */
+        error: InvalidRequestError,
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "community.offer.publish",

@@ -179,6 +179,18 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
       .handle(
         "offerPublish",
         Effect.fn("CommunityHttpApi.offerPublish")(function* (ctx) {
+          /**
+           * 🔴 Told, not silently dropped. `verify` refuses an endpoint that is not an http(s) URL
+           * on every READ — which is right for an offer already on disk, and wrong as the only
+           * feedback a user gets: the POST used to answer 200 with the offer echoed back while
+           * nothing was ever served to anybody.
+           */
+          if (!CommunityOffer.isServableEndpoint(ctx.payload.endpoint))
+            return yield* Effect.fail(
+              new InvalidRequestError({
+                message: "An offer's endpoint must be an http:// or https:// URL — that is what peers will connect to.",
+              }),
+            )
           return yield* offers.publish({
             kind: "model-server",
             ...ctx.payload,
