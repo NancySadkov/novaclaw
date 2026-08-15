@@ -27,6 +27,8 @@ export interface CommunityContact {
 export interface CommunityChannel {
   readonly name: string
   readonly muted: boolean
+  /** Whether other instances are told we are in it. Unlisted unless the user says otherwise. */
+  readonly listed: boolean
 }
 
 export interface CommunityMessage {
@@ -143,6 +145,20 @@ export function communityMuteChannel(server: ServerConnection.HttpBase, name: st
     method: "POST",
     body: { muted },
   })
+}
+
+/** Let other instances see we are in this channel — or stop letting them. */
+export function communityListChannel(server: ServerConnection.HttpBase, name: string, listed: boolean) {
+  return instanceFetch<boolean>(server, {
+    route: `api/community/channel/${encodeURIComponent(name)}/listed`,
+    method: "POST",
+    body: { listed },
+  })
+}
+
+/** Channels the instances we can reach advertise — one hop, not the whole network. */
+export function communityNearbyChannels(server: ServerConnection.HttpBase) {
+  return instanceFetch<string[]>(server, { route: "api/community/nearby" })
 }
 
 export function communityPost(server: ServerConnection.HttpBase, channel: string, body: string) {

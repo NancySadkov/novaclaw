@@ -123,6 +123,18 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
         }),
       )
       .handle(
+        "channelListed",
+        Effect.fn("CommunityHttpApi.channelListed")(function* (ctx) {
+          return yield* channels.setListed(ctx.params.name, ctx.payload.listed)
+        }),
+      )
+      .handle(
+        "channelsNearby",
+        Effect.fn("CommunityHttpApi.channelsNearby")(function* () {
+          return yield* sync.channelsNearby()
+        }),
+      )
+      .handle(
         "channelPost",
         Effect.fn("CommunityHttpApi.channelPost")(function* (ctx) {
           const result = yield* posts.post(ctx.params.name, ctx.payload.body)
@@ -167,6 +179,13 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
     })
 
     return handlers
+      .handle(
+        "communityListed",
+        Effect.fn("CommunityHttpApi.communityListed")(function* () {
+          // Only what the user chose to disclose — never `channels()`.
+          return { channels: yield* channels.listed() }
+        }),
+      )
       .handle(
         "communityPeers",
         Effect.fn("CommunityHttpApi.communityPeers")(function* () {

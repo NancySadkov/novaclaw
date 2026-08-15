@@ -15,6 +15,26 @@ export const CommunityChannelTable = sqliteTable("community_channel", {
   name: text().primaryKey(),
   /** Muted: still subscribed, but the UI stays quiet. Distinct from leaving. */
   muted: integer({ mode: "boolean" }).notNull().$default(() => false),
+  /**
+   * 🔴 Whether this instance tells other people it is in this channel.
+   *
+   * Discovery and privacy are the same question asked from two sides, and this is where the user
+   * answers it. Being IN a room is not public information: the sync endpoints deliberately answer an
+   * unknown topic exactly like an empty one, so a stranger cannot map which rooms this instance is in
+   * by walking topic hashes. A discovery reply that named every joined channel would hand over that
+   * same map through a different door.
+   *
+   * ⚠️ Defaults to FALSE, which is the opposite of principle 12(a)'s "work by default", and
+   * deliberately so: the default here is not a convenience setting but a disclosure, and the harm of
+   * over-sharing is not symmetric with the annoyance of a toggle. `#NovaClaw` is listed at join time
+   * because every instance is in it, so saying so reveals nothing anyone did not already assume.
+   *
+   * ⚠️ `.default(false)`, NOT `$default(() => false)` — the JS form emits no SQL DEFAULT and SQLite
+   * refuses `ADD COLUMN ... NOT NULL` without one. That exact mistake bricked a real instance's boot
+   * on this very table, with the whole test gate green, because test databases are built fresh and
+   * never take the incremental upgrade path.
+   */
+  listed: integer({ mode: "boolean" }).notNull().default(false),
   ...Timestamps,
 })
 

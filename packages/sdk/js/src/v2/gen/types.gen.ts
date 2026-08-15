@@ -8920,6 +8920,7 @@ export type CommunityChannelListResponses = {
   200: Array<{
     name: string
     muted: boolean
+    listed: boolean
   }>
 }
 
@@ -8954,6 +8955,7 @@ export type CommunityChannelJoinResponses = {
   200: Array<{
     name: string
     muted: boolean
+    listed: boolean
   }>
 }
 
@@ -9091,6 +9093,68 @@ export type CommunityChannelMuteResponses = {
 
 export type CommunityChannelMuteResponse = CommunityChannelMuteResponses[keyof CommunityChannelMuteResponses]
 
+export type CommunityChannelListedData = {
+  body: {
+    listed: boolean
+  }
+  path: {
+    name: string
+  }
+  query?: never
+  url: "/api/community/channel/{name}/listed"
+}
+
+export type CommunityChannelListedErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityChannelListedError = CommunityChannelListedErrors[keyof CommunityChannelListedErrors]
+
+export type CommunityChannelListedResponses = {
+  /**
+   * True when the channel's listing changed
+   */
+  200: boolean
+}
+
+export type CommunityChannelListedResponse = CommunityChannelListedResponses[keyof CommunityChannelListedResponses]
+
+export type CommunityChannelNearbyData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/community/nearby"
+}
+
+export type CommunityChannelNearbyErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityChannelNearbyError = CommunityChannelNearbyErrors[keyof CommunityChannelNearbyErrors]
+
+export type CommunityChannelNearbyResponses = {
+  /**
+   * Channels reachable peers advertise that we are not in
+   */
+  200: Array<string>
+}
+
+export type CommunityChannelNearbyResponse = CommunityChannelNearbyResponses[keyof CommunityChannelNearbyResponses]
+
 export type CommunityChannelPostData = {
   body: {
     body: string
@@ -9165,6 +9229,33 @@ export type CommunityChannelHistoryResponses = {
 }
 
 export type CommunityChannelHistoryResponse = CommunityChannelHistoryResponses[keyof CommunityChannelHistoryResponses]
+
+export type CommunityPeerListedData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/community/listed"
+}
+
+export type CommunityPeerListedErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type CommunityPeerListedError = CommunityPeerListedErrors[keyof CommunityPeerListedErrors]
+
+export type CommunityPeerListedResponses = {
+  /**
+   * Channels this instance is willing to be seen in
+   */
+  200: {
+    channels: Array<string>
+  }
+}
+
+export type CommunityPeerListedResponse = CommunityPeerListedResponses[keyof CommunityPeerListedResponses]
 
 export type CommunityPeerExchangeData = {
   body?: never

@@ -41,6 +41,8 @@ export const SYNC_IDS_PATH = "/api/community/sync/ids"
 export const SYNC_MESSAGES_PATH = "/api/community/sync/messages"
 /** Peer exchange — how one address becomes an entry point to the whole network. */
 export const PEERS_PATH = "/api/community/peers"
+/** Channel discovery — what each peer chose to disclose, never what it is actually in. */
+export const LISTED_PATH = "/api/community/listed"
 
 /**
  * The most messages one request may ask for.
@@ -87,6 +89,14 @@ export interface Interface {
    * like a peer that is merely offline.
    */
   readonly learnFrom: (addresses: readonly string[], source?: string) => Effect.Effect<number>
+  /**
+   * Channels our peers advertise, minus the ones we are already in.
+   *
+   * ⚠️ ONE HOP, and named that way rather than called "search". A multi-hop throttled broadcast is
+   * what `search.ts` is for and is a bigger thing; this asks the instances we can already reach. It
+   * is honest about its reach instead of implying the whole network answered.
+   */
+  readonly channelsNearby: () => Effect.Effect<ReadonlyArray<string>>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/CommunitySync") {}
@@ -96,6 +106,7 @@ const Summary = Schema.Struct({ buckets: Schema.Array(Schema.String) })
 const Ids = Schema.Struct({ ids: Schema.Array(Schema.String) })
 /** Enough of `/global/health` to identify a peer. Every instance already serves it. */
 const Health = Schema.Struct({ networkID: Schema.String })
+const Listed = Schema.Struct({ channels: Schema.Array(Schema.String) })
 
 const PeerList = Schema.Struct({
   peers: Schema.Array(Schema.Struct({ networkID: Schema.String, routes: Schema.Array(Schema.String) })),
@@ -176,6 +187,25 @@ export const layer = Layer.effect(
     })
 
     return Service.of({
+      channelsNearby: Effect.fn("CommunitySync.channelsNearby")(function* () {
+        if (offline.policy.enabled) return []
+        const joined = (yield* channels.channels()).map((entry) => CommunityTopic.canonical(entry.name))
+        const seen = new Map<string, string>()
+        for (const peer of yield* reachable) {
+          const answer = yield* ask(peer.route, LISTED_PATH, undefined, Listed, "GET")
+          if (answer === undefined) continue
+          yield* peers.seen(peer.networkID)
+          for (const name of answer.channels) {
+            // ⚠️ Keyed CANONICALLY, so two peers spelling one room differently offer it once — the
+            // same rule that stops a second spelling becoming a second room locally.
+            const key = CommunityTopic.canonical(name)
+            if (joined.includes(key) || seen.has(key)) continue
+            seen.set(key, name)
+          }
+        }
+        return [...seen.values()]
+      }),
+
       learnFrom: Effect.fn("CommunitySync.learnFrom")(function* (addresses, source = "lan") {
         if (offline.policy.enabled) return 0
         let learned = 0

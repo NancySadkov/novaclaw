@@ -8,6 +8,7 @@ export default {
         CREATE TABLE \`community_channel\` (
           \`name\` text PRIMARY KEY,
           \`muted\` integer NOT NULL,
+          \`listed\` integer DEFAULT false NOT NULL,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL
         );

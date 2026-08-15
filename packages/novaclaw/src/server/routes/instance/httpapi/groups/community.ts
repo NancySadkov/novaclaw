@@ -53,6 +53,12 @@ export const CommunityTransportState = Schema.Union([
 export const CommunityChannel = Schema.Struct({
   name: Schema.String,
   muted: Schema.Boolean,
+  /**
+   * ⚠️ Declared, because an undeclared field is silently DROPPED by the response schema and looks
+   * exactly like a backend that never sent it. Caught live: the store returned `listed`, the wire did
+   * not, and the toggle would have read as permanently off with nothing in the logs to say why.
+   */
+  listed: Schema.Boolean,
 })
 
 export const CommunityMessageInfo = Schema.Struct({
@@ -97,6 +103,8 @@ export const CommunityPaths = {
   channels: "/api/community/channel",
   channel: "/api/community/channel/:name",
   channelMute: "/api/community/channel/:name/mute",
+  channelListed: "/api/community/channel/:name/listed",
+  channelsNearby: "/api/community/nearby",
   discover: "/api/community/discover",
   channelsArchived: "/api/community/channel/archived",
   channelHistory: "/api/community/channel/:name/history",
@@ -230,6 +238,28 @@ export const CommunityApi = HttpApi.make("community").add(
             "Muting keeps the subscription and quiets the UI — distinct from leaving. With no moderator, a user's own attention is the only thing they control, and a channel worth keeping is not always a channel worth being interrupted by.",
         }),
       ),
+      HttpApiEndpoint.post("channelListed", CommunityPaths.channelListed, {
+        params: ChannelParams,
+        payload: Schema.Struct({ listed: Schema.Boolean }),
+        success: described(Schema.Boolean, "True when the channel's listing changed"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.channel.listed",
+          summary: "Let others see you are in this channel",
+          description:
+            "Discovery and privacy are one question asked from two sides, and this is the user answering it. Unlisted is the default for every channel except the one everybody is in, because the default here is a disclosure rather than a convenience.",
+        }),
+      ),
+      HttpApiEndpoint.get("channelsNearby", CommunityPaths.channelsNearby, {
+        success: described(Schema.Array(Schema.String), "Channels reachable peers advertise that we are not in"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.channel.nearby",
+          summary: "Channels the instances you can reach advertise",
+          description:
+            "ONE HOP, deliberately: it asks the instances already reachable rather than implying the whole network answered. Multi-hop throttled broadcast is a separate, larger mechanism.",
+        }),
+      ),
       HttpApiEndpoint.post("channelPost", CommunityPaths.channelPost, {
         params: ChannelParams,
         payload: Schema.Struct({ body: Schema.String }),
@@ -284,6 +314,7 @@ export const CommunityPeerPaths = {
   syncIds: "/api/community/sync/ids",
   syncMessages: "/api/community/sync/messages",
   peers: "/api/community/peers",
+  listedChannels: "/api/community/listed",
 } as const
 
 /** A `Proven` message on the wire. Shape only — every rule about it lives at the ingress door. */
@@ -347,6 +378,19 @@ const PeerList = Schema.Struct({
 export const CommunityPeerApi = HttpApi.make("communityPeer").add(
   HttpApiGroup.make("communityPeer")
     .add(
+      HttpApiEndpoint.get("communityListed", CommunityPeerPaths.listedChannels, {
+        success: described(
+          Schema.Struct({ channels: Schema.Array(Schema.String) }),
+          "Channels this instance is willing to be seen in",
+        ),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.peer.listed",
+          summary: "Channels this instance advertises",
+          description:
+            "Channel discovery, and only what the user chose to disclose. Being in a room is not public information — the sync endpoints answer an unknown topic exactly like an empty one so nobody can map this instance's rooms, and this door must not undo that. Unlisted channels are invisible here no matter who asks.",
+        }),
+      ),
       HttpApiEndpoint.get("communityPeers", CommunityPeerPaths.peers, {
         success: described(PeerList, "Other instances this one believes are reachable"),
       }).annotateMerge(

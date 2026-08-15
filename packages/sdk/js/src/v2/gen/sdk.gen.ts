@@ -941,6 +941,49 @@ class ApiCommunityChannel extends NovaClawApiClient {
   }
 
   /**
+   * Let others see you are in this channel
+   *
+   * Discovery and privacy are one question asked from two sides, and this is the user answering it. Unlisted is the default for every channel except the one everybody is in, because the default here is a disclosure rather than a convenience.
+   */
+  public listed<ThrowOnError extends boolean = false>(
+    parameters: {
+      name: string
+      listed: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { name: parameters?.["name"] }
+    const body = { listed: parameters?.["listed"] }
+    return (options?.client ?? this.client).post<
+      T.CommunityChannelListedResponses,
+      T.CommunityChannelListedErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/channel/{name}/listed",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Channels the instances you can reach advertise
+   *
+   * ONE HOP, deliberately: it asks the instances already reachable rather than implying the whole network answered. Multi-hop throttled broadcast is a separate, larger mechanism.
+   */
+  public nearby<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.CommunityChannelNearbyResponses,
+      T.CommunityChannelNearbyErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/nearby",
+      ...options,
+    })
+  }
+
+  /**
    * Say something in a channel
    *
    * Sign a message as this instance, store it locally, then offer it to the transport. Storing happens FIRST, so a missing or offline transport costs an audience and never the message.
@@ -1068,6 +1111,22 @@ class ApiCommunityPeerSync extends NovaClawApiClient {
 }
 
 class ApiCommunityPeer extends NovaClawApiClient {
+  /**
+   * Channels this instance advertises
+   *
+   * Channel discovery, and only what the user chose to disclose. Being in a room is not public information — the sync endpoints answer an unknown topic exactly like an empty one so nobody can map this instance's rooms, and this door must not undo that. Unlisted channels are invisible here no matter who asks.
+   */
+  public listed<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.CommunityPeerListedResponses,
+      T.CommunityPeerListedErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/listed",
+      ...options,
+    })
+  }
+
   /**
    * Ask for other peers
    *

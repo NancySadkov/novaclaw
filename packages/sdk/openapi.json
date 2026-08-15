@@ -2698,9 +2698,12 @@
                       },
                       "muted": {
                         "type": "boolean"
+                      },
+                      "listed": {
+                        "type": "boolean"
                       }
                     },
-                    "required": ["name", "muted"],
+                    "required": ["name", "muted", "listed"],
                     "additionalProperties": false
                   },
                   "description": "Channels this instance has joined"
@@ -2751,9 +2754,12 @@
                       },
                       "muted": {
                         "type": "boolean"
+                      },
+                      "listed": {
+                        "type": "boolean"
                       }
                     },
-                    "required": ["name", "muted"],
+                    "required": ["name", "muted", "listed"],
                     "additionalProperties": false
                   },
                   "description": "Channels after joining"
@@ -3130,6 +3136,119 @@
         ]
       }
     },
+    "/api/community/channel/{name}/listed": {
+      "post": {
+        "tags": ["community"],
+        "operationId": "community.channel.listed",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "True when the channel's listing changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "True when the channel's listing changed"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Discovery and privacy are one question asked from two sides, and this is the user answering it. Unlisted is the default for every channel except the one everybody is in, because the default here is a disclosure rather than a convenience.",
+        "summary": "Let others see you are in this channel",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "listed": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["listed"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.channel.listed({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/community/nearby": {
+      "get": {
+        "tags": ["community"],
+        "operationId": "community.channel.nearby",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Channels reachable peers advertise that we are not in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Channels reachable peers advertise that we are not in"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "ONE HOP, deliberately: it asks the instances already reachable rather than implying the whole network answered. Multi-hop throttled broadcast is a separate, larger mechanism.",
+        "summary": "Channels the instances you can reach advertise",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.channel.nearby({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/community/channel/{name}/post": {
       "post": {
         "tags": ["community"],
@@ -3323,6 +3442,55 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.channel.history({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/community/listed": {
+      "get": {
+        "tags": ["community-peer"],
+        "operationId": "community.peer.listed",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Channels this instance is willing to be seen in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "channels": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": ["channels"],
+                  "additionalProperties": false,
+                  "description": "Channels this instance is willing to be seen in"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Channel discovery, and only what the user chose to disclose. Being in a room is not public information — the sync endpoints answer an unknown topic exactly like an empty one so nobody can map this instance's rooms, and this door must not undo that. Unlisted channels are invisible here no matter who asks.",
+        "summary": "Channels this instance advertises",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.peer.listed({\n  ...\n})"
           }
         ]
       }

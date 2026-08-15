@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "596ca45d-4704-417a-9706-92557cf0e42b",
+  "id": "38228b83-8bc7-4f8b-8d0a-3126a4584dfd",
   "prevIds": [
-    "e6a2b9d7-bdf4-46c2-a432-c6ae95664255"
+    "596ca45d-4704-417a-9706-92557cf0e42b"
   ],
   "ddl": [
     {
@@ -223,6 +223,16 @@
       "default": null,
       "generated": null,
       "name": "muted",
+      "entityType": "columns",
+      "table": "community_channel"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "name": "listed",
       "entityType": "columns",
       "table": "community_channel"
     },

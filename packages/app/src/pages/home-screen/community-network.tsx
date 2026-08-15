@@ -9,6 +9,8 @@ import {
   communityChannels,
   communityArchivedChannels,
   communityDiscover,
+  communityListChannel,
+  communityNearbyChannels,
   communityContacts,
   communityJoinChannel,
   communityLeaveChannel,
@@ -53,6 +55,14 @@ export const CommunityNetwork: Component = () => {
   const [archived, archivedActions] = createResource(connection, (value) =>
     communityArchivedChannels(value.http),
   )
+  /**
+   * Channels the instances we can reach advertise — ONE HOP, and the copy says so.
+   *
+   * ⚠️ Only what each peer CHOSE to disclose. Being in a room is not public: the sync endpoints
+   * answer an unknown topic exactly like an empty one so nobody can map an instance's rooms, and
+   * this must not undo that through another door.
+   */
+  const [nearby, nearbyActions] = createResource(connection, (value) => communityNearbyChannels(value.http))
 
   /**
    * Which channel is on screen.
@@ -210,7 +220,7 @@ export const CommunityNetwork: Component = () => {
           : `${result.peers} ${result.peers === 1 ? "instance" : "instances"} reachable` +
               (result.learned > 0 ? ` — ${result.learned} newly discovered` : ""),
       )
-      await contactActions.refetch()
+      await Promise.all([contactActions.refetch(), nearbyActions.refetch()])
     } catch (error) {
       setFound(error instanceof Error ? error.message : String(error))
     } finally {
@@ -229,7 +239,7 @@ export const CommunityNetwork: Component = () => {
       // two would eventually disagree about which room a user is in.
       await communityJoinChannel(current.http, name)
       setJoining("")
-      await Promise.all([channelActions.refetch(), archivedActions.refetch()])
+      await Promise.all([channelActions.refetch(), archivedActions.refetch(), nearbyActions.refetch()])
       setSelected(name)
     } catch (error) {
       setProblem(error instanceof Error ? error.message : String(error))
@@ -252,6 +262,13 @@ export const CommunityNetwork: Component = () => {
     // The selection is resolved against the joined list, so dropping the channel being read falls
     // back to whatever remains rather than leaving the screen pointed at nothing.
     await Promise.all([channelActions.refetch(), archivedActions.refetch(), historyActions.refetch()])
+  }
+
+  const setListed = async (name: string, listed: boolean) => {
+    const current = connection()
+    if (!current) return
+    await communityListChannel(current.http, name, listed)
+    await channelActions.refetch()
   }
 
   const mute = async (name: string, muted: boolean) => {
@@ -424,6 +441,15 @@ export const CommunityNetwork: Component = () => {
                 <ButtonV2 variant="ghost" size="small" onClick={() => void mute(entry().name, !entry().muted)}>
                   {entry().muted ? "Unmute" : "Mute"}
                 </ButtonV2>
+                {/* ⚠️ Says what is IN FORCE, per principle 12(d) — not an unlabelled switch. Being
+                    in a room is not public unless the user says it is. */}
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  onClick={() => void setListed(entry().name, !entry().listed)}
+                >
+                  {entry().listed ? "Listed — others can find you here" : "Not listed"}
+                </ButtonV2>
                 {/* Leaving KEEPS the history — the store refuses to delete it, so this is a
                     subscription change and not a destructive act needing a confirmation. */}
                 <ButtonV2 variant="ghost" size="small" onClick={() => void leave(entry().name)}>
@@ -472,6 +498,22 @@ export const CommunityNetwork: Component = () => {
           what discovery missed rather than the front door. These are rooms whose messages are on
           this disk right now — the user has already met them.
         */}
+        <Show when={(nearby() ?? []).length > 0}>
+          <div class="mt-2 flex flex-col gap-1 border-t border-white/5 pt-2">
+            <span class="text-[11px] text-v2-text-text-muted">
+              Channels the instances you can reach say they are in:
+            </span>
+            <div class="flex flex-wrap items-center gap-1">
+              <For each={nearby() ?? []}>
+                {(name) => (
+                  <ButtonV2 variant="ghost" size="small" onClick={() => void rejoin(name)}>
+                    {name}
+                  </ButtonV2>
+                )}
+              </For>
+            </div>
+          </div>
+        </Show>
         <Show when={(archived() ?? []).length > 0}>
           <div class="mt-2 flex flex-col gap-1 border-t border-white/5 pt-2">
             <span class="text-[11px] text-v2-text-text-muted">
@@ -499,12 +541,14 @@ export const CommunityNetwork: Component = () => {
             Join
           </ButtonV2>
         </div>
-        {/* ⚠️ Says plainly that there is no directory yet. Without this, an empty switcher reads as
-            "there are no other channels", when the truth is that FINDING them is the part still
-            being built — the names themselves have always been free to make up. */}
+        {/* ⚠️ Rewritten WITH the control it sits under. It used to say finding channels "needs the
+            network part that is still being built", which stopped being true the moment discovery
+            shipped — and copy describing the previous version is the failure principle 12 records,
+            because the user reads an instruction to do what the control no longer needs. */}
         <span class="text-[11px] leading-snug text-v2-text-text-muted">
-          Anyone can make a channel — a name is only a hash, so nobody owns one. Finding channels you
-          were not told about needs the network part that is still being built.
+          Anyone can make a channel — a name is only a hash, so nobody owns one. Channels your peers
+          list show up above; the rest you can join by name. Nobody sees which channels you are in
+          unless you list them.
         </span>
       </div>
     </section>

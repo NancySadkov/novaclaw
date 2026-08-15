@@ -65,7 +65,19 @@ export type Rejection =
 export interface Interface {
   readonly join: (channel: string) => Effect.Effect<void>
   readonly leave: (channel: string) => Effect.Effect<boolean>
-  readonly channels: () => Effect.Effect<ReadonlyArray<{ readonly name: string; readonly muted: boolean }>>
+  readonly channels: () => Effect.Effect<
+    ReadonlyArray<{ readonly name: string; readonly muted: boolean; readonly listed: boolean }>
+  >
+  /**
+   * Tell other instances (or stop telling them) that we are in this channel.
+   *
+   * 🔴 The user's own answer to discovery-versus-privacy. Being in a room is not public: the sync
+   * endpoints answer an unknown topic exactly like an empty one so nobody can map our rooms, and a
+   * discovery reply naming every joined channel would hand over that map through another door.
+   */
+  readonly setListed: (channel: string, listed: boolean) => Effect.Effect<boolean>
+  /** The channels this instance is willing to be seen in — the ONLY ones discovery may reveal. */
+  readonly listed: () => Effect.Effect<ReadonlyArray<string>>
   readonly setMuted: (channel: string, muted: boolean) => Effect.Effect<boolean>
   /**
    * Ingest a message that arrived on `channel`'s topic. Returns the stored row, or why it was not.
@@ -330,7 +342,18 @@ export const layer = Layer.effect(
           return
         yield* db
           .insert(CommunityChannelTable)
-          .values({ name: channel })
+          .values({
+            name: channel,
+            /**
+             * ⚠️ The default channel is LISTED on joining; everything else starts unlisted.
+             *
+             * Every instance is in `#NovaClaw`, so admitting it reveals nothing anyone did not
+             * already assume — and a discovery network where nobody lists the one room everybody
+             * shares would find nothing on its first run and look broken. Any other room is the
+             * user's to disclose.
+             */
+            listed: CommunityTopic.canonical(channel) === CommunityTopic.canonical(DEFAULT_CHANNEL),
+          })
           .onConflictDoNothing()
           .run()
           .pipe(Effect.orDie)
@@ -350,7 +373,28 @@ export const layer = Layer.effect(
 
       channels: Effect.fn("CommunityChannels.channels")(function* () {
         const rows = yield* db.select().from(CommunityChannelTable).all().pipe(Effect.orDie)
-        return rows.map((row) => ({ name: row.name, muted: row.muted }))
+        return rows.map((row) => ({ name: row.name, muted: row.muted, listed: row.listed }))
+      }),
+
+      setListed: Effect.fn("CommunityChannels.setListed")(function* (channel: string, listed: boolean) {
+        const updated = yield* db
+          .update(CommunityChannelTable)
+          .set({ listed })
+          .where(eq(CommunityChannelTable.name, (yield* joinedAs(channel)) ?? channel))
+          .returning({ name: CommunityChannelTable.name })
+          .all()
+          .pipe(Effect.orDie)
+        return updated.length > 0
+      }),
+
+      listed: Effect.fn("CommunityChannels.listed")(function* () {
+        const rows = yield* db
+          .select()
+          .from(CommunityChannelTable)
+          .where(eq(CommunityChannelTable.listed, true))
+          .all()
+          .pipe(Effect.orDie)
+        return rows.map((row) => row.name)
       }),
 
       setMuted: Effect.fn("CommunityChannels.setMuted")(function* (channel: string, muted: boolean) {

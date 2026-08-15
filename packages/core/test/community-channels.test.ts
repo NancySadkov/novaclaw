@@ -530,4 +530,42 @@ describe("CommunityChannels", () => {
     }),
   )
 
+
+  it.effect("🔴 discovery reveals ONLY what the user chose to disclose", () =>
+    Effect.gen(function* () {
+      /**
+       * Discovery and privacy are one question asked from two sides. The sync endpoints answer an
+       * unknown topic exactly like an empty room precisely so a stranger cannot map which rooms this
+       * instance is in — and a discovery reply that named every joined channel would hand over that
+       * same map through a different door. So listing is opt-in, and the test that matters is the one
+       * about what is NOT said.
+       */
+      const channels = yield* CommunityChannels.Service
+
+      // The room everybody is in is listed on joining: saying so reveals nothing anyone did not
+      // already assume, and a discovery network where nobody lists the shared room finds nothing on
+      // its first run and looks broken.
+      yield* channels.join(CHANNEL)
+      expect(yield* channels.listed()).toEqual([CHANNEL])
+
+      // Anything else is the user's to disclose, and starts undisclosed.
+      yield* channels.join("#therapy")
+      yield* channels.join("#recipes")
+      expect(yield* channels.listed()).toEqual([CHANNEL])
+      expect((yield* channels.channels()).map((entry) => entry.listed)).toEqual([true, false, false])
+
+      expect(yield* channels.setListed("#recipes", true)).toBe(true)
+      expect([...(yield* channels.listed())].sort()).toEqual([CHANNEL, "#recipes"].sort())
+      // 🔴 The private one stays invisible however the question is asked.
+      expect(yield* channels.listed()).not.toContain("#therapy")
+
+      // ⚠️ Any spelling reaches the same room, like every other door into this store.
+      expect(yield* channels.setListed("#RECIPES", false)).toBe(true)
+      expect(yield* channels.listed()).toEqual([CHANNEL])
+
+      // And a channel we are not in cannot be listed at all.
+      expect(yield* channels.setListed("#not-joined", true)).toBe(false)
+    }),
+  )
+
 })
