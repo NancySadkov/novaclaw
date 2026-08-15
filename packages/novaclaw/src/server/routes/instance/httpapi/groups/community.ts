@@ -329,6 +329,29 @@ export const CommunityApi = HttpApi.make("community").add(
             "ONE HOP, deliberately: it asks the instances already reachable rather than implying the whole network answered. Multi-hop throttled broadcast is a separate, larger mechanism.",
         }),
       ),
+      /**
+       * 🔴 The OWNER's view of their own offer, and it is a different question from what peers can
+       * fetch. The panel used to read the peer endpoint for this, which coupled the owner's truth to
+       * the peer door: airgapped it answered 503, and an offer the current rules refuse read as
+       * empty, so the panel told a user who HAD published that they were "not offering anything".
+       */
+      HttpApiEndpoint.get("offerMineRead", CommunityPaths.offerMine, {
+        success: described(
+          Schema.Struct({
+            offer: Schema.optional(PeerOffer),
+            /** False when a stored offer can no longer be served — not the same as having none. */
+            servable: Schema.Boolean,
+          }),
+          "This instance's own offer, servable or not",
+        ),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.offer.mine",
+          summary: "What this instance offers",
+          description:
+            "The owner's own view. `servable: false` with an offer present means it is stored but the current rules refuse it — an endpoint or payment address an older build accepted — so peers are being served nothing.",
+        }),
+      ),
       HttpApiEndpoint.post("offerPublish", CommunityPaths.offerMine, {
         payload: Schema.Struct({
           endpoint: Schema.String,

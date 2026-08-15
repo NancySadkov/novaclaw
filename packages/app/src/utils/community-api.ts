@@ -154,11 +154,19 @@ export function communityOffers(server: ServerConnection.HttpBase) {
 /**
  * What THIS instance currently offers, if anything.
  *
- * ⚠️ Reads the peer-facing endpoint deliberately — it returns exactly what other people see, so the
- * user is shown their advertisement as advertised rather than a local echo of what they typed.
+ * 🔴 Reads the OWNER's endpoint, not the peer-facing one. It used to read the peer door on the
+ * reasoning that this shows the advertisement "as others see it" — good intent, wrong coupling: every
+ * policy on that door then rewrites what the owner is told. Observed both ways on a running instance:
+ * airgapped it answered 503, and an offer the current rules refuse read as empty, so a user who HAD
+ * published was told "You are not offering anything."
+ *
+ * `servable: false` alongside an offer is the case that matters — stored, but peers are getting
+ * nothing — and it is why this cannot be a bare optional.
  */
 export function communityMyOffer(server: ServerConnection.HttpBase) {
-  return instanceFetch<{ readonly offer?: CommunityServiceOffer }>(server, { route: "api/community/offer" })
+  return instanceFetch<{ readonly offer?: CommunityServiceOffer; readonly servable: boolean }>(server, {
+    route: "api/community/offer/mine",
+  })
 }
 
 /** Offer a model server to the network. `price` is free text — no rails behind it. */

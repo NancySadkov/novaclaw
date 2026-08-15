@@ -468,4 +468,46 @@ describe("CommunityOffer", () => {
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
 
+
+  it.effect("🔴 an offer the CURRENT rules refuse is reported, not silently withdrawn", () =>
+    Effect.gen(function* () {
+      /**
+       * The upgrade path, which tests never take because they build fresh from today's rules.
+       * Reproduced on a running instance: a row an older build accepted — a look-alike host, a
+       * padded payment address — made the peer door answer `{}` and the panel say **"You are not
+       * offering anything."** The user had published. Nothing was logged. They were simply off the
+       * network, and the sentence they were shown was about a different situation entirely.
+       *
+       * ⚠️ Reported, not repaired: the endpoint is the user's to choose and we cannot invent a valid
+       * one. `servable` hands them the fact, and the form they already have fixes it in one action.
+       */
+      const offers = yield* CommunityOffer.Service
+      const { db } = yield* Database.Service
+
+      expect(yield* offers.mineStored()).toEqual({ servable: false })
+
+      const published = yield* offers.publish(terms)
+      const healthy = yield* offers.mineStored()
+      expect(healthy.servable).toBe(true)
+      expect(healthy.offer?.endpoint).toBe(published.endpoint)
+
+      // Rewrite the row the way a build without today's rules would have stored it.
+      const stale = { ...published, payTo: `${published.payTo}${" ".repeat(20)}` }
+      yield* db
+        .update(CommunityOfferTable)
+        .set({ document: JSON.stringify(stale) })
+        .run()
+        .pipe(Effect.orDie)
+
+      const reported = yield* offers.mineStored()
+      // 🔴 Still THERE, and known to be unservable — the distinction the panel needs to say which
+      // of two very different sentences is true.
+      expect(reported.offer?.endpoint).toBe(published.endpoint)
+      expect(reported.servable).toBe(false)
+      // ⚠️ And peers are correctly served nothing: the owner learning about it must not mean the
+      // network being handed an offer that fails its own rules.
+      expect(yield* offers.mine()).toBeUndefined()
+    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+  )
+
 })

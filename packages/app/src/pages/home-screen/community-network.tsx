@@ -672,17 +672,31 @@ export const CommunityNetwork: Component = () => {
           to that person's machine, so nothing is saved until you say so.
         </span>
         <div class="mt-2 flex flex-col gap-2 border-t border-white/5 pt-2">
-          {/* ⚠️ Stated BEFORE the controls, and read from the peer-facing endpoint so the user sees
-              their advertisement exactly as other people see it — not a local echo of what they typed. */}
+          {/* ⚠️ Stated BEFORE the controls. Read from the OWNER's endpoint: reading the peer door
+              here meant an airgap or a stricter rule silently turned "you are offering X" into "you
+              are not offering anything", which is a different sentence and a false one. */}
           <Show
             when={myOffer()?.offer}
             fallback={<span class="text-[11px] text-v2-text-text-muted">You are not offering anything.</span>}
           >
             {(mine) => (
-              <span class="text-[11px] leading-snug text-v2-text-text-base">
-                You are offering {mine().endpoint} — {mine().models.join(", ") || "models unspecified"} ·{" "}
-                {mine().price}
-              </span>
+              <Show
+                when={myOffer()?.servable}
+                fallback={
+                  /* 🔴 Stored, but peers are being served NOTHING — an endpoint or payment address
+                     an older build accepted and this one refuses. Said plainly, with the form below
+                     as the one action that fixes it. */
+                  <span class="text-[11px] leading-snug text-v2-text-text-base">
+                    Your offer of {mine().endpoint} is no longer being sent to anyone — its address is not one
+                    this version will advertise. Re-enter it below to fix that.
+                  </span>
+                }
+              >
+                <span class="text-[11px] leading-snug text-v2-text-text-base">
+                  You are offering {mine().endpoint} — {mine().models.join(", ") || "models unspecified"} ·{" "}
+                  {mine().price}
+                </span>
+              </Show>
             )}
           </Show>
           <span class="text-[11px] text-v2-text-text-muted">Offer your own:</span>

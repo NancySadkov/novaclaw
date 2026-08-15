@@ -177,6 +177,12 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
         }),
       )
       .handle(
+        "offerMineRead",
+        Effect.fn("CommunityHttpApi.offerMineRead")(function* () {
+          return yield* offers.mineStored()
+        }),
+      )
+      .handle(
         "offerPublish",
         Effect.fn("CommunityHttpApi.offerPublish")(function* (ctx) {
           /**

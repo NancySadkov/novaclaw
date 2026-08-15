@@ -35,7 +35,18 @@ describe("airgap on the peer door", () => {
      * The airgap withdraws a choice to talk to the NETWORK. An airgap that locked the user out of
      * their own message history would be a data-loss bug wearing a security feature's clothes.
      */
-    for (const path of ["/api/community/channel/%23bread/history", "/api/community/contact", "/api/session"])
+    for (const path of [
+      "/api/community/channel/%23bread/history",
+      "/api/community/contact",
+      "/api/session",
+      /**
+       * 🔴 The owner's own OFFER read. This gate broke it: the panel used to read the peer path
+       * `/api/community/offer`, so an airgapped user could not see their own advertisement — and
+       * this very test passed, because it only listed app paths and that read was not one. The fix
+       * gave the owner their own route; the test now names it so the coupling cannot come back.
+       */
+      "/api/community/offer/mine",
+    ])
       expect(refusesWhileAirgapped(path, true)).toBe(false)
   })
 })

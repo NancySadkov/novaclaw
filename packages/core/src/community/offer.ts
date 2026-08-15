@@ -280,6 +280,24 @@ export interface Interface {
    * not check is exactly how a rewritten endpoint gets laundered through an honest instance.
    */
   readonly learn: (offer: Signed) => Effect.Effect<boolean>
+  /**
+   * What WE have stored, servable or not — the owner's own view, which is not the same question as
+   * what peers can fetch.
+   *
+   * 🔴 Exists because the panel used to read the PEER endpoint for this. The intent was good ("show
+   * the user their advertisement exactly as others see it") but it couples the owner's truth to the
+   * peer door, so every policy on that door silently rewrites what the owner is told. Two ways that
+   * bit, both observed on a running instance:
+   *
+   *   - AIRGAPPED, the peer door answers 503, so the panel could not show the user their own offer.
+   *   - a stored offer the CURRENT rules refuse — an endpoint or payment address that an older build
+   *     accepted — reads as `{}`, and the panel said "You are not offering anything." The user did
+   *     offer something; it simply stopped being servable under an upgrade, silently.
+   *
+   * `servable` is the difference between those and "nothing published", so the panel can say which.
+   */
+  readonly mineStored: () => Effect.Effect<{ readonly offer?: Signed; readonly servable: boolean }>
+
   /** Offers collected from peers — never our own. */
   readonly known: () => Effect.Effect<ReadonlyArray<Signed>>
 }
@@ -392,6 +410,25 @@ export const layer = Layer.effect(
           }
         }
         return out
+      }),
+
+      mineStored: Effect.fn("CommunityOffer.mineStored")(function* () {
+        const row = yield* db
+          .select()
+          .from(CommunityOfferTable)
+          .where(eq(CommunityOfferTable.id, ROW))
+          .get()
+          .pipe(Effect.orDie)
+        if (row === undefined) return { servable: false }
+        try {
+          const parsed = JSON.parse(row.document) as Signed
+          // ⚠️ Reported, not repaired. The endpoint is the user's to choose and we cannot invent a
+          // valid one — so this hands them the fact and the existing form fixes it in one action,
+          // which is the shape decisions §4 asks for.
+          return { offer: parsed, servable: verify(parsed) }
+        } catch {
+          return { servable: false }
+        }
       }),
 
       mine: Effect.fn("CommunityOffer.mine")(function* () {
