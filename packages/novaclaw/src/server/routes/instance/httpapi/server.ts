@@ -128,6 +128,7 @@ import { memoMap } from "@novaclaw/core/effect/memo-map"
 import { compressionLayer } from "./middleware/compression"
 import { corsVaryFix } from "./middleware/cors-vary"
 import { emptyJsonBodyLayer } from "./middleware/empty-json-body"
+import { peerAirgapLayer } from "./middleware/peer-airgap"
 import { peerBodyLimitLayer } from "./middleware/peer-body-limit"
 import { errorLayer } from "./middleware/error"
 import { fenceLayer } from "./middleware/fence"
@@ -431,6 +432,7 @@ export function createRoutes(
       compressionLayer,
       corsVaryFix,
       fenceLayer,
+      peerAirgapLayer,
       peerBodyLimitLayer,
       emptyJsonBodyLayer,
       cors(corsOptions),

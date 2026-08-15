@@ -93,7 +93,20 @@ export type Verdict =
 export class Seen {
   private readonly at = new Map<string, number>()
 
-  constructor(private readonly ttlMs: number = SEEN_TTL_MS) {}
+  constructor(
+    private readonly ttlMs: number = SEEN_TTL_MS,
+    /**
+     * 🔴 A ceiling, because the TTL alone was never a bound. `prune` below is documented as "called
+     * periodically" and **nothing ever called it** — so the only expiry was the lazy one in `has`,
+     * which fires when an id is asked about AGAIN. A flooder never repeats an id (repeating is what
+     * dedup catches), so their entries were precisely the ones nothing could reach.
+     *
+     * ⚠️ This is the same trap as peer eviction sorting by a `last_seen_at` nothing wrote: the
+     * mechanism was present, correct, and unreachable. **A bound whose signal has no source is
+     * decoration.** A ceiling needs no caller, which is why it is the belt rather than the braces.
+     */
+    private readonly maxIDs: number = 50_000,
+  ) {}
 
   /** True when this id has been seen recently. Expired entries are dropped as they are met. */
   has(id: string, now: number): boolean {
@@ -108,6 +121,11 @@ export class Seen {
 
   remember(id: string, now: number): void {
     this.at.set(id, now)
+    // Insertion order is eviction order, which for a rolling window is oldest-first.
+    if (this.at.size > this.maxIDs) {
+      const oldest = this.at.keys().next()
+      if (!oldest.done) this.at.delete(oldest.value)
+    }
   }
 
   /** Drop everything older than the window. Called periodically, not per query. */

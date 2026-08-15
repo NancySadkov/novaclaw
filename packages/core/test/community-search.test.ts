@@ -200,4 +200,25 @@ describe("a hostile TTL", () => {
     expect(throttle.size).toBeLessThanOrEqual(100)
   })
 
+
+  test("🔴 the dedup set has a CEILING — its prune was never called", () => {
+    /**
+     * `Seen.prune` is documented as "called periodically, not per query", and a grep for its callers
+     * finds none. So the only expiry was the lazy one inside `has`, which fires when an id is asked
+     * about a SECOND time — and a flooder never repeats an id, because repeating is exactly what
+     * dedup catches. Their entries were the ones nothing could ever reach.
+     *
+     * ⚠️ The same trap as peer eviction ordering by a `last_seen_at` that nothing wrote: present,
+     * correct, unreachable. A bound whose signal has no source is decoration, and a ceiling is the
+     * version that needs no caller.
+     */
+    const seen = new CommunitySearch.Seen(CommunitySearch.SEEN_TTL_MS, 500)
+    for (let i = 0; i < 20_000; i++) seen.remember(`q-${i}`, 1)
+    expect(seen.size).toBeLessThanOrEqual(500)
+    // ⚠️ And it still DEDUPES — a ceiling that broke the control it bounds would be worse than the
+    // leak, because duplicate suppression is what stops exponential re-broadcast in a cyclic graph.
+    seen.remember("recent", 1)
+    expect(seen.has("recent", 1)).toBe(true)
+  })
+
 })
