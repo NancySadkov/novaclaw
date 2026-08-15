@@ -222,6 +222,17 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   models: "privileged",
   // The airgap itself. Turning it off RELEASES the egress guard, which is the one switch that makes
   // every other egress possible.
+  /**
+   * 🔴 PRIVILEGED, beside `offline` and `telemetry` and for the same reason: it is a consent
+   * decision with consequences outside this machine. Turning the community on exposes this box's IP
+   * address to anyone it talks to — there is no central server to hide behind — and subscribes the
+   * user to content nobody moderates.
+   *
+   * ⚠️ This is what an AGENT must spend `configure_privileged` to change. An agent may read and use
+   * the community once its owner has enabled it; deciding to JOIN is not a thing a model does on
+   * somebody's behalf because it read a message asking it to.
+   */
+  community: "privileged",
   offline: "privileged",
   // The gate itself. Nothing else on this list is worth much if an agent can rewrite this one.
   permissions: "privileged",

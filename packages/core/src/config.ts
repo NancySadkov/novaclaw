@@ -211,6 +211,42 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   // state on every machine today. ⚠️ Do not fold the airgap condition into this field's default:
   // the two are held apart on purpose and `telemetry.test.ts` fails if either starts reading the
   // other's source.
+  /**
+   * 🔴 The community P2P module is OFF until the user turns it on, and `consented` is why it stays
+   * that way rather than defaulting on for convenience.
+   *
+   * Two fields, held apart for the same reason `telemetry.enabled` and `offline` are: they answer
+   * different questions and folding them loses one of the answers.
+   *
+   *   · `consented` — has this person been shown what joining costs them, and said yes. STICKY: it
+   *     records that a warning was read, and turning the module off later does not un-read it.
+   *   · `enabled` — the switch in the Community app's settings. Off is a normal, reversible state.
+   *
+   * The module runs only when BOTH are true, and the airgap independently forces it off — the same
+   * override telemetry has (design-principle 4). ⚠️ `consented: false` with `enabled: true` must
+   * never run: that combination means somebody edited the config by hand to skip the warning.
+   *
+   * What the warning has to say is not decoration, and is recorded here because the fields exist to
+   * carry its answer: the network is UNMODERATED (nobody can delete what a stranger writes, and it
+   * may be offensive), and because there is no central server, talking to a peer reveals this
+   * machine's IP ADDRESS to them. Both are consequences of the architecture, not defects in it.
+   */
+  community: Schema.Struct({
+    consented: Schema.Boolean.pipe(Schema.optional).annotate({
+      description:
+        "The user has read the community warning (unmoderated content; direct connections reveal your IP) and accepted it. Absent means never asked — the module stays off and the app shows the warning.",
+    }),
+    enabled: Schema.Boolean.pipe(Schema.optional).annotate({
+      description:
+        "The Community app's on/off switch. Requires `consented`; airgap/offline mode forces it off independently.",
+    }),
+  })
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        "Community P2P participation. Off until explicitly accepted — joining is a decision with consequences the user has to see first.",
+    }),
+
   telemetry: Schema.Struct({
     enabled: ConfigAnnotation.depends(
       Schema.Boolean.pipe(Schema.optional).annotate({

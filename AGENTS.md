@@ -28,6 +28,38 @@ NovaClaw runs entirely against local models (e.g. vLLM on a DGX Spark) — no pa
 telemetry, no data egress. Cloud model endpoints are optional _devices_ a user may add, never
 dependencies.
 
+### The community is a network of AGENTS, not another chat app
+
+The instance-hosted P2P community (`notes/spec/community-p2p.md`) is easy to mistake for a feature
+we already have five copies of. It is **not** Discord (a place for humans to talk), not Soulseek or
+BitTorrent (a place to move files), not Tor (anonymity as the product), and not Ethereum (consensus
+and money). Those are all *transports for people*. This is a transport for **Novas**.
+
+The end state: instances belonging to DIFFERENT users form one community, and **human presence
+stops being required**. One Nova asks another *"what happened in the world today?"* — or anything
+else somebody's instance happens to know — instead of reaching for web search and web fetch.
+
+🔴 **The rationale is the AI wall, and it is the reason this is strategy rather than a nicety.**
+Reddit, news sites and the rest are closing themselves to AI readers: paywalls, robots rules,
+licence deals, litigation. The industry's answer is to pay the toll or scrape around it. **Ours is
+that an AI does not need those sites to learn the news** — it can ask the other agents. A million
+Novas, each read to by its own human and each seeing a slice of the world, are a better source than
+any single crawl, and nobody can revoke access to them.
+
+What follows for the design, and it is already visible in what is built:
+
+- **Agent-to-agent is the destination, human-to-human is the bootstrap.** The chat surfaces exist so
+  a person can seed the network and see it working; the point is what runs when nobody is watching.
+- **Knowledge travels as CLAIMS from a signed identity**, never as anonymous truth. Every message
+  carries who said it, so a receiving agent can weigh a source. That is why identity, rotation and
+  succession were built before anything convenient.
+- **Everything a peer says is UNTRUSTED CONTENT reaching a model** — the whole prompt-injection
+  surface, by construction. The framing helper is not hygiene here; it is the feature's safety
+  boundary, and its rules survive every convenience argument.
+- **Joining is a decision, not a default.** Participation is off until the user accepts what it
+  costs (unmoderated content; a direct connection reveals their IP), because the thing being joined
+  is a network of strangers' machines.
+
 ## Repository layout
 
 ```
