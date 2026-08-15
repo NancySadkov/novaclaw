@@ -1,7 +1,7 @@
 export * as CommunityDirect from "./dm"
 
 import { createHash } from "node:crypto"
-import { and, desc, eq } from "drizzle-orm"
+import { and, desc, eq, sql } from "drizzle-orm"
 import { Context, Effect, Layer } from "effect"
 import { CommunityDirectMessageTable } from "./dm.sql"
 import { CommunitySeal } from "./seal"
@@ -60,6 +60,39 @@ export type Rejection = "unverified" | "unproven" | "not-for-us" | "unreadable" 
 
 /** Same bound as a channel message: the door is open to strangers, so the body cannot be unbounded. */
 export const MAX_BODY_BYTES = 8 * 1024
+
+/**
+ * 🔴 How many direct messages this instance keeps. The channel log has had this since it was written;
+ * the DM store had nothing, through the SAME open door.
+ *
+ * Proof-of-work meters the rate — measured, a flooder falls from 9.8k msg/s to about 20 — but metering
+ * is not a storage bound. At that ceiling and this body size it is still gigabytes a day, arriving
+ * from a stranger who never has to be anybody.
+ *
+ * ⚠️ A per-CONVERSATION cap would not have closed it, and that is the interesting part: an attacker
+ * mints a fresh key per conversation, so every thread stays under a per-thread limit while the total
+ * grows without end. The bound has to be global.
+ *
+ * ⚠️ Eviction protects CONTACTS first, then recency. A flood from strangers must never be able to push
+ * out the conversation the user actually cares about — a bound that discards real mail to make room
+ * for spam is worse than no bound, because it hands the attacker the thing they wanted.
+ */
+export const MAX_DIRECT_MESSAGES = 20_000
+
+/**
+ * 🔴 How far OVER the bound the store is allowed to drift before it is trimmed, and this exists
+ * because the first version of this bound recreated the seventh finding of the adversarial pass —
+ * a ceiling that made the thing it bounded more dangerous.
+ *
+ * Measured at the bound: the trim costs **31.9 ms**, against 0.83 µs for a work check. Run on every
+ * arrival it would have cost us almost exactly what proof-of-work costs the ATTACKER (49 ms), which
+ * cancels the one defence the door has — they would be paying to make us pay.
+ *
+ * ⚠️ So the trim is guarded by a COUNT (0.014 ms) and, when it does run, cuts all the way to
+ * `MAX_DIRECT_MESSAGES` rather than shaving one row. That amortises 31.9 ms across this many
+ * messages — about 0.08 ms each — and the cost of the slack is 500 extra rows on disk.
+ */
+export const PRUNE_SLACK = 500
 
 const DOMAIN = "novaclaw/community/direct-message-envelope/1"
 const encoder = new TextEncoder()
@@ -181,6 +214,29 @@ export const layer = Layer.effect(
         .all()
         .pipe(Effect.orDie)
       if (inserted.length === 0) return undefined
+
+      // ⚠️ The cheap guard comes first, and it is the whole reason this is affordable — see
+      // `PRUNE_SLACK`. Reaching the trim on every arrival would hand an attacker a 31.9 ms bill for
+      // the 49 ms they already pay, which is not a defence, it is a trade.
+      const held = yield* db.$count(CommunityDirectMessageTable).pipe(Effect.orDie)
+      if (held > MAX_DIRECT_MESSAGES + PRUNE_SLACK)
+        // Trimmed by IDENTITY, never a time cutoff — a burst inside one millisecond makes a cutoff
+        // match everything or nothing, which the message log and the peer table both learned already.
+        yield* db
+          .delete(CommunityDirectMessageTable)
+          .where(
+            sql`${CommunityDirectMessageTable.id} NOT IN (
+              SELECT id FROM ${CommunityDirectMessageTable} AS m
+              ORDER BY
+                (SELECT COUNT(*) FROM community_contact c WHERE c.network_id = m.peer) DESC,
+                m.received_at DESC,
+                m.rowid DESC
+              LIMIT ${MAX_DIRECT_MESSAGES}
+            )`,
+          )
+          .run()
+          .pipe(Effect.orDie)
+
       return {
         id,
         peer: input.peer,
