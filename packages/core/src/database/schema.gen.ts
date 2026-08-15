@@ -246,6 +246,8 @@ export default {
           \`id\` text PRIMARY KEY,
           \`public_key\` text,
           \`secret_key\` text,
+          \`sealing_public_key\` text,
+          \`sealing_secret_key\` text,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL
         );

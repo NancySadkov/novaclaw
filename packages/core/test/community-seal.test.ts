@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
+import { Effect } from "effect"
 import { CommunitySeal } from "@novaclaw/core/community/seal"
+import { CredentialCipher } from "@novaclaw/core/credential-cipher"
+import { Database } from "@novaclaw/core/database/database"
+import { LayerNode } from "@novaclaw/core/effect/layer-node"
+import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
+import { testEffect } from "./lib/effect"
 
 /**
  * Community P3 — sealing a direct message (`todo/community-p2p.md`).
@@ -109,4 +115,58 @@ describe("CommunitySeal", () => {
     const long = "🔴".repeat(20_000)
     expect(CommunitySeal.unseal(bob.secretKey, CommunitySeal.seal(bob.publicKey, long)!)).toBe(long)
   })
+})
+
+const it = testEffect(LayerNode.compile(LayerNode.group([Database.node, InstanceIdentityStore.node])))
+
+describe("the published sealing key", () => {
+  it.effect("🔴 is SIGNED by the identity, so it cannot be substituted", () =>
+    Effect.gen(function* () {
+      /**
+       * The attack this exists to stop is silent. A sealing key taken on trust is one anybody in the
+       * path can swap for their own: the sender encrypts to the attacker, the attacker reads and
+       * re-seals to the real recipient, and NOTHING looks wrong at either end — because a substituted
+       * key produces perfectly valid ciphertext. The signature is the only thing that notices.
+       */
+      const store = yield* InstanceIdentityStore.Service
+      const me = (yield* store.identity()).networkID
+      const published = yield* store.sealingKey()
+
+      expect(InstanceIdentityStore.verifySealingKey(me, published.publicKey, published.signature)).toBe(true)
+
+      // An attacker's own key, offered in our name — the substitution, refused.
+      const attacker = CommunitySeal.generate()
+      expect(InstanceIdentityStore.verifySealingKey(me, attacker.publicKey, published.signature)).toBe(false)
+      // Their key AND a signature they made with their own identity: still not ours to vouch for.
+      const other = `nid_${Buffer.alloc(32, 3).toString("base64url")}`
+      expect(InstanceIdentityStore.verifySealingKey(other, published.publicKey, published.signature)).toBe(false)
+
+      for (const broken of ["", "!!!!", Buffer.alloc(63).toString("base64url")])
+        expect(InstanceIdentityStore.verifySealingKey(me, published.publicKey, broken)).toBe(false)
+    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+  )
+
+  it.effect("🔴 is STABLE — a second call must not mint a second key", () =>
+    Effect.gen(function* () {
+      /**
+       * ⚠️ The failure this pins is delayed and total: a peer fetches the key, seals to it, and the
+       * message arrives addressed to a key this instance no longer holds. It would look like garbled
+       * mail rather than like a bug in key minting, and only messages from BEFORE the last restart
+       * would fail — which is the hardest possible thing to reproduce.
+       */
+      const store = yield* InstanceIdentityStore.Service
+      const first = yield* store.sealingKey()
+      const second = yield* store.sealingKey()
+      expect(second.publicKey).toBe(first.publicKey)
+
+      // And what was sealed to the published key really opens here — the round trip through storage,
+      // not just through the pure module.
+      const envelope = CommunitySeal.seal(first.publicKey, "for your eyes only")!
+      expect(yield* store.openSealed(envelope)).toBe("for your eyes only")
+
+      // Something sealed to somebody else does not open, and does not throw.
+      const stranger = CommunitySeal.generate()
+      expect(yield* store.openSealed(CommunitySeal.seal(stranger.publicKey, "not for us")!)).toBeUndefined()
+    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+  )
 })

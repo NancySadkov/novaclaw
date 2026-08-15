@@ -297,6 +297,12 @@
                     },
                     "networkID": {
                       "type": "string"
+                    },
+                    "sealingKey": {
+                      "type": "string"
+                    },
+                    "sealingSignature": {
+                      "type": "string"
                     }
                   },
                   "required": ["healthy", "version", "instanceID", "networkID"],

@@ -7,6 +7,7 @@ import { CredentialCipher } from "./credential-cipher"
 import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
 import * as Id from "./id/id"
+import { CommunitySeal } from "./community/seal"
 import { InstanceIdentityTable } from "./instance-identity/sql"
 
 // Remote-access R7: the instance-wide durable identity. `get()` returns the stored id, minting
@@ -124,6 +125,33 @@ export interface Identity {
   readonly publicKey: Buffer
 }
 
+/**
+ * The exact bytes an instance signs to claim a sealing key.
+ *
+ * 🔴 Domain-separated, and this one matters more than most: without a prefix, a signature over a
+ * 32-byte blob could be REPLAYED as a signature over something else 32 bytes long — a message hash, a
+ * successor statement's key field — and a peer would accept an attacker's sealing key as the
+ * identity's own. Which is exactly the substitution that would let them read the mail.
+ */
+export const sealingKeyBytes = (publicKey: string): Uint8Array =>
+  Buffer.concat([Buffer.from("novaclaw/community/sealing-key/1"), Buffer.from(publicKey, "base64url")])
+
+/**
+ * Does this sealing key really belong to that identity?
+ *
+ * ⚠️ The whole point of publishing a signature beside the key. A sealing key taken on trust is a key
+ * anyone in the path can substitute for their own, and the sender would encrypt to the attacker while
+ * everything looked correct — the failure would be invisible precisely because it produces valid
+ * ciphertext.
+ */
+export const verifySealingKey = (networkID: string, publicKey: string, signature: string): boolean => {
+  if (typeof publicKey !== "string" || typeof signature !== "string") return false
+  if (Buffer.from(publicKey, "base64url").length !== 32) return false
+  const raw = Buffer.from(signature, "base64url")
+  if (raw.length !== 64) return false
+  return verifySignature(networkID, sealingKeyBytes(publicKey), raw)
+}
+
 export interface Interface {
   /** The instance's stable id — minted once on first read, immutable after. */
   readonly get: () => Effect.Effect<string>
@@ -157,6 +185,21 @@ export interface Interface {
    * needs contacts re-verifying out of band, which is a different feature with a human in it.
    */
   readonly rotate: () => Effect.Effect<{ readonly identity: Identity; readonly statement: SuccessorStatement }>
+  /**
+   * This instance's SEALING key and the identity's signature over it — the pair a peer needs to send
+   * something only we can read.
+   *
+   * ⚠️ Public halves only. The signature is what makes the key usable by a stranger: without it they
+   * would be trusting whatever key the network handed them, which is the substitution attack.
+   */
+  readonly sealingKey: () => Effect.Effect<{ readonly publicKey: string; readonly signature: string }>
+  /**
+   * Open something sealed to us, or `undefined`.
+   *
+   * ⚠️ The secret is decrypted per call and never leaves this service, exactly like `sign`. A caller
+   * that could obtain it could read every DM this instance will ever receive.
+   */
+  readonly openSealed: (envelope: CommunitySeal.Envelope) => Effect.Effect<string | undefined>
 }
 
 /** What `rotate` hands back: the retiring key's own signature over the handover. */
@@ -177,6 +220,8 @@ export const layer = Layer.effect(
 
     /** Bound to the row it protects, so ciphertext lifted into another row will not decrypt. */
     const AAD = "instance-identity.secret_key"
+    /** Its own AAD, so a sealing secret cannot be lifted into the identity column or the reverse. */
+    const SEALING_AAD = "instance-identity.sealing_secret_key"
 
     const row = () => db.select().from(InstanceIdentityTable).get().pipe(Effect.orDie)
 
@@ -234,6 +279,53 @@ export const layer = Layer.effect(
         return stored.id
       }),
       identity,
+      /**
+       * Mint the sealing keypair on first use and keep it thereafter.
+       *
+       * ⚠️ Lazy and separate from `ensure`, because every instance that existed before this change
+       * has a row with an identity and no sealing key. Minting it inside `ensure` would have worked
+       * only for instances created after it — the same backfill trap the identity keypair itself
+       * already documents one function above.
+       */
+      sealingKey: Effect.fn("InstanceIdentityStore.sealingKey")(function* () {
+        yield* ensure()
+        // ⚠️ Re-read rather than trusting `ensure`'s return: it yields the freshly-inserted VALUES on
+        // the mint path, which carry only the columns that insert set — the sealing pair reads as
+        // absent there and would be minted a second time on the very next call.
+        const stored = yield* row()
+        let publicKey = stored?.sealing_public_key ?? undefined
+        if (publicKey === undefined || !stored?.sealing_secret_key) {
+          const minted = CommunitySeal.generate()
+          yield* db
+            .update(InstanceIdentityTable)
+            .set({
+              sealing_public_key: minted.publicKey,
+              sealing_secret_key: cipher.encrypt(minted.secretKey, SEALING_AAD),
+            })
+            // 🔴 Guarded on absence, like the identity backfill: two concurrent first calls must not
+            // let the loser overwrite the winner's key, or a peer that already fetched the first one
+            // would be encrypting to a key nobody holds any more.
+            .where(isNull(InstanceIdentityTable.sealing_public_key))
+            .run()
+            .pipe(Effect.orDie)
+          publicKey = (yield* row())?.sealing_public_key ?? minted.publicKey
+        }
+        const secret = yield* cipher.decrypt(stored?.secret_key ?? "", AAD).pipe(Effect.orDie)
+        const signature = sign(
+          null,
+          Buffer.from(sealingKeyBytes(publicKey)),
+          privateKeyFromRaw(Buffer.from(secret, "base64url")),
+        )
+        return { publicKey, signature: signature.toString("base64url") }
+      }),
+
+      openSealed: Effect.fn("InstanceIdentityStore.openSealed")(function* (envelope: CommunitySeal.Envelope) {
+        const stored = yield* row()
+        if (!stored?.sealing_secret_key) return undefined
+        const secret = yield* cipher.decrypt(stored.sealing_secret_key, SEALING_AAD).pipe(Effect.orDie)
+        return CommunitySeal.unseal(secret, envelope)
+      }),
+
       sign: Effect.fn("InstanceIdentityStore.sign")(function* (message: Uint8Array) {
         const stored = yield* ensure()
         const secret = yield* cipher.decrypt(stored.secret_key ?? "", AAD).pipe(Effect.orDie)

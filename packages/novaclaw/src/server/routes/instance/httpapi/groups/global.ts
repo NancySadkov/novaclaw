@@ -24,6 +24,19 @@ const GlobalHealth = Schema.Struct({
    * ⚠️ Public by definition, and only the public half: the secret never crosses this wire.
    */
   networkID: Schema.String,
+  /**
+   * Community P3: the X25519 SEALING key, and the identity's signature over it.
+   *
+   * 🔴 Published HERE because this is where a peer already looks to learn who lives at an address —
+   * one fetch teaches both halves. The signature is not decoration: a sealing key taken on trust is
+   * one anybody in the path can swap for their own, and the sender would encrypt to the attacker with
+   * everything looking correct, because the failure produces perfectly valid ciphertext.
+   *
+   * ⚠️ Optional in the schema: instances that predate the key mint one on first use, so a peer may
+   * legitimately meet an instance that has not been asked for it yet.
+   */
+  sealingKey: Schema.optional(Schema.String),
+  sealingSignature: Schema.optional(Schema.String),
 })
 
 // Remote-access R7: a point-in-time LAN scan for advertised NovaClaw instances (serve --mdns).

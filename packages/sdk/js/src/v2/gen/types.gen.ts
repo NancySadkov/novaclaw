@@ -8173,6 +8173,8 @@ export type GlobalHealthResponses = {
     version: string
     instanceID: string
     networkID: string
+    sealingKey?: string
+    sealingSignature?: string
   }
 }
 

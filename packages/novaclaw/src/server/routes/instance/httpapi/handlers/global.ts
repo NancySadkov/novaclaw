@@ -77,11 +77,17 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       // `identity()` rather than `get()`: both read the same row, so reporting the network identity
       // alongside the handle costs nothing extra on an endpoint that gets polled hard.
       const self = yield* identity.identity()
+      // The sealing key is minted on first request and kept, so this is one extra row read on an
+      // endpoint that is polled hard — and it is what lets ONE fetch teach a peer both halves of who
+      // lives here: the identity to verify signatures against, and the key to seal to.
+      const sealing = yield* identity.sealingKey()
       return {
         healthy: true as const,
         version: InstallationVersion,
         instanceID: self.id,
         networkID: self.networkID,
+        sealingKey: sealing.publicKey,
+        sealingSignature: sealing.signature,
       }
     })
 

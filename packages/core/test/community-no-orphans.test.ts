@@ -117,9 +117,8 @@ const EXPECTED_ORPHANS: Record<string, string> = {
    * ⚠️ What it is waiting for is NOT a transport. It is the DM feature itself: publishing a sealing
    * key signed by the identity, and a message type that carries an envelope. Those are the next wire.
    */
-  "seal.ts#seal": "waiting for the DM feature: the envelope exists, nothing sends one yet",
-  "seal.ts#unseal": "waiting for the DM feature: nothing receives one yet",
-  "seal.ts#generate": "waiting for the DM feature: the identity store will mint and publish the sealing key",
+  "seal.ts#seal": "waiting for the SEND path: the key is published and openSealed receives, but no message type carries an envelope yet",
+  "instance-identity-store.ts#openSealed": "waiting for the SEND path: the receiving half of a DM, with nothing yet delivering one",
   "seal.ts#parsePublic": "internal helper used by seal/unseal in the same file; exported to test that a peer's malformed key is refused rather than thrown on",
   "work.ts#solve": "internal helper called by prove() in the same file; exported for measurement",
   // THE inbound door. A sidecar is a separate process holding only a topic id, so it calls this —

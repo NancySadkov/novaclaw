@@ -28,5 +28,16 @@ export const InstanceIdentityTable = sqliteTable("instance_identity", {
    * and an agent that could read it could impersonate the instance to the whole network.
    */
   secret_key: text(),
+  /**
+   * 🔴 The X25519 SEALING key — a second keypair, and deliberately not derived from the first.
+   *
+   * The identity key signs; this one agrees. Converting Ed25519 to X25519 is the curve arithmetic
+   * §11 called "the kind that looks finished long before it is correct", so the two are separate keys
+   * and the identity SIGNS this one to bind them. Nullable: instances that predate it mint one on
+   * first use, exactly as the identity keypair itself is backfilled.
+   */
+  sealing_public_key: text(),
+  /** Encrypted like `secret_key`, by the same cipher and with its own AAD. */
+  sealing_secret_key: text(),
   ...Timestamps,
 })
