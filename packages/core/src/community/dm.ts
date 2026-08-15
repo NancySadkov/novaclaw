@@ -345,9 +345,22 @@ export const layer = Layer.effect(
       }),
 
       conversations: Effect.fn("CommunityDirect.conversations")(function* () {
+        /**
+         * 🔴 MOST RECENT FIRST. `selectDistinct` with no `ORDER BY` returns whatever order the
+         * engine finds convenient, so the user's list of conversations could reorder itself between
+         * two openings of the same screen with nothing having happened — the kind of thing a person
+         * reads as the app losing their messages.
+         *
+         * ⚠️ Ordered by the newest RECEIVED time in each thread, not the author's claimed `at`:
+         * sorting by a number the other party chooses would let them pin themselves to the top of
+         * someone's list forever. That is the same rule `history` and the channel log follow, and
+         * the reason it is stated again here is that this query had neither.
+         */
         const rows = yield* db
-          .selectDistinct({ peer: CommunityDirectMessageTable.peer })
+          .select({ peer: CommunityDirectMessageTable.peer, at: sql<number>`max(received_at)` })
           .from(CommunityDirectMessageTable)
+          .groupBy(CommunityDirectMessageTable.peer)
+          .orderBy(desc(sql`max(received_at)`))
           .all()
           .pipe(Effect.orDie)
         return rows.map((row) => row.peer)

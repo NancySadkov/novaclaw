@@ -106,4 +106,71 @@ describe("CommunityDirect retention", () => {
       expect(total).toBeGreaterThan(CommunityDirect.MAX_DIRECT_MESSAGES / 2)
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
+
+  it.effect("🔴 the conversation list is ordered by RECENCY, not by whatever the engine returns", () =>
+    Effect.gen(function* () {
+      /**
+       * `conversations` backs the user's list of DM threads and had no test and no `ORDER BY`. A
+       * `selectDistinct` with no ordering returns whatever the engine finds convenient, so the list
+       * could reorder itself between two openings of the same screen with nothing having happened —
+       * which a person reads as the app losing their messages.
+       *
+       * ⚠️ By RECEIVED time, never the author's claimed `at`: sorting on a number the other party
+       * chooses would let them pin themselves to the top of somebody's list forever. The channel log
+       * and `history` both already refuse that, and this query followed neither.
+       */
+      const { db } = yield* Database.Service
+      const direct = yield* CommunityDirect.Service
+      const oldest = identity(1)
+      const middle = identity(2)
+      const newest = identity(3)
+
+      // Inserted deliberately OUT of order, so a pass cannot come from insertion order alone.
+      for (const [peer, at] of [
+        [middle, 200],
+        [oldest, 100],
+        [newest, 300],
+      ] as const)
+        yield* db
+          .insert(CommunityDirectMessageTable)
+          .values({
+            id: `m-${peer}-${at}`,
+            peer,
+            direction: "in",
+            body: "x",
+            claimed_at: 999_999,
+            received_at: at,
+            signature: "x",
+          })
+          .run()
+          .pipe(Effect.orDie)
+
+      expect(yield* direct.conversations()).toEqual([newest, middle, oldest])
+
+      // ⚠️ A newer message in the OLDEST thread moves it to the top — the list tracks activity
+      // rather than when a conversation began.
+      yield* db
+        .insert(CommunityDirectMessageTable)
+        .values({
+          id: "m-revive",
+          peer: oldest,
+          direction: "in",
+          body: "x",
+          claimed_at: 1,
+          received_at: 400,
+          signature: "x",
+        })
+        .run()
+        .pipe(Effect.orDie)
+      expect(yield* direct.conversations()).toEqual([oldest, newest, middle])
+
+      /**
+       * 🔴 And the author's CLAIMED time does not move anything: every row above carries
+       * `claimed_at: 999_999` except the last, which claims to be the oldest thing ever sent. If the
+       * order tracked that claim, this list would be upside down.
+       */
+      expect((yield* direct.conversations())[0]).toBe(oldest)
+    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+  )
+
 })
