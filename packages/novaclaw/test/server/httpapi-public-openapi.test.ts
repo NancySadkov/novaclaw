@@ -123,7 +123,21 @@ describe("PublicApi OpenAPI v2 errors", () => {
    * serious defect — so an exception belongs here, named, rather than expressed by weakening it or by
    * hiding the route from the spec.
    */
+  const peerSurface =
+    "Community P2/P4: the P2P surface. A node that answers only callers holding THIS instance's " +
+    "token is a private federation, not a community — strangers reaching us is the entire feature. " +
+    "Guarded by the ingress door rather than by a credential: proof-of-work first (0.83 µs to check, " +
+    "~49 ms for a sender to produce), then signature, subscription, block, size and duplicate rules, " +
+    "all in CommunityChannels.record. These stay IN the public spec on purpose — a stranger building " +
+    "a compatible peer needs the protocol documented (AGENTS.md: the third-party surface must clear " +
+    "a bar). Reachability is not granted by serving them: an instance behind a NAT with nothing " +
+    "forwarded is no more addressable than it was."
+
   const deliberatelyOpen: Record<string, string> = {
+    "POST /api/community/sync/summary":
+      `${peerSurface} Answers an unknown topic exactly like an empty room, so probing reveals no map of our channels.`,
+    "POST /api/community/sync/ids": peerSurface,
+    "POST /api/community/sync/messages": `${peerSurface} Bounded per request so one caller cannot make us assemble the whole log.`,
     "POST /api/community/inbound":
       "Community P2: the P2P ingress. A node that accepts messages only from callers holding THIS " +
       "instance's token is a private federation, not a community — strangers handing us bytes is the " +
