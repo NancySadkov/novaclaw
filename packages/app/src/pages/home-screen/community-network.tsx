@@ -9,6 +9,9 @@ import {
   communityChannels,
   communityArchivedChannels,
   communityDiscover,
+  communityConversations,
+  communityDirectHistory,
+  communitySendDirect,
   communityListChannel,
   communityNearbyChannels,
   communityContacts,
@@ -63,6 +66,54 @@ export const CommunityNetwork: Component = () => {
    * this must not undo that through another door.
    */
   const [nearby, nearbyActions] = createResource(connection, (value) => communityNearbyChannels(value.http))
+
+  /**
+   * 1:1 chat.
+   *
+   * ⚠️ A DM is a different thing from a channel post and the UI must not blur them: a channel is a
+   * public broadcast anyone in the room stores, while this is sealed to one person's key and cannot
+   * be read by whoever carries it. The copy says exactly that much and no more — "only they can read
+   * it" is true; "untraceable" would not be, because who talked to whom is visible to anyone watching
+   * the connection.
+   */
+  const [talkingTo, setTalkingTo] = createSignal("")
+  const [conversations, conversationActions] = createResource(connection, (value) =>
+    communityConversations(value.http),
+  )
+  const [dms, dmActions] = createResource(
+    () => {
+      const value = connection()
+      const peer = talkingTo()
+      return value === undefined || peer === "" ? undefined : ([value, peer] as const)
+    },
+    ([value, peer]) => communityDirectHistory(value.http, peer),
+  )
+  const [dmDraft, setDmDraft] = createSignal("")
+  const [dmNote, setDmNote] = createSignal("")
+
+  const sendDirect = async () => {
+    const current = connection()
+    const peer = talkingTo()
+    const body = dmDraft().trim()
+    if (!current || peer === "" || !body) return
+    setDmNote("")
+    try {
+      const result = await communitySendDirect(current.http, peer, body)
+      setDmDraft("")
+      // ⚠️ Says which of the two happened, like the channel compose box. The message is kept either
+      // way — a send that could not reach them must not also lose what the user wrote.
+      setDmNote(
+        result.sent
+          ? "Delivered."
+          : result.reason === "no-route"
+            ? "Saved. You have no address for them yet — find them first, or ask them for one."
+            : "Saved to your copy. They could not be reached just now.",
+      )
+      await Promise.all([dmActions.refetch(), conversationActions.refetch()])
+    } catch (error) {
+      setDmNote(error instanceof Error ? error.message : String(error))
+    }
+  }
 
   /**
    * Which channel is on screen.
@@ -354,6 +405,15 @@ export const CommunityNetwork: Component = () => {
                   <span class="text-[11px] text-v2-text-text-muted">
                     {contact.blocked ? "blocked" : contact.routes.length > 0 ? "known address" : "no address yet"}
                   </span>
+                  {/* ⚠️ Starting a conversation belongs HERE, on the person. The DM list can only show
+                      conversations that already exist, so without this the feature is reachable only
+                      by someone who has already been written to — which is nobody, on a fresh
+                      install. */}
+                  <Show when={!contact.blocked}>
+                    <ButtonV2 variant="ghost" size="small" onClick={() => setTalkingTo(contact.networkID)}>
+                      Message
+                    </ButtonV2>
+                  </Show>
                   {/* The only power a user has here, so it belongs on the row rather than behind a
                       menu — and it acts at ingress, not as a display filter. */}
                   <ButtonV2
@@ -411,6 +471,59 @@ export const CommunityNetwork: Component = () => {
           <span class="text-[11px] leading-snug text-v2-text-text-muted">{found()}</span>
         </Show>
       </div>
+
+      <Show when={(conversations() ?? []).length > 0 || talkingTo() !== ""}>
+        <div class="flex flex-col gap-1 rounded-xl bg-v2-background-bg-layer-02 px-3 py-3">
+          <span class="text-[12px] font-medium text-v2-text-text-base">Direct messages</span>
+          <div class="flex flex-wrap items-center gap-1">
+            <For each={conversations() ?? []}>
+              {(peer) => (
+                <ButtonV2
+                  variant={peer === talkingTo() ? "neutral" : "ghost"}
+                  size="small"
+                  onClick={() => setTalkingTo(peer)}
+                >
+                  {nameFor()(peer)}
+                </ButtonV2>
+              )}
+            </For>
+          </div>
+          <Show when={talkingTo() !== ""}>
+            <For each={dms() ?? []}>
+              {(message) => (
+                <div class="flex flex-col gap-0.5 border-t border-white/5 pt-2 first:border-0 first:pt-0">
+                  <span class="truncate text-[10px] text-v2-text-text-muted">
+                    {message.direction === "out" ? "You" : nameFor()(message.peer)}
+                  </span>
+                  <span class="text-[12px] leading-snug text-v2-text-text-base">{message.body}</span>
+                </div>
+              )}
+            </For>
+            <div class="mt-2 flex items-center gap-2">
+              <TextInputV2
+                appearance="base"
+                value={dmDraft()}
+                onInput={(event) => setDmDraft(event.currentTarget.value)}
+                placeholder={`Write to ${nameFor()(talkingTo())}`}
+                spellcheck={true}
+              />
+              <ButtonV2 variant="neutral" size="small" disabled={!dmDraft().trim()} onClick={() => void sendDirect()}>
+                Send
+              </ButtonV2>
+            </div>
+            <Show when={dmNote()}>
+              <span class="text-[11px] leading-snug text-v2-text-text-muted">{dmNote()}</span>
+            </Show>
+            {/* ⚠️ Precisely what is and is not promised. "Only they can read it" is true — the seal is
+                to their key, so even an instance relaying it holds ciphertext. Anything implying
+                anonymity would be false: who talked to whom is visible to anyone watching. */}
+            <span class="text-[11px] leading-snug text-v2-text-text-muted">
+              Sealed to their key — only they can read it, not even an instance passing it along. That
+              you two talked is not hidden.
+            </span>
+          </Show>
+        </div>
+      </Show>
 
       <div class="flex flex-col gap-1 rounded-xl bg-v2-background-bg-layer-02 px-3 py-3">
         {/*

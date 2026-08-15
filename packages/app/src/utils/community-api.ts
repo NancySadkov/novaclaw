@@ -133,6 +133,41 @@ export function communityRotate(server: ServerConnection.HttpBase) {
   })
 }
 
+export interface CommunityDirectMessage {
+  readonly id: string
+  readonly peer: string
+  readonly direction: string
+  readonly body: string
+  readonly at: number
+  readonly receivedAt: number
+}
+
+/** Everyone there is a conversation with. */
+export function communityConversations(server: ServerConnection.HttpBase) {
+  return instanceFetch<string[]>(server, { route: "api/community/direct" })
+}
+
+/** One conversation, most recent first. Plaintext from this instance's own store. */
+export function communityDirectHistory(server: ServerConnection.HttpBase, networkID: string) {
+  return instanceFetch<CommunityDirectMessage[]>(server, {
+    route: `api/community/direct/${encodeURIComponent(networkID)}/history`,
+  })
+}
+
+/**
+ * Send a direct message.
+ *
+ * ⚠️ The recipient's sealing key is fetched from THEIR instance and verified server-side — never
+ * supplied from here, because a key taken on trust is the substitution attack.
+ */
+export function communitySendDirect(server: ServerConnection.HttpBase, networkID: string, body: string) {
+  return instanceFetch<{ readonly sent: boolean; readonly reason?: string }>(server, {
+    route: `api/community/direct/${encodeURIComponent(networkID)}`,
+    method: "POST",
+    body: { body },
+  })
+}
+
 /** Channels this instance left but still holds messages for. */
 export function communityArchivedChannels(server: ServerConnection.HttpBase) {
   return instanceFetch<{ readonly name: string; readonly messages: number }[]>(server, {
