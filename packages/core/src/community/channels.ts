@@ -5,6 +5,7 @@ import { and, desc, eq, lt, sql } from "drizzle-orm"
 import { Context, Effect, Layer } from "effect"
 import { CommunityContacts } from "./contacts"
 import { CommunityMessage } from "./message"
+import { CommunityWork } from "./work"
 import { CommunityChannelTable, CommunityMessageTable } from "./channel.sql"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
@@ -36,7 +37,7 @@ export interface Stored extends CommunityMessage.Signed {
 }
 
 /** Why an incoming message was not stored. Recorded because "nothing appeared" is unreadable. */
-export type Rejection = "unverified" | "wrong-channel" | "blocked" | "duplicate" | "not-subscribed"
+export type Rejection = "unverified" | "unproven" | "wrong-channel" | "blocked" | "duplicate" | "not-subscribed"
 
 export interface Interface {
   readonly join: (channel: string) => Effect.Effect<void>
@@ -51,7 +52,7 @@ export interface Interface {
    */
   readonly record: (
     channel: string,
-    message: CommunityMessage.Signed,
+    message: CommunityMessage.Proven,
   ) => Effect.Effect<{ readonly stored: Stored } | { readonly rejected: Rejection }>
   /** Most recent first, by RECEIVED time. */
   readonly history: (channel: string, limit?: number) => Effect.Effect<ReadonlyArray<Stored>>
@@ -157,7 +158,7 @@ export const layer = Layer.effect(
         return updated.length > 0
       }),
 
-      record: Effect.fn("CommunityChannels.record")(function* (channel: string, message: CommunityMessage.Signed) {
+      record: Effect.fn("CommunityChannels.record")(function* (channel: string, message: CommunityMessage.Proven) {
         // Order matters: the cheapest and most decisive checks first, and nothing touches the disk
         // until the message has proved it deserves to.
         if ((yield* subscribed(channel)) === undefined) return { rejected: "not-subscribed" as const }
@@ -170,6 +171,16 @@ export const layer = Layer.effect(
          */
         if (message.channel !== channel) return { rejected: "wrong-channel" as const }
         if (!CommunityMessage.verifyOn(channel, message)) return { rejected: "unverified" as const }
+
+        /**
+         * 🔴 The flood defence, at the one door everything enters by.
+         *
+         * Measured: peer scoring does NOT stop a flood (it scored the flooder at the cap), so the
+         * cost has to be imposed here. Checking is ONE hash whatever the difficulty, so a receiver
+         * spends the same trivial amount rejecting a hostile message as accepting an honest one —
+         * verification can never itself become the flood.
+         */
+        if (!CommunityWork.verify(message.signature, message.nonce)) return { rejected: "unproven" as const }
 
         /**
          * 🔴 A blocked author is dropped at INGRESS, not filtered at read.

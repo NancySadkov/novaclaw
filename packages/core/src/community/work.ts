@@ -1,6 +1,7 @@
 export * as CommunityWork from "./work"
 
 import { createHash } from "node:crypto"
+import type { CommunityMessage } from "./message"
 
 /**
  * Community P5 — proof-of-work per message (`todo/community-p2p.md`).
@@ -81,4 +82,18 @@ export const verify = (
   if (!Number.isInteger(nonce) || nonce < 0) return false
   if (!Number.isInteger(difficulty) || difficulty < 1 || difficulty > MAX_DIFFICULTY) return false
   return leadingZeroBits(digest(signature, nonce)) >= difficulty
+}
+
+/**
+ * Attach proof to a signed message — the one way to obtain a `Proven`.
+ *
+ * Returns `undefined` when the work could not be found inside `maxAttempts`, so a caller reports
+ * failure rather than shipping a message the ingress door will refuse.
+ */
+export const prove = (
+  message: CommunityMessage.Signed,
+  difficulty: number = DEFAULT_DIFFICULTY,
+): CommunityMessage.Proven | undefined => {
+  const nonce = solve(message.signature, difficulty)
+  return nonce === undefined ? undefined : { ...message, nonce }
 }

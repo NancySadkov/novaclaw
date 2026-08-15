@@ -26,6 +26,23 @@ export interface Signed extends Unsigned {
   readonly signature: string
 }
 
+/**
+ * A signed message that also carries its proof-of-work.
+ *
+ * 🔴 A SEPARATE type, not an optional field, so the compiler enforces what a comment cannot: the
+ * log's ingress door accepts only `Proven`, and a caller holding a merely-`Signed` message has to
+ * pass through `CommunityWork` to get one. An optional `nonce` would have let every existing call
+ * site keep compiling while silently skipping the flood defence.
+ *
+ * ⚠️ The nonce is NOT inside `canonicalBytes` and is not signed. It binds to the SIGNATURE
+ * instead, which is already unique and unforgeable — so work cannot be transplanted between
+ * messages, and signing over a nonce would have forced solve-before-sign and a re-solve on any edit.
+ */
+export interface Proven extends Signed {
+  /** Nonce whose digest with the signature clears the difficulty. See `community/work.ts`. */
+  readonly nonce: number
+}
+
 export class MessageError extends Schema.TaggedErrorClass<MessageError>()("CommunityMessage.MessageError", {
   message: Schema.String,
 }) {}

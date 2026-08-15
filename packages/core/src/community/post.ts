@@ -4,6 +4,7 @@ import { Context, Effect, Layer } from "effect"
 import { CommunityChannels } from "./channels"
 import { CommunityMessage } from "./message"
 import { CommunityTransport } from "./transport"
+import { CommunityWork } from "./work"
 import { makeGlobalNode } from "../effect/app-node"
 import { InstanceIdentityStore } from "../instance-identity-store"
 
@@ -27,7 +28,7 @@ import { InstanceIdentityStore } from "../instance-identity-store"
  */
 
 export interface Posted {
-  readonly message: CommunityMessage.Signed
+  readonly message: CommunityMessage.Proven
   /** Stored in our own log — always true on success, because that happens before any send. */
   readonly stored: boolean
   /**
@@ -57,9 +58,16 @@ export const layer = Layer.effect(
 
     return Service.of({
       post: Effect.fn("CommunityPost.post")(function* (channel: string, body: string) {
-        const message = yield* CommunityMessage.sign({ channel, body }).pipe(
+        const signed = yield* CommunityMessage.sign({ channel, body }).pipe(
           Effect.provideService(InstanceIdentityStore.Service, identity),
         )
+        /**
+         * ⚠️ Our OWN messages pay the work too. It would be easy to exempt them — we know we are
+         * not flooding — but then `record` could not require proof of everything it stores, and a
+         * door with an exception is a door. ~50 ms inside a send action nobody notices.
+         */
+        const message = CommunityWork.prove(signed)
+        if (message === undefined) return { message: { ...signed, nonce: 0 }, stored: false, delivered: false }
 
         /**
          * Our own message goes through the SAME ingress door as everyone else's.

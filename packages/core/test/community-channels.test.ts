@@ -5,6 +5,7 @@ import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityMessageTable } from "@novaclaw/core/community/channel.sql"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityMessage } from "@novaclaw/core/community/message"
+import { CommunityWork } from "@novaclaw/core/community/work"
 import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
@@ -42,6 +43,9 @@ const CHANNEL = CommunityChannels.DEFAULT_CHANNEL
  * encoder in the test would be a second protocol and would agree with itself while disagreeing with
  * every real peer.
  */
+/** Signed + PROVEN: `record` refuses work that does not clear the difficulty, so tests must pay it. */
+const proven = (message: CommunityMessage.Signed) => CommunityWork.prove(message)!
+
 const fromStranger = (input: { channel: string; body: string; at?: number }) => {
   const { publicKey, privateKey } = generateKeyPairSync("ed25519")
   const raw = (publicKey.export({ type: "spki", format: "der" }) as Buffer).subarray(12)
@@ -62,7 +66,7 @@ describe("CommunityChannels", () => {
       yield* channels.join(CHANNEL)
       const message = yield* CommunityMessage.sign({ channel: CHANNEL, body: "hello" })
 
-      const result = yield* channels.record(CHANNEL, message)
+      const result = yield* channels.record(CHANNEL, proven(message))
       expect("stored" in result).toBe(true)
       const history = yield* channels.history(CHANNEL)
       expect(history.map((m) => m.body)).toEqual(["hello"])
@@ -77,20 +81,51 @@ describe("CommunityChannels", () => {
       const message = yield* CommunityMessage.sign({ channel: CHANNEL, body: "hi" })
 
       // Not subscribed: a topic we never joined must not fill our disk.
-      expect(yield* channels.record(CHANNEL, message)).toEqual({ rejected: "not-subscribed" })
+      expect(yield* channels.record(CHANNEL, proven(message))).toEqual({ rejected: "not-subscribed" })
 
       yield* channels.join(CHANNEL)
       // Tampered: the signature no longer covers the body.
-      expect(yield* channels.record(CHANNEL, { ...message, body: "edited" })).toEqual({ rejected: "unverified" })
+      expect(yield* channels.record(CHANNEL, proven({ ...message, body: "edited" }))).toEqual({ rejected: "unverified" })
       // Replayed from another channel onto this topic, signature perfectly valid.
       const elsewhere = yield* CommunityMessage.sign({ channel: "#elsewhere", body: "out of context" })
-      expect(yield* channels.record(CHANNEL, elsewhere)).toEqual({ rejected: "wrong-channel" })
+      expect(yield* channels.record(CHANNEL, proven(elsewhere))).toEqual({ rejected: "wrong-channel" })
 
       // The honest one lands, and the SAME message arriving again from another mesh peer is a
       // duplicate rather than a second entry — the normal case in a gossip mesh.
-      expect("stored" in (yield* channels.record(CHANNEL, message))).toBe(true)
-      expect(yield* channels.record(CHANNEL, message)).toEqual({ rejected: "duplicate" })
+      expect("stored" in (yield* channels.record(CHANNEL, proven(message)))).toBe(true)
+      expect(yield* channels.record(CHANNEL, proven(message))).toEqual({ rejected: "duplicate" })
       expect((yield* channels.history(CHANNEL)).length).toBe(1)
+    }),
+  )
+
+  it.effect("🔴 a message WITHOUT valid work is refused — the flood defence", () =>
+    Effect.gen(function* () {
+      const channels = yield* CommunityChannels.Service
+      yield* channels.join(CHANNEL)
+      const signed = yield* CommunityMessage.sign({ channel: CHANNEL, body: "cheap to send" })
+
+      // Perfectly signed, genuinely ours, and REFUSED — because a flooder's messages are also
+      // perfectly signed. Measured: peer scoring rated a flooder at the CAP, so the signature says
+      // nothing about whether this cost anything to produce.
+      expect(yield* channels.record(CHANNEL, { ...signed, nonce: 0 })).toEqual({ rejected: "unproven" })
+      expect(yield* channels.record(CHANNEL, { ...signed, nonce: -1 })).toEqual({ rejected: "unproven" })
+      expect(yield* channels.history(CHANNEL)).toEqual([])
+
+      // With the work done, the same message lands.
+      expect("stored" in (yield* channels.record(CHANNEL, proven(signed)))).toBe(true)
+    }),
+  )
+
+  it.effect("🔴 work does not transfer between messages", () =>
+    Effect.gen(function* () {
+      const channels = yield* CommunityChannels.Service
+      yield* channels.join(CHANNEL)
+      const first = proven(yield* CommunityMessage.sign({ channel: CHANNEL, body: "one" }))
+      const second = yield* CommunityMessage.sign({ channel: CHANNEL, body: "two" })
+
+      // Solving once and reusing the nonce is exactly how a flooder would avoid paying per message.
+      // The work binds to the SIGNATURE, so it cannot be carried across.
+      expect(yield* channels.record(CHANNEL, { ...second, nonce: first.nonce })).toEqual({ rejected: "unproven" })
     }),
   )
 
@@ -107,7 +142,7 @@ describe("CommunityChannels", () => {
       const message = yield* CommunityMessage.sign({ channel: CHANNEL, body: "spam" })
       // Storing then hiding would let a blocked spammer keep filling the disk at the ~9.8k msg/s the
       // flood test measured: blocked in the UI, still paid for in full.
-      expect(yield* channels.record(CHANNEL, message)).toEqual({ rejected: "blocked" })
+      expect(yield* channels.record(CHANNEL, proven(message))).toEqual({ rejected: "blocked" })
       expect(yield* channels.history(CHANNEL)).toEqual([])
     }),
   )
@@ -118,13 +153,13 @@ describe("CommunityChannels", () => {
       yield* channels.join(CHANNEL)
 
       const honest = yield* CommunityMessage.sign({ channel: CHANNEL, body: "first", at: Date.now() })
-      yield* channels.record(CHANNEL, honest)
+      yield* channels.record(CHANNEL, proven(honest))
       // A peer dating itself in the year 3000. Sorting by the claim would pin it above everyone
       // else's messages forever, in every reader's view, with no authority able to say otherwise.
       const liar = yield* CommunityMessage.sign({ channel: CHANNEL, body: "pinned", at: 32_503_680_000_000 })
-      yield* channels.record(CHANNEL, liar)
+      yield* channels.record(CHANNEL, proven(liar))
       const later = yield* CommunityMessage.sign({ channel: CHANNEL, body: "latest", at: Date.now() })
-      yield* channels.record(CHANNEL, later)
+      yield* channels.record(CHANNEL, proven(later))
 
       const bodies = (yield* channels.history(CHANNEL)).map((m) => m.body)
       expect(bodies[0]).toBe("latest")
@@ -136,7 +171,7 @@ describe("CommunityChannels", () => {
     Effect.gen(function* () {
       const channels = yield* CommunityChannels.Service
       yield* channels.join(CHANNEL)
-      yield* channels.record(CHANNEL, yield* CommunityMessage.sign({ channel: CHANNEL, body: "kept" }))
+      yield* channels.record(CHANNEL, proven(yield* CommunityMessage.sign({ channel: CHANNEL, body: "kept" })))
 
       expect(yield* channels.leave(CHANNEL)).toBe(true)
       expect(yield* channels.channels()).toEqual([])
@@ -154,14 +189,14 @@ describe("CommunityChannels", () => {
       // met. Nothing about verification may depend on knowing the author beforehand.
       const stranger = fromStranger({ channel: CHANNEL, body: "hello from outside" })
       expect(CommunityMessage.verify(stranger)).toBe(true)
-      expect("stored" in (yield* channels.record(CHANNEL, stranger))).toBe(true)
+      expect("stored" in (yield* channels.record(CHANNEL, proven(stranger)))).toBe(true)
       expect((yield* channels.history(CHANNEL)).map((m) => m.body)).toEqual(["hello from outside"])
 
       // And a forged one from that same author is refused: an attacker who knows a stranger's
       // public key must not be able to speak as them.
       const forged = { ...stranger, body: "words they never wrote" }
       expect(CommunityMessage.verify(forged)).toBe(false)
-      expect(yield* channels.record(CHANNEL, forged)).toEqual({ rejected: "unverified" })
+      expect(yield* channels.record(CHANNEL, proven(forged))).toEqual({ rejected: "unverified" })
     }),
   )
 
