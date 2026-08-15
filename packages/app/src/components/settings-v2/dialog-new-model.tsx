@@ -64,6 +64,20 @@ type SavedProvider = {
 export const DialogNewModel: Component<{
   http: ServerConnection.HttpBase
   directory: string
+  /**
+   * Open straight on the custom-endpoint step with this address filled in.
+   *
+   * 🔴 Used by the community panel when a user accepts somebody's model-server offer. It lands HERE
+   * rather than writing config itself precisely because this dialog PROBES the endpoint before saving
+   * — it checks the server exists and lists models, which is the one thing a signature on an offer
+   * cannot tell you. A second config writer with a subset of those rules is the failure this codebase
+   * keeps one door to avoid.
+   *
+   * ⚠️ It prefills and stops: the user still presses through the probe and the save. Decisions §4 is
+   * explicit that the repair is "one click, not zero" — an address arriving from the network must
+   * never re-point where prompts go without the person seeing it.
+   */
+  initialEndpoint?: string
 }> = (props) => {
   const dialog = useDialog()
   const language = useLanguage()
@@ -254,6 +268,20 @@ export const DialogNewModel: Component<{
     setError(undefined)
     setStep("connect")
   }
+
+  /**
+   * Jump to the custom endpoint step with an address already in the field.
+   *
+   * ⚠️ Runs on mount only, and only when an address was passed. Re-applying it later would fight the
+   * user: they may have edited the field or backed out to pick a preset instead.
+   */
+  onMount(() => {
+    const offered = props.initialEndpoint?.trim()
+    if (!offered) return
+    setPresetID("custom")
+    setForm({ baseURL: offered, providerID: providerIDFromEndpoint(offered), apiKey: "" })
+    setStep("connect")
+  })
 
   const chooseCustom = () => {
     setPresetID("custom")

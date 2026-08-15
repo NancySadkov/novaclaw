@@ -1,7 +1,9 @@
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { For, Show, createMemo, createResource, createSignal, type Component } from "solid-js"
+import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useGlobal } from "@/context/global"
+import { useServerSync } from "@/context/server-sync"
 import { useServer } from "@/context/server"
 import {
   communityAddContact,
@@ -47,6 +49,22 @@ export const CommunityNetwork: Component = () => {
   const server = useServer()
   const global = useGlobal()
   const connection = createMemo(() => server.current ?? global.servers.list()[0])
+  const dialog = useDialog()
+  const sync = useServerSync()
+  /**
+   * The probe the add-model dialog runs needs a directory to resolve config against, and the scratch
+   * cwd is the one always available on this screen.
+   *
+   * ⚠️ Resolved exactly as `new-agent-bar.tsx` does — the ctx sync preferred, the top-level sync as
+   * fallback — so a not-yet-warm ctx never yields an undefined path. A second way of finding the same
+   * value would drift from that one.
+   */
+  const serverCtx = createMemo(() => {
+    const current = server.current
+    return current ? global.ensureServerCtx(current) : undefined
+  })
+  const activeSync = () => serverCtx()?.sync ?? sync()
+  const scratchDir = createMemo(() => (activeSync().data.path as { scratchDir?: string } | undefined)?.scratchDir)
 
   const [identity] = createResource(connection, (value) => instanceIdentity(value.http))
   const [contacts, contactActions] = createResource(connection, (value) => communityContacts(value.http))
@@ -113,6 +131,32 @@ export const CommunityNetwork: Component = () => {
   const [offerModels, setOfferModels] = createSignal("")
   const [offerPrice, setOfferPrice] = createSignal("")
   const [offerNote, setOfferNote] = createSignal("")
+
+  /**
+   * Accept somebody's offer — ONE CLICK, and not zero.
+   *
+   * 🔴 Opens the existing add-model dialog with the address filled in, rather than writing config
+   * here. That dialog PROBES the endpoint before saving, which checks the server exists and lists
+   * models — the one thing a signature on an offer cannot tell you. Writing config from this panel
+   * would be a second door carrying a subset of those rules.
+   *
+   * ⚠️ Decisions §4 sets the standard: "the vision's headline repair is ONE CLICK, NOT ZERO … instead
+   * of silently re-pointing where the user's prompts go while nobody watches." So this prefills and
+   * hands over; the person still sees the address and presses save.
+   */
+  const useOffer = (endpoint: string) => {
+    const current = connection()
+    const directory = scratchDir()
+    if (!current || !directory) {
+      setOfferNote("Open a project first — the check that this endpoint works runs against one.")
+      return
+    }
+    void import("@/components/settings-v2/dialog-new-model").then((module) => {
+      dialog.show(() => (
+        <module.DialogNewModel http={current.http} directory={directory} initialEndpoint={endpoint} />
+      ))
+    })
+  }
 
   const publishOffer = async () => {
     const current = connection()
@@ -555,6 +599,11 @@ export const CommunityNetwork: Component = () => {
                     them the address and letting them decide in Settings keeps that choice theirs and
                     visible, and costs one paste.
                   */}
+                  {/* ⚠️ "Use this" prefills; it never saves. The dialog it opens probes the endpoint
+                      first, and the user presses through — see `useOffer`. */}
+                  <ButtonV2 variant="ghost" size="small" onClick={() => useOffer(offer.endpoint)}>
+                    Use this
+                  </ButtonV2>
                   <ButtonV2
                     variant="ghost"
                     size="small"
@@ -571,9 +620,9 @@ export const CommunityNetwork: Component = () => {
             to send their prompts somewhere, and "verified" would be read as "vouched for". */}
         <span class="mt-1 text-[11px] leading-snug text-v2-text-text-muted">
           Each one is signed, so the address cannot have been changed on the way to you. Whether it
-          works, serves what it says, or is still there tomorrow is between you and them. To use one,
-          copy its address into your model settings — your prompts would then go to that person's
-          machine, so it stays your decision to make there.
+          works, serves what it says, or is still there tomorrow is between you and them. "Use this"
+          fills the address into your model settings and checks it answers — your prompts would then go
+          to that person's machine, so nothing is saved until you say so.
         </span>
         <div class="mt-2 flex flex-col gap-2 border-t border-white/5 pt-2">
           {/* ⚠️ Stated BEFORE the controls, and read from the peer-facing endpoint so the user sees
