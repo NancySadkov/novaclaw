@@ -544,9 +544,25 @@ export const CommunityNetwork: Component = () => {
               <div class="flex flex-col gap-0.5 border-t border-white/5 pt-2 first:border-0 first:pt-0">
                 <span class="truncate text-[10px] text-v2-text-text-muted">{nameFor()(offer.from)}</span>
                 <span class="text-[12px] leading-snug text-v2-text-text-base">{offer.endpoint}</span>
-                <span class="text-[11px] leading-snug text-v2-text-text-muted">
-                  {offer.models.join(", ") || "models unspecified"} · {offer.price}
-                </span>
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] leading-snug text-v2-text-text-muted">
+                    {offer.models.join(", ") || "models unspecified"} · {offer.price}
+                  </span>
+                  {/*
+                    🔴 COPIES the address; it does not configure anything. Adding it as a provider
+                    automatically would point this user's prompts at somebody else's machine — the one
+                    thing the data-plane promise is about — off the back of an advertisement. Handing
+                    them the address and letting them decide in Settings keeps that choice theirs and
+                    visible, and costs one paste.
+                  */}
+                  <ButtonV2
+                    variant="ghost"
+                    size="small"
+                    onClick={() => void navigator.clipboard.writeText(offer.endpoint)}
+                  >
+                    Copy address
+                  </ButtonV2>
+                </div>
               </div>
             )}
           </For>
@@ -555,7 +571,9 @@ export const CommunityNetwork: Component = () => {
             to send their prompts somewhere, and "verified" would be read as "vouched for". */}
         <span class="mt-1 text-[11px] leading-snug text-v2-text-text-muted">
           Each one is signed, so the address cannot have been changed on the way to you. Whether it
-          works, serves what it says, or is still there tomorrow is between you and them.
+          works, serves what it says, or is still there tomorrow is between you and them. To use one,
+          copy its address into your model settings — your prompts would then go to that person's
+          machine, so it stays your decision to make there.
         </span>
         <div class="mt-2 flex flex-col gap-2 border-t border-white/5 pt-2">
           {/* ⚠️ Stated BEFORE the controls, and read from the peer-facing endpoint so the user sees
