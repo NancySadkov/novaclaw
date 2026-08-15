@@ -172,6 +172,8 @@ export const layer = Layer.effectDiscard(
                       ? `Connected to ${state.peers} peer(s).`
                       : state.kind === "connecting"
                         ? "Connecting."
+                        : state.reason === "not-joined"
+                          ? "Not connected: this instance has not joined the community. Its owner turns that on in the Community app, after reading what it involves."
                         : state.reason === "airgap"
                           ? "Not connected: offline mode is on, so nothing goes in or out."
                           : "Not connected: the transport that carries messages between instances does not exist yet.",

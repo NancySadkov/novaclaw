@@ -14,6 +14,7 @@ import { CommunityTopic } from "./topic"
 import { httpRoutes } from "./transport"
 import { makeGlobalNode } from "../effect/app-node"
 import { httpClient } from "../effect/app-node-platform"
+import { CommunityConsent } from "./consent"
 import { Offline } from "../offline"
 
 /**
@@ -216,6 +217,11 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const offline = yield* Offline.Service
+    // 🔴 `speaks()` rather than the airgap alone: an instance that has not JOINED must not reach out
+    // either. Gating only the inbound door was the first attempt and it left the bigger half open —
+    // outbound connections are precisely what reveal the user's IP to a stranger, which is the thing
+    // the warning they accepted is about. `participates` covers BOTH conditions, and reads each live.
+    const speaks = () => CommunityConsent.participates(CommunityConsent.currentGate())
     const contacts = yield* CommunityContacts.Service
     const channels = yield* CommunityChannels.Service
     const peers = yield* CommunityPeers.Service
@@ -279,7 +285,7 @@ export const layer = Layer.effect(
 
     return Service.of({
       sendDirect: Effect.fn("CommunitySync.sendDirect")(function* (to: string, body: string) {
-        if (offline.policy.enabled) return { sent: false, reason: "offline" }
+        if (!speaks()) return { sent: false, reason: "offline" }
 
         /**
          * ⚠️ Only routes belonging to THIS recipient, and their key is read from the instance that
@@ -319,7 +325,7 @@ export const layer = Layer.effect(
       }),
 
       successions: Effect.fn("CommunitySync.successions")(function* (announce) {
-        if (offline.policy.enabled) return { told: 0, learned: 0 }
+        if (!speaks()) return { told: 0, learned: 0 }
         let told = 0
         let learned = 0
         for (const peer of yield* reachable) {
@@ -339,7 +345,7 @@ export const layer = Layer.effect(
       }),
 
       channelsNearby: Effect.fn("CommunitySync.channelsNearby")(function* () {
-        if (offline.policy.enabled) return []
+        if (!speaks()) return []
         const joined = (yield* channels.channels()).map((entry) => CommunityTopic.canonical(entry.name))
         const seen = new Map<string, string>()
         for (const peer of yield* reachable) {
@@ -358,7 +364,7 @@ export const layer = Layer.effect(
       }),
 
       learnFrom: Effect.fn("CommunitySync.learnFrom")(function* (addresses, source = "lan") {
-        if (offline.policy.enabled) return 0
+        if (!speaks()) return 0
         let learned = 0
         for (const address of httpRoutes(addresses)) {
           // ⚠️ ASK who they are rather than trusting a claim attached to the address. The reply is
@@ -373,7 +379,7 @@ export const layer = Layer.effect(
       }),
 
       discover: Effect.fn("CommunitySync.discover")(function* () {
-        if (offline.policy.enabled) return { asked: 0, learned: 0 }
+        if (!speaks()) return { asked: 0, learned: 0 }
         let asked = 0
         let learned = 0
         for (const peer of yield* reachable) {
@@ -408,7 +414,7 @@ export const layer = Layer.effect(
       sync: Effect.fn("CommunitySync.sync")(function* (channel: string) {
         // The airgap gate, first and by the same argument as the transport's: a community is egress
         // the user chose, and airgap has to be able to withdraw that choice.
-        if (offline.policy.enabled) return { peers: 0, fetched: 0 }
+        if (!speaks()) return { peers: 0, fetched: 0 }
 
         // 🔴 Contacts AND learned peers. Syncing only with people the user added by hand would make
         // catching up depend on who they happen to know, when the whole point of peer exchange is

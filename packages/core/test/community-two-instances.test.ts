@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { Effect } from "effect"
 import { CommunityChannels } from "@novaclaw/core/community/channels"
+import { CommunityConsent } from "@novaclaw/core/community/consent"
 import { CommunityDirect } from "@novaclaw/core/community/dm"
 import { CommunitySeal } from "@novaclaw/core/community/seal"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
@@ -34,12 +35,27 @@ import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
  * `record` is called by the sidecar instead of by the test.
  */
 
+/**
+ * 🔴 These instances have JOINED the community, and saying so is now part of building one.
+ *
+ * The module does not reach out until its owner accepts what joining costs — unmoderated content,
+ * and an IP address revealed to whoever they talk to. That gate is process-wide, so a test that did
+ * not grant it would find every outbound path refusing and the failure would look like a transport
+ * bug rather than a consent one. Granted through the SAME function the config write path uses, so
+ * these run against the real gate rather than a bypass.
+ *
+ * ⚠️ The airgap is passed as OFF explicitly: `participates` needs both, and defaulting it here would
+ * hide the day someone makes the airgap default differently.
+ */
+const joinTheCommunity = () => CommunityConsent.applied({ consented: true }, { enabled: false })
+
 const instance = (label: string) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), `novaclaw-community-${label}-`))
   const file = path.join(home, "instance.db")
   // ⚠️ A distinct FILE per instance, not `:memory:`. Two in-memory databases built from the same
   // layer can silently collapse into one another's — and two instances that shared a database would
   // "exchange" messages by reading their own rows, proving nothing.
+  joinTheCommunity()
   const database = Database.layerFromPath(file)
   const graph = AppNodeBuilder.build(
     LayerNode.group([

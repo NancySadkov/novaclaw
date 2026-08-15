@@ -11,6 +11,7 @@ import { httpRoutes } from "./transport"
 import { makeGlobalNode } from "../effect/app-node"
 import { httpClient } from "../effect/app-node-platform"
 import { InstanceIdentityStore } from "../instance-identity-store"
+import { CommunityConsent } from "./consent"
 import { Offline } from "../offline"
 
 /**
@@ -316,6 +317,11 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const offline = yield* Offline.Service
+    // 🔴 `speaks()` rather than the airgap alone: an instance that has not JOINED must not reach out
+    // either. Gating only the inbound door was the first attempt and it left the bigger half open —
+    // outbound connections are precisely what reveal the user's IP to a stranger, which is the thing
+    // the warning they accepted is about. `participates` covers BOTH conditions, and reads each live.
+    const speaks = () => CommunityConsent.participates(CommunityConsent.currentGate())
     const channels = yield* CommunityChannels.Service
     const peers = yield* CommunityPeers.Service
     const identity = yield* InstanceIdentityStore.Service
@@ -390,7 +396,7 @@ export const layer = Layer.effect(
 
     return Service.of({
       search: Effect.fn("CommunitySearch.search")(function* (terms: string) {
-        if (offline.policy.enabled) return []
+        if (!speaks()) return []
         const self = (yield* identity.identity()).networkID
         /**
          * ⚠️ A fresh id per search, and it is the DEDUP key every node keys on. Reusing one would
@@ -415,7 +421,7 @@ export const layer = Layer.effect(
       }),
 
       receive: Effect.fn("CommunitySearch.receive")(function* (query: Query) {
-        if (offline.policy.enabled) return []
+        if (!speaks()) return []
         const self = (yield* identity.identity()).networkID
         const verdict = consider(query, { self, seen, throttle, now: Date.now() })
         // Answer from our own shelf whatever the verdict: refusing to FORWARD a query is a traffic

@@ -45,7 +45,7 @@ export const CommunityContact = Schema.Struct({
  * disconnected state would make an airgapped instance look broken.
  */
 export const CommunityTransportState = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("off"), reason: Schema.Literals(["airgap", "no-peers"]) }),
+  Schema.Struct({ kind: Schema.Literal("off"), reason: Schema.Literals(["airgap", "no-peers", "not-joined"]) }),
   Schema.Struct({ kind: Schema.Literal("connecting") }),
   Schema.Struct({ kind: Schema.Literal("online"), peers: Schema.Number }),
 ])

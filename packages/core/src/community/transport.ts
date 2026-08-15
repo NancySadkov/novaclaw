@@ -9,6 +9,7 @@ import { CommunityTopic } from "./topic"
 import { CommunityMessage } from "./message"
 import { makeGlobalNode } from "../effect/app-node"
 import { httpClient } from "../effect/app-node-platform"
+import { CommunityConsent } from "./consent"
 import { Offline } from "../offline"
 
 /**
@@ -37,7 +38,7 @@ export type State =
    * symmetry. A transport now always exists, so `none` became a state nothing could return, and a
    * state that cannot occur is a branch every reader has to reason about for nothing.
    */
-  | { readonly kind: "off"; readonly reason: "airgap" | "no-peers" }
+  | { readonly kind: "off"; readonly reason: "airgap" | "no-peers" | "not-joined" }
   | { readonly kind: "connecting" }
   | { readonly kind: "online"; readonly peers: number }
 
@@ -119,6 +120,11 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const offline = yield* Offline.Service
+    // 🔴 `speaks()` rather than the airgap alone: an instance that has not JOINED must not reach out
+    // either. Gating only the inbound door was the first attempt and it left the bigger half open —
+    // outbound connections are precisely what reveal the user's IP to a stranger, which is the thing
+    // the warning they accepted is about. `participates` covers BOTH conditions, and reads each live.
+    const speaks = () => CommunityConsent.participates(CommunityConsent.currentGate())
     const contacts = yield* CommunityContacts.Service
     const peers = yield* CommunityPeers.Service
     const http = yield* HttpClient.HttpClient
@@ -157,7 +163,14 @@ export const layer = Layer.effect(
       // A live getter over the process-wide ref, so a Settings change takes effect without a restart.
       // The airgap gate stays FIRST: a community feature is egress the user chose, and airgap has to
       // be able to withdraw that choice before anything else is considered.
-      if (offline.policy.enabled) return { kind: "off", reason: "airgap" } as const
+      /**
+       * ⚠️ The two reasons are told APART. Folding "has not joined" into "airgap" was a one-line
+       * convenience that made this surface lie: it is read by the agent tool's `status` and by the
+       * API, and a user shown "offline mode is on" when it is not would go and look for a switch
+       * that is already off. The same argument the refusals ARRAY makes, one layer down.
+       */
+      if (CommunityConsent.currentGate().airgap) return { kind: "off", reason: "airgap" } as const
+      if (!speaks()) return { kind: "off", reason: "not-joined" } as const
       const peers = yield* reachable()
       // ⚠️ Not `off/none`: the transport exists and works. "We know nobody to dial" is a different
       // sentence to a person than "this is not built yet", and it is one they can fix in a minute.
@@ -177,7 +190,7 @@ export const layer = Layer.effect(
       state,
 
       publish: Effect.fn("CommunityTransportHttp.publish")(function* (message: CommunityMessage.Proven) {
-        if (offline.policy.enabled) return false
+        if (!speaks()) return false
         const peers = yield* reachable()
         if (peers.length === 0) return false
 

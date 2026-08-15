@@ -6,6 +6,7 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { CommunityMessage } from "@novaclaw/core/community/message"
 import { CommunityWork } from "@novaclaw/core/community/work"
+import { CommunityConsent } from "@novaclaw/core/community/consent"
 import { Offline } from "@novaclaw/core/offline"
 import { testEffect } from "./lib/effect"
 
@@ -16,6 +17,15 @@ import { testEffect } from "./lib/effect"
  * instance that HAS one and still cannot send: nobody to dial, or airgap. Both are ordinary, and
  * neither may be reported as a failure.
  */
+
+/**
+ * 🔴 These instances have JOINED. The transport does not carry anything for an instance whose owner
+ * has not accepted what joining costs, so without this every case below would report `not-joined`
+ * and the airgap distinction under test would be invisible.
+ *
+ * ⚠️ Granted through the same function the config write path uses, so this exercises the real gate.
+ */
+const joined = () => CommunityConsent.applied({ consented: true }, { enabled: false })
 
 const it = testEffect(
   // Offline is listed explicitly as well as being a dependency of the transport: the airgap case
@@ -28,6 +38,7 @@ const it = testEffect(
 describe("CommunityTransport", () => {
   it.effect("reports OFF with a reason, not a failure", () =>
     Effect.gen(function* () {
+      joined()
       const transport = yield* CommunityTransport.Service
       const state = yield* transport.state()
       // ⚠️ `no-peers`, not `none`. A transport exists and works; this instance simply knows nobody
@@ -39,6 +50,7 @@ describe("CommunityTransport", () => {
 
   it.effect("🔴 publishing returns false rather than failing", () =>
     Effect.gen(function* () {
+      joined()
       const transport = yield* CommunityTransport.Service
       // PROVEN, because `publish` demands it: handing a transport a message without its work would
       // publish something every receiver refuses, and the failure would show only on the far side.
@@ -51,6 +63,7 @@ describe("CommunityTransport", () => {
 
   it.effect("🔴 AIRGAP is reported distinctly from 'nobody to dial'", () =>
     Effect.gen(function* () {
+      joined()
       const transport = yield* CommunityTransport.Service
       const before = yield* transport.state()
       expect(before).toEqual({ kind: "off", reason: "no-peers" })
