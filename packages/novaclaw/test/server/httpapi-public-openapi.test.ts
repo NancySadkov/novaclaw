@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { OpenApi } from "effect/unstable/httpapi"
+import { CommunityPeerPaths } from "../../src/server/routes/instance/httpapi/groups/community"
 import { PublicApi } from "../../src/server/routes/instance/httpapi/public"
 
 type Method = "get" | "post" | "put" | "delete" | "patch"
@@ -117,51 +118,44 @@ describe("PublicApi OpenAPI v2 errors", () => {
   })
 
   /**
-   * 🔴 Routes that are UNAUTHENTICATED on purpose, each with the reason it has to be.
+   * 🔴 The routes that are UNAUTHENTICATED on purpose — derived from the peer group, not listed here.
    *
-   * The guard below is worth keeping strict — an accidentally open route on the instance API is a
-   * serious defect — so an exception belongs here, named, rather than expressed by weakening it or by
-   * hiding the route from the spec.
+   * A hand-written list was the first attempt and it was wrong three times in a row: every time the
+   * P2P surface grew a route I had to remember to add an entry, and the guard failed on work that was
+   * entirely correct. That is a guard tracking a copy of the design instead of the design.
+   *
+   * `CommunityPeerPaths` IS the boundary. Every route in that group is open by definition — it is the
+   * peer-to-peer surface, and a node that answers only callers holding this instance's token is a
+   * private federation rather than a community. What protects it is the ingress door, not a
+   * credential: proof-of-work first (0.83 µs to check, ~49 ms for a sender to produce), then
+   * signature, subscription, block, size and duplicate rules. They stay in the public spec on purpose
+   * — a stranger building a compatible peer needs the protocol documented.
+   *
+   * ⚠️ The protection this keeps: a route open ANYWHERE ELSE still fails, and every peer route is
+   * asserted to actually BE open, so putting one behind auth fails too and asks for this to be
+   * revisited. Deriving it removes the bookkeeping, never the check.
    */
-  const peerSurface =
-    "Community P2/P4: the P2P surface. A node that answers only callers holding THIS instance's " +
-    "token is a private federation, not a community — strangers reaching us is the entire feature. " +
-    "Guarded by the ingress door rather than by a credential: proof-of-work first (0.83 µs to check, " +
-    "~49 ms for a sender to produce), then signature, subscription, block, size and duplicate rules, " +
-    "all in CommunityChannels.record. These stay IN the public spec on purpose — a stranger building " +
-    "a compatible peer needs the protocol documented (AGENTS.md: the third-party surface must clear " +
-    "a bar). Reachability is not granted by serving them: an instance behind a NAT with nothing " +
-    "forwarded is no more addressable than it was."
-
-  const deliberatelyOpen: Record<string, string> = {
-    "POST /api/community/sync/summary":
-      `${peerSurface} Answers an unknown topic exactly like an empty room, so probing reveals no map of our channels.`,
-    "POST /api/community/sync/ids": peerSurface,
-    "POST /api/community/sync/messages": `${peerSurface} Bounded per request so one caller cannot make us assemble the whole log.`,
-    "POST /api/community/inbound":
-      "Community P2: the P2P ingress. A node that accepts messages only from callers holding THIS " +
-      "instance's token is a private federation, not a community — strangers handing us bytes is the " +
-      "entire feature. It is guarded instead by proof-of-work (checked first, ~49 ms for a sender to " +
-      "produce, 0.83 µs for us to reject), signature, subscription, block, size and duplicate rules, " +
-      "all in CommunityChannels.record. It stays IN the public spec on purpose: a stranger building a " +
-      "compatible peer needs the protocol documented.",
-  }
+  const openByDesign = new Set<string>(Object.values(CommunityPeerPaths))
 
   test("preserves /api auth responses", () => {
     const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
 
+    let openSeen = 0
     for (const route of v2Operations(spec)) {
       const name = `${route.method.toUpperCase()} ${route.path}`
-      if (name in deliberatelyOpen) {
-        // ⚠️ Asserted to be open, not merely skipped. If someone later puts this route behind auth,
-        // this fails and asks them to remove the exemption — an exemption that quietly stopped being
-        // true is how a guard turns into decoration.
-        expect(route.operation.responses?.["401"], `${name} is exempt but now declares 401`).toBeUndefined()
+      if (openByDesign.has(route.path)) {
+        // ⚠️ Asserted to be open, not merely skipped: a route that quietly gained auth would leave
+        // this exemption silently untrue, which is how a guard turns into decoration.
+        expect(route.operation.responses?.["401"], `${name} is open by design but now declares 401`).toBeUndefined()
+        openSeen++
         continue
       }
       expect(route.operation.responses?.["401"], name).toBeDefined()
       expect(route.operation.security, name).toEqual([])
     }
+    // Every declared peer path is actually served: a typo in the group would otherwise make this
+    // exemption cover nothing while looking thorough.
+    expect(openSeen).toBe(openByDesign.size)
   })
 
   test("documents references separately from filesystem routes", () => {
