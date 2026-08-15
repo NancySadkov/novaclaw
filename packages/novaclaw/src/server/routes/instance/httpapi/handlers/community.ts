@@ -5,6 +5,7 @@ import { CommunityPost } from "@novaclaw/core/community/post"
 import { CommunityPeers } from "@novaclaw/core/community/peers"
 import { MDNS } from "@/server/mdns"
 import { CommunityReconcile } from "@novaclaw/core/community/reconcile"
+import { CommunitySearch } from "@novaclaw/core/community/search"
 import { CommunitySuccession } from "@novaclaw/core/community/succession"
 import { CommunitySync } from "@novaclaw/core/community/sync"
 import { CommunityTopic } from "@novaclaw/core/community/topic"
@@ -26,6 +27,7 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
     const channels = yield* CommunityChannels.Service
     const sync = yield* CommunitySync.Service
     const identity = yield* InstanceIdentityStore.Service
+    const search = yield* CommunitySearch.Service
     const peersStore = yield* CommunityPeers.Service
     const transport = yield* CommunityTransport.Service
     const posts = yield* CommunityPost.Service
@@ -153,6 +155,12 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
         }),
       )
       .handle(
+        "searchChannels",
+        Effect.fn("CommunityHttpApi.searchChannels")(function* (ctx) {
+          return yield* search.search(ctx.payload.terms)
+        }),
+      )
+      .handle(
         "channelPost",
         Effect.fn("CommunityHttpApi.channelPost")(function* (ctx) {
           const result = yield* posts.post(ctx.params.name, ctx.payload.body)
@@ -182,6 +190,7 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
     const peers = yield* CommunityPeers.Service
     const contacts = yield* CommunityContacts.Service
     const successions = yield* CommunitySuccession.Store
+    const search = yield* CommunitySearch.Service
 
     /**
      * Resolve a topic to one of OUR channels, or nothing.
@@ -199,6 +208,12 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
     })
 
     return handlers
+      .handle(
+        "communitySearch",
+        Effect.fn("CommunityHttpApi.communitySearch")(function* (ctx) {
+          return { channels: yield* search.receive(ctx.payload) }
+        }),
+      )
       .handle(
         "communitySuccessionTell",
         Effect.fn("CommunityHttpApi.communitySuccessionTell")(function* (ctx) {

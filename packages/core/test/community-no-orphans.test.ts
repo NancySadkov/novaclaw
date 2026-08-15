@@ -87,8 +87,7 @@ const EXPECTED_ORPHANS: Record<string, string> = {
   // Statements arrive from PEERS. The caller is the transport's inbound path (P2), which is the one
   // piece of this program that does not exist — the same reason `record` was test-only until the
   // HTTP surface landed.
-  "contacts.ts#follow": "waiting for P2: successor statements arrive over the network",
-  "contacts.ts#followAll": "waiting for P2: a bag of statements arrives from a gossip mesh",
+  "contacts.ts#follow": "internal helper: followAll walks the chain link by link with it, and followAll IS the caller the network reaches — a bag of statements arrives unordered, so single-stepping is never the entry point",
   // Deliberately NOT exposed. With one channel and no way to join others, a Leave button's only
   // effect is to empty the screen, and Mute has nothing to mute against. Both become real with
   // channel discovery in P5; shipping the controls first would be UI for a situation nobody is in.
@@ -96,12 +95,11 @@ const EXPECTED_ORPHANS: Record<string, string> = {
   // statement that no peer can receive without a transport, so a user who rotated today would
   // silently strand themselves: new key, nobody told, and the proof undeliverable. The capability is
   // built and tested; exposing it is P2's job, not P1's.
-  "instance-identity-store.ts#rotate": "waiting for P2: a successor statement nobody can receive strands the user",
   // Queries and summaries arrive FROM PEERS. Built ahead of the transport deliberately — these are
   // the controls whose absence collapsed Gnutella, and they are cheaper to get right in a test than
   // in a mesh — but nothing local can call them until something carries a query.
-  "search.ts#consider": "waiting for P2: queries arrive over the network",
-  "search.ts#widen": "waiting for P2: widening is a decision about which PEERS to ask next",
+  "search.ts#consider": "internal: the wire in this same file calls it on every received query — it is the door, not a capability waiting for one",
+  "search.ts#widen": "internal: `broadcast` in this same file waves through it, widening only when a wave under-delivers",
   "reconcile.ts#bucketOf": "internal helper called by summarize/idsIn in the same file; exported to test the both-sides-agree rule",
   // ✅ WIRED since the note above was written: `post` calls `prove`, `record` calls `verify`, and
   // the signed envelope carries a nonce. `solve` remains listed only because this guard counts

@@ -1162,6 +1162,38 @@ class ApiCommunityPeerSync extends NovaClawApiClient {
 
 class ApiCommunityPeer extends NovaClawApiClient {
   /**
+   * Ask this instance, and whoever it can reach
+   *
+   * Throttled broadcast search — the owner's decision: no servers, just nodes, and any one living node is a complete entry point. Gnutella collapsed in 2001 because query traffic grew with users × hops, so every query here carries a hop limit, is suppressed by id after the first sighting, and is rate-limited per ORIGIN rather than per sender. A refusal is silent: telling a flooder which control stopped it tells it what to vary.
+   */
+  public search<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+      terms: string
+      ttl: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      origin: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = {
+      id: parameters?.["id"],
+      terms: parameters?.["terms"],
+      ttl: parameters?.["ttl"],
+      origin: parameters?.["origin"],
+    }
+    return (options?.client ?? this.client).post<
+      T.CommunityPeerSearchResponses,
+      T.CommunityPeerSearchErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/search",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
    * Channels this instance advertises
    *
    * Channel discovery, and only what the user chose to disclose. Being in a room is not public information — the sync endpoints answer an unknown topic exactly like an empty one so nobody can map this instance's rooms, and this door must not undo that. Unlisted channels are invisible here no matter who asks.
@@ -1269,6 +1301,26 @@ class ApiCommunity extends NovaClawApiClient {
         headers: { "Content-Type": "application/json", ...options?.headers },
       },
     )
+  }
+
+  /**
+   * Search the network for channels
+   *
+   * Asks a few peers first and widens only if too few answers come back, so a query that is going to be answered costs almost nothing. Reaches beyond directly-connected instances, unlike the one-hop `nearby` list.
+   */
+  public search<ThrowOnError extends boolean = false>(
+    parameters: {
+      terms: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { terms: parameters?.["terms"] }
+    return (options?.client ?? this.client).post<T.CommunitySearchResponses, T.CommunitySearchErrors, ThrowOnError>({
+      url: "/api/community/search-channels",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
   }
 
   private _contact?: ApiCommunityContact

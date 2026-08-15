@@ -9187,6 +9187,37 @@ export type CommunityChannelNearbyResponses = {
 
 export type CommunityChannelNearbyResponse = CommunityChannelNearbyResponses[keyof CommunityChannelNearbyResponses]
 
+export type CommunitySearchData = {
+  body: {
+    terms: string
+  }
+  path?: never
+  query?: never
+  url: "/api/community/search-channels"
+}
+
+export type CommunitySearchErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunitySearchError = CommunitySearchErrors[keyof CommunitySearchErrors]
+
+export type CommunitySearchResponses = {
+  /**
+   * Channels found across the network
+   */
+  200: Array<string>
+}
+
+export type CommunitySearchResponse = CommunitySearchResponses[keyof CommunitySearchResponses]
+
 export type CommunityChannelPostData = {
   body: {
     body: string
@@ -9261,6 +9292,38 @@ export type CommunityChannelHistoryResponses = {
 }
 
 export type CommunityChannelHistoryResponse = CommunityChannelHistoryResponses[keyof CommunityChannelHistoryResponses]
+
+export type CommunityPeerSearchData = {
+  body: {
+    id: string
+    terms: string
+    ttl: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    origin: string
+  }
+  path?: never
+  query?: never
+  url: "/api/community/search"
+}
+
+export type CommunityPeerSearchErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type CommunityPeerSearchError = CommunityPeerSearchErrors[keyof CommunityPeerSearchErrors]
+
+export type CommunityPeerSearchResponses = {
+  /**
+   * Matching channels this instance advertises, plus whatever it forwarded to
+   */
+  200: {
+    channels: Array<string>
+  }
+}
+
+export type CommunityPeerSearchResponse = CommunityPeerSearchResponses[keyof CommunityPeerSearchResponses]
 
 export type CommunityPeerSuccessionTellData = {
   body: {

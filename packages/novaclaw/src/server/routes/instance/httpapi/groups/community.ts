@@ -105,6 +105,7 @@ export const CommunityPaths = {
   channelMute: "/api/community/channel/:name/mute",
   channelListed: "/api/community/channel/:name/listed",
   channelsNearby: "/api/community/nearby",
+  searchChannels: "/api/community/search-channels",
   discover: "/api/community/discover",
   rotate: "/api/community/rotate",
   channelsArchived: "/api/community/channel/archived",
@@ -274,6 +275,17 @@ export const CommunityApi = HttpApi.make("community").add(
             "ONE HOP, deliberately: it asks the instances already reachable rather than implying the whole network answered. Multi-hop throttled broadcast is a separate, larger mechanism.",
         }),
       ),
+      HttpApiEndpoint.post("searchChannels", CommunityPaths.searchChannels, {
+        payload: Schema.Struct({ terms: Schema.String }),
+        success: described(Schema.Array(Schema.String), "Channels found across the network"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.search",
+          summary: "Search the network for channels",
+          description:
+            "Asks a few peers first and widens only if too few answers come back, so a query that is going to be answered costs almost nothing. Reaches beyond directly-connected instances, unlike the one-hop `nearby` list.",
+        }),
+      ),
       HttpApiEndpoint.post("channelPost", CommunityPaths.channelPost, {
         params: ChannelParams,
         payload: Schema.Struct({ body: Schema.String }),
@@ -330,6 +342,7 @@ export const CommunityPeerPaths = {
   peers: "/api/community/peers",
   listedChannels: "/api/community/listed",
   succession: "/api/community/succession",
+  search: "/api/community/search",
 } as const
 
 /** A `Proven` message on the wire. Shape only — every rule about it lives at the ingress door. */
@@ -404,6 +417,25 @@ const PeerList = Schema.Struct({
 export const CommunityPeerApi = HttpApi.make("communityPeer").add(
   HttpApiGroup.make("communityPeer")
     .add(
+      HttpApiEndpoint.post("communitySearch", CommunityPeerPaths.search, {
+        payload: Schema.Struct({
+          id: Schema.String,
+          terms: Schema.String,
+          ttl: Schema.Number,
+          origin: Schema.String,
+        }),
+        success: described(
+          Schema.Struct({ channels: Schema.Array(Schema.String) }),
+          "Matching channels this instance advertises, plus whatever it forwarded to",
+        ),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.peer.search",
+          summary: "Ask this instance, and whoever it can reach",
+          description:
+            "Throttled broadcast search — the owner's decision: no servers, just nodes, and any one living node is a complete entry point. Gnutella collapsed in 2001 because query traffic grew with users × hops, so every query here carries a hop limit, is suppressed by id after the first sighting, and is rate-limited per ORIGIN rather than per sender. A refusal is silent: telling a flooder which control stopped it tells it what to vary.",
+        }),
+      ),
       HttpApiEndpoint.post("communitySuccessionTell", CommunityPeerPaths.succession, {
         payload: PeerSuccession,
         success: described(PeerAck, "Always true — a forgery is refused silently, like any other"),

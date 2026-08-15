@@ -9,6 +9,7 @@ import { CommunityMessage } from "@novaclaw/core/community/message"
 import { CommunityPost } from "@novaclaw/core/community/post"
 import { CommunityPeers } from "@novaclaw/core/community/peers"
 import { CommunityReconcile } from "@novaclaw/core/community/reconcile"
+import { CommunitySearch } from "@novaclaw/core/community/search"
 import { CommunitySuccession } from "@novaclaw/core/community/succession"
 import { CommunitySync } from "@novaclaw/core/community/sync"
 import { CommunityTopic } from "@novaclaw/core/community/topic"
@@ -46,6 +47,7 @@ const instance = (label: string) => {
       Offline.node,
       CommunityTransport.node,
       CommunityPeers.node,
+      CommunitySearch.node,
       CommunitySuccession.node,
       CommunitySync.node,
       CommunityPost.node,
@@ -540,6 +542,104 @@ describe("two instances", () => {
       expect(landed).not.toContain(rotation.before)
     } finally {
       server?.stop(true)
+      cleanup(alice.home)
+      cleanup(bob.home)
+      cleanup(carol.home)
+    }
+  })
+
+
+  test("🔴 a channel is found TWO HOPS away, through a peer that does not have it", async () => {
+    /**
+     * The owner's decision, exercised: *search is done through selective request-count throttled
+     * broadcast — no central servers, just nodes, and once a user found a single living node they
+     * can join the network.*
+     *
+     * Alice knows only Bob. Bob does not have the channel; Carol does, and Alice has never heard of
+     * her. If this only reached directly-connected instances it would find nothing — which is
+     * exactly what the one-hop `nearby` list already does, and why this is a different mechanism.
+     */
+    const alice = instance("alice-search")
+    const bob = instance("bob-search")
+    const carol = instance("carol-search")
+    let bobServer: ReturnType<typeof Bun.serve> | undefined
+    let carolServer: ReturnType<typeof Bun.serve> | undefined
+    try {
+      const serve = (who: typeof bob) =>
+        Bun.serve({
+          port: 0,
+          fetch: async (request) => {
+            const query = (await request.json()) as CommunitySearch.Query
+            return Response.json(
+              await Effect.runPromise(
+                CommunitySearch.Service.pipe(
+                  Effect.flatMap((search) => search.receive(query)),
+                  Effect.map((channels) => ({ channels })),
+                  Effect.provide(who.graph),
+                  Effect.provide(CredentialCipher.defaultLayer),
+                ),
+              ),
+            )
+          },
+        })
+
+      // Carol is in a channel and LISTS it — unlisted, she would be invisible to any search.
+      carolServer = serve(carol)
+      const carolKey = await Effect.runPromise(
+        Effect.gen(function* () {
+          const channels = yield* CommunityChannels.Service
+          const store = yield* InstanceIdentityStore.Service
+          yield* channels.join("#bread-baking")
+          expect(yield* channels.setListed("#bread-baking", true)).toBe(true)
+          return (yield* store.identity()).networkID
+        }).pipe(Effect.provide(carol.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+
+      // Bob knows Carol and does NOT have the channel himself.
+      bobServer = serve(bob)
+      const bobKey = await Effect.runPromise(
+        Effect.gen(function* () {
+          const peers = yield* CommunityPeers.Service
+          const store = yield* InstanceIdentityStore.Service
+          yield* peers.learn(carolKey, [`http://127.0.0.1:${carolServer!.port}`], "px")
+          return (yield* store.identity()).networkID
+        }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+
+      const found = await Effect.runPromise(
+        Effect.gen(function* () {
+          const peers = yield* CommunityPeers.Service
+          const search = yield* CommunitySearch.Service
+          // Everything Alice knows: one address, Bob's.
+          yield* peers.learn(bobKey, [`http://127.0.0.1:${bobServer!.port}`], "px")
+          return yield* search.search("bread")
+        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+
+      // 🔴 Found through Bob, who does not have it — the hop that makes this a broadcast rather than
+      // a directory lookup.
+      expect(found).toEqual(["#bread-baking"])
+
+      // ⚠️ And an UNLISTED channel stays invisible however hard anyone searches: discovery must not
+      // become the door that undoes the disclosure the user never gave.
+      await Effect.runPromise(
+        CommunityChannels.Service.pipe(
+          Effect.flatMap((channels) => channels.setListed("#bread-baking", false)),
+          Effect.provide(carol.graph),
+          Effect.provide(CredentialCipher.defaultLayer),
+        ),
+      )
+      const hidden = await Effect.runPromise(
+        CommunitySearch.Service.pipe(
+          Effect.flatMap((search) => search.search("bread")),
+          Effect.provide(alice.graph),
+          Effect.provide(CredentialCipher.defaultLayer),
+        ),
+      )
+      expect(hidden).toEqual([])
+    } finally {
+      bobServer?.stop(true)
+      carolServer?.stop(true)
       cleanup(alice.home)
       cleanup(bob.home)
       cleanup(carol.home)

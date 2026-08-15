@@ -3321,6 +3321,68 @@
         ]
       }
     },
+    "/api/community/search-channels": {
+      "post": {
+        "tags": ["community"],
+        "operationId": "community.search",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Channels found across the network",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Channels found across the network"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Asks a few peers first and widens only if too few answers come back, so a query that is going to be answered costs almost nothing. Reaches beyond directly-connected instances, unlike the one-hop `nearby` list.",
+        "summary": "Search the network for channels",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "terms": {
+                    "type": "string"
+                  }
+                },
+                "required": ["terms"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.search({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/community/channel/{name}/post": {
       "post": {
         "tags": ["community"],
@@ -3514,6 +3576,101 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.channel.history({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/community/search": {
+      "post": {
+        "tags": ["community-peer"],
+        "operationId": "community.peer.search",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Matching channels this instance advertises, plus whatever it forwarded to",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "channels": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": ["channels"],
+                  "additionalProperties": false,
+                  "description": "Matching channels this instance advertises, plus whatever it forwarded to"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Throttled broadcast search — the owner's decision: no servers, just nodes, and any one living node is a complete entry point. Gnutella collapsed in 2001 because query traffic grew with users × hops, so every query here carries a hop limit, is suppressed by id after the first sighting, and is rate-limited per ORIGIN rather than per sender. A refusal is silent: telling a flooder which control stopped it tells it what to vary.",
+        "summary": "Ask this instance, and whoever it can reach",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "terms": {
+                    "type": "string"
+                  },
+                  "ttl": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  },
+                  "origin": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id", "terms", "ttl", "origin"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.peer.search({\n  ...\n})"
           }
         ]
       }
