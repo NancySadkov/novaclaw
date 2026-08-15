@@ -164,7 +164,24 @@ describe("instance HttpApi", () => {
         Effect.flatMap(HttpClient.execute),
       )
       expect(joined.status).toBe(200)
-      expect(yield* joined.json).toEqual([{ name: "#NovaClaw", muted: false }])
+      // ⚠️ `listed: true` for the default channel and nothing else: every instance is in it, so
+      // admitting it discloses nothing anyone did not assume.
+      expect(yield* joined.json).toEqual([{ name: "#NovaClaw", muted: false, listed: true }])
+
+      /**
+       * 🔴 Being in a room is not public. Checked from the SAME surface a stranger would use, because
+       * that is the only place the difference between "what we are in" and "what we admit to" is
+       * visible — and the sync endpoints already refuse to leak it, so this door must not either.
+       */
+      const privateRoom = yield* HttpClientRequest.post("/api/community/channel").pipe(
+        HttpClientRequest.bodyJson({ name: "#a-private-room" }),
+        Effect.flatMap(HttpClient.execute),
+      )
+      expect(((yield* privateRoom.json) as { name: string }[]).map((entry) => entry.name)).toContain(
+        "#a-private-room",
+      )
+      const advertised = yield* HttpClient.get("/api/community/listed")
+      expect(yield* advertised.json).toEqual({ channels: ["#NovaClaw"] })
 
       const history = yield* HttpClient.get(`/api/community/channel/${encodeURIComponent("#NovaClaw")}/history`)
       expect(history.status).toBe(200)
