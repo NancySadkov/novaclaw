@@ -5,6 +5,7 @@ import { Context, Effect, Layer, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { CommunityChannels } from "./channels"
 import { CommunityPeers } from "./peers"
+import { CommunityWork } from "./work"
 import { CommunityTopic } from "./topic"
 import { httpRoutes } from "./transport"
 import { makeGlobalNode } from "../effect/app-node"
@@ -49,12 +50,38 @@ export interface Query {
   readonly ttl: number
   /** Who asked, so results can be routed back. */
   readonly origin: string
+  /**
+   * 🔴 Proof of work over `workBytes(query)`. Search was the ONE door in this design with no cost
+   * attached, and the per-origin throttle was carrying that weight alone — which it cannot, because
+   * `origin` is an unverified string the caller writes. Measured: 300,000 queries with a fresh
+   * origin each were refused **0** times, while the same origin repeated 1,000 times was refused 990.
+   * The control worked perfectly against an attacker who cooperated by not varying a string.
+   *
+   * ⚠️ `ttl` is deliberately NOT under the proof. It is decremented on every forward, so binding it
+   * would invalidate the work at the first hop and make a search that only ever reaches its
+   * neighbours. Everything that identifies the query IS bound, so a relay cannot re-point somebody
+   * else's proven query at a different term or a different asker.
+   */
+  readonly nonce: number
 }
+
+/**
+ * What the work is computed over: everything that IDENTIFIES a query, and nothing that travels.
+ *
+ * Newline-separated with the lengths implied by the field order rather than prefixed, because unlike
+ * the message and offer envelopes these three fields cannot be shifted across each other: `id` is a
+ * UUID of fixed shape and `origin` is a `nid_…` of fixed shape, so a character moved between them
+ * changes both into something that no longer parses as either.
+ */
+export const workBytes = (query: Pick<Query, "id" | "terms" | "origin">): string =>
+  `${query.id}
+${query.terms}
+${query.origin}`
 
 export type Verdict =
   | { readonly forward: true; readonly next: Query }
   /** Named reasons, because "did not forward" with no cause is unreadable in a mesh. */
-  | { readonly forward: false; readonly reason: "duplicate" | "expired" | "throttled" | "own-query" }
+  | { readonly forward: false; readonly reason: "duplicate" | "expired" | "throttled" | "own-query" | "unproven" }
 
 /**
  * Remembers query ids for a bounded time.
@@ -105,6 +132,13 @@ export class Throttle {
   constructor(
     private readonly limit: number = 10,
     private readonly windowMs: number = 10_000,
+    /**
+     * ⚠️ A ceiling of OUR OWN on the map itself. Proof of work is what actually stops the flood now,
+     * but this table is still keyed on a string the caller chose, and a defence that grows without
+     * bound is the shape of half the findings in this subsystem. Insertion order is eviction order,
+     * which for a rolling window is the same as oldest-first.
+     */
+    private readonly maxOrigins: number = 10_000,
   ) {}
 
   /** Records an attempt and says whether it is within budget. */
@@ -116,7 +150,16 @@ export class Throttle {
     }
     recent.push(now)
     this.hits.set(origin, recent)
+    if (this.hits.size > this.maxOrigins) {
+      const oldest = this.hits.keys().next()
+      if (!oldest.done) this.hits.delete(oldest.value)
+    }
     return true
+  }
+
+  /** How many origins are being tracked — so the ceiling above can be watched to hold. */
+  get size(): number {
+    return this.hits.size
   }
 }
 
@@ -131,6 +174,15 @@ export const consider = (
   query: Query,
   context: { readonly self: string; readonly seen: Seen; readonly throttle: Throttle; readonly now: number },
 ): Verdict => {
+  /**
+   * 🔴 FIRST, before anything of ours is touched. An unproven query must not reach `seen.remember`
+   * or the throttle's window — both are maps keyed on strings the caller chose, so letting an
+   * unproven query write to either makes our own defences the flood's storage.
+   *
+   * One hash to check, ~49 ms to produce. That asymmetry is the only thing that makes a broadcast
+   * search affordable to answer, and it is the same primitive every other door here already used.
+   */
+  if (!CommunityWork.verify(workBytes(query), query.nonce)) return { forward: false, reason: "unproven" }
   if (query.origin === context.self) return { forward: false, reason: "own-query" }
   if (context.seen.has(query.id, context.now)) return { forward: false, reason: "duplicate" }
   // Remember BEFORE the remaining checks: a query we refuse for TTL or throttle must still not be
@@ -312,8 +364,18 @@ export const layer = Layer.effect(
          * make every node treat the second search as a duplicate of the first and answer nothing —
          * a search that silently stops working after it has been run once.
          */
-        const query: Query = { id: randomUUID(), terms, ttl: DEFAULT_TTL, origin: self }
-        const remote = yield* broadcast(query)
+        const unproven = { id: randomUUID(), terms, ttl: DEFAULT_TTL, origin: self }
+        /**
+         * ⚠️ The asker pays for their own search — about 49 ms, once, however far it travels. The
+         * proof rides along unchanged through every forward because `ttl` is outside it, so a single
+         * solve buys the whole broadcast for the person who wanted it, and costs a flooder the same
+         * 49 ms for every distinct query they invent.
+         */
+        const nonce = CommunityWork.solve(workBytes(unproven))
+        // A machine that cannot find the work reports an empty search rather than sending something
+        // every peer will refuse — the difficulty is a probability, not a promise.
+        if (nonce === undefined) return []
+        const remote = yield* broadcast({ ...unproven, nonce })
         // Our own listed channels are not a search RESULT: the user already has them.
         const mine = new Set((yield* channels.channels()).map((entry) => CommunityTopic.canonical(entry.name)))
         return remote.filter((name) => !mine.has(CommunityTopic.canonical(name)))

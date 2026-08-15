@@ -585,6 +585,11 @@ export const CommunityPeerApi = HttpApi.make("communityPeer").add(
           terms: Schema.String,
           ttl: Schema.Number,
           origin: Schema.String,
+          /**
+           * ⚠️ MUST be declared here or the schema drops it silently and every query arrives
+           * unproven — the trap this codebase has already been bitten by once.
+           */
+          nonce: Schema.Number,
         }),
         success: described(
           Schema.Struct({ channels: Schema.Array(Schema.String) }),

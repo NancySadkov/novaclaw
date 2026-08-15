@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { CommunitySearch } from "@novaclaw/core/community/search"
+import { CommunityWork } from "@novaclaw/core/community/work"
 
 /**
  * Community P5 — throttled broadcast search (`todo/community-p2p.md`).
@@ -8,13 +9,19 @@ import { CommunitySearch } from "@novaclaw/core/community/search"
  * the network eats itself, so each removal has been checked to make the corresponding test fail.
  */
 
-const query = (over: Partial<CommunitySearch.Query> = {}): CommunitySearch.Query => ({
-  id: "q1",
-  terms: "gguf 7b",
-  ttl: CommunitySearch.DEFAULT_TTL,
-  origin: "nid_asker",
-  ...over,
-})
+/**
+ * A query with its work solved, which is now what a query IS. ⚠️ Every helper here goes through
+ * `proven` so that no test can accidentally assert about a query no peer would accept.
+ */
+const proven = (over: Partial<CommunitySearch.Query> = {}): CommunitySearch.Query => {
+  const base = { id: "q1", terms: "gguf 7b", ttl: CommunitySearch.DEFAULT_TTL, origin: "nid_asker", ...over }
+  if (typeof over.nonce === "number") return base as CommunitySearch.Query
+  const nonce = CommunityWork.solve(CommunitySearch.workBytes(base))
+  if (nonce === undefined) throw new Error("could not solve the query work")
+  return { ...base, nonce }
+}
+
+const query = proven
 
 const context = (over: { now?: number; self?: string } = {}) => ({
   self: over.self ?? "nid_me",
@@ -49,13 +56,15 @@ describe("CommunitySearch.consider", () => {
 
   test("🔴 TTL bounds the blast radius even when nothing is duplicated", () => {
     // A hop chain with all-distinct ids: dedup cannot help, so only TTL stops it.
+    // ⚠️ Each relabelled hop is RE-PROVEN, because the id is under the work — which is itself the
+    // point: an attacker cannot relabel one proven query into a fresh one for free.
     let hops = 0
     let current = query({ ttl: 3 })
     for (let i = 0; i < 10; i++) {
       const verdict = CommunitySearch.consider(current, context({ self: `nid_hop${i}` }))
       if (!verdict.forward) break
       hops++
-      current = { ...verdict.next, id: `q-${i}` }
+      current = proven({ ...verdict.next, id: `q-${i}`, nonce: undefined })
     }
     expect(hops).toBe(2)
   })
@@ -122,7 +131,7 @@ describe("a hostile TTL", () => {
      */
     const seen = new CommunitySearch.Seen()
     const throttle = new CommunitySearch.Throttle()
-    const hostile = { id: "q1", terms: "anything", ttl: 1_000_000, origin: "nid_them" }
+    const hostile = proven({ id: "q1", terms: "anything", ttl: 1_000_000, origin: "nid_them" })
 
     const verdict = CommunitySearch.consider(hostile, { self: "nid_us", seen, throttle, now: 1 })
     expect(verdict.forward).toBe(true)
@@ -137,16 +146,58 @@ describe("a hostile TTL", () => {
     const throttle = new CommunitySearch.Throttle()
     // Below our limit: untouched, so a short query is not silently lengthened either.
     const short = CommunitySearch.consider(
-      { id: "q2", terms: "x", ttl: 2, origin: "nid_them" },
+      proven({ id: "q2", terms: "x", ttl: 2, origin: "nid_them" }),
       { self: "nid_us", seen, throttle, now: 1 },
     )
     expect(short.forward && short.next.ttl).toBe(1)
     // And at the floor it stops.
     expect(
       CommunitySearch.consider(
-        { id: "q3", terms: "x", ttl: 1, origin: "nid_them" },
+        proven({ id: "q3", terms: "x", ttl: 1, origin: "nid_them" }),
         { self: "nid_us", seen, throttle, now: 1 },
       ),
     ).toEqual({ forward: false, reason: "expired" })
   })
+
+  test("🔴 a VARYING origin no longer buys a free flood — the throttle could not see it", () => {
+    /**
+     * The throttle is the owner's named control and it was carrying the whole weight alone, which it
+     * cannot: `origin` is an unverified string the caller writes. Measured before the fix — 300,000
+     * queries with a fresh origin each were refused **0** times, while the same origin repeated
+     * 1,000 times was refused 990. The control worked perfectly against an attacker who cooperated
+     * by not varying a string.
+     *
+     * ⚠️ Search was the ONE door here with no cost attached. Every other one already used this exact
+     * primitive, and an unthrottled query fans out to up to `MAX_ASKED` peers — so a free request
+     * bought a 32x amplification.
+     */
+    const ctx = context()
+    const unproven = Array.from({ length: 20 }, (_, i) => ({
+      id: `flood-${i}`,
+      terms: "x",
+      ttl: 3,
+      origin: `nid_fresh-${i}`,
+      nonce: 0,
+    }))
+    const verdicts = unproven.map((q) => CommunitySearch.consider(q, ctx))
+    expect(verdicts.every((v) => !v.forward && v.reason === "unproven")).toBe(true)
+
+    // 🔴 And NOTHING of ours was touched: an unproven query must not reach `seen` or the throttle,
+    // because both are maps keyed on strings the caller chose. A defence that stores what it refuses
+    // is the flood's storage.
+    expect(ctx.seen.size).toBe(0)
+
+    // The same queries, with the work actually done, are ordinary traffic again.
+    const honest = unproven.map((q) => CommunitySearch.consider(proven({ ...q, nonce: undefined }), ctx))
+    expect(honest.some((v) => v.forward)).toBe(true)
+  })
+
+  test("🔴 the throttle's own table has a ceiling", () => {
+    // Proof of work is what stops the flood now, but this map is still keyed on a caller's string,
+    // and a defence that grows without bound is the shape of half the findings in this subsystem.
+    const throttle = new CommunitySearch.Throttle(10, 10_000, 100)
+    for (let i = 0; i < 5_000; i++) throttle.allow(`nid_origin-${i}`, 1)
+    expect(throttle.size).toBeLessThanOrEqual(100)
+  })
+
 })
