@@ -1,6 +1,6 @@
 export * as CommunityPeers from "./peers"
 
-import { desc, eq, sql } from "drizzle-orm"
+import { and, desc, eq, sql } from "drizzle-orm"
 import { Context, Effect, Layer } from "effect"
 import { CommunityContacts } from "./contacts"
 import { CommunityPeerTable } from "./sql"
@@ -134,6 +134,28 @@ export const layer = Layer.effect(
           .where(eq(CommunityPeerTable.network_id, networkID))
           .get()
           .pipe(Effect.orDie)
+
+        /**
+         * 🔴 An address answers as ONE instance, so any other row claiming these routes under a
+         * DIFFERENT identity is stale — and the usual way that happens is a peer ROTATING.
+         *
+         * Found by running the fresh-instance journey after a rotation: two rows appeared for one
+         * box. That is not merely untidy. `reachable` de-duplicates by ROUTE, so only one of the two
+         * is ever dialled — possibly the dead one — which means `seen` marks the wrong row alive and
+         * eviction can keep the identity nobody answers as while dropping the one that works.
+         */
+        for (const route of routes) {
+          yield* db
+            .delete(CommunityPeerTable)
+            .where(
+              and(
+                sql`EXISTS (SELECT 1 FROM json_each(${CommunityPeerTable.routes}) WHERE value = ${route})`,
+                sql`${CommunityPeerTable.network_id} <> ${networkID}`,
+              ),
+            )
+            .run()
+            .pipe(Effect.orDie)
+        }
 
         // Additive and de-duplicated: a LAN address and a public address are both true at once, and
         // replacing would make the last source to speak the only one that counts.

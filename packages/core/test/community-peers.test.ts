@@ -106,4 +106,37 @@ describe("CommunityPeers", () => {
       expect(listed.some((peer) => peer.networkID === survivor)).toBe(true)
     }),
   )
+
+  it.effect("🔴 a ROTATED peer does not leave a second row for the same box", () =>
+    Effect.gen(function* () {
+      /**
+       * Found by running the fresh-instance journey after a rotation, not by any unit test: one
+       * machine appeared as TWO peers, its old identity and its new one, both at the same address.
+       *
+       * ⚠️ That is not untidiness. `reachable` de-duplicates by ROUTE, so only one of the pair is
+       * ever dialled — and if it is the dead one, `seen` marks the wrong row alive, eviction keeps
+       * the identity nobody answers as, and the working one ages out.
+       */
+      const peers = yield* CommunityPeers.Service
+      const before = identity(11)
+      const after = identity(12)
+      const address = "http://192.168.1.50:4096"
+
+      yield* peers.learn(before, [address], "px")
+      expect((yield* peers.list()).map((peer) => peer.networkID)).toEqual([before])
+
+      // The same box, answering under its new key after a rotation.
+      yield* peers.learn(after, [address], "px")
+      const listed = yield* peers.list()
+      expect(listed.map((peer) => peer.networkID)).toEqual([after])
+      expect([...listed[0]!.routes]).toEqual([address])
+
+      // ⚠️ A DIFFERENT address is a different box and must survive — this must not become "the last
+      // peer learned is the only peer".
+      const elsewhere = identity(13)
+      yield* peers.learn(elsewhere, ["http://10.0.0.9:4096"], "px")
+      expect((yield* peers.list()).map((peer) => peer.networkID).sort()).toEqual([after, elsewhere].sort())
+    }),
+  )
+
 })
