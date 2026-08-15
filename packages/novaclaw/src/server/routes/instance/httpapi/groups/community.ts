@@ -517,6 +517,20 @@ export const CommunityPeerPaths = {
   search: "/api/community/search",
   dm: "/api/community/dm",
   offer: "/api/community/offer",
+  /**
+   * 🔴 Who lives here — the ONE thing an address must yield before it can become a peer.
+   *
+   * Discovery used to probe `/global/health`, which the design intended ("this is where a peer
+   * already looks to learn who lives at an address") and the auth boundary contradicted: on an
+   * instance with a password that path answers 401, so **bootstrap by address failed entirely
+   * between secured instances** while every other peer path answered. The vision's "one living node
+   * is a complete entry point" quietly did not hold for anyone who set a password.
+   *
+   * ⚠️ A separate endpoint rather than making `/global/health` public: health also carries
+   * `version` and `instanceID`, which a stranger has no business reading. This returns only what a
+   * peer must have — the identity to verify signatures against, and the key to seal a message to.
+   */
+  identity: "/api/community/identity",
 } as const
 
 /** A `Proven` message on the wire. Shape only — every rule about it lives at the ingress door. */
@@ -658,6 +672,23 @@ export const CommunityPeerApi = HttpApi.make("communityPeer").add(
           summary: "Rotations this instance knows about",
           description:
             "How a peer that was OFFLINE when someone rotated still finds them. A statement pushed once reaches whoever was listening; keeping and re-serving it is what stops rotation stranding a user against everybody who happened to be closed.",
+        }),
+      ),
+      HttpApiEndpoint.get("communityIdentity", CommunityPeerPaths.identity, {
+        success: described(
+          Schema.Struct({
+            networkID: Schema.String,
+            sealingKey: Schema.optional(Schema.String),
+            sealingSignature: Schema.optional(Schema.String),
+          }),
+          "Who lives at this address, and the key to seal to",
+        ),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.peer.identity",
+          summary: "Who lives at this address",
+          description:
+            "The first thing a peer asks, and the only thing an address must yield to become a peer. The signature over the sealing key matters: a key taken on trust is one anybody in the path can swap for their own, and the sender would encrypt to the attacker with everything looking correct.",
         }),
       ),
       HttpApiEndpoint.get("communityOffer", CommunityPeerPaths.offer, {

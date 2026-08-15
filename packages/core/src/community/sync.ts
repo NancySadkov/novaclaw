@@ -165,6 +165,17 @@ const OfferAnswer = Schema.Struct({
     }),
   ),
 })
+/**
+ * 🔴 The peer identity probe, and it is NOT `/global/health`.
+ *
+ * It was, and that path is authenticated: on an instance with a password it answers 401, so
+ * bootstrap by address failed entirely between two secured instances — `{"learned":0,"asked":0}`,
+ * an empty peer table, `no-peers` — while every other peer path answered normally. The vision's
+ * "one living node is a complete entry point" did not hold for anyone who set a password, which is
+ * the recommended configuration for an instance reachable from outside.
+ */
+export const IDENTITY_PATH = "/api/community/identity"
+
 const Health = Schema.Struct({
   networkID: Schema.String,
   sealingKey: Schema.optional(Schema.String),
@@ -282,7 +293,7 @@ export const layer = Layer.effect(
         if (addresses.length === 0) return { sent: false, reason: "no-route" }
 
         for (const address of addresses) {
-          const health = yield* ask(address, "/global/health", undefined, Health, "GET")
+          const health = yield* ask(address, IDENTITY_PATH, undefined, Health, "GET")
           // A different identity at that address means the route is stale or someone else is there.
           // Either way it is not the person we are writing to.
           if (health === undefined || health.networkID !== to) continue
@@ -354,7 +365,7 @@ export const layer = Layer.effect(
           // only a claim too — anyone can serve a health endpoint — but a peer's key is not a secret
           // and every message it sends is verified against it anyway. What this buys is that the
           // route is real and reaches something that speaks our protocol.
-          const health = yield* ask(address, "/global/health", undefined, Health, "GET")
+          const health = yield* ask(address, IDENTITY_PATH, undefined, Health, "GET")
           if (health === undefined) continue
           if (yield* peers.learn(health.networkID, [address], source)) learned++
         }

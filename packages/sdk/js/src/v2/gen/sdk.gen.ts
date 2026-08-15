@@ -1448,6 +1448,22 @@ class ApiCommunityPeer extends NovaClawApiClient {
   }
 
   /**
+   * Who lives at this address
+   *
+   * The first thing a peer asks, and the only thing an address must yield to become a peer. The signature over the sealing key matters: a key taken on trust is one anybody in the path can swap for their own, and the sender would encrypt to the attacker with everything looking correct.
+   */
+  public identity<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.CommunityPeerIdentityResponses,
+      T.CommunityPeerIdentityErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/identity",
+      ...options,
+    })
+  }
+
+  /**
    * What this instance offers
    *
    * A signed advertisement: a model server at an endpoint, on stated terms. The signature protects the ENDPOINT above all — an offer travels through instances that did not write it, and the profitable edit is where the traffic goes. It says what somebody CLAIMS to run; nothing here checks the endpoint exists or is honest.

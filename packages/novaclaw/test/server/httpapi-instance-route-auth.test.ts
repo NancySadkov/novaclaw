@@ -102,6 +102,9 @@ describe("HttpApi instance route authorization", () => {
       listedChannels: "GET",
       succession: "GET",
       offer: "GET",
+      // Added when bootstrap-by-address turned out to probe an AUTHENTICATED path; the completeness
+      // assertion below is what forced this line to be written rather than the path slipping in.
+      identity: "GET",
     }
     expect(Object.keys(METHOD).sort()).toEqual(Object.keys(CommunityPeerPaths).sort())
 

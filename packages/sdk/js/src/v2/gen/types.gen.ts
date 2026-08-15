@@ -9782,6 +9782,35 @@ export type CommunityPeerSuccessionKnownResponses = {
 export type CommunityPeerSuccessionKnownResponse =
   CommunityPeerSuccessionKnownResponses[keyof CommunityPeerSuccessionKnownResponses]
 
+export type CommunityPeerIdentityData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/community/identity"
+}
+
+export type CommunityPeerIdentityErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type CommunityPeerIdentityError = CommunityPeerIdentityErrors[keyof CommunityPeerIdentityErrors]
+
+export type CommunityPeerIdentityResponses = {
+  /**
+   * Who lives at this address, and the key to seal to
+   */
+  200: {
+    networkID: string
+    sealingKey?: string
+    sealingSignature?: string
+  }
+}
+
+export type CommunityPeerIdentityResponse = CommunityPeerIdentityResponses[keyof CommunityPeerIdentityResponses]
+
 export type CommunityPeerOfferData = {
   body?: never
   path?: never

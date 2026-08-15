@@ -4813,6 +4813,58 @@
         ]
       }
     },
+    "/api/community/identity": {
+      "get": {
+        "tags": ["community-peer"],
+        "operationId": "community.peer.identity",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Who lives at this address, and the key to seal to",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "networkID": {
+                      "type": "string"
+                    },
+                    "sealingKey": {
+                      "type": "string"
+                    },
+                    "sealingSignature": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["networkID"],
+                  "additionalProperties": false,
+                  "description": "Who lives at this address, and the key to seal to"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "The first thing a peer asks, and the only thing an address must yield to become a peer. The signature over the sealing key matters: a key taken on trust is one anybody in the path can swap for their own, and the sender would encrypt to the attacker with everything looking correct.",
+        "summary": "Who lives at this address",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.peer.identity({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/community/offer": {
       "get": {
         "tags": ["community-peer"],

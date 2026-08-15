@@ -299,6 +299,10 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
     const search = yield* CommunitySearch.Service
     const direct = yield* CommunityDirect.Service
     const offers = yield* CommunityOffer.Service
+    // ⚠️ Acquired in THIS group, not borrowed from the authenticated one above — both scopes bind
+    // names like `channels` and `identity`, so a handler placed in the wrong block still compiles
+    // against the other group's service. That mistake has been made three times in this file.
+    const selfIdentity = yield* InstanceIdentityStore.Service
 
     /**
      * Resolve a topic to one of OUR channels, or nothing.
@@ -344,6 +348,16 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
         "communitySuccessionKnown",
         Effect.fn("CommunityHttpApi.communitySuccessionKnown")(function* () {
           return { statements: yield* successions.known() }
+        }),
+      )
+      .handle(
+        "communityIdentity",
+        Effect.fn("CommunityHttpApi.communityIdentity")(function* () {
+          const self = yield* selfIdentity.identity()
+          // Minted on first request and kept, so one fetch teaches a peer both halves of who lives
+          // here — the identity to verify against, and the key to seal to.
+          const sealing = yield* selfIdentity.sealingKey()
+          return { networkID: self.networkID, sealingKey: sealing.publicKey, sealingSignature: sealing.signature }
         }),
       )
       .handle(
