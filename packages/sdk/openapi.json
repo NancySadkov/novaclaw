@@ -3327,6 +3327,255 @@
         ]
       }
     },
+    "/api/community/offer/mine": {
+      "post": {
+        "tags": ["community"],
+        "operationId": "community.offer.publish",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The signed offer, as peers will see it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string"
+                    },
+                    "endpoint": {
+                      "type": "string"
+                    },
+                    "models": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "price": {
+                      "type": "string"
+                    },
+                    "from": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "signature": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["kind", "endpoint", "models", "price", "from", "at", "signature"],
+                  "additionalProperties": false,
+                  "description": "The signed offer, as peers will see it"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Signs and stores what this instance offers. `price` is your own words — this software moves no money and cannot enforce terms; whatever is agreed happens between you and the other person.",
+        "summary": "Offer a model server to the network",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "endpoint": {
+                    "type": "string"
+                  },
+                  "models": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "price": {
+                    "type": "string"
+                  }
+                },
+                "required": ["endpoint", "models", "price"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.offer.publish({\n  ...\n})"
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["community"],
+        "operationId": "community.offer.withdraw",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "True once nothing is offered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "True once nothing is offered"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Removes this instance's offer. Peers that already collected it keep their copy until they refresh.",
+        "summary": "Stop offering",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.offer.withdraw({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/community/offers": {
+      "get": {
+        "tags": ["community"],
+        "operationId": "community.offer.known",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Offers collected from peers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string"
+                      },
+                      "endpoint": {
+                        "type": "string"
+                      },
+                      "models": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "price": {
+                        "type": "string"
+                      },
+                      "from": {
+                        "type": "string"
+                      },
+                      "at": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["NaN"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["-Infinity"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity", "-Infinity", "NaN"]
+                          }
+                        ]
+                      },
+                      "signature": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "endpoint", "models", "price", "from", "at", "signature"],
+                    "additionalProperties": false
+                  },
+                  "description": "Offers collected from peers"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Each one verified against its signer, so an endpoint cannot have been rewritten in transit. Authenticity is all a signature buys: whether the endpoint exists, serves what it claims, or is still there in an hour are separate questions nothing here answers.",
+        "summary": "Model servers other people offer",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.offer.known({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/community/direct/{networkID}": {
       "post": {
         "tags": ["community"],
@@ -4224,6 +4473,99 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.peer.succession.known({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/community/offer": {
+      "get": {
+        "tags": ["community-peer"],
+        "operationId": "community.peer.offer",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "What this instance offers, if anything",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "offer": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "endpoint": {
+                          "type": "string"
+                        },
+                        "models": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "price": {
+                          "type": "string"
+                        },
+                        "from": {
+                          "type": "string"
+                        },
+                        "at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        },
+                        "signature": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["kind", "endpoint", "models", "price", "from", "at", "signature"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "What this instance offers, if anything"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "A signed advertisement: a model server at an endpoint, on stated terms. The signature protects the ENDPOINT above all — an offer travels through instances that did not write it, and the profitable edit is where the traffic goes. It says what somebody CLAIMS to run; nothing here checks the endpoint exists or is honest.",
+        "summary": "What this instance offers",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.peer.offer({\n  ...\n})"
           }
         ]
       }

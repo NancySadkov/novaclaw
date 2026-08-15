@@ -133,4 +133,41 @@ describe("CommunityOffer", () => {
         expect(CommunityOffer.verify(broken)).toBe(false)
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
+
+  it.effect("🔴 a forged offer cannot be LAUNDERED through an honest instance", () =>
+    Effect.gen(function* () {
+      /**
+       * The attack collection makes possible. An instance collects offers from peers and serves what
+       * it knows — so if it stored whatever it was handed, a peer could give it a forged offer naming
+       * a third party's endpoint, and every instance downstream would receive that claim from a
+       * source it trusts. The signature is what makes passing an offer along harmless; storing one
+       * unverified is what would make it dangerous.
+       */
+      const offers = yield* CommunityOffer.Service
+      const stranger = `nid_${Buffer.alloc(32, 7).toString("base64url")}`
+
+      // A claim about somebody else's endpoint, with no valid signature behind it.
+      const forged = {
+        kind: "model-server" as const,
+        endpoint: "https://attacker.example/v1",
+        models: ["holo3.1"],
+        price: "free",
+        from: stranger,
+        at: Date.now(),
+        signature: Buffer.alloc(64, 1).toString("base64url"),
+      }
+      expect(yield* offers.learn(forged)).toBe(false)
+      expect(yield* offers.known()).toEqual([])
+
+      // ⚠️ And a peer cannot plant an offer under OUR identity, which would have us advertising a
+      // stranger's endpoint as our own to everyone who asks.
+      const me = (yield* InstanceIdentityStore.Service.pipe(Effect.flatMap((s) => s.identity()))).networkID
+      const published = yield* offers.publish(terms)
+      expect(yield* offers.learn({ ...published, from: me })).toBe(false)
+      expect(yield* offers.known()).toEqual([])
+      // Our own offer is still ours, and is not listed among the peers'.
+      expect((yield* offers.mine())?.from).toBe(me)
+    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+  )
+
 })

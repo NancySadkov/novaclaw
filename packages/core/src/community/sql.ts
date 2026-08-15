@@ -140,6 +140,13 @@ export const CommunitySuccessionTable = sqliteTable("community_succession", {
  * One row at most — an instance offers one thing or nothing, so the id is a constant.
  */
 export const CommunityOfferTable = sqliteTable("community_offer", {
+  /**
+   * `self` for our own offer, or the offering peer's `nid_…` for one we collected.
+   *
+   * ⚠️ One table rather than two, because the difference between "mine" and "theirs" is WHO SIGNED
+   * it and nothing else — and a second table would invite a second set of verification rules, which
+   * is how the weaker one gets forgotten.
+   */
   id: text().primaryKey(),
   /** The signed offer, verbatim, so what is served is byte-identical to what was signed. */
   document: text().notNull(),

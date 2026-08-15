@@ -122,6 +122,16 @@ export interface Interface {
   readonly withdraw: () => Effect.Effect<void>
   /** What this instance offers, if anything — the thing peers fetch. */
   readonly mine: () => Effect.Effect<Signed | undefined>
+  /**
+   * Keep an offer collected from a peer.
+   *
+   * ⚠️ Verified BEFORE storing and again on the way out. An unverified store would let this instance
+   * repeat somebody's forged claim about a third party's endpoint — and passing on an offer we did
+   * not check is exactly how a rewritten endpoint gets laundered through an honest instance.
+   */
+  readonly learn: (offer: Signed) => Effect.Effect<boolean>
+  /** Offers collected from peers — never our own. */
+  readonly known: () => Effect.Effect<ReadonlyArray<Signed>>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/CommunityOffer") {}
@@ -166,6 +176,39 @@ export const layer = Layer.effect(
        * ⚠️ Lazy, like the sealing key: it re-signs on the next read rather than as part of rotation,
        * because rotation must not need to know about every artefact that quotes the identity.
        */
+      learn: Effect.fn("CommunityOffer.learn")(function* (offer: Signed) {
+        if (!verify(offer)) return false
+        // ⚠️ Refuses an offer that claims to be OURS. An instance that stored a stranger's offer under
+        // its own identity would serve it to everyone as its own, which is the laundering above with
+        // one extra step.
+        if (offer.from === (yield* identity.identity()).networkID) return false
+        if (offer.from === ROW) return false
+        yield* db
+          .insert(CommunityOfferTable)
+          .values({ id: offer.from, document: JSON.stringify(offer) })
+          .onConflictDoUpdate({ target: CommunityOfferTable.id, set: { document: JSON.stringify(offer) } })
+          .run()
+          .pipe(Effect.orDie)
+        return true
+      }),
+
+      known: Effect.fn("CommunityOffer.known")(function* () {
+        const rows = yield* db.select().from(CommunityOfferTable).all().pipe(Effect.orDie)
+        const out: Signed[] = []
+        for (const row of rows) {
+          if (row.id === ROW) continue
+          try {
+            const parsed = JSON.parse(row.document) as Signed
+            // Re-verified on READ as well: a row edited on disk must not be handed to a user as
+            // though a peer had signed it.
+            if (verify(parsed) && parsed.from === row.id) out.push(parsed)
+          } catch {
+            /* a corrupted row is not an offer */
+          }
+        }
+        return out
+      }),
+
       mine: Effect.fn("CommunityOffer.mine")(function* () {
         const row = yield* db
           .select()

@@ -6,6 +6,7 @@ import { CommunityChannels } from "./channels"
 import { CommunityContacts } from "./contacts"
 import { CommunityDirect } from "./dm"
 import { CommunityMessage } from "./message"
+import { CommunityOffer } from "./offer"
 import { CommunityPeers } from "./peers"
 import { CommunityReconcile } from "./reconcile"
 import { CommunitySuccession } from "./succession"
@@ -49,6 +50,8 @@ export const LISTED_PATH = "/api/community/listed"
 export const SUCCESSION_PATH = "/api/community/succession"
 /** Where a peer accepts a direct message. */
 export const DM_PATH = "/api/community/dm"
+/** What a peer offers — collected while discovering, since it is the same round of asking. */
+export const OFFER_PATH = "/api/community/offer"
 
 /**
  * The most messages one request may ask for.
@@ -137,6 +140,19 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 const Summary = Schema.Struct({ buckets: Schema.Array(Schema.String) })
 const Ids = Schema.Struct({ ids: Schema.Array(Schema.String) })
 const Listed = Schema.Struct({ channels: Schema.Array(Schema.String) })
+const OfferAnswer = Schema.Struct({
+  offer: Schema.optional(
+    Schema.Struct({
+      kind: Schema.String,
+      endpoint: Schema.String,
+      models: Schema.Array(Schema.String),
+      price: Schema.String,
+      from: Schema.String,
+      at: Schema.Number,
+      signature: Schema.String,
+    }),
+  ),
+})
 const Health = Schema.Struct({
   networkID: Schema.String,
   sealingKey: Schema.optional(Schema.String),
@@ -184,6 +200,7 @@ export const layer = Layer.effect(
     // ⚠️ Acquired when the layer is BUILT, not inside the call — a `yield*` in the method body makes
     // the service a requirement of every caller instead of a dependency of this one.
     const direct = yield* CommunityDirect.Service
+    const offers = yield* CommunityOffer.Service
     const http = yield* HttpClient.HttpClient
 
     /**
@@ -343,6 +360,18 @@ export const layer = Layer.effect(
           // It answered, so it is alive: this is what keeps a working peer ahead of invented ones
           // when the table is evicted.
           yield* peers.seen(peer.networkID)
+          /**
+           * ⚠️ Collected in the SAME round as peer exchange rather than in a pass of its own: we are
+           * already talking to this instance, and a second sweep would double the traffic for a
+           * question it could have answered the first time.
+           */
+          const advertised = yield* ask(peer.route, OFFER_PATH, undefined, OfferAnswer, "GET")
+          if (advertised?.offer !== undefined) {
+            // `learn` verifies and refuses anything claiming to be ours — a peer describing a THIRD
+            // party's endpoint is exactly what a signature is here to make harmless.
+            yield* offers.learn(advertised.offer as CommunityOffer.Signed)
+          }
+
           for (const peer of answer.peers) {
             // ⚠️ `learn` does the refusing — our own key, and anything that is not a public key. A
             // peer describing peers is hearsay, so every claim is filtered by the store rather than
@@ -415,6 +444,7 @@ export const node = makeGlobalNode({
     CommunityPeers.node,
     CommunitySuccession.node,
     CommunityDirect.node,
+    CommunityOffer.node,
     httpClient,
   ],
 })

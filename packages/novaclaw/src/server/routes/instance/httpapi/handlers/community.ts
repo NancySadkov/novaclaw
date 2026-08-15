@@ -1,5 +1,6 @@
 import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityDirect } from "@novaclaw/core/community/dm"
+import { CommunityOffer } from "@novaclaw/core/community/offer"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityPost } from "@novaclaw/core/community/post"
@@ -30,6 +31,7 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
     const identity = yield* InstanceIdentityStore.Service
     const search = yield* CommunitySearch.Service
     const direct = yield* CommunityDirect.Service
+    const offers = yield* CommunityOffer.Service
     const peersStore = yield* CommunityPeers.Service
     const transport = yield* CommunityTransport.Service
     const posts = yield* CommunityPost.Service
@@ -157,6 +159,25 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
         }),
       )
       .handle(
+        "offerPublish",
+        Effect.fn("CommunityHttpApi.offerPublish")(function* (ctx) {
+          return yield* offers.publish({ kind: "model-server", ...ctx.payload })
+        }),
+      )
+      .handle(
+        "offerWithdraw",
+        Effect.fn("CommunityHttpApi.offerWithdraw")(function* () {
+          yield* offers.withdraw()
+          return true
+        }),
+      )
+      .handle(
+        "offersKnown",
+        Effect.fn("CommunityHttpApi.offersKnown")(function* () {
+          return yield* offers.known()
+        }),
+      )
+      .handle(
         "directSend",
         Effect.fn("CommunityHttpApi.directSend")(function* (ctx) {
           return yield* sync.sendDirect(ctx.params.networkID, ctx.payload.body)
@@ -212,6 +233,7 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
     const successions = yield* CommunitySuccession.Store
     const search = yield* CommunitySearch.Service
     const direct = yield* CommunityDirect.Service
+    const offers = yield* CommunityOffer.Service
 
     /**
      * Resolve a topic to one of OUR channels, or nothing.
@@ -257,6 +279,13 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
         "communitySuccessionKnown",
         Effect.fn("CommunityHttpApi.communitySuccessionKnown")(function* () {
           return { statements: yield* successions.known() }
+        }),
+      )
+      .handle(
+        "communityOffer",
+        Effect.fn("CommunityHttpApi.communityOffer")(function* () {
+          const mine = yield* offers.mine()
+          return mine === undefined ? {} : { offer: mine }
         }),
       )
       .handle(

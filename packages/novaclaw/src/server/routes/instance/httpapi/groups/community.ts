@@ -50,6 +50,21 @@ export const CommunityTransportState = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("online"), peers: Schema.Number }),
 ])
 
+/**
+ * A signed service offer. ⚠️ `price` is FREE TEXT the offerer wrote — not an enum (which would be a
+ * payment protocol with no rails) and not a number (which would look like a price this software can
+ * enforce; it cannot, and settlement happens between two people elsewhere).
+ */
+const PeerOffer = Schema.Struct({
+  kind: Schema.String,
+  endpoint: Schema.String,
+  models: Schema.Array(Schema.String),
+  price: Schema.String,
+  from: Schema.String,
+  at: Schema.Number,
+  signature: Schema.String,
+})
+
 export const CommunityChannel = Schema.Struct({
   name: Schema.String,
   muted: Schema.Boolean,
@@ -109,6 +124,8 @@ export const CommunityPaths = {
   directSend: "/api/community/direct/:networkID",
   directHistory: "/api/community/direct/:networkID/history",
   directList: "/api/community/direct",
+  offerMine: "/api/community/offer/mine",
+  offersKnown: "/api/community/offers",
   discover: "/api/community/discover",
   rotate: "/api/community/rotate",
   channelsArchived: "/api/community/channel/archived",
@@ -278,6 +295,40 @@ export const CommunityApi = HttpApi.make("community").add(
             "ONE HOP, deliberately: it asks the instances already reachable rather than implying the whole network answered. Multi-hop throttled broadcast is a separate, larger mechanism.",
         }),
       ),
+      HttpApiEndpoint.post("offerPublish", CommunityPaths.offerMine, {
+        payload: Schema.Struct({
+          endpoint: Schema.String,
+          models: Schema.Array(Schema.String),
+          price: Schema.String,
+        }),
+        success: described(PeerOffer, "The signed offer, as peers will see it"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.offer.publish",
+          summary: "Offer a model server to the network",
+          description:
+            "Signs and stores what this instance offers. `price` is your own words — this software moves no money and cannot enforce terms; whatever is agreed happens between you and the other person.",
+        }),
+      ),
+      HttpApiEndpoint.delete("offerWithdraw", CommunityPaths.offerMine, {
+        success: described(Schema.Boolean, "True once nothing is offered"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.offer.withdraw",
+          summary: "Stop offering",
+          description: "Removes this instance's offer. Peers that already collected it keep their copy until they refresh.",
+        }),
+      ),
+      HttpApiEndpoint.get("offersKnown", CommunityPaths.offersKnown, {
+        success: described(Schema.Array(PeerOffer), "Offers collected from peers"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.offer.known",
+          summary: "Model servers other people offer",
+          description:
+            "Each one verified against its signer, so an endpoint cannot have been rewritten in transit. Authenticity is all a signature buys: whether the endpoint exists, serves what it claims, or is still there in an hour are separate questions nothing here answers.",
+        }),
+      ),
       HttpApiEndpoint.post("directSend", CommunityPaths.directSend, {
         params: ContactParams,
         payload: Schema.Struct({ body: Schema.String }),
@@ -394,6 +445,7 @@ export const CommunityPeerPaths = {
   succession: "/api/community/succession",
   search: "/api/community/search",
   dm: "/api/community/dm",
+  offer: "/api/community/offer",
 } as const
 
 /** A `Proven` message on the wire. Shape only — every rule about it lives at the ingress door. */
@@ -530,6 +582,19 @@ export const CommunityPeerApi = HttpApi.make("communityPeer").add(
           summary: "Rotations this instance knows about",
           description:
             "How a peer that was OFFLINE when someone rotated still finds them. A statement pushed once reaches whoever was listening; keeping and re-serving it is what stops rotation stranding a user against everybody who happened to be closed.",
+        }),
+      ),
+      HttpApiEndpoint.get("communityOffer", CommunityPeerPaths.offer, {
+        success: described(
+          Schema.Struct({ offer: Schema.optional(PeerOffer) }),
+          "What this instance offers, if anything",
+        ),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.peer.offer",
+          summary: "What this instance offers",
+          description:
+            "A signed advertisement: a model server at an endpoint, on stated terms. The signature protects the ENDPOINT above all — an offer travels through instances that did not write it, and the profitable edit is where the traffic goes. It says what somebody CLAIMS to run; nothing here checks the endpoint exists or is honest.",
         }),
       ),
       HttpApiEndpoint.get("communityListed", CommunityPeerPaths.listedChannels, {

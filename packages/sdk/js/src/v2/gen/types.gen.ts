@@ -9189,6 +9189,113 @@ export type CommunityChannelNearbyResponses = {
 
 export type CommunityChannelNearbyResponse = CommunityChannelNearbyResponses[keyof CommunityChannelNearbyResponses]
 
+export type CommunityOfferPublishData = {
+  body: {
+    endpoint: string
+    models: Array<string>
+    price: string
+  }
+  path?: never
+  query?: never
+  url: "/api/community/offer/mine"
+}
+
+export type CommunityOfferPublishErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityOfferPublishError = CommunityOfferPublishErrors[keyof CommunityOfferPublishErrors]
+
+export type CommunityOfferPublishResponses = {
+  /**
+   * The signed offer, as peers will see it
+   */
+  200: {
+    kind: string
+    endpoint: string
+    models: Array<string>
+    price: string
+    from: string
+    at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    signature: string
+  }
+}
+
+export type CommunityOfferPublishResponse = CommunityOfferPublishResponses[keyof CommunityOfferPublishResponses]
+
+export type CommunityOfferWithdrawData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/community/offer/mine"
+}
+
+export type CommunityOfferWithdrawErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityOfferWithdrawError = CommunityOfferWithdrawErrors[keyof CommunityOfferWithdrawErrors]
+
+export type CommunityOfferWithdrawResponses = {
+  /**
+   * True once nothing is offered
+   */
+  200: boolean
+}
+
+export type CommunityOfferWithdrawResponse = CommunityOfferWithdrawResponses[keyof CommunityOfferWithdrawResponses]
+
+export type CommunityOfferKnownData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/community/offers"
+}
+
+export type CommunityOfferKnownErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityOfferKnownError = CommunityOfferKnownErrors[keyof CommunityOfferKnownErrors]
+
+export type CommunityOfferKnownResponses = {
+  /**
+   * Offers collected from peers
+   */
+  200: Array<{
+    kind: string
+    endpoint: string
+    models: Array<string>
+    price: string
+    from: string
+    at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    signature: string
+  }>
+}
+
+export type CommunityOfferKnownResponse = CommunityOfferKnownResponses[keyof CommunityOfferKnownResponses]
+
 export type CommunityDirectSendData = {
   body: {
     body: string
@@ -9535,6 +9642,41 @@ export type CommunityPeerSuccessionKnownResponses = {
 
 export type CommunityPeerSuccessionKnownResponse =
   CommunityPeerSuccessionKnownResponses[keyof CommunityPeerSuccessionKnownResponses]
+
+export type CommunityPeerOfferData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/community/offer"
+}
+
+export type CommunityPeerOfferErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type CommunityPeerOfferError = CommunityPeerOfferErrors[keyof CommunityPeerOfferErrors]
+
+export type CommunityPeerOfferResponses = {
+  /**
+   * What this instance offers, if anything
+   */
+  200: {
+    offer?: {
+      kind: string
+      endpoint: string
+      models: Array<string>
+      price: string
+      from: string
+      at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      signature: string
+    }
+  }
+}
+
+export type CommunityPeerOfferResponse = CommunityPeerOfferResponses[keyof CommunityPeerOfferResponses]
 
 export type CommunityPeerListedData = {
   body?: never

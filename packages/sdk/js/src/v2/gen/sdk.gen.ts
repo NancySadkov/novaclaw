@@ -1034,6 +1034,66 @@ class ApiCommunityChannel extends NovaClawApiClient {
   }
 }
 
+class ApiCommunityOffer extends NovaClawApiClient {
+  /**
+   * Offer a model server to the network
+   *
+   * Signs and stores what this instance offers. `price` is your own words — this software moves no money and cannot enforce terms; whatever is agreed happens between you and the other person.
+   */
+  public publish<ThrowOnError extends boolean = false>(
+    parameters: {
+      endpoint: string
+      models: Array<string>
+      price: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { endpoint: parameters?.["endpoint"], models: parameters?.["models"], price: parameters?.["price"] }
+    return (options?.client ?? this.client).post<
+      T.CommunityOfferPublishResponses,
+      T.CommunityOfferPublishErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/offer/mine",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Stop offering
+   *
+   * Removes this instance's offer. Peers that already collected it keep their copy until they refresh.
+   */
+  public withdraw<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).delete<
+      T.CommunityOfferWithdrawResponses,
+      T.CommunityOfferWithdrawErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/offer/mine",
+      ...options,
+    })
+  }
+
+  /**
+   * Model servers other people offer
+   *
+   * Each one verified against its signer, so an endpoint cannot have been rewritten in transit. Authenticity is all a signature buys: whether the endpoint exists, serves what it claims, or is still there in an hour are separate questions nothing here answers.
+   */
+  public known<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.CommunityOfferKnownResponses,
+      T.CommunityOfferKnownErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/offers",
+      ...options,
+    })
+  }
+}
+
 class ApiCommunityDirect extends NovaClawApiClient {
   /**
    * Send a direct message
@@ -1298,6 +1358,22 @@ class ApiCommunityPeer extends NovaClawApiClient {
   }
 
   /**
+   * What this instance offers
+   *
+   * A signed advertisement: a model server at an endpoint, on stated terms. The signature protects the ENDPOINT above all — an offer travels through instances that did not write it, and the profitable edit is where the traffic goes. It says what somebody CLAIMS to run; nothing here checks the endpoint exists or is honest.
+   */
+  public offer<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.CommunityPeerOfferResponses,
+      T.CommunityPeerOfferErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/offer",
+      ...options,
+    })
+  }
+
+  /**
    * Channels this instance advertises
    *
    * Channel discovery, and only what the user chose to disclose. Being in a room is not public information — the sync endpoints answer an unknown topic exactly like an empty one so nobody can map this instance's rooms, and this door must not undo that. Unlisted channels are invisible here no matter who asks.
@@ -1440,6 +1516,11 @@ class ApiCommunity extends NovaClawApiClient {
   private _channel?: ApiCommunityChannel
   get channel(): ApiCommunityChannel {
     return (this._channel ??= new ApiCommunityChannel({ client: this.client }))
+  }
+
+  private _offer?: ApiCommunityOffer
+  get offer(): ApiCommunityOffer {
+    return (this._offer ??= new ApiCommunityOffer({ client: this.client }))
   }
 
   private _direct?: ApiCommunityDirect
