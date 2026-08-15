@@ -8941,7 +8941,7 @@ export type CommunityChannelJoinErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError
+  400: InvalidRequestError | InvalidRequestError
   /**
    * Unauthorized
    */
@@ -9280,6 +9280,47 @@ export type CommunityChannelNearbyResponses = {
 
 export type CommunityChannelNearbyResponse = CommunityChannelNearbyResponses[keyof CommunityChannelNearbyResponses]
 
+export type CommunityOfferMineData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/community/offer/mine"
+}
+
+export type CommunityOfferMineErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityOfferMineError = CommunityOfferMineErrors[keyof CommunityOfferMineErrors]
+
+export type CommunityOfferMineResponses = {
+  /**
+   * This instance's own offer, servable or not
+   */
+  200: {
+    offer?: {
+      kind: string
+      endpoint: string
+      models: Array<string>
+      price: string
+      payTo: string
+      from: string
+      at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      signature: string
+    }
+    servable: boolean
+  }
+}
+
+export type CommunityOfferMineResponse = CommunityOfferMineResponses[keyof CommunityOfferMineResponses]
+
 export type CommunityOfferPublishData = {
   body: {
     endpoint: string
@@ -9296,7 +9337,7 @@ export type CommunityOfferPublishErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError
+  400: InvalidRequestError | InvalidRequestError
   /**
    * Unauthorized
    */
@@ -9646,6 +9687,7 @@ export type CommunityPeerSearchData = {
     terms: string
     ttl: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     origin: string
+    nonce: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   }
   path?: never
   query?: never

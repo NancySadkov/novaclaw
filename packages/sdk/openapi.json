@@ -2778,7 +2778,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
                 }
               }
             }
@@ -3487,6 +3494,107 @@
       }
     },
     "/api/community/offer/mine": {
+      "get": {
+        "tags": ["community"],
+        "operationId": "community.offer.mine",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "This instance's own offer, servable or not",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "offer": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "endpoint": {
+                          "type": "string"
+                        },
+                        "models": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "price": {
+                          "type": "string"
+                        },
+                        "payTo": {
+                          "type": "string"
+                        },
+                        "from": {
+                          "type": "string"
+                        },
+                        "at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        },
+                        "signature": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["kind", "endpoint", "models", "price", "payTo", "from", "at", "signature"],
+                      "additionalProperties": false
+                    },
+                    "servable": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": ["servable"],
+                  "additionalProperties": false,
+                  "description": "This instance's own offer, servable or not"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "The owner's own view. `servable: false` with an offer present means it is stored but the current rules refuse it — an endpoint or payment address an older build accepted — so peers are being served nothing.",
+        "summary": "What this instance offers",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.offer.mine({\n  ...\n})"
+          }
+        ]
+      },
       "post": {
         "tags": ["community"],
         "operationId": "community.offer.publish",
@@ -3560,7 +3668,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
                 }
               }
             }
@@ -4482,9 +4597,32 @@
                   },
                   "origin": {
                     "type": "string"
+                  },
+                  "nonce": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
                   }
                 },
-                "required": ["id", "terms", "ttl", "origin"],
+                "required": ["id", "terms", "ttl", "origin", "nonce"],
                 "additionalProperties": false
               }
             }

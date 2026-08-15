@@ -1102,6 +1102,22 @@ class ApiCommunityFilter extends NovaClawApiClient {
 
 class ApiCommunityOffer extends NovaClawApiClient {
   /**
+   * What this instance offers
+   *
+   * The owner's own view. `servable: false` with an offer present means it is stored but the current rules refuse it — an endpoint or payment address an older build accepted — so peers are being served nothing.
+   */
+  public mine<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.CommunityOfferMineResponses,
+      T.CommunityOfferMineErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/offer/mine",
+      ...options,
+    })
+  }
+
+  /**
    * Offer a model server to the network
    *
    * Signs and stores what this instance offers. `price` is your own words and `payTo` is a Lightning address others can copy — this software generates no invoice, tracks no balance, counts no usage and settles nothing. Whatever is agreed happens between two people, in their own wallets.
@@ -1408,6 +1424,7 @@ class ApiCommunityPeer extends NovaClawApiClient {
       terms: string
       ttl: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
       origin: string
+      nonce: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1416,6 +1433,7 @@ class ApiCommunityPeer extends NovaClawApiClient {
       terms: parameters?.["terms"],
       ttl: parameters?.["ttl"],
       origin: parameters?.["origin"],
+      nonce: parameters?.["nonce"],
     }
     return (options?.client ?? this.client).post<
       T.CommunityPeerSearchResponses,
