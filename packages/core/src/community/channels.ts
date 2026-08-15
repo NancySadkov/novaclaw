@@ -1,7 +1,7 @@
 export * as CommunityChannels from "./channels"
 
 import { createHash } from "node:crypto"
-import { and, desc, eq, lt, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, lt, sql } from "drizzle-orm"
 import { Context, Effect, Layer } from "effect"
 import { CommunityContacts } from "./contacts"
 import { CommunityMessage } from "./message"
@@ -137,6 +137,31 @@ export const layer = Layer.effect(
       nonce: row.nonce,
       receivedAt: row.received_at,
     })
+
+    /**
+     * 🔴 Every SPELLING of this room that appears in the log.
+     *
+     * Messages are stored under the name of the channel row they arrived on, so one room grows a
+     * second spelling the moment a user leaves `#recipes` and rejoins as `#Recipes`. Querying the
+     * literal name then hides everything written under the other one — messages that are on disk,
+     * belong to the room being read, and are reachable from nowhere: not from history, and not from
+     * the archive, which excludes by topic precisely because it IS the same room.
+     *
+     * The canonical form is the room's identity everywhere else (`topic.ts`, `join`, `verifyOn`), so
+     * it is the identity here too. Falls back to the name as given, which is what an archived room
+     * with no joined counterpart needs.
+     */
+    const spellingsOf = (channel: string) =>
+      Effect.gen(function* () {
+        const rows = yield* db
+          .selectDistinct({ name: CommunityMessageTable.channel })
+          .from(CommunityMessageTable)
+          .all()
+          .pipe(Effect.orDie)
+        const target = CommunityTopic.canonical(channel)
+        const found = rows.map((row) => row.name).filter((name) => CommunityTopic.canonical(name) === target)
+        return found.length === 0 ? [channel] : found
+      })
 
     const subscribed = (channel: string) =>
       db
@@ -287,7 +312,11 @@ export const layer = Layer.effect(
 
       archived: Effect.fn("CommunityChannels.archived")(function* () {
         const counts = yield* db
-          .select({ name: CommunityMessageTable.channel, messages: sql<number>`count(*)` })
+          .select({
+            name: CommunityMessageTable.channel,
+            messages: sql<number>`count(*)`,
+            latest: sql<number>`max(${CommunityMessageTable.received_at})`,
+          })
           .from(CommunityMessageTable)
           .groupBy(CommunityMessageTable.channel)
           .all()
@@ -298,16 +327,32 @@ export const layer = Layer.effect(
         // ⚠️ Excluded by TOPIC, not by name. A user who left `#recipes` and rejoined as `#Recipes` is
         // in that room right now; listing their own history as something to "rejoin" would offer them
         // a door into the room they are standing in.
-        return counts.filter(
-          (entry) => CommunityTopic.channelFor(CommunityTopic.topicOf(entry.name), joined) === undefined,
-        )
+        // ⚠️ Collapsed by TOPIC, so a room that grew two spellings is ONE entry with ONE total
+        // rather than two rooms the user never made.
+        //
+        // The name shown is the MOST RECENTLY used spelling — what the user last called the room, and
+        // so what they will recognise. Taking whichever the grouping returned first would pick by
+        // SQLite's collation, which is nothing to do with them.
+        const rooms = new Map<string, { name: string; messages: number; latest: number }>()
+        for (const entry of counts) {
+          if (CommunityTopic.channelFor(CommunityTopic.topicOf(entry.name), joined) !== undefined) continue
+          const key = CommunityTopic.canonical(entry.name)
+          const existing = rooms.get(key)
+          const latest = Number(entry.latest)
+          rooms.set(key, {
+            name: existing === undefined || latest > existing.latest ? entry.name : existing.name,
+            messages: (existing?.messages ?? 0) + Number(entry.messages),
+            latest: Math.max(existing?.latest ?? 0, latest),
+          })
+        }
+        return [...rooms.values()].map(({ name, messages }) => ({ name, messages }))
       }),
 
       history: Effect.fn("CommunityChannels.history")(function* (channel: string, limit = 200) {
         const rows = yield* db
           .select()
           .from(CommunityMessageTable)
-          .where(eq(CommunityMessageTable.channel, channel))
+          .where(inArray(CommunityMessageTable.channel, yield* spellingsOf(channel)))
           // ⚠️ By RECEIVED time, never by the author's claim — see the column's note. Sorting by a
           // number the author chooses hands them the top of every reader's view.
           .orderBy(desc(CommunityMessageTable.received_at), desc(sql`rowid`))

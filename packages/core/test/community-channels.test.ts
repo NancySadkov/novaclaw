@@ -417,4 +417,37 @@ describe("CommunityChannels", () => {
     }),
   )
 
+
+  it.effect("🔴 messages written under an EARLIER spelling of a room are not orphaned", () =>
+    Effect.gen(function* () {
+      /**
+       * The room's identity is its canonical form everywhere — `topic.ts`, `join`, `verifyOn`. The
+       * log was the exception: it stored the spelling of the channel row a message arrived on, and
+       * read back by that literal string. Leave `#recipes`, rejoin as `#Recipes`, and everything
+       * said before the rename is on disk and reachable from NOWHERE — not from history, which asks
+       * for the new spelling, and not from the archive, which excludes it because it is correctly
+       * the same room.
+       */
+      const channels = yield* CommunityChannels.Service
+      yield* channels.join("#recipes")
+      yield* channels.record("#recipes", proven(fromStranger({ channel: "#recipes", body: "before" })))
+      yield* channels.leave("#recipes")
+
+      yield* channels.join("#Recipes")
+      yield* channels.record("#Recipes", proven(fromStranger({ channel: "#Recipes", body: "after" })))
+
+      // One room, both messages, whichever spelling is used to ask.
+      for (const spelling of ["#Recipes", "#recipes", "recipes"])
+        expect((yield* channels.history(spelling)).map((m) => m.body).sort()).toEqual(["after", "before"])
+
+      // And it is not ALSO offered as an archived room: the user is standing in it.
+      expect(yield* channels.archived()).toEqual([])
+
+      // Left entirely, it becomes ONE archive entry carrying BOTH messages — not two rooms the user
+      // never made — named by the spelling they used most recently.
+      yield* channels.leave("#Recipes")
+      expect(yield* channels.archived()).toEqual([{ name: "#Recipes", messages: 2 }])
+    }),
+  )
+
 })
