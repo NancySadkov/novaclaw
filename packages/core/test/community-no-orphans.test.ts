@@ -109,6 +109,18 @@ const EXPECTED_ORPHANS: Record<string, string> = {
   // ⚠️ That is a known weakness of the rule: an exported INTERNAL helper looks identical to an
   // orphan. Tightening it to ignore same-file callers would hide real orphans in big modules, so the
   // exemption carries the reason instead.
+  /**
+   * The DM envelope, built before the feature that carries it — the same order the message envelope,
+   * reconciliation and the search controls used, and for the reason §11 gave: this is the most
+   * dangerous code in the program and it is cheaper to get right in a test than in a mesh.
+   *
+   * ⚠️ What it is waiting for is NOT a transport. It is the DM feature itself: publishing a sealing
+   * key signed by the identity, and a message type that carries an envelope. Those are the next wire.
+   */
+  "seal.ts#seal": "waiting for the DM feature: the envelope exists, nothing sends one yet",
+  "seal.ts#unseal": "waiting for the DM feature: nothing receives one yet",
+  "seal.ts#generate": "waiting for the DM feature: the identity store will mint and publish the sealing key",
+  "seal.ts#parsePublic": "internal helper used by seal/unseal in the same file; exported to test that a peer's malformed key is refused rather than thrown on",
   "work.ts#solve": "internal helper called by prove() in the same file; exported for measurement",
   // THE inbound door. A sidecar is a separate process holding only a topic id, so it calls this —
   // and nothing in-process does, by design: an in-process caller already knows the channel name and
