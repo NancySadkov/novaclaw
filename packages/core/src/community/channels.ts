@@ -163,6 +163,23 @@ export const layer = Layer.effect(
         return found.length === 0 ? [channel] : found
       })
 
+    /**
+     * The name of the JOINED row for this room, whatever spelling was asked for.
+     *
+     * 🔴 `join`, `history`, `archived` and `verifyOn` all identify a room canonically; `leave` and
+     * `setMuted` compared literally, so leaving `#Recipes` while joined as `#recipes` matched no row,
+     * changed nothing, and reported `false` — a no-op that looks exactly like "you were not in that
+     * channel". Every door into this store now agrees on what a room IS.
+     */
+    const joinedAs = (channel: string) =>
+      Effect.gen(function* () {
+        const rows = yield* db.select().from(CommunityChannelTable).all().pipe(Effect.orDie)
+        return CommunityTopic.channelFor(
+          CommunityTopic.topicOf(channel),
+          rows.map((row) => row.name),
+        )
+      })
+
     const subscribed = (channel: string) =>
       db
         .select()
@@ -269,7 +286,7 @@ export const layer = Layer.effect(
       leave: Effect.fn("CommunityChannels.leave")(function* (channel: string) {
         const removed = yield* db
           .delete(CommunityChannelTable)
-          .where(eq(CommunityChannelTable.name, channel))
+          .where(eq(CommunityChannelTable.name, (yield* joinedAs(channel)) ?? channel))
           .returning({ name: CommunityChannelTable.name })
           .all()
           .pipe(Effect.orDie)
@@ -287,7 +304,7 @@ export const layer = Layer.effect(
         const updated = yield* db
           .update(CommunityChannelTable)
           .set({ muted })
-          .where(eq(CommunityChannelTable.name, channel))
+          .where(eq(CommunityChannelTable.name, (yield* joinedAs(channel)) ?? channel))
           .returning({ name: CommunityChannelTable.name })
           .all()
           .pipe(Effect.orDie)

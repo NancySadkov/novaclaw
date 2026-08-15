@@ -450,4 +450,30 @@ describe("CommunityChannels", () => {
     }),
   )
 
+
+  it.effect("🔴 leaving and muting accept ANY spelling of the room", () =>
+    Effect.gen(function* () {
+      /**
+       * Found by leaving a room on the running instance and watching it stay: `DELETE #Recipes` while
+       * joined as `#recipes` matched no row, changed nothing, and returned `false` — indistinguishable
+       * from "you were not in that channel". `join`, `history` and `archived` had all been made
+       * canonical; these two were still comparing strings.
+       */
+      const channels = yield* CommunityChannels.Service
+      yield* channels.join("#recipes")
+
+      expect(yield* channels.setMuted("#Recipes", true)).toBe(true)
+      expect((yield* channels.channels()).map((c) => ({ name: c.name, muted: c.muted }))).toEqual([
+        { name: "#recipes", muted: true },
+      ])
+
+      expect(yield* channels.leave("#RECIPES")).toBe(true)
+      expect(yield* channels.channels()).toEqual([])
+
+      // ⚠️ And still honest about a room we are genuinely not in.
+      expect(yield* channels.leave("#never-joined")).toBe(false)
+      expect(yield* channels.setMuted("#never-joined", true)).toBe(false)
+    }),
+  )
+
 })
