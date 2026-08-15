@@ -1006,11 +1006,24 @@ if (measured.length) {
     // max of 17,833. Shards run SEQUENTIALLY, so the excess is not two processes at once; it is the
     // previous shard's memory not yet reclaimed inside the next shard's window.
     //
-    // ⚠️ That closes a LOOP, and the loop is the reason `core` is permanently DEGRADED: an inflated
-    // peak enters the profile, the planner reads it and decides the unit cannot fit whole, so it
-    // shards, so the next measurement is inflated again. `core`'s profile says 17,958 MB against a
-    // whole-run maximum of 10,822. Recording it is still what closes the bootstrap for an unprofiled
-    // unit — but a sharded reading must never be promoted as if it were the unit's own demand.
+    // ⚠️ That closes a LOOP which would otherwise make `core` permanently DEGRADED: an inflated peak
+    // enters the profile, the planner reads it and decides the unit cannot fit whole, so it shards,
+    // so the next measurement is inflated again. Recording a sharded peak is still what closes the
+    // bootstrap for an unprofiled unit — but such a reading must never be promoted as if it were the
+    // unit's own demand.
+    //
+    // 🔴 **The loop is CLOSED, and this note used to say otherwise.** It read *"`core`'s profile says
+    // 17,958 MB against a whole-run maximum of 10,822"*, describing a live defect. The profile now
+    // says **10,822** — the whole-run maximum exactly — so the promotion rule has been applied and
+    // the planner budgets `core` against real demand. Re-measured from `tmp/peak-series.jsonl`
+    // (2026-08-15, 257 `core` rows): 25 WHOLE runs median 10,198 / max 10,822; 232 SPLIT runs median
+    // 10,117 / max 17,833, with 88 of them above the profile. The inflation is real, which is why
+    // the rule stays; the loop it once caused is not.
+    //
+    // ⚠️ Left as a WARNING rather than deleted, because the number in the profile is the only thing
+    // holding it shut: paste one sharded reading in and `core` shards on every machine forever. A
+    // stale "this is broken" note is its own hazard — this one cost a reader an hour of chasing a
+    // defect that had already been fixed.
     const from = r.shards ? `  \x1b[33m(from a SHARDED run — reads high; do not promote it)\x1b[0m` : ""
     // ⚠️ A peak taken from one or two samples is a LOWER BOUND, and saying so is the cheap half of
     // the fix that item 4 of todo/test-speed.md makes structural. A 300 ms unit gets 2–4 ticks at a
