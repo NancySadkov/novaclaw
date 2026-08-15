@@ -185,7 +185,10 @@ describe("instance HttpApi", () => {
 
       const history = yield* HttpClient.get(`/api/community/channel/${encodeURIComponent("#NovaClaw")}/history`)
       expect(history.status).toBe(200)
-      expect(yield* history.json).toEqual([])
+      // ⚠️ `{messages, hidden}`, not a bare array: the count of what the reader's OWN filters removed
+      // travels with them, so a room that looks quiet because of a forgotten rule is distinguishable
+      // from one nobody posts in.
+      expect(yield* history.json).toEqual({ messages: [], hidden: 0 })
 
       // The transport reports OFF with a REASON, so the screen can say something true rather than
       // "disconnected" — which would read as broken on every fresh install. `no-peers`, not `none`:
@@ -212,7 +215,7 @@ describe("instance HttpApi", () => {
       expect(yield* inbound.json).toEqual({ received: true })
 
       const afterForgery = yield* HttpClient.get(`/api/community/channel/${encodeURIComponent("#NovaClaw")}/history`)
-      expect(yield* afterForgery.json).toEqual([])
+      expect(yield* afterForgery.json).toEqual({ messages: [], hidden: 0 })
 
       /**
        * 🔴 Reconciliation must not let a stranger MAP which rooms this instance is in.
