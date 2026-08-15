@@ -58,6 +58,9 @@ const VALID: Record<string, unknown> = {
   },
   compaction: {},
   computer: { display: ":99" },
+  // Community participation. ⚠️ `consented` alone is the ON state — `enabled` defaults true once the
+  // warning has been accepted, so a fixture setting both would not exercise the shape the app writes.
+  community: { consented: true },
   context: { enabled: true },
   provider_capability: {
     "spark-holo/holo3.1": { choice: "native", rationale: "a well-formed native tool call", measuredAt: 1, fingerprint: "f" },

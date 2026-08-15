@@ -1,6 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { CommunityChannels } from "@novaclaw/core/community/channels"
+import { CommunityConsent } from "@novaclaw/core/community/consent"
 import { CommunitySearch } from "@novaclaw/core/community/search"
 import { CommunityWork } from "@novaclaw/core/community/work"
 import { CredentialCipher } from "@novaclaw/core/credential-cipher"
@@ -39,6 +40,13 @@ const proven = (terms: string) => {
 describe("what a stranger's search can see", () => {
   it.effect("🔴 an UNLISTED room is never returned, even on its exact name", () =>
     Effect.gen(function* () {
+      /**
+       * ⚠️ This instance has JOINED. Search does not answer for one that has not — an instance whose
+       * owner never accepted what joining costs neither speaks nor is spoken to — so without this
+       * every case below returns empty and the test would pass for entirely the wrong reason: the
+       * unlisted room would look protected when nothing was being searched at all.
+       */
+      CommunityConsent.applied({ consented: true }, { enabled: false })
       const channels = yield* CommunityChannels.Service
       const search = yield* CommunitySearch.Service
 

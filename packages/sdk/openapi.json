@@ -2602,7 +2602,7 @@
                         },
                         "reason": {
                           "type": "string",
-                          "enum": ["airgap", "no-peers"]
+                          "enum": ["airgap", "no-peers", "not-joined"]
                         }
                       },
                       "required": ["kind", "reason"],
@@ -3489,6 +3489,68 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.channel.nearby({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/community/participation": {
+      "get": {
+        "tags": ["community"],
+        "operationId": "community.participation",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Whether this instance is on the network, and every reason it is not",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "participating": {
+                      "type": "boolean"
+                    },
+                    "consented": {
+                      "type": "boolean"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "refusals": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": ["never_consented", "switched_off", "airgap"]
+                      }
+                    }
+                  },
+                  "required": ["participating", "consented", "enabled", "refusals"],
+                  "additionalProperties": false,
+                  "description": "Whether this instance is on the network, and every reason it is not"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "An ARRAY of refusals rather than one reason: airgapped AND never-asked is a real state, and reporting only one would send the user to fix something that would not help.",
+        "summary": "Whether this instance has joined the community",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.participation({\n  ...\n})"
           }
         ]
       }
@@ -38060,6 +38122,18 @@
           },
           "offline": {
             "type": "boolean"
+          },
+          "community": {
+            "type": "object",
+            "properties": {
+              "consented": {
+                "type": "boolean"
+              },
+              "enabled": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
           },
           "telemetry": {
             "type": "object",

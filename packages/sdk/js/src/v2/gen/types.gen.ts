@@ -4267,6 +4267,10 @@ export type ConfigInfo = {
   folder_bookmarks?: Array<string>
   virtualFs?: boolean
   offline?: boolean
+  community?: {
+    consented?: boolean
+    enabled?: boolean
+  }
   telemetry?: {
     enabled?: boolean
   }
@@ -8882,7 +8886,7 @@ export type CommunityTransportStateResponses = {
   200:
     | {
         kind: "off"
-        reason: "airgap" | "no-peers"
+        reason: "airgap" | "no-peers" | "not-joined"
       }
     | {
         kind: "connecting"
@@ -9279,6 +9283,40 @@ export type CommunityChannelNearbyResponses = {
 }
 
 export type CommunityChannelNearbyResponse = CommunityChannelNearbyResponses[keyof CommunityChannelNearbyResponses]
+
+export type CommunityParticipationData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/community/participation"
+}
+
+export type CommunityParticipationErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityParticipationError = CommunityParticipationErrors[keyof CommunityParticipationErrors]
+
+export type CommunityParticipationResponses = {
+  /**
+   * Whether this instance is on the network, and every reason it is not
+   */
+  200: {
+    participating: boolean
+    consented: boolean
+    enabled: boolean
+    refusals: Array<"never_consented" | "switched_off" | "airgap">
+  }
+}
+
+export type CommunityParticipationResponse = CommunityParticipationResponses[keyof CommunityParticipationResponses]
 
 export type CommunityOfferMineData = {
   body?: never

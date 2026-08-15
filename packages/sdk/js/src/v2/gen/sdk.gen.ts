@@ -1590,6 +1590,22 @@ class ApiCommunity extends NovaClawApiClient {
   }
 
   /**
+   * Whether this instance has joined the community
+   *
+   * An ARRAY of refusals rather than one reason: airgapped AND never-asked is a real state, and reporting only one would send the user to fix something that would not help.
+   */
+  public participation<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.CommunityParticipationResponses,
+      T.CommunityParticipationErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/participation",
+      ...options,
+    })
+  }
+
+  /**
    * Search the network for channels
    *
    * Asks a few peers first and widens only if too few answers come back, so a query that is going to be answered costs almost nothing. Reaches beyond directly-connected instances, unlike the one-hop `nearby` list.

@@ -215,6 +215,12 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "autoupdate",
       "capability_services",
       "commands",
+      // Community participation. PRIVILEGED beside `offline` and `telemetry` and for the same
+      // reason: it has consequences outside this machine — joining exposes this box's IP to anyone
+      // it talks to, and subscribes the user to content nobody moderates. An agent may USE the
+      // community once its owner enabled it; deciding to JOIN is not a thing a model does on
+      // somebody's behalf because it read a message asking it to.
+      "community",
       "computer",
       "default_agent",
       "experimental",
