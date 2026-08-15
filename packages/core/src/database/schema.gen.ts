@@ -205,6 +205,14 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`community_offer\` (
+          \`id\` text PRIMARY KEY,
+          \`document\` text NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`community_peer\` (
           \`network_id\` text PRIMARY KEY,
           \`routes\` text NOT NULL,

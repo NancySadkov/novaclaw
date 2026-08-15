@@ -128,3 +128,20 @@ export const CommunitySuccessionTable = sqliteTable("community_succession", {
   signature: text().notNull(),
   ...Timestamps,
 })
+
+/**
+ * Community P6 — the offer THIS instance publishes, if any.
+ *
+ * ⚠️ Its own table rather than a `runtime_setting` row, and that is a hazard avoided rather than a
+ * preference: a settings key written without being declared makes the write succeed and the NEXT
+ * BOOT crash-loop, with the whole test gate green throughout. A table has no such trap, and every
+ * other community store already works this way.
+ *
+ * One row at most — an instance offers one thing or nothing, so the id is a constant.
+ */
+export const CommunityOfferTable = sqliteTable("community_offer", {
+  id: text().primaryKey(),
+  /** The signed offer, verbatim, so what is served is byte-identical to what was signed. */
+  document: text().notNull(),
+  ...Timestamps,
+})

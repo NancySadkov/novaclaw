@@ -118,6 +118,17 @@ const EXPECTED_ORPHANS: Record<string, string> = {
    * key signed by the identity, and a message type that carries an envelope. Those are the next wire.
    */
   "seal.ts#parsePublic": "internal helper used by seal/unseal in the same file; exported to test that a peer's malformed key is refused rather than thrown on",
+  /**
+   * P6's first slice: an instance can SIGN what it offers, and nothing serves or fetches one yet.
+   * The remaining wire is a peer endpoint that returns `mine()` and a collector that gathers peers'
+   * offers during discovery — the same shape the sealing key and listed channels already use.
+   *
+   * ⛔ Payment stays unbuilt on purpose. The ledger says Lightning is LAST and without custody, and
+   * moving money is a decision with legal weight rather than a next step in an advertisement format.
+   */
+  "offer.ts#publish": "waiting for the offer surface: nothing lets a user declare one yet",
+  "offer.ts#withdraw": "waiting for the offer surface",
+  "offer.ts#mine": "waiting for the peer endpoint that serves it",
   "work.ts#solve": "internal helper called by prove() in the same file; exported for measurement",
   // THE inbound door. A sidecar is a separate process holding only a topic id, so it calls this —
   // and nothing in-process does, by design: an in-process caller already knows the channel name and

@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "ee6eb220-9ff9-4e05-ba46-ee49057437e3",
+  "id": "68757e4d-af7c-437b-a9e5-05149bd18221",
   "prevIds": [
-    "4b04f5dd-25f9-4a72-885b-907e55fbaecb"
+    "ee6eb220-9ff9-4e05-ba46-ee49057437e3"
   ],
   "ddl": [
     {
@@ -80,6 +80,10 @@
     },
     {
       "name": "community_contact",
+      "entityType": "tables"
+    },
+    {
+      "name": "community_offer",
       "entityType": "tables"
     },
     {
@@ -1433,6 +1437,46 @@
       "name": "time_updated",
       "entityType": "columns",
       "table": "community_contact"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "community_offer"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "document",
+      "entityType": "columns",
+      "table": "community_offer"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "community_offer"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "community_offer"
     },
     {
       "type": "text",
@@ -4500,6 +4544,15 @@
       "nameExplicit": false,
       "name": "community_contact_pk",
       "table": "community_contact",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "community_offer_pk",
+      "table": "community_offer",
       "entityType": "pks"
     },
     {
