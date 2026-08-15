@@ -425,9 +425,24 @@ export const layer = Layer.effect(
           const offered = yield* ask(route, SYNC_IDS_PATH, { topic, buckets: disagree }, Ids)
           if (offered === undefined) continue
 
-          // What we do not hold. `missing` deliberately returns what to REQUEST, so nothing arrives
-          // because a sender decided it should — the same rule the ingress door enforces.
-          const wanted = CommunityReconcile.missing([...offered.ids], mine)
+          /**
+           * What we do not hold. `missing` deliberately returns what to REQUEST, so nothing arrives
+           * because a sender decided it should — the same rule the ingress door enforces.
+           *
+           * 🔴 BOUNDED, because the id list is written by the peer. A hostile answer of a million
+           * invented ids costs them one response and costs US thousands of round trips plus the array
+           * to hold them — the asker paying for the answerer's claim, which is the same asymmetry the
+           * peer table and the message bound already close.
+           *
+           * ⚠️ The bound is not arbitrary: retention keeps at most `RETAIN_PER_CHANNEL` messages per
+           * room, so a peer legitimately holding more than that in one channel does not exist. Anything
+           * past it is invented, and a sync that stops early still made progress — the next round
+           * fetches the rest.
+           */
+          const wanted = CommunityReconcile.missing([...offered.ids], mine).slice(
+            0,
+            CommunityChannels.RETAIN_PER_CHANNEL,
+          )
           for (let index = 0; index < wanted.length; index += MAX_MESSAGES_PER_REQUEST) {
             const batch = wanted.slice(index, index + MAX_MESSAGES_PER_REQUEST)
             const carried = yield* ask(route, SYNC_MESSAGES_PATH, { topic, ids: batch }, Messages)

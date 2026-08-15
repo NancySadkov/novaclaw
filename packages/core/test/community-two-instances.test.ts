@@ -767,4 +767,63 @@ describe("two instances", () => {
     }
   })
 
+
+  test("🔴 a peer answering with a MILLION invented ids cannot make us chase them", async () => {
+    /**
+     * The asker pays for the answerer's claim. Reconciliation asks a peer which ids it holds and then
+     * fetches what it lacks — so a hostile answer of a million invented ids costs the peer ONE
+     * response and costs us thousands of round trips plus the array to hold them.
+     *
+     * ⚠️ Nothing bad would be STORED — every fetched message still passes the ingress door. The cost
+     * is the chase itself, which is the same asymmetry the peer table's bound and the message-size
+     * bound already close.
+     */
+    const alice = instance("alice-flood")
+    let server: ReturnType<typeof Bun.serve> | undefined
+    try {
+      let idsRequests = 0
+      let messageRequests = 0
+      server = Bun.serve({
+        port: 0,
+        fetch: async (request) => {
+          const url = new URL(request.url)
+          if (url.pathname === CommunitySync.SYNC_SUMMARY_PATH) {
+            // Every bucket differs, so the asker asks for ids.
+            return Response.json({ buckets: Array.from({ length: 64 }, (_, index) => `deadbeef${index}`) })
+          }
+          if (url.pathname === CommunitySync.SYNC_IDS_PATH) {
+            idsRequests++
+            // A million ids nobody holds. Cheap to generate, expensive to chase.
+            return Response.json({ ids: Array.from({ length: 1_000_000 }, (_, index) => index.toString(16).padStart(64, "0")) })
+          }
+          messageRequests++
+          return Response.json({ messages: [] })
+        },
+      })
+
+      const bobKey = `nid_${Buffer.alloc(32, 5).toString("base64url")}`
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const channels = yield* CommunityChannels.Service
+          const peers = yield* CommunityPeers.Service
+          const sync = yield* CommunitySync.Service
+          yield* channels.join("#NovaClaw")
+          yield* peers.learn(bobKey, [`http://127.0.0.1:${server!.port}`], "px")
+          return yield* sync.sync("#NovaClaw")
+        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+
+      expect(result.fetched).toBe(0)
+      expect(idsRequests).toBe(1)
+      // 🔴 The chase is bounded by our own retention, not by what the peer claimed: at 256 ids a
+      // request, a million would have been ~3,900 round trips.
+      expect(messageRequests).toBeLessThanOrEqual(
+        Math.ceil(CommunityChannels.RETAIN_PER_CHANNEL / CommunitySync.MAX_MESSAGES_PER_REQUEST),
+      )
+    } finally {
+      server?.stop(true)
+      cleanup(alice.home)
+    }
+  })
+
 })
