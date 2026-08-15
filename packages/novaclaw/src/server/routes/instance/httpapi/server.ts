@@ -69,6 +69,7 @@ import { MessengerGateway } from "@novaclaw/core/messenger/gateway"
 import { MessengerLogin } from "@novaclaw/core/messenger/login"
 import { MessengerPace } from "@novaclaw/core/messenger/pace"
 import { MessengerStore } from "@novaclaw/core/messenger/store"
+import { CommunityConsent } from "@novaclaw/core/community/consent"
 import { Offline } from "@novaclaw/core/offline"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -318,6 +319,11 @@ const app = LayerNode.group([
   // (b) the messenger stack below can leave Offline as a requirement — one declared source for the
   // service instead of two constructions that only agree because Effect happens to memoize the
   // shared module-level layer by reference.
+  // 🔴 Installs the community consent gate at boot. Required in the SERVER graph rather than only
+  // where community services are built, because the peer-door middleware runs on every request
+  // whether or not those services exist — and without it the gate reads its safe default and the
+  // door stays shut for everyone.
+  CommunityConsent.node,
   Offline.node,
   httpClient,
   EventV2.node,

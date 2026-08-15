@@ -47,6 +47,10 @@ export const SETTINGS_KEYS = [
   "snapshots",
   "watcher",
   "computer",
+  // The community consent gate. Routed here because `runtime_setting` is precisely what
+  // `CommunityConsent.readStoreConsent` reads at boot and after every write — the same row, so the
+  // stored value and the live gate cannot disagree.
+  "community",
   "formatter",
   "attachments",
   "log",

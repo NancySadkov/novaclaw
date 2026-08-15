@@ -180,7 +180,26 @@ describe("instance HttpApi", () => {
       expect(((yield* privateRoom.json) as { name: string }[]).map((entry) => entry.name)).toContain(
         "#a-private-room",
       )
+      /**
+       * 🔴 The peer door is SHUT until this instance has joined the community, so the check below
+       * has to open it first — and asserting the closed state is the more valuable half.
+       *
+       * A fresh install serves strangers nothing: participation costs the user unmoderated content
+       * and an IP address revealed to whoever they talk to, so it waits for them to accept that.
+       * The owner's own screens above are unaffected, which is the distinction the gate exists to
+       * make.
+       */
+      const beforeJoining = yield* HttpClient.get("/api/community/listed")
+      expect(beforeJoining.status).toBe(503)
+
+      const accepted = yield* HttpClientRequest.patch("/config").pipe(
+        HttpClientRequest.bodyJson({ community: { consented: true } }),
+        Effect.flatMap(HttpClient.execute),
+      )
+      expect(accepted.status).toBe(200)
+
       const advertised = yield* HttpClient.get("/api/community/listed")
+      expect(advertised.status).toBe(200)
       expect(yield* advertised.json).toEqual({ channels: ["#NovaClaw"] })
 
       const history = yield* HttpClient.get(`/api/community/channel/${encodeURIComponent("#NovaClaw")}/history`)

@@ -16,6 +16,7 @@ import { Database } from "./database/database"
 import { Watcher } from "./filesystem/watcher"
 import { ModelPrune } from "./catalog/model-prune"
 import { MergePatch } from "./merge-patch"
+import { CommunityConsent } from "./community/consent"
 import { Offline } from "./offline"
 import { PluginConfigSeed } from "./plugin-config-seed"
 import { PluginConfigStore } from "./plugin-config-store"
@@ -899,6 +900,14 @@ export const apply = (patch: Config.Info) =>
           "config.offline.hosts": [...policy.allowedHosts],
         })
     }
+    // ⚠️ Community consent follows the SAME post-commit path as the airgap, and must: accepting the
+    // warning has to take effect on the next call, not the next boot. It is passed the live offline
+    // policy rather than importing it, so the two conditions stay independent.
+    if (consumed.has("community")) {
+      // The value as just committed, not a re-read: see `CommunityConsent.applied`.
+      const stored = (yield* (yield* SettingsConfigStore.Service).all())["community"]
+      yield* Effect.sync(() => CommunityConsent.applied(stored, Offline.currentPolicy()))
+    }
     if (consumed.has("watcher")) yield* Watcher.reload()
     // Ruling 2 BEFORE the reloads, not after: the reloads can die ("committed, not live"), and a key
     // this process was never going to apply is a fact the operator needs either way.
@@ -1208,6 +1217,14 @@ export const remove = (
           "config.offline.enabled": policy.enabled,
           "config.offline.hosts": [...policy.allowedHosts],
         })
+    }
+    // ⚠️ Community consent follows the SAME post-commit path as the airgap, and must: accepting the
+    // warning has to take effect on the next call, not the next boot. It is passed the live offline
+    // policy rather than importing it, so the two conditions stay independent.
+    if (consumed.has("community")) {
+      // The value as just committed, not a re-read: see `CommunityConsent.applied`.
+      const stored = (yield* (yield* SettingsConfigStore.Service).all())["community"]
+      yield* Effect.sync(() => CommunityConsent.applied(stored, Offline.currentPolicy()))
     }
     if (consumed.has("watcher")) yield* Watcher.reload()
     const stuck = restartRequired(consumed)
