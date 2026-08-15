@@ -2217,6 +2217,12 @@
                       "petname": {
                         "type": "string"
                       },
+                      "formerIDs": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
                       "routes": {
                         "type": "array",
                         "items": {
@@ -2322,6 +2328,12 @@
                     },
                     "petname": {
                       "type": "string"
+                    },
+                    "formerIDs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     },
                     "routes": {
                       "type": "array",

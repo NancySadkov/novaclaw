@@ -8738,6 +8738,7 @@ export type CommunityContactListResponses = {
   200: Array<{
     networkID: string
     petname?: string
+    formerIDs?: Array<string>
     routes: Array<string>
     lastSeenAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     blocked: boolean
@@ -8778,6 +8779,7 @@ export type CommunityContactAddResponses = {
   200: {
     networkID: string
     petname?: string
+    formerIDs?: Array<string>
     routes: Array<string>
     lastSeenAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     blocked: boolean
