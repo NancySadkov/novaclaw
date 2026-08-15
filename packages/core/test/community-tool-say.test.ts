@@ -75,6 +75,26 @@ describe("the community tool is really wired", () => {
       expect(schema).toContain("say")
       expect(definition.description.length).toBeGreaterThan(0)
 
+      /**
+       * 🔴 The description must not CONTRADICT the operations, and it did: it said "READ-ONLY — it
+       * cannot post" for as long as `say` existed. That is worse than a stale comment, because this
+       * text is the model's contract — an agent told it cannot speak does not try, so the capability
+       * would have shipped switched off by its own description.
+       *
+       * Derived from the op list rather than hard-coded, so the next operation added cannot
+       * reintroduce the mismatch quietly.
+       */
+      const ops: readonly string[] = CommunityTool.Input.fields.op.literals
+      if (ops.includes("say")) {
+        expect(definition.description).not.toContain("READ-ONLY")
+        expect(definition.description).not.toContain("cannot post")
+        expect(definition.description).toContain("say")
+      }
+
+      // ⚠️ And the injection warning SURVIVES the rewrite: the reason the tool is careful did not
+      // stop being true when it gained a voice.
+      expect(definition.description).toContain("STRANGERS")
+
       // ⚠️ And speaking is declared as having a side effect — a tool the runner believed was pure
       // could be retried or reordered, and a message posted twice is not a message posted once.
       expect(Tool.sideEffect(tool!)).toBeDefined()
