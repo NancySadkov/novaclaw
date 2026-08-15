@@ -1034,6 +1034,74 @@ class ApiCommunityChannel extends NovaClawApiClient {
   }
 }
 
+class ApiCommunityDirect extends NovaClawApiClient {
+  /**
+   * Send a direct message
+   *
+   * Fetches the recipient's sealing key from their OWN instance and verifies it against their identity before sealing — taking that key from anywhere else is the substitution attack, where the send succeeds, the ciphertext is valid, and only an unchecked signature would have shown anything wrong. Your copy is stored whether or not it was delivered.
+   */
+  public send<ThrowOnError extends boolean = false>(
+    parameters: {
+      networkID: string
+      body: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { networkID: parameters?.["networkID"] }
+    const body = { body: parameters?.["body"] }
+    return (options?.client ?? this.client).post<
+      T.CommunityDirectSendResponses,
+      T.CommunityDirectSendErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/direct/{networkID}",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Read a conversation
+   *
+   * Plaintext, from this instance's own store. The seal protects the WIRE; the disk is protected by the machine — an instance cannot reopen what it sent, because the key that sealed it was discarded, so its own copy is the only one it will ever have.
+   */
+  public history<ThrowOnError extends boolean = false>(
+    parameters: {
+      networkID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { networkID: parameters?.["networkID"] }
+    return (options?.client ?? this.client).get<
+      T.CommunityDirectHistoryResponses,
+      T.CommunityDirectHistoryErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/direct/{networkID}/history",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * List conversations
+   *
+   * The peers there is a conversation with.
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.CommunityDirectListResponses,
+      T.CommunityDirectListErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/direct",
+      ...options,
+    })
+  }
+}
+
 class ApiCommunityPeerSuccession extends NovaClawApiClient {
   /**
    * Tell this instance a peer rotated its key
@@ -1161,6 +1229,42 @@ class ApiCommunityPeerSync extends NovaClawApiClient {
 }
 
 class ApiCommunityPeer extends NovaClawApiClient {
+  /**
+   * Accept a direct message
+   *
+   * A message sealed to this instance's published key. Whoever carries it — including a relaying instance — holds ciphertext only; the seal is to the recipient's key, not to the hop. Answered uniformly, so a sender learns nothing about whether it was kept, and nothing about who this instance blocks.
+   */
+  public dm<ThrowOnError extends boolean = false>(
+    parameters: {
+      to: string
+      from: string
+      at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      sealed: {
+        epk: string
+        iv: string
+        ct: string
+      }
+      signature: string
+      nonce: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = {
+      to: parameters?.["to"],
+      from: parameters?.["from"],
+      at: parameters?.["at"],
+      sealed: parameters?.["sealed"],
+      signature: parameters?.["signature"],
+      nonce: parameters?.["nonce"],
+    }
+    return (options?.client ?? this.client).post<T.CommunityPeerDmResponses, T.CommunityPeerDmErrors, ThrowOnError>({
+      url: "/api/community/dm",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
   /**
    * Ask this instance, and whoever it can reach
    *
@@ -1336,6 +1440,11 @@ class ApiCommunity extends NovaClawApiClient {
   private _channel?: ApiCommunityChannel
   get channel(): ApiCommunityChannel {
     return (this._channel ??= new ApiCommunityChannel({ client: this.client }))
+  }
+
+  private _direct?: ApiCommunityDirect
+  get direct(): ApiCommunityDirect {
+    return (this._direct ??= new ApiCommunityDirect({ client: this.client }))
   }
 
   private _peer?: ApiCommunityPeer

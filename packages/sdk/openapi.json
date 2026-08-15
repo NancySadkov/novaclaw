@@ -3327,6 +3327,245 @@
         ]
       }
     },
+    "/api/community/direct/{networkID}": {
+      "post": {
+        "tags": ["community"],
+        "operationId": "community.direct.send",
+        "parameters": [
+          {
+            "name": "networkID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Whether a peer took it — your own copy is kept either way",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sent": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["sent"],
+                  "additionalProperties": false,
+                  "description": "Whether a peer took it — your own copy is kept either way"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Fetches the recipient's sealing key from their OWN instance and verifies it against their identity before sealing — taking that key from anywhere else is the substitution attack, where the send succeeds, the ciphertext is valid, and only an unchecked signature would have shown anything wrong. Your copy is stored whether or not it was delivered.",
+        "summary": "Send a direct message",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "body": {
+                    "type": "string"
+                  }
+                },
+                "required": ["body"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.direct.send({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/community/direct/{networkID}/history": {
+      "get": {
+        "tags": ["community"],
+        "operationId": "community.direct.history",
+        "parameters": [
+          {
+            "name": "networkID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The conversation with one person, most recent first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "peer": {
+                        "type": "string"
+                      },
+                      "direction": {
+                        "type": "string"
+                      },
+                      "body": {
+                        "type": "string"
+                      },
+                      "at": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["NaN"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["-Infinity"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity", "-Infinity", "NaN"]
+                          }
+                        ]
+                      },
+                      "receivedAt": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["NaN"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["-Infinity"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity", "-Infinity", "NaN"]
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["id", "peer", "direction", "body", "at", "receivedAt"],
+                    "additionalProperties": false
+                  },
+                  "description": "The conversation with one person, most recent first"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Plaintext, from this instance's own store. The seal protects the WIRE; the disk is protected by the machine — an instance cannot reopen what it sent, because the key that sealed it was discarded, so its own copy is the only one it will ever have.",
+        "summary": "Read a conversation",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.direct.history({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/community/direct": {
+      "get": {
+        "tags": ["community"],
+        "operationId": "community.direct.list",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Everyone this instance has exchanged a DM with",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Everyone this instance has exchanged a DM with"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "The peers there is a conversation with.",
+        "summary": "List conversations",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.direct.list({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/community/search-channels": {
       "post": {
         "tags": ["community"],
@@ -3582,6 +3821,138 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.channel.history({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/community/dm": {
+      "post": {
+        "tags": ["community-peer"],
+        "operationId": "community.peer.dm",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Always true — the verdict is deliberately not disclosed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "received": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["received"],
+                  "additionalProperties": false,
+                  "description": "Always true — the verdict is deliberately not disclosed"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "A message sealed to this instance's published key. Whoever carries it — including a relaying instance — holds ciphertext only; the seal is to the recipient's key, not to the hop. Answered uniformly, so a sender learns nothing about whether it was kept, and nothing about who this instance blocks.",
+        "summary": "Accept a direct message",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string"
+                  },
+                  "from": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  },
+                  "sealed": {
+                    "type": "object",
+                    "properties": {
+                      "epk": {
+                        "type": "string"
+                      },
+                      "iv": {
+                        "type": "string"
+                      },
+                      "ct": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["epk", "iv", "ct"],
+                    "additionalProperties": false
+                  },
+                  "signature": {
+                    "type": "string"
+                  },
+                  "nonce": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  }
+                },
+                "required": ["to", "from", "at", "sealed", "signature", "nonce"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.peer.dm({\n  ...\n})"
           }
         ]
       }

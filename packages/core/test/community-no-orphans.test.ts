@@ -117,15 +117,6 @@ const EXPECTED_ORPHANS: Record<string, string> = {
    * ⚠️ What it is waiting for is NOT a transport. It is the DM feature itself: publishing a sealing
    * key signed by the identity, and a message type that carries an envelope. Those are the next wire.
    */
-  /**
-   * 1:1 chat: the store is complete and nothing routes a DM yet. What is missing is small and
-   * specific — a peer endpoint that hands an envelope to `receive`, and a send path that fetches the
-   * recipient's published sealing key before calling `compose`.
-   */
-  "dm.ts#compose": "waiting for the send path: needs the recipient's published sealing key fetched first",
-  "dm.ts#receive": "waiting for the peer endpoint that delivers an envelope",
-  "dm.ts#history": "waiting for the DM surface",
-  "dm.ts#conversations": "waiting for the DM surface",
   "seal.ts#parsePublic": "internal helper used by seal/unseal in the same file; exported to test that a peer's malformed key is refused rather than thrown on",
   "work.ts#solve": "internal helper called by prove() in the same file; exported for measurement",
   // THE inbound door. A sidecar is a separate process holding only a topic id, so it calls this —

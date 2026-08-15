@@ -4,6 +4,7 @@ import { Context, Effect, Layer, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { CommunityChannels } from "./channels"
 import { CommunityContacts } from "./contacts"
+import { CommunityDirect } from "./dm"
 import { CommunityMessage } from "./message"
 import { CommunityPeers } from "./peers"
 import { CommunityReconcile } from "./reconcile"
@@ -46,6 +47,8 @@ export const PEERS_PATH = "/api/community/peers"
 export const LISTED_PATH = "/api/community/listed"
 /** Successor statements — told to peers on rotation, and asked for by peers that were away. */
 export const SUCCESSION_PATH = "/api/community/succession"
+/** Where a peer accepts a direct message. */
+export const DM_PATH = "/api/community/dm"
 
 /**
  * The most messages one request may ask for.
@@ -111,6 +114,18 @@ export interface Interface {
    * ⚠️ Statements are self-verifying, so both directions are safe with strangers: `remember` refuses
    * a forgery before storing it, and `followAll` moves only contacts whose whole chain is proven.
    */
+  /**
+   * Send a direct message to `to`.
+   *
+   * 🔴 Fetches the recipient's SEALING key from their own instance and verifies it against their
+   * identity before sealing. Taking that key from anywhere else — a contact record, a cache, a peer
+   * that offered it — is the substitution attack: the sender succeeds, the ciphertext is valid, and
+   * the only evidence is a signature nobody checked.
+   */
+  readonly sendDirect: (
+    to: string,
+    body: string,
+  ) => Effect.Effect<{ readonly sent: boolean; readonly reason?: string }>
   readonly successions: (
     announce?: CommunitySuccession.Statement,
   ) => Effect.Effect<{ readonly told: number; readonly learned: number }>
@@ -121,9 +136,12 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 /** What a peer sends back. Parsed rather than trusted: a peer is an untrusted source of bytes. */
 const Summary = Schema.Struct({ buckets: Schema.Array(Schema.String) })
 const Ids = Schema.Struct({ ids: Schema.Array(Schema.String) })
-/** Enough of `/global/health` to identify a peer. Every instance already serves it. */
-const Health = Schema.Struct({ networkID: Schema.String })
 const Listed = Schema.Struct({ channels: Schema.Array(Schema.String) })
+const Health = Schema.Struct({
+  networkID: Schema.String,
+  sealingKey: Schema.optional(Schema.String),
+  sealingSignature: Schema.optional(Schema.String),
+})
 const Successions = Schema.Struct({
   statements: Schema.Array(
     Schema.Struct({
@@ -163,6 +181,9 @@ export const layer = Layer.effect(
     const channels = yield* CommunityChannels.Service
     const peers = yield* CommunityPeers.Service
     const successions = yield* CommunitySuccession.Store
+    // ⚠️ Acquired when the layer is BUILT, not inside the call — a `yield*` in the method body makes
+    // the service a requirement of every caller instead of a dependency of this one.
+    const direct = yield* CommunityDirect.Service
     const http = yield* HttpClient.HttpClient
 
     /**
@@ -217,6 +238,46 @@ export const layer = Layer.effect(
     })
 
     return Service.of({
+      sendDirect: Effect.fn("CommunitySync.sendDirect")(function* (to: string, body: string) {
+        if (offline.policy.enabled) return { sent: false, reason: "offline" }
+
+        /**
+         * ⚠️ Only routes belonging to THIS recipient, and their key is read from the instance that
+         * answers there. A peer describing another peer's sealing key would be exactly the
+         * substitution `compose` refuses — so it is never asked.
+         */
+        const known = [...(yield* contacts.bootstrap()), ...(yield* peers.list())].filter(
+          (entry) => entry.networkID === to,
+        )
+        const addresses = known.flatMap((entry) => httpRoutes(entry.routes))
+        if (addresses.length === 0) return { sent: false, reason: "no-route" }
+
+        for (const address of addresses) {
+          const health = yield* ask(address, "/global/health", undefined, Health, "GET")
+          // A different identity at that address means the route is stale or someone else is there.
+          // Either way it is not the person we are writing to.
+          if (health === undefined || health.networkID !== to) continue
+          if (health.sealingKey === undefined || health.sealingSignature === undefined) continue
+
+          const composed = yield* direct.compose({
+            to,
+            sealingKey: health.sealingKey,
+            sealingSignature: health.sealingSignature,
+            body,
+          })
+          if ("rejected" in composed) return { sent: false, reason: composed.rejected }
+
+          const ack = yield* ask(address, DM_PATH, composed.message, Ack, "POST")
+          // ⚠️ Stored either way — `compose` already kept our copy. A send that failed to reach them
+          // must not also lose what the user wrote.
+          if (ack !== undefined) {
+            yield* peers.seen(to)
+            return { sent: true }
+          }
+        }
+        return { sent: false, reason: "unreachable" }
+      }),
+
       successions: Effect.fn("CommunitySync.successions")(function* (announce) {
         if (offline.policy.enabled) return { told: 0, learned: 0 }
         let told = 0
@@ -353,6 +414,7 @@ export const node = makeGlobalNode({
     CommunityChannels.node,
     CommunityPeers.node,
     CommunitySuccession.node,
+    CommunityDirect.node,
     httpClient,
   ],
 })

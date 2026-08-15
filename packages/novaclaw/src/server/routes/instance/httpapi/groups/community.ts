@@ -106,6 +106,9 @@ export const CommunityPaths = {
   channelListed: "/api/community/channel/:name/listed",
   channelsNearby: "/api/community/nearby",
   searchChannels: "/api/community/search-channels",
+  directSend: "/api/community/direct/:networkID",
+  directHistory: "/api/community/direct/:networkID/history",
+  directList: "/api/community/direct",
   discover: "/api/community/discover",
   rotate: "/api/community/rotate",
   channelsArchived: "/api/community/channel/archived",
@@ -275,6 +278,53 @@ export const CommunityApi = HttpApi.make("community").add(
             "ONE HOP, deliberately: it asks the instances already reachable rather than implying the whole network answered. Multi-hop throttled broadcast is a separate, larger mechanism.",
         }),
       ),
+      HttpApiEndpoint.post("directSend", CommunityPaths.directSend, {
+        params: ContactParams,
+        payload: Schema.Struct({ body: Schema.String }),
+        success: described(
+          Schema.Struct({ sent: Schema.Boolean, reason: Schema.optional(Schema.String) }),
+          "Whether a peer took it — your own copy is kept either way",
+        ),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.direct.send",
+          summary: "Send a direct message",
+          description:
+            "Fetches the recipient's sealing key from their OWN instance and verifies it against their identity before sealing — taking that key from anywhere else is the substitution attack, where the send succeeds, the ciphertext is valid, and only an unchecked signature would have shown anything wrong. Your copy is stored whether or not it was delivered.",
+        }),
+      ),
+      HttpApiEndpoint.get("directHistory", CommunityPaths.directHistory, {
+        params: ContactParams,
+        success: described(
+          Schema.Array(
+            Schema.Struct({
+              id: Schema.String,
+              peer: Schema.String,
+              direction: Schema.String,
+              body: Schema.String,
+              at: Schema.Number,
+              receivedAt: Schema.Number,
+            }),
+          ),
+          "The conversation with one person, most recent first",
+        ),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.direct.history",
+          summary: "Read a conversation",
+          description:
+            "Plaintext, from this instance's own store. The seal protects the WIRE; the disk is protected by the machine — an instance cannot reopen what it sent, because the key that sealed it was discarded, so its own copy is the only one it will ever have.",
+        }),
+      ),
+      HttpApiEndpoint.get("directList", CommunityPaths.directList, {
+        success: described(Schema.Array(Schema.String), "Everyone this instance has exchanged a DM with"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.direct.list",
+          summary: "List conversations",
+          description: "The peers there is a conversation with.",
+        }),
+      ),
       HttpApiEndpoint.post("searchChannels", CommunityPaths.searchChannels, {
         payload: Schema.Struct({ terms: Schema.String }),
         success: described(Schema.Array(Schema.String), "Channels found across the network"),
@@ -343,6 +393,7 @@ export const CommunityPeerPaths = {
   listedChannels: "/api/community/listed",
   succession: "/api/community/succession",
   search: "/api/community/search",
+  dm: "/api/community/dm",
 } as const
 
 /** A `Proven` message on the wire. Shape only — every rule about it lives at the ingress door. */
@@ -410,6 +461,16 @@ const PeerSuccession = Schema.Struct({
   signature: Schema.String,
 })
 
+/** A sealed direct message on the wire. The body is opaque to everyone but its recipient. */
+const PeerDirectMessage = Schema.Struct({
+  to: Schema.String,
+  from: Schema.String,
+  at: Schema.Number,
+  sealed: Schema.Struct({ epk: Schema.String, iv: Schema.String, ct: Schema.String }),
+  signature: Schema.String,
+  nonce: Schema.Number,
+})
+
 const PeerList = Schema.Struct({
   peers: Schema.Array(Schema.Struct({ networkID: Schema.String, routes: Schema.Array(Schema.String) })),
 })
@@ -417,6 +478,17 @@ const PeerList = Schema.Struct({
 export const CommunityPeerApi = HttpApi.make("communityPeer").add(
   HttpApiGroup.make("communityPeer")
     .add(
+      HttpApiEndpoint.post("communityDirectMessage", CommunityPeerPaths.dm, {
+        payload: PeerDirectMessage,
+        success: described(PeerAck, "Always true — the verdict is deliberately not disclosed"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.peer.dm",
+          summary: "Accept a direct message",
+          description:
+            "A message sealed to this instance's published key. Whoever carries it — including a relaying instance — holds ciphertext only; the seal is to the recipient's key, not to the hop. Answered uniformly, so a sender learns nothing about whether it was kept, and nothing about who this instance blocks.",
+        }),
+      ),
       HttpApiEndpoint.post("communitySearch", CommunityPeerPaths.search, {
         payload: Schema.Struct({
           id: Schema.String,

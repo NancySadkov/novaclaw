@@ -9189,6 +9189,109 @@ export type CommunityChannelNearbyResponses = {
 
 export type CommunityChannelNearbyResponse = CommunityChannelNearbyResponses[keyof CommunityChannelNearbyResponses]
 
+export type CommunityDirectSendData = {
+  body: {
+    body: string
+  }
+  path: {
+    networkID: string
+  }
+  query?: never
+  url: "/api/community/direct/{networkID}"
+}
+
+export type CommunityDirectSendErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityDirectSendError = CommunityDirectSendErrors[keyof CommunityDirectSendErrors]
+
+export type CommunityDirectSendResponses = {
+  /**
+   * Whether a peer took it — your own copy is kept either way
+   */
+  200: {
+    sent: boolean
+    reason?: string
+  }
+}
+
+export type CommunityDirectSendResponse = CommunityDirectSendResponses[keyof CommunityDirectSendResponses]
+
+export type CommunityDirectHistoryData = {
+  body?: never
+  path: {
+    networkID: string
+  }
+  query?: never
+  url: "/api/community/direct/{networkID}/history"
+}
+
+export type CommunityDirectHistoryErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityDirectHistoryError = CommunityDirectHistoryErrors[keyof CommunityDirectHistoryErrors]
+
+export type CommunityDirectHistoryResponses = {
+  /**
+   * The conversation with one person, most recent first
+   */
+  200: Array<{
+    id: string
+    peer: string
+    direction: string
+    body: string
+    at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    receivedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }>
+}
+
+export type CommunityDirectHistoryResponse = CommunityDirectHistoryResponses[keyof CommunityDirectHistoryResponses]
+
+export type CommunityDirectListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/community/direct"
+}
+
+export type CommunityDirectListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityDirectListError = CommunityDirectListErrors[keyof CommunityDirectListErrors]
+
+export type CommunityDirectListResponses = {
+  /**
+   * Everyone this instance has exchanged a DM with
+   */
+  200: Array<string>
+}
+
+export type CommunityDirectListResponse = CommunityDirectListResponses[keyof CommunityDirectListResponses]
+
 export type CommunitySearchData = {
   body: {
     terms: string
@@ -9294,6 +9397,44 @@ export type CommunityChannelHistoryResponses = {
 }
 
 export type CommunityChannelHistoryResponse = CommunityChannelHistoryResponses[keyof CommunityChannelHistoryResponses]
+
+export type CommunityPeerDmData = {
+  body: {
+    to: string
+    from: string
+    at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    sealed: {
+      epk: string
+      iv: string
+      ct: string
+    }
+    signature: string
+    nonce: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  path?: never
+  query?: never
+  url: "/api/community/dm"
+}
+
+export type CommunityPeerDmErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type CommunityPeerDmError = CommunityPeerDmErrors[keyof CommunityPeerDmErrors]
+
+export type CommunityPeerDmResponses = {
+  /**
+   * Always true — the verdict is deliberately not disclosed
+   */
+  200: {
+    received: true
+  }
+}
+
+export type CommunityPeerDmResponse = CommunityPeerDmResponses[keyof CommunityPeerDmResponses]
 
 export type CommunityPeerSearchData = {
   body: {

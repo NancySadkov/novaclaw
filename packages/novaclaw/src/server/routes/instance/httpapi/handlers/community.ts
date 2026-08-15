@@ -1,4 +1,5 @@
 import { CommunityChannels } from "@novaclaw/core/community/channels"
+import { CommunityDirect } from "@novaclaw/core/community/dm"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityPost } from "@novaclaw/core/community/post"
@@ -28,6 +29,7 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
     const sync = yield* CommunitySync.Service
     const identity = yield* InstanceIdentityStore.Service
     const search = yield* CommunitySearch.Service
+    const direct = yield* CommunityDirect.Service
     const peersStore = yield* CommunityPeers.Service
     const transport = yield* CommunityTransport.Service
     const posts = yield* CommunityPost.Service
@@ -155,6 +157,24 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
         }),
       )
       .handle(
+        "directSend",
+        Effect.fn("CommunityHttpApi.directSend")(function* (ctx) {
+          return yield* sync.sendDirect(ctx.params.networkID, ctx.payload.body)
+        }),
+      )
+      .handle(
+        "directHistory",
+        Effect.fn("CommunityHttpApi.directHistory")(function* (ctx) {
+          return yield* direct.history(ctx.params.networkID)
+        }),
+      )
+      .handle(
+        "directList",
+        Effect.fn("CommunityHttpApi.directList")(function* () {
+          return yield* direct.conversations()
+        }),
+      )
+      .handle(
         "searchChannels",
         Effect.fn("CommunityHttpApi.searchChannels")(function* (ctx) {
           return yield* search.search(ctx.payload.terms)
@@ -191,6 +211,7 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
     const contacts = yield* CommunityContacts.Service
     const successions = yield* CommunitySuccession.Store
     const search = yield* CommunitySearch.Service
+    const direct = yield* CommunityDirect.Service
 
     /**
      * Resolve a topic to one of OUR channels, or nothing.
@@ -208,6 +229,15 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
     })
 
     return handlers
+      .handle(
+        "communityDirectMessage",
+        Effect.fn("CommunityHttpApi.communityDirectMessage")(function* (ctx) {
+          // The verdict is dropped, as on the channel door: reporting it would tell a stranger
+          // whether they are blocked, and whether this instance holds the key they sealed to.
+          yield* direct.receive(ctx.payload)
+          return { received: true } as const
+        }),
+      )
       .handle(
         "communitySearch",
         Effect.fn("CommunityHttpApi.communitySearch")(function* (ctx) {
