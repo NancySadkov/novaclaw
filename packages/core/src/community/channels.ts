@@ -188,8 +188,34 @@ export const messageID = (message: CommunityMessage.Signed): string =>
  *
  * Exported and parameterised because a bound is only real if it has been watched to hold; testing it
  * through `record` alone would need 5,000 signed messages per case.
+ *
+ * 🔴 **Guarded by a COUNT, because enforcing a bound is itself on the attacker's path.** Measured at
+ * 5,000 rows the delete costs **9.95 ms**, against 0.83 µs for the work check at the door — and
+ * unlike the other bounds here that is not only an attack cost. A busy channel sits AT its bound
+ * permanently, so unguarded this was a ~10 ms tax on every ordinary message forever.
+ *
+ * ⚠️ Worse under broadcast than the arithmetic suggests: an attacker pays the 49 ms proof-of-work
+ * ONCE and the message then propagates, so every instance that stores it pays the 9.95 ms
+ * separately. Paid once, charged N times, is the definition of an amplifier.
+ *
+ * The count is an index seek on `(channel, received_at)` at 0.014 ms, and `SLACK` then amortises the
+ * delete across that many messages — about 0.02 ms each, for a few hundred extra rows on disk.
  */
-export const prune = (db: Database.Interface["db"], channel: string, keep: number) =>
+export const PRUNE_SLACK = 500
+
+export const prune = Effect.fn("CommunityChannels.prune")(function* (
+  db: Database.Interface["db"],
+  channel: string,
+  keep: number,
+) {
+  const held = yield* db
+    .$count(CommunityMessageTable, eq(CommunityMessageTable.channel, channel))
+    .pipe(Effect.orDie)
+  if (held <= keep + PRUNE_SLACK) return
+  yield* pruneNow(db, channel, keep)
+})
+
+const pruneNow = (db: Database.Interface["db"], channel: string, keep: number) =>
   db
     .delete(CommunityMessageTable)
     .where(

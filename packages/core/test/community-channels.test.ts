@@ -234,26 +234,33 @@ describe("CommunityChannels", () => {
       // cutoff equalled every row's value, `<` matched nothing, and the bound deleted ZERO rows
       // while the table grew without limit — failing precisely where it was needed.
       const frozen = 1_700_000_000_000
-      for (let i = 0; i < 40; i++)
-        yield* db
-          .insert(CommunityMessageTable)
-          .values({
-            id: `id-${i}`,
-            channel: CHANNEL,
-            author: `nid_${Buffer.alloc(32, 1).toString("base64url")}`,
-            claimed_at: frozen,
-            received_at: frozen,
-            body: `m${i}`,
-            signature: "x",
-          })
-          .run()
+      /**
+       * ⚠️ Sized past `keep + PRUNE_SLACK`, because the prune is now COUNT-guarded: enforcing the
+       * bound costs 9.95 ms at 5,000 rows and a busy channel sits at its bound permanently, so
+       * running it on every message was a permanent tax on ordinary traffic. This test caught the
+       * change by failing — 40 rows no longer trip the guard — and the fix is to flood past it
+       * rather than to call the unguarded statement, which would test a path `record` never takes.
+       */
+      const keep = 10
+      const total = keep + CommunityChannels.PRUNE_SLACK + 30
+      const rows = Array.from({ length: total }, (_, i) => ({
+        id: `id-${i}`,
+        channel: CHANNEL,
+        author: `nid_${Buffer.alloc(32, 1).toString("base64url")}`,
+        claimed_at: frozen,
+        received_at: frozen,
+        body: `m${i}`,
+        signature: "x",
+      }))
+      for (let start = 0; start < rows.length; start += 200)
+        yield* db.insert(CommunityMessageTable).values(rows.slice(start, start + 200)).run()
 
-      yield* CommunityChannels.prune(db, CHANNEL, 10)
+      yield* CommunityChannels.prune(db, CHANNEL, keep)
       const left = yield* db.select().from(CommunityMessageTable).all()
-      expect(left).toHaveLength(10)
+      expect(left).toHaveLength(keep)
       // And it kept the NEWEST ten, deterministically, rather than an arbitrary ten.
       expect(left.map((r) => r.body).sort()).toEqual(
-        ["m30", "m31", "m32", "m33", "m34", "m35", "m36", "m37", "m38", "m39"].sort(),
+        Array.from({ length: keep }, (_, i) => `m${total - keep + i}`).sort(),
       )
     }),
   )
