@@ -168,11 +168,32 @@ describe("instance HttpApi", () => {
       expect(history.status).toBe(200)
       expect(yield* history.json).toEqual([])
 
-      // The transport seam reports OFF with a REASON, so the screen can say "still being built"
-      // rather than "disconnected" — which would read as broken on every fresh install.
+      // The transport reports OFF with a REASON, so the screen can say something true rather than
+      // "disconnected" — which would read as broken on every fresh install. `no-peers`, not `none`:
+      // the transport is real now, this instance simply knows nobody with an address to dial.
       const transport = yield* HttpClient.get("/api/community/transport")
       expect(transport.status).toBe(200)
-      expect(yield* transport.json).toEqual({ kind: "off", reason: "none" })
+      expect(yield* transport.json).toEqual({ kind: "off", reason: "no-peers" })
+
+      /**
+       * 🔴 The P2P door, and the one route here with NO auth — checked from the same surface as
+       * everything else precisely because "unauthenticated" is a claim that has to keep being true.
+       * A forged message is answered exactly like a good one and stored like neither.
+       */
+      const inbound = yield* HttpClientRequest.post("/api/community/inbound").pipe(
+        HttpClientRequest.bodyJson({
+          topic: "not-a-real-topic",
+          message: { channel: "#NovaClaw", author: "nid_forged", at: 1, body: "hi", signature: "AAAA", nonce: 0 },
+        }),
+        Effect.flatMap(HttpClient.execute),
+      )
+      expect(inbound.status).toBe(200)
+      // Uniform: reporting the verdict would tell a stranger they are blocked, or let them map our
+      // channels by probing topics.
+      expect(yield* inbound.json).toEqual({ received: true })
+
+      const afterForgery = yield* HttpClient.get(`/api/community/channel/${encodeURIComponent("#NovaClaw")}/history`)
+      expect(yield* afterForgery.json).toEqual([])
     }),
   )
 

@@ -116,12 +116,37 @@ describe("PublicApi OpenAPI v2 errors", () => {
     })
   })
 
+  /**
+   * 🔴 Routes that are UNAUTHENTICATED on purpose, each with the reason it has to be.
+   *
+   * The guard below is worth keeping strict — an accidentally open route on the instance API is a
+   * serious defect — so an exception belongs here, named, rather than expressed by weakening it or by
+   * hiding the route from the spec.
+   */
+  const deliberatelyOpen: Record<string, string> = {
+    "POST /api/community/inbound":
+      "Community P2: the P2P ingress. A node that accepts messages only from callers holding THIS " +
+      "instance's token is a private federation, not a community — strangers handing us bytes is the " +
+      "entire feature. It is guarded instead by proof-of-work (checked first, ~49 ms for a sender to " +
+      "produce, 0.83 µs for us to reject), signature, subscription, block, size and duplicate rules, " +
+      "all in CommunityChannels.record. It stays IN the public spec on purpose: a stranger building a " +
+      "compatible peer needs the protocol documented.",
+  }
+
   test("preserves /api auth responses", () => {
     const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
 
     for (const route of v2Operations(spec)) {
-      expect(route.operation.responses?.["401"], `${route.method.toUpperCase()} ${route.path}`).toBeDefined()
-      expect(route.operation.security, `${route.method.toUpperCase()} ${route.path}`).toEqual([])
+      const name = `${route.method.toUpperCase()} ${route.path}`
+      if (name in deliberatelyOpen) {
+        // ⚠️ Asserted to be open, not merely skipped. If someone later puts this route behind auth,
+        // this fails and asks them to remove the exemption — an exemption that quietly stopped being
+        // true is how a guard turns into decoration.
+        expect(route.operation.responses?.["401"], `${name} is exempt but now declares 401`).toBeUndefined()
+        continue
+      }
+      expect(route.operation.responses?.["401"], name).toBeDefined()
+      expect(route.operation.security, name).toEqual([])
     }
   })
 
