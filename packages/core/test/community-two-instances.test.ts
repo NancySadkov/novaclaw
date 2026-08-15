@@ -768,11 +768,11 @@ describe("two instances", () => {
   })
 
 
-  test("🔴 a peer answering with a MILLION invented ids cannot make us chase them", async () => {
+  test("🔴 a peer offering more ids than could exist cannot make us chase them", async () => {
     /**
      * The asker pays for the answerer's claim. Reconciliation asks a peer which ids it holds and then
-     * fetches what it lacks — so a hostile answer of a million invented ids costs the peer ONE
-     * response and costs us thousands of round trips plus the array to hold them.
+     * fetches what it lacks — so a hostile answer of invented ids costs the peer ONE response and
+     * costs us a round trip per 256 of them.
      *
      * ⚠️ Nothing bad would be STORED — every fetched message still passes the ingress door. The cost
      * is the chase itself, which is the same asymmetry the peer table's bound and the message-size
@@ -793,8 +793,15 @@ describe("two instances", () => {
           }
           if (url.pathname === CommunitySync.SYNC_IDS_PATH) {
             idsRequests++
-            // A million ids nobody holds. Cheap to generate, expensive to chase.
-            return Response.json({ ids: Array.from({ length: 1_000_000 }, (_, index) => index.toString(16).padStart(64, "0")) })
+            /**
+             * ⚠️ 20,000, not a million. The point is that the offer EXCEEDS our retention bound
+             * (5,000) so the clamp has something to bite on — and a million ids is ~64 MB of string
+             * generated per request, which made this test alone a load on the suite. Proving a bound
+             * does not require the largest number that would violate it.
+             */
+            return Response.json({
+              ids: Array.from({ length: 20_000 }, (_, index) => index.toString(16).padStart(64, "0")),
+            })
           }
           messageRequests++
           return Response.json({ messages: [] })
