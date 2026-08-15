@@ -118,6 +118,15 @@ const EXPECTED_ORPHANS: Record<string, string> = {
   // orphan. Tightening it to ignore same-file callers would hide real orphans in big modules, so the
   // exemption carries the reason instead.
   "work.ts#solve": "internal helper called by prove() in the same file; exported for measurement",
+  // THE inbound door. A sidecar is a separate process holding only a topic id, so it calls this —
+  // and nothing in-process does, by design: an in-process caller already knows the channel name and
+  // should use `record`.
+  "channels.ts#deliver": "waiting for P2: the sidecar's entry point, addressed by topic",
+  // The transport needs `topicOf` to know which topic to publish to; until one exists, its only
+  // caller is `channelFor` beside it. `canonical` is `topicOf`'s own helper, exported so the
+  // normalisation decision — that #NovaClaw and #novaclaw are ONE room — is directly testable.
+  "topic.ts#topicOf": "waiting for P2: the transport addresses by topic",
+  "topic.ts#canonical": "internal helper called by topicOf in the same file; exported to test the rule",
 }
 
 describe("community capabilities have callers", () => {

@@ -5,6 +5,7 @@ import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityMessageTable } from "@novaclaw/core/community/channel.sql"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityMessage } from "@novaclaw/core/community/message"
+import { CommunityTopic } from "@novaclaw/core/community/topic"
 import { CommunityWork } from "@novaclaw/core/community/work"
 import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
@@ -126,6 +127,30 @@ describe("CommunityChannels", () => {
       // Solving once and reusing the nonce is exactly how a flooder would avoid paying per message.
       // The work binds to the SIGNATURE, so it cannot be carried across.
       expect(yield* channels.record(CHANNEL, { ...second, nonce: first.nonce })).toEqual({ rejected: "unproven" })
+    }),
+  )
+
+  it.effect("🔴 deliver resolves a TOPIC to a joined channel, and refuses one we never joined", () =>
+    Effect.gen(function* () {
+      const channels = yield* CommunityChannels.Service
+      yield* channels.join(CHANNEL)
+      const message = proven(yield* CommunityMessage.sign({ channel: CHANNEL, body: "from the wire" }))
+
+      // The sidecar knows only a topic id — a hash it cannot invert. Resolution against OUR joined
+      // channels is what turns that into a channel name.
+      const landed = yield* channels.deliver(CommunityTopic.topicOf(CHANNEL), message)
+      expect("stored" in landed).toBe(true)
+      expect((yield* channels.history(CHANNEL)).map((m) => m.body)).toEqual(["from the wire"])
+
+      // A topic for a channel we never joined is UNRESOLVABLE, so "not subscribed" is enforced by
+      // arithmetic rather than by a check that could be forgotten.
+      expect(yield* channels.deliver(CommunityTopic.topicOf("#never-joined"), message)).toEqual({
+        rejected: "unknown-topic",
+      })
+      // And a topic that resolves still passes every rule `record` enforces — here, the work check.
+      expect(yield* channels.deliver(CommunityTopic.topicOf(CHANNEL), { ...message, nonce: 0 })).toEqual({
+        rejected: "unproven",
+      })
     }),
   )
 

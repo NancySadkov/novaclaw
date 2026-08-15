@@ -5,6 +5,7 @@ import { and, desc, eq, lt, sql } from "drizzle-orm"
 import { Context, Effect, Layer } from "effect"
 import { CommunityContacts } from "./contacts"
 import { CommunityMessage } from "./message"
+import { CommunityTopic } from "./topic"
 import { CommunityWork } from "./work"
 import { CommunityChannelTable, CommunityMessageTable } from "./channel.sql"
 import { Database } from "../database/database"
@@ -54,6 +55,20 @@ export interface Interface {
     channel: string,
     message: CommunityMessage.Proven,
   ) => Effect.Effect<{ readonly stored: Stored } | { readonly rejected: Rejection }>
+  /**
+   * THE INBOUND DOOR for a transport: a message arrived addressed by TOPIC.
+   *
+   * 🔴 A sidecar is a separate process and cannot call `record` — it knows only a topic id, and a
+   * hash cannot be inverted. Resolution therefore happens HERE, against the channels this instance
+   * joined, which makes "we are not subscribed" unanswerable rather than merely unchecked.
+   *
+   * Returns the same verdicts as `record`, plus `unknown-topic` for an id none of our channels
+   * hashes to.
+   */
+  readonly deliver: (
+    topic: string,
+    message: CommunityMessage.Proven,
+  ) => Effect.Effect<{ readonly stored: Stored } | { readonly rejected: Rejection | "unknown-topic" }>
   /** Most recent first, by RECEIVED time. */
   readonly history: (channel: string, limit?: number) => Effect.Effect<ReadonlyArray<Stored>>
 }
@@ -120,45 +135,10 @@ export const layer = Layer.effect(
         .get()
         .pipe(Effect.orDie)
 
-    return Service.of({
-      join: Effect.fn("CommunityChannels.join")(function* (channel: string) {
-        yield* db
-          .insert(CommunityChannelTable)
-          .values({ name: channel })
-          .onConflictDoNothing()
-          .run()
-          .pipe(Effect.orDie)
-      }),
-
-      leave: Effect.fn("CommunityChannels.leave")(function* (channel: string) {
-        const removed = yield* db
-          .delete(CommunityChannelTable)
-          .where(eq(CommunityChannelTable.name, channel))
-          .returning({ name: CommunityChannelTable.name })
-          .all()
-          .pipe(Effect.orDie)
-        // ⚠️ History SURVIVES leaving. Deleting it would make "leave" a destructive act the user did
-        // not ask for, and rejoining would silently show an empty room they know had messages.
-        return removed.length > 0
-      }),
-
-      channels: Effect.fn("CommunityChannels.channels")(function* () {
-        const rows = yield* db.select().from(CommunityChannelTable).all().pipe(Effect.orDie)
-        return rows.map((row) => ({ name: row.name, muted: row.muted }))
-      }),
-
-      setMuted: Effect.fn("CommunityChannels.setMuted")(function* (channel: string, muted: boolean) {
-        const updated = yield* db
-          .update(CommunityChannelTable)
-          .set({ muted })
-          .where(eq(CommunityChannelTable.name, channel))
-          .returning({ name: CommunityChannelTable.name })
-          .all()
-          .pipe(Effect.orDie)
-        return updated.length > 0
-      }),
-
-      record: Effect.fn("CommunityChannels.record")(function* (channel: string, message: CommunityMessage.Proven) {
+    const record = Effect.fn("CommunityChannels.record")(function* (
+      channel: string,
+      message: CommunityMessage.Proven,
+    ) {
         // Order matters: the cheapest and most decisive checks first, and nothing touches the disk
         // until the message has proved it deserves to.
         if ((yield* subscribed(channel)) === undefined) return { rejected: "not-subscribed" as const }
@@ -219,6 +199,60 @@ export const layer = Layer.effect(
         return {
           stored: { ...message, id, receivedAt } satisfies Stored,
         }
+    })
+
+    return Service.of({
+      join: Effect.fn("CommunityChannels.join")(function* (channel: string) {
+        yield* db
+          .insert(CommunityChannelTable)
+          .values({ name: channel })
+          .onConflictDoNothing()
+          .run()
+          .pipe(Effect.orDie)
+      }),
+
+      leave: Effect.fn("CommunityChannels.leave")(function* (channel: string) {
+        const removed = yield* db
+          .delete(CommunityChannelTable)
+          .where(eq(CommunityChannelTable.name, channel))
+          .returning({ name: CommunityChannelTable.name })
+          .all()
+          .pipe(Effect.orDie)
+        // ⚠️ History SURVIVES leaving. Deleting it would make "leave" a destructive act the user did
+        // not ask for, and rejoining would silently show an empty room they know had messages.
+        return removed.length > 0
+      }),
+
+      channels: Effect.fn("CommunityChannels.channels")(function* () {
+        const rows = yield* db.select().from(CommunityChannelTable).all().pipe(Effect.orDie)
+        return rows.map((row) => ({ name: row.name, muted: row.muted }))
+      }),
+
+      setMuted: Effect.fn("CommunityChannels.setMuted")(function* (channel: string, muted: boolean) {
+        const updated = yield* db
+          .update(CommunityChannelTable)
+          .set({ muted })
+          .where(eq(CommunityChannelTable.name, channel))
+          .returning({ name: CommunityChannelTable.name })
+          .all()
+          .pipe(Effect.orDie)
+        return updated.length > 0
+      }),
+
+      record,
+            deliver: Effect.fn("CommunityChannels.deliver")(function* (
+        topic: string,
+        message: CommunityMessage.Proven,
+      ) {
+        const rows = yield* db.select().from(CommunityChannelTable).all().pipe(Effect.orDie)
+        const channel = CommunityTopic.channelFor(
+          topic,
+          rows.map((row) => row.name),
+        )
+        // Not a lookup failure to retry: a hash cannot be inverted, so this is the definitive answer
+        // that nothing we subscribe to has that id.
+        if (channel === undefined) return { rejected: "unknown-topic" as const }
+        return yield* record(channel, message)
       }),
 
       history: Effect.fn("CommunityChannels.history")(function* (channel: string, limit = 200) {
