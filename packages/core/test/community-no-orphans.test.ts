@@ -109,12 +109,15 @@ const EXPECTED_ORPHANS: Record<string, string> = {
   "reconcile.ts#differing": "waiting for P2: compares OUR summary against a peer's",
   "reconcile.ts#idsIn": "waiting for P2: answers a peer's request for a bucket",
   "reconcile.ts#missing": "waiting for P2: decides what to request FROM a peer",
-  // 🔴 The one that is NOT transport-blocked. Proof-of-work is computed on send and checked on
-  // receive, both local. Wiring it means the signed envelope carries a nonce, `post` solves before
-  // returning, and `record` refuses work that does not clear the difficulty — a change to the wire
-  // format, which is free NOW and expensive after anything ships. That is the next concrete task in
-  // this program that needs no transport and no decision from anyone.
-  "work.ts#solve": "NOT blocked — wiring PoW into post/record is the next task; see the note above",
+  // ✅ WIRED since the note above was written: `post` calls `prove`, `record` calls `verify`, and
+  // the signed envelope carries a nonce. `solve` remains listed only because this guard counts
+  // callers OUTSIDE the declaring file, and `solve`'s caller is `prove` in the same module — it is
+  // exported so the difficulty table in `work.test.ts` can be measured directly.
+  //
+  // ⚠️ That is a known weakness of the rule: an exported INTERNAL helper looks identical to an
+  // orphan. Tightening it to ignore same-file callers would hide real orphans in big modules, so the
+  // exemption carries the reason instead.
+  "work.ts#solve": "internal helper called by prove() in the same file; exported for measurement",
 }
 
 describe("community capabilities have callers", () => {
