@@ -1069,6 +1069,22 @@ class ApiCommunityPeerSync extends NovaClawApiClient {
 
 class ApiCommunityPeer extends NovaClawApiClient {
   /**
+   * Ask for other peers
+   *
+   * Peer exchange: how one address becomes an entry point to the whole network. Returns routes this instance believes work, never the user's contact list, and never a blocked peer.
+   */
+  public exchange<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.CommunityPeerExchangeResponses,
+      T.CommunityPeerExchangeErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/peers",
+      ...options,
+    })
+  }
+
+  /**
    * Accept a community message from a peer
    *
    * The open door of the P2P network: any instance may hand this one a signed, work-proven message. Unauthenticated by design — a node that required a token would be a private federation, not a community. The answer is always the same so that probing reveals neither our subscriptions nor our block list.

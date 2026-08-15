@@ -3193,6 +3193,68 @@
         ]
       }
     },
+    "/api/community/peers": {
+      "get": {
+        "tags": ["community-peer"],
+        "operationId": "community.peer.exchange",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Other instances this one believes are reachable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "peers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "networkID": {
+                            "type": "string"
+                          },
+                          "routes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": ["networkID", "routes"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["peers"],
+                  "additionalProperties": false,
+                  "description": "Other instances this one believes are reachable"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Peer exchange: how one address becomes an entry point to the whole network. Returns routes this instance believes work, never the user's contact list, and never a blocked peer.",
+        "summary": "Ask for other peers",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.peer.exchange({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/community/inbound": {
       "post": {
         "tags": ["community-peer"],

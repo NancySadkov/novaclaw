@@ -9131,6 +9131,36 @@ export type CommunityChannelHistoryResponses = {
 
 export type CommunityChannelHistoryResponse = CommunityChannelHistoryResponses[keyof CommunityChannelHistoryResponses]
 
+export type CommunityPeerExchangeData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/community/peers"
+}
+
+export type CommunityPeerExchangeErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type CommunityPeerExchangeError = CommunityPeerExchangeErrors[keyof CommunityPeerExchangeErrors]
+
+export type CommunityPeerExchangeResponses = {
+  /**
+   * Other instances this one believes are reachable
+   */
+  200: {
+    peers: Array<{
+      networkID: string
+      routes: Array<string>
+    }>
+  }
+}
+
+export type CommunityPeerExchangeResponse = CommunityPeerExchangeResponses[keyof CommunityPeerExchangeResponses]
+
 export type CommunityPeerInboundData = {
   body: {
     topic: string

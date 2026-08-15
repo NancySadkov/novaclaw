@@ -19,6 +19,7 @@ import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityPost } from "@novaclaw/core/community/post"
+import { CommunityPeers } from "@novaclaw/core/community/peers"
 import { CommunityTransport } from "@novaclaw/core/community/transport"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
@@ -245,6 +246,7 @@ const app = LayerNode.group([
   // group whose services are missing here compiles green and answers 500 on every call.
   CommunityContacts.node,
   CommunityChannels.node,
+  CommunityPeers.node,
   CommunityTransport.node,
   CommunityPost.node,
   SkillConfigStore.node,

@@ -7,6 +7,7 @@ import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityMessage } from "@novaclaw/core/community/message"
 import { CommunityPost } from "@novaclaw/core/community/post"
+import { CommunityPeers } from "@novaclaw/core/community/peers"
 import { CommunityReconcile } from "@novaclaw/core/community/reconcile"
 import { CommunitySync } from "@novaclaw/core/community/sync"
 import { CommunityTopic } from "@novaclaw/core/community/topic"
@@ -43,6 +44,7 @@ const instance = (label: string) => {
       CommunityChannels.node,
       Offline.node,
       CommunityTransport.node,
+      CommunityPeers.node,
       CommunitySync.node,
       CommunityPost.node,
     ]),
@@ -367,6 +369,81 @@ describe("two instances", () => {
       )
       expect(again).toEqual({ peers: 1, fetched: 0 })
       expect(asked).toEqual([CommunitySync.SYNC_SUMMARY_PATH])
+    } finally {
+      server?.stop(true)
+      cleanup(alice.home)
+      cleanup(bob.home)
+    }
+  })
+
+
+  test("🔴 ONE address reaches a peer we were never told about — peer exchange", async () => {
+    /**
+     * The anti-shutdown property, exercised rather than asserted. The spec states it exactly: *any
+     * peer address from any source is a complete entry point, because PEER EXCHANGE supplies the
+     * rest. There is no list to seize, because there is nothing special about any particular entry.*
+     *
+     * Alice is given exactly one address — Bob's. Bob knows Carol. Alice must end up able to reach
+     * Carol, whom nobody told her about, WITHOUT Carol becoming a contact: an address book is a trust
+     * decision the user makes, and a peer that can talk to us must never be able to write itself into
+     * it. That is why `observe` and `follow` refuse to create entries, and why this lands elsewhere.
+     */
+    const alice = instance("alice-px")
+    const bob = instance("bob-px")
+    let server: ReturnType<typeof Bun.serve> | undefined
+    try {
+      const carol = `nid_${Buffer.alloc(32, 9).toString("base64url")}`
+      const carolRoute = "http://198.51.100.7:4096"
+
+      // Bob knows Carol — as a PEER, the way peer exchange would have taught him.
+      const bobKey = await Effect.runPromise(
+        Effect.gen(function* () {
+          const peers = yield* CommunityPeers.Service
+          expect(yield* peers.learn(carol, [carolRoute], "px")).toBe(true)
+          return (yield* InstanceIdentityStore.Service.pipe(Effect.flatMap((store) => store.identity()))).networkID
+        }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+
+      server = Bun.serve({
+        port: 0,
+        fetch: async () =>
+          Response.json(
+            await Effect.runPromise(
+              CommunityPeers.Service.pipe(
+                Effect.flatMap((peers) => peers.sample()),
+                Effect.map((offered) => ({
+                  peers: offered.map((peer) => ({ networkID: peer.networkID, routes: peer.routes })),
+                })),
+                Effect.provide(bob.graph),
+                Effect.provide(CredentialCipher.defaultLayer),
+              ),
+            ),
+          ),
+      })
+
+      const seen = await Effect.runPromise(
+        Effect.gen(function* () {
+          const contacts = yield* CommunityContacts.Service
+          const peers = yield* CommunityPeers.Service
+          const sync = yield* CommunitySync.Service
+
+          // Everything Alice is given: one address.
+          yield* contacts
+            .add({ networkID: bobKey, petname: "bob", routes: [`http://127.0.0.1:${server!.port}`] })
+            .pipe(Effect.orDie)
+          expect(yield* peers.list()).toEqual([])
+
+          expect(yield* sync.discover()).toEqual({ asked: 1, learned: 1 })
+
+          // 🔴 Carol is now reachable, and is NOT in the address book. Both halves matter.
+          expect((yield* contacts.list()).map((entry) => entry.networkID)).toEqual([bobKey])
+          return yield* peers.list()
+        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+
+      expect(seen.map((peer) => ({ id: peer.networkID, routes: [...peer.routes] }))).toEqual([
+        { id: carol, routes: [carolRoute] },
+      ])
     } finally {
       server?.stop(true)
       cleanup(alice.home)

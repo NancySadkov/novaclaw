@@ -1,6 +1,7 @@
 import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityPost } from "@novaclaw/core/community/post"
+import { CommunityPeers } from "@novaclaw/core/community/peers"
 import { CommunityReconcile } from "@novaclaw/core/community/reconcile"
 import { CommunitySync } from "@novaclaw/core/community/sync"
 import { CommunityTopic } from "@novaclaw/core/community/topic"
@@ -126,6 +127,7 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
 export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "communityPeer", (handlers) =>
   Effect.gen(function* () {
     const channels = yield* CommunityChannels.Service
+    const peers = yield* CommunityPeers.Service
 
     /**
      * Resolve a topic to one of OUR channels, or nothing.
@@ -143,6 +145,13 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
     })
 
     return handlers
+      .handle(
+        "communityPeers",
+        Effect.fn("CommunityHttpApi.communityPeers")(function* () {
+          const offered = yield* peers.sample()
+          return { peers: offered.map((peer) => ({ networkID: peer.networkID, routes: peer.routes })) }
+        }),
+      )
       .handle(
         "communitySyncSummary",
         Effect.fn("CommunityHttpApi.communitySyncSummary")(function* (ctx) {

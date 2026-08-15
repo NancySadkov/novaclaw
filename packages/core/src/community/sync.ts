@@ -5,6 +5,7 @@ import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { CommunityChannels } from "./channels"
 import { CommunityContacts } from "./contacts"
 import { CommunityMessage } from "./message"
+import { CommunityPeers } from "./peers"
 import { CommunityReconcile } from "./reconcile"
 import { CommunityTopic } from "./topic"
 import { httpRoutes } from "./transport"
@@ -38,6 +39,8 @@ import { Offline } from "../offline"
 export const SYNC_SUMMARY_PATH = "/api/community/sync/summary"
 export const SYNC_IDS_PATH = "/api/community/sync/ids"
 export const SYNC_MESSAGES_PATH = "/api/community/sync/messages"
+/** Peer exchange — how one address becomes an entry point to the whole network. */
+export const PEERS_PATH = "/api/community/peers"
 
 /**
  * The most messages one request may ask for.
@@ -58,6 +61,19 @@ export interface Result {
 export interface Interface {
   /** Reconcile one channel against every reachable peer. */
   readonly sync: (channel: string) => Effect.Effect<Result>
+  /**
+   * Ask reachable peers who else they know, and remember the answers.
+   *
+   * 🔴 This is the anti-shutdown property in motion. The spec: *any peer address from any source is
+   * a complete entry point, because peer exchange supplies the rest.* One contact, one pasted
+   * address or one instance on the LAN is therefore enough to reach a network nobody can switch off
+   * — there is no list to seize because nothing is special about any particular entry.
+   *
+   * ⚠️ What it learns are ROUTES, and they land in the peer table, never the address book. A peer
+   * that can talk to us must not be able to make itself a CONTACT: that is a trust decision the
+   * user makes, and `observe`/`follow` already refuse it for the same reason.
+   */
+  readonly discover: () => Effect.Effect<{ readonly asked: number; readonly learned: number }>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/CommunitySync") {}
@@ -65,6 +81,9 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 /** What a peer sends back. Parsed rather than trusted: a peer is an untrusted source of bytes. */
 const Summary = Schema.Struct({ buckets: Schema.Array(Schema.String) })
 const Ids = Schema.Struct({ ids: Schema.Array(Schema.String) })
+const PeerList = Schema.Struct({
+  peers: Schema.Array(Schema.Struct({ networkID: Schema.String, routes: Schema.Array(Schema.String) })),
+})
 const Messages = Schema.Struct({
   messages: Schema.Array(
     Schema.Struct({
@@ -86,6 +105,7 @@ export const layer = Layer.effect(
     const offline = yield* Offline.Service
     const contacts = yield* CommunityContacts.Service
     const channels = yield* CommunityChannels.Service
+    const peers = yield* CommunityPeers.Service
     const http = yield* HttpClient.HttpClient
 
     /**
@@ -95,10 +115,18 @@ export const layer = Layer.effect(
      * answering with nonsense is the ORDINARY case in a network of home machines — none of it is an
      * error the user should see, and none of it may abort a sync with the peers that did answer.
      */
-    const ask = <A, I>(route: string, path: string, body: unknown, schema: Schema.Codec<A, I>) =>
+    const ask = <A, I>(
+      route: string,
+      path: string,
+      body: unknown,
+      schema: Schema.Codec<A, I>,
+      method: "POST" | "GET" = "POST",
+    ) =>
       http
         .execute(
-          HttpClientRequest.post(`${route.replace(/\/+$/, "")}${path}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
+          method === "GET"
+            ? HttpClientRequest.get(`${route.replace(/\/+$/, "")}${path}`)
+            : HttpClientRequest.post(`${route.replace(/\/+$/, "")}${path}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
         )
         .pipe(
           Effect.timeout(PER_REQUEST_TIMEOUT_MS),
@@ -108,25 +136,72 @@ export const layer = Layer.effect(
           Effect.catchCause(() => Effect.succeed(undefined)),
         )
 
+    /**
+     * Everywhere we might reach the network: trusted contacts AND merely-known routes.
+     *
+     * ⚠️ Carries the IDENTITY beside each route, which an earlier version dropped by flattening to a
+     * list of URLs. That loss was not cosmetic: eviction from the peer table is least-recently-SEEN
+     * first, so without knowing whose route just answered there is nothing to mark, `last_seen_at`
+     * stays null forever, and a flood of invented peers evicts the ones that actually work. The bound
+     * would still be there and would be useless. The orphan ledger found it — `seen` had no caller.
+     */
+    const reachable = Effect.gen(function* () {
+      const known = yield* contacts.bootstrap()
+      const learned = yield* peers.list()
+      const out: { networkID: string; route: string }[] = []
+      const already = new Set<string>()
+      for (const entry of [...known, ...learned])
+        for (const route of httpRoutes(entry.routes))
+          if (!already.has(route)) {
+            already.add(route)
+            out.push({ networkID: entry.networkID, route })
+          }
+      return out
+    })
+
     return Service.of({
+      discover: Effect.fn("CommunitySync.discover")(function* () {
+        if (offline.policy.enabled) return { asked: 0, learned: 0 }
+        let asked = 0
+        let learned = 0
+        for (const peer of yield* reachable) {
+          const answer = yield* ask(peer.route, PEERS_PATH, undefined, PeerList, "GET")
+          if (answer === undefined) continue
+          asked++
+          // It answered, so it is alive: this is what keeps a working peer ahead of invented ones
+          // when the table is evicted.
+          yield* peers.seen(peer.networkID)
+          for (const peer of answer.peers) {
+            // ⚠️ `learn` does the refusing — our own key, and anything that is not a public key. A
+            // peer describing peers is hearsay, so every claim is filtered by the store rather than
+            // trusted because it arrived over a connection that worked.
+            if (yield* peers.learn(peer.networkID, [...peer.routes], "px")) learned++
+          }
+        }
+        return { asked, learned }
+      }),
+
       sync: Effect.fn("CommunitySync.sync")(function* (channel: string) {
         // The airgap gate, first and by the same argument as the transport's: a community is egress
         // the user chose, and airgap has to be able to withdraw that choice.
         if (offline.policy.enabled) return { peers: 0, fetched: 0 }
 
-        const known = yield* contacts.bootstrap()
-        const peers = known.flatMap((contact) => httpRoutes(contact.routes))
-        if (peers.length === 0) return { peers: 0, fetched: 0 }
+        // 🔴 Contacts AND learned peers. Syncing only with people the user added by hand would make
+        // catching up depend on who they happen to know, when the whole point of peer exchange is
+        // that any entry point reaches the network.
+        const dialable = yield* reachable
+        if (dialable.length === 0) return { peers: 0, fetched: 0 }
 
         const topic = CommunityTopic.topicOf(channel)
         let answered = 0
         let fetched = 0
 
-        for (const route of peers) {
+        for (const { networkID, route } of dialable) {
           const mine = yield* channels.ids(channel)
           const theirs = yield* ask(route, SYNC_SUMMARY_PATH, { topic }, Summary)
           if (theirs === undefined) continue
           answered++
+          yield* peers.seen(networkID)
 
           const disagree = CommunityReconcile.differing(
             CommunityReconcile.summarize(mine),
@@ -161,5 +236,5 @@ export const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: Service,
   layer,
-  deps: [Offline.node, CommunityContacts.node, CommunityChannels.node, httpClient],
+  deps: [Offline.node, CommunityContacts.node, CommunityChannels.node, CommunityPeers.node, httpClient],
 })

@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "e6a2b9d7-bdf4-46c2-a432-c6ae95664255",
+  "id": "596ca45d-4704-417a-9706-92557cf0e42b",
   "prevIds": [
-    "9e068422-2365-49b4-9a66-4ff9af4e243c"
+    "e6a2b9d7-bdf4-46c2-a432-c6ae95664255"
   ],
   "ddl": [
     {
@@ -76,6 +76,10 @@
     },
     {
       "name": "community_contact",
+      "entityType": "tables"
+    },
+    {
+      "name": "community_peer",
       "entityType": "tables"
     },
     {
@@ -1321,6 +1325,66 @@
       "name": "time_updated",
       "entityType": "columns",
       "table": "community_contact"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "network_id",
+      "entityType": "columns",
+      "table": "community_peer"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "routes",
+      "entityType": "columns",
+      "table": "community_peer"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_seen_at",
+      "entityType": "columns",
+      "table": "community_peer"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'px'",
+      "generated": null,
+      "name": "source",
+      "entityType": "columns",
+      "table": "community_peer"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "community_peer"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "community_peer"
     },
     {
       "type": "text",
@@ -4239,6 +4303,15 @@
       "nameExplicit": false,
       "name": "community_contact_pk",
       "table": "community_contact",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "network_id"
+      ],
+      "nameExplicit": false,
+      "name": "community_peer_pk",
+      "table": "community_peer",
       "entityType": "pks"
     },
     {

@@ -67,3 +67,39 @@ export const CommunityContactTable = sqliteTable("community_contact", {
   blocked: integer({ mode: "boolean" }).notNull().$default(() => false),
   ...Timestamps,
 })
+
+/**
+ * Community P0/P3 — addresses learned from the NETWORK, which are not contacts.
+ *
+ * 🔴 The distinction is the whole reason this table exists rather than a flag on `community_contact`.
+ * A contact is a TRUST decision the user made; `observe` and `follow` both refuse to create one
+ * precisely so that nothing which can talk to us can insert itself into the address book. Peer
+ * exchange has to learn addresses from strangers, so writing them there would be that same hole
+ * wearing a bootstrap disguise.
+ *
+ * A row here is only ever a ROUTE — somewhere the network might be reached. It confers no trust at
+ * all: messages from these peers pass the identical ingress door, and a blocked contact stays
+ * blocked no matter how many peers offer their address.
+ *
+ * ⚠️ This is what makes the spec's anti-shutdown claim literally true: *any peer address from any
+ * source is a complete entry point, because peer exchange supplies the rest.* Without a place to put
+ * what PX returns, one address stays one address, and a "network" that needs our seed list is one we
+ * could switch off.
+ */
+export const CommunityPeerTable = sqliteTable("community_peer", {
+  /** `nid_…` — the peer's identity. Same shape as a contact's, carrying none of the meaning. */
+  network_id: text().primaryKey(),
+  /** JSON array of addresses we were told reach this peer. Unverified until one of them answers. */
+  routes: text({ mode: "json" }).$type<string[]>().notNull().$default(() => []),
+  /** Epoch millis we last got an answer here. Null = told about it, never reached it. */
+  last_seen_at: integer(),
+  /**
+   * Where we heard about this peer: `px` (another peer told us), `lan` (mDNS on this network).
+   *
+   * Kept because the sources have different trust and different failure modes — a LAN peer is
+   * someone on your own network, a PX peer is hearsay from a stranger — and because a bootstrap
+   * monoculture is only visible if you can see which source everything came from.
+   */
+  source: text().notNull().default("px"),
+  ...Timestamps,
+})

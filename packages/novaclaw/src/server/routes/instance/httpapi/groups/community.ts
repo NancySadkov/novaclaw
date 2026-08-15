@@ -268,6 +268,7 @@ export const CommunityPeerPaths = {
   syncSummary: "/api/community/sync/summary",
   syncIds: "/api/community/sync/ids",
   syncMessages: "/api/community/sync/messages",
+  peers: "/api/community/peers",
 } as const
 
 /** A `Proven` message on the wire. Shape only — every rule about it lives at the ingress door. */
@@ -312,9 +313,35 @@ const SyncIds = Schema.Struct({ ids: Schema.Array(Schema.String) })
 const SyncMessagesRequest = Schema.Struct({ topic: Schema.String, ids: Schema.Array(Schema.String) })
 const SyncMessages = Schema.Struct({ messages: Schema.Array(PeerMessage) })
 
+/**
+ * 🔴 PEER EXCHANGE — the mechanism that makes the anti-shutdown claim literally true.
+ *
+ * The spec: *any peer address from any source is a complete entry point, because peer exchange
+ * supplies the rest. There is no list to seize, because there is nothing special about any
+ * particular entry.* Without this endpoint that sentence is false — one address stays one address,
+ * and a network that needs OUR seed list is one we could switch off by deleting it.
+ *
+ * ⚠️ What it returns is ROUTES, never the user's address book. A blocked peer is excluded: blocking
+ * is the only power a user has here, and an instance that still handed out a blocked peer's address
+ * would be a distributor for someone its owner refuses to hear.
+ */
+const PeerList = Schema.Struct({
+  peers: Schema.Array(Schema.Struct({ networkID: Schema.String, routes: Schema.Array(Schema.String) })),
+})
+
 export const CommunityPeerApi = HttpApi.make("communityPeer").add(
   HttpApiGroup.make("communityPeer")
     .add(
+      HttpApiEndpoint.get("communityPeers", CommunityPeerPaths.peers, {
+        success: described(PeerList, "Other instances this one believes are reachable"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.peer.exchange",
+          summary: "Ask for other peers",
+          description:
+            "Peer exchange: how one address becomes an entry point to the whole network. Returns routes this instance believes work, never the user's contact list, and never a blocked peer.",
+        }),
+      ),
       HttpApiEndpoint.post("communityInbound", CommunityPeerPaths.inbound, {
         payload: PeerDelivery,
         success: described(PeerAck, "Always true — the verdict is deliberately not disclosed"),
