@@ -194,6 +194,21 @@ const FANOUT = 8
 /** How many answers are enough to stop widening. Beyond this, more peers cost traffic for nothing. */
 export const WANTED = 8
 
+/**
+ * 🔴 The most peers ONE query may ask, however little it finds.
+ *
+ * Widening stops when enough answers arrive — but a search that finds NOTHING is the common case for
+ * a specific term, and without this it walked the entire peer table. At the table's legitimate bound
+ * that is 500 outbound requests for one query, and a FORWARDING node pays it too, on somebody else's
+ * query. The per-origin throttle bounds how many queries an origin may send; it says nothing about
+ * what each one costs, so ten queries became five thousand requests.
+ *
+ * ⚠️ This is Gnutella's collapse arriving by BREADTH rather than depth, which is why the hop limit
+ * alone did not stop it. Asking 32 peers and reporting what they knew is a search; asking 500 is a
+ * broadcast storm wearing a search's name.
+ */
+export const MAX_ASKED = 32
+
 export interface Interface {
   /** Ask the network. Starts narrow and widens only if the cheap attempt under-delivers. */
   readonly search: (terms: string) => Effect.Effect<ReadonlyArray<string>>
@@ -271,9 +286,12 @@ export const layer = Layer.effect(
       const found = new Set<string>()
       let asked = 0
       for (;;) {
+        if (asked >= MAX_ASKED) break
         const more = widen({ results: found.size, wanted: WANTED, asked, available: available.length })
         if (more === 0) break
-        const wave = available.slice(asked, asked + more)
+        // ⚠️ The wave is clipped to the remaining budget, so the cap holds even mid-doubling — widen
+        // returns the size it WANTS, and the last one it wants is usually larger than what is left.
+        const wave = available.slice(asked, Math.min(asked + more, MAX_ASKED))
         if (wave.length === 0) break
         const answers = yield* Effect.all(
           wave.map((route) => askPeer(route, query)),

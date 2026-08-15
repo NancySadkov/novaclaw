@@ -888,4 +888,53 @@ describe("two instances", () => {
     }
   })
 
+
+  test("🔴 one search cannot walk the whole peer table", async () => {
+    /**
+     * Gnutella's collapse arriving by BREADTH rather than depth, which is why the hop limit alone did
+     * not stop it. Widening stops once enough answers arrive — but a search that finds NOTHING is the
+     * common case for a specific term, and it walked the entire peer table: 500 outbound requests for
+     * one query at the table's legitimate bound.
+     *
+     * ⚠️ And a FORWARDING node pays the same, on somebody else's query. The per-origin throttle bounds
+     * how many queries an origin may send; it says nothing about what each one costs, so ten queries
+     * became five thousand requests.
+     */
+    const alice = instance("alice-breadth")
+    let asked = 0
+    let server: ReturnType<typeof Bun.serve> | undefined
+    try {
+      server = Bun.serve({
+        port: 0,
+        fetch: async () => {
+          asked++
+          // Nobody has it — the case that makes widening walk everything.
+          return Response.json({ channels: [] })
+        },
+      })
+
+      const found = await Effect.runPromise(
+        Effect.gen(function* () {
+          const peers = yield* CommunityPeers.Service
+          const search = yield* CommunitySearch.Service
+          for (let index = 0; index < 200; index++) {
+            const key = Buffer.alloc(32)
+            key.writeUInt32BE(index + 1, 0)
+            yield* peers.learn(`nid_${key.toString("base64url")}`, [`http://127.0.0.1:${server!.port}/p${index}`], "px")
+          }
+          return yield* search.search("nothing-has-this")
+        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+
+      expect(found).toEqual([])
+      // 🔴 200 peers available, and the query stops at the budget rather than asking all of them.
+      expect(asked).toBeLessThanOrEqual(CommunitySearch.MAX_ASKED)
+      // ⚠️ It still ASKED — a cap that silently made search do nothing would pass this line too.
+      expect(asked).toBeGreaterThan(0)
+    } finally {
+      server?.stop(true)
+      cleanup(alice.home)
+    }
+  })
+
 })
