@@ -3282,6 +3282,165 @@
         ]
       }
     },
+    "/api/community/filter": {
+      "get": {
+        "tags": ["community"],
+        "operationId": "community.filter.list",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Words the user does not want to read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Words the user does not want to read"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Your own words. With no moderator anywhere, blocking a person and muting a topic are the two powers a user has, and this is the second. It hides at READ, so removing a rule brings the messages back.",
+        "summary": "What you have chosen not to see",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.filter.list({\n  ...\n})"
+          }
+        ]
+      },
+      "post": {
+        "tags": ["community"],
+        "operationId": "community.filter.add",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "True when a new rule was added",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "True when a new rule was added"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Matched as a plain, case-insensitive substring — never a regular expression, because a pattern that backtracks catastrophically would hang every channel read for the person who typed it.",
+        "summary": "Hide messages containing this",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "pattern": {
+                    "type": "string"
+                  }
+                },
+                "required": ["pattern"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.filter.add({\n  ...\n})"
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["community"],
+        "operationId": "community.filter.remove",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "True when a rule was removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "True when a rule was removed"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "The messages come back — they were never dropped, only hidden.",
+        "summary": "Stop hiding it",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "pattern": {
+                    "type": "string"
+                  }
+                },
+                "required": ["pattern"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.filter.remove({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/community/nearby": {
       "get": {
         "tags": ["community"],
@@ -3984,77 +4143,107 @@
         "security": [],
         "responses": {
           "200": {
-            "description": "Stored messages, most recently RECEIVED first",
+            "description": "Messages most recently RECEIVED first, and how many the user's own filters hid",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "channel": {
-                        "type": "string"
-                      },
-                      "author": {
-                        "type": "string"
-                      },
-                      "at": {
-                        "anyOf": [
-                          {
-                            "type": "number"
+                  "type": "object",
+                  "properties": {
+                    "messages": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
                           },
-                          {
-                            "type": "string",
-                            "enum": ["NaN"]
+                          "channel": {
+                            "type": "string"
                           },
-                          {
-                            "type": "string",
-                            "enum": ["Infinity"]
+                          "author": {
+                            "type": "string"
                           },
-                          {
-                            "type": "string",
-                            "enum": ["-Infinity"]
+                          "at": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
                           },
-                          {
-                            "type": "string",
-                            "enum": ["Infinity", "-Infinity", "NaN"]
+                          "receivedAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
+                          },
+                          "body": {
+                            "type": "string"
                           }
-                        ]
-                      },
-                      "receivedAt": {
-                        "anyOf": [
-                          {
-                            "type": "number"
-                          },
-                          {
-                            "type": "string",
-                            "enum": ["NaN"]
-                          },
-                          {
-                            "type": "string",
-                            "enum": ["Infinity"]
-                          },
-                          {
-                            "type": "string",
-                            "enum": ["-Infinity"]
-                          },
-                          {
-                            "type": "string",
-                            "enum": ["Infinity", "-Infinity", "NaN"]
-                          }
-                        ]
-                      },
-                      "body": {
-                        "type": "string"
+                        },
+                        "required": ["id", "channel", "author", "at", "receivedAt", "body"],
+                        "additionalProperties": false
                       }
                     },
-                    "required": ["id", "channel", "author", "at", "receivedAt", "body"],
-                    "additionalProperties": false
+                    "hidden": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    }
                   },
-                  "description": "Stored messages, most recently RECEIVED first"
+                  "required": ["messages", "hidden"],
+                  "additionalProperties": false,
+                  "description": "Messages most recently RECEIVED first, and how many the user's own filters hid"
                 }
               }
             }
@@ -4073,7 +4262,7 @@
             "description": "Unauthorized"
           }
         },
-        "description": "Gossip only reaches whoever is online, so this local log is what makes a channel readable by someone who was away. Ordered by receive time, never by the author's own claimed timestamp.",
+        "description": "Gossip only reaches whoever is online, so this local log is what makes a channel readable by someone who was away. Ordered by receive time, never by the author's own claimed timestamp. `hidden` counts what the user's own filter rules removed — reported rather than silent, because a channel that looks empty because of a forgotten rule is indistinguishable from one nobody posts in.",
         "summary": "Read a channel's history",
         "x-codeSamples": [
           {

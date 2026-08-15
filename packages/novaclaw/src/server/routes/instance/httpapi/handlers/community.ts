@@ -153,6 +153,24 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
         }),
       )
       .handle(
+        "filterList",
+        Effect.fn("CommunityHttpApi.filterList")(function* () {
+          return yield* channels.filters()
+        }),
+      )
+      .handle(
+        "filterAdd",
+        Effect.fn("CommunityHttpApi.filterAdd")(function* (ctx) {
+          return yield* channels.filter(ctx.payload.pattern)
+        }),
+      )
+      .handle(
+        "filterRemove",
+        Effect.fn("CommunityHttpApi.filterRemove")(function* (ctx) {
+          return yield* channels.unfilter(ctx.payload.pattern)
+        }),
+      )
+      .handle(
         "channelsNearby",
         Effect.fn("CommunityHttpApi.channelsNearby")(function* () {
           return yield* sync.channelsNearby()
@@ -215,7 +233,7 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
       .handle(
         "channelHistory",
         Effect.fn("CommunityHttpApi.channelHistory")(function* (ctx) {
-          return yield* channels.history(ctx.params.name)
+          return yield* channels.historyFiltered(ctx.params.name)
         }),
       )
   }),

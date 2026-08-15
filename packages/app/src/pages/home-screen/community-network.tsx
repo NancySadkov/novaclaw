@@ -12,6 +12,9 @@ import {
   communityArchivedChannels,
   communityDiscover,
   communityOffers,
+  communityFilters,
+  communityAddFilter,
+  communityRemoveFilter,
   communityMyOffer,
   communityPublishOffer,
   communityWithdrawOffer,
@@ -189,6 +192,34 @@ export const CommunityNetwork: Component = () => {
     await communityWithdrawOffer(current.http)
     setOfferNote("Withdrawn. Peers that already copied it keep theirs until they look again.")
     await Promise.all([offerActions.refetch(), myOfferActions.refetch()])
+  }
+
+  /**
+   * Words the user has chosen not to read — the second of the two powers a user has here, the first
+   * being blocking a person.
+   *
+   * 🔴 The rules are theirs and only theirs. §10: a filter computed from instructions found in a
+   * channel would let the spammer write the filter that judges them, which is why the agent-facing
+   * tool cannot reach these in either direction — not to write one, and not to read which words to
+   * avoid.
+   */
+  const [filters, filterActions] = createResource(connection, (value) => communityFilters(value.http))
+  const [filterDraft, setFilterDraft] = createSignal("")
+
+  const addFilter = async () => {
+    const current = connection()
+    const pattern = filterDraft().trim()
+    if (!current || !pattern) return
+    await communityAddFilter(current.http, pattern)
+    setFilterDraft("")
+    await Promise.all([filterActions.refetch(), historyActions.refetch()])
+  }
+
+  const removeFilter = async (pattern: string) => {
+    const current = connection()
+    if (!current) return
+    await communityRemoveFilter(current.http, pattern)
+    await Promise.all([filterActions.refetch(), historyActions.refetch()])
   }
 
   const [dmDraft, setDmDraft] = createSignal("")
@@ -800,14 +831,14 @@ export const CommunityNetwork: Component = () => {
           </Show>
         </div>
         <Show
-          when={(history()?.length ?? 0) > 0}
+          when={(history()?.messages.length ?? 0) > 0}
           fallback={
             /* ⚠️ Says WHY it is empty, in the INSTANCE's terms. "No messages" would read as a
                broken screen, and a hardcoded reason would misreport an airgapped instance. */
             <span class="text-[11px] leading-snug text-v2-text-text-muted">{emptyReason()}</span>
           }
         >
-          <For each={history() ?? []}>
+          <For each={history()?.messages ?? []}>
             {(message) => (
               <div class="flex flex-col gap-0.5 border-t border-white/5 pt-2 first:border-0 first:pt-0">
                 <span class="truncate text-[10px] text-v2-text-text-muted" title={message.author}>
@@ -833,6 +864,42 @@ export const CommunityNetwork: Component = () => {
         <Show when={sendNote()}>
           <span class="text-[11px] leading-snug text-v2-text-text-muted">{sendNote()}</span>
         </Show>
+        {/* ⚠️ Reported, never silent: a room that looks quiet because of a rule the user forgot they
+            wrote is indistinguishable from one nobody posts in. */}
+        <Show when={(history()?.hidden ?? 0) > 0}>
+          <span class="text-[11px] leading-snug text-v2-text-text-muted">
+            {`${history()?.hidden} message(s) hidden by your words below.`}
+          </span>
+        </Show>
+        <div class="mt-2 flex flex-col gap-1 border-t border-white/5 pt-2">
+          <div class="flex flex-wrap items-center gap-1">
+            <span class="text-[11px] text-v2-text-text-muted">Hide messages containing:</span>
+            <For each={filters() ?? []}>
+              {(pattern) => (
+                <ButtonV2 variant="ghost" size="small" onClick={() => void removeFilter(pattern)}>
+                  {`${pattern} ✕`}
+                </ButtonV2>
+              )}
+            </For>
+          </div>
+          <div class="flex items-center gap-2">
+            <TextInputV2
+              appearance="base"
+              value={filterDraft()}
+              onInput={(event) => setFilterDraft(event.currentTarget.value)}
+              placeholder="A word you would rather not read"
+            />
+            <ButtonV2 variant="ghost" size="small" disabled={!filterDraft().trim()} onClick={() => void addFilter()}>
+              Hide
+            </ButtonV2>
+          </div>
+          {/* ⚠️ Says they are HIDDEN, not deleted — removing a rule brings them back, and a user who
+              thought they had destroyed something would be wrong in a way that matters. */}
+          <span class="text-[11px] leading-snug text-v2-text-text-muted">
+            Your words, kept on this machine. Messages are hidden, not deleted — remove a word and they
+            come back.
+          </span>
+        </div>
         {/*
           ⚠️ Offered BEFORE the free-text box, because principle 12 makes free text the fallback for
           what discovery missed rather than the front door. These are rooms whose messages are on

@@ -1013,7 +1013,7 @@ class ApiCommunityChannel extends NovaClawApiClient {
   /**
    * Read a channel's history
    *
-   * Gossip only reaches whoever is online, so this local log is what makes a channel readable by someone who was away. Ordered by receive time, never by the author's own claimed timestamp.
+   * Gossip only reaches whoever is online, so this local log is what makes a channel readable by someone who was away. Ordered by receive time, never by the author's own claimed timestamp. `hidden` counts what the user's own filter rules removed — reported rather than silent, because a channel that looks empty because of a forgotten rule is indistinguishable from one nobody posts in.
    */
   public history<ThrowOnError extends boolean = false>(
     parameters: {
@@ -1030,6 +1030,72 @@ class ApiCommunityChannel extends NovaClawApiClient {
       url: "/api/community/channel/{name}/history",
       ...options,
       path,
+    })
+  }
+}
+
+class ApiCommunityFilter extends NovaClawApiClient {
+  /**
+   * What you have chosen not to see
+   *
+   * Your own words. With no moderator anywhere, blocking a person and muting a topic are the two powers a user has, and this is the second. It hides at READ, so removing a rule brings the messages back.
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.CommunityFilterListResponses,
+      T.CommunityFilterListErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/filter",
+      ...options,
+    })
+  }
+
+  /**
+   * Hide messages containing this
+   *
+   * Matched as a plain, case-insensitive substring — never a regular expression, because a pattern that backtracks catastrophically would hang every channel read for the person who typed it.
+   */
+  public add<ThrowOnError extends boolean = false>(
+    parameters: {
+      pattern: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { pattern: parameters?.["pattern"] }
+    return (options?.client ?? this.client).post<
+      T.CommunityFilterAddResponses,
+      T.CommunityFilterAddErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/filter",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Stop hiding it
+   *
+   * The messages come back — they were never dropped, only hidden.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      pattern: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { pattern: parameters?.["pattern"] }
+    return (options?.client ?? this.client).delete<
+      T.CommunityFilterRemoveResponses,
+      T.CommunityFilterRemoveErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/filter",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
     })
   }
 }
@@ -1522,6 +1588,11 @@ class ApiCommunity extends NovaClawApiClient {
   private _channel?: ApiCommunityChannel
   get channel(): ApiCommunityChannel {
     return (this._channel ??= new ApiCommunityChannel({ client: this.client }))
+  }
+
+  private _filter?: ApiCommunityFilter
+  get filter(): ApiCommunityFilter {
+    return (this._filter ??= new ApiCommunityFilter({ client: this.client }))
   }
 
   private _offer?: ApiCommunityOffer

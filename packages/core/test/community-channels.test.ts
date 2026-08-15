@@ -568,4 +568,43 @@ describe("CommunityChannels", () => {
     }),
   )
 
+
+  it.effect("🔴 a user's own words hide messages — at READ, never at ingress", () =>
+    Effect.gen(function* () {
+      /**
+       * The owner's ask: *"users can block messages from the users they dislike, and also tell their
+       * Nova to filter what messages they dislike."* Blocking is about a PERSON and drops at ingress;
+       * this is about WORDS and hides at read, and the difference is deliberate — a filter changes
+       * often, and a user who removes one expects the messages BACK. Filtering at ingress would
+       * destroy history on a preference they can flip in a second.
+       */
+      const channels = yield* CommunityChannels.Service
+      yield* channels.join(CHANNEL)
+      for (const body of ["free crypto, click here", "anyone tried the new model?", "CRYPTO giveaway"])
+        yield* channels.record(CHANNEL, proven(fromStranger({ channel: CHANNEL, body })))
+
+      expect((yield* channels.historyFiltered(CHANNEL)).messages).toHaveLength(3)
+
+      expect(yield* channels.filter("  Crypto  ")).toBe(true)
+      const filtered = yield* channels.historyFiltered(CHANNEL)
+      // Case-insensitive, and trimmed — the user typed it, not a machine.
+      expect(filtered.messages.map((m) => m.body)).toEqual(["anyone tried the new model?"])
+      // ⚠️ The count is REPORTED, not silent: a channel that looks empty because of a rule the user
+      // forgot writing is indistinguishable from a channel nobody posts in.
+      expect(filtered.hidden).toBe(2)
+
+      // 🔴 The messages were never dropped — removing the rule brings them back. That is the whole
+      // reason this is not the block path.
+      expect(yield* channels.unfilter("crypto")).toBe(true)
+      expect((yield* channels.historyFiltered(CHANNEL)).messages).toHaveLength(3)
+      expect((yield* channels.historyFiltered(CHANNEL)).hidden).toBe(0)
+
+      // The same rule twice is one rule, and an empty one is not a rule.
+      yield* channels.filter("spam")
+      expect(yield* channels.filter("SPAM")).toBe(false)
+      expect(yield* channels.filter("   ")).toBe(false)
+      expect(yield* channels.filters()).toEqual(["spam"])
+    }),
+  )
+
 })

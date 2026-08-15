@@ -122,6 +122,7 @@ export const CommunityPaths = {
   channelMute: "/api/community/channel/:name/mute",
   channelListed: "/api/community/channel/:name/listed",
   channelsNearby: "/api/community/nearby",
+  filters: "/api/community/filter",
   searchChannels: "/api/community/search-channels",
   directSend: "/api/community/direct/:networkID",
   directHistory: "/api/community/direct/:networkID/history",
@@ -287,6 +288,37 @@ export const CommunityApi = HttpApi.make("community").add(
             "Discovery and privacy are one question asked from two sides, and this is the user answering it. Unlisted is the default for every channel except the one everybody is in, because the default here is a disclosure rather than a convenience.",
         }),
       ),
+      HttpApiEndpoint.get("filterList", CommunityPaths.filters, {
+        success: described(Schema.Array(Schema.String), "Words the user does not want to read"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.filter.list",
+          summary: "What you have chosen not to see",
+          description:
+            "Your own words. With no moderator anywhere, blocking a person and muting a topic are the two powers a user has, and this is the second. It hides at READ, so removing a rule brings the messages back.",
+        }),
+      ),
+      HttpApiEndpoint.post("filterAdd", CommunityPaths.filters, {
+        payload: Schema.Struct({ pattern: Schema.String }),
+        success: described(Schema.Boolean, "True when a new rule was added"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.filter.add",
+          summary: "Hide messages containing this",
+          description:
+            "Matched as a plain, case-insensitive substring — never a regular expression, because a pattern that backtracks catastrophically would hang every channel read for the person who typed it.",
+        }),
+      ),
+      HttpApiEndpoint.delete("filterRemove", CommunityPaths.filters, {
+        payload: Schema.Struct({ pattern: Schema.String }),
+        success: described(Schema.Boolean, "True when a rule was removed"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.filter.remove",
+          summary: "Stop hiding it",
+          description: "The messages come back — they were never dropped, only hidden.",
+        }),
+      ),
       HttpApiEndpoint.get("channelsNearby", CommunityPaths.channelsNearby, {
         success: described(Schema.Array(Schema.String), "Channels reachable peers advertise that we are not in"),
       }).annotateMerge(
@@ -404,13 +436,16 @@ export const CommunityApi = HttpApi.make("community").add(
       ),
       HttpApiEndpoint.get("channelHistory", CommunityPaths.channelHistory, {
         params: ChannelParams,
-        success: described(Schema.Array(CommunityMessageInfo), "Stored messages, most recently RECEIVED first"),
+        success: described(
+          Schema.Struct({ messages: Schema.Array(CommunityMessageInfo), hidden: Schema.Number }),
+          "Messages most recently RECEIVED first, and how many the user's own filters hid",
+        ),
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "community.channel.history",
           summary: "Read a channel's history",
           description:
-            "Gossip only reaches whoever is online, so this local log is what makes a channel readable by someone who was away. Ordered by receive time, never by the author's own claimed timestamp.",
+            "Gossip only reaches whoever is online, so this local log is what makes a channel readable by someone who was away. Ordered by receive time, never by the author's own claimed timestamp. `hidden` counts what the user's own filter rules removed — reported rather than silent, because a channel that looks empty because of a forgotten rule is indistinguishable from one nobody posts in.",
         }),
       ),
     )

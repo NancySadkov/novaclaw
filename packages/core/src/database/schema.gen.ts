@@ -14,6 +14,13 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`community_filter\` (
+          \`pattern\` text PRIMARY KEY,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`community_message\` (
           \`id\` text PRIMARY KEY,
           \`channel\` text NOT NULL,

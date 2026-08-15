@@ -80,3 +80,28 @@ export const CommunityMessageTable = sqliteTable(
   },
   (table) => [index("community_message_channel_idx").on(table.channel, table.received_at)],
 )
+
+/**
+ * Community P5 — what the USER said they do not want to read.
+ *
+ * 🔴 The owner's ask: *"users can block messages from the users they dislike, and also tell their Nova
+ * to filter what messages they dislike."* Blocking is about a PERSON and drops at ingress; this is
+ * about WORDS and hides at read. The difference is deliberate:
+ *
+ *   - A block says "I refuse to receive this person", so dropping early also stops them filling the
+ *     disk at the measured 9.8k msg/s. Unblocking cannot recover what was never stored, which is the
+ *     right way round for a decision about a person.
+ *   - A filter says "not interested in this right now". It changes often, and a user who removes one
+ *     expects the messages back — so filtering at INGRESS would silently destroy history on a
+ *     preference they can flip in a second.
+ *
+ * ⚠️ Patterns are matched as plain, case-insensitive SUBSTRINGS, never as regular expressions. A
+ * user-supplied regex is a denial of service against its own author — one catastrophic-backtracking
+ * pattern and every channel read hangs — and "why did my messages stop loading" is an unanswerable
+ * question for the person who typed it.
+ */
+export const CommunityFilterTable = sqliteTable("community_filter", {
+  /** The pattern as typed, lowercased for matching. It is also the key: the same rule twice is one. */
+  pattern: text().primaryKey(),
+  ...Timestamps,
+})

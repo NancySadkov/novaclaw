@@ -217,6 +217,19 @@ export function communitySendDirect(server: ServerConnection.HttpBase, networkID
   })
 }
 
+/** Words the user chose not to read. Their own — never anything an agent or a channel supplied. */
+export function communityFilters(server: ServerConnection.HttpBase) {
+  return instanceFetch<string[]>(server, { route: "api/community/filter" })
+}
+
+export function communityAddFilter(server: ServerConnection.HttpBase, pattern: string) {
+  return instanceFetch<boolean>(server, { route: "api/community/filter", method: "POST", body: { pattern } })
+}
+
+export function communityRemoveFilter(server: ServerConnection.HttpBase, pattern: string) {
+  return instanceFetch<boolean>(server, { route: "api/community/filter", method: "DELETE", body: { pattern } })
+}
+
 /** Channels this instance left but still holds messages for. */
 export function communityArchivedChannels(server: ServerConnection.HttpBase) {
   return instanceFetch<{ readonly name: string; readonly messages: number }[]>(server, {
@@ -265,8 +278,14 @@ export function communityPost(server: ServerConnection.HttpBase, channel: string
   })
 }
 
+/**
+ * A channel's messages, plus how many the user's own filters hid.
+ *
+ * ⚠️ The count travels with them: a room that looks quiet because of a rule its reader forgot writing
+ * is indistinguishable from one nobody posts in.
+ */
 export function communityChannelHistory(server: ServerConnection.HttpBase, name: string) {
-  return instanceFetch<CommunityMessage[]>(server, {
+  return instanceFetch<{ readonly messages: CommunityMessage[]; readonly hidden: number }>(server, {
     route: `api/community/channel/${encodeURIComponent(name)}/history`,
   })
 }

@@ -7,7 +7,7 @@ import { CommunityContacts } from "./contacts"
 import { CommunityMessage } from "./message"
 import { CommunityTopic } from "./topic"
 import { CommunityWork } from "./work"
-import { CommunityChannelTable, CommunityMessageTable } from "./channel.sql"
+import { CommunityChannelTable, CommunityFilterTable, CommunityMessageTable } from "./channel.sql"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 
@@ -129,7 +129,30 @@ export interface Interface {
    * a message out of another that the asker never joined.
    */
   readonly byIDs: (channel: string, ids: readonly string[]) => Effect.Effect<ReadonlyArray<Stored>>
-  readonly history: (channel: string, limit?: number) => Effect.Effect<ReadonlyArray<Stored>>
+  /**
+   * Words the user does not want to read — their OWN stated preferences.
+   *
+   * 🔴 §10 binds this: the filter must be computed from what the USER said, NEVER from instructions
+   * discovered in a channel, or the spammer writes the filter that judges them. That is why the
+   * agent-facing tool is read-only and cannot reach these at all.
+   */
+  readonly filters: () => Effect.Effect<ReadonlyArray<string>>
+  readonly filter: (pattern: string) => Effect.Effect<boolean>
+  readonly unfilter: (pattern: string) => Effect.Effect<boolean>
+  /**
+   * Most recent first, by RECEIVED time, with filtered messages HIDDEN.
+   *
+   * ⚠️ `hidden` is reported rather than the messages silently vanishing: a channel that looks empty
+   * because of a rule the user forgot they wrote is indistinguishable from a channel nobody posts in.
+   */
+  readonly history: (
+    channel: string,
+    limit?: number,
+  ) => Effect.Effect<ReadonlyArray<Stored>>
+  readonly historyFiltered: (
+    channel: string,
+    limit?: number,
+  ) => Effect.Effect<{ readonly messages: ReadonlyArray<Stored>; readonly hidden: number }>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/CommunityChannels") {}
@@ -228,6 +251,36 @@ export const layer = Layer.effect(
           rows.map((row) => row.name),
         )
       })
+
+    /**
+     * The reader's view of a room: newest first, with the user's hidden words removed.
+     *
+     * ⚠️ ONE implementation, used by both `history` and `historyFiltered`, so the two can never
+     * disagree about what a person is shown — and a caller cannot accidentally get the unfiltered
+     * list by picking the shorter method name.
+     */
+    const readable = Effect.fn("CommunityChannels.readable")(function* (channel: string, limit: number) {
+      const rows = yield* db
+        .select()
+        .from(CommunityMessageTable)
+        .where(inArray(CommunityMessageTable.channel, yield* spellingsOf(channel)))
+        // ⚠️ By RECEIVED time, never by the author's claim — see the column's note. Sorting by a
+        // number the author chooses hands them the top of every reader's view.
+        .orderBy(desc(CommunityMessageTable.received_at), desc(sql`rowid`))
+        .limit(limit)
+        .all()
+        .pipe(Effect.orDie)
+      const all = rows.map(rowStored)
+      const patterns = (yield* db.select().from(CommunityFilterTable).all().pipe(Effect.orDie)).map(
+        (row) => row.pattern,
+      )
+      if (patterns.length === 0) return { messages: all as ReadonlyArray<Stored>, hidden: 0 }
+      const messages = all.filter((message) => {
+        const body = message.body.toLowerCase()
+        return !patterns.some((pattern) => body.includes(pattern))
+      })
+      return { messages: messages as ReadonlyArray<Stored>, hidden: all.length - messages.length }
+    })
 
     const subscribed = (channel: string) =>
       db
@@ -462,6 +515,38 @@ export const layer = Layer.effect(
         return [...rooms.values()].map(({ name, messages }) => ({ name, messages }))
       }),
 
+      filters: Effect.fn("CommunityChannels.filters")(function* () {
+        const rows = yield* db.select().from(CommunityFilterTable).all().pipe(Effect.orDie)
+        return rows.map((row) => row.pattern)
+      }),
+
+      filter: Effect.fn("CommunityChannels.filter")(function* (pattern: string) {
+        const normalised = pattern.trim().toLowerCase()
+        if (normalised === "") return false
+        const inserted = yield* db
+          .insert(CommunityFilterTable)
+          .values({ pattern: normalised })
+          .onConflictDoNothing()
+          .returning({ pattern: CommunityFilterTable.pattern })
+          .all()
+          .pipe(Effect.orDie)
+        return inserted.length > 0
+      }),
+
+      unfilter: Effect.fn("CommunityChannels.unfilter")(function* (pattern: string) {
+        const removed = yield* db
+          .delete(CommunityFilterTable)
+          .where(eq(CommunityFilterTable.pattern, pattern.trim().toLowerCase()))
+          .returning({ pattern: CommunityFilterTable.pattern })
+          .all()
+          .pipe(Effect.orDie)
+        return removed.length > 0
+      }),
+
+      historyFiltered: Effect.fn("CommunityChannels.historyFiltered")(function* (channel: string, limit = 200) {
+        return yield* readable(channel, limit)
+      }),
+
       ids: Effect.fn("CommunityChannels.ids")(function* (channel: string) {
         const rows = yield* db
           .select({ id: CommunityMessageTable.id })
@@ -488,18 +573,20 @@ export const layer = Layer.effect(
         return rows.map(rowStored)
       }),
 
+      /**
+       * The READER's view — filtered.
+       *
+       * 🔴 Applying the user's rules HERE rather than at each caller is the one-door rule again. The
+       * panel, the agent's `community` tool and anything added later all present messages to the same
+       * person, and a second reader that forgot to filter would quietly hand them exactly the words
+       * they asked not to see — with their filter looking like it worked everywhere else.
+       *
+       * ⚠️ Reconciliation does NOT come through here: it works from `ids`/`byIDs`, so a filtered word
+       * never stops a message being STORED or PASSED ON. Hiding is a reading preference and must not
+       * become a quiet censorship of what this instance relays for other people.
+       */
       history: Effect.fn("CommunityChannels.history")(function* (channel: string, limit = 200) {
-        const rows = yield* db
-          .select()
-          .from(CommunityMessageTable)
-          .where(inArray(CommunityMessageTable.channel, yield* spellingsOf(channel)))
-          // ⚠️ By RECEIVED time, never by the author's claim — see the column's note. Sorting by a
-          // number the author chooses hands them the top of every reader's view.
-          .orderBy(desc(CommunityMessageTable.received_at), desc(sql`rowid`))
-          .limit(limit)
-          .all()
-          .pipe(Effect.orDie)
-        return rows.map(rowStored)
+        return (yield* readable(channel, limit)).messages
       }),
     })
   }),

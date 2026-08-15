@@ -9160,6 +9160,97 @@ export type CommunityChannelListedResponses = {
 
 export type CommunityChannelListedResponse = CommunityChannelListedResponses[keyof CommunityChannelListedResponses]
 
+export type CommunityFilterListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/community/filter"
+}
+
+export type CommunityFilterListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityFilterListError = CommunityFilterListErrors[keyof CommunityFilterListErrors]
+
+export type CommunityFilterListResponses = {
+  /**
+   * Words the user does not want to read
+   */
+  200: Array<string>
+}
+
+export type CommunityFilterListResponse = CommunityFilterListResponses[keyof CommunityFilterListResponses]
+
+export type CommunityFilterAddData = {
+  body: {
+    pattern: string
+  }
+  path?: never
+  query?: never
+  url: "/api/community/filter"
+}
+
+export type CommunityFilterAddErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityFilterAddError = CommunityFilterAddErrors[keyof CommunityFilterAddErrors]
+
+export type CommunityFilterAddResponses = {
+  /**
+   * True when a new rule was added
+   */
+  200: boolean
+}
+
+export type CommunityFilterAddResponse = CommunityFilterAddResponses[keyof CommunityFilterAddResponses]
+
+export type CommunityFilterRemoveData = {
+  body: {
+    pattern: string
+  }
+  path?: never
+  query?: never
+  url: "/api/community/filter"
+}
+
+export type CommunityFilterRemoveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityFilterRemoveError = CommunityFilterRemoveErrors[keyof CommunityFilterRemoveErrors]
+
+export type CommunityFilterRemoveResponses = {
+  /**
+   * True when a rule was removed
+   */
+  200: boolean
+}
+
+export type CommunityFilterRemoveResponse = CommunityFilterRemoveResponses[keyof CommunityFilterRemoveResponses]
+
 export type CommunityChannelNearbyData = {
   body?: never
   path?: never
@@ -9494,16 +9585,19 @@ export type CommunityChannelHistoryError = CommunityChannelHistoryErrors[keyof C
 
 export type CommunityChannelHistoryResponses = {
   /**
-   * Stored messages, most recently RECEIVED first
+   * Messages most recently RECEIVED first, and how many the user's own filters hid
    */
-  200: Array<{
-    id: string
-    channel: string
-    author: string
-    at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    receivedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    body: string
-  }>
+  200: {
+    messages: Array<{
+      id: string
+      channel: string
+      author: string
+      at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      receivedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      body: string
+    }>
+    hidden: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
 }
 
 export type CommunityChannelHistoryResponse = CommunityChannelHistoryResponses[keyof CommunityChannelHistoryResponses]

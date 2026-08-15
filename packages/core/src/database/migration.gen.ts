@@ -103,5 +103,6 @@ export const migrations = (
     import("./migration/20260815070119_add_sealing_key"),
     import("./migration/20260815072143_add_direct_message"),
     import("./migration/20260815084652_add_community_offer"),
+    import("./migration/20260815105906_add_community_filter"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

@@ -87,6 +87,15 @@ describe("what the tool deliberately CANNOT do", () => {
   test("it cannot post, block, add or forget anybody", () => {
     for (const forbidden of ["post", "send", "block", "add", "forget", "join", "leave", "rotate"])
       expect(ops).not.toContain(forbidden)
+    /**
+     * 🔴 And it cannot reach the user's FILTERS, in either direction.
+     *
+     * §10 is explicit: the filter must be computed from what the USER said, never from instructions
+     * discovered in a channel, "otherwise the spammer writes the filter that judges them". A tool that
+     * could WRITE one hands a stranger the pen. A tool that could merely READ them is barely better —
+     * it tells an attacker exactly which words to avoid, which is the same fight with more steps.
+     */
+    for (const forbidden of ["filter", "filters", "hide", "mute"]) expect(ops).not.toContain(forbidden)
     // ⚠️ And the list is pinned exactly: an operation added later lands here, where somebody has to
     // decide whether it belongs, rather than slipping in under a rule about names.
     expect([...ops].sort()).toEqual(["archived", "channels", "contacts", "history", "peers", "status"])
