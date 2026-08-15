@@ -201,4 +201,36 @@ describe("CommunityOffer", () => {
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
 
+
+  it.effect("🔴 an offer is BOUNDED — it is re-verified on every read", () =>
+    Effect.gen(function* () {
+      /**
+       * The amplifier in this design. `known` re-verifies each stored offer on every read, because a
+       * row edited on disk must not be served as though a peer had signed it — so a peer who signs
+       * ONCE over a hundred thousand model names makes this instance hash all of them every time a
+       * user opens the screen. One signature for them; a cost per view for us, forever.
+       */
+      const offers = yield* CommunityOffer.Service
+      const huge = yield* offers.publish({
+        ...terms,
+        models: Array.from({ length: CommunityOffer.MAX_MODELS + 1 }, (_, index) => `model-${index}`),
+      })
+      // Signed by us and still refused: the bound binds on the way OUT too, so an offer stored by an
+      // older build stops being served rather than being trusted because it is on disk.
+      expect(CommunityOffer.verify(huge)).toBe(false)
+      expect(yield* offers.mine()).toBeUndefined()
+
+      // Long fields are refused the same way, whichever one carries the weight.
+      const long = "x".repeat(CommunityOffer.MAX_FIELD_BYTES + 1)
+      for (const field of ["endpoint", "price", "payTo"] as const) {
+        const published = yield* offers.publish({ ...terms, [field]: long })
+        expect(CommunityOffer.verify(published)).toBe(false)
+      }
+
+      // ⚠️ And an ordinary offer still passes — a bound that refused real ones would be worse than none.
+      const normal = yield* offers.publish(terms)
+      expect(CommunityOffer.verify(normal)).toBe(true)
+    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+  )
+
 })

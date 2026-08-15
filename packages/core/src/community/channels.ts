@@ -46,6 +46,19 @@ export const RETAIN_PER_CHANNEL = 5_000
  */
 export const MAX_BODY_BYTES = 8 * 1024
 
+/**
+ * 🔴 The largest CHANNEL NAME we will even look at, and it is checked FIRST.
+ *
+ * `record` compares rooms canonically, which lowercases the name the SENDER wrote. A peer can put ten
+ * megabytes there, and until this existed that string was lowercased — allocating a copy — before any
+ * bound applied, before the work check, and before the signature. Zero cost to send, an allocation
+ * per message to receive, and none of the defences below had run yet.
+ *
+ * ⚠️ A name is hashed to a topic, so length buys nothing: 256 bytes is far past any room anyone would
+ * type and far short of a payload worth sending.
+ */
+export const MAX_CHANNEL_BYTES = 256
+
 export interface Stored extends CommunityMessage.Proven {
   readonly id: string
   /** When THIS instance received it — the only time we can vouch for. */
@@ -296,6 +309,14 @@ export const layer = Layer.effect(
     ) {
         // Order matters: the cheapest and most decisive checks first, and nothing touches the disk
         // until the message has proved it deserves to.
+        /**
+         * ⚠️ FIRST, before anything touches the sender's string. Everything after this — the
+         * canonical comparison, the size rule, the work check — either allocates from it or trusts
+         * that it is small enough to. The cheapest possible check on the most attacker-controlled
+         * field belongs at the very front.
+         */
+        if (Buffer.byteLength(message.channel ?? "", "utf8") > MAX_CHANNEL_BYTES)
+          return { rejected: "too-large" as const }
         if ((yield* subscribed(channel)) === undefined) return { rejected: "not-subscribed" as const }
         /**
          * ⚠️ The channel check is kept SEPARATE from `verifyOn` only to name the two rejections

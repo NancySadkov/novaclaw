@@ -607,4 +607,28 @@ describe("CommunityChannels", () => {
     }),
   )
 
+
+  it.effect("🔴 an enormous CHANNEL NAME is refused before anything touches it", () =>
+    Effect.gen(function* () {
+      /**
+       * `record` compares rooms canonically, which lowercases the name the SENDER wrote. A ten-megabyte
+       * name was therefore copied before any bound applied, before the work check and before the
+       * signature — zero cost to send, an allocation per message to receive, with none of the defences
+       * below having run. The cheapest check on the most attacker-controlled field belongs first.
+       */
+      const channels = yield* CommunityChannels.Service
+      yield* channels.join(CHANNEL)
+
+      const enormous = "#" + "x".repeat(CommunityChannels.MAX_CHANNEL_BYTES + 1)
+      const message = proven(fromStranger({ channel: enormous, body: "hi" }))
+      expect(yield* channels.record(CHANNEL, message)).toEqual({ rejected: "too-large" })
+
+      // ⚠️ And an ordinary name is untouched — the bound is far past anything anyone types, because a
+      // name is hashed to a topic and length buys nothing.
+      expect("stored" in (yield* channels.record(CHANNEL, proven(fromStranger({ channel: CHANNEL, body: "ok" }))))).toBe(
+        true,
+      )
+    }),
+  )
+
 })

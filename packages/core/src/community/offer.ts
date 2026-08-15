@@ -72,6 +72,20 @@ export interface Signed extends Unsigned {
   readonly signature: string
 }
 
+/**
+ * 🔴 What an offer may contain. Bounds, not preferences — and this one is an AMPLIFIER.
+ *
+ * An offer is verified on every READ (`known` re-checks each stored offer, because a row edited on
+ * disk must not be served as though a peer had signed it). So a peer who signs ONCE over a hundred
+ * thousand model names makes this instance hash all of them every time a user opens the screen. They
+ * pay a single signature; we pay per view, forever.
+ *
+ * ⚠️ Enforced in `verify`, so it binds on the way IN and on the way out — an offer already stored by
+ * an older build stops being served rather than being trusted because it is on disk.
+ */
+export const MAX_MODELS = 64
+export const MAX_FIELD_BYTES = 512
+
 const DOMAIN = "novaclaw/community/service-offer/1"
 const encoder = new TextEncoder()
 
@@ -126,6 +140,13 @@ export const verify = (offer: Signed): boolean => {
   if (typeof offer.payTo !== "string") return false
   if (!Array.isArray(offer.models) || offer.models.some((model) => typeof model !== "string")) return false
   if (!Number.isFinite(offer.at)) return false
+  // ⚠️ Sizes BEFORE the signature check, because the signature is the expensive part and its cost
+  // grows with exactly these fields. Checking cheap-and-decisive first is the same ordering the
+  // message door uses, for the same measured reason.
+  if (offer.models.length > MAX_MODELS) return false
+  if (offer.models.some((model) => Buffer.byteLength(model, "utf8") > MAX_FIELD_BYTES)) return false
+  for (const field of [offer.endpoint, offer.price, offer.payTo, offer.from])
+    if (Buffer.byteLength(field, "utf8") > MAX_FIELD_BYTES) return false
   const signature = Buffer.from(offer.signature, "base64url")
   if (signature.length !== 64) return false
   return InstanceIdentityStore.verifySignature(offer.from, canonicalBytes(offer), signature)
