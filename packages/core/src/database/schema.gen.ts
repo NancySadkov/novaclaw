@@ -20,7 +20,8 @@ export default {
           \`claimed_at\` integer NOT NULL,
           \`received_at\` integer NOT NULL,
           \`body\` text NOT NULL,
-          \`signature\` text NOT NULL
+          \`signature\` text NOT NULL,
+          \`nonce\` integer NOT NULL
         );
       `)
       yield* tx.run(`

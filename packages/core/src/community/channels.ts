@@ -31,7 +31,7 @@ export const DEFAULT_CHANNEL = "#NovaClaw"
  */
 export const RETAIN_PER_CHANNEL = 5_000
 
-export interface Stored extends CommunityMessage.Signed {
+export interface Stored extends CommunityMessage.Proven {
   readonly id: string
   /** When THIS instance received it — the only time we can vouch for. */
   readonly receivedAt: number
@@ -124,6 +124,7 @@ export const layer = Layer.effect(
       at: row.claimed_at,
       body: row.body,
       signature: row.signature,
+      nonce: row.nonce,
       receivedAt: row.received_at,
     })
 
@@ -185,6 +186,7 @@ export const layer = Layer.effect(
             received_at: receivedAt,
             body: message.body,
             signature: message.signature,
+            nonce: message.nonce,
           })
           // The same message arrives from every mesh peer that has it; a duplicate is the normal
           // case, not an error.

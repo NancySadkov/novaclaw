@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "779e5589-6619-4ea4-a61a-4abd51983f6f",
+  "id": "2a9f70b2-cbdb-4390-aa84-8ef36e1da0cb",
   "prevIds": [
-    "65c2f789-3f0d-408c-8746-0485139c8686"
+    "779e5589-6619-4ea4-a61a-4abd51983f6f"
   ],
   "ddl": [
     {
@@ -309,6 +309,16 @@
       "default": null,
       "generated": null,
       "name": "signature",
+      "entityType": "columns",
+      "table": "community_message"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "nonce",
       "entityType": "columns",
       "table": "community_message"
     },

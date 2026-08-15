@@ -42,6 +42,15 @@ export const CommunityMessageTable = sqliteTable(
     body: text().notNull(),
     /** Retained so a stored message can be re-verified later, or handed on to another peer intact. */
     signature: text().notNull(),
+    /**
+     * 🔴 The proof-of-work nonce, and it MUST be persisted.
+     *
+     * Replication hands stored messages to other instances, and every receiver's ingress door
+     * refuses work it cannot verify. A log that dropped the nonce would hold messages that are
+     * perfectly valid locally and REJECTED by every peer they are offered to — replication failing
+     * silently and completely, with each side believing the other was at fault.
+     */
+    nonce: integer().notNull().$default(() => 0),
   },
   (table) => [index("community_message_channel_idx").on(table.channel, table.received_at)],
 )

@@ -29,12 +29,16 @@ export type State =
 export interface Interface {
   readonly state: () => Effect.Effect<State>
   /**
-   * Send a signed message to a channel's subscribers.
+   * Send a PROVEN message to a channel's subscribers.
+   *
+   * ⚠️ `Proven`, not `Signed`: every receiver's ingress door refuses work it cannot verify, so
+   * handing the transport a message without its nonce would publish something guaranteed to be
+   * rejected by everyone — a failure visible only on the far side.
    *
    * Returns false when nothing could carry it. NOT an error: "there is no network yet" is the
    * ordinary state of a fresh install, and a failing effect would turn it into a red screen.
    */
-  readonly publish: (message: CommunityMessage.Signed) => Effect.Effect<boolean>
+  readonly publish: (message: CommunityMessage.Proven) => Effect.Effect<boolean>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/CommunityTransport") {}
@@ -64,7 +68,7 @@ export const layer = Layer.effect(
 
     return Service.of({
       state,
-      publish: Effect.fn("CommunityTransport.publish")(function* (_message: CommunityMessage.Signed) {
+      publish: Effect.fn("CommunityTransport.publish")(function* (_message: CommunityMessage.Proven) {
         // Nothing to publish through. The caller stores its own copy either way, so a user's message
         // is never lost — it simply has no audience until a transport lands.
         return false

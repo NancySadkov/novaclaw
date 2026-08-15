@@ -117,6 +117,32 @@ describe("two instances", () => {
         ),
       )
       expect(refused).toEqual({ rejected: "unverified" })
+
+      /**
+       * 🔴 REPLICATION: what Bob STORED must still be acceptable to a third instance.
+       *
+       * This is the defect the nonce column exists for. `Stored` used to extend `Signed`, dropping
+       * the proof-of-work on the way into the database — so every message Bob relayed onward would
+       * be refused as `unproven` by its receiver, while looking perfectly valid in Bob's own log.
+       * Replication would have failed silently and completely, with each side blaming the other.
+       */
+      const relayed = seen[0]!
+      expect(relayed.nonce).toBeGreaterThan(0)
+
+      const carol = instance("carol")
+      try {
+        const accepted = await Effect.runPromise(
+          Effect.gen(function* () {
+            const channels = yield* CommunityChannels.Service
+            yield* channels.join("#NovaClaw")
+            // Exactly the bytes Bob holds, offered onward — the shape replication sends.
+            return yield* channels.record("#NovaClaw", relayed)
+          }).pipe(Effect.provide(carol.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        )
+        expect("stored" in accepted).toBe(true)
+      } finally {
+        cleanup(carol.home)
+      }
     } finally {
       cleanup(alice.home)
       cleanup(bob.home)
