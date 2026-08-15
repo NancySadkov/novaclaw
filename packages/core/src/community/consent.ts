@@ -99,7 +99,18 @@ let live: { readonly read: () => unknown; readonly gate: Gate } | undefined
  * to avoid.
  */
 export function install(read: () => unknown, policy: { readonly enabled: boolean }): Gate {
-  const gate = resolveGate({ config: read(), policy })
+  const stored = read()
+  /**
+   * ⚠️ Does NOT clobber a gate somebody already applied when storage has nothing to say.
+   *
+   * At a real boot `live` is undefined and this is simply the first read. The case that matters is
+   * a second graph built inside a process that already knows the answer — a test harness, or a CLI
+   * run beside a server — where reading an empty database and overwriting a granted gate with the
+   * safe default would REVOKE a consent that was given, and report "has not joined" to someone who
+   * had. Storage that says nothing is not storage that says no.
+   */
+  if (stored === undefined && live !== undefined) return live.gate
+  const gate = resolveGate({ config: stored, policy })
   live = { read, gate }
   return gate
 }
