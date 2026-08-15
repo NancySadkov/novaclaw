@@ -833,4 +833,59 @@ describe("two instances", () => {
     }
   })
 
+
+  test("🔴 publishing to a full peer table does not open a socket per peer", async () => {
+    /**
+     * Our OWN bound feeding an unlimited fan-out — the same mistake as trusting a peer's number, made
+     * against ourselves. The peer table legitimately holds up to 500, and the publish fan-out was
+     * `"unbounded"`, so one message could open five hundred simultaneous connections from a laptop.
+     *
+     * ⚠️ An attacker does not need to break anything to trigger it: filling the peer table to its
+     * ALLOWED size is enough, and then every message the user sends is a socket storm on their own
+     * machine.
+     */
+    const alice = instance("alice-fanout")
+    let inFlight = 0
+    let peak = 0
+    let server: ReturnType<typeof Bun.serve> | undefined
+    try {
+      server = Bun.serve({
+        port: 0,
+        fetch: async () => {
+          inFlight++
+          peak = Math.max(peak, inFlight)
+          // Hold the connection briefly so overlap is observable rather than serialised by speed.
+          await new Promise((resolve) => setTimeout(resolve, 60))
+          inFlight--
+          return Response.json({ received: true })
+        },
+      })
+
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const channels = yield* CommunityChannels.Service
+          const peers = yield* CommunityPeers.Service
+          const posts = yield* CommunityPost.Service
+          yield* channels.join("#NovaClaw")
+          // 40 distinct peers, all answering at the same address — enough that an unbounded fan-out
+          // would show plainly.
+          for (let index = 0; index < 40; index++) {
+            const key = Buffer.alloc(32)
+            key.writeUInt32BE(index + 1, 0)
+            yield* peers.learn(`nid_${key.toString("base64url")}`, [`http://127.0.0.1:${server!.port}/p${index}`], "px")
+          }
+          yield* posts.post("#NovaClaw", "to everyone at once?")
+        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+
+      // Every peer is still reached — batching, not dropping.
+      expect(peak).toBeGreaterThan(0)
+      // 🔴 But never all at once. Unbounded, this peaked at 40; the cap is 8.
+      expect(peak).toBeLessThanOrEqual(8)
+    } finally {
+      server?.stop(true)
+      cleanup(alice.home)
+    }
+  })
+
 })

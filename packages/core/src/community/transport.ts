@@ -100,6 +100,21 @@ export const httpRoutes = (routes: readonly string[]): string[] =>
 /** How long to wait on one peer. A slow peer must never hold up the others. */
 const PER_PEER_TIMEOUT_MS = 8_000
 
+/**
+ * 🔴 How many peers we dial AT ONCE.
+ *
+ * The peer table is bounded at 500, and this fan-out was `"unbounded"` — so posting a single message
+ * could open five hundred simultaneous connections from a laptop. Our OWN ceiling feeding an
+ * unlimited fan-out, which is the same mistake as trusting a peer's number, made against ourselves:
+ * an attacker who fills the peer table to its legitimate bound turns every message the user sends
+ * into a socket storm on their own machine.
+ *
+ * ⚠️ 8, because the work is network-bound and the failure is exhaustion rather than slowness. Every
+ * peer is still dialled; they are dialled in batches, and a message reaching its audience a moment
+ * later is not a cost anyone can perceive.
+ */
+const FANOUT = 8
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -201,7 +216,7 @@ export const layer = Layer.effect(
                 Effect.catchCause(() => Effect.succeed(false)),
               ),
           ),
-          { concurrency: "unbounded" },
+          { concurrency: FANOUT },
         )
 
         // True when ANY peer took it. The caller has already stored its own copy, so this reports

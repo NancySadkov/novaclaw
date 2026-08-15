@@ -184,6 +184,13 @@ export const SEARCH_PATH = "/api/community/search"
  */
 const FORWARD_TIMEOUT_MS = 4_000
 
+/**
+ * ⚠️ Peers asked simultaneously within one wave. `widen` doubles the wave size, so a late wave over a
+ * full peer table would otherwise open hundreds of sockets at once — and a forwarding node does this
+ * on somebody ELSE'S query, so the storm would not even be its own user's doing.
+ */
+const FANOUT = 8
+
 /** How many answers are enough to stop widening. Beyond this, more peers cost traffic for nothing. */
 export const WANTED = 8
 
@@ -270,7 +277,7 @@ export const layer = Layer.effect(
         if (wave.length === 0) break
         const answers = yield* Effect.all(
           wave.map((route) => askPeer(route, query)),
-          { concurrency: "unbounded" },
+          { concurrency: FANOUT },
         )
         for (const names of answers) for (const name of names) found.add(name)
         asked += wave.length
