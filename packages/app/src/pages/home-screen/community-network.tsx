@@ -12,6 +12,8 @@ import {
   communityArchivedChannels,
   communityDiscover,
   communityOffers,
+  communityParticipation,
+  communitySetParticipation,
   communityFilters,
   communityAddFilter,
   communityRemoveFilter,
@@ -129,6 +131,29 @@ export const CommunityNetwork: Component = () => {
    * could offer their machine and see no evidence of it anywhere — no way to know what they were
    * advertising, or that it was still live. Principle 12(d): say what is in force, before the control.
    */
+  /**
+   * 🔴 Asked BEFORE anything else is rendered: this instance may not have joined the community at
+   * all, and a fresh install has not. Three not-participating states look identical from outside and
+   * must not be shown the same way — never asked deserves the warning, switched-off deserves a
+   * switch, and airgapped deserves neither, because flipping a community setting would not change it.
+   */
+  const [participation, participationActions] = createResource(connection, (value) =>
+    communityParticipation(value.http),
+  )
+  const [switching, setSwitching] = createSignal(false)
+
+  const setParticipation = async (value: { consented?: boolean; enabled?: boolean }) => {
+    const current = connection()
+    if (!current) return
+    setSwitching(true)
+    try {
+      await communitySetParticipation(current.http, value)
+      await participationActions.refetch()
+    } finally {
+      setSwitching(false)
+    }
+  }
+
   const [myOffer, myOfferActions] = createResource(connection, (value) => communityMyOffer(value.http))
   const [offerEndpoint, setOfferEndpoint] = createSignal("")
   const [offerModels, setOfferModels] = createSignal("")
@@ -485,7 +510,89 @@ export const CommunityNetwork: Component = () => {
     }
   }
 
+  /**
+   * 🔴 The door. Nothing below renders until this instance has joined, because joining is a decision
+   * with consequences the person has to see FIRST — and because the module genuinely is not running
+   * until they make it.
+   *
+   * ⚠️ The warning is shown only for `never_consented`. Somebody who accepted it and later switched
+   * the module off gets a switch, not the warning again: consent is sticky, and re-asking would be
+   * nagging dressed as care.
+   */
+  const refusals = () => participation()?.refusals ?? []
+  const neverAsked = () => refusals().includes("never_consented")
+  const switchedOff = () => refusals().includes("switched_off")
+
+  /**
+   * ⚠️ A `<Show>`, NOT an early `return` from the component body — and that distinction is the whole
+   * bug this replaced. A Solid component body runs ONCE: at that moment the participation resource
+   * is still pending, so an early return computed `undefined` and rendered the joined panel forever,
+   * to a user who had never joined. The types were fine and the logic read correctly; only opening
+   * the page showed it.
+   */
+  const notJoined = () => (
+
+      <section class="flex flex-col gap-3" data-slot="community-network">
+        <div class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-v2-text-text-base">Your own community</span>
+          <Show when={neverAsked()}>
+            <span class="text-[12px] leading-snug text-v2-text-text-muted">
+              NovaClaw instances can talk to each other directly — yours and other people's. It is off until you
+              turn it on, and there are two things to know first.
+            </span>
+            {/* Stated plainly and without euphemism. Both are consequences of the architecture, not
+                defects in it, and a person cannot consent to what they were not told. */}
+            <ul class="mt-2 flex flex-col gap-2">
+              <li class="text-[12px] leading-snug text-v2-text-text-base">
+                <b>Nobody moderates this.</b> There is no company in the middle, which also means there is no one
+                to delete what a stranger writes or to appeal to. You may see things you find offensive or
+                upsetting. You can block people, and that is the only power anyone has here.
+              </li>
+              <li class="text-[12px] leading-snug text-v2-text-text-base">
+                <b>Other people will see your IP address.</b> Because there is no central server, your machine
+                connects directly to theirs — so anyone you talk to learns roughly where you are, in the way any
+                direct connection reveals.
+              </li>
+            </ul>
+            <span class="mt-2 text-[11px] leading-snug text-v2-text-text-muted">
+              You can turn it off again at any time, here in Community settings.
+            </span>
+            <div class="mt-2 flex items-center gap-2">
+              <ButtonV2
+                appearance="base"
+                disabled={switching()}
+                onClick={() => void setParticipation({ consented: true })}
+              >
+                I understand — turn it on
+              </ButtonV2>
+            </div>
+          </Show>
+
+          <Show when={switchedOff()}>
+            <span class="text-[12px] leading-snug text-v2-text-text-muted">
+              Community is turned off. Nothing goes in or out, and other instances cannot reach yours.
+            </span>
+            <div class="mt-2 flex items-center gap-2">
+              <ButtonV2 appearance="base" disabled={switching()} onClick={() => void setParticipation({ enabled: true })}>
+                Turn it back on
+              </ButtonV2>
+            </div>
+          </Show>
+
+          <Show when={refusals().includes("airgap")}>
+            {/* ⚠️ No community control offered: the airgap is a machine-level decision that overrides
+                this one, so a switch here would do nothing and reading it as broken would be fair. */}
+            <span class="text-[12px] leading-snug text-v2-text-text-muted">
+              Offline mode is on, so the community is off regardless of this setting. Turn off offline mode in
+              Settings to use it.
+            </span>
+          </Show>
+        </div>
+      </section>
+  )
+
   return (
+    <Show when={participation() === undefined || participation()?.participating} fallback={notJoined()}>
     <section class="flex flex-col gap-3" data-slot="community-network">
       <div class="flex flex-col gap-1">
         <span class="text-sm font-medium text-v2-text-text-base">Your own community</span>
@@ -503,6 +610,17 @@ export const CommunityNetwork: Component = () => {
             }}
           />
           <span class="text-[11px] text-v2-text-text-muted">{status()}</span>
+          {/* 🔴 The way back out, beside the state it turns off rather than buried in a settings
+              page: a person who joined and then wants to stop should not have to find where. Consent
+              is NOT withdrawn by this — turning it off is reversible without being warned again. */}
+          <ButtonV2
+            appearance="ghost"
+            class="ml-auto text-[11px]"
+            disabled={switching()}
+            onClick={() => void setParticipation({ enabled: false })}
+          >
+            Turn off
+          </ButtonV2>
         </div>
       </div>
 
@@ -973,5 +1091,6 @@ export const CommunityNetwork: Component = () => {
         </span>
       </div>
     </section>
+    </Show>
   )
 }

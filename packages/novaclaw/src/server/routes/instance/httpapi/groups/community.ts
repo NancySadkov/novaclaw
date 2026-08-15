@@ -117,6 +117,8 @@ export const CommunityPaths = {
   contact: "/api/community/contact/:networkID",
   contactBlock: "/api/community/contact/:networkID/block",
   transport: "/api/community/transport",
+  /** Whether this instance has joined the community, and if not, every reason why. */
+  participation: "/api/community/participation",
   channels: "/api/community/channel",
   channel: "/api/community/channel/:name",
   channelMute: "/api/community/channel/:name/mute",
@@ -338,6 +340,31 @@ export const CommunityApi = HttpApi.make("community").add(
        * the peer door: airgapped it answered 503, and an offer the current rules refuse read as
        * empty, so the panel told a user who HAD published that they were "not offering anything".
        */
+      /**
+       * 🔴 The Community app asks this BEFORE showing anything, because the three states it has to
+       * tell apart look identical from the outside: never asked, asked and switched off, and
+       * airgapped. Only the first should show a warning — re-showing it to somebody who already
+       * accepted and then turned the module off would be nagging, not consent.
+       */
+      HttpApiEndpoint.get("communityParticipation", CommunityPaths.participation, {
+        success: described(
+          Schema.Struct({
+            participating: Schema.Boolean,
+            consented: Schema.Boolean,
+            enabled: Schema.Boolean,
+            /** Every condition currently refusing, in a stable order. Empty when participating. */
+            refusals: Schema.Array(Schema.Literals(["never_consented", "switched_off", "airgap"])),
+          }),
+          "Whether this instance is on the network, and every reason it is not",
+        ),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.participation",
+          summary: "Whether this instance has joined the community",
+          description:
+            "An ARRAY of refusals rather than one reason: airgapped AND never-asked is a real state, and reporting only one would send the user to fix something that would not help.",
+        }),
+      ),
       HttpApiEndpoint.get("offerMineRead", CommunityPaths.offerMine, {
         success: described(
           Schema.Struct({

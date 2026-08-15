@@ -1,5 +1,6 @@
 import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityDirect } from "@novaclaw/core/community/dm"
+import { CommunityConsent } from "@novaclaw/core/community/consent"
 import { CommunityOffer } from "@novaclaw/core/community/offer"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
@@ -190,6 +191,18 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
         "channelsNearby",
         Effect.fn("CommunityHttpApi.channelsNearby")(function* () {
           return yield* sync.channelsNearby()
+        }),
+      )
+      .handle(
+        "communityParticipation",
+        Effect.fn("CommunityHttpApi.communityParticipation")(function* () {
+          const gate = CommunityConsent.currentGate()
+          return {
+            participating: CommunityConsent.participates(gate),
+            consented: gate.consented,
+            enabled: gate.enabled,
+            refusals: CommunityConsent.refusals(gate),
+          }
         }),
       )
       .handle(

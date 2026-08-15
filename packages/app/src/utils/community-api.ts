@@ -163,6 +163,38 @@ export function communityOffers(server: ServerConnection.HttpBase) {
  * `servable: false` alongside an offer is the case that matters — stored, but peers are getting
  * nothing — and it is why this cannot be a bare optional.
  */
+export type CommunityRefusal = "never_consented" | "switched_off" | "airgap"
+
+/**
+ * Whether this instance has joined the community — asked BEFORE anything else is shown.
+ *
+ * The three not-participating states look identical from outside and must not be shown the same
+ * way: never asked deserves the warning, switched-off deserves a switch, and airgapped deserves
+ * neither because flipping community settings would not change it.
+ */
+export function communityParticipation(server: ServerConnection.HttpBase) {
+  return instanceFetch<{
+    readonly participating: boolean
+    readonly consented: boolean
+    readonly enabled: boolean
+    readonly refusals: ReadonlyArray<CommunityRefusal>
+  }>(server, { route: "api/community/participation" })
+}
+
+/**
+ * Record that the user read the warning and accepted it, or flip the app's own switch.
+ *
+ * ⚠️ Goes through `/config` because this is a PRIVILEGED setting, beside the airgap and telemetry:
+ * it has consequences off this machine. Routing it through a community-specific endpoint would have
+ * quietly given it a second, ungated path.
+ */
+export function communitySetParticipation(
+  server: ServerConnection.HttpBase,
+  value: { readonly consented?: boolean; readonly enabled?: boolean },
+) {
+  return instanceFetch<unknown>(server, { route: "config", method: "PATCH", body: { community: value } })
+}
+
 export function communityMyOffer(server: ServerConnection.HttpBase) {
   return instanceFetch<{ readonly offer?: CommunityServiceOffer; readonly servable: boolean }>(server, {
     route: "api/community/offer/mine",
