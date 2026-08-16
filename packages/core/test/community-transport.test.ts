@@ -7,7 +7,6 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { CommunityMessage } from "@novaclaw/core/community/message"
 import { CommunityWork } from "@novaclaw/core/community/work"
-import { CommunityConsent } from "@novaclaw/core/community/consent"
 import { Offline } from "@novaclaw/core/offline"
 import { testEffect } from "./lib/effect"
 
