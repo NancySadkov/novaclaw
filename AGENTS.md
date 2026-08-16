@@ -274,7 +274,24 @@ why the curve matters more than any constant in it.
 room* and *less than yourself*, so a guru's word is a strong prior that your own observations
 overturn. An agent that never revises its inviter's opinions has stopped following the axiom, and an
 agent that treats a stranger's word as equal to its doorman's has stopped using it. Truth inference —
-the deduction the agent does on top of what it is told — lives in the gap between those two bounds.
+the deduction the agent does on top of what it is told — lives in the gap between those two bounds,
+and two theorems already constrain it.
+
+🔴 **Trust is not transitive; the axiom is one HOP, not a chain.** Your doorman's word about a judge
+is elevated. That judge's word about a fourth party is not — it is an ordinary claim from an ordinary
+peer. **This is the classic failure of every web-of-trust that treated trust as composable**: after a
+few hops the graph connects everyone to everyone, standing reaches strangers nobody observed, and one
+compromised node launders reputation for its whole downstream. The axiom survives only because it is
+deliberately shallow — the person who opened the door for *you*, not the person who opened it for
+them. Generalising one hop into N is not an extension, it is the thing the literature already buried,
+and it will look like an improvement because more edges means more coverage right up until it means
+nothing.
+
+🔴 **No inference may overturn a first-hand observation.** Deduction operates strictly below your own
+eyes: it can fill gaps, rank strangers and propagate suspicion, but a chain of reasoning that
+concludes you did not see what you saw has violated the axiom it was built on. That is what stops a
+clever agent talking itself out of evidence, and it is why the ordering is strict rather than a
+heuristic.
 
 ## Working notes and scratch files
 
