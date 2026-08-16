@@ -419,6 +419,93 @@ describe("two instances", () => {
        */
       expect(twice.second).toEqual({ peers: 0, fetched: 0 })
       expect(asked).toEqual([CommunitySync.SYNC_SUMMARY_PATH])
+
+      /** A room Alice has never been in, so what she ends up holding came through the door. */
+      const BLOCKED_ROOM = "#after-block"
+      const alsoSaid = ["six", "seven", "eight"]
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const channels = yield* CommunityChannels.Service
+          const posts = yield* CommunityPost.Service
+          yield* channels.join(BLOCKED_ROOM)
+          for (const body of alsoSaid) yield* posts.post(BLOCKED_ROOM, body)
+        }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+
+      /**
+       * 🔴 Blocking survives the catch-up path — and it is defended TWICE, which only came out by
+       * writing this and watching the first assertion fail.
+       *
+       * Until catch-up was wired this could not execute at all, so the property was argued and never
+       * run: the spec's rotation finding reasons about it explicitly ("reconciliation exists to
+       * backfill exactly those messages") about code nothing called.
+       *
+       * ⚠️ The two defences answer different questions and only one of them is the security one:
+       *
+       *   1. a blocked CONTACT is never dialled — `contacts.bootstrap` is "not blocked, and with at
+       *      least one known route", so they leave the reachable set entirely; and
+       *   2. a blocked AUTHOR reached some other way is refused at `deliver`.
+       *
+       * The second is the one that matters, because a stranger you blocked is in the PEER table, not
+       * your contacts — nobody adds someone as a contact in order to block them. A test that only
+       * covered the first would report this property green while the door it protects stood open.
+       */
+      const notEvenDialled = await Effect.runPromise(
+        Effect.gen(function* () {
+          const contacts = yield* CommunityContacts.Service
+          const channels = yield* CommunityChannels.Service
+          const sync = yield* CommunitySync.Service
+          yield* contacts.setBlocked(bobKey, true)
+          /**
+           * ⚠️ A room she has NOTHING in, rather than #NovaClaw emptied first. Leaving a channel
+           * deliberately KEEPS its history (principle 12), so `leave` + `join` — the obvious way to
+           * write this — left all five in place and the assertion measured nothing.
+           */
+          yield* channels.join(BLOCKED_ROOM)
+          const result = yield* sync.sync(BLOCKED_ROOM)
+          return { result, held: (yield* channels.history(BLOCKED_ROOM)).length }
+        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+      expect(notEvenDialled.result).toEqual({ peers: 0, fetched: 0 })
+      expect(notEvenDialled.held).toBe(0)
+
+      /**
+       * Now the same block with Bob reachable as a LEARNED PEER, which is how a blocked stranger is
+       * actually known. The exchange really happens — `peers: 1` is the part that makes the result
+       * mean something — and every message he offers is refused at ingress.
+       */
+      const dialledAndRefused = await Effect.runPromise(
+        Effect.gen(function* () {
+          const peers = yield* CommunityPeers.Service
+          const channels = yield* CommunityChannels.Service
+          const sync = yield* CommunitySync.Service
+          yield* peers.learn(bobKey, [`http://127.0.0.1:${server!.port}`], "manual")
+          const result = yield* sync.sync(BLOCKED_ROOM)
+          return { result, held: (yield* channels.history(BLOCKED_ROOM)).length }
+        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+      expect(dialledAndRefused.result.peers).toBe(1)
+      expect(dialledAndRefused.result.fetched).toBe(0)
+      expect(dialledAndRefused.held).toBe(0)
+
+      /**
+       * The control, and the reason either result above is usable: the SAME messages arrive the
+       * moment he is unblocked. A gate that simply broke this endpoint would pass both assertions
+       * above and fail here.
+       */
+      const unblocked = await Effect.runPromise(
+        Effect.gen(function* () {
+          const contacts = yield* CommunityContacts.Service
+          const channels = yield* CommunityChannels.Service
+          const sync = yield* CommunitySync.Service
+          yield* contacts.setBlocked(bobKey, false)
+          const result = yield* sync.sync(BLOCKED_ROOM)
+          return { result, held: (yield* channels.history(BLOCKED_ROOM)).length }
+        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+      expect(unblocked.result.fetched).toBe(alsoSaid.length)
+      expect(unblocked.held).toBe(alsoSaid.length)
+
     } finally {
       server?.stop(true)
       cleanup(alice.home)
