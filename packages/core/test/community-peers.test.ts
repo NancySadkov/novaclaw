@@ -169,4 +169,35 @@ describe("CommunityPeers", () => {
     expect(CommunitySync.MAX_PEERS_ASKED).toBeLessThanOrEqual(32)
   })
 
+
+  it.effect("🔴 one px claim cannot put an unbounded address list on a peer", () =>
+    Effect.gen(function* () {
+      const peers = yield* CommunityPeers.Service
+      const target = `nid_${Buffer.alloc(32, 9).toString("base64url")}`
+
+      /**
+       * Peer exchange is hearsay — `learn` refuses an unparseable key and our own, and nothing else
+       * — so this list is a stranger's number. Measured before the cap: 5,000 routes on one row.
+       *
+       * ⚠️ The damage is not the row, it is the LOOP it feeds. `reachable` slices its own dialling,
+       * but `sendDirect` builds its address list separately and walks every one at a 10 s timeout,
+       * so this number decided how long the USER's own private message took to fail.
+       */
+      const flood = Array.from({ length: 5000 }, (_, i) => `http://10.0.0.1:${1000 + i}`)
+      yield* peers.learn(target, flood, "px")
+      const stored = (yield* peers.list()).find((entry) => entry.networkID === target)?.routes ?? []
+      expect(stored.length).toBe(CommunityPeers.MAX_ROUTES_PER_PEER)
+
+      /**
+       * 🔴 And the cap keeps the NEWEST, which is the half a naive slice gets backwards: keeping the
+       * oldest would drop exactly the address that repairs a peer who has moved — the case these
+       * routes exist for.
+       */
+      yield* peers.learn(target, ["http://moved-here:9"], "px")
+      const after = (yield* peers.list()).find((entry) => entry.networkID === target)?.routes ?? []
+      expect(after.length).toBe(CommunityPeers.MAX_ROUTES_PER_PEER)
+      expect(after[0], "the address it just moved to was dropped by the cap").toBe("http://moved-here:9")
+    }),
+  )
+
 })

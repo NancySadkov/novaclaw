@@ -45,6 +45,16 @@ export const MAX_PEERS = 500
 /** How many we hand a peer that asks. Enough to bootstrap from, few enough not to dump the table. */
 export const PX_SAMPLE = 32
 
+/**
+ * The most addresses kept for ONE peer.
+ *
+ * ⚠️ Eight rather than the contacts' six: a peer legitimately accumulates from more sources (a LAN
+ * sighting, a manual address, peer exchange), while a contact's list starts from what its owner
+ * typed. Both are OUR ceilings on somebody else's number, which is the rule this subsystem keeps
+ * relearning.
+ */
+export const MAX_ROUTES_PER_PEER = 8
+
 export interface Interface {
   /** Every peer we might reach, most recently seen first. */
   readonly list: () => Effect.Effect<ReadonlyArray<Peer>>
@@ -157,9 +167,26 @@ export const layer = Layer.effect(
             .pipe(Effect.orDie)
         }
 
-        // Additive and de-duplicated: a LAN address and a public address are both true at once, and
-        // replacing would make the last source to speak the only one that counts.
-        const merged = [...new Set([...(existing?.routes ?? []), ...routes])]
+        /**
+         * Additive and de-duplicated: a LAN address and a public address are both true at once, and
+         * replacing would make the last source to speak the only one that counts.
+         *
+         * 🔴 CAPPED, because this list is written by whoever is talking to us. Peer exchange is
+         * hearsay — `learn` refuses an unparseable key and our own, and nothing else — so one claim
+         * could put any number of addresses on a row. Measured before this bound: a single px answer
+         * stored **5,000 routes** on one peer.
+         *
+         * ⚠️ That number then becomes a LOOP. `reachable` slices its own dialling to
+         * `MAX_PEERS_ASKED`, but `sendDirect` builds its address list separately and walks all of
+         * them at a 10 s timeout each — so a stranger's number decided how long the USER's own
+         * private message took to fail. The ceiling belongs here, on the row, so every consumer
+         * inherits it rather than each remembering its own slice.
+         *
+         * ⚠️ NEWEST first, which is the opposite of the obvious order. Keeping the oldest would make
+         * the cap drop exactly the address that repairs a peer who has moved — the case these routes
+         * exist for.
+         */
+        const merged = [...new Set([...routes, ...(existing?.routes ?? [])])].slice(0, MAX_ROUTES_PER_PEER)
         if (existing === undefined) {
           yield* db
             .insert(CommunityPeerTable)
