@@ -9704,7 +9704,7 @@ export type CommunityChannelHistoryError = CommunityChannelHistoryErrors[keyof C
 
 export type CommunityChannelHistoryResponses = {
   /**
-   * Messages most recently RECEIVED first, and how many the user's own filters hid
+   * One page of messages, most recently RECEIVED first, how many the user's own filters hid, and how many the room HOLDS
    */
   200: {
     messages: Array<{
@@ -9716,6 +9716,7 @@ export type CommunityChannelHistoryResponses = {
       body: string
     }>
     hidden: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    held: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   }
 }
 

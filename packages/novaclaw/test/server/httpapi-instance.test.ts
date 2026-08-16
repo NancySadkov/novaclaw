@@ -247,10 +247,16 @@ describe("instance HttpApi", () => {
 
       const history = yield* HttpClient.get(`/api/community/channel/${encodeURIComponent("#NovaClaw")}/history`)
       expect(history.status).toBe(200)
-      // ⚠️ `{messages, hidden}`, not a bare array: the count of what the reader's OWN filters removed
-      // travels with them, so a room that looks quiet because of a forgotten rule is distinguishable
-      // from one nobody posts in.
-      expect(yield* history.json).toEqual({ messages: [], hidden: 0 })
+      /**
+       * ⚠️ `{messages, hidden, held}`, not a bare array, and asserted EXACTLY on purpose — this is a
+       * contract test, and it earned that this session by catching `held` being added to the wire.
+       *
+       * `hidden` is what the reader's own filters removed, so a room that looks quiet because of a
+       * forgotten rule is distinguishable from one nobody posts in. `held` is how many the room
+       * stores: `messages` is ONE PAGE of at most 200, and retention keeps far more, so a caller
+       * that reads the page as the whole log under-reports a busy room.
+       */
+      expect(yield* history.json).toEqual({ messages: [], hidden: 0, held: 0 })
 
       // The transport reports OFF with a REASON, so the screen can say something true rather than
       // "disconnected" — which would read as broken on every fresh install. `no-peers`, not `none`:
@@ -277,7 +283,7 @@ describe("instance HttpApi", () => {
       expect(yield* inbound.json).toEqual({ received: true })
 
       const afterForgery = yield* HttpClient.get(`/api/community/channel/${encodeURIComponent("#NovaClaw")}/history`)
-      expect(yield* afterForgery.json).toEqual({ messages: [], hidden: 0 })
+      expect(yield* afterForgery.json).toEqual({ messages: [], hidden: 0, held: 0 })
 
       /**
        * 🔴 Reconciliation must not let a stranger MAP which rooms this instance is in.

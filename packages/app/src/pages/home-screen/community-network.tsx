@@ -1065,6 +1065,21 @@ export const CommunityNetwork: Component = () => {
         </Show>
         {/* ⚠️ Reported, never silent: a room that looks quiet because of a rule the user forgot they
             wrote is indistinguishable from one nobody posts in. */}
+        {/*
+          🔴 Say that this is a PAGE. Retention keeps thousands and a reader gets 200, and nothing
+          said so — a user looking for something said last week saw the oldest of 200 and no reason
+          to think anything older survived. That is the same silence the `hidden` line beneath exists
+          to break, and catching up made it concrete: an instance can fetch 600 messages and show 200.
+
+          ⚠️ Shown only when there IS more, so a quiet room stays quiet. Deliberately states the
+          numbers rather than offering a control: paging is a product decision, and inventing one
+          here would answer it by accident.
+        */}
+        <Show when={(history()?.held ?? 0) > (history()?.messages.length ?? 0)}>
+          <span class="text-[11px] text-v2-text-text-muted">
+            {`Showing the most recent ${history()?.messages.length ?? 0} of ${history()?.held ?? 0} messages this room holds.`}
+          </span>
+        </Show>
         <Show when={(history()?.hidden ?? 0) > 0}>
           <span class="text-[11px] leading-snug text-v2-text-text-muted">
             {`${history()?.hidden} message(s) hidden by your words below.`}

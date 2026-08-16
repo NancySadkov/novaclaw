@@ -198,7 +198,12 @@ export interface Interface {
   readonly historyFiltered: (
     channel: string,
     limit?: number,
-  ) => Effect.Effect<{ readonly messages: ReadonlyArray<Stored>; readonly hidden: number }>
+  ) => Effect.Effect<{
+    readonly messages: ReadonlyArray<Stored>
+    readonly hidden: number
+    /** How many this room HOLDS — `messages` is one page of it, never the whole log. */
+    readonly held: number
+  }>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/CommunityChannels") {}
@@ -343,15 +348,34 @@ export const layer = Layer.effect(
         .all()
         .pipe(Effect.orDie)
       const all = rows.map(rowStored)
+      /**
+       * 🔴 How many this room HOLDS, which is not how many this page shows.
+       *
+       * Retention keeps up to `RETAIN_PER_CHANNEL`; a reader gets a page of 200. Nothing said so, and
+       * the note on `ids` one screen up already conceded the shape of the problem — "that one is a
+       * reader's view, capped at a page". A user looking for something said last week saw the oldest
+       * of 200 and no reason to think anything older survived, which is the same silence the `hidden`
+       * count exists to break: a channel that looks exhausted is indistinguishable from one that is.
+       *
+       * ⚠️ Counted, not inferred from `rows.length === limit`. That guess is wrong in both directions
+       * — exactly `limit` held reads as "there is more", and it cannot say how much more.
+       */
+      const [count] = yield* db
+        .select({ held: sql<number>`count(*)` })
+        .from(CommunityMessageTable)
+        .where(inArray(CommunityMessageTable.channel, yield* spellingsOf(channel)))
+        .all()
+        .pipe(Effect.orDie)
+      const held = count?.held ?? all.length
       const patterns = (yield* db.select().from(CommunityFilterTable).all().pipe(Effect.orDie)).map(
         (row) => row.pattern,
       )
-      if (patterns.length === 0) return { messages: all as ReadonlyArray<Stored>, hidden: 0 }
+      if (patterns.length === 0) return { messages: all as ReadonlyArray<Stored>, hidden: 0, held }
       const messages = all.filter((message) => {
         const body = message.body.toLowerCase()
         return !patterns.some((pattern) => body.includes(pattern))
       })
-      return { messages: messages as ReadonlyArray<Stored>, hidden: all.length - messages.length }
+      return { messages: messages as ReadonlyArray<Stored>, hidden: all.length - messages.length, held }
     })
 
     const subscribed = (channel: string) =>

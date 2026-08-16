@@ -4409,7 +4409,7 @@
         "security": [],
         "responses": {
           "200": {
-            "description": "Messages most recently RECEIVED first, and how many the user's own filters hid",
+            "description": "One page of messages, most recently RECEIVED first, how many the user's own filters hid, and how many the room HOLDS",
             "content": {
               "application/json": {
                 "schema": {
@@ -4505,11 +4505,34 @@
                           "enum": ["Infinity", "-Infinity", "NaN"]
                         }
                       ]
+                    },
+                    "held": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
                     }
                   },
-                  "required": ["messages", "hidden"],
+                  "required": ["messages", "hidden", "held"],
                   "additionalProperties": false,
-                  "description": "Messages most recently RECEIVED first, and how many the user's own filters hid"
+                  "description": "One page of messages, most recently RECEIVED first, how many the user's own filters hid, and how many the room HOLDS"
                 }
               }
             }
@@ -4528,7 +4551,7 @@
             "description": "Unauthorized"
           }
         },
-        "description": "Gossip only reaches whoever is online, so this local log is what makes a channel readable by someone who was away. Ordered by receive time, never by the author's own claimed timestamp. `hidden` counts what the user's own filter rules removed — reported rather than silent, because a channel that looks empty because of a forgotten rule is indistinguishable from one nobody posts in.",
+        "description": "Gossip only reaches whoever is online, so this local log is what makes a channel readable by someone who was away. Ordered by receive time, never by the author's own claimed timestamp. `hidden` counts what the user's own filter rules removed — reported rather than silent, because a channel that looks empty because of a forgotten rule is indistinguishable from one nobody posts in. `held` is how many the room stores in total: `messages` is ONE PAGE of at most 200, and retention keeps far more, so a caller that treats the page as the whole log will under-report a busy room.",
         "summary": "Read a channel's history",
         "x-codeSamples": [
           {

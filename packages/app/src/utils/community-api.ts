@@ -45,11 +45,18 @@ export interface CommunityMessage {
 /**
  * Whether anything can carry a message right now.
  *
- * ⚠️ `off` names its reason, and the screen must use it: "still being built" and "you switched the
- * network off" are different things to tell a person.
+ * ⚠️ `off` names its reason and the screen must use it — the three are different things to tell a
+ * person: `not-joined` (this instance never accepted what joining costs, so it does not reach out at
+ * all), `airgap` (its owner switched the network off), and `no-peers` (willing and able, but nobody
+ * to dial — the one they can fix in a minute).
+ *
+ * 🔴 `not-joined` was MISSING here while the server has declared it since the consent gate shipped.
+ * Nothing consumed it, so nothing failed: the panel gates on `participation` before this is read.
+ * But a narrower type than the wire sends is a trap set for the next reader, who will handle the two
+ * cases the type admits and fall through on the one every fresh install is in.
  */
 export type CommunityTransportState =
-  | { readonly kind: "off"; readonly reason: "airgap" | "no-peers" }
+  | { readonly kind: "off"; readonly reason: "airgap" | "no-peers" | "not-joined" }
   | { readonly kind: "connecting" }
   | { readonly kind: "online"; readonly peers: number }
 
@@ -325,7 +332,12 @@ export function communityPost(server: ServerConnection.HttpBase, channel: string
  * is indistinguishable from one nobody posts in.
  */
 export function communityChannelHistory(server: ServerConnection.HttpBase, name: string) {
-  return instanceFetch<{ readonly messages: CommunityMessage[]; readonly hidden: number }>(server, {
+  return instanceFetch<{
+    readonly messages: CommunityMessage[]
+    readonly hidden: number
+    /** How many the room HOLDS. `messages` is one page of at most 200. */
+    readonly held: number
+  }>(server, {
     route: `api/community/channel/${encodeURIComponent(name)}/history`,
   })
 }

@@ -499,15 +499,24 @@ export const CommunityApi = HttpApi.make("community").add(
       HttpApiEndpoint.get("channelHistory", CommunityPaths.channelHistory, {
         params: ChannelParams,
         success: described(
-          Schema.Struct({ messages: Schema.Array(CommunityMessageInfo), hidden: Schema.Number }),
-          "Messages most recently RECEIVED first, and how many the user's own filters hid",
+          Schema.Struct({
+            messages: Schema.Array(CommunityMessageInfo),
+            hidden: Schema.Number,
+            /**
+             * ⚠️ Declared, because an undeclared field is silently DROPPED by the response schema and
+             * reads exactly like a backend that never sent it — the trap `listed` fell into on this
+             * same group.
+             */
+            held: Schema.Number,
+          }),
+          "One page of messages, most recently RECEIVED first, how many the user's own filters hid, and how many the room HOLDS",
         ),
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "community.channel.history",
           summary: "Read a channel's history",
           description:
-            "Gossip only reaches whoever is online, so this local log is what makes a channel readable by someone who was away. Ordered by receive time, never by the author's own claimed timestamp. `hidden` counts what the user's own filter rules removed — reported rather than silent, because a channel that looks empty because of a forgotten rule is indistinguishable from one nobody posts in.",
+            "Gossip only reaches whoever is online, so this local log is what makes a channel readable by someone who was away. Ordered by receive time, never by the author's own claimed timestamp. `hidden` counts what the user's own filter rules removed — reported rather than silent, because a channel that looks empty because of a forgotten rule is indistinguishable from one nobody posts in. `held` is how many the room stores in total: `messages` is ONE PAGE of at most 200, and retention keeps far more, so a caller that treats the page as the whole log will under-report a busy room.",
         }),
       ),
       HttpApiEndpoint.post("channelSync", CommunityPaths.channelSync, {
