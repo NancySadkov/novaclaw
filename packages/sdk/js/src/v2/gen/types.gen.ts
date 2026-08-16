@@ -8351,6 +8351,46 @@ export type GlobalIdentityBackupResponses = {
 
 export type GlobalIdentityBackupResponse = GlobalIdentityBackupResponses[keyof GlobalIdentityBackupResponses]
 
+export type GlobalIdentityRestoreData = {
+  body: {
+    backup: {
+      version: 1
+      id: string
+      networkID: string
+      secretKey: string
+    }
+    replace?: boolean
+  }
+  path?: never
+  query?: never
+  url: "/api/identity/restore"
+}
+
+export type GlobalIdentityRestoreErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type GlobalIdentityRestoreError = GlobalIdentityRestoreErrors[keyof GlobalIdentityRestoreErrors]
+
+export type GlobalIdentityRestoreResponses = {
+  /**
+   * The identity this instance now holds
+   */
+  200: {
+    id: string
+    networkID: string
+  }
+}
+
+export type GlobalIdentityRestoreResponse = GlobalIdentityRestoreResponses[keyof GlobalIdentityRestoreResponses]
+
 export type GlobalResourcesData = {
   body?: never
   path?: never

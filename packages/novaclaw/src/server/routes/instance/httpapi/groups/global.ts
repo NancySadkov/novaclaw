@@ -172,6 +172,7 @@ export const GlobalPaths = {
    * — a guard the targeted suites I was running never touch.
    */
   identityBackup: "/api/identity/backup",
+  identityRestore: "/api/identity/restore",
 } as const
 
 export const GlobalApi = HttpApi.make("global").add(
@@ -244,6 +245,33 @@ export const GlobalApi = HttpApi.make("global").add(
           summary: "Export the instance identity",
           description:
             "Export this instance's cryptographic identity INCLUDING its secret key, so it can be restored after a disk failure. Anyone holding the result can sign as this instance; there is no revocation.",
+        }),
+      ),
+      /**
+       * 🔴 The other half of backup, which shipped without it — a user could export an identity and
+       * had no way to import it, against the spec's "key loss = identity loss, and with no authority
+       * there is no reset".
+       *
+       * ⚠️ `replace` is a REQUIRED act, not a convenience flag. Restoring over an existing identity
+       * orphans every contact and channel that knows this peer, and from outside it is independently
+       * indistinguishable from the instance being taken over — so it cannot be the default, and the
+       * refusal has to be legible enough that the caller knows what they are being asked to confirm.
+       */
+      HttpApiEndpoint.post("identityRestore", GlobalPaths.identityRestore, {
+        payload: Schema.Struct({
+          backup: GlobalIdentityBackup,
+          replace: Schema.optional(Schema.Boolean),
+        }),
+        success: described(
+          Schema.Struct({ id: Schema.String, networkID: Schema.String }),
+          "The identity this instance now holds",
+        ),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "global.identity.restore",
+          summary: "Restore a backed-up instance identity",
+          description:
+            "Import an identity exported by `identity/backup`, so an instance rebuilt after a disk failure is the SAME peer to everyone who knew it. Refuses unless `replace` is set when this instance already has an identity: overwriting one orphans every contact and channel that knows it, and there is no authority to appeal to afterwards. Not reachable by an agent — this is a deliberate human action.",
         }),
       ),
       HttpApiEndpoint.get("resources", GlobalPaths.resources, {

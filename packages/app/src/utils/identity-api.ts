@@ -38,3 +38,22 @@ export function instanceIdentity(server: ServerConnection.HttpBase, options?: { 
 export function instanceIdentityBackup(server: ServerConnection.HttpBase) {
   return instanceFetch<IdentityBackup>(server, { route: "api/identity/backup", method: "POST" })
 }
+
+/**
+ * Import an identity exported by `instanceIdentityBackup`.
+ *
+ * 🔴 `replace` overwrites the identity this instance already has, which orphans every contact and
+ * channel that knows it — there is no authority to appeal to afterwards. It is passed only from a
+ * confirmed user action, never defaulted on, and the server refuses without it.
+ */
+export function instanceIdentityRestore(
+  server: ServerConnection.HttpBase,
+  backup: IdentityBackup,
+  options?: { readonly replace?: boolean },
+) {
+  return instanceFetch<{ readonly id: string; readonly networkID: string }>(server, {
+    route: "api/identity/restore",
+    method: "POST",
+    body: { backup, ...(options?.replace === undefined ? {} : { replace: options.replace }) },
+  })
+}

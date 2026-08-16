@@ -1244,6 +1244,17 @@ export const dict = {
   "settings.identity.backupProceed": "Save backup",
   "settings.identity.backupBusy": "Saving…",
   "settings.identity.backupCancel": "Cancel",
+  "settings.identity.restoreTitle": "Restore an identity",
+  "settings.identity.restoreDescription": "Become the same peer again on a rebuilt machine",
+  "settings.identity.restoreHint":
+    "Load a file saved by Back up. Everyone who knew the old instance keeps knowing you — contacts, channels and history stay attached to the key, not to the machine.",
+  "settings.identity.restoreAction": "Restore…",
+  "settings.identity.restoreChosen": "This replaces the identity below. Contacts and channels that know the current key lose you, and there is no way to undo it.",
+  "settings.identity.restoreProceed": "Replace identity",
+  "settings.identity.restoreBusy": "Restoring…",
+  "settings.identity.restoreCancel": "Cancel",
+  "settings.identity.restoreDone": "Restored. This instance is now {id}.",
+  "settings.identity.restoreUnreadable": "That file is not an identity backup.",
   "settings.identity.rotateTitle": "Move to a new key",
   "settings.identity.rotateDescription": "Keep your name and history when you change machines or keys",
   // ⚠️ States the limit FIRST, because the wrong reason to press this is the one people arrive with.

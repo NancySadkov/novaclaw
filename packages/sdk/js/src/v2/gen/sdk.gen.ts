@@ -503,6 +503,36 @@ class ApiGlobalIdentity extends NovaClawApiClient {
       ...options,
     })
   }
+
+  /**
+   * Restore a backed-up instance identity
+   *
+   * Import an identity exported by `identity/backup`, so an instance rebuilt after a disk failure is the SAME peer to everyone who knew it. Refuses unless `replace` is set when this instance already has an identity: overwriting one orphans every contact and channel that knows it, and there is no authority to appeal to afterwards. Not reachable by an agent — this is a deliberate human action.
+   */
+  public restore<ThrowOnError extends boolean = false>(
+    parameters: {
+      backup: {
+        version: 1
+        id: string
+        networkID: string
+        secretKey: string
+      }
+      replace?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { backup: parameters?.["backup"], replace: parameters?.["replace"] }
+    return (options?.client ?? this.client).post<
+      T.GlobalIdentityRestoreResponses,
+      T.GlobalIdentityRestoreErrors,
+      ThrowOnError
+    >({
+      url: "/api/identity/restore",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
 }
 
 class ApiGlobal extends NovaClawApiClient {

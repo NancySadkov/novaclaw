@@ -170,21 +170,6 @@ const EXPECTED_ORPHANS: Record<string, string> = {
    * key signed by the identity, and a message type that carries an envelope. Those are the next wire.
    */
   /**
-   * 🔴 EXPOSED by tightening this ledger, and it is a real gap rather than a helper.
-   *
-   * `backup` is wired end to end — core, `/api/identity/backup`, a client function and a button in
-   * Settings. `restore` has no route, no client function and no UI, so a user can export their
-   * identity and has no way to import it. The pair LOOKS complete because the visible half works,
-   * and §4 of the spec is explicit that this matters: "Key loss = identity loss. With no authority
-   * there is no reset."
-   *
-   * ⚠️ Exempted rather than silently wired because restore is destructive by design — `replace`
-   * overwrites an identity and orphans every contact and channel that knew this peer — and the
-   * store's own note requires "a deliberate human action behind a consent card". That is UI with
-   * confirmation semantics, not a two-line wiring. Filed in `todo/subsystem-residues.md`.
-   */
-  "instance-identity-store.ts#restore": "the identity RESTORE surface, which does not exist — backup ships without it; filed in todo/subsystem-residues.md as a real gap, not a helper",
-  /**
    * ⚠️ Also exposed by the tightening. The transport is the intended caller — the store's note calls
    * it "repair… the self-healing story, safe for an agent or the transport to do automatically" —
    * and `sync` already calls `peers.seen` at exactly the point this belongs. Left unwired here

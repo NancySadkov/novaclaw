@@ -4,7 +4,7 @@ import { Show, createMemo, createResource, createSignal, type Component } from "
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
-import { instanceIdentity, instanceIdentityBackup } from "@/utils/identity-api"
+import { instanceIdentity, instanceIdentityBackup, instanceIdentityRestore, type IdentityBackup } from "@/utils/identity-api"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 
@@ -35,6 +35,26 @@ function downloadText(filename: string, text: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
+/**
+ * Read a backup file, or `undefined` if it is not one.
+ *
+ * ⚠️ Checked here rather than trusting the server to refuse: the confirm below names the identity
+ * the user is about to BECOME, and a dialog that shows "undefined" while asking for an irreversible
+ * decision is worse than no dialog. The server still validates — this is so the question is honest,
+ * not so the check happens only once.
+ */
+function readBackup(text: string): IdentityBackup | undefined {
+  try {
+    const value = JSON.parse(text) as Partial<IdentityBackup>
+    if (value?.version !== 1) return undefined
+    if (typeof value.id !== "string" || typeof value.networkID !== "string") return undefined
+    if (typeof value.secretKey !== "string" || value.secretKey.length === 0) return undefined
+    return value as IdentityBackup
+  } catch {
+    return undefined
+  }
+}
+
 export const SettingsIdentityV2: Component = () => {
   const language = useLanguage()
   const server = useServer()
@@ -47,6 +67,10 @@ export const SettingsIdentityV2: Component = () => {
   const [rotating, setRotating] = createSignal(false)
   const [rotated, setRotated] = createSignal("")
   const [busy, setBusy] = createSignal(false)
+  /** The parsed file, held between choosing it and confirming — the confirm names what it contains. */
+  const [pending, setPending] = createSignal<IdentityBackup | undefined>(undefined)
+  const [restoreNote, setRestoreNote] = createSignal("")
+  let fileInput: HTMLInputElement | undefined
   const [copied, setCopied] = createSignal(false)
 
   const networkID = createMemo(() => identity()?.networkID ?? "")
@@ -87,6 +111,44 @@ export const SettingsIdentityV2: Component = () => {
       const result = await communityRotate(current.http)
       setRotated(language.t("settings.identity.rotateDone").replace("{count}", String(result.told)))
       setRotating(false)
+      await identityActions.refetch()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const chooseFile = (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement
+    const file = input.files?.[0]
+    // Cleared straight away so choosing the SAME file twice still fires a change event.
+    input.value = ""
+    if (!file) return
+    setRestoreNote("")
+    void file.text().then((text) => {
+      const parsed = readBackup(text)
+      if (!parsed) {
+        setRestoreNote(language.t("settings.identity.restoreUnreadable"))
+        return
+      }
+      setPending(parsed)
+    })
+  }
+
+  /**
+   * 🔴 `replace` is always true here, and that is honest rather than lazy: this instance always has
+   * an identity by the time Settings can be opened, so a restore that did not replace could only
+   * ever fail. The safety is not in withholding the flag — it is in the confirm above naming what
+   * is lost, which is the only place a person can still stop.
+   */
+  const restore = async () => {
+    const current = connection()
+    const bundle = pending()
+    if (!current || !bundle) return
+    setBusy(true)
+    try {
+      const result = await instanceIdentityRestore(current.http, bundle, { replace: true })
+      setRestoreNote(language.t("settings.identity.restoreDone").replace("{id}", result.networkID))
+      setPending(undefined)
       await identityActions.refetch()
     } finally {
       setBusy(false)
@@ -137,6 +199,64 @@ export const SettingsIdentityV2: Component = () => {
                 {language.t("settings.identity.backupCancel")}
               </ButtonV2>
             </div>
+          </Show>
+        </SettingsRowV2>
+        {/*
+          🔴 Backup's other half. It shipped alone — a user could export an identity and had nowhere
+          to put it back, so the button led nowhere and the spec's "key loss = identity loss, and
+          with no authority there is no reset" had no answer in the product.
+
+          ⚠️ The confirm names the identity being restored AND says what replacing costs, because
+          this is the one control here that cannot be undone by pressing it again: the contacts and
+          channels attached to the CURRENT key stop being able to find this instance.
+        */}
+        <SettingsRowV2
+          title={language.t("settings.identity.restoreTitle")}
+          description={language.t("settings.identity.restoreDescription")}
+          hint={language.t("settings.identity.restoreHint")}
+        >
+          <input
+            ref={(element) => (fileInput = element)}
+            type="file"
+            accept="application/json,.json"
+            class="hidden"
+            onChange={chooseFile}
+          />
+          <Show
+            when={pending()}
+            fallback={
+              <div class="flex items-center gap-2">
+                <ButtonV2 variant="neutral" size="small" disabled={busy()} onClick={() => fileInput?.click()}>
+                  {language.t("settings.identity.restoreAction")}
+                </ButtonV2>
+                <Show when={restoreNote()}>
+                  <span class="text-[11px] text-v2-text-text-muted">{restoreNote()}</span>
+                </Show>
+              </div>
+            }
+          >
+            {(bundle) => (
+              <div class="flex flex-col items-end gap-1">
+                <span class="text-[11px] text-v2-text-text-muted">
+                  {language.t("settings.identity.restoreChosen")}
+                </span>
+                {/* Selectable and monospaced like the id above it: the user is being asked to
+                    confirm a key, so they have to be able to READ the key. */}
+                <span class="select-text truncate font-mono text-[11px] text-v2-text-text-muted">
+                  {bundle().networkID}
+                </span>
+                <div class="flex items-center gap-2">
+                  <ButtonV2 variant="neutral" size="small" disabled={busy()} onClick={() => void restore()}>
+                    {busy()
+                      ? language.t("settings.identity.restoreBusy")
+                      : language.t("settings.identity.restoreProceed")}
+                  </ButtonV2>
+                  <ButtonV2 variant="ghost" size="small" disabled={busy()} onClick={() => setPending(undefined)}>
+                    {language.t("settings.identity.restoreCancel")}
+                  </ButtonV2>
+                </div>
+              </div>
+            )}
           </Show>
         </SettingsRowV2>
         <SettingsRowV2

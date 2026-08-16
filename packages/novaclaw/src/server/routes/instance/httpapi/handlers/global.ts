@@ -5,6 +5,7 @@ import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
 import { EffectBridge } from "@/effect/bridge"
 import { EventV2 } from "@novaclaw/core/event"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
+import { InvalidRequestError } from "../errors"
 import { MDNS } from "@/server/mdns"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
@@ -96,6 +97,33 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       return yield* identity.backup()
     })
 
+    /**
+     * 🔴 Backup's missing half. It shipped alone, so a user could export an identity and never
+     * import it — the button led nowhere, and §4 of the community spec is explicit that this is not
+     * cosmetic: with no authority there is no reset, so the backup IS the recovery story.
+     *
+     * ⚠️ The store's refusal is translated rather than re-decided here. `restore` fails when the
+     * instance already has an identity and `replace` was not passed, and that refusal is the whole
+     * safety property — a handler that defaulted `replace` to true would silently orphan every
+     * contact and channel that knows this peer.
+     */
+    const identityRestore = Effect.fn("GlobalHttpApi.identityRestore")(function* (ctx: {
+      readonly payload: {
+        readonly backup: InstanceIdentityStore.Backup
+        readonly replace?: boolean
+      }
+    }) {
+      const restored = yield* identity
+        .restore(ctx.payload.backup, { replace: ctx.payload.replace === true })
+        .pipe(
+          Effect.catchTag("InstanceIdentityStore.RestoreError", (error) =>
+            Effect.fail(new InvalidRequestError({ message: error.message })),
+          ),
+        )
+      // Public halves only: the secret went IN, and nothing about it comes back out.
+      return { id: restored.id, networkID: restored.networkID }
+    })
+
     // Remote-access R7: a bounded LAN scan for NovaClaw instances advertising via serve --mdns.
     // Discovery is an INSTANCE capability (the UI is a thin client and may not be on the LAN or
     // able to open multicast sockets at all — the web build cannot); the scanning instance is.
@@ -176,5 +204,6 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       .handle("discovery", discovery)
       .handle("resources", resources)
       .handle("identityBackup", identityBackup)
+      .handle("identityRestore", identityRestore)
   }),
 )
