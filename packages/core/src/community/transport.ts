@@ -30,9 +30,18 @@ export type State =
   /**
    * Nothing can carry a message, and the REASON is the whole point of this being a union.
    *
-   * `airgap` — the user switched the network off. `no-peers` — the transport works; we simply know
-   * nobody with an address to dial. Two different sentences to a person, and one "disconnected" state
-   * would tell a user whose contact list is empty that the software is broken.
+   * `airgap` — the user switched the network off machine-wide. `not-joined` — they have not accepted
+   * what joining costs, so this instance is not on the network at all. `no-peers` — they have joined
+   * and the transport works; we simply know nobody with an address to dial.
+   *
+   * THREE different sentences to a person, and each sends them somewhere else: turn off offline
+   * mode, open the Community app and read the warning, or go and find somebody. One "disconnected"
+   * state would tell a user whose contact list is merely empty that the software is broken — and
+   * collapsing any two of these would send them to fix a thing that is already correct.
+   *
+   * ⚠️ `not-joined` was added when participation became a decision, and this note enumerated two
+   * reasons for a while after the type carried three. The list is the argument for the union
+   * existing, so it going stale costs more than an out-of-date comment usually does.
    *
    * ⚠️ There was a third, `none` — "no transport installed" — and it is GONE rather than retained for
    * symmetry. A transport now always exists, so `none` became a state nothing could return, and a

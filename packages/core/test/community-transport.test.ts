@@ -1,5 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
+import { CommunityConsent } from "@novaclaw/core/community/consent"
 import { CommunityTransport } from "@novaclaw/core/community/transport"
 import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
@@ -85,4 +86,45 @@ describe("CommunityTransport", () => {
       expect(yield* transport.state()).toEqual({ kind: "off", reason: "no-peers" })
     }),
   )
+
+  it.effect("🔴 the three OFF reasons stay distinct — each sends the user somewhere else", () =>
+    Effect.gen(function* () {
+      /**
+       * `airgap` → turn off offline mode. `not-joined` → open the Community app and read the warning.
+       * `no-peers` → go and find somebody. Collapsing any two sends a person to fix a thing that is
+       * already correct.
+       *
+       * 🔴 This existed as a defect for exactly one commit: gating the transport on participation
+       * made `state` report "airgap" for an instance that simply had not joined, on a surface the
+       * agent tool and the API both read. Nothing asserted the difference, so nothing caught it —
+       * the same argument the refusals ARRAY makes one layer up, which is why this pins all three.
+       */
+      const transport = yield* CommunityTransport.Service
+      const offline = yield* Offline.Service
+
+      // NOT JOINED — the state of a fresh install, before anything else can be true.
+      CommunityConsent.resetGate()
+      expect(yield* transport.state()).toEqual({ kind: "off", reason: "not-joined" })
+
+      // JOINED, nobody to dial — the ordinary state of a new user who has accepted.
+      joined()
+      expect(yield* transport.state()).toEqual({ kind: "off", reason: "no-peers" })
+
+      /**
+       * ⚠️ AIRGAP outranks both: the machine-level switch is not a community setting, and reporting
+       * "no-peers" while it is on would hide the only thing that matters.
+       *
+       * Forced the way the airgap case above forces it — a property on the live policy — because the
+       * gate reads `Offline.currentPolicy()` directly, which is the same object.
+       */
+      const original = offline.policy.enabled
+      try {
+        Object.defineProperty(offline.policy, "enabled", { value: true, configurable: true })
+        expect(yield* transport.state()).toEqual({ kind: "off", reason: "airgap" })
+      } finally {
+        Object.defineProperty(offline.policy, "enabled", { value: original, configurable: true })
+      }
+    }),
+  )
+
 })
