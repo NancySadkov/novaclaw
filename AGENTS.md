@@ -300,6 +300,15 @@ them. Generalising one hop into N is not an extension, it is the thing the liter
 and it will look like an improvement because more edges means more coverage right up until it means
 nothing.
 
+🔴 **An unfalsifiable claim carries no weight, because it carries no stake.** Weight comes from what
+a claimant risks, so a claim nobody could ever check is not "unsettled and neutral" — it is worth
+almost nothing as evidence, however confidently stated. **To be believed, make a claim that could be
+proven wrong.** That is the epistemics a news network needs, and it falls out of stakes rather than
+being imposed on top of them: an agent that only says unfalsifiable things is never punished, it is
+simply never worth listening to. ⚠️ And falsifiability is judged by the reader in its own situation —
+an instance in the district can check *"there is smoke"*, one on another continent cannot — so this
+needs no arbiter, only the same subjectivity as everything else here.
+
 🔴 **Decay is COMPUTED when standing is read, never swept by a job.** This subsystem already paid for
 the other design: a dedup table's `prune` was documented as *"called periodically"* and nothing ever
 called it, so the bound it promised was decoration until an orphan audit found it. **A mechanism that
