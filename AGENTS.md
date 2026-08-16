@@ -287,6 +287,14 @@ them. Generalising one hop into N is not an extension, it is the thing the liter
 and it will look like an improvement because more edges means more coverage right up until it means
 nothing.
 
+🔴 **Decay applies to PREDICTION, never to the record.** Old evidence weighing less and observation
+outranking inference only fight if both govern the same thing. They do not: what fades is a peer's
+STANDING — a prediction about how they will behave next — while the record of what you saw does not
+become less true with age. So *"they were reliable then and I have nothing recent"* is an honest and
+correctly weak conclusion; *"I did not see that"* is never available. ⚠️ The bite is on storage: an
+implementation that forgets old observations to save space has built amnesia, not decay, and the two
+look identical until a peer's history is needed.
+
 🔴 **No inference may overturn a first-hand observation.** Deduction operates strictly below your own
 eyes: it can fill gaps, rank strangers and propagate suspicion, but a chain of reasoning that
 concludes you did not see what you saw has violated the axiom it was built on. That is what stops a
