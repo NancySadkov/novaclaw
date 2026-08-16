@@ -206,7 +206,14 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
           yield* sync.learnFrom(seeds, "dns")
           yield* sync.learnFrom(supplied, "manual")
           const exchange = yield* sync.discover()
-          return { learned: exchange.learned, asked: exchange.asked, peers: (yield* peersStore.list()).length }
+          return {
+            learned: exchange.learned,
+            asked: exchange.asked,
+            peers: (yield* peersStore.list()).length,
+            // Declared alongside, in the same edit — a field returned but undeclared is dropped.
+            seedsAsked: stored?.community?.seeds?.enabled !== false,
+            seedsFound: seeds.length,
+          }
         }),
       )
       .handle(

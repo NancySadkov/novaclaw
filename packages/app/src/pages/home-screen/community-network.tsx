@@ -475,11 +475,27 @@ export const CommunityNetwork: Component = () => {
       // principle 12 exists to forbid.
       const typed = adding().trim()
       const result = await communityDiscover(current.http, typed === "" ? undefined : [typed])
+      /**
+       * 🔴 "Found nobody" has to name WHY, because two very different situations produce it.
+       *
+       * An empty seed zone gives no starting addresses at all — nothing to dial, and pasting an
+       * address is the fix. A zone that answered with hosts that are all dead is a different
+       * problem, and telling somebody to paste an address they may not have would be sending them
+       * to fix the wrong thing.
+       *
+       * ⚠️ The transport records the same rule one file over: *"we know nobody to dial" is a
+       * different sentence to a person than "this is not built yet", and it is one they can fix in a
+       * minute.*
+       */
       setFound(
-        result.peers === 0
-          ? "Found nobody yet. Anyone running NovaClaw on this network shows up here, or paste someone's address above."
-          : `${result.peers} ${result.peers === 1 ? "instance" : "instances"} reachable` +
-              (result.learned > 0 ? ` — ${result.learned} newly discovered` : ""),
+        result.peers > 0
+          ? `${result.peers} ${result.peers === 1 ? "instance" : "instances"} reachable` +
+              (result.learned > 0 ? ` — ${result.learned} newly discovered` : "")
+          : !result.seedsAsked
+            ? "Found nobody on this network. Starting addresses are turned off, so paste someone's address above to reach the wider network."
+            : result.seedsFound === 0
+              ? "Found nobody on this network, and no starting addresses were published. Paste someone's address above — one is enough to reach everyone they know."
+              : `Found nobody yet: ${result.seedsFound} starting ${result.seedsFound === 1 ? "address" : "addresses"} were tried and none answered. Paste someone's address above if you have one.`,
       )
       await Promise.all([contactActions.refetch(), nearbyActions.refetch()])
     } catch (error) {

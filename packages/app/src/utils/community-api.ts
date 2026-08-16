@@ -121,7 +121,14 @@ export function communityJoinChannel(server: ServerConnection.HttpBase, name: st
  * ⚠️ An ADDRESS is enough — the instance there tells us its own key. Nobody types a `nid_…`.
  */
 export function communityDiscover(server: ServerConnection.HttpBase, addresses?: readonly string[]) {
-  return instanceFetch<{ readonly learned: number; readonly asked: number; readonly peers: number }>(server, {
+  return instanceFetch<{
+    readonly learned: number
+    readonly asked: number
+    readonly peers: number
+    /** Whether the DNS seed door was consulted, and how many addresses it gave. */
+    readonly seedsAsked: boolean
+    readonly seedsFound: number
+  }>(server, {
     route: "api/community/discover",
     method: "POST",
     body: addresses === undefined ? {} : { addresses },

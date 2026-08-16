@@ -256,8 +256,22 @@ export const CommunityApi = HttpApi.make("community").add(
       HttpApiEndpoint.post("communityDiscover", CommunityPaths.discover, {
         payload: Schema.Struct({ addresses: Schema.optional(Schema.Array(Schema.String)) }),
         success: described(
-          Schema.Struct({ learned: Schema.Number, asked: Schema.Number, peers: Schema.Number }),
-          "How many peers were learned, and how many are now known",
+          Schema.Struct({
+            learned: Schema.Number,
+            asked: Schema.Number,
+            peers: Schema.Number,
+            /**
+             * 🔴 How the DEFAULT door went, so "found nobody" can name its reason.
+             *
+             * An empty seed zone and a seed zone full of dead hosts look identical to somebody
+             * staring at "found nobody yet", and only one of them is fixed by pasting an address.
+             * The transport's own rule applies: *"we know nobody to dial" is a different sentence to
+             * a person than "this is not built yet", and it is one they can fix in a minute.*
+             */
+            seedsAsked: Schema.Boolean,
+            seedsFound: Schema.Number,
+          }),
+          "How many peers were learned, how many are now known, and whether the seed door answered",
         ),
       }).annotateMerge(
         OpenApi.annotations({
