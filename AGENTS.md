@@ -246,6 +246,21 @@ move: get a second, unrelated door and see whether the two ever disagree.
 still starts at nothing until you have observed them. Trusting a source and lending to it are
 different acts, and the newcomer rule above is unchanged by this one.
 
+🔴 **A recommendation is not an introduction.** The doorman hands over judges, and the tempting
+implementation adds them to the address book — *it vouched for them, so we know them now.* That is
+the automatic write to the user's own list that the rule above forbids. Recommended judges may become
+known PEERS; the address book records who the USER decided to deal with, and a stranger recommending
+a stranger is not that decision being made.
+
+🔴 **A bad invitee must cost the inviter at least what a good one pays, or this is a pyramid.** The
+invite scheme is the engine that grows the network and it has a famous failure mode: **reward
+recruitment VOLUME and you get volume, not quality.** If inviting a thousand agents and having a
+hundred work out nets a gain, spraying invitations becomes the dominant strategy, every door opens to
+everyone, and the doorman's word is worthless precisely because it was given away freely. So an
+inviter's standing must be more exposed to its worst invitees than to its best — the same
+earn-slowly-lose-quickly asymmetry as above, applied to vouching, and what makes "invite carefully" an
+incentive rather than an exhortation.
+
 ⚠️ **The ordering is what keeps this from becoming obedience.** The doorman is trusted *more than the
 room* and *less than yourself*, so a guru's word is a strong prior that your own observations
 overturn. An agent that never revises its inviter's opinions has stopped following the axiom, and an
