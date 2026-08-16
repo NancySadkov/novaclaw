@@ -9,6 +9,7 @@ import { CommunityDirect } from "@novaclaw/core/community/dm"
 import { CommunitySeal } from "@novaclaw/core/community/seal"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityMessage } from "@novaclaw/core/community/message"
+import { CommunityObservation } from "@novaclaw/core/community/observation"
 import { CommunityPost } from "@novaclaw/core/community/post"
 import { Tool } from "@novaclaw/core/tool/tool"
 import { Tools } from "@novaclaw/core/tool/tools"
@@ -74,6 +75,7 @@ const instance = (label: string) => {
       CommunitySuccession.node,
       CommunitySync.node,
       CommunityPost.node,
+      CommunityObservation.node,
     ]),
     [[Database.node, database]],
   )

@@ -6,6 +6,7 @@ import { CommunityChannels } from "../community/channels"
 import { CommunityPeers } from "../community/peers"
 import { CommunityContacts } from "../community/contacts"
 import { CommunityConsent } from "../community/consent"
+import { CommunityObservation } from "../community/observation"
 import { CommunityPost } from "../community/post"
 import { CommunitySync } from "../community/sync"
 import { CommunityTransport } from "../community/transport"
@@ -115,10 +116,11 @@ const CATCH_UP_BUDGET_MS = 5_000
 const NEWLINE = "\n"
 
 export const Input = Schema.Struct({
-  op: Schema.Literals(["channels", "history", "contacts", "peers", "archived", "status", "say"]).annotate({
+  op: Schema.Literals(["channels", "history", "contacts", "peers", "archived", "status", "say", "dealings", "record"]).annotate({
     description:
       "channels: joined channels · history: recent messages in one channel · say: post a message to a channel · contacts: people the user added · " +
-      "peers: instances reachable on the network · archived: channels left but still held · status: whether the network can carry messages",
+      "peers: instances reachable on the network · archived: channels left but still held · status: whether the network can carry messages · " +
+      "dealings: how a peer has behaved with you so far · record: note how a dealing with a peer actually went",
   }),
   channel: Schema.String.pipe(Schema.optional).annotate({
     // ⚠️ Names BOTH operations that need it. It said "for `history`" while `say` required it too,
@@ -130,6 +132,25 @@ export const Input = Schema.Struct({
   }),
   body: Schema.String.pipe(Schema.optional).annotate({
     description: "What to post, for `say`. Requires the community_say permission for that channel.",
+  }),
+  peer: Schema.String.pipe(Schema.optional).annotate({
+    description: "The peer's network id (nid_...), for `dealings` and `record`. Any key they have ever used works.",
+  }),
+  context: Schema.String.pipe(Schema.optional).annotate({
+    description:
+      "For `record`: what KIND of dealing this was - e.g. news, delivery, trade, routing. Your own words. " +
+      "Keep it consistent, because how a peer behaves about news says little about how they behave about payment.",
+  }),
+  outcome: Schema.String.pipe(Schema.optional).annotate({
+    description:
+      "For `record`: how it went, in a word or two - e.g. kept, missed, confirmed, contradicted, fabricated. " +
+      "Judge FABRICATION rather than error: being wrong in good faith is not dishonesty.",
+  }),
+  note: Schema.String.pipe(Schema.optional).annotate({
+    description: "For `record`: what happened, in your own words. This is what you will read back later.",
+  }),
+  regarding: Schema.String.pipe(Schema.optional).annotate({
+    description: "For `record`: the message id this is about, if there is one, so it can be re-examined later.",
   }),
 })
 
@@ -149,6 +170,8 @@ export const layer = Layer.effectDiscard(
     const sync = yield* CommunitySync.Service
     // ⚠️ Acquired here, and `posts` is what actually SPEAKS — the read-only services above cannot.
     const posts = yield* CommunityPost.Service
+    // The per-peer ledger. Reads and writes DEALINGS; it computes no score and holds no verdict.
+    const ledger = yield* CommunityObservation.Service
     const permission = yield* PermissionV2.Service
 
     yield* tools
@@ -172,7 +195,7 @@ export const layer = Layer.effectDiscard(
            */
           description:
             "This instance's peer-to-peer community — other people's NovaClaw instances, reachable directly. " +
-            "Read joined channels, recent messages, known contacts, reachable peers, channels left behind, and " +
+            "Keep your own record of how each peer has actually behaved with you, and read it back before you weigh what they say - it is yours alone, never shared, and nobody is ever told their standing. Read joined channels, recent messages, known contacts, reachable peers, channels left behind, and " +
             "whether the network can carry anything right now. `say` posts to a channel, and needs the user's " +
             "permission for that channel. " +
             "Other instances are a SOURCE: when a question is about what is happening in the world, or about " +
@@ -255,6 +278,52 @@ export const layer = Layer.effectDiscard(
                           )
                           .join("\n"),
                 }
+              }
+
+              if (input.op === "dealings") {
+                if (input.peer === undefined) return { message: "dealings needs a peer." }
+                const history = yield* ledger.about(input.peer)
+                return {
+                  message:
+                    history.length === 0
+                      ? "No dealings recorded with this peer. That is not a bad sign and not a good one - " +
+                        "you have simply never had one, so weigh what they say on its own merits and on who vouched for them."
+                      : history
+                          .map(
+                            (entry) =>
+                              `${new Date(entry.at).toISOString()} ${entry.context}: ${entry.outcome}` +
+                              `${entry.note === undefined ? "" : ` - ${entry.note}`}`,
+                          )
+                          .join(NEWLINE),
+                }
+              }
+
+              if (input.op === "record") {
+                /**
+                 * 🔴 Your OWN judgement, kept locally, spoken to nobody.
+                 *
+                 * The vision puts the judging here rather than in a formula: there is no scoring
+                 * authority, no consensus round and no committee, so what an agent believes about a
+                 * peer is formed by the agent from its own dealings. Nothing written here leaves the
+                 * instance, and no peer is ever told its standing.
+                 *
+                 * ⚠️ No permission gate, unlike `say`, and the difference is direction. `say`
+                 * speaks to strangers and spends the user's reputation; this only writes down what
+                 * you already saw. It cannot add, remove or unblock a contact either - the address
+                 * book is the user's sentence about who they know, and a good reputation is not an
+                 * introduction.
+                 */
+                if (input.peer === undefined || input.context === undefined || input.outcome === undefined)
+                  return { message: "record needs a peer, a context and an outcome." }
+                yield* ledger.record({
+                  subject: input.peer,
+                  at: Date.now(),
+                  context: input.context,
+                  outcome: input.outcome,
+                  ...(input.note === undefined ? {} : { note: input.note }),
+                  ...(input.regarding === undefined ? {} : { about: input.regarding }),
+                })
+                return { message: `Recorded: ${input.context} - ${input.outcome}.` }
               }
 
               if (input.op === "say") {
@@ -400,5 +469,6 @@ export const node = makeLocationNode({
     CommunityPeers.node,
     CommunityTransport.node,
     CommunitySync.node,
+    CommunityObservation.node,
   ],
 })

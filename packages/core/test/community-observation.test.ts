@@ -1,10 +1,11 @@
 import { generateKeyPairSync, sign as nodeSign } from "node:crypto"
 import { describe, expect } from "bun:test"
-import { sql } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { Effect } from "effect"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityObservation } from "@novaclaw/core/community/observation"
 import { CommunitySuccession } from "@novaclaw/core/community/succession"
+import { CommunitySuccessionTable } from "@novaclaw/core/community/sql"
 import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
@@ -131,7 +132,7 @@ describe("CommunityObservation", () => {
 
   it.effect("⚠️ the pin is load-bearing: an UNOBSERVED link does evict", () =>
     Effect.gen(function* () {
-      const ledger = yield* CommunityObservation.Service
+      const { db } = yield* Database.Service
       const successions = yield* CommunitySuccession.Store
       const before = stranger()
       const after = stranger().networkID
@@ -144,8 +145,14 @@ describe("CommunityObservation", () => {
         yield* successions.remember(rotation(noise, stranger().networkID))
       }
 
-      const keys = yield* ledger.chain(after)
-      expect(keys).toEqual([after])
+      // Observed DIRECTLY rather than through the chain walk: the statement itself is gone, which is
+      // the fact the pinned case depends on not happening.
+      const surviving = yield* db
+        .select()
+        .from(CommunitySuccessionTable)
+        .where(eq(CommunitySuccessionTable.network_id, before.networkID))
+        .all()
+      expect(surviving.length).toBe(0)
     }),
   )
 

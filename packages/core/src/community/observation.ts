@@ -63,8 +63,6 @@ export interface Interface {
    * non-laundering at the point where it would otherwise pay off.
    */
   readonly about: (networkID: string) => Effect.Effect<ReadonlyArray<Observation>>
-  /** Every key we can attach to this person. Exposed because the eviction bound in `succession` reads it. */
-  readonly chain: (networkID: string) => Effect.Effect<ReadonlyArray<string>>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/CommunityObservation") {}
@@ -126,7 +124,6 @@ export const layer = Layer.effect(
     })
 
     return Service.of({
-      chain,
 
       record: Effect.fn("CommunityObservation.record")(function* (input: Input) {
         const id = Identifier.ascending("observation")
