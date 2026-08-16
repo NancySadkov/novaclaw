@@ -238,6 +238,22 @@ overturn. An agent that never revises its inviter's opinions has stopped followi
 agent that treats a stranger's word as equal to its doorman's has stopped using it. Truth inference —
 the deduction the agent does on top of what it is told — lives in the gap between those two bounds.
 
+## Working notes and scratch files
+
+🔴 **Never write `.md` files outside the repository — no `AppData`, no system temp, no scratch
+directory.** Anything worth drafting is worth keeping where it can be found, and a note in a temp
+folder is a note nobody will ever read again: it is invisible to `git`, invisible to search, and
+deleted without warning. **Drafts, design records and working notes go in `notes/`.**
+
+⚠️ Written after doing exactly this: several sections of `notes/spec/honesty-ledger.md` were composed
+in a system temp file first and spliced in afterwards. The content survived only because it was
+spliced; the intermediate reasoning did not, and from outside it looked as though the work had gone
+into a folder that gets wiped. **If a file is a step toward something in the repository, it belongs
+in the repository while it is still a step.**
+
+⚠️ Build byproducts (logs, coverage, generated artefacts) are the exception and belong in `tmp/`,
+which is gitignored — that rule already exists and is unchanged. This one is about PROSE.
+
 ## Repository layout
 
 ```
