@@ -35,6 +35,8 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
   Effect.gen(function* () {
     const contacts = yield* CommunityContacts.Service
     const channels = yield* CommunityChannels.Service
+    // Answering is a narrower permission than participating, and the panel shows both together.
+    const answers = yield* CommunityAnswer.Service
     const sync = yield* CommunitySync.Service
     const identity = yield* InstanceIdentityStore.Service
     const search = yield* CommunitySearch.Service
@@ -261,11 +263,17 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
         "communityParticipation",
         Effect.fn("CommunityHttpApi.communityParticipation")(function* () {
           const gate = CommunityConsent.currentGate()
+          const answering = yield* answers.state()
           return {
             participating: CommunityConsent.participates(gate),
             consented: gate.consented,
             enabled: gate.enabled,
             refusals: CommunityConsent.refusals(gate),
+            answers: {
+              enabled: answering.gate.enabled,
+              perDay: answering.gate.perDay,
+              today: answering.today,
+            },
           }
         }),
       )

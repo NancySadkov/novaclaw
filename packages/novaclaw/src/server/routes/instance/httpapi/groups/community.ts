@@ -390,6 +390,20 @@ export const CommunityApi = HttpApi.make("community").add(
             enabled: Schema.Boolean,
             /** Every condition currently refusing, in a stable order. Empty when participating. */
             refusals: Schema.Array(Schema.Literals(["never_consented", "switched_off", "airgap"])),
+            /**
+             * 🔴 Answering peers — a NARROWER permission than participating, with its own switch
+             * and its own budget, because it spends tokens rather than bandwidth.
+             *
+             * ⚠️ Declared here in the same edit as the handler that returns it. Twice now a field
+             * has been computed, typed and shipped while this schema dropped it on the way out, and
+             * the symptom both times was a feature that looked broken rather than absent.
+             */
+            answers: Schema.Struct({
+              enabled: Schema.Boolean,
+              perDay: Schema.Number,
+              /** How many answers have been given today, so a user can see the budget moving. */
+              today: Schema.Number,
+            }),
           }),
           "Whether this instance is on the network, and every reason it is not",
         ),

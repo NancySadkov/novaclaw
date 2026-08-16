@@ -207,6 +207,11 @@ export function communityParticipation(server: ServerConnection.HttpBase) {
     readonly consented: boolean
     readonly enabled: boolean
     readonly refusals: ReadonlyArray<CommunityRefusal>
+    readonly answers: {
+      readonly enabled: boolean
+      readonly perDay: number
+      readonly today: number
+    }
   }>(server, { route: "api/community/participation" })
 }
 
@@ -219,7 +224,15 @@ export function communityParticipation(server: ServerConnection.HttpBase) {
  */
 export function communitySetParticipation(
   server: ServerConnection.HttpBase,
-  value: { readonly consented?: boolean; readonly enabled?: boolean },
+  value: {
+    readonly consented?: boolean
+    readonly enabled?: boolean
+    /**
+     * 🔴 Answering peers — a SEPARATE decision from joining, because it spends tokens rather
+     * than bandwidth. Nothing here may turn it on as a side effect of joining.
+     */
+    readonly answers?: { readonly enabled?: boolean; readonly perDay?: number }
+  },
 ) {
   return instanceFetch<unknown>(server, { route: "config", method: "PATCH", body: { community: value } })
 }

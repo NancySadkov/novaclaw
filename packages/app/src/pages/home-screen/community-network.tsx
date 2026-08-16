@@ -149,7 +149,11 @@ export const CommunityNetwork: Component = () => {
   )
   const [switching, setSwitching] = createSignal(false)
 
-  const setParticipation = async (value: { consented?: boolean; enabled?: boolean }) => {
+  const setParticipation = async (value: {
+    consented?: boolean
+    enabled?: boolean
+    answers?: { enabled?: boolean; perDay?: number }
+  }) => {
     const current = connection()
     if (!current) return
     setSwitching(true)
@@ -847,6 +851,33 @@ export const CommunityNetwork: Component = () => {
           </ButtonV2>
           <span class="text-[11px] leading-snug text-v2-text-text-muted">
             Looks on this network, then asks whoever answers who else they know.
+          </span>
+        </div>
+        {/* 🔴 ANSWERING — a second switch, and the only one that spends the user's tokens.
+            AGENTS.md makes the ledger mandatory for unattended operation, and this is the capability
+            it exists to make safe; joining does not imply it and must never turn it on. */}
+        <div class="mt-2 flex items-center gap-2">
+          <ButtonV2
+            variant="neutral"
+            size="small"
+            disabled={switching()}
+            onClick={() =>
+              void setParticipation({ answers: { enabled: !(participation()?.answers.enabled ?? false) } })
+            }
+          >
+            {participation()?.answers.enabled ? "Stop answering peers" : "Answer peers' questions"}
+          </ButtonV2>
+          <span class="text-[11px] leading-snug text-v2-text-text-muted">
+            <Show
+              when={participation()?.answers.enabled}
+              fallback={
+                "Off. Other instances can ask this one questions; answering spends your tokens, so it stays off until you say otherwise."
+              }
+            >
+              {/* ⚠️ The COUNT, not just the switch: a budget you cannot see moving is one you cannot
+                  trust, and this is the number that stops a stranger spending a day of tokens. */}
+              {`${participation()?.answers.today ?? 0} of ${participation()?.answers.perDay ?? 0} answered today. Each reply is signed by this instance, so a careless one costs your standing.`}
+            </Show>
           </span>
         </div>
         {/* 🔴 The doorman row. Joining never needs it; it is how a user says "I know this one, and
