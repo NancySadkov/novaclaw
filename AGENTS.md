@@ -287,6 +287,15 @@ them. Generalising one hop into N is not an extension, it is the thing the liter
 and it will look like an improvement because more edges means more coverage right up until it means
 nothing.
 
+🔴 **A vouch is just a claim with a stake.** Vouching for someone who later defects is a
+misjudgement, not a lie — so it costs the inviter not as fabrication but as a settled wager, which is
+the same rule that governs every other claim here. A cautious vouch that fails costs little; an
+emphatic one costs a lot; an emphatic one that holds earns fastest, which IS the invite engine rather
+than a separate mechanism. ⚠️ So there is no second "quality of judgement" reputation to maintain, and
+there should not be: two reputations must eventually rank each other, and nothing says which wins.
+⚠️ The honeypot guru falls out of the same rule — an instance that opens doors indiscriminately is
+placing emphatic bets constantly, and its own record settles them.
+
 🔴 **Decay applies to PREDICTION, never to the record.** Old evidence weighing less and observation
 outranking inference only fight if both govern the same thing. They do not: what fades is a peer's
 STANDING — a prediction about how they will behave next — while the record of what you saw does not
