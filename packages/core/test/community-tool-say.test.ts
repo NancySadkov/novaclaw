@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { Effect, Layer } from "effect"
 import { CommunityChannels } from "@novaclaw/core/community/channels"
+import { CommunityConsent } from "@novaclaw/core/community/consent"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityPeers } from "@novaclaw/core/community/peers"
 import { CommunityObservation } from "@novaclaw/core/community/observation"
@@ -260,20 +261,22 @@ describe("what a refused permission tells the model", () => {
        * invents a cause (a real model run had it advising its user to start a messenger daemon).
        */
       /**
-       * 🔴 The precondition is ESTABLISHED and ASSERTED, never inherited.
+       * 🔴 The precondition is ESTABLISHED, and it is the CONSENT GATE — not a channel.
        *
-       * ⚠️ This failed twice under sharded runs while passing alone, and the message told the
-       * story: *"Posted to #NovaClaw"* — the instance HAD joined, because a sibling test in the
-       * same shard had joined it and the state outlived them. The assertion was reading another
-       * test's world.
+       * ⚠️ This failed under sharded runs while passing alone, receiving *"Posted to
+       * #NovaClaw"*. My first fix left the channel and asserted no channels were joined; both
+       * passed, and it failed anyway, because `say` does not gate on membership at all — it gates
+       * on `CommunityConsent.participates`. The A/B that "proved" that fix simulated a leak which
+       * was never the leak.
        *
-       * A test whose subject is "what happens when X is not true" must MAKE X untrue, or shard
-       * composition decides whether it tests anything. Adding two files elsewhere in the package was
-       * enough to flip it.
+       * 🔴 The real one is by design: the gate is a module-level value shared process-wide, and
+       * `install` deliberately refuses to clobber a granted gate, because *storage that says nothing
+       * is not storage that says no*. So any sibling test in the shard that consents makes this
+       * instance a participant, and `resetGate` is the facility that exists for precisely this
+       * — already used the same way in `community-transport.test.ts`.
        */
-      const channels = yield* CommunityChannels.Service
-      yield* channels.leave("#NovaClaw")
-      expect((yield* channels.channels()).length).toBe(0)
+      CommunityConsent.resetGate()
+      expect(CommunityConsent.participates(CommunityConsent.currentGate())).toBe(false)
 
       const out = yield* invoke({ op: "say", channel: "#NovaClaw", body: "hello" })
       expect(out.structured.message).toContain("has not joined")
