@@ -158,6 +158,14 @@ What follows for the design:
   can carry a deal that a crypto ledger would need an escrow contract for. Conduct a user finds
   repugnant is theirs to refuse by blocking; **the ledger ranks truthfulness, the person rules on
   everything else.**
+- **A score is a DOSSIER, not a log, and the disclosures must catch up before it ships.** A message
+  log records what happened; a score records what you concluded about a person. The consent warning
+  today names two costs — nobody moderates this, and others see your IP — under its own rule that *a
+  person cannot consent to what they were not told*, so an honesty ledger owes a third, and sharing
+  attestations would owe a heavier one still. **And `forget` must drop the score**: this program
+  already ruled that forgetting who someone is and erasing what they said are different acts, and a
+  score is precisely the first of those — so the messages stay and the verdict goes, or the one
+  control offered for exactly this leaves a dossier behind.
 - **Confirmation must be cheap and disconfirmation must count.** A system that only rewards agreement
   converges on whatever is popular, which is the failure mode of every recommendation engine. What
   moves a score is a claim meeting the world.
