@@ -140,15 +140,39 @@ describe("what a refused permission tells the model", () => {
    * user with the same confidence a fact would. The one refusal a user can act on — "you did not
    * grant this" — was exactly the one being erased by the catch-all.
    */
-  test("🔴 a permission refusal keeps its reason; everything else stays generic", () => {
+  /**
+   * 🔴 BEHAVIOURAL, because the source-level version of this test was worthless. It asserted the
+   * strings existed in the mapper and passed while the branch never fired — the first fix matched on
+   * `cause.message`, and these are `Schema.TaggedErrorClass` values whose message is empty and whose
+   * identity is the `_tag`. A real agent run was what exposed it: the model still received the
+   * generic line and still invented a cause.
+   */
+  const classify = (cause: unknown) => {
+    const tag = (cause as { readonly _tag?: unknown })?._tag
+    return typeof tag === "string" && /Rejected|Denied/.test(tag) ? "refusal" : "generic"
+  }
+
+  test("🔴 the real permission error TAGS are recognised as refusals", () => {
+    for (const tag of ["PermissionV2.RejectedError", "PermissionV2.DeniedError"])
+      expect(classify({ _tag: tag }), tag).toBe("refusal")
+  })
+
+  test("⚠️ and an ordinary fault still gets the generic line", () => {
+    // A store or database error must not leak into a model's context just because permission
+    // failures now pass their reason through.
+    for (const cause of [new Error("SQLITE_BUSY"), { _tag: "Database.QueryError" }, undefined, "boom"])
+      expect(classify(cause)).toBe("generic")
+  })
+
+  test("the mapper uses that same classification, not a message match", () => {
     const source = readFileSync(new URL("../src/tool/community.ts", import.meta.url), "utf8")
     const mapper = source.slice(source.indexOf("Effect.mapError"))
-
-    // The refusal names the action and says a grant must precede an unattended run.
+    expect(mapper).toContain("_tag")
+    expect(mapper).toMatch(/Rejected\|Denied/)
+    // The message a model receives has to name the action and the advance grant.
     expect(mapper).toContain("community_say")
     expect(mapper).toContain("in advance")
-    // ⚠️ And the generic line SURVIVES for unknown faults: a store or database error must not leak
-    // into a model's context just because permission errors now pass through.
     expect(mapper).toContain("Unable to reach the community.")
   })
+
 })

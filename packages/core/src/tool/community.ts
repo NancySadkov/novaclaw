@@ -325,8 +325,16 @@ export const layer = Layer.effectDiscard(
                  * The generic line stays for everything else: an unknown fault must not leak a store
                  * or a database error into a model's context.
                  */
-                const reason = cause instanceof Error ? cause.message : String(cause)
-                return /permission|denied|reject/i.test(reason)
+                /**
+                 * ⚠️ Matched on the `_tag`, not on a message. The first version tested the text of
+                 * `cause.message` and never fired: these are `Schema.TaggedErrorClass` values —
+                 * `PermissionV2.RejectedError` and `DeniedError` — whose identity lives in the tag
+                 * and whose message is empty. The model went on getting the generic line, and the
+                 * source-level test I wrote for the fix passed anyway, because it only checked the
+                 * strings existed.
+                 */
+                const tag = (cause as { readonly _tag?: unknown })?._tag
+                return typeof tag === "string" && /Rejected|Denied/.test(tag)
                   ? new ToolFailure({
                       message:
                         "Refused: this session does not have permission to post to that channel. Its user grants `community_say` for a channel, and an unattended run needs that grant made in advance.",
