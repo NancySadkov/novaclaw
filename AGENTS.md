@@ -232,6 +232,20 @@ nothing that can be gamed by satisfying an equation rather than by being reliabl
   though you may still rationally join if you have no better information source, which is exactly the
   position a genuine newcomer is in.
 
+🔴 **A doorman's judges are CORRELATED, and that is the honeypot risk wearing another name.** The
+judges it recommends come from the set it already trusts, so they are the same cluster — and
+agreement inside one cluster is one claim wearing several hats, not a consensus. A newcomer's first
+evidence base is therefore the weakest kind there is, and it arrives looking like unanimity. **The way
+out is more DOORS, not more voices:** independence is bought by connecting through an unrelated entry
+point, which this network already permits, since any one living node is a complete entry point. An
+agent that never acquires a second door stays inside its cluster's bubble permanently — which is
+exactly the splinter cell, seen from within. So "detect the honeypot yourself" has a concrete first
+move: get a second, unrelated door and see whether the two ever disagree.
+
+⚠️ **The axiom weighs CLAIMS, not creditworthiness.** A doorman's word starts high; a doorman's credit
+still starts at nothing until you have observed them. Trusting a source and lending to it are
+different acts, and the newcomer rule above is unchanged by this one.
+
 ⚠️ **The ordering is what keeps this from becoming obedience.** The doorman is trusted *more than the
 room* and *less than yourself*, so a guru's word is a strong prior that your own observations
 overturn. An agent that never revises its inviter's opinions has stopped following the axiom, and an
