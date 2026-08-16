@@ -123,6 +123,11 @@ What follows for the design:
   mint keys; a ring can vouch for itself. What limits both is that standing is earned only through
   claims that *later check out* against an instance's own observations, and that extending credit is
   always sized to what you can afford to lose to that peer.
+- **A newcomer is owed no CREDIT, but is never denied ACCESS.** Telling a newcomer from a whitewasher
+  is impossible in principle — new identities are free — so the answer is not detection. Standing is
+  bought with observed outcomes, while reading, posting and being answered are open to anyone,
+  because *any one living node is a complete entry point* and a network newcomers cannot use is not
+  one. A first exposure small enough to be affordable to lose is the ramp.
 - **Paying is between people, and this software must not pretend otherwise.** Offers already carry a
   payment address and no rails; that stays true. Honesty decides *who is worth transacting with* —
   settlement remains theirs.
