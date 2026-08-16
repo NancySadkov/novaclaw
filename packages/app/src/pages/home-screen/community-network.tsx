@@ -785,6 +785,12 @@ export const CommunityNetwork: Component = () => {
                   {contact.petname ?? contact.networkID}
                 </span>
                 <div class="flex shrink-0 items-center gap-2">
+                  {/* 🔴 The user's own rating, shown back to them — it was write-only until now.
+                      A declaration you cannot see is one you cannot check, and these ratings are the
+                      ladder: which of these people this instance weighs a stranger's word by. */}
+                  <Show when={contact.trust !== undefined}>
+                    <span class="text-[11px] text-v2-text-text-muted">{`trusted ${contact.trust}/5`}</span>
+                  </Show>
                   <span class="text-[11px] text-v2-text-text-muted">
                     {contact.blocked ? "blocked" : contact.routes.length > 0 ? "known address" : "no address yet"}
                   </span>

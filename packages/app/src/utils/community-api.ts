@@ -11,6 +11,14 @@ export interface CommunityContact {
   readonly networkID: string
   readonly petname?: string
   /**
+   * 🔴 The user's own rating of this peer, 1..5. Absent means never rated — which is the
+   * ordinary state of everyone met through peer exchange, and NOT the same as untrusted.
+   *
+   * A declaration, never a computation: the honesty ledger may not move it, because a user outranks
+   * the ledger.
+   */
+  readonly trust?: number
+  /**
    * Keys this peer has rotated away from, newest first — sent by `contactList` only.
    *
    * Attribution needs them: a message carries whichever key its author held when they signed it, so
