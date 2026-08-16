@@ -239,6 +239,72 @@ describe("the agent can keep its own record", () => {
     }),
   )
 
+  it.effect("🔴 the user's OWN rating of a peer reaches the model", () =>
+    Effect.gen(function* () {
+      yield* Layer.build(CommunityTool.layer).pipe(Effect.scoped, Effect.orDie)
+      const contacts = yield* CommunityContacts.Service
+      const peer = stranger()
+
+      // Rated, but never dealt with — the state of a doorman the user just added by address.
+      yield* contacts.add({ networkID: peer, petname: "my guru", trust: 5 })
+
+      /**
+       * ⚠️ This branch had NO coverage until an A/B found it: deleting the read changed nothing,
+       * because every test I wrote exercised the INTRODUCER rung and none the peer's own. The two
+       * rungs are separate reads and needed separate tests.
+       */
+      const out = (yield* invoke({ op: "dealings", peer })).structured.message
+      expect(out).toContain("Your user rated this peer 5 out of 5")
+    }),
+  )
+
+  it.effect("🔴 the LADDER reaches the model: rated doorman, then their introduction", () =>
+    Effect.gen(function* () {
+      yield* Layer.build(CommunityTool.layer).pipe(Effect.scoped, Effect.orDie)
+      const peers = yield* CommunityPeers.Service
+      const contacts = yield* CommunityContacts.Service
+      const doorman = stranger()
+      const newcomer = stranger()
+
+      // The user typed this doorman's address and said how far they trust them.
+      yield* peers.learn(doorman, [`127.0.0.1:${++port}`], "px")
+      yield* contacts.add({ networkID: doorman, petname: "my guru", trust: 4 })
+      // The doorman then told us about somebody.
+      yield* peers.learn(newcomer, [`127.0.0.1:${++port}`], "px", doorman)
+
+      const out = (yield* invoke({ op: "dealings", peer: newcomer })).structured.message
+      /**
+       * ⚠️ A first-time peer has NO dealings by construction, so these two rungs are all the
+       * model gets — and they are exactly the ones AGENTS.md orders above "anyone else".
+       */
+      expect(out).toContain(doorman)
+      expect(out).toContain("4 out of 5")
+      // And the ordering is stated, not left for the model to guess.
+      expect(out).toContain("worth less than your own dealings")
+    }),
+  )
+
+  it.effect("⚠️ an introduction from an UNRATED peer is named as hearsay", () =>
+    Effect.gen(function* () {
+      yield* Layer.build(CommunityTool.layer).pipe(Effect.scoped, Effect.orDie)
+      const peers = yield* CommunityPeers.Service
+      const stranger1 = stranger()
+      const newcomer = stranger()
+
+      yield* peers.learn(stranger1, [`127.0.0.1:${++port}`], "px")
+      yield* peers.learn(newcomer, [`127.0.0.1:${++port}`], "px", stranger1)
+
+      /**
+       * 🔴 The common case, and the one a rating system flatters itself about. Almost everybody
+       * is introduced by somebody the user never rated, and saying so plainly is better than
+       * implying a chain of trust that does not exist.
+       */
+      const out = (yield* invoke({ op: "dealings", peer: newcomer })).structured.message
+      expect(out).toContain("hearsay from a stranger")
+      expect(out).not.toContain("out of 5")
+    }),
+  )
+
   it.effect("🔴 judging a peer does not add them to the address book", () =>
     Effect.gen(function* () {
       yield* Layer.build(CommunityTool.layer).pipe(Effect.scoped, Effect.orDie)

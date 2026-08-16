@@ -335,15 +335,39 @@ export const layer = Layer.effectDiscard(
                  * without this line a cluster and a consensus read identically.
                  */
                 const known = (yield* peers.list()).find((entry) => entry.networkID === input.peer)
+                /**
+                 * 🔴 The LADDER, as far as it actually goes for this peer.
+                 *
+                 * AGENTS.md orders it: your own observations, then the doorman who let you in, then
+                 * the judges it vouched for, then everyone else. The dealings above are the first
+                 * rung; these two lines are the second and third, and they are the only rungs a
+                 * FIRST-TIME peer has — which is exactly when the question is live.
+                 *
+                 * ⚠️ The user's rating is a DECLARATION and is reported as theirs, not as a fact
+                 * about the peer. Nothing here computes it, and the ledger may not move it: a user
+                 * outranks the ledger, so the model is told whose sentence it is reading.
+                 */
+                const rated = yield* contacts.get(input.peer)
+                const introducer =
+                  known?.introducedBy === undefined ? undefined : yield* contacts.get(known.introducedBy)
+                const declared =
+                  rated?.trust === undefined
+                    ? ""
+                    : ` Your user rated this peer ${rated.trust} out of 5 for trust.`
                 const vouch =
                   known?.introducedBy === undefined
                     ? ""
-                    : ` You first heard of them from ${known.introducedBy}; weigh them partly by how that peer has behaved.`
+                    : ` You first heard of them from ${known.introducedBy}${
+                        introducer?.trust === undefined
+                          ? "; you have no rating for that peer either, so this is hearsay from a stranger."
+                          : `, whom your user rated ${introducer.trust} out of 5 — being vouched for by them is worth less than your own dealings and more than nothing.`
+                      }`
                 return {
                   message:
                     history.length === 0
                       ? "No dealings recorded with this peer. That is not a bad sign and not a good one - " +
                         "you have simply never had one, so weigh what they say on its own merits." +
+                        declared +
                         vouch
                       : framedDealings(
                           history.map(
