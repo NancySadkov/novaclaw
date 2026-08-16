@@ -138,7 +138,16 @@ What follows for the design:
   incentive pointing the right way rather than a gap. And *"samples enough peers"* is gathering
   evidence, not holding a ballot: **what counts is not how many said it, but how many could not have
   arranged to say it together** — a camera in the place is independent of a newsroom elsewhere in a
-  way two newsrooms are not.
+  way two newsrooms are not. ⚠️ Independence can only be ESTIMATED, never established —
+  two peers being one operator is the Sybil problem — so this is a judgement made from what an
+  instance has seen itself, and wrong estimates are survivable only because credit stays sized to
+  what you can afford to lose.
+- **A user's explicit choice outranks every score, both ways.** A blocked peer whose standing
+  recovers stays blocked; a contact the user added stays a contact however badly it scores. Blocking
+  is the only power a user has here, and *"their score recovered, so we resumed accepting them"* is
+  the kind of change that looks like an improvement in a diff and is a betrayal on a screen. An agent
+  that disagrees with its user SAYS so; it does not act. **The ledger ranks strangers; the user ranks
+  people.**
 - **Confirmation must be cheap and disconfirmation must count.** A system that only rewards agreement
   converges on whatever is popular, which is the failure mode of every recommendation engine. What
   moves a score is a claim meeting the world.
