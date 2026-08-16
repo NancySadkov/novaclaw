@@ -12,6 +12,7 @@ import { CommunityPeers } from "@novaclaw/core/community/peers"
 import { MDNS } from "@/server/mdns"
 import { CommunityReconcile } from "@novaclaw/core/community/reconcile"
 import { CommunitySearch } from "@novaclaw/core/community/search"
+import { CommunitySeeds } from "@novaclaw/core/community/seeds"
 import { CommunitySuccession } from "@novaclaw/core/community/succession"
 import { CommunitySync } from "@novaclaw/core/community/sync"
 import { CommunityTopic } from "@novaclaw/core/community/topic"
@@ -143,7 +144,21 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
           const supplied = ctx.payload.addresses ?? []
           // ⚠️ Sightings first, PX second, and in that order deliberately: a peer learned from the
           // LAN this second is someone we can immediately ask for more.
+          /**
+           * 🔴 The DEFAULT door, for a user who knows nobody and is not on a LAN with anyone.
+           *
+           * Without this, "clicking Community joins the network" was true only beside another
+           * instance or for somebody who had been handed an address — an invitation-only club,
+           * which is the opposite of the point.
+           *
+           * ⚠️ Best-effort and silent: no seeds, no error, join anyway. A lookup that could fail
+           * a join would make the seeds a DEPENDENCY, and the whole argument for allowing a
+           * centralised seed at all is that it is a convenience the network survives losing.
+           */
+          const seeds = yield* CommunitySeeds.resolve()
+
           yield* sync.learnFrom(lan, "lan")
+          yield* sync.learnFrom(seeds, "dns")
           yield* sync.learnFrom(supplied, "manual")
           const exchange = yield* sync.discover()
           return { learned: exchange.learned, asked: exchange.asked, peers: (yield* peersStore.list()).length }

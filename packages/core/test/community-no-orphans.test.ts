@@ -164,6 +164,8 @@ const EXPECTED_ORPHANS: Record<string, string> = {
     "internal: the wire in this same file calls it on every received query — it is the door, not a capability waiting for one",
   "search.ts#widen":
     "internal: `broadcast` in this same file waves through it, widening only when a wave under-delivers",
+  "seeds.ts#parse":
+    "internal helper: `resolve` in this same file calls it on whatever DNS returned — exported so the chunk-joining and the bound can be exercised without a network, which is the part most likely to be wrong",
   "reconcile.ts#bucketOf":
     "internal helper called by summarize/idsIn in the same file; exported to test the both-sides-agree rule",
   "seal.ts#parsePublic":
