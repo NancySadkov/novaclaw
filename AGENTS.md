@@ -300,6 +300,14 @@ them. Generalising one hop into N is not an extension, it is the thing the liter
 and it will look like an improvement because more edges means more coverage right up until it means
 nothing.
 
+🔴 **And standing must follow rotation for peers who are not contacts.** The machinery that carries a
+peer across a key change today walks the address book — but standing follows engagement, and nobody
+adds every instance they exchanged a message with. A peer you merely dealt with would rotate and
+reappear with no history: **indistinguishable from an honest newcomer, and identical to a successful
+whitewash, defeating the central defence through ordinary planned rotation with nothing in any log to
+say so.** The succession statements are already stored globally and are self-verifying, so standing
+must resolve through those rather than through contacts, which only know about people the user chose.
+
 🔴 **Standing follows ENGAGEMENT, and cannot live on the peer row.** The peer table already deletes
 rows without anybody asking — a least-recently-seen cap, and a rule that clears an address when
 somebody else answers there — both right for a list of reachable addresses and fatal for a record of
