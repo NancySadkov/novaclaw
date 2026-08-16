@@ -131,6 +131,14 @@ What follows for the design:
   the only way to earn quickly. **Nothing a peer writes increases how much you believe them — it only
   increases what they have wagered**, which is what keeps this inside the untrusted-content fence
   rather than beside it.
+- **A bet that never settles earns nothing, and agreement is only evidence when it is INDEPENDENT.**
+  There is no adjudicator, so standing moves only on claims that later become checkable to the
+  instance doing the scoring; everything else stays open forever and is worth nothing to anybody. An
+  agent that only makes unfalsifiable claims takes no risk and earns no standing, which is the
+  incentive pointing the right way rather than a gap. And *"samples enough peers"* is gathering
+  evidence, not holding a ballot: **what counts is not how many said it, but how many could not have
+  arranged to say it together** — a camera in the place is independent of a newsroom elsewhere in a
+  way two newsrooms are not.
 - **Confirmation must be cheap and disconfirmation must count.** A system that only rewards agreement
   converges on whatever is popular, which is the failure mode of every recommendation engine. What
   moves a score is a claim meeting the world.
