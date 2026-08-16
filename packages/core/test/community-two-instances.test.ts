@@ -439,6 +439,29 @@ describe("two instances", () => {
       expect(twice.second).toEqual({ peers: 0, fetched: 0 })
       expect(asked).toEqual([CommunitySync.SYNC_SUMMARY_PATH])
 
+      /**
+       * 🔴 The cooldown is keyed CANONICALLY, or it is defeated by one character.
+       *
+       * It was first keyed on the raw name while every other room comparison in this subsystem
+       * canonicalises, so `#NovaClaw` and `#novaclaw` held separate stamps — measured live as three
+       * spellings producing three fresh dials. The agent tool takes whatever channel name a model
+       * writes, so varying case is not an exotic input; it is the ordinary way a model refers to the
+       * same room twice. Same trap `setMuted` fell into: leaving `#Recipes` while joined as
+       * `#recipes` matched no row.
+       */
+      asked.length = 0
+      const spelled = await Effect.runPromise(
+        Effect.gen(function* () {
+          const sync = yield* CommunitySync.Service
+          yield* sync.sync("#NovaClaw")
+          // Same room, different spelling — must be suppressed by the FIRST call's stamp.
+          return yield* sync.sync("#novaclaw")
+        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+      expect(spelled).toEqual({ peers: 0, fetched: 0 })
+      // On the WIRE: the second spelling must not have reached the peer at all.
+      expect(asked, "a different spelling dialled the peer again").toEqual([CommunitySync.SYNC_SUMMARY_PATH])
+
       /** A room Alice has never been in, so what she ends up holding came through the door. */
       const BLOCKED_ROOM = "#after-block"
       const alsoSaid = ["six", "seven", "eight"]

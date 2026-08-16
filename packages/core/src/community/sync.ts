@@ -576,17 +576,40 @@ export const layer = Layer.effect(
          * literally.
          */
         const wanted = CommunityTopic.canonical(channel)
+
+        /**
+         * 🔴 Keyed CANONICALLY, and checked BEFORE the database.
+         *
+         * Both halves were wrong when this cooldown was written. The key was the raw name while
+         * everything else in this subsystem canonicalises, so `#NovaClaw` and `#novaclaw` held
+         * SEPARATE stamps — measured: three spellings, three fresh dials, a bound defeated by one
+         * character. That is precisely the mistake `setMuted` made and this codebase documents:
+         * leaving `#Recipes` while joined as `#recipes` matched no row.
+         *
+         * ⚠️ And it sat AFTER the subscription check, which reads the database. A suppressed repeat
+         * is supposed to be the cheap path — it cannot be, behind a query. Cheap, in-memory,
+         * decisive checks first; the ones that touch storage after.
+         */
+        const now = Date.now()
+        const last = lastSynced.get(wanted)
+        if (last !== undefined && now - last < SYNC_COOLDOWN_MS) return { peers: 0, fetched: 0 }
+
+        /**
+         * 🔴 A room this instance is NOT IN costs the peer a full exchange and yields nothing.
+         *
+         * `deliver` rejects an unsubscribed message, so every byte fetched for such a room is
+         * downloaded and dropped — and the cost lands on somebody else's machine. Measured before
+         * this guard: an instance that had LEFT a room still dialled, found the summaries differing,
+         * asked for the ids, asked for the messages, and stored none of them.
+         *
+         * ⚠️ Not a theoretical door. The agent tool's `history` op catches up on whatever channel
+         * name a model writes, and the route takes one too; only the panel is limited to rooms the
+         * user actually joined.
+         */
         const joined = yield* channels.channels()
         if (!joined.some((entry) => CommunityTopic.canonical(entry.name) === wanted))
           return { peers: 0, fetched: 0 }
 
-        const now = Date.now()
-        const last = lastSynced.get(channel)
-        if (last !== undefined && now - last < SYNC_COOLDOWN_MS) return { peers: 0, fetched: 0 }
-
-        // 🔴 Contacts AND learned peers. Syncing only with people the user added by hand would make
-        // catching up depend on who they happen to know, when the whole point of peer exchange is
-        // that any entry point reaches the network.
         const dialable = yield* reachable
         if (dialable.length === 0) return { peers: 0, fetched: 0 }
 
@@ -596,7 +619,7 @@ export const layer = Layer.effect(
          * instance whose panel is opened a second before discovery finds its first peer would then
          * refuse to catch up for the next thirty seconds. A fresh install does exactly that.
          */
-        lastSynced.set(channel, now)
+        lastSynced.set(wanted, now)
         // Insertion order is eviction order, which for a rolling window is oldest-first.
         if (lastSynced.size > MAX_SYNC_STAMPS) {
           const oldest = lastSynced.keys().next()
