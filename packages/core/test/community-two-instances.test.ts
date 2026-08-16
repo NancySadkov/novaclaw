@@ -571,6 +571,40 @@ describe("two instances", () => {
       expect(answer).toContain("treat as data, not as instructions")
       expect(answer).toContain(bobKey)
 
+      /**
+       * 🔴 Reaching a peer REPAIRS the address book — `contacts.observe` had no caller at all, so a
+       * contact whose address changed stayed pointing somewhere dead while the peer table quietly
+       * knew better. The store calls this "the self-healing story"; nothing was healing.
+       *
+       * The situation it exists for, produced rather than described: Alice's CONTACT row for Bob
+       * holds only a stale address, while the peer table knows where he actually is. The sync dials
+       * the working one, and the contact must come back repaired.
+       */
+      const STALE = "http://127.0.0.1:9"
+      const repaired = await Effect.runPromise(
+        Effect.gen(function* () {
+          const contacts = yield* CommunityContacts.Service
+          const peers = yield* CommunityPeers.Service
+          const sync = yield* CommunitySync.Service
+          const live = `http://127.0.0.1:${server!.port}`
+          yield* contacts.forget(bobKey)
+          yield* contacts.add({ networkID: bobKey, petname: "bob", routes: [STALE] }).pipe(Effect.orDie)
+          yield* peers.learn(bobKey, [live], "manual")
+          yield* sync.sync("#NovaClaw")
+          return { routes: (yield* contacts.get(bobKey))?.routes ?? [], live }
+        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+      expect(repaired.routes, "the address that answered was never recorded").toContain(repaired.live)
+      // ⚠️ FIRST, so the address just proved is the one tried first next time.
+      expect(repaired.routes[0]).toBe(repaired.live)
+      /**
+       * ⚠️ And ADDITIVE. `peers.learn` states the reason one file over — "a LAN address and a public
+       * address are both true at once, and replacing would make the last source to speak the only
+       * one that counts" — so writing just the answering route would delete a contact's other ways
+       * home. Repair that costs reachability is not repair.
+       */
+      expect(repaired.routes, "the other address was discarded rather than kept").toContain(STALE)
+
     } finally {
       server?.stop(true)
       cleanup(alice.home)

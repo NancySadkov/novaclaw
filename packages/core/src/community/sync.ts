@@ -97,6 +97,17 @@ export const OFFER_PATH = "/api/community/offer"
  */
 export const MAX_PEERS_ASKED = 16
 
+/**
+ * The most addresses kept on ONE contact.
+ *
+ * ⚠️ A ceiling because the list grows from what we successfully DIALLED, and the routes we dial come
+ * from the peer table, which peers themselves fill. A contact answering on many ports would
+ * otherwise accumulate a row without limit — the same "a value a stranger wrote became our row"
+ * shape this subsystem bounds everywhere else. Six is well past the real case (a LAN address, a
+ * public one, maybe a relay) and far below anything worth an attack.
+ */
+export const MAX_CONTACT_ROUTES = 6
+
 export const MAX_MESSAGES_PER_REQUEST = 256
 
 export interface Result {
@@ -338,6 +349,34 @@ export const layer = Layer.effect(
       return out.slice(0, MAX_PEERS_ASKED)
     })
 
+    /**
+     * 🔴 A peer ANSWERED us at this address — the one place that fact gets recorded.
+     *
+     * `contacts.observe` is documented as "repair… the self-healing story, safe for an agent or the
+     * transport to do automatically" and had no caller at all, so a contact whose address changed
+     * was never repaired: the user's own address book kept pointing at somewhere dead while the peer
+     * table quietly knew better.
+     *
+     * ⚠️ ONE helper rather than the call written out at each of the five sites that already mark
+     * `peers.seen`. This subsystem's recurring failure is a cross-cutting rule applied where someone
+     * REMEMBERED — blocking missing from two doors, the airgap missing from ten — and a sixth site
+     * added later inherits this instead of having to recall it.
+     *
+     * ⚠️ ADDITIVE, never replacing, which `peers.learn` states the reason for one file over: "a LAN
+     * address and a public address are both true at once, and replacing would make the last source
+     * to speak the only one that counts". Writing just the answering route would delete a contact's
+     * other addresses — repair that costs reachability is not repair. The live one goes FIRST, so
+     * the address we just proved is the one tried first next time.
+     */
+    const reached = Effect.fn("CommunitySync.reached")(function* (networkID: string, route: string) {
+      yield* peers.seen(networkID)
+      // Not a contact: the peer table already holds it, and `observe` deliberately cannot create one.
+      const known = yield* contacts.get(networkID)
+      if (known === undefined) return
+      const merged = [route, ...known.routes.filter((entry) => entry !== route)].slice(0, MAX_CONTACT_ROUTES)
+      yield* contacts.observe(networkID, merged)
+    })
+
     return Service.of({
       sendDirect: Effect.fn("CommunitySync.sendDirect")(function* (to: string, body: string) {
         if (!speaks()) return { sent: false, reason: "offline" }
@@ -372,7 +411,7 @@ export const layer = Layer.effect(
           // ⚠️ Stored either way — `compose` already kept our copy. A send that failed to reach them
           // must not also lose what the user wrote.
           if (ack !== undefined) {
-            yield* peers.seen(to)
+            yield* reached(to, address)
             return { sent: true }
           }
         }
@@ -390,7 +429,7 @@ export const layer = Layer.effect(
           }
           const theirs = yield* ask(peer.route, SUCCESSION_PATH, undefined, Successions, "GET")
           if (theirs === undefined) continue
-          yield* peers.seen(peer.networkID)
+          yield* reached(peer.networkID, peer.route)
           for (const statement of theirs.statements) if (yield* successions.remember(statement)) learned++
           // ⚠️ `followAll` and not a loop of `follow`: statements arrive from a mesh in no order, and
           // single-stepping drops a link whose predecessor has not been seen yet and never retries.
@@ -406,7 +445,7 @@ export const layer = Layer.effect(
         for (const peer of yield* reachable) {
           const answer = yield* ask(peer.route, LISTED_PATH, undefined, Listed, "GET")
           if (answer === undefined) continue
-          yield* peers.seen(peer.networkID)
+          yield* reached(peer.networkID, peer.route)
           for (const name of answer.channels) {
             // ⚠️ Keyed CANONICALLY, so two peers spelling one room differently offer it once — the
             // same rule that stops a second spelling becoming a second room locally.
@@ -443,7 +482,7 @@ export const layer = Layer.effect(
           asked++
           // It answered, so it is alive: this is what keeps a working peer ahead of invented ones
           // when the table is evicted.
-          yield* peers.seen(peer.networkID)
+          yield* reached(peer.networkID, peer.route)
           /**
            * ⚠️ Collected in the SAME round as peer exchange rather than in a pass of its own: we are
            * already talking to this instance, and a second sweep would double the traffic for a
@@ -516,7 +555,7 @@ export const layer = Layer.effect(
           const theirs = yield* ask(route, SYNC_SUMMARY_PATH, { topic }, Summary)
           if (theirs === undefined) continue
           answered++
-          yield* peers.seen(networkID)
+          yield* reached(networkID, route)
 
           const disagree = CommunityReconcile.differing(
             CommunityReconcile.summarize(mine),
