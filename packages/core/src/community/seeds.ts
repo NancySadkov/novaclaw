@@ -33,7 +33,20 @@ import { Effect } from "effect"
  * here — it is a DNS edit — and it is the only thing standing between one dead host and a closed
  * front door.
  */
-export const DEFAULT_SEED_HOST = "seed.novaclaw.app"
+/**
+ * 🔴 NO DEFAULT, and that is the owner's ruling (2026-08-17): **novaclaw.app is a static page
+ * about Nova and must not be responsible for the network.** A hostname shipped here would have made
+ * the project's own domain the thing every instance asks permission of — which is the shape this
+ * whole design refuses, and I built it before being told.
+ *
+ * ⚠️ What fills this slot is libp2p's public bootstrap provisions, not us. Until that lands the
+ * automatic door is the LAN, and a typed doorman address is the guarantee it always was.
+ *
+ * ⚠️ The mechanism stays because it costs nothing and belongs to the USER: point `community.
+ * seeds.host` at a zone you control and this bootstraps from your own hosts. What it will never do
+ * is default to ours.
+ */
+export const DEFAULT_SEED_HOST: string | undefined = undefined
 
 /**
  * How many seeds we take. A bound, not a preference: this list is supplied by whoever controls the
@@ -93,6 +106,9 @@ export const resolve = Effect.fn("CommunitySeeds.resolve")(function* (input?: {
   // somebody who has never configured anything.
   if (input?.settings?.enabled === false) return []
   const host = input?.host ?? input?.settings?.host ?? DEFAULT_SEED_HOST
+  // No host configured is the ORDINARY state now, not a failure: nothing is asked and nothing is
+  // learned, exactly as if the zone were empty.
+  if (host === undefined) return []
   const lookup =
     input?.lookup ??
     ((name: string) => import("node:dns/promises").then((dns) => dns.resolveTxt(name) as Promise<string[][]>))

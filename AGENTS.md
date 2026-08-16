@@ -191,6 +191,28 @@ What follows for the design:
   settlement remains theirs.
 
 
+### The network bootstraps from a PUBLIC DHT, never from novaclaw.app
+
+🔴 **novaclaw.app is a static page about Nova. It is not responsible for the network** (owner,
+2026-08-17). A seed hostname the project controls would make every instance ask our permission to
+find its peers — the exact shape "there is no list to seize" exists to refuse, and a single domain
+is far easier to seize than a list.
+
+🔴 **The automatic door is a public Kademlia DHT.** Every instance with Community enabled joins
+it and finds the others there, using libp2p's existing public provisions rather than infrastructure
+we run. That is the difference between borrowing a commons and becoming one: the DHT is not ours, it
+does not know what NovaClaw is, and nobody can switch off *our* corner of it without switching off
+everyone's.
+
+⚠️ **The manual doorman remains the guarantee, and this is why it was never optional.** Public
+bootstrap nodes have gone dark before; when they do, a network with no other door is unreachable
+however many instances are alive and talking. Typing an address you trust is what makes any bootstrap
+— theirs or ours — a convenience rather than a dependency.
+
+⚠️ **A user-configured seed zone stays available and belongs to the USER.** Point it at hosts you
+run and your instances bootstrap from your own. What the product will never ship is a default
+pointing at us.
+
 ### Joining is doorman-FREE; the doorman is for TRUST, not for entry
 
 🔴 **Clicking Community joins the network. It asks nobody for permission and needs nobody's

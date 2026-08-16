@@ -90,11 +90,32 @@ describe("CommunitySeeds.resolve", () => {
     expect(asked).toBe(0)
   })
 
-  test("⚠️ absence is ON — the door works for somebody who configured nothing", async () => {
+  test("🔴 with NO host configured, nothing is asked at all", async () => {
+    let asked = 0
     const answered = await run(
-      CommunitySeeds.resolve({ settings: {}, lookup: () => Promise.resolve([["a.example:1"]]) }),
+      CommunitySeeds.resolve({
+        settings: {},
+        lookup: () => {
+          asked += 1
+          return Promise.resolve([["never-read.example:1"]])
+        },
+      }),
     )
-    expect(answered).toEqual(["a.example:1"])
+
+    /**
+     * 🔴 The owner's ruling (2026-08-17): **novaclaw.app is a static page about Nova and must not
+     * be responsible for the network.** So there is no default host, and an instance that configured
+     * nothing asks NOBODY — it does not quietly fall back to a zone the project controls.
+     *
+     * ⚠️ This test previously asserted the opposite ("absence is ON"), because I had shipped a
+     * default pointing at our own domain before being told not to. The assertion is inverted rather
+     * than deleted so the change of mind stays visible.
+     *
+     * ⚠️ What fills the automatic slot is a public Kademlia DHT, not us. Until then the automatic
+     * door is the LAN and the guarantee is a typed doorman address.
+     */
+    expect(asked).toBe(0)
+    expect(answered).toEqual([])
   })
 
   test("a host of your own is used instead of the project's", async () => {
