@@ -143,7 +143,16 @@ describe("asking this instance a question", () => {
   })
 
   test("🔴 an UNSIGNED ask is refused — `asker` is not a field you may simply claim", async () => {
-    await using tmp = await tmpdir({ git: true, config: { formatter: false, community: { consented: true } } })
+    /**
+     * ⚠️ Answering must be ON for this to test anything. The handler refuses in CHEAPEST-first
+     * order — a shut door, then the gate, then the signature — so on an instance that is not
+     * answering, a forged ask is turned away as "not-answering" long before any key is checked. The
+     * test asserted "unsigned" and passed for that reason until the order was corrected.
+     */
+    await using tmp = await tmpdir({
+      git: true,
+      config: { formatter: false, community: { consented: true, answers: { enabled: true } } },
+    })
     const victim = asker().networkID
     const forged = asker().ask("what happened today?")
 

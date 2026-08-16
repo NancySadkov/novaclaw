@@ -240,6 +240,33 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       description:
         "The Community app's on/off switch. Requires `consented`; airgap/offline mode forces it off independently.",
     }),
+    /**
+     * 🔴 ANSWERING strangers' questions — a THIRD condition, and narrower than the two above.
+     *
+     * Joining costs bandwidth and reveals an IP; answering costs TOKENS, which is a different order
+     * of consent and so gets its own switch rather than riding on `enabled`.
+     *
+     * ⚠️ Declared here because it was NOT, and the failure was total and silent: the config
+     * PATCH succeeded, the value was STRIPPED by this schema, and the gate read a key that could
+     * never be stored — so the whole capability was unreachable in production while every test
+     * passed. Found by turning it on against a live instance and watching nothing change.
+     */
+    answers: Schema.Struct({
+      enabled: Schema.Boolean.pipe(Schema.optional).annotate({
+        description:
+          "Answer questions from other instances. OFF by default and separate from `enabled`: this is the one path that spends the user's tokens on people they have never met.",
+      }),
+      perDay: Schema.Number.pipe(Schema.optional).annotate({
+        description: "How many questions a day this instance will answer in total. Bounded before anything is spent.",
+      }),
+      perPeerPerDay: Schema.Number.pipe(Schema.optional).annotate({
+        description: "How many of the day's answers any ONE peer may take, so a single asker cannot consume it.",
+      }),
+    })
+      .pipe(Schema.optional)
+      .annotate({
+        description: "Answering peers' questions: off unless turned on, and bounded by a daily and a per-asker count.",
+      }),
   })
     .pipe(Schema.optional)
     .annotate({

@@ -454,6 +454,21 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
            * dealing we record on answering an assertion about whoever the sender named — which is
            * the third-party bad-mouthing the ledger's own engagement bound exists to stop.
            */
+          /**
+           * 🔴 Cheapest refusal first, and the ASKER is not read until it is proven.
+           *
+           * `state()` answers not-joined, not-answering and budget-spent without touching the asker
+           * at all — a config read and one count. Doing it before the signature means an instance
+           * with answering switched off does NO cryptography for a flood, which the live probe made
+           * obvious: a valid question got "not-answering" only after a verification nobody needed.
+           *
+           * ⚠️ The per-asker share is checked AFTER verification, and that ordering is the point.
+           * It is the one refusal keyed on who is asking, so consulting it for an unproven identity
+           * would let a stranger probe whether a peer they name has used up their share.
+           */
+          const overall = yield* answers.state()
+          if (overall.refusal !== undefined) return { refused: overall.refusal }
+
           if (!CommunityAnswer.verifyAsk(ctx.payload)) return { refused: "unsigned" as const }
 
           const refusal = yield* answers.allowed(ctx.payload.asker)
@@ -497,13 +512,29 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
                       return Effect.void
                     }),
                   )
-                return chunks.join("")
-              }).pipe(Effect.provide(AppNodeBuilder.build(llmClient))),
+                return chunks.join("") as string | undefined
+              }).pipe(
+                Effect.provide(AppNodeBuilder.build(llmClient)),
+                /**
+                 * 🔴 A model we cannot reach is a REFUSAL, not a 500.
+                 *
+                 * Found by turning answering on where no model is configured: every asker got an
+                 * opaque UnknownError with a diagnostic reference, which tells a stranger nothing,
+                 * tells the owner nothing, and reads as a broken instance rather than one that
+                 * cannot answer right now. §4d says a refusal is a normal answer and must be NAMED.
+                 *
+                 * ⚠️ It also has to be caught here rather than at the edge, because the failure
+                 * is somebody else's request holding OUR permit — dying inside the semaphore is
+                 * how a transient model problem becomes a stuck door.
+                 */
+                Effect.catchCause(() => Effect.succeed(undefined)),
+              ),
             )
-            .pipe(Effect.orDie)
 
           // Nobody got the permit: somebody else's question is being answered right now.
           if (Option.isNone(answer)) return { refused: "busy" as const }
+          // ⚠️ Distinct from "no-answer": the model never ran, rather than running and saying nothing.
+          if (answer.value === undefined) return { refused: "unavailable" as const }
           const text = answer.value.trim()
           // An empty completion is a broken call, not an answer worth signing our name to.
           if (text === "") return { refused: "no-answer" as const }
