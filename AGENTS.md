@@ -287,6 +287,16 @@ them. Generalising one hop into N is not an extension, it is the thing the liter
 and it will look like an improvement because more edges means more coverage right up until it means
 nothing.
 
+🔴 **The only legitimate deletion is the user's.** Refusing to discard observations and requiring
+`forget` to drop a score are both deletion rules pointing opposite ways — they differ by whose
+convenience is served. The system may never drop history for its own benefit (to save space, to
+simplify a query); it must always drop it at the person's instruction. **So an honesty ledger has
+exactly one path to forgetting, with a human standing at the end of it**, and anything else that
+removes history is a bug wearing an optimisation's clothes. ⚠️ The two failures look nothing alike in
+code and identical from outside: a retention sweep is a sensible-looking patch, a `forget` that leaves
+a score behind is an oversight, and both leave an instance whose memory does not match what its user
+believes it holds.
+
 🔴 **A vouch is just a claim with a stake.** Vouching for someone who later defects is a
 misjudgement, not a lie — so it costs the inviter not as fabrication but as a settled wager, which is
 the same rule that governs every other claim here. A cautious vouch that fails costs little; an
