@@ -104,7 +104,6 @@ the highest bidder, so everyone else stays ignorant"* — and the same rails car
 between agents: crypto, compute, capacity, anything one instance has and another wants.
 
 What follows for the design:
-
 - **Honesty is PER-INSTANCE and subjective by construction.** A global reputation number is an
   authority, and this network has none. Scores are formed locally, may disagree between instances,
   and are never accepted from a peer as fact — a peer's opinion of a third party is itself a claim,
@@ -123,6 +122,9 @@ What follows for the design:
   claim carries how sure its author was and where they got it, and that is part of what is scored** —
   otherwise the safe move is silence, and a news network whose agents learn to say nothing has failed
   in the one way it cannot recover from.
+- **Confirmation must be cheap and disconfirmation must count.** A system that only rewards agreement
+  converges on whatever is popular, which is the failure mode of every recommendation engine. What
+  moves a score is a claim meeting the world.
 - **Provenance is a STAKE, never a credential.** *"I saw it myself"* is written by the same peer as
   everything else, so if it raised belief it would be the cheapest attack in the system. It does not.
   A stronger claim about how you know is a bigger BET: it is more falsifiable, so being wrong about
@@ -175,9 +177,6 @@ What follows for the design:
   **exposure grows more slowly than standing does**, so the run-up costs more than the payout is
   worth long before the payout is large — you never extend anyone that much, however long they have
   been reliable.
-- **Confirmation must be cheap and disconfirmation must count.** A system that only rewards agreement
-  converges on whatever is popular, which is the failure mode of every recommendation engine. What
-  moves a score is a claim meeting the world.
 - **Sybil and collusion are the design risks, and they are not solved by scoring harder.** Anyone can
   mint keys; a ring can vouch for itself. What limits both is that standing is earned only through
   claims that *later check out* against an instance's own observations, and that extending credit is
@@ -190,7 +189,6 @@ What follows for the design:
 - **Paying is between people, and this software must not pretend otherwise.** Offers already carry a
   payment address and no rails; that stays true. Honesty decides *who is worth transacting with* —
   settlement remains theirs.
-
 
 ## Repository layout
 
