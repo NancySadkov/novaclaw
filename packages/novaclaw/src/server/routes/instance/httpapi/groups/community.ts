@@ -707,8 +707,15 @@ export const CommunityPeerApi = HttpApi.make("communityPeer").add(
       HttpApiEndpoint.post("communityAsk", CommunityPeerPaths.ask, {
         payload: Schema.Struct({
           /** Who is asking, so the budget can be shared out and the dealing recorded. */
+          /**
+           * 🔴 SIGNED by the asker. Without it this field is a claim anybody can make, the
+           * per-asker share of the budget bounds only honest peers, and the dealing recorded on
+           * answering names whoever the sender felt like naming.
+           */
           asker: Schema.String,
           question: Schema.String,
+          at: Schema.Number,
+          signature: Schema.String,
         }),
         success: described(
           Schema.Struct({

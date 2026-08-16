@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { generateKeyPairSync, sign as nodeSign } from "node:crypto"
+import { CommunityAnswer } from "@novaclaw/core/community/answer"
 import { CommunityConsent } from "@novaclaw/core/community/consent"
 import { ConfigProvider, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
@@ -46,6 +48,24 @@ const ask = (handler: ReturnType<typeof app>, directory: string, body: unknown) 
   )
 }
 
+
+/** A real asker: an ed25519 identity that can sign its own question. */
+const asker = () => {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519")
+  const raw = (publicKey.export({ type: "spki", format: "der" }) as Buffer).subarray(12)
+  const networkID = `nid_${raw.toString("base64url")}`
+  return {
+    networkID,
+    ask: (question: string, at = Date.now()) => {
+      const body = { asker: networkID, question, at }
+      return {
+        ...body,
+        signature: nodeSign(null, Buffer.from(CommunityAnswer.askBytes(body)), privateKey).toString("base64url"),
+      }
+    },
+  }
+}
+
 describe("asking this instance a question", () => {
   /**
    * 🔴 The consent gate is PROCESS-WIDE, so a test that joins must un-join after itself.
@@ -65,7 +85,7 @@ describe("asking this instance a question", () => {
 
   test("🔴 a fresh install's peer door is SHUT, before any of this is reached", async () => {
     await using tmp = await tmpdir({ git: true, config: { formatter: false } })
-    const response = await ask(app(), tmp.path, { asker: "nid_someone", question: "what happened today?" })
+    const response = await ask(app(), tmp.path, asker().ask("what happened today?"))
 
     /**
      * ⚠️ 503, not a refusal body — and this is the ordering I got wrong when writing the test.
@@ -78,7 +98,7 @@ describe("asking this instance a question", () => {
 
   test("🔴 JOINED but not answering: refused, and NAMED", async () => {
     await using tmp = await tmpdir({ git: true, config: { formatter: false, community: { consented: true } } })
-    const response = await ask(app(), tmp.path, { asker: "nid_someone", question: "what happened today?" })
+    const response = await ask(app(), tmp.path, asker().ask("what happened today?"))
 
     expect(response.status).toBe(200)
     const body = (await response.json()) as { answer?: string; refused?: string }
@@ -92,11 +112,30 @@ describe("asking this instance a question", () => {
     expect(body.answer).toBeUndefined()
   })
 
+  test("🔴 an UNSIGNED ask is refused — `asker` is not a field you may simply claim", async () => {
+    await using tmp = await tmpdir({ git: true, config: { formatter: false, community: { consented: true } } })
+    const victim = asker().networkID
+    const forged = asker().ask("what happened today?")
+
+    /**
+     * 🔴 The attack this closes: POST a question naming somebody ELSE as the asker.
+     *
+     * ⚠️ Two things broke at once while `asker` was an unchecked string. The per-asker share of
+     * the budget bounded only honest peers, since varying one field bought a fresh share. And the
+     * dealing recorded on answering names that key — so anyone could make this instance write
+     * "answered nid_victim" about a third party it had never met, which is precisely the
+     * bad-mouthing the observation store's engagement bound exists to stop.
+     */
+    const response = await ask(app(), tmp.path, { ...forged, asker: victim })
+    const body = (await response.json()) as { refused?: string }
+    expect(body.refused).toBe("unsigned")
+  })
+
   test("⚠️ a malformed question is refused by the SCHEMA, before any of it runs", async () => {
     await using tmp = await tmpdir({ git: true, config: { formatter: false, community: { consented: true } } })
     // No asker: the budget cannot be shared out without knowing who is spending it, so this is not a
     // field the handler may default.
-    const response = await ask(app(), tmp.path, { question: "and who am I?" })
+    const response = await ask(app(), tmp.path, { question: "and who am I?", at: Date.now(), signature: "x" })
     expect(response.status).toBe(400)
   })
 })

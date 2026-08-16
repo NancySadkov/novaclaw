@@ -166,6 +166,65 @@ export const verify = (answer: Signed): boolean => {
   return InstanceIdentityStore.verifySignature(answer.author, canonicalBytes(answer), signature)
 }
 
+/**
+ * 🔴 The QUESTION is signed too, and this was missing until it was audited for.
+ *
+ * `asker` arrived as a plain string nobody checked, which broke two things at once. The per-asker
+ * share of the budget was evadable by varying a field — it bounded honest peers and nobody else.
+ * And the dealing we record on answering names that key, so anyone could have made this instance
+ * write "answered nid_victim" about a third party it had never met: **exactly the bad-mouthing the
+ * observation store's engagement bound exists to prevent, walked in through the front door.**
+ *
+ * ⚠️ Replay is bounded rather than prevented: a captured ask can be re-sent, and what it costs is
+ * that ASKER's share of the day and nothing else. A freshness window would need a clock policy this
+ * protocol does not otherwise have, and the bound already sits on the attacker's path.
+ */
+const ASK_DOMAIN = "novaclaw.community.ask.v1"
+
+export interface UnsignedAsk {
+  readonly asker: string
+  readonly question: string
+  readonly at: number
+}
+
+export interface SignedAsk extends UnsignedAsk {
+  readonly signature: string
+}
+
+export const askBytes = (input: UnsignedAsk): Uint8Array => {
+  const parts: Uint8Array[] = []
+  const push = (value: string) => {
+    const bytes = encoder.encode(value)
+    const length = new Uint8Array(4)
+    new DataView(length.buffer).setUint32(0, bytes.length, false)
+    parts.push(length, bytes)
+  }
+  push(ASK_DOMAIN)
+  push(input.asker)
+  push(input.question)
+  const at = new Uint8Array(8)
+  new DataView(at.buffer).setBigUint64(0, BigInt(Math.trunc(input.at)), false)
+  parts.push(at)
+  const total = parts.reduce((sum, part) => sum + part.length, 0)
+  const out = new Uint8Array(total)
+  let offset = 0
+  for (const part of parts) {
+    out.set(part, offset)
+    offset += part.length
+  }
+  return out
+}
+
+/** True only if `asker` really sent this question. Everything downstream depends on it. */
+export const verifyAsk = (ask: SignedAsk): boolean => {
+  if (typeof ask.signature !== "string" || ask.signature.length === 0) return false
+  if (typeof ask.asker !== "string" || typeof ask.question !== "string") return false
+  if (!Number.isFinite(ask.at)) return false
+  const signature = Buffer.from(ask.signature, "base64url")
+  if (signature.length !== 64) return false
+  return InstanceIdentityStore.verifySignature(ask.asker, askBytes(ask), signature)
+}
+
 export interface Interface {
   /** The gate as it stands right now, including how much of today's budget is left. */
   readonly state: () => Effect.Effect<{

@@ -394,6 +394,15 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
            * called. Resolving reads a catalog and a credential — cheap, but not free, and doing it
            * for a request we were never going to answer is work a stranger got for nothing.
            */
+          /**
+           * 🔴 VERIFIED FIRST, before the gate, the budget or anything else reads `asker`.
+           *
+           * An unverified asker makes the per-peer budget evadable by varying a string, and makes the
+           * dealing we record on answering an assertion about whoever the sender named — which is
+           * the third-party bad-mouthing the ledger's own engagement bound exists to stop.
+           */
+          if (!CommunityAnswer.verifyAsk(ctx.payload)) return { refused: "unsigned" as const }
+
           const refusal = yield* answers.allowed(ctx.payload.asker)
           if (refusal !== undefined) return { refused: refusal }
 
