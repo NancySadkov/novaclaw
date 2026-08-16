@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
+import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
 import { Timestamps } from "../database/schema.sql"
 
 /**
@@ -152,3 +152,76 @@ export const CommunityOfferTable = sqliteTable("community_offer", {
   document: text().notNull(),
   ...Timestamps,
 })
+
+
+/**
+ * Community — HONESTY, the per-peer ledger (`notes/spec/honesty-ledger.md`).
+ *
+ * 🔴 A row is a DEALING that happened, never a verdict about a peer. No score, weight, stake or
+ * confidence is stored anywhere, and that is the load-bearing decision rather than an omission:
+ * every such value is a function of these rows plus a policy, and storing one freezes the policy
+ * that computed it. The mechanism is the part we promised to keep cheap to change, so changing it
+ * must cost a re-read and never a migration.
+ *
+ * ⚠️ What is recorded is what cannot be recomputed. The shape question looks like a mechanism
+ * choice and is not, because the two have different costs: what you compute is reversible, what you
+ * failed to record is gone. So each column below earns its place by being unrecoverable later.
+ *
+ * ⚠️ This table can never introduce anyone. `community_contact` is the user's sentence about who
+ * they know, and a good reputation is not an introduction — exactly as `observe` and `follow`
+ * already refuse to mint a contact from anything the network says. Standing derived from these rows
+ * may weigh what a peer claims; it may not add, remove or unblock one.
+ */
+export const CommunityObservationTable = sqliteTable(
+  "community_observation",
+  {
+    /** Time-ordered so "what happened lately with this peer" is a range scan, not a sort. */
+    id: text().primaryKey(),
+    /**
+     * The peer, BY THE KEY THEY HELD AT THE TIME — not resolved forward before storing.
+     *
+     * 🔴 Storing the resolved key would rewrite history at every rotation, and the whole defence
+     * against a fresh face is that the past stays attached to the person. Resolution happens on
+     * READ, through the succession chain, which already answers by any key a peer ever held.
+     */
+    subject: text().notNull(),
+    /**
+     * Epoch millis the dealing HAPPENED, which is not `time_created`.
+     *
+     * A confirmation arriving days later is an observation about the earlier claim, so the two
+     * genuinely differ, and decay and oscillation-detection both read this one.
+     */
+    observed_at: integer().notNull(),
+    /**
+     * What KIND of dealing this was.
+     *
+     * ⚠️ The one column that is genuinely irrecoverable. The vision names dealings that are not
+     * the same thing — fabricating a news claim, blowing a deadline, failing to deliver paid work,
+     * trading compute — and says a score SIZES exposure. The right size for lending compute is not
+     * the right weight for believing a war report, and a peer meticulous about delivery and florid
+     * about news is an ordinary peer rather than a contradiction.
+     *
+     * It does NOT decide whether standing is one number or several: that is a read-time policy and
+     * is deliberately still open. It decides only that a per-context score can always be collapsed
+     * into one, while one number can never be split back apart.
+     */
+    context: text().notNull(),
+    /**
+     * The coarse result, for counting. Prose cannot be tallied and a tally cannot be re-read for
+     * nuance, so both are kept and neither substitutes for the other.
+     */
+    outcome: text().notNull(),
+    /**
+     * The agent's own words about what happened.
+     *
+     * ⚠️ Untrusted-adjacent: it quotes what a peer did and may quote what a peer SAID, so
+     * anything rendering it owes it the same fence channel content gets.
+     */
+    note: text(),
+    /** The message or claim this is about, when there is one — without it a dispute can only be
+     * re-argued, never re-examined. */
+    about: text(),
+    ...Timestamps,
+  },
+  (table) => [index("community_observation_subject_idx").on(table.subject, table.observed_at)],
+)

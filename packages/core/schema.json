@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "446c8303-5ee3-457e-9a37-88bc7400d709",
+  "id": "f24bf992-c587-4282-86fb-820137b41279",
   "prevIds": [
-    "68757e4d-af7c-437b-a9e5-05149bd18221"
+    "446c8303-5ee3-457e-9a37-88bc7400d709"
   ],
   "ddl": [
     {
@@ -84,6 +84,10 @@
     },
     {
       "name": "community_contact",
+      "entityType": "tables"
+    },
+    {
+      "name": "community_observation",
       "entityType": "tables"
     },
     {
@@ -1471,6 +1475,96 @@
       "name": "time_updated",
       "entityType": "columns",
       "table": "community_contact"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "community_observation"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "subject",
+      "entityType": "columns",
+      "table": "community_observation"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "observed_at",
+      "entityType": "columns",
+      "table": "community_observation"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "context",
+      "entityType": "columns",
+      "table": "community_observation"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "outcome",
+      "entityType": "columns",
+      "table": "community_observation"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "note",
+      "entityType": "columns",
+      "table": "community_observation"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "about",
+      "entityType": "columns",
+      "table": "community_observation"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "community_observation"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "community_observation"
     },
     {
       "type": "text",
@@ -4594,6 +4688,15 @@
         "id"
       ],
       "nameExplicit": false,
+      "name": "community_observation_pk",
+      "table": "community_observation",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
       "name": "community_offer_pk",
       "table": "community_offer",
       "entityType": "pks"
@@ -4917,6 +5020,24 @@
       "name": "bash_job_owner_idx",
       "entityType": "indexes",
       "table": "bash_job"
+    },
+    {
+      "columns": [
+        {
+          "value": "subject",
+          "isExpression": false
+        },
+        {
+          "value": "observed_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "community_observation_subject_idx",
+      "entityType": "indexes",
+      "table": "community_observation"
     },
     {
       "columns": [
