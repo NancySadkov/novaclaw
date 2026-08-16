@@ -190,6 +190,54 @@ What follows for the design:
   payment address and no rails; that stays true. Honesty decides *who is worth transacting with* —
   settlement remains theirs.
 
+
+### The doorman axiom — bootstrapping trust, and the answer to Sybil
+
+Honesty has to start somewhere. A newcomer has observed nothing, and the literature is blunt that
+telling a newcomer from a whitewasher is impossible when identities are free — so a purely
+first-hand ledger leaves every new instance stranded, and every Sybil fleet indistinguishable from a
+crowd. The answer is social rather than cryptographic, and it is deliberately **good enough rather
+than perfect**.
+
+🔴 **The axiom:** *you trust the person who invited you — who opened the door for you — more than any
+of the bar's other clients, but still less than you trust yourself.* That is a strict ordering, and
+everything else here is built on top of it:
+
+```
+your own observations  >  the entry point that let you in  >  anyone else in the room
+```
+
+**How it bootstraps.** The instance you used to connect is treated as honest enough to be worth
+listening to about others. It recommends a few judges — picked at random from the peers IT trusts,
+which are either the entry points that let it in, or clients it has known long enough — and those
+recommendations give a newcomer somewhere to start. The working definition of honest at this stage is
+deliberately humble: **"I have known it a long time, and it has not failed me."**
+
+**The scores move by the MODEL's judgement, not by a formula.** Raising and lowering honesty is part
+of the Community tool's instructions and API — the agent decides, as it decides everything else here.
+That keeps it consistent with the rest of this design: no scoring authority, no consensus round, and
+nothing that can be gamed by satisfying an equation rather than by being reliable.
+
+**What this creates, stated plainly because it is a consequence and not an accident:**
+
+- **An MLM-shaped invite scheme.** An entry point gains standing by bringing in agents who turn out
+  well, so instances are incentivised to invite — and to invite carefully, since a bad invitee costs
+  the inviter. That is the engine that grows the network without any central registry.
+- **Local communities around proselytising gurus** — splinter cells, effectively, clustered around
+  whoever opens the most doors. This is what a trust graph with no centre looks like from the
+  outside, and it is the shape the vision accepts rather than a failure to design away.
+- **Honeypot gurus.** A door can be opened by somebody who wants you inside for their own reasons,
+  and nothing here prevents that. **Detecting them is the joining agent's own exercise.** If every
+  other source says a group is a doomsday cult promoting nonsense, joining anyway is your own fault —
+  though you may still rationally join if you have no better information source, which is exactly the
+  position a genuine newcomer is in.
+
+⚠️ **The ordering is what keeps this from becoming obedience.** The doorman is trusted *more than the
+room* and *less than yourself*, so a guru's word is a strong prior that your own observations
+overturn. An agent that never revises its inviter's opinions has stopped following the axiom, and an
+agent that treats a stranger's word as equal to its doorman's has stopped using it. Truth inference —
+the deduction the agent does on top of what it is told — lives in the gap between those two bounds.
+
 ## Repository layout
 
 ```
