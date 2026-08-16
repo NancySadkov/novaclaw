@@ -136,55 +136,40 @@ const sourcesExcept = (exclude: string): string[] => {
  * those arrive rather than becoming a place to hide things.
  */
 const EXPECTED_ORPHANS: Record<string, string> = {
-  // Statements arrive from PEERS. The caller is the transport's inbound path (P2), which is the one
-  // piece of this program that does not exist — the same reason `record` was test-only until the
-  // HTTP surface landed.
-  "contacts.ts#follow": "internal helper: followAll walks the chain link by link with it, and followAll IS the caller the network reaches — a bag of statements arrives unordered, so single-stepping is never the entry point",
-  // Deliberately NOT exposed. With one channel and no way to join others, a Leave button's only
-  // effect is to empty the screen, and Mute has nothing to mute against. Both become real with
-  // channel discovery in P5; shipping the controls first would be UI for a situation nobody is in.
-  // 🔴 Deliberately unreachable, and it must STAY that way until P2. Rotating issues a successor
-  // statement that no peer can receive without a transport, so a user who rotated today would
-  // silently strand themselves: new key, nobody told, and the proof undeliverable. The capability is
-  // built and tested; exposing it is P2's job, not P1's.
-  // Queries and summaries arrive FROM PEERS. Built ahead of the transport deliberately — these are
-  // the controls whose absence collapsed Gnutella, and they are cheaper to get right in a test than
-  // in a mesh — but nothing local can call them until something carries a query.
-  "search.ts#consider": "internal: the wire in this same file calls it on every received query — it is the door, not a capability waiting for one",
-  "search.ts#widen": "internal: `broadcast` in this same file waves through it, widening only when a wave under-delivers",
-  "reconcile.ts#bucketOf": "internal helper called by summarize/idsIn in the same file; exported to test the both-sides-agree rule",
-  // ✅ WIRED since the note above was written: `post` calls `prove`, `record` calls `verify`, and
-  // the signed envelope carries a nonce. `solve` remains listed only because this guard counts
-  // callers OUTSIDE the declaring file, and `solve`'s caller is `prove` in the same module — it is
-  // exported so the difficulty table in `work.test.ts` can be measured directly.
-  //
-  // ⚠️ That is a known weakness of the rule: an exported INTERNAL helper looks identical to an
-  // orphan. Tightening it to ignore same-file callers would hide real orphans in big modules, so the
-  // exemption carries the reason instead.
   /**
-   * The DM envelope, built before the feature that carries it — the same order the message envelope,
-   * reconciliation and the search controls used, and for the reason §11 gave: this is the most
-   * dangerous code in the program and it is cheaper to get right in a test than in a mesh.
+   * 🔴 Every entry below is an exported INTERNAL helper — a same-file caller, which this guard
+   * cannot see because it deliberately counts callers OUTSIDE the declaring file. Tightening it to
+   * accept same-file callers would hide real orphans in big modules, so the exemption carries the
+   * reason instead. **Nothing here is "not wired up yet"**; that state is what the ledger exists to
+   * expose, and an entry claiming it would be the ledger hiding work from itself.
    *
-   * ⚠️ What it is waiting for is NOT a transport. It is the DM feature itself: publishing a sealing
-   * key signed by the identity, and a message type that carries an envelope. Those are the next wire.
+   * ⚠️ This block used to be wrapped in prose describing a product that no longer exists. Six
+   * claims, all false by the time they were read: that the transport "is the one piece of this
+   * program that does not exist" (it shipped), that rotation "must STAY unreachable until P2" (it is
+   * in Settings), that Leave and Mute are "deliberately NOT exposed" pending channel discovery (both
+   * are in the panel), that nothing can carry a search query (`/search-channels` answers one), that
+   * the sealing envelope waits on "the DM feature itself" (DMs ship), and that `topicOf` waits for a
+   * transport to need it.
+   *
+   * 🔴 Each was true when written, and each was left behind when its ENTRY was deleted on wiring —
+   * the comment outlived the thing it explained. That is the same failure this program has now hit
+   * three times (a step named for what it did not test, a note saying a surface could not be
+   * tested): **a wrong sentence about coverage or state does not fail, it just stops the looking.**
+   * Prose about what is NOT built belongs in the roadmap, which is pruned; a guard should describe
+   * only what it is exempting, right now.
    */
-  /**
-   * ⚠️ Also exposed by the tightening. The transport is the intended caller — the store's note calls
-   * it "repair… the self-healing story, safe for an agent or the transport to do automatically" —
-   * and `sync` already calls `peers.seen` at exactly the point this belongs. Left unwired here
-   * because it changes what a successful peer answer WRITES, and that wants its own verification
-   * rather than being folded into a guard fix.
-   */
-  "contacts.ts#observe": "the transport's route repair: `sync` marks `peers.seen` when a peer answers and should record the contact's live route beside it; filed in todo/subsystem-residues.md",
-  "seal.ts#parsePublic": "internal helper used by seal/unseal in the same file; exported to test that a peer's malformed key is refused rather than thrown on",
-  "work.ts#solve": "internal helper called by prove() in the same file; exported for measurement",
-  // THE inbound door. A sidecar is a separate process holding only a topic id, so it calls this —
-  // and nothing in-process does, by design: an in-process caller already knows the channel name and
-  // should use `record`.
-  // The transport needs `topicOf` to know which topic to publish to; until one exists, its only
-  // caller is `channelFor` beside it. `canonical` is `topicOf`'s own helper, exported so the
-  // normalisation decision — that #NovaClaw and #novaclaw are ONE room — is directly testable.
+  "contacts.ts#follow":
+    "internal helper: followAll walks the chain link by link with it, and followAll IS the caller the network reaches — a bag of statements arrives unordered, so single-stepping is never the entry point",
+  "search.ts#consider":
+    "internal: the wire in this same file calls it on every received query — it is the door, not a capability waiting for one",
+  "search.ts#widen":
+    "internal: `broadcast` in this same file waves through it, widening only when a wave under-delivers",
+  "reconcile.ts#bucketOf":
+    "internal helper called by summarize/idsIn in the same file; exported to test the both-sides-agree rule",
+  "seal.ts#parsePublic":
+    "internal helper used by seal/unseal in the same file; exported to test that a peer's malformed key is refused rather than thrown on",
+  "work.ts#solve":
+    "internal helper called by prove() in the same file; exported so the difficulty table in `work.test.ts` can be measured directly",
 }
 
 describe("community capabilities have callers", () => {

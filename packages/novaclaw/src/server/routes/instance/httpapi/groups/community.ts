@@ -40,9 +40,9 @@ export const CommunityContact = Schema.Struct({
 /**
  * Whether anything can currently carry a message, and why not when it cannot.
  *
- * ⚠️ `off` carries a REASON because the two cases are different things to tell a person: "the part
- * that carries messages is still being built" versus "you switched the network off". A single
- * disconnected state would make an airgapped instance look broken.
+ * ⚠️ `off` carries a REASON because the three cases are different things to tell a person: "you have
+ * not joined yet", "you switched the network off", and "nobody to dial". A single disconnected state
+ * would make an airgapped instance look broken and a joinable one look dead.
  */
 export const CommunityTransportState = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("off"), reason: Schema.Literals(["airgap", "no-peers", "not-joined"]) }),
@@ -99,8 +99,9 @@ const AddContact = Schema.Struct({
  * The result of saying something.
  *
  * ⚠️ `delivered` is NOT "was it read" — nobody can promise delivery in a network with no server. It
- * says only that a transport accepted it. False means the message is in the author's own log and has
- * no audience yet, which is every install until P2 lands.
+ * says only that a transport accepted it. False means the message is in the author's own log and had
+ * no audience at that moment: nobody reachable was in the room. It goes out to whoever asks for the
+ * room's history later, which is what reconciliation is for.
  */
 const PostResult = Schema.Struct({
   id: Schema.String,
@@ -193,7 +194,7 @@ export const CommunityApi = HttpApi.make("community").add(
           identifier: "community.transport.state",
           summary: "Transport state",
           description:
-            "Report whether the community network can carry messages. `off` names its reason so the UI can distinguish a transport that does not exist yet from one airgap has switched off.",
+            "Report whether the community network can carry messages. `off` carries a reason, and the three are genuinely different situations a caller must not merge: `not-joined` (this instance has never accepted what joining costs, so it does not reach out at all), `airgap` (its owner switched the network off), and `no-peers` (willing and able, but it knows nobody to dial — the one a user can fix in a minute).",
         }),
       ),
       HttpApiEndpoint.get("channelList", CommunityPaths.channels, {

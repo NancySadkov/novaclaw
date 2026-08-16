@@ -849,7 +849,7 @@ class ApiCommunityTransport extends NovaClawApiClient {
   /**
    * Transport state
    *
-   * Report whether the community network can carry messages. `off` names its reason so the UI can distinguish a transport that does not exist yet from one airgap has switched off.
+   * Report whether the community network can carry messages. `off` carries a reason, and the three are genuinely different situations a caller must not merge: `not-joined` (this instance has never accepted what joining costs, so it does not reach out at all), `airgap` (its owner switched the network off), and `no-peers` (willing and able, but it knows nobody to dial — the one a user can fix in a minute).
    */
   public state<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<

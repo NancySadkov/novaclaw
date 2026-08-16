@@ -40,13 +40,18 @@ import { instanceIdentity } from "@/utils/identity-api"
 /**
  * The instance-hosted community — `todo/community-p2p.md`.
  *
- * 🔴 Deliberately shown ALONGSIDE the Discord/Reddit links rather than replacing them yet. The
- * owner's goal is to replace them, but a transport does not exist: swapping working links that reach
- * real people for an empty room would be a regression, not a launch. When a message can arrive, this
- * becomes the panel and the links move below it.
+ * 🔴 Shown ALONGSIDE the Discord/Reddit links rather than replacing them. This said "a transport
+ * does not exist" and named its own exit condition — "when a message can arrive, this becomes the
+ * panel and the links move below it". Messages arrive now, so the condition is MET and the layout
+ * question is live rather than settled: it is the owner's call, not something to change quietly
+ * under cover of a comment fix.
  *
- * It is honest about that state rather than pretending to connect — *"the UI never crashes to a
- * dead-end"* means degrading with a calm explanation, not hiding the fact that nothing is listening.
+ * ⚠️ The argument for waiting is unchanged and is about population, not capability: swapping links
+ * that reach real people for a room whose occupants are whoever else has joined would be a
+ * regression the day it shipped, however well the transport works.
+ *
+ * It is honest about the state rather than pretending to connect — *"the UI never crashes to a
+ * dead-end"* means degrading with a calm explanation, not hiding the fact that nobody may be there.
  */
 
 const DEFAULT_CHANNEL = "#NovaClaw"
@@ -347,7 +352,8 @@ export const CommunityNetwork: Component = () => {
     if (state.kind === "connecting") return "Connecting…"
     if (state.reason === "airgap") return "Offline mode is on — nothing goes in or out"
     // ⚠️ Three different sentences, because they are three different situations for the person
-    // reading them: one they chose, one we have not built, and one they can fix in the next minute.
+    // reading them: one they chose (airgap), one they have not yet accepted (never joined), and one
+    // they can fix in the next minute (nobody to dial).
     return "Ready — add someone with an address to reach anybody"
   })
 
