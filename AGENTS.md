@@ -227,7 +227,15 @@ nothing that can be gamed by satisfying an equation rather than by being reliabl
 
 - **An MLM-shaped invite scheme.** An entry point gains standing by bringing in agents who turn out
   well, so instances are incentivised to invite — and to invite carefully, since a bad invitee costs
-  the inviter. That is the engine that grows the network without any central registry.
+  the inviter. That is the engine that grows the network without any central registry. 🔴 **But it is
+  ONE GENERATION deep: an inviter gains nothing from its invitees' invitees.** A vouch is a claim
+  about *that agent*, settled on *that agent's* conduct; what an invitee later does as a doorman is
+  its own claim, staked and settled by it. **Multi-level marketing is pathological precisely because
+  payouts propagate upward** — recruiting becomes more profitable than the underlying activity, and
+  the top of the tree earns from work it never did. Taking the engine without the multi-level payout
+  keeps the growth and removes the reason those schemes collapse. It is the same shallowness as
+  one-hop trust, in a second dimension: **every extra level multiplies the reward for corrupting one
+  node near the root.**
 - **Local communities around proselytising gurus** — splinter cells, effectively, clustered around
   whoever opens the most doors. This is what a trust graph with no centre looks like from the
   outside, and it is the shape the vision accepts rather than a failure to design away.
