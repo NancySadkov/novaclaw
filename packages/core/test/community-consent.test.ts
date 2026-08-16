@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { Effect, Exit } from "effect"
+import { ConfigureTool } from "@novaclaw/core/tool/configure"
 import { CommunityConsent } from "@novaclaw/core/community/consent"
 
 /**
@@ -102,5 +104,38 @@ describe("reading consent off the disk", () => {
      */
     expect(() => CommunityConsent.readStoreConsent("C:/nonexistent/never-created.db")).not.toThrow()
     expect(CommunityConsent.readStoreConsent("C:/nonexistent/never-created.db")).toBeUndefined()
+  })
+})
+
+describe("an AGENT changing the community settings", () => {
+  /**
+   * 🔴 The owner asked for the app AND its settings to be reachable by a Nova session. The settings
+   * half needed no new tool — `community` is a config key, so the existing `configure` tool already
+   * carries it — but that was ASSERTED from the tier table rather than tested, which is the shape
+   * this session has caught wrong three times.
+   *
+   * ⚠️ PRIVILEGED, so it costs `configure_privileged` rather than plain `configure`: a standing
+   * grant for ordinary settings must not carry "join a network of strangers" along with it. That is
+   * the whole reason for two actions rather than one.
+   */
+  test("🔴 the key is reachable by `configure`, and priced privileged", () => {
+    expect(ConfigureTool.KEY_TIERS).toHaveProperty("community")
+    expect(ConfigureTool.tierOf("community")).toBe("privileged")
+    expect(ConfigureTool.TIER_ACTION.privileged).toBe("configure_privileged")
+  })
+
+  test("a community patch DECODES — the tool can actually carry it, not just price it", async () => {
+    const decoded = await Effect.runPromise(
+      ConfigureTool.decodePatch({ community: { consented: true } }).pipe(Effect.exit),
+    )
+    expect(Exit.isSuccess(decoded), JSON.stringify(decoded)).toBe(true)
+  })
+
+  test("⚠️ and a malformed one is refused rather than written", async () => {
+    // The same strictness the boot path has: `"yes"` is not consent, wherever it arrives from.
+    const decoded = await Effect.runPromise(
+      ConfigureTool.decodePatch({ community: { consented: "yes" } }).pipe(Effect.exit),
+    )
+    expect(Exit.isSuccess(decoded)).toBe(false)
   })
 })
