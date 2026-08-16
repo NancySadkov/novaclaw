@@ -132,6 +132,49 @@ describe("instance HttpApi", () => {
     }),
   )
 
+  it.live("🔴 restore REFUSES without replace, and never echoes the secret back", () =>
+    Effect.gen(function* () {
+      const backup = (yield* (yield* HttpClientRequest.post("/api/identity/backup").pipe(HttpClient.execute)).json) as {
+        version: number
+        id: string
+        networkID: string
+        secretKey: string
+      }
+
+      /**
+       * 🔴 The refusal IS the safety property. Restoring over an existing identity orphans every
+       * contact and channel that knows this peer, and from outside it is indistinguishable from the
+       * instance being taken over — so a caller that forgets the flag must be stopped, not helped.
+       * A handler that defaulted `replace` to true would pass every other test in this file.
+       */
+      const refused = yield* HttpClientRequest.post("/api/identity/restore").pipe(
+        HttpClientRequest.bodyJson({ backup }),
+        Effect.flatMap(HttpClient.execute),
+      )
+      expect(refused.status).toBe(400)
+      expect(JSON.stringify(yield* refused.json)).toContain("confirmed explicitly")
+
+      const accepted = yield* HttpClientRequest.post("/api/identity/restore").pipe(
+        HttpClientRequest.bodyJson({ backup, replace: true }),
+        Effect.flatMap(HttpClient.execute),
+      )
+      expect(accepted.status).toBe(200)
+      const body = yield* accepted.json
+
+      // Same instance it started as: this restores the backup taken moments ago, so a DIFFERENT
+      // networkID here would mean the endpoint installed something other than what it was handed.
+      expect((body as { networkID: string }).networkID).toBe(backup.networkID)
+
+      /**
+       * ⚠️ Public halves ONLY. The secret goes IN; nothing about it comes back out. An endpoint that
+       * echoed it would put the key in every proxy log and browser history that saw the response —
+       * the exact reason backup is a POST rather than a GET, undone on the way home.
+       */
+      expect(JSON.stringify(body)).not.toContain(backup.secretKey)
+      expect(JSON.stringify(body)).not.toContain("secret")
+    }),
+  )
+
   it.live("🔴 the community surface answers — a missing node compiles green and 500s", () =>
     Effect.gen(function* () {
       // This is the failure mode the group could not be trusted to avoid on types alone: the API
