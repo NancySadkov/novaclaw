@@ -344,6 +344,13 @@ peers you dealt with, not for everyone who knocked.** A refused message from an 
 something about your door, not about a counterparty. That bound is set by your own activity, which a
 stranger cannot inflate without first getting you to deal with them.
 
+🔴 **Attribution is cryptographic, so relaying cannot launder.** Gossip forwards the ORIGINAL signed
+message, so the wire already says who wrote it: carry a peer's message and they remain the author;
+retype it and you are. There is no third option, and no prose for anyone to adjudicate. **That makes
+the rule below enforced rather than merely incentivised** — and it is the identity work paying off
+somewhere it was not designed for: signed messages were built so a reader could weigh a source, and
+they turn out to make relay liability unforgeable too.
+
 🔴 **An unattributed relay absorbs the whole stake.** If you pass a peer's claim on as your own and it
 fails, you made the claim and you own the wager; if you attributed it, you claimed only that they said
 it — which was true — and the listener learns about them second-hand. **That turns "do not pass off a
