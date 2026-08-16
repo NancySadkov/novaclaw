@@ -179,6 +179,29 @@ describe("CommunityObservation", () => {
     }),
   )
 
+  it.effect("🔴 a dealing we PERFORMED is recorded even with a total stranger", () =>
+    Effect.gen(function* () {
+      const ledger = yield* CommunityObservation.Service
+      const contacts = yield* CommunityContacts.Service
+      const asker = stranger().networkID
+
+      /**
+       * ⚠️ The engagement bound refuses this subject through `record` — correctly, since that
+       * path is written by an agent reading strangers. But answering a question IS the encounter, and
+       * routing it through the bounded path meant every FIRST-TIME asker was dropped: the ledger
+       * never learned we had dealt with them, which is the one thing it exists to remember.
+       */
+      expect(yield* ledger.record({ subject: asker, at: 1_000, context: "answer", outcome: "answered" })).toBeUndefined()
+
+      const id = yield* ledger.recordFirstHand({ subject: asker, at: 2_000, context: "answer", outcome: "answered" })
+      expect(id).toBeTruthy()
+      expect((yield* ledger.about(asker)).length).toBe(1)
+
+      // — and it still cannot introduce them. A dealing is not a relationship.
+      expect(yield* contacts.get(asker)).toBeUndefined()
+    }),
+  )
+
   it.effect("🔴 recording a dealing never introduces anyone", () =>
     Effect.gen(function* () {
       const ledger = yield* CommunityObservation.Service

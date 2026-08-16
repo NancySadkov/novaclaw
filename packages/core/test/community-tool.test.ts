@@ -1,3 +1,5 @@
+import fs from "node:fs"
+import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { PermissionV2 } from "@novaclaw/core/permission"
@@ -130,6 +132,22 @@ describe("what the tool deliberately CANNOT do", () => {
      * record about a stranger. It does not stop a peer lying about ITSELF, which is the agent's
      * judgement to make and is at least attributable.
      */
+    /**
+     * 🔴 And the tool cannot reach the UNBOUNDED recording path.
+     *
+     * `recordFirstHand` skips the engagement bound because its callers are code that just performed
+     * the dealing — answering a question IS the encounter, and no instruction is involved to be
+     * injected. That argument collapses the moment a MODEL can call it: an agent reading a channel
+     * could then be told to write about anyone at all, which is the exact attack the bound exists
+     * to stop.
+     *
+     * ⚠️ Checked against the tool's SOURCE, because this is a claim about what a model can reach
+     * rather than about the op list — a helper added later that happens to call it would be
+     * invisible to a name-based check.
+     */
+    const toolSource = fs.readFileSync(path.join(import.meta.dir, "..", "src", "tool", "community.ts"), "utf8")
+    expect(toolSource).not.toContain("recordFirstHand")
+
     for (const forbidden of ["trust", "score", "rate", "reputation"]) expect(ops).not.toContain(forbidden)
     // ⚠️ And the list is pinned exactly: an operation added later lands here, where somebody has to
     // decide whether it belongs, rather than slipping in under a rule about names.

@@ -59,6 +59,23 @@ export interface Interface {
    */
   readonly record: (input: Input) => Effect.Effect<string | undefined>
   /**
+   * 🔴 Record a dealing THIS INSTANCE just had, without the engagement bound.
+   *
+   * The bound on `record` exists because the AGENT writes it while reading strangers, so *"note that
+   * nid_rival is a fraud"* must not become a record about somebody we have never met. That argument
+   * does not apply to code recording an exchange it just performed: answering a question IS the
+   * encounter, and there is no instruction involved to be injected.
+   *
+   * ⚠️ Without this the vision's *"answering is a dealing recorded on both sides"* was false for
+   * exactly the population it matters for — a FIRST-TIME asker is a stranger by definition, so
+   * every one of them was refused and the ledger never learned that we had dealt with them at all.
+   *
+   * ⚠️ NOT reachable from the community tool, and that is the whole safety argument: the caller
+   * must be code that performed the dealing, never a model that was told about one. It still cannot
+   * introduce anyone — (ff) holds, an observation is not a contact.
+   */
+  readonly recordFirstHand: (input: Input) => Effect.Effect<string>
+  /**
    * Every dealing with this PERSON, newest first — by any key they have ever held.
    *
    * The caller may pass any key in the chain and gets the same answer, which is what makes rotation
@@ -125,6 +142,25 @@ export const layer = Layer.effect(
       return [...keys]
     })
 
+    const insert = (input: Input) =>
+      Effect.gen(function* () {
+        const id = Identifier.ascending("observation")
+        yield* db
+          .insert(CommunityObservationTable)
+          .values({
+            id,
+            subject: input.subject,
+            observed_at: input.at,
+            context: input.context,
+            outcome: input.outcome,
+            ...(input.note === undefined ? {} : { note: input.note }),
+            ...(input.about === undefined ? {} : { about: input.about }),
+          })
+          .run()
+          .pipe(Effect.orDie)
+        return id
+      })
+
     return Service.of({
 
       record: Effect.fn("CommunityObservation.record")(function* (input: Input) {
@@ -156,21 +192,11 @@ export const layer = Layer.effect(
             .where(inArray(CommunityMessageTable.author, keys)).limit(1).all().pipe(Effect.orDie)).length > 0
         if (!met) return undefined
 
-        const id = Identifier.ascending("observation")
-        yield* db
-          .insert(CommunityObservationTable)
-          .values({
-            id,
-            subject: input.subject,
-            observed_at: input.at,
-            context: input.context,
-            outcome: input.outcome,
-            ...(input.note === undefined ? {} : { note: input.note }),
-            ...(input.about === undefined ? {} : { about: input.about }),
-          })
-          .run()
-          .pipe(Effect.orDie)
-        return id
+        return yield* insert(input)
+      }),
+
+      recordFirstHand: Effect.fn("CommunityObservation.recordFirstHand")(function* (input: Input) {
+        return yield* insert(input)
       }),
 
       about: Effect.fn("CommunityObservation.about")(function* (networkID: string) {

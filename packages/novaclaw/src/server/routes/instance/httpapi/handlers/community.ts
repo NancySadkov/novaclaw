@@ -453,7 +453,17 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
            * either way, because what we spend is always our own business.
            */
           yield* answers.spent(ctx.payload.asker)
-          yield* ledger.record({
+          /**
+           * 🔴 FIRST-HAND, so the dealing is actually recorded.
+           *
+           * `record` refuses subjects this instance has never encountered — the defence against an
+           * agent being told to write about strangers. A FIRST-TIME asker is a stranger by
+           * definition, so routing this through it meant every one of them was silently dropped and
+           * the vision's *"answering is a dealing recorded on both sides"* was false for exactly the
+           * population it matters for. Found by asking what the store did with a key it had never
+           * seen, rather than by any test.
+           */
+          yield* ledger.recordFirstHand({
             subject: ctx.payload.asker,
             at: Date.now(),
             context: "answer",
