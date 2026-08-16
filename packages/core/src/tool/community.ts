@@ -106,7 +106,9 @@ export const Input = Schema.Struct({
       "peers: instances reachable on the network · archived: channels left but still held · status: whether the network can carry messages",
   }),
   channel: Schema.String.pipe(Schema.optional).annotate({
-    description: "Channel name for `history`, e.g. #NovaClaw.",
+    // ⚠️ Names BOTH operations that need it. It said "for `history`" while `say` required it too,
+    // so the one field a post cannot happen without was documented as belonging to another verb.
+    description: "Channel name, for `history` and `say` — e.g. #NovaClaw.",
   }),
   limit: Schema.Number.pipe(Schema.optional).annotate({
     description: "How many messages `history` returns (default 50).",
@@ -307,7 +309,11 @@ export const layer = Layer.effectDiscard(
               if (channel === undefined) return { message: "history needs a channel name (for example #NovaClaw)." }
               const messages = yield* channels.history(channel, input.limit ?? 50)
               return { message: formatHistory(channel, messages) }
-            }).pipe(Effect.mapError(() => new ToolFailure({ message: "Unable to read the community." }))),
+            }).pipe(Effect.mapError(() => new ToolFailure({
+                // ⚠️ "reach", not "read": this now covers `say` as well, and telling a model its POST
+                // failed to read something sends it to diagnose the wrong half.
+                message: "Unable to reach the community.",
+              }))),
           }),
         ),
       })
