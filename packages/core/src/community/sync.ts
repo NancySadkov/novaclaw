@@ -108,6 +108,28 @@ export const MAX_PEERS_ASKED = 16
  */
 export const MAX_CONTACT_ROUTES = 6
 
+/**
+ * 🔴 The most a PEER'S ANSWER may be, checked before it is read.
+ *
+ * `peer-body-limit.ts` closed this in the inbound direction after a 52.9 MB anonymous POST returned
+ * 200 and cost +450 MB of commit. The OUTBOUND half was never closed: `ask` read `response.json`
+ * with no ceiling at all, so every bound in this file — 256 ids, 256 messages, 8 KB bodies — was
+ * applied to a structure that had already been buffered and parsed.
+ *
+ * Measured against a hostile peer serving one oversized answer: `/nearby` returned **6,000,001 bytes
+ * and 400,000 channel names** to the caller, ingested, de-duplicated into a Map and handed to the
+ * app. Nothing refused it at any layer.
+ *
+ * ⚠️ Wiring catch-up is what made this ordinary. Before it, dialling happened when a user pressed
+ * "look for instances"; now every channel open asks up to 16 peers, and the answer is attacker-
+ * controlled by definition.
+ *
+ * ⚠️ The ceiling is derived, not picked: the largest honest answer is a `sync/messages` reply of
+ * `MAX_MESSAGES_PER_REQUEST` messages at `MAX_BODY_BYTES` each — about 2 MB of bodies — so 4 MB
+ * leaves generous room for signatures, ids and framing while refusing anything of a different order.
+ */
+export const MAX_PEER_RESPONSE_BYTES = 4 * 1024 * 1024
+
 export const MAX_MESSAGES_PER_REQUEST = 256
 
 export interface Result {
@@ -306,7 +328,19 @@ export const layer = Layer.effect(
         )
         .pipe(
           Effect.timeout(PER_REQUEST_TIMEOUT_MS),
-          Effect.flatMap((response) => response.json),
+          Effect.flatMap((response) => {
+            /**
+             * ⚠️ Refused on the DECLARED length, before the body is read — the only place the check
+             * can happen before the allocation it exists to prevent. An answer with no declared
+             * length is refused for the same reason the inbound limiter refuses one: every honest
+             * responder here is a NovaClaw instance answering with a JSON string, which always sets
+             * it, and a peer that omits it is asking us to read an unknown quantity on trust.
+             */
+            const declared = Number(response.headers["content-length"])
+            if (!Number.isFinite(declared) || declared > MAX_PEER_RESPONSE_BYTES)
+              return Effect.fail(new Error("peer answer too large"))
+            return response.json
+          }),
           Effect.flatMap((json) => Schema.decodeUnknownEffect(schema)(json)),
           Effect.map((value): A | undefined => value),
           Effect.catchCause(() => Effect.succeed(undefined)),
