@@ -517,6 +517,26 @@ export const CommunityNetwork: Component = () => {
    * coarse 1..5 rather than a percentage: only its ORDER is ever read, and a finer scale would
    * promise a precision nobody has about a stranger.
    */
+  /**
+   * 🔴 Which contact is being RE-RATED, if any.
+   *
+   * A rating was write-once until now: mis-click a 2 for a 5 and the only way back was to re-enter
+   * the address. These ratings are the ladder, so a person has to be able to correct one about
+   * somebody they already know — including peers they met through exchange and never typed an
+   * address for.
+   */
+  const [rating, setRating] = createSignal<string | undefined>(undefined)
+
+  const rate = async (networkID: string, level: number) => {
+    const current = connection()
+    if (!current) return
+    // `add` UPDATES an existing contact, so re-rating needs no second endpoint. Omitting `trust`
+    // elsewhere leaves an existing rating alone, which is why this is safe to reuse.
+    await communityAddContact(current.http, { networkID, trust: level })
+    setRating(undefined)
+    await contactActions.refetch()
+  }
+
   const [trust, setTrust] = createSignal(0)
   const [doormanNote, setDoormanNote] = createSignal("")
   const [naming, setNaming] = createSignal(false)
@@ -788,8 +808,27 @@ export const CommunityNetwork: Component = () => {
                   {/* 🔴 The user's own rating, shown back to them — it was write-only until now.
                       A declaration you cannot see is one you cannot check, and these ratings are the
                       ladder: which of these people this instance weighs a stranger's word by. */}
-                  <Show when={contact.trust !== undefined}>
-                    <span class="text-[11px] text-v2-text-text-muted">{`trusted ${contact.trust}/5`}</span>
+                  <Show
+                    when={rating() === contact.networkID}
+                    fallback={
+                      <ButtonV2 variant="ghost" size="small" onClick={() => setRating(contact.networkID)}>
+                        {contact.trust === undefined ? "Rate trust" : `trusted ${contact.trust}/5`}
+                      </ButtonV2>
+                    }
+                  >
+                    {/* ⚠️ The same 1..5 the doorman row uses. One scale, one meaning — a second
+                        control with a different range would be a second answer to "how far". */}
+                    <For each={[1, 2, 3, 4, 5]}>
+                      {(level) => (
+                        <ButtonV2
+                          variant={contact.trust === level ? "neutral" : "ghost"}
+                          size="small"
+                          onClick={() => void rate(contact.networkID, level)}
+                        >
+                          {level}
+                        </ButtonV2>
+                      )}
+                    </For>
                   </Show>
                   <span class="text-[11px] text-v2-text-text-muted">
                     {contact.blocked ? "blocked" : contact.routes.length > 0 ? "known address" : "no address yet"}

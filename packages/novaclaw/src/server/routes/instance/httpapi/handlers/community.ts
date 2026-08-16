@@ -63,6 +63,13 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
               networkID: ctx.payload.networkID,
               ...(ctx.payload.petname === undefined ? {} : { petname: ctx.payload.petname }),
               ...(ctx.payload.routes === undefined ? {} : { routes: ctx.payload.routes }),
+              /**
+               * ⚠️ Forwarded, and it was NOT. Declaring `trust` on the payload schema made it
+               * arrive and made it typecheck; this line is what makes it do anything. The POST
+               * answered 200 with the old rating intact — a success that changed nothing, which is
+               * the mirror of a field dropped on the way OUT and just as quiet.
+               */
+              ...(ctx.payload.trust === undefined ? {} : { trust: ctx.payload.trust }),
             })
             .pipe(
               Effect.catchTag("CommunityContacts.ContactError", (error) =>

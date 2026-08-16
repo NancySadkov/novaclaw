@@ -78,7 +78,16 @@ export function communityContacts(server: ServerConnection.HttpBase) {
 
 export function communityAddContact(
   server: ServerConnection.HttpBase,
-  input: { readonly networkID: string; readonly petname?: string; readonly routes?: readonly string[] },
+  input: {
+    readonly networkID: string
+    readonly petname?: string
+    readonly routes?: readonly string[]
+    /**
+     * ⚠️ Re-adding an EXISTING contact updates them, which is how a rating is changed without a
+     * second endpoint — and omitting this leaves any existing rating alone rather than clearing it.
+     */
+    readonly trust?: number
+  },
 ) {
   return instanceFetch<CommunityContact>(server, { route: "api/community/contact", method: "POST", body: input })
 }
