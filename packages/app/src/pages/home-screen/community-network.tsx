@@ -1,6 +1,6 @@
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
-import { For, Show, createMemo, createResource, createSignal, type Component } from "solid-js"
+import { For, Show, createEffect, createMemo, createResource, createSignal, type Component } from "solid-js"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useGlobal } from "@/context/global"
 import { useServerSync } from "@/context/server-sync"
@@ -8,6 +8,7 @@ import { useServer } from "@/context/server"
 import {
   communityAddContact,
   communityChannelHistory,
+  communityChannelSync,
   communityChannels,
   communityArchivedChannels,
   communityDiscover,
@@ -297,6 +298,34 @@ export const CommunityNetwork: Component = () => {
     },
     ([value, name]) => communityChannelHistory(value.http, name),
   )
+  /**
+   * 🔴 Catch up on what the channel held before we got here.
+   *
+   * Gossip only reaches whoever is online, so without this a channel opened on a fresh instance shows
+   * only what arrives from this second onward — measured on two real instances as 601 messages on one
+   * side and 1 on the other. `sync.sync` existed and was tested from the day it was written; nothing
+   * in a running instance had ever called it.
+   *
+   * ⚠️ On opening a channel rather than on a timer: catch-up costs a round trip per peer, and paying
+   * that for channels nobody is reading is exactly the kind of ambient cost this subsystem bounds
+   * everywhere else. Opening the channel is the moment the history is about to be read.
+   *
+   * ⚠️ Deliberately not awaited before rendering. The local log draws immediately and the fetched
+   * messages appear when they land, so a slow or unreachable peer costs freshness and never the view.
+   */
+  createEffect(() => {
+    const value = connection()
+    const name = channel()
+    if (value === undefined) return
+    void communityChannelSync(value.http, name)
+      .then((result) => {
+        if (result.fetched > 0) historyActions.refetch()
+      })
+      .catch(() => {
+        // A failed catch-up is not an error the user needs: the local log is already on screen.
+      })
+  })
+
   const [transport] = createResource(connection, (value) => communityTransportState(value.http))
 
   /**

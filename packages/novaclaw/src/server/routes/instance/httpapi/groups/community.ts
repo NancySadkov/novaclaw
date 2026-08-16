@@ -136,6 +136,7 @@ export const CommunityPaths = {
   channelsArchived: "/api/community/channel/archived",
   channelHistory: "/api/community/channel/:name/history",
   channelPost: "/api/community/channel/:name/post",
+  channelSync: "/api/community/channel/:name/sync",
 } as const
 
 export const CommunityApi = HttpApi.make("community").add(
@@ -506,6 +507,21 @@ export const CommunityApi = HttpApi.make("community").add(
           summary: "Read a channel's history",
           description:
             "Gossip only reaches whoever is online, so this local log is what makes a channel readable by someone who was away. Ordered by receive time, never by the author's own claimed timestamp. `hidden` counts what the user's own filter rules removed — reported rather than silent, because a channel that looks empty because of a forgotten rule is indistinguishable from one nobody posts in.",
+        }),
+      ),
+      HttpApiEndpoint.post("channelSync", CommunityPaths.channelSync, {
+        params: ChannelParams,
+        payload: Schema.Struct({}),
+        success: described(
+          Schema.Struct({ peers: Schema.Number, fetched: Schema.Number }),
+          "How many peers answered, and how many messages were new to us",
+        ),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.channel.sync",
+          summary: "Catch up on a channel's history from peers",
+          description:
+            "Gossip only reaches whoever is online, so an instance that joins late — or was simply switched off for a day — holds nothing from before it arrived. This asks peers what they have, compares it against the local log by bucket summary, and requests only what is missing. Everything fetched enters through the same ingress door a pushed message uses, so a peer we asked gets no more trust than a stranger: signatures are checked, blocked authors are dropped, and the local retention bound still applies. `peers` counts how many answered, `fetched` how many messages were new.",
         }),
       ),
     )

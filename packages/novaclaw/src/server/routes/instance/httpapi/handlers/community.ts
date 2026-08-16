@@ -292,6 +292,23 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
           return yield* channels.historyFiltered(ctx.params.name)
         }),
       )
+      /**
+       * 🔴 The wire that was missing. `reconcile.ts` and `sync.sync` were written, bounded, reviewed
+       * and tested — and then nothing in a running instance ever called them, so a joining instance
+       * held only what arrived live after it got there. Measured on two real instances: A held 601
+       * messages, B joined, and B received the next live post and NONE of the backlog.
+       *
+       * ⚠️ On demand rather than a background timer. Catch-up is `peers × round trips`, and the whole
+       * subsystem is careful about what a peer's answer costs us; a timer would pay that repeatedly
+       * for channels nobody is reading. The app asks when a channel is opened, which is exactly when
+       * the history is about to be looked at.
+       */
+      .handle(
+        "channelSync",
+        Effect.fn("CommunityHttpApi.channelSync")(function* (ctx) {
+          return yield* sync.sync(ctx.params.name)
+        }),
+      )
   }),
 )
 

@@ -1032,6 +1032,35 @@ class ApiCommunityChannel extends NovaClawApiClient {
       path,
     })
   }
+
+  /**
+   * Catch up on a channel's history from peers
+   *
+   * Gossip only reaches whoever is online, so an instance that joins late — or was simply switched off for a day — holds nothing from before it arrived. This asks peers what they have, compares it against the local log by bucket summary, and requests only what is missing. Everything fetched enters through the same ingress door a pushed message uses, so a peer we asked gets no more trust than a stranger: signatures are checked, blocked authors are dropped, and the local retention bound still applies. `peers` counts how many answered, `fetched` how many messages were new.
+   */
+  public sync<ThrowOnError extends boolean = false>(
+    parameters: {
+      name: string
+      body: {
+        [key: string]: unknown
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { name: parameters?.["name"] }
+    const body = parameters?.["body"]
+    return (options?.client ?? this.client).post<
+      T.CommunityChannelSyncResponses,
+      T.CommunityChannelSyncErrors,
+      ThrowOnError
+    >({
+      url: "/api/community/channel/{name}/sync",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
 }
 
 class ApiCommunityFilter extends NovaClawApiClient {

@@ -392,6 +392,33 @@ describe("two instances", () => {
       )
       expect(again).toEqual({ peers: 1, fetched: 0 })
       expect(asked).toEqual([CommunitySync.SYNC_SUMMARY_PATH])
+
+      /**
+       * ⚠️ That second sync runs on a FRESH service build, which is the only reason it reaches the
+       * summary at all: `sync` now holds a per-channel cooldown, and a repeat inside it never dials.
+       * Stated because the distinction is invisible from the assertions above — they would keep
+       * passing if the cooldown silently swallowed every real repeat, which is the failure this note
+       * exists to stop. The same-instance behaviour is pinned by its own test below.
+       */
+      asked.length = 0
+      const twice = await Effect.runPromise(
+        Effect.gen(function* () {
+          const sync = yield* CommunitySync.Service
+          // Same service, twice in a row — what a channel switch or a model loop actually does.
+          const first = yield* sync.sync("#NovaClaw")
+          const second = yield* sync.sync("#NovaClaw")
+          return { first, second }
+        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+      expect(twice.first).toEqual({ peers: 1, fetched: 0 })
+      /**
+       * 🔴 The repeat costs the peer NOTHING — not one round trip, not even the ~4 KB summary.
+       * Asserted on `asked` and not only on the counts, because a suppressed sync and a sync that
+       * exchanged summaries and found nothing both report `fetched: 0`. Only the wire log tells them
+       * apart, and the wire is the thing the cooldown exists to protect.
+       */
+      expect(twice.second).toEqual({ peers: 0, fetched: 0 })
+      expect(asked).toEqual([CommunitySync.SYNC_SUMMARY_PATH])
     } finally {
       server?.stop(true)
       cleanup(alice.home)

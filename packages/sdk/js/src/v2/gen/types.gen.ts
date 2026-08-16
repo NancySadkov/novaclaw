@@ -9681,6 +9681,42 @@ export type CommunityChannelHistoryResponses = {
 
 export type CommunityChannelHistoryResponse = CommunityChannelHistoryResponses[keyof CommunityChannelHistoryResponses]
 
+export type CommunityChannelSyncData = {
+  body: {
+    [key: string]: unknown
+  }
+  path: {
+    name: string
+  }
+  query?: never
+  url: "/api/community/channel/{name}/sync"
+}
+
+export type CommunityChannelSyncErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityChannelSyncError = CommunityChannelSyncErrors[keyof CommunityChannelSyncErrors]
+
+export type CommunityChannelSyncResponses = {
+  /**
+   * How many peers answered, and how many messages were new to us
+   */
+  200: {
+    peers: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    fetched: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type CommunityChannelSyncResponse = CommunityChannelSyncResponses[keyof CommunityChannelSyncResponses]
+
 export type CommunityPeerDmData = {
   body: {
     to: string

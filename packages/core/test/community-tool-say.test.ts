@@ -5,6 +5,7 @@ import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityPeers } from "@novaclaw/core/community/peers"
 import { CommunityPost } from "@novaclaw/core/community/post"
+import { CommunitySync } from "../src/community/sync"
 import { CommunityTransport } from "@novaclaw/core/community/transport"
 import { CommunityTool } from "@novaclaw/core/tool/community"
 import { CredentialCipher } from "@novaclaw/core/credential-cipher"
@@ -55,6 +56,8 @@ const it = testEffect(
       CommunityPeers.node,
       CommunityPost.node,
       CommunityTransport.node,
+      // `history` catches up before it reads, so the tool now depends on sync too.
+      CommunitySync.node,
     ]),
   ),
 )

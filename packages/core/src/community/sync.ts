@@ -39,6 +39,28 @@ import { Offline } from "../offline"
  * would be the easiest one to attack because we asked for the data.
  */
 
+/**
+ * How long after catching up on a channel before it is worth asking again.
+ *
+ * ⚠️ Tuned to what it PROTECTS, not to a feel: a catch-up is one round trip per peer imposed on
+ * other people's machines, and the events that trigger it — a user switching channels, a model
+ * calling `history` — repeat far faster than a room's contents change. Thirty seconds is long
+ * enough that a loop cannot turn into a flood and short enough that nobody reading a live
+ * conversation notices it, since delivery already pushes new messages as they are said. Catch-up
+ * fills the gap left by being AWAY; it is not how a channel stays current while you watch it.
+ */
+export const SYNC_COOLDOWN_MS = 30_000
+
+/**
+ * The most channels whose last-sync time is remembered.
+ *
+ * ⚠️ A ceiling rather than an expiry sweep, for the reason `search.ts` records one file over: a
+ * bound whose signal has no source is decoration. `sync` accepts any channel name from the tool or
+ * the route, so without this an agent asking about a million invented rooms would grow this map
+ * forever — and forgetting a stale entry costs one extra catch-up, which is the cheap direction.
+ */
+const MAX_SYNC_STAMPS = 10_000
+
 /** Paths a peer serves so others can catch up from it. */
 export const SYNC_SUMMARY_PATH = "/api/community/sync/summary"
 export const SYNC_IDS_PATH = "/api/community/sync/ids"
@@ -66,7 +88,12 @@ export const OFFER_PATH = "/api/community/offer"
  *
  * 16, against `search`'s 32: search is concurrent and its cost is other people's throttle budget,
  * while these loops are sequential and their cost is the user waiting. Sixteen unreachable peers at
- * the 8 s timeout is about two minutes — bad, but bounded and survivable, where 500 is not.
+ * the 10 s timeout is about two and a half minutes — bad, but bounded and survivable, where 500 is
+ * not.
+ *
+ * ⚠️ That upper bound is survivable only where somebody can SEE it. The two callers wired since
+ * treat it accordingly: the community panel does not await catch-up before drawing, and the agent
+ * tool caps its wait and answers from what it holds.
  */
 export const MAX_PEERS_ASKED = 16
 
@@ -231,6 +258,11 @@ export const layer = Layer.effect(
     // outbound connections are precisely what reveal the user's IP to a stranger, which is the thing
     // the warning they accepted is about. `participates` covers BOTH conditions, and reads each live.
     const speaks = () => CommunityConsent.participates(CommunityConsent.currentGate())
+    /**
+     * When each channel was last caught up on. Held in memory on purpose: a restart is exactly when
+     * catching up matters most, so it should never be the thing a stale stamp suppresses.
+     */
+    const lastSynced = new Map<string, number>()
     const contacts = yield* CommunityContacts.Service
     const channels = yield* CommunityChannels.Service
     const peers = yield* CommunityPeers.Service
@@ -439,11 +471,41 @@ export const layer = Layer.effect(
         // the user chose, and airgap has to be able to withdraw that choice.
         if (!speaks()) return { peers: 0, fetched: 0 }
 
+        /**
+         * 🔴 A cooldown, because both callers can repeat far faster than the network changes.
+         *
+         * Catch-up costs a round trip PER PEER, and the two things that trigger it are a user
+         * switching channels and a model calling `history` — a model in a loop can ask twenty times
+         * in the seconds a person takes to ask once. Every one of those asks is a cost we impose on
+         * OTHER people's instances, which is the side of the ledger this subsystem usually looks at
+         * from the receiving end: the same reasoning that bounds what a peer can make us assemble
+         * applies to what we can make a peer assemble.
+         *
+         * ⚠️ Per channel, not global — catching up on one room must not silence a first-ever sync of
+         * another.
+         */
+        const now = Date.now()
+        const last = lastSynced.get(channel)
+        if (last !== undefined && now - last < SYNC_COOLDOWN_MS) return { peers: 0, fetched: 0 }
+
         // 🔴 Contacts AND learned peers. Syncing only with people the user added by hand would make
         // catching up depend on who they happen to know, when the whole point of peer exchange is
         // that any entry point reaches the network.
         const dialable = yield* reachable
         if (dialable.length === 0) return { peers: 0, fetched: 0 }
+
+        /**
+         * ⚠️ Stamped only once there is somebody to ask. Recording the attempt above this line — the
+         * first way I wrote it — meant a sync that reached NOBODY still started the cooldown, so an
+         * instance whose panel is opened a second before discovery finds its first peer would then
+         * refuse to catch up for the next thirty seconds. A fresh install does exactly that.
+         */
+        lastSynced.set(channel, now)
+        // Insertion order is eviction order, which for a rolling window is oldest-first.
+        if (lastSynced.size > MAX_SYNC_STAMPS) {
+          const oldest = lastSynced.keys().next()
+          if (!oldest.done) lastSynced.delete(oldest.value)
+        }
 
         const topic = CommunityTopic.topicOf(channel)
         let answered = 0

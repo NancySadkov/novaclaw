@@ -7,6 +7,7 @@ import { CommunityPeers } from "../community/peers"
 import { CommunityContacts } from "../community/contacts"
 import { CommunityConsent } from "../community/consent"
 import { CommunityPost } from "../community/post"
+import { CommunitySync } from "../community/sync"
 import { CommunityTransport } from "../community/transport"
 import { PermissionV2 } from "../permission"
 import { makeLocationNode } from "../effect/app-node"
@@ -97,6 +98,20 @@ export const formatHistory = (
 }
 
 /** One place for the separator, so a heredoc cannot turn it into a real line break again. */
+/**
+ * The longest a `history` read will wait for catch-up before answering from what it has.
+ *
+ * ⚠️ `sync` dials peers SEQUENTIALLY at a 10 s timeout each, up to 16 of them — a bound written when
+ * nothing called it, whose own comment accepts "about two minutes" on the grounds that the cost is a
+ * user waiting. That reasoning does not survive being wired to a tool: an agent is not a person who
+ * can see a spinner and decide to wait, and a read that hangs for minutes is a broken read however
+ * correct its result.
+ *
+ * ⚠️ Cutting it short keeps what already arrived — every fetched message is committed through
+ * `deliver` as it lands, so a timeout costs the REST of the catch-up, never the part that finished.
+ */
+const CATCH_UP_BUDGET_MS = 5_000
+
 const NEWLINE = "\n"
 
 export const Input = Schema.Struct({
@@ -127,6 +142,11 @@ export const layer = Layer.effectDiscard(
     const contacts = yield* CommunityContacts.Service
     const peers = yield* CommunityPeers.Service
     const transport = yield* CommunityTransport.Service
+    /**
+     * Catch-up, so an agent reading a channel is not answering from a log that stopped when the
+     * instance was last closed. See the `history` branch for why this is a read's business.
+     */
+    const sync = yield* CommunitySync.Service
     // ⚠️ Acquired here, and `posts` is what actually SPEAKS — the read-only services above cannot.
     const posts = yield* CommunityPost.Service
     const permission = yield* PermissionV2.Service
@@ -307,6 +327,21 @@ export const layer = Layer.effectDiscard(
 
               const channel = input.channel
               if (channel === undefined) return { message: "history needs a channel name (for example #NovaClaw)." }
+              /**
+               * 🔴 Catch up BEFORE reading, because a stale answer here is worse than a slow one.
+               *
+               * The vision (AGENTS.md) makes an instance asking another for what it knows the point
+               * of the network — "AI doesn't need these sites to learn the news". An agent that read
+               * only the local log would answer that question from whatever arrived before its user
+               * last closed the app, and report it with exactly the confidence a fresh answer gets.
+               * Gossip reaches whoever is ONLINE, so for any instance that was away the local log is
+               * a partial archive by construction.
+               *
+               * ⚠️ Best-effort and never fatal: an unreachable peer costs freshness, not the read.
+               * `sync` is consent-gated and rate-limited internally, so calling it on every history
+               * read costs nothing when the community is off and cannot become a flood when it is on.
+               */
+              yield* Effect.ignore(Effect.timeout(sync.sync(channel), CATCH_UP_BUDGET_MS))
               const messages = yield* channels.history(channel, input.limit ?? 50)
               return { message: formatHistory(channel, messages) }
             }).pipe(
@@ -364,5 +399,6 @@ export const node = makeLocationNode({
     CommunityContacts.node,
     CommunityPeers.node,
     CommunityTransport.node,
+    CommunitySync.node,
   ],
 })

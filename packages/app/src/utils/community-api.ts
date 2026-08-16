@@ -329,3 +329,17 @@ export function communityChannelHistory(server: ServerConnection.HttpBase, name:
     route: `api/community/channel/${encodeURIComponent(name)}/history`,
   })
 }
+
+/**
+ * Ask peers for what this channel had before we arrived.
+ *
+ * ⚠️ Answers `{peers:0,fetched:0}` rather than failing when the community is off — the gate lives in
+ * core, so a caller never has to ask whether it is allowed to try.
+ */
+export function communityChannelSync(server: ServerConnection.HttpBase, name: string) {
+  return instanceFetch<{ readonly peers: number; readonly fetched: number }>(server, {
+    route: `api/community/channel/${encodeURIComponent(name)}/sync`,
+    method: "POST",
+    body: {},
+  })
+}

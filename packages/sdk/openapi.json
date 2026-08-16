@@ -4449,6 +4449,118 @@
         ]
       }
     },
+    "/api/community/channel/{name}/sync": {
+      "post": {
+        "tags": ["community"],
+        "operationId": "community.channel.sync",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "How many peers answered, and how many messages were new to us",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "peers": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "fetched": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    }
+                  },
+                  "required": ["peers", "fetched"],
+                  "additionalProperties": false,
+                  "description": "How many peers answered, and how many messages were new to us"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Gossip only reaches whoever is online, so an instance that joins late — or was simply switched off for a day — holds nothing from before it arrived. This asks peers what they have, compares it against the local log by bucket summary, and requests only what is missing. Everything fetched enters through the same ingress door a pushed message uses, so a peer we asked gets no more trust than a stranger: signatures are checked, blocked authors are dropped, and the local retention bound still applies. `peers` counts how many answered, `fetched` how many messages were new.",
+        "summary": "Catch up on a channel's history from peers",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.channel.sync({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/community/dm": {
       "post": {
         "tags": ["community-peer"],
