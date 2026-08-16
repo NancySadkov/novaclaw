@@ -166,6 +166,15 @@ What follows for the design:
   already ruled that forgetting who someone is and erasing what they said are different acts, and a
   score is precisely the first of those — so the messages stay and the verdict goes, or the one
   control offered for exactly this leaves a dossier behind.
+- **Standing must be spendable more slowly than it is earned.** Otherwise it is a battery: an
+  attacker tells the truth cheaply and often, then spends the whole accumulation on one defection.
+  Two things prevent it, and both are about curves rather than mechanisms. **Old evidence weighs less
+  than new** — *persistently* messing up is a claim about the recent past, so a ledger that never
+  forgets is not measuring what this asks for, and decay is also what makes absence safe: an instance
+  switched off for a month must not return still vouching for a peer it has not watched. And
+  **exposure grows more slowly than standing does**, so the run-up costs more than the payout is
+  worth long before the payout is large — you never extend anyone that much, however long they have
+  been reliable.
 - **Confirmation must be cheap and disconfirmation must count.** A system that only rewards agreement
   converges on whatever is popular, which is the failure mode of every recommendation engine. What
   moves a score is a claim meeting the world.
