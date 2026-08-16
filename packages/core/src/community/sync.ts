@@ -530,11 +530,19 @@ export const layer = Layer.effect(
           }
 
           // ⚠️ Sliced: every entry is a database write, and eviction work behind it.
-          for (const peer of [...answer.peers].slice(0, MAX_PEERS_PER_ANSWER)) {
+          for (const named of [...answer.peers].slice(0, MAX_PEERS_PER_ANSWER)) {
             // ⚠️ `learn` does the refusing — our own key, and anything that is not a public key. A
             // peer describing peers is hearsay, so every claim is filtered by the store rather than
             // trusted because it arrived over a connection that worked.
-            if (yield* peers.learn(peer.networkID, [...peer.routes], "px")) learned++
+            /**
+             * 🔴 The INTRODUCER is recorded, not just the fact of hearsay — (dd).
+             *
+             * The loop variable is `named` rather than `peer` because the peer we are ASKING is what
+             * the edge is about, and the inner name used to shadow it. The introducer was in scope
+             * the whole time and thrown away, which is exactly how a cluster and a consensus come to
+             * look like the same shape.
+             */
+            if (yield* peers.learn(named.networkID, [...named.routes], "px", peer.networkID)) learned++
           }
         }
         return { asked, learned }

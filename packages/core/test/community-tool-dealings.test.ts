@@ -165,6 +165,68 @@ describe("the agent can keep its own record", () => {
     }),
   )
 
+  it.effect("🔴 an unknown peer's answer names WHO introduced them", () =>
+    Effect.gen(function* () {
+      yield* Layer.build(CommunityTool.layer).pipe(Effect.scoped, Effect.orDie)
+      const peers = yield* CommunityPeers.Service
+      const doorman = stranger()
+      const newcomer = stranger()
+
+      // Learned the way peer exchange really supplies them: the doorman's answer carried the newcomer.
+      yield* peers.learn(doorman, [`127.0.0.1:${++port}`], "px")
+      yield* peers.learn(newcomer, [`127.0.0.1:${++port}`], "px", doorman)
+
+      /**
+       * ⚠️ A first asker has no dealings by construction, so this sentence is the ONLY thing the
+       * model gets. It must carry the one fact that exists: who opened the door.
+       */
+      const out = yield* invoke({ op: "dealings", peer: newcomer })
+      expect(out.structured.message).toContain("No dealings")
+      expect(out.structured.message).toContain(doorman)
+    }),
+  )
+
+  it.effect("🔴 the introducer is WRITE-ONCE, so provenance cannot be laundered", () =>
+    Effect.gen(function* () {
+      yield* Layer.build(CommunityTool.layer).pipe(Effect.scoped, Effect.orDie)
+      const peers = yield* CommunityPeers.Service
+      const doorman = stranger()
+      const latecomer = stranger()
+      const newcomer = stranger()
+
+      yield* peers.learn(newcomer, [`127.0.0.1:${++port}`], "px", doorman)
+      // A second peer names them later. That is not a re-introduction, and if it overwrote the edge
+      // an attacker could own a peer's provenance simply by being the last to mention them.
+      yield* peers.learn(newcomer, [`127.0.0.1:${++port}`], "px", latecomer)
+
+      const out = yield* invoke({ op: "dealings", peer: newcomer })
+      expect(out.structured.message).toContain(doorman)
+      expect(out.structured.message).not.toContain(latecomer)
+    }),
+  )
+
+  it.effect("🔴 a cluster is distinguishable from a consensus", () =>
+    Effect.gen(function* () {
+      yield* Layer.build(CommunityTool.layer).pipe(Effect.scoped, Effect.orDie)
+      const peers = yield* CommunityPeers.Service
+      const guru = stranger()
+      const faces = [stranger(), stranger(), stranger()]
+
+      yield* peers.learn(guru, [`127.0.0.1:${++port}`], "px")
+      for (const face of faces) yield* peers.learn(face, [`127.0.0.1:${++port}`], "px", guru)
+
+      /**
+       * 🔴 Three peers agreeing looks like independent confirmation whether they are three
+       * strangers or three faces of one operator. This is the only thing that tells them apart, and
+       * without the edge every one of these would read as `undefined` — indistinguishable.
+       */
+      const listed = yield* peers.list()
+      const introducers = faces.map((face) => listed.find((p) => p.networkID === face)?.introducedBy)
+      expect(new Set(introducers).size).toBe(1)
+      expect(introducers[0]).toBe(guru)
+    }),
+  )
+
   it.effect("🔴 judging a peer does not add them to the address book", () =>
     Effect.gen(function* () {
       yield* Layer.build(CommunityTool.layer).pipe(Effect.scoped, Effect.orDie)

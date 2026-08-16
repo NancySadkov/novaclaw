@@ -101,6 +101,24 @@ export const CommunityPeerTable = sqliteTable("community_peer", {
    * monoculture is only visible if you can see which source everything came from.
    */
   source: text().notNull().default("px"),
+  /**
+   * 🔴 WHICH peer told us about this one — the introduction edge (`notes/spec/honesty-ledger.md`
+   * (dd)). `source` says what KIND of hearsay it was; this says whose.
+   *
+   * Without it a cluster and a consensus are the same shape: three peers agreeing looks like
+   * independent confirmation whether they are three strangers or three faces of one operator. It is
+   * the only structural defence against a honeypot guru, because everything else about their
+   * cluster looks exactly like a group of peers who happen to agree.
+   *
+   * ⚠️ WRITE-ONCE. The first peer to tell us about somebody is who introduced them; a later
+   * announcement is not a re-introduction, and letting it overwrite would hand an attacker a way to
+   * launder provenance by simply being the last to mention a peer.
+   *
+   * ⚠️ Nullable, with no default: LAN discovery has no introducer, and rows that predate this
+   * column genuinely do not know. NULL means unknown, which is not the same as "nobody" — and a
+   * `$default` here would emit no SQL DEFAULT and brick the upgrade it is meant to serve.
+   */
+  introduced_by: text(),
   ...Timestamps,
 })
 

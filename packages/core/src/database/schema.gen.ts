@@ -238,6 +238,7 @@ export default {
           \`routes\` text NOT NULL,
           \`last_seen_at\` integer,
           \`source\` text DEFAULT 'px' NOT NULL,
+          \`introduced_by\` text,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL
         );

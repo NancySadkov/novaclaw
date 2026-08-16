@@ -283,11 +283,29 @@ export const layer = Layer.effectDiscard(
               if (input.op === "dealings") {
                 if (input.peer === undefined) return { message: "dealings needs a peer." }
                 const history = yield* ledger.about(input.peer)
+                /**
+                 * 🔴 Who introduced them, for the case where there is nothing else — the doorman
+                 * ladder, reaching the model at the one moment it decides anything.
+                 *
+                 * A first-time asker has no dealings BY CONSTRUCTION, so the ledger is silent exactly
+                 * when the question is live. What is not silent is who opened the door: you trust the
+                 * peer who introduced you more than the room, and less than yourself.
+                 *
+                 * ⚠️ It is also the correlation signal. If several peers vouching for each other
+                 * all trace to one introducer, that is one operator wearing several faces — and
+                 * without this line a cluster and a consensus read identically.
+                 */
+                const known = (yield* peers.list()).find((entry) => entry.networkID === input.peer)
+                const vouch =
+                  known?.introducedBy === undefined
+                    ? ""
+                    : ` You first heard of them from ${known.introducedBy}; weigh them partly by how that peer has behaved.`
                 return {
                   message:
                     history.length === 0
                       ? "No dealings recorded with this peer. That is not a bad sign and not a good one - " +
-                        "you have simply never had one, so weigh what they say on its own merits and on who vouched for them."
+                        "you have simply never had one, so weigh what they say on its own merits." +
+                        vouch
                       : history
                           .map(
                             (entry) =>

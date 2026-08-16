@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "f24bf992-c587-4282-86fb-820137b41279",
+  "id": "cef966a4-8edd-48b6-8616-24bfbe9bed29",
   "prevIds": [
-    "446c8303-5ee3-457e-9a37-88bc7400d709"
+    "f24bf992-c587-4282-86fb-820137b41279"
   ],
   "ddl": [
     {
@@ -1643,6 +1643,16 @@
       "default": "'px'",
       "generated": null,
       "name": "source",
+      "entityType": "columns",
+      "table": "community_peer"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "introduced_by",
       "entityType": "columns",
       "table": "community_peer"
     },

@@ -29,6 +29,8 @@ export interface Peer {
   readonly routes: readonly string[]
   readonly lastSeenAt?: number
   readonly source: string
+  /** WHICH peer told us about this one. Undefined for LAN discovery, and for rows learned before we kept it. */
+  readonly introducedBy?: string
 }
 
 /**
@@ -70,6 +72,14 @@ export interface Interface {
     networkID: string,
     routes: readonly string[],
     source?: string,
+    /**
+     * 🔴 The peer whose answer carried this one — the introduction edge (dd).
+     *
+     * ⚠️ Recorded only when the row is CREATED. The first peer to name somebody is who
+     * introduced them; a later mention is not a re-introduction, and overwriting would let an
+     * attacker launder provenance by being the last to speak.
+     */
+    introducedBy?: string,
   ) => Effect.Effect<boolean>
   /** Mark that this peer answered just now — what keeps it alive through eviction. */
   readonly seen: (networkID: string) => Effect.Effect<boolean>
@@ -90,6 +100,7 @@ const rowPeer = (row: typeof CommunityPeerTable.$inferSelect): Peer => ({
   routes: row.routes ?? [],
   ...(row.last_seen_at === null ? {} : { lastSeenAt: row.last_seen_at }),
   source: row.source,
+  ...(row.introduced_by === null ? {} : { introducedBy: row.introduced_by }),
 })
 
 export const layer = Layer.effect(
@@ -132,7 +143,7 @@ export const layer = Layer.effect(
         return (yield* all()).map(rowPeer)
       }),
 
-      learn: Effect.fn("CommunityPeers.learn")(function* (networkID, routes, source = "px") {
+      learn: Effect.fn("CommunityPeers.learn")(function* (networkID, routes, source = "px", introducedBy) {
         if (InstanceIdentityStore.parseNetworkID(networkID) === undefined) return false
         // Ourselves: a peer table listing this instance makes it gossip with itself, and every
         // publish would spend a round trip talking into a mirror.
@@ -190,7 +201,7 @@ export const layer = Layer.effect(
         if (existing === undefined) {
           yield* db
             .insert(CommunityPeerTable)
-            .values({ network_id: networkID, routes: merged, source })
+            .values({ network_id: networkID, routes: merged, source, ...(introducedBy === undefined ? {} : { introduced_by: introducedBy }) })
             .onConflictDoNothing()
             .run()
             .pipe(Effect.orDie)
