@@ -82,8 +82,17 @@ export const parse = (records: ReadonlyArray<ReadonlyArray<string>>): ReadonlyAr
 export const resolve = Effect.fn("CommunitySeeds.resolve")(function* (input?: {
   readonly host?: string
   readonly lookup?: (host: string) => Promise<ReadonlyArray<ReadonlyArray<string>>>
+  /**
+   * ⚠️ The user's own setting, read by the CALLER and passed in rather than reached for here.
+   * This module has no business resolving configuration, and a lookup that consulted a gate would
+   * be a second place answering "may we go out", which is how the two drift apart.
+   */
+  readonly settings?: { readonly enabled?: boolean; readonly host?: string }
 }) {
-  const host = input?.host ?? DEFAULT_SEED_HOST
+  // OFF is explicit only. Absence means the default door, which is what makes joining work for
+  // somebody who has never configured anything.
+  if (input?.settings?.enabled === false) return []
+  const host = input?.host ?? input?.settings?.host ?? DEFAULT_SEED_HOST
   const lookup =
     input?.lookup ??
     ((name: string) => import("node:dns/promises").then((dns) => dns.resolveTxt(name) as Promise<string[][]>))

@@ -251,6 +251,32 @@ export class Info extends Schema.Class<Info>("Config.Info")({
      * never be stored — so the whole capability was unreachable in production while every test
      * passed. Found by turning it on against a live instance and watching nothing change.
      */
+    /**
+     * 🔴 Where the DEFAULT door looks — and the ability to shut it.
+     *
+     * Joining asks DNS for a first address so somebody who knows nobody still reaches the network.
+     * That query tells whoever runs that zone that this machine runs NovaClaw, which is a small
+     * thing and not nothing, and the vision's whole objection to a company in the middle applies to
+     * us as much as anyone. So it is declared, pointable elsewhere, and refusable.
+     *
+     * ⚠️ Turning it off does NOT strand anybody: LAN discovery needs no seed, peer exchange
+     * needs one address from any source, and typing a doorman's address always works. That is what
+     * makes this a preference rather than a switch that breaks the product.
+     */
+    seeds: Schema.Struct({
+      enabled: Schema.Boolean.pipe(Schema.optional).annotate({
+        description:
+          "Ask DNS for a starting address when joining. On by default. Off means this instance finds peers only on the LAN, from addresses you type, and through peer exchange.",
+      }),
+      host: Schema.String.pipe(Schema.optional).annotate({
+        description:
+          "The name whose TXT records list starting addresses. Point it at a zone you control to bootstrap from your own hosts instead of the project's.",
+      }),
+    })
+      .pipe(Schema.optional)
+      .annotate({
+        description: "The default way in for somebody who knows nobody. A convenience — never the only door.",
+      }),
     answers: Schema.Struct({
       enabled: Schema.Boolean.pipe(Schema.optional).annotate({
         description:

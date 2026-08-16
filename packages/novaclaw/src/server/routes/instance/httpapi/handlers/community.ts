@@ -193,7 +193,12 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
            * a join would make the seeds a DEPENDENCY, and the whole argument for allowing a
            * centralised seed at all is that it is a convenience the network survives losing.
            */
-          const seeds = yield* CommunitySeeds.resolve()
+          const stored = CommunityConsent.storedConfig() as
+            | { community?: { seeds?: { enabled?: boolean; host?: string } } }
+            | undefined
+          const seeds = yield* CommunitySeeds.resolve({
+            ...(stored?.community?.seeds === undefined ? {} : { settings: stored.community.seeds }),
+          })
 
           yield* sync.learnFrom(lan, "lan")
           yield* sync.learnFrom(seeds, "dns")

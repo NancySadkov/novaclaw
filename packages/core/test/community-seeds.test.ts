@@ -70,6 +70,48 @@ describe("CommunitySeeds.resolve", () => {
     expect(Date.now() - started).toBeLessThan(CommunitySeeds.LOOKUP_TIMEOUT_MS + 2_000)
   })
 
+  test("🔴 turning seeds OFF asks nothing at all", async () => {
+    let asked = 0
+    const answered = await run(
+      CommunitySeeds.resolve({
+        settings: { enabled: false },
+        lookup: () => {
+          asked += 1
+          return Promise.resolve([["should-never-be-read.example:1"]])
+        },
+      }),
+    )
+    /**
+     * ⚠️ The point is the LOOKUP, not the list. A DNS query tells whoever runs that zone this
+     * machine runs NovaClaw — so "off" has to mean no question was asked, not that the answer was
+     * discarded afterwards.
+     */
+    expect(answered).toEqual([])
+    expect(asked).toBe(0)
+  })
+
+  test("⚠️ absence is ON — the door works for somebody who configured nothing", async () => {
+    const answered = await run(
+      CommunitySeeds.resolve({ settings: {}, lookup: () => Promise.resolve([["a.example:1"]]) }),
+    )
+    expect(answered).toEqual(["a.example:1"])
+  })
+
+  test("a host of your own is used instead of the project's", async () => {
+    let sawHost = ""
+    await run(
+      CommunitySeeds.resolve({
+        settings: { host: "my-own-zone.example" },
+        lookup: (host) => {
+          sawHost = host
+          return Promise.resolve([])
+        },
+      }),
+    )
+    expect(sawHost).toBe("my-own-zone.example")
+    expect(sawHost).not.toBe(CommunitySeeds.DEFAULT_SEED_HOST)
+  })
+
   test("records that resolve become addresses", async () => {
     const found = await run(
       CommunitySeeds.resolve({
