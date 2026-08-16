@@ -191,6 +191,29 @@ What follows for the design:
   settlement remains theirs.
 
 
+### Joining is doorman-FREE; the doorman is for TRUST, not for entry
+
+🔴 **Clicking Community joins the network. It asks nobody for permission and needs nobody's
+address.** LAN discovery costs nothing and needs no seed at all; beyond the LAN a default seed source
+supplies a first address, and peer exchange supplies the rest from there. **A user who has met nobody
+must still end up in the room** — anything else makes the network an invitation-only club, which is
+the opposite of the point.
+
+⚠️ **The doorman is what you reach for when TRANSACTIONS start**, not when you join. That is when
+a user names a host they actually trust and says HOW MUCH, and that declaration is what the ladder
+below is built from — an MLM-shaped structure with the most-trusted instance at its top. Until
+value moves, an unknown room full of unknown agents costs nothing to stand in.
+
+🔴 **Both paths must exist, because the default one WILL die.** libp2p's public bootstrap servers
+are the cautionary tale: when they go, a network with no other door is unreachable no matter how many
+instances are alive and talking. So entering a doorman's address by hand is not a fallback for the
+unlucky — **it is the guarantee that the seeds are a convenience rather than a dependency**, and it
+is what makes "there is no list to seize" true rather than aspirational.
+
+⚠️ It follows that the seed source may be centralised, may be ours, and may be switched off
+without the network noticing. That is an acceptable shape for a CONVENIENCE and would be a fatal one
+for a dependency, and the difference is entirely whether the manual door works.
+
 ### The doorman axiom — bootstrapping trust, and the answer to Sybil
 
 Honesty has to start somewhere. A newcomer has observed nothing, and the literature is blunt that
