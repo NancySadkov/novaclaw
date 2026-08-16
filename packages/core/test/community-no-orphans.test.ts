@@ -57,6 +57,58 @@ const declaredMethods = (source: string): string[] => {
   return [...block.matchAll(/readonly (\w+): \(/g)].map((match) => match[1]!)
 }
 
+/**
+ * 🔴 Namespaces whose `.method(` is NEVER a call to one of our capabilities.
+ *
+ * This ledger used to ask `other.includes(".${method}(")` and called that *"loose on purpose: a
+ * false NEGATIVE here just means the ledger stays quiet"*. It did not stay quiet — it stayed WRONG,
+ * and it hid the largest defect of the program: `sync.ts#sync` had no production caller for as long
+ * as it existed, and this guard reported it used because **`Effect.sync(` contains `.sync(`**. The
+ * one capability whose name collided with the most common combinator in the codebase was the one
+ * nothing called.
+ *
+ * ⚠️ The original reasoning traded a false negative for the risk of exemptions becoming decoration.
+ * That trade is only sound when the miss is random; here it is SYSTEMATIC — it fires precisely on
+ * the names a framework also uses (`sync`, `filter`, `get`, `all`), so the guard was blindest
+ * exactly where a service method is most ordinarily named.
+ */
+const FRAMEWORK = new Set([
+  "Effect", "Layer", "Schema", "Option", "Either", "Cause", "Exit", "Fiber", "Stream", "Chunk",
+  "Duration", "Clock", "Console", "Context", "Ref", "Deferred", "Queue", "Scope", "Predicate",
+  "Array", "Record", "String", "Number", "Boolean", "Object", "JSON", "Math", "Promise", "Date",
+  "Order", "Equal", "Hash", "Struct", "Tuple", "Data", "Match", "Config", "Logger", "Metric",
+])
+
+/**
+ * Whether `source` calls `.method(` on something that is not a framework namespace.
+ *
+ * ⚠️ Still deliberately loose about WHICH of our objects the receiver is — a service is reached
+ * through a local name (`const sync = yield* CommunitySync.Service`) and chasing that would make
+ * this a type checker. Excluding the namespaces that are definitionally not ours is enough to close
+ * the systematic hole without inviting exemptions.
+ */
+const calls = (source: string, method: string): boolean => {
+  const needle = "." + method + "("
+  for (let at = source.indexOf(needle); at >= 0; at = source.indexOf(needle, at + 1)) {
+    let start = at
+    while (start > 0 && /[A-Za-z0-9_$]/.test(source[start - 1]!)) start--
+    if (!FRAMEWORK.has(source.slice(start, at))) return true
+  }
+  return false
+}
+
+/**
+ * The namespace a module is re-exported under — `export * as CommunitySync from "./sync"`.
+ *
+ * 🔴 The second half of the fix, and the first half alone was NOT enough. Excluding framework
+ * receivers still counted `serverSession.session.sync(id)` in the app as a caller of the community's
+ * `sync`: the collision is not only with `Effect.sync`, it is with any object anywhere that happens
+ * to have a method of the same name. A real caller must first GET the service, and the only way to
+ * do that is through this namespace — so a file that never mentions it cannot be calling into it.
+ */
+const namespaceOf = (source: string): string | undefined =>
+  /export \* as (\w+) from/.exec(source)?.[1]
+
 /** Every .ts file under src, minus the file that declares the method. */
 const sourcesExcept = (exclude: string): string[] => {
   const files: string[] = []
@@ -117,6 +169,29 @@ const EXPECTED_ORPHANS: Record<string, string> = {
    * ⚠️ What it is waiting for is NOT a transport. It is the DM feature itself: publishing a sealing
    * key signed by the identity, and a message type that carries an envelope. Those are the next wire.
    */
+  /**
+   * 🔴 EXPOSED by tightening this ledger, and it is a real gap rather than a helper.
+   *
+   * `backup` is wired end to end — core, `/api/identity/backup`, a client function and a button in
+   * Settings. `restore` has no route, no client function and no UI, so a user can export their
+   * identity and has no way to import it. The pair LOOKS complete because the visible half works,
+   * and §4 of the spec is explicit that this matters: "Key loss = identity loss. With no authority
+   * there is no reset."
+   *
+   * ⚠️ Exempted rather than silently wired because restore is destructive by design — `replace`
+   * overwrites an identity and orphans every contact and channel that knew this peer — and the
+   * store's own note requires "a deliberate human action behind a consent card". That is UI with
+   * confirmation semantics, not a two-line wiring. Filed in `todo/subsystem-residues.md`.
+   */
+  "instance-identity-store.ts#restore": "the identity RESTORE surface, which does not exist — backup ships without it; filed in todo/subsystem-residues.md as a real gap, not a helper",
+  /**
+   * ⚠️ Also exposed by the tightening. The transport is the intended caller — the store's note calls
+   * it "repair… the self-healing story, safe for an agent or the transport to do automatically" —
+   * and `sync` already calls `peers.seen` at exactly the point this belongs. Left unwired here
+   * because it changes what a successful peer answer WRITES, and that wants its own verification
+   * rather than being folded into a guard fix.
+   */
+  "contacts.ts#observe": "the transport's route repair: `sync` marks `peers.seen` when a peer answers and should record the contact's live route beside it; filed in todo/subsystem-residues.md",
   "seal.ts#parsePublic": "internal helper used by seal/unseal in the same file; exported to test that a peer's malformed key is refused rather than thrown on",
   "work.ts#solve": "internal helper called by prove() in the same file; exported for measurement",
   // THE inbound door. A sidecar is a separate process holding only a topic id, so it calls this —
@@ -140,6 +215,7 @@ describe("community capabilities have callers", () => {
     const moduleName = path.basename(file)
     const source = fs.readFileSync(file, "utf8")
     const methods = [...declaredMethods(source), ...exportedFunctions(source)]
+    const namespace = namespaceOf(source)
     if (methods.length === 0) continue
 
     test(`${moduleName}: ${methods.length} capability(ies) are each used somewhere`, () => {
@@ -147,10 +223,7 @@ describe("community capabilities have callers", () => {
       const orphans = methods.filter((method) => {
         const key = `${moduleName}#${method}`
         if (key in EXPECTED_ORPHANS) return false
-        // `.method(` anywhere outside the declaring file. Loose on purpose: a false NEGATIVE here
-        // just means the ledger stays quiet, while a false positive would train people to add
-        // exemptions, which is how a guard becomes decoration.
-        return !others.some((other) => other.includes(`.${method}(`))
+        return !others.some((other) => (namespace === undefined || other.includes(namespace)) && calls(other, method))
       })
       expect(orphans, `${moduleName} declares capabilities nothing calls: ${orphans.join(", ")}`).toEqual([])
     })
