@@ -209,6 +209,14 @@ export const SettingsIdentityV2: Component = () => {
           ⚠️ The confirm names the identity being restored AND says what replacing costs, because
           this is the one control here that cannot be undone by pressing it again: the contacts and
           channels attached to the CURRENT key stop being able to find this instance.
+
+          🔴 It also says what happens to what this instance ALREADY SAID, which the first version
+          missed by warning only about other people. Measured on a running pair: a fresh install
+          posted three messages, restored a backup minted elsewhere, and all three were left authored
+          by a key it no longer holds — the user's own words, indistinguishable from a stranger's.
+          Nothing is deleted and nothing is wrong: they really were signed by the replaced key, and
+          re-attributing them would be forging history. But the panel does not mark own messages, so
+          NOTHING on screen would ever tell them — which makes saying it beforehand the only chance.
         */}
         <SettingsRowV2
           title={language.t("settings.identity.restoreTitle")}

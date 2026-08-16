@@ -1249,7 +1249,7 @@ export const dict = {
   "settings.identity.restoreHint":
     "Load a file saved by Back up. Everyone who knew the old instance keeps knowing you — contacts, channels and history stay attached to the key, not to the machine.",
   "settings.identity.restoreAction": "Restore…",
-  "settings.identity.restoreChosen": "This replaces the identity below. Contacts and channels that know the current key lose you, and there is no way to undo it.",
+  "settings.identity.restoreChosen": "This replaces the identity below, and there is no way to undo it. Contacts and channels that know the current key lose you — and anything already said from this instance stays in its rooms but stops being yours, because it was signed by the key you are replacing.",
   "settings.identity.restoreProceed": "Replace identity",
   "settings.identity.restoreBusy": "Restoring…",
   "settings.identity.restoreCancel": "Cancel",
