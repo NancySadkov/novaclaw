@@ -469,7 +469,28 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
             context: "answer",
             outcome: "answered",
           })
-          return { answer: text }
+          /**
+           * 🔴 SIGNED, which is what makes the system prompt's claim true.
+           *
+           * The prompt tells the model its answer is signed with its user's identity and that a
+           * careless one costs their standing — the only reason it is given to be careful. That was
+           * false for as long as the reply carried no signature, and a false reason is worse than
+           * none.
+           *
+           * ⚠️ The ASKER and the QUESTION are inside the signature, not just the answer: without
+           * the asker, our reply to one peer could be replayed as our reply to another; without the
+           * question, the claim is unfalsifiable and cannot be re-examined by anyone it is repeated to.
+           */
+          const at = Date.now()
+          const unsigned = {
+            author: (yield* selfIdentity.identity()).networkID,
+            asker: ctx.payload.asker,
+            question: ctx.payload.question,
+            answer: text,
+            at,
+          }
+          const signature = yield* selfIdentity.sign(CommunityAnswer.canonicalBytes(unsigned))
+          return { answer: text, author: unsigned.author, at, signature: signature.toString("base64url") }
         }),
       )
       .handle(

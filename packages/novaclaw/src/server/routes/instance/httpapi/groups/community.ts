@@ -719,6 +719,16 @@ export const CommunityPeerApi = HttpApi.make("communityPeer").add(
              */
             answer: Schema.optional(Schema.String),
             refused: Schema.optional(Schema.String),
+            /**
+             * 🔴 The answer is a CLAIM WE AUTHOR, so it is signed — and every field the
+             * signature covers has to travel with it or the asker cannot rebuild the bytes.
+             *
+             * ⚠️ All optional because a refusal carries none of them, and an undeclared field is
+             * dropped silently: the reply would arrive looking exactly like an unsigned one.
+             */
+            author: Schema.optional(Schema.String),
+            at: Schema.optional(Schema.Number),
+            signature: Schema.optional(Schema.String),
           }),
           "An answer, or a NAMED refusal - never silence",
         ),

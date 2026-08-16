@@ -3,6 +3,7 @@ import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { CommunityAnswer } from "@novaclaw/core/community/answer"
 import { CommunityConsent } from "@novaclaw/core/community/consent"
+import { CommunityMessage } from "@novaclaw/core/community/message"
 import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
@@ -101,6 +102,70 @@ describe("CommunityAnswer", () => {
       // A string where a number belongs is a config mistake, not an instruction to answer nobody —
       // and not an instruction to answer everybody either. It takes the default.
       expect((yield* answers.state()).gate.perDay).toBe(CommunityAnswer.DEFAULT_PER_DAY)
+    }),
+  )
+
+  it.effect("🔴 an answer VERIFIES, and every field it is bound to matters", () =>
+    Effect.gen(function* () {
+      const store = yield* InstanceIdentityStore.Service
+      const me = (yield* store.identity()).networkID
+      const unsigned = {
+        author: me,
+        asker: stranger(),
+        question: "did the bridge come down?",
+        answer: "I did not see it myself; two peers upriver say no.",
+        at: 1_700_000_000_000,
+      }
+      const signature = (yield* store.sign(CommunityAnswer.canonicalBytes(unsigned))).toString("base64url")
+      const signed = { ...unsigned, signature }
+      expect(CommunityAnswer.verify(signed)).toBe(true)
+
+      /**
+       * 🔴 Each field is BOUND, and each has a distinct attack behind it.
+       *
+       * The answer: somebody putting words in our mouth. The asker: replaying our reply to one peer
+       * as our reply to another. The question: detaching a claim from what it answered, which makes
+       * it unfalsifiable — and an unfalsifiable claim carries no stake, which is the whole reason
+       * the ledger can price one.
+       */
+      expect(CommunityAnswer.verify({ ...signed, answer: "the bridge is down, flee" })).toBe(false)
+      expect(CommunityAnswer.verify({ ...signed, asker: stranger() })).toBe(false)
+      expect(CommunityAnswer.verify({ ...signed, question: "is the water safe?" })).toBe(false)
+      expect(CommunityAnswer.verify({ ...signed, at: unsigned.at + 1 })).toBe(false)
+      // And it cannot be passed off as somebody else's answer.
+      expect(CommunityAnswer.verify({ ...signed, author: stranger() })).toBe(false)
+    }),
+  )
+
+  it.effect("🔴 the signed bytes are DOMAIN-SEPARATED, asserted directly", () =>
+    Effect.gen(function* () {
+      const store = yield* InstanceIdentityStore.Service
+      const bytes = CommunityAnswer.canonicalBytes({
+        author: (yield* store.identity()).networkID,
+        asker: stranger(),
+        question: "q",
+        answer: "a",
+        at: 1,
+      })
+
+      /**
+       * 🔴 Asserted on the BYTES, because the obvious test was vacuous.
+       *
+       * ⚠️ I first wrote this as "a channel message's signature does not verify as an answer",
+       * and it passed with the domain separator DELETED — the two field layouts already differ, so
+       * it proved the layouts and not the separator. A test that cannot fail for the reason it names
+       * is the failure this program keeps finding, and this time it was mine again.
+       *
+       * The literal is duplicated here on purpose: the domain is a WIRE constant, so changing it
+       * breaks every peer on the old one, and it should take two deliberate edits rather than a
+       * rename that compiles.
+       */
+      const prefix = new TextDecoder().decode(bytes.slice(4, 4 + "novaclaw.community.answer.v1".length))
+      expect(prefix).toBe("novaclaw.community.answer.v1")
+      // And the length prefix in front of it really is that length, so the framing is what it looks like.
+      expect(new DataView(bytes.buffer, bytes.byteOffset).getUint32(0, false)).toBe(
+        "novaclaw.community.answer.v1".length,
+      )
     }),
   )
 
