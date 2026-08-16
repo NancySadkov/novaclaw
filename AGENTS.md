@@ -300,6 +300,15 @@ them. Generalising one hop into N is not an extension, it is the thing the liter
 and it will look like an improvement because more edges means more coverage right up until it means
 nothing.
 
+🔴 **Confidence and provenance live in the PROSE, not in the envelope.** A claim saying how sure its
+author is and where they got it does not need new signed fields — *"I heard this, unconfirmed"* and
+*"I watched it happen"* are ordinary English in the body, and the judging already belongs to the
+model. ⚠️ Adding them to the signed bytes would break verification against every peer that has not
+upgraded, and those messages are refused as `unverified` — **a protocol break wearing an attack's
+clothes**, which is the most expensive thing this design could ship into a network where version skew
+is normal. And prose loses nothing that matters: provenance was never a credential, it is a stake,
+and a stake stated in words settles exactly like one stated in a field.
+
 🔴 **And standing must follow rotation for peers who are not contacts.** The machinery that carries a
 peer across a key change today walks the address book — but standing follows engagement, and nobody
 adds every instance they exchanged a message with. A peer you merely dealt with would rotate and
