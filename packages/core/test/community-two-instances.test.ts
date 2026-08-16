@@ -329,7 +329,15 @@ describe("two instances", () => {
         fetch: async (request) => {
           const url = new URL(request.url)
           asked.push(url.pathname)
-          const body = (await request.json()) as { topic: string; buckets?: number[]; ids?: string[] }
+          /**
+           * ⚠️ Only POSTs carry a body. `listed` is a GET, and parsing one unconditionally threw
+           * before the handler ever ran — the fake peer failing looked exactly like the instance
+           * refusing the answer.
+           */
+          const body =
+            request.method === "POST"
+              ? ((await request.json()) as { topic: string; buckets?: number[]; ids?: string[] })
+              : ({} as { topic: string; buckets?: number[]; ids?: string[] })
           const answer = await Effect.runPromise(
             Effect.gen(function* () {
               const channels = yield* CommunityChannels.Service
@@ -343,6 +351,13 @@ describe("two instances", () => {
               // said here" by counting buckets, which is how the real handler was caught getting it
               // wrong against a comment claiming otherwise.
               const ids = room === undefined ? [] : yield* channels.ids(room)
+              /**
+               * A DISHONEST answer on purpose: far more rooms than any instance hosts. The 4 MB
+               * response ceiling bounds the bytes; only a COUNT ceiling bounds what we then loop
+               * into a Map and hand to the app.
+               */
+              if (url.pathname === CommunitySync.LISTED_PATH)
+                return { channels: Array.from({ length: 4000 }, (_, i) => `#flood${i}`) }
               if (url.pathname === CommunitySync.SYNC_SUMMARY_PATH)
                 return { buckets: CommunityReconcile.summarize(ids) }
               if (url.pathname === CommunitySync.SYNC_IDS_PATH)
@@ -659,6 +674,27 @@ describe("two instances", () => {
           Effect.provide(CredentialCipher.defaultLayer),
         ),
       )
+
+      /**
+       * 🔴 A COUNT ceiling on what one peer may advertise.
+       *
+       * The 4 MB response cap bounds the bytes a peer can send; it does not bound the number of
+       * items, and every name here becomes an entry in a Map that `channelsNearby` returns to the
+       * app. **A size limit is not a count limit** — the same lesson the peer-route cap taught, and
+       * the reason four of these answers needed ceilings rather than one.
+       */
+      const flooded = await Effect.runPromise(
+        Effect.gen(function* () {
+          const contacts = yield* CommunityContacts.Service
+          const sync = yield* CommunitySync.Service
+          yield* contacts.forget(bobKey)
+          yield* contacts
+            .add({ networkID: bobKey, petname: "bob", routes: [`http://127.0.0.1:${server!.port}`] })
+            .pipe(Effect.orDie)
+          return yield* sync.channelsNearby()
+        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+      expect(flooded.length).toBeLessThanOrEqual(CommunitySync.MAX_LISTED_PER_ANSWER)
 
       const STALE = "http://127.0.0.1:9"
       const repaired = await Effect.runPromise(

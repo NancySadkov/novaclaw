@@ -109,6 +109,24 @@ export const MAX_PEERS_ASKED = 16
 export const MAX_CONTACT_ROUTES = 6
 
 /**
+ * 🔴 Ceilings on how many ITEMS a peer's answer may contain.
+ *
+ * The 4 MB response cap bounds the BYTES that arrive; it does not bound the count, and every one of
+ * these arrays feeds a loop that does real work per element — a signature verification, a database
+ * write, a delivery. **A size limit is not a count limit**, which is the lesson the peer-route cap
+ * had already taught on the same day, one file over.
+ *
+ * ⚠️ Derived where a derivation exists rather than picked. `sync/messages` is the strict case: we
+ * asked for at most `MAX_MESSAGES_PER_REQUEST` ids, so anything beyond that many messages is
+ * definitionally invented and there is no honest answer that needs it. The others are generous
+ * against any real instance — a peer hosting more than 200 rooms, offering more than 128 peers in
+ * one breath, or holding more than 64 succession statements is not a case that exists.
+ */
+export const MAX_LISTED_PER_ANSWER = 200
+export const MAX_PEERS_PER_ANSWER = 128
+export const MAX_SUCCESSIONS_PER_ANSWER = 64
+
+/**
  * 🔴 The most a PEER'S ANSWER may be, checked before it is read.
  *
  * `peer-body-limit.ts` closed this in the inbound direction after a 52.9 MB anonymous POST returned
@@ -464,10 +482,12 @@ export const layer = Layer.effect(
           const theirs = yield* ask(peer.route, SUCCESSION_PATH, undefined, Successions, "GET")
           if (theirs === undefined) continue
           yield* reached(peer.networkID, peer.route)
-          for (const statement of theirs.statements) if (yield* successions.remember(statement)) learned++
+          // ⚠️ Sliced: each statement costs a signature verification, and the count is theirs.
+          const claimed = [...theirs.statements].slice(0, MAX_SUCCESSIONS_PER_ANSWER)
+          for (const statement of claimed) if (yield* successions.remember(statement)) learned++
           // ⚠️ `followAll` and not a loop of `follow`: statements arrive from a mesh in no order, and
           // single-stepping drops a link whose predecessor has not been seen yet and never retries.
-          yield* contacts.followAll([...theirs.statements])
+          yield* contacts.followAll(claimed)
         }
         return { told, learned }
       }),
@@ -480,7 +500,8 @@ export const layer = Layer.effect(
           const answer = yield* ask(peer.route, LISTED_PATH, undefined, Listed, "GET")
           if (answer === undefined) continue
           yield* reached(peer.networkID, peer.route)
-          for (const name of answer.channels) {
+          // ⚠️ Sliced: every name becomes a row in a Map this returns to the app.
+          for (const name of [...answer.channels].slice(0, MAX_LISTED_PER_ANSWER)) {
             // ⚠️ Keyed CANONICALLY, so two peers spelling one room differently offer it once — the
             // same rule that stops a second spelling becoming a second room locally.
             const key = CommunityTopic.canonical(name)
@@ -529,7 +550,8 @@ export const layer = Layer.effect(
             yield* offers.learn(advertised.offer as CommunityOffer.Signed)
           }
 
-          for (const peer of answer.peers) {
+          // ⚠️ Sliced: every entry is a database write, and eviction work behind it.
+          for (const peer of [...answer.peers].slice(0, MAX_PEERS_PER_ANSWER)) {
             // ⚠️ `learn` does the refusing — our own key, and anything that is not a public key. A
             // peer describing peers is hearsay, so every claim is filtered by the store rather than
             // trusted because it arrived over a connection that worked.
@@ -644,7 +666,12 @@ export const layer = Layer.effect(
             const batch = wanted.slice(index, index + MAX_MESSAGES_PER_REQUEST)
             const carried = yield* ask(route, SYNC_MESSAGES_PATH, { topic, ids: batch }, Messages)
             if (carried === undefined) break
-            for (const message of carried.messages) {
+            /**
+             * ⚠️ Sliced to what we ASKED for. The request carried at most
+             * `MAX_MESSAGES_PER_REQUEST` ids, so a longer answer is invented by definition — and
+             * every element costs a signature check, a work check and a write at the ingress door.
+             */
+            for (const message of [...carried.messages].slice(0, MAX_MESSAGES_PER_REQUEST)) {
               // 🔴 THE ingress door. A peer we asked gets no more trust than a stranger who pushed.
               const result = yield* channels.deliver(topic, message as CommunityMessage.Proven)
               if ("stored" in result) fetched++
