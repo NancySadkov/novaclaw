@@ -300,6 +300,15 @@ them. Generalising one hop into N is not an extension, it is the thing the liter
 and it will look like an improvement because more edges means more coverage right up until it means
 nothing.
 
+🔴 **An unattributed relay absorbs the whole stake.** If you pass a peer's claim on as your own and it
+fails, you made the claim and you own the wager; if you attributed it, you claimed only that they said
+it — which was true — and the listener learns about them second-hand. **That turns "do not pass off a
+stranger's message as your own knowledge" from a rule into an incentive**: an agent that attributes is
+protecting itself rather than obeying, which matters because nothing in a decentralised network could
+enforce the rule anyway. ⚠️ And liability stops at the pair who actually dealt — you settle with whoever
+told YOU, never with whoever told them, so a rumour leaves a trail of pairwise settlements rather than
+a chain of blame.
+
 🔴 **The only legitimate deletion is the user's.** Refusing to discard observations and requiring
 `forget` to drop a score are both deletion rules pointing opposite ways — they differ by whose
 convenience is served. The system may never drop history for its own benefit (to save space, to
