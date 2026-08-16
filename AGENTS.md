@@ -261,6 +261,15 @@ inviter's standing must be more exposed to its worst invitees than to its best �
 earn-slowly-lose-quickly asymmetry as above, applied to vouching, and what makes "invite carefully" an
 incentive rather than an exhortation.
 
+🔴 **Asymmetric, but bounded — or nobody opens a door.** Pushed one step past the rule above, the
+scheme stops the network instead of the pyramid: if vouching can cost an inviter everything, then the
+dominant strategy for anyone with standing worth keeping is to open NO doors, every established
+instance becomes a dead end, and newcomers reach only those with nothing to lose. **That selects for
+the worst possible doormen.** So an invitation must be able to cost more than it pays and still be
+survivable — a fraction of what an inviter holds, never all of it, which is the same risk-what-you-
+can-afford-to-lose rule that governs credit. The failure at each end is total and opposite, which is
+why the curve matters more than any constant in it.
+
 ⚠️ **The ordering is what keeps this from becoming obedience.** The doorman is trusted *more than the
 room* and *less than yourself*, so a guru's word is a strong prior that your own observations
 overturn. An agent that never revises its inviter's opinions has stopped following the axiom, and an
