@@ -580,6 +580,41 @@ describe("two instances", () => {
        * holds only a stale address, while the peer table knows where he actually is. The sync dials
        * the working one, and the contact must come back repaired.
        */
+      /**
+       * 🔴 A room we are NOT IN costs the peer a full exchange and yields nothing.
+       *
+       * `sync` gated on consent, on the cooldown and on having somebody to dial — never on whether
+       * this instance is subscribed. `deliver` rejects an unsubscribed message (`"not-subscribed"`),
+       * so every byte fetched for such a room is downloaded and dropped. Measured live before the
+       * guard: an instance that had LEFT a room still dialled, found the summaries differing,
+       * requested the ids, requested the messages, and stored none of them.
+       *
+       * ⚠️ This is the ledger this subsystem watches, pointed outward: the cost lands on OTHER
+       * people's instances. The agent tool reaches it with any channel name a model can write, so it
+       * is not a theoretical door.
+       */
+      asked.length = 0
+      const unsubscribed = await Effect.runPromise(
+        Effect.gen(function* () {
+          const channels = yield* CommunityChannels.Service
+          const sync = yield* CommunitySync.Service
+          yield* channels.leave("#NovaClaw")
+          return yield* sync.sync("#NovaClaw")
+        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+      expect(unsubscribed).toEqual({ peers: 0, fetched: 0 })
+      // The claim is about the WIRE: not one request, not even the cheap summary.
+      expect(asked, "a room we are not in must cost the peer nothing").toEqual([])
+
+      // Re-joined, so the assertions after this see the instance as it was.
+      await Effect.runPromise(
+        CommunityChannels.Service.pipe(
+          Effect.flatMap((channels) => channels.join("#NovaClaw")),
+          Effect.provide(alice.graph),
+          Effect.provide(CredentialCipher.defaultLayer),
+        ),
+      )
+
       const STALE = "http://127.0.0.1:9"
       const repaired = await Effect.runPromise(
         Effect.gen(function* () {

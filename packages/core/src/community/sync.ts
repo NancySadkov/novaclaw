@@ -523,6 +523,28 @@ export const layer = Layer.effect(
          * ⚠️ Per channel, not global — catching up on one room must not silence a first-ever sync of
          * another.
          */
+        /**
+         * 🔴 A room this instance is NOT IN costs the peer a full exchange and yields nothing.
+         *
+         * `deliver` rejects an unsubscribed message, so every byte fetched for such a room is
+         * downloaded and dropped — and the cost lands on somebody else's machine. Measured before
+         * this guard: an instance that had LEFT a room still dialled, found the summaries differing,
+         * asked for the ids, asked for the messages, and stored none of them.
+         *
+         * ⚠️ Not a theoretical door. The agent tool's `history` op catches up on whatever channel
+         * name a model writes, and the route takes one too; only the panel is limited to rooms the
+         * user actually joined. Checked HERE rather than at each caller for the reason this file
+         * already has one `reached` helper: a rule applied per caller is a rule somebody forgets.
+         *
+         * ⚠️ Compared canonically, because `#NovaClaw` and `#novaclaw` are ONE room — the same
+         * normalisation `channelsNearby` uses, and the mistake `setMuted` made by comparing
+         * literally.
+         */
+        const wanted = CommunityTopic.canonical(channel)
+        const joined = yield* channels.channels()
+        if (!joined.some((entry) => CommunityTopic.canonical(entry.name) === wanted))
+          return { peers: 0, fetched: 0 }
+
         const now = Date.now()
         const last = lastSynced.get(channel)
         if (last !== undefined && now - last < SYNC_COOLDOWN_MS) return { peers: 0, fetched: 0 }
