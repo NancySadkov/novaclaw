@@ -304,6 +304,17 @@ export const CommunityNetwork: Component = () => {
     ([value, name]) => communityChannelHistory(value.http, name),
   )
   /**
+   * How many the PAGE read — not how many survived the user's filters.
+   *
+   * 🔴 The first version of the line below counted `messages.length`, which is the count AFTER
+   * filtering, so a rule matching everything produced "Showing the most recent 0 of 260" — blaming
+   * the page for what a filter did, next to a `hidden` line saying the opposite. Two sentences about
+   * the same absence, disagreeing. The page read 200 either way; what happened to them afterwards is
+   * the other line's job.
+   */
+  const pageRead = createMemo(() => (history()?.messages.length ?? 0) + (history()?.hidden ?? 0))
+
+  /**
    * 🔴 Catch up on what the channel held before we got here.
    *
    * Gossip only reaches whoever is online, so without this a channel opened on a fresh instance shows
@@ -1075,9 +1086,9 @@ export const CommunityNetwork: Component = () => {
           numbers rather than offering a control: paging is a product decision, and inventing one
           here would answer it by accident.
         */}
-        <Show when={(history()?.held ?? 0) > (history()?.messages.length ?? 0)}>
+        <Show when={(history()?.held ?? 0) > pageRead()}>
           <span class="text-[11px] text-v2-text-text-muted">
-            {`Showing the most recent ${history()?.messages.length ?? 0} of ${history()?.held ?? 0} messages this room holds.`}
+            {`Showing the most recent ${pageRead()} of ${history()?.held ?? 0} messages this room holds.`}
           </span>
         </Show>
         <Show when={(history()?.hidden ?? 0) > 0}>
