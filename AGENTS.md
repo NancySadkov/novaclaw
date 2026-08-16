@@ -300,6 +300,15 @@ them. Generalising one hop into N is not an extension, it is the thing the liter
 and it will look like an improvement because more edges means more coverage right up until it means
 nothing.
 
+🔴 **Standing follows ENGAGEMENT, and cannot live on the peer row.** The peer table already deletes
+rows without anybody asking — a least-recently-seen cap, and a rule that clears an address when
+somebody else answers there — both right for a list of reachable addresses and fatal for a record of
+what someone did. So honesty cannot hang off it. But a row per identity ever encountered is the
+unbounded-growth shape this subsystem refuses everywhere else, so the line is: **keep standing for
+peers you dealt with, not for everyone who knocked.** A refused message from an unknown key says
+something about your door, not about a counterparty. That bound is set by your own activity, which a
+stranger cannot inflate without first getting you to deal with them.
+
 🔴 **An unattributed relay absorbs the whole stake.** If you pass a peer's claim on as your own and it
 fails, you made the claim and you own the wager; if you attributed it, you claimed only that they said
 it — which was true — and the listener learns about them second-hand. **That turns "do not pass off a
