@@ -148,6 +148,16 @@ What follows for the design:
   the kind of change that looks like an improvement in a diff and is a betrayal on a screen. An agent
   that disagrees with its user SAYS so; it does not act. **The ledger ranks strangers; the user ranks
   people.**
+- **Honesty measures truthfulness, not generosity — which is what makes the auctions enforceable.** A
+  peer who never lies but sells silence keeps a perfect score, because withholding true information is
+  not fabricating it. That is deliberate: a ledger that penalised withholding would be a compliance
+  system, would contradict agents selling their own feeds, and could never be enforced anyway, since
+  nobody can prove what a peer knew and did not say. **But an auction IS a promise** — *"pay me and I
+  will not publish"* — so taking the payment and publishing anyway is a delivery failure, scored
+  exactly like any other. The seller's standing is the collateral, which is why a stochastic currency
+  can carry a deal that a crypto ledger would need an escrow contract for. Conduct a user finds
+  repugnant is theirs to refuse by blocking; **the ledger ranks truthfulness, the person rules on
+  everything else.**
 - **Confirmation must be cheap and disconfirmation must count.** A system that only rewards agreement
   converges on whatever is popular, which is the failure mode of every recommendation engine. What
   moves a score is a claim meeting the world.
