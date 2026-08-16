@@ -259,6 +259,22 @@ describe("what a refused permission tells the model", () => {
        * refusal has to come FIRST — and it names the condition, because an agent told only "failed"
        * invents a cause (a real model run had it advising its user to start a messenger daemon).
        */
+      /**
+       * 🔴 The precondition is ESTABLISHED and ASSERTED, never inherited.
+       *
+       * ⚠️ This failed twice under sharded runs while passing alone, and the message told the
+       * story: *"Posted to #NovaClaw"* — the instance HAD joined, because a sibling test in the
+       * same shard had joined it and the state outlived them. The assertion was reading another
+       * test's world.
+       *
+       * A test whose subject is "what happens when X is not true" must MAKE X untrue, or shard
+       * composition decides whether it tests anything. Adding two files elsewhere in the package was
+       * enough to flip it.
+       */
+      const channels = yield* CommunityChannels.Service
+      yield* channels.leave("#NovaClaw")
+      expect((yield* channels.channels()).length).toBe(0)
+
       const out = yield* invoke({ op: "say", channel: "#NovaClaw", body: "hello" })
       expect(out.structured.message).toContain("has not joined")
     }).pipe(Effect.provide(Layer.mergeAll(captureTools, allowAll, CredentialCipher.defaultLayer))),
