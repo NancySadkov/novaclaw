@@ -38,6 +38,22 @@ function app() {
  */
 const handler = app()
 
+const at = (route: string, directory: string, method: "GET" | "POST", body?: unknown) => {
+  const payload = body === undefined ? undefined : JSON.stringify(body)
+  return handler(
+    new Request(`http://localhost${route}`, {
+      method,
+      headers: {
+        "content-type": "application/json",
+        "x-novaclaw-directory": directory,
+        ...(payload === undefined ? {} : { "content-length": String(new TextEncoder().encode(payload).length) }),
+      },
+      ...(payload === undefined ? {} : { body: payload }),
+    }),
+    HttpApiApp.context,
+  )
+}
+
 const send = (directory: string, method: "GET" | "POST", body?: unknown) => {
   const payload = body === undefined ? undefined : JSON.stringify(body)
   return handler(
@@ -56,6 +72,49 @@ const send = (directory: string, method: "GET" | "POST", body?: unknown) => {
 
 /** A valid ed25519-shaped identity: `add` refuses anything that cannot parse as a public key. */
 const identity = (fill: number) => `nid_${Buffer.alloc(32, fill).toString("base64url")}`
+
+describe("the other community fields that cross the same seam", () => {
+  afterEach(() => CommunityConsent.resetGate())
+  afterEach(disposeAllInstances)
+
+  test("🔴 the ANSWERING state reaches the panel, with its budget", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      config: { formatter: false, community: { consented: true, answers: { enabled: true, perDay: 7 } } },
+    })
+
+    /**
+     * ⚠️ This is the field whose absence made the capability look broken rather than off. The
+     * panel decides what to show from it, so a drop here means a user who turned answering ON is
+     * told it is off — and nothing anywhere reports a fault.
+     */
+    const body = (await (await at("/api/community/participation", tmp.path, "GET")).json()) as {
+      answers?: { enabled?: boolean; perDay?: number; today?: number }
+    }
+    expect(body.answers?.enabled).toBe(true)
+    expect(body.answers?.perDay).toBe(7)
+    expect(body.answers?.today).toBe(0)
+  })
+
+  test("🔴 DISCOVER reports how the seed door went, so an empty result can name its reason", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      config: { formatter: false, community: { consented: true, seeds: { enabled: false } } },
+    })
+
+    /**
+     * ⚠️ Without these two, three different situations collapse into "found nobody yet", and only
+     * some are fixed by pasting an address. A dropped field here does not break a feature — it
+     * makes the app give bad advice, which is harder to notice and worse to receive.
+     */
+    const body = (await (await at("/api/community/discover", tmp.path, "POST", {})).json()) as {
+      seedsAsked?: boolean
+      seedsFound?: number
+    }
+    expect(body.seedsAsked).toBe(false)
+    expect(body.seedsFound).toBe(0)
+  })
+})
 
 describe("a trust rating survives the HTTP seam", () => {
   // The consent gate is process-wide; a test that joins must un-join or it weakens the next one.
