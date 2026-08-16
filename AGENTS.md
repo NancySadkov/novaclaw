@@ -204,8 +204,13 @@ of the bar's other clients, but still less than you trust yourself.* That is a s
 everything else here is built on top of it:
 
 ```
-your own observations  >  the entry point that let you in  >  anyone else in the room
+your own observations  >  the doorman who let you in  >  judges it vouched for  >  anyone else
 ```
+
+⚠️ **Four rungs, and the ladder does not extend.** The judges sit between the doorman and the room
+because that is what being vouched for buys — more credible than a stranger, less than the one who
+staked their own name on them. **A judge's own recommendation does NOT create a fifth rung**: that is
+the second hop, and trust is not transitive (below). The ladder is short on purpose.
 
 **How it bootstraps.** The instance you used to connect is treated as honest enough to be worth
 listening to about others. It recommends a few judges — picked at random from the peers IT trusts,
