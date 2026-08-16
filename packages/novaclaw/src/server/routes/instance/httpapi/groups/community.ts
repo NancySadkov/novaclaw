@@ -219,6 +219,28 @@ export const CommunityApi = HttpApi.make("community").add(
             "Issues a new identity plus a successor statement signed by the OLD key, then tells every reachable peer and collects the rotations they know. Contacts follow the statement, so people who know you keep knowing you and your history keeps its author. ⚠️ It CANNOT recover a stolen key: whoever holds the secret can rotate exactly as easily as you, and faster, since they need not notice the theft first. This is for planned moves.",
         }),
       ),
+      HttpApiEndpoint.post("communityDoorman", "/api/community/doorman", {
+        payload: Schema.Struct({
+          address: Schema.String,
+          /** 1..5, the user's own words about how far they trust this instance. */
+          trust: Schema.Number,
+          petname: Schema.optional(Schema.String),
+        }),
+        success: described(
+          Schema.Struct({
+            found: Schema.Boolean,
+            networkID: Schema.optional(Schema.String),
+          }),
+          "Who lives at that address, now recorded as a contact with the trust the user declared",
+        ),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.doorman",
+          summary: "Add a doorman by address, with a declared level of trust",
+          description:
+            "Joining needs no doorman - the network is reachable by LAN, by DNS seed and by peer exchange. This is the OTHER path: naming a host you actually trust and saying how far, which is what the trust ladder is built from and what matters once transactions are involved. It is also the guarantee that the seeds are a convenience rather than a dependency: when every default door is shut, this one still opens.",
+        }),
+      ),
       HttpApiEndpoint.post("communityDiscover", CommunityPaths.discover, {
         payload: Schema.Struct({ addresses: Schema.optional(Schema.Array(Schema.String)) }),
         success: described(

@@ -26,6 +26,8 @@ export interface Contact {
    */
   readonly networkID: string
   readonly petname?: string
+  /** The user's own declaration of how far they trust this peer, 1..5. Absent = never rated. */
+  readonly trust?: number
   /**
    * Keys this peer has ROTATED AWAY FROM, oldest last — everything they ever signed as.
    *
@@ -59,6 +61,14 @@ export interface Interface {
     readonly networkID: string
     readonly petname?: string
     readonly routes?: readonly string[]
+    /**
+     * 🔴 The USER's declaration, 1..5, and the only thing that may write this column.
+     *
+     * ⚠️ Omitting it leaves an existing rating alone rather than clearing it — re-adding
+     * somebody must not silently un-rate them, the same rule `blocked` and `last_seen_at` already
+     * follow here.
+     */
+    readonly trust?: number
   }) => Effect.Effect<Contact, ContactError>
   readonly forget: (networkID: string) => Effect.Effect<boolean>
   readonly setBlocked: (networkID: string, blocked: boolean) => Effect.Effect<boolean>
@@ -103,6 +113,7 @@ export interface Interface {
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/CommunityContacts") {}
 
 const rowContact = (row: typeof CommunityContactTable.$inferSelect): Contact => ({
+  ...(row.trust === null ? {} : { trust: row.trust }),
   networkID: row.network_id,
   ...(row.petname === null ? {} : { petname: row.petname }),
   routes: row.routes ?? [],
@@ -260,6 +271,12 @@ export const layer = Layer.effect(
         // them: `blocked` and `last_seen_at` survive because they are never in this set.
         const updates = {
           ...(input.petname === undefined ? {} : { petname: input.petname }),
+          /**
+           * ⚠️ Clamped, not rejected. A rating outside the scale is a caller's mistake and not a
+           * reason to refuse somebody's doorman — but storing it as given would let a 9 outrank
+           * every honest 5 forever, since only the ORDER of this column is ever read.
+           */
+          ...(input.trust === undefined ? {} : { trust: Math.min(5, Math.max(1, Math.trunc(input.trust))) }),
           ...(input.routes === undefined ? {} : { routes: [...input.routes] }),
         }
         /**
@@ -268,9 +285,15 @@ export const layer = Layer.effect(
          * entry for them that would never receive anything.
          */
         const networkID = yield* currentID(input.networkID)
+        /**
+         * ⚠️ The INSERT carries the same fields as `updates`, and forgetting one here is silent:
+         * a first-time add would store nothing while re-adding the same peer stored it, so the value
+         * would appear only on the second attempt. That is exactly how `trust` behaved when it was
+         * added to `updates` alone.
+         */
         const insert = db.insert(CommunityContactTable).values({
           network_id: networkID,
-          ...(input.petname === undefined ? {} : { petname: input.petname }),
+          ...updates,
           routes: [...(input.routes ?? [])],
         })
 

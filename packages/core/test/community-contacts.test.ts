@@ -21,6 +21,45 @@ const it = testEffect(LayerNode.compile(LayerNode.group([Database.node, Communit
 const identity = (fill: number) => `nid_${Buffer.alloc(32, fill).toString("base64url")}`
 
 describe("CommunityContacts", () => {
+  it.effect("🔴 the user's declared TRUST is stored, clamped, and never cleared by accident", () =>
+    Effect.gen(function* () {
+      const contacts = yield* CommunityContacts.Service
+      const who = identity(0x51)
+
+      yield* contacts.add({ networkID: who, petname: "the doorman", trust: 4 })
+      expect((yield* contacts.get(who))?.trust).toBe(4)
+
+      /**
+       * ⚠️ Re-adding must not silently UN-RATE somebody. `blocked` and `last_seen_at` already
+       * follow that rule here, and a trust rating is the one field a user typed on purpose.
+       */
+      yield* contacts.add({ networkID: who, petname: "renamed" })
+      expect((yield* contacts.get(who))?.trust).toBe(4)
+
+      /**
+       * 🔴 Clamped rather than refused. Only the ORDER of this column is ever read, so a 9 stored
+       * as given would outrank every honest 5 forever — but a bad number is a caller's mistake and
+       * not a reason to reject somebody's doorman.
+       */
+      yield* contacts.add({ networkID: who, trust: 9 })
+      expect((yield* contacts.get(who))?.trust).toBe(5)
+      yield* contacts.add({ networkID: who, trust: -3 })
+      expect((yield* contacts.get(who))?.trust).toBe(1)
+    }),
+  )
+
+  it.effect("⚠️ an UNRATED contact is unrated, not trusted zero", () =>
+    Effect.gen(function* () {
+      const contacts = yield* CommunityContacts.Service
+      const who = identity(0x52)
+
+      // The ordinary state of everyone met through peer exchange. Reading absence as "trusted 0"
+      // would rank the entire network below one stranger who was typed in once.
+      yield* contacts.add({ networkID: who })
+      expect((yield* contacts.get(who))?.trust).toBeUndefined()
+    }),
+  )
+
   it.effect("a contact keeps its routes, because an id alone cannot be dialled", () =>
     Effect.gen(function* () {
       const contacts = yield* CommunityContacts.Service

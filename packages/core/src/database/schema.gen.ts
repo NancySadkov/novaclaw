@@ -216,6 +216,7 @@ export default {
           \`routes\` text NOT NULL,
           \`last_seen_at\` integer,
           \`blocked\` integer NOT NULL,
+          \`trust\` integer,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL
         );

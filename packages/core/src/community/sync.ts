@@ -166,6 +166,10 @@ export interface Interface {
    * and is not stored. A route that was never going to work is worse than no route, because it looks
    * like a peer that is merely offline.
    */
+  /** Ask an address who lives there. `undefined` when nothing answers, or the community is off. */
+  readonly identify: (
+    address: string,
+  ) => Effect.Effect<{ readonly networkID: string; readonly route: string } | undefined>
   readonly learnFrom: (addresses: readonly string[], source?: string) => Effect.Effect<number>
   /**
    * Channels our peers advertise, minus the ones we are already in.
@@ -489,6 +493,26 @@ export const layer = Layer.effect(
           }
         }
         return [...seen.values()]
+      }),
+
+      identify: Effect.fn("CommunitySync.identify")(function* (address: string) {
+        /**
+         * 🔴 WHO lives at an address — the first half of adding a doorman by hand.
+         *
+         * `learnFrom` already asks this and then throws the answer away, keeping only a count. The
+         * doorman flow needs the identity itself, because the user is making a statement ABOUT A
+         * PERSON ("I trust them this far") and a trust rating attached to an address would survive
+         * that address being reassigned to somebody else.
+         *
+         * ⚠️ The reply is a claim like any other. What it buys is that the route is real and
+         * reaches something speaking this protocol; every message from that key is verified against
+         * it afterwards regardless.
+         */
+        if (!speaks()) return undefined
+        const [route] = httpRoutes([address])
+        if (route === undefined) return undefined
+        const health = yield* ask(route, IDENTITY_PATH, undefined, Health, "GET")
+        return health === undefined ? undefined : { networkID: health.networkID, route }
       }),
 
       learnFrom: Effect.fn("CommunitySync.learnFrom")(function* (addresses, source = "lan") {

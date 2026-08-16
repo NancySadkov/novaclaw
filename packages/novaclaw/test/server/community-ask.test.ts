@@ -83,6 +83,36 @@ describe("asking this instance a question", () => {
   afterEach(() => CommunityConsent.resetGate())
   afterEach(disposeAllInstances)
 
+  test("🔴 a doorman that answers NOTHING is not recorded as trusted", async () => {
+    await using tmp = await tmpdir({ git: true, config: { formatter: false, community: { consented: true } } })
+    const payload = JSON.stringify({ address: "127.0.0.1:1", trust: 5 })
+    const response = await app()(
+      new Request("http://localhost/api/community/doorman", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-novaclaw-directory": tmp.path,
+          "content-length": String(new TextEncoder().encode(payload).length),
+        },
+        body: payload,
+      }),
+      HttpApiApp.context,
+    )
+
+    /**
+     * 🔴 A trust rating is a statement about a PERSON, so there must be a person.
+     *
+     * ⚠️ The tempting shortcut is to record the address with its rating and attach an identity
+     * later — and it is wrong, because an address can be reassigned to somebody else, and the
+     * user's sentence would silently transfer with it. Nothing answered here, so there is nobody to
+     * trust and nothing is written.
+     */
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { found: boolean; networkID?: string }
+    expect(body.found).toBe(false)
+    expect(body.networkID).toBeUndefined()
+  })
+
   test("🔴 a fresh install's peer door is SHUT, before any of this is reached", async () => {
     await using tmp = await tmpdir({ git: true, config: { formatter: false } })
     const response = await ask(app(), tmp.path, asker().ask("what happened today?"))

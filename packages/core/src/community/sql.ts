@@ -65,6 +65,25 @@ export const CommunityContactTable = sqliteTable("community_contact", {
    * the contact rather than in a side list — the thing you block is a person, not a message.
    */
   blocked: integer({ mode: "boolean" }).notNull().$default(() => false),
+  /**
+   * 🔴 How much the USER says they trust this peer — the doorman declaration (`AGENTS.md`,
+   * "Joining is doorman-FREE"). 1..5, or NULL for "never said".
+   *
+   * This is what the ladder is actually built from. Joining needs no doorman at all; the question
+   * arrives when TRANSACTIONS do, and a user naming a host and saying how far they trust it is the
+   * root the MLM-shaped structure hangs from, with the most-trusted instance at the top.
+   *
+   * ⚠️ A DECLARATION, never a computation. Nothing derives it, nothing updates it behind the
+   * user's back, and the honesty ledger may not move it — it is the user's sentence, and (i) says
+   * a user outranks the ledger. Only its ORDER is meaningful: it ranks doormen against each other
+   * and carries no magnitude anybody should average.
+   *
+   * ⚠️ NULL is not zero, and the difference matters at exactly the moment this is read. A peer
+   * the user never rated is UNRATED — the ordinary state of everyone met through peer exchange —
+   * and treating that as "trusted 0" would silently rank the whole network below a stranger who was
+   * typed in once.
+   */
+  trust: integer(),
   ...Timestamps,
 })
 

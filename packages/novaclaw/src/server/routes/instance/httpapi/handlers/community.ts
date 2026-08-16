@@ -132,6 +132,44 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
         }),
       )
       .handle(
+        "communityDoorman",
+        Effect.fn("CommunityHttpApi.communityDoorman")(function* (ctx) {
+          /**
+           * 🔴 The USER is making this relationship, which is why a contact may be created here.
+           *
+           * (ff): autonomy may deepen a relationship the user made and may never make one —
+           * `observe` and `follow` both refuse to mint a contact from anything the network says.
+           * This is the opposite case: a person typed an address and stated how far they trust who
+           * is behind it. Refusing to record that would be enforcing a rule against the only party
+           * it exists to protect.
+           */
+          const who = yield* sync.identify(ctx.payload.address)
+          if (who === undefined) return { found: false }
+
+          // The route first, so the contact has somewhere to be reached even before any gossip.
+          yield* peersStore.learn(who.networkID, [who.route], "manual")
+          /**
+           * 🔴 A malformed identity is NOT FOUND, not a crash and not an error page.
+           *
+           * The key came from the far end, not from the user — so a peer serving nonsense there is
+           * an ordinary hostile case, and dying on it would let anyone with an address take this
+           * endpoint down. `add` refuses an id that cannot parse as a public key, which is exactly
+           * the check we want; what changes here is only that its refusal reads as "nobody usable
+           * lives there".
+           */
+          const added = yield* contacts
+            .add({
+              networkID: who.networkID,
+              routes: [who.route],
+              trust: ctx.payload.trust,
+              ...(ctx.payload.petname === undefined ? {} : { petname: ctx.payload.petname }),
+            })
+            .pipe(Effect.catchTag("CommunityContacts.ContactError", () => Effect.succeed(undefined)))
+          if (added === undefined) return { found: false }
+          return { found: true, networkID: who.networkID }
+        }),
+      )
+      .handle(
         "communityDiscover",
         Effect.fn("CommunityHttpApi.communityDiscover")(function* (ctx) {
           /**
