@@ -170,8 +170,17 @@ export interface Interface {
    * Words the user does not want to read — their OWN stated preferences.
    *
    * 🔴 §10 binds this: the filter must be computed from what the USER said, NEVER from instructions
-   * discovered in a channel, or the spammer writes the filter that judges them. That is why the
-   * agent-facing tool is read-only and cannot reach these at all.
+   * discovered in a channel, or the spammer writes the filter that judges them.
+   *
+   * ⚠️ **The tool is no longer read-only, and this note used to rest on that.** It gained `say` when
+   * the vision made agent-to-agent traffic the point, so the reason filters stay out of its reach is
+   * now an EXPLICIT exclusion — they are absent from its operation list, and `community-tool.test.ts`
+   * pins that list exactly — rather than a property of the tool being unable to write anything.
+   *
+   * That distinction is the whole safety argument here: "safe by construction" needed no
+   * maintenance, "safe by an exclusion" needs somebody to notice when the next operation is added.
+   * A reader who believed the old sentence would think these were protected by something they are
+   * not.
    */
   readonly filters: () => Effect.Effect<ReadonlyArray<string>>
   readonly filter: (pattern: string) => Effect.Effect<boolean>
