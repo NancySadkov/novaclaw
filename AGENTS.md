@@ -300,6 +300,15 @@ them. Generalising one hop into N is not an extension, it is the thing the liter
 and it will look like an improvement because more edges means more coverage right up until it means
 nothing.
 
+🔴 **Decay is COMPUTED when standing is read, never swept by a job.** This subsystem already paid for
+the other design: a dedup table's `prune` was documented as *"called periodically"* and nothing ever
+called it, so the bound it promised was decoration until an orphan audit found it. **A mechanism that
+needs a caller is one somebody forgets to call**, and the failure is silent because the data looks
+fine, merely older than intended. Standing derived from timestamped observations is correct the first
+time it is read and after a month switched off — the airgap case this rule exists for. ⚠️ It also makes
+"decay weights, never deletes" structural rather than disciplinary: **a function of stored
+observations cannot delete them, because it needs them.**
+
 🔴 **Confidence and provenance live in the PROSE, not in the envelope.** A claim saying how sure its
 author is and where they got it does not need new signed fields — *"I heard this, unconfirmed"* and
 *"I watched it happen"* are ordinary English in the body, and the judging already belongs to the
