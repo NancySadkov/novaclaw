@@ -83,6 +83,26 @@ export const name = "community"
 export const framedNames = (lines: readonly string[]): string =>
   SessionOrigin.externalContentFrame("channel names, some advertised by other instances") + lines.join(NEWLINE)
 
+/**
+ * 🔴 Your own past notes about peers, FRAMED — because they quote strangers.
+ *
+ * A note is written by this agent, so it looks like our own words and I first rendered it raw. Its
+ * PROVENANCE is what matters: it is written while reading a channel, it is usually a paraphrase of
+ * what a peer said, and it is replayed into context on a later read. That is a stored injection
+ * path — a peer's sentence, laundered through our own note, arriving later with no marker on it.
+ *
+ * ⚠️ This file's own comment warned about exactly this: *"this file is FRAMED" is not the same
+ * claim as "this file frames everything foreign it emits"*. The ledger classifies FILES, so the two
+ * operations added here inherited a green it never checked.
+ *
+ * ⚠️ Framed WHOLE rather than per line, and described honestly: these are not a stranger's words
+ * directly, they are ours about them, and a frame that overstates teaches a reader as little as one
+ * that is missing.
+ */
+export const framedDealings = (lines: readonly string[]): string =>
+  SessionOrigin.externalContentFrame("your own earlier notes about peers, which may quote what those peers said") +
+  lines.join(NEWLINE)
+
 export const formatHistory = (
   channel: string,
   messages: readonly { readonly author: string; readonly receivedAt: number; readonly body: string }[],
@@ -306,13 +326,13 @@ export const layer = Layer.effectDiscard(
                       ? "No dealings recorded with this peer. That is not a bad sign and not a good one - " +
                         "you have simply never had one, so weigh what they say on its own merits." +
                         vouch
-                      : history
-                          .map(
+                      : framedDealings(
+                          history.map(
                             (entry) =>
                               `${new Date(entry.at).toISOString()} ${entry.context}: ${entry.outcome}` +
                               `${entry.note === undefined ? "" : ` - ${entry.note}`}`,
-                          )
-                          .join(NEWLINE),
+                          ),
+                        ),
                 }
               }
 
