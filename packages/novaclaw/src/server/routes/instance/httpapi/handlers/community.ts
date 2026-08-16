@@ -1,6 +1,9 @@
+import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { CommunityAnswer } from "@novaclaw/core/community/answer"
 import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityDirect } from "@novaclaw/core/community/dm"
 import { CommunityConsent } from "@novaclaw/core/community/consent"
+import { CommunityObservation } from "@novaclaw/core/community/observation"
 import { CommunityOffer } from "@novaclaw/core/community/offer"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
@@ -13,7 +16,10 @@ import { CommunitySuccession } from "@novaclaw/core/community/succession"
 import { CommunitySync } from "@novaclaw/core/community/sync"
 import { CommunityTopic } from "@novaclaw/core/community/topic"
 import { CommunityTransport } from "@novaclaw/core/community/transport"
-import { Effect } from "effect"
+import { LLM, LLMClient, LLMEvent, Message, SystemPart } from "@novaclaw/llm"
+import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
+import { llmClient } from "@novaclaw/core/effect/app-node-platform"
+import { Effect, Option, Semaphore, Stream } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { InvalidRequestError } from "../errors"
@@ -333,6 +339,21 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
     // names like `channels` and `identity`, so a handler placed in the wrong block still compiles
     // against the other group's service. That mistake has been made three times in this file.
     const selfIdentity = yield* InstanceIdentityStore.Service
+    const answers = yield* CommunityAnswer.Service
+    const ledger = yield* CommunityObservation.Service
+    /**
+     * 🔴 ONE answering turn at a time, and a request that cannot have it is refused rather than
+     * queued.
+     *
+     * The budget bounds what we SPEND; it does not bound what a stranger can tie up. An inline model
+     * call holds a connection for seconds, so without this a handful of askers occupy every worker
+     * while the daily count is still nearly untouched — the cost lands on the owner's own machine,
+     * which is the half a token budget cannot see.
+     *
+     * ⚠️ Refused, not queued: a queue turns "we are busy" into an unbounded wait, which is the
+     * same denial with a longer timeout.
+     */
+    const turn = Semaphore.makeUnsafe(1)
 
     /**
      * Resolve a topic to one of OUR channels, or nothing.
@@ -363,6 +384,82 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
         "communitySearch",
         Effect.fn("CommunityHttpApi.communitySearch")(function* (ctx) {
           return { channels: yield* search.receive(ctx.payload) }
+        }),
+      )
+      .handle(
+        "communityAsk",
+        Effect.fn("CommunityHttpApi.communityAsk")(function* (ctx) {
+          /**
+           * 🔴 The permission and the budget are checked BEFORE a model is resolved, let alone
+           * called. Resolving reads a catalog and a credential — cheap, but not free, and doing it
+           * for a request we were never going to answer is work a stranger got for nothing.
+           */
+          const refusal = yield* answers.allowed(ctx.payload.asker)
+          if (refusal !== undefined) return { refused: refusal }
+
+          const answer = yield* turn
+            .withPermitsIfAvailable(1)(
+              Effect.gen(function* () {
+                const models = yield* SessionRunnerModel.Service
+                const llm = yield* LLMClient.Service
+                // ⚠️ BOUNDED, for the reason the memory handler records: resolving does not call the
+                // model, so it is fast or it is stuck, and a stuck resolve here would hold a stranger's
+                // connection open indefinitely.
+                const model = yield* models
+                  .resolveDefault()
+                  .pipe(
+                    Effect.timeoutOrElse({
+                      duration: "30 seconds",
+                      orElse: () => Effect.die("resolveDefault timed out"),
+                    }),
+                  )
+                const chunks: string[] = []
+                yield* llm
+                  .stream(
+                    LLM.request({
+                      model,
+                      system: [SystemPart.make(CommunityAnswer.SYSTEM)],
+                      // 🔴 FRAMED. The question is a stranger's words entering a model's context, and
+                      // this one is more dangerous than a channel body because the model is SUPPOSED
+                      // to act on it.
+                      messages: [Message.user(CommunityAnswer.framedQuestion(ctx.payload.question))],
+                      // 🔴 NO TOOLS. An instance that answers strangers with a full agent is a remote
+                      // shell with extra steps; what it may use is what it would say aloud in a room.
+                      tools: [],
+                      generation: { maxTokens: 512 },
+                    }),
+                  )
+                  .pipe(
+                    Stream.runForEach((event) => {
+                      if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
+                      return Effect.void
+                    }),
+                  )
+                return chunks.join("")
+              }).pipe(Effect.provide(AppNodeBuilder.build(llmClient))),
+            )
+            .pipe(Effect.orDie)
+
+          // Nobody got the permit: somebody else's question is being answered right now.
+          if (Option.isNone(answer)) return { refused: "busy" as const }
+          const text = answer.value.trim()
+          // An empty completion is a broken call, not an answer worth signing our name to.
+          if (text === "") return { refused: "no-answer" as const }
+
+          /**
+           * ⚠️ Spent AFTER the answer exists, so a failed turn does not consume the day — and
+           * the dealing is recorded because answering IS one. `record` refuses subjects we have never
+           * encountered, so a first-time asker simply leaves no ledger entry; the SPEND is counted
+           * either way, because what we spend is always our own business.
+           */
+          yield* answers.spent(ctx.payload.asker)
+          yield* ledger.record({
+            subject: ctx.payload.asker,
+            at: Date.now(),
+            context: "answer",
+            outcome: "answered",
+          })
+          return { answer: text }
         }),
       )
       .handle(

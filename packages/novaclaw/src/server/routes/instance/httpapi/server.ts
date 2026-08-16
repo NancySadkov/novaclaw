@@ -21,6 +21,8 @@ import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityPost } from "@novaclaw/core/community/post"
 import { CommunityPeers } from "@novaclaw/core/community/peers"
 import { CommunityDirect } from "@novaclaw/core/community/dm"
+import { CommunityAnswer } from "@novaclaw/core/community/answer"
+import { CommunityObservation } from "@novaclaw/core/community/observation"
 import { CommunityOffer } from "@novaclaw/core/community/offer"
 import { CommunitySearch } from "@novaclaw/core/community/search"
 import { CommunitySuccession } from "@novaclaw/core/community/succession"
@@ -256,6 +258,8 @@ const app = LayerNode.group([
   CommunityChannels.node,
   CommunityPeers.node,
   CommunityDirect.node,
+  CommunityAnswer.node,
+  CommunityObservation.node,
   CommunityOffer.node,
   CommunitySearch.node,
   CommunitySuccession.node,

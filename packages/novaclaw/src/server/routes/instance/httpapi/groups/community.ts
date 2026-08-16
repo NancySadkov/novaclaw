@@ -568,6 +568,7 @@ export const CommunityPeerPaths = {
   listedChannels: "/api/community/listed",
   succession: "/api/community/succession",
   search: "/api/community/search",
+  ask: "/api/community/ask",
   dm: "/api/community/dm",
   offer: "/api/community/offer",
   /**
@@ -701,6 +702,32 @@ export const CommunityPeerApi = HttpApi.make("communityPeer").add(
           summary: "Ask this instance, and whoever it can reach",
           description:
             "Throttled broadcast search — the owner's decision: no servers, just nodes, and any one living node is a complete entry point. Gnutella collapsed in 2001 because query traffic grew with users × hops, so every query here carries a hop limit, is suppressed by id after the first sighting, and is rate-limited per ORIGIN rather than per sender. A refusal is silent: telling a flooder which control stopped it tells it what to vary.",
+        }),
+      ),
+      HttpApiEndpoint.post("communityAsk", CommunityPeerPaths.ask, {
+        payload: Schema.Struct({
+          /** Who is asking, so the budget can be shared out and the dealing recorded. */
+          asker: Schema.String,
+          question: Schema.String,
+        }),
+        success: described(
+          Schema.Struct({
+            /**
+             * ⚠️ BOTH fields declared. A success schema drops what it does not name, and a
+             * refusal that arrived as an empty answer would read to the asker as "this instance knows
+             * nothing" rather than "this instance is not answering today".
+             */
+            answer: Schema.optional(Schema.String),
+            refused: Schema.optional(Schema.String),
+          }),
+          "An answer, or a NAMED refusal - never silence",
+        ),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "community.peer.ask",
+          summary: "Ask this instance a question",
+          description:
+            "The vision's destination: an agent that cannot read a site asks the other agents instead. OFF unless the owner turned it on separately from joining, because this is the one path that spends their tokens on strangers. Bounded three ways - a daily count, a per-asker share of it, and one turn at a time - and the turn itself runs with no tools, no files and no access to the owner's sessions or private messages. A refusal is NAMED rather than silent, because an asker told only 'no' cannot tell a closed door from a spent budget.",
         }),
       ),
       HttpApiEndpoint.post("communitySuccessionTell", CommunityPeerPaths.succession, {

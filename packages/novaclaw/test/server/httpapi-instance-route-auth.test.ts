@@ -105,6 +105,17 @@ describe("HttpApi instance route authorization", () => {
       // Added when bootstrap-by-address turned out to probe an AUTHENTICATED path; the completeness
       // assertion below is what forced this line to be written rather than the path slipping in.
       identity: "GET",
+      /**
+       * 🔴 Unauthenticated like every peer path, and that is the DECISION rather than an
+       * oversight: a stranger with no credentials is exactly who this is for — an agent asking the
+       * other agents because a site closed itself to it.
+       *
+       * ⚠️ What stops it being an open cost is not authentication but the gate behind it: off
+       * unless the owner turned it on separately from joining, a daily count, a per-asker share, and
+       * one turn at a time. Requiring credentials instead would make it useless for its purpose and
+       * would not bound the cost any better.
+       */
+      ask: "POST",
     }
     expect(Object.keys(METHOD).sort()).toEqual(Object.keys(CommunityPeerPaths).sort())
 
