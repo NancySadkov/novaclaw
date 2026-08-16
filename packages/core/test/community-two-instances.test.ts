@@ -593,6 +593,51 @@ describe("two instances", () => {
        * people's instances. The agent tool reaches it with any channel name a model can write, so it
        * is not a theoretical door.
        */
+      /**
+       * 🔴 A HOSTILE answer: the peer serves a message from ANOTHER room.
+       *
+       * Every sync test until now used an honest peer, so the one thing a stranger controls — what
+       * comes back — was never adversarial. `deliver` resolves the room from the TOPIC WE ASKED FOR
+       * and nothing in the message picks it, so if the signature did not bind the channel, a peer
+       * answering our sync could land any message they hold in any room we are in, attributed to an
+       * author who never said it there.
+       *
+       * ⚠️ Alice is subscribed to BOTH rooms, which is what makes this a real test rather than a
+       * re-run of the subscription check: the message is legitimately signed, by a real author, for
+       * a room she really is in. Only the CHANNEL BINDING can refuse it, and it must — landing it
+       * under the requested topic would be a forgery by relocation.
+       */
+      const relocated = await Effect.runPromise(
+        Effect.gen(function* () {
+          const channels = yield* CommunityChannels.Service
+          const posts = yield* CommunityPost.Service
+          yield* channels.join("#elsewhere")
+          const said = yield* posts.post("#elsewhere", "said in another room entirely")
+          return said.message
+        }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+
+      const verdict = await Effect.runPromise(
+        Effect.gen(function* () {
+          const channels = yield* CommunityChannels.Service
+          yield* channels.join("#elsewhere")
+          // Straight at the ingress door, as a sync answer for a DIFFERENT topic would arrive.
+          const result = yield* channels.deliver(CommunityTopic.topicOf("#NovaClaw"), relocated as never)
+          return {
+            result,
+            inTarget: (yield* channels.history("#NovaClaw")).filter((m) =>
+              m.body.includes("another room entirely"),
+            ).length,
+            inOrigin: (yield* channels.history("#elsewhere")).length,
+          }
+        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+      )
+      expect(verdict.result).toEqual({ rejected: "wrong-channel" })
+      expect(verdict.inTarget, "a message from another room landed in the room we asked about").toBe(0)
+      // ⚠️ And it is not quietly filed under its OWN room either: we asked about #NovaClaw, so this
+      // is unsolicited content arriving through a door opened for something else.
+      expect(verdict.inOrigin, "an unsolicited message was stored because it was signed").toBe(0)
+
       asked.length = 0
       const unsubscribed = await Effect.runPromise(
         Effect.gen(function* () {
