@@ -164,6 +164,48 @@ describe("CommunityContacts", () => {
     }).pipe(Effect.provide(InstanceIdentityStore.defaultLayer)),
   )
 
+  it.effect("🔴 a block survives a LONG chain — rotating repeatedly is not an escape", () =>
+    Effect.gen(function* () {
+      const contacts = yield* CommunityContacts.Service
+      const store = yield* InstanceIdentityStore.Service
+
+      /**
+       * 🔴 The whitewashing defence, at depth. One rotation is covered above; the attack this file
+       * actually has to refuse is rotating REPEATEDLY to shed a history — the literature's name for
+       * it is whitewashing, and `notes/spec/honesty-ledger.md` §1(c) leans on this holding, because
+       * a reputation that a fresh key sheds is no reputation at all.
+       *
+       * ⚠️ Depth is the point. A chain that silently truncates, or that splits into one row per key,
+       * would pass the single-rotation test above and fail here — and both failures look like the
+       * peer simply being unknown, which is indistinguishable from an honest newcomer.
+       */
+      const original = (yield* store.identity()).networkID
+      yield* contacts.add({ networkID: original, petname: "shifty", routes: ["/ip4/10.0.0.1/udp/1/quic-v1"] })
+      yield* contacts.setBlocked(original, true)
+
+      const keys = [original]
+      for (let round = 0; round < 8; round++) {
+        const { statement, identity } = yield* store.rotate()
+        expect(yield* contacts.follow(statement), `rotation ${round + 1} was not followed`).toBe(true)
+        keys.push(identity.networkID)
+      }
+      const current = keys.at(-1)!
+
+      // ONE person, not eight: a row per key would make each new one an unknown stranger.
+      const rows = yield* contacts.list()
+      expect(rows.filter((row) => row.blocked)).toHaveLength(1)
+      expect(rows[0]!.networkID).toBe(current)
+
+      // EVERY key they ever held still answers with them — the property `get` promises.
+      for (const key of keys) expect((yield* contacts.get(key))?.networkID, `${key} stopped resolving`).toBe(current)
+
+      // 🔴 And the block is still on, eight rotations later. If it were not, "rotate until they
+      // forget" would be the standard way back in, and nobody would be told.
+      expect((yield* contacts.get(current))?.blocked).toBe(true)
+      expect((yield* contacts.list())[0]!.formerIDs).toHaveLength(keys.length - 1)
+    }).pipe(Effect.provide(InstanceIdentityStore.defaultLayer)),
+  )
+
   it.effect("🔴 two rotations arriving OUT OF ORDER still land the contact on the current key", () =>
     Effect.gen(function* () {
       const contacts = yield* CommunityContacts.Service
