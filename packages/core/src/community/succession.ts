@@ -2,7 +2,7 @@ export * as CommunitySuccession from "./succession"
 
 import { sql } from "drizzle-orm"
 import { Context, Effect, Layer } from "effect"
-import { CommunitySuccessionTable } from "./sql"
+import { CommunityObservationTable, CommunitySuccessionTable } from "./sql"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { InstanceIdentityStore } from "../instance-identity-store"
@@ -133,6 +133,25 @@ export const layer = Layer.effect(
           .pipe(Effect.orDie)
         if (inserted.length === 0) return false
 
+        /**
+         * 🔴 PINNED: a statement about a peer we have DEALT WITH is never evicted.
+         *
+         * The cap above is sized for gossip — statements we keep so a peer who was offline can still be
+         * pointed onward. A statement linking two keys of someone in `community_observation` is not gossip,
+         * it is the spine of our own record, and read-time resolution walks it every time standing is asked
+         * for.
+         *
+         * ⚠️ Without this, whitewashing has a second door that costs nothing: rotate once, wait for the
+         * cap to push the link out oldest-first, and the record stops attaching to the person who earned it.
+         * No fresh face required, which is the attack the design claims to have already answered.
+         *
+         * ⚠️ Contacts would have hidden it — their chain lives on the contact row and never evicts, so
+         * anything tested with a contact passes. The exposure is precisely for peers dealt with but never
+         * added, which is the population the ledger exists to cover.
+         *
+         * ⚠️ The table is therefore bounded by MAX_STATEMENTS + the peers we have observed, and the
+         * second term is bounded by our OWN engagement rather than by anything a stranger can drive.
+         */
         // ⚠️ Trimmed by IDENTITY, not by a time cutoff — the lesson the message log and the peer table
         // both record: a burst arriving inside one millisecond makes a cutoff match everything or
         // nothing, and the "bound" then deletes zero rows while the table grows.
@@ -143,7 +162,9 @@ export const layer = Layer.effect(
               SELECT network_id FROM ${CommunitySuccessionTable}
               ORDER BY time_created DESC, rowid DESC
               LIMIT ${MAX_STATEMENTS}
-            )`,
+            )
+            AND ${CommunitySuccessionTable.network_id} NOT IN (SELECT subject FROM ${CommunityObservationTable})
+            AND ${CommunitySuccessionTable.successor_id} NOT IN (SELECT subject FROM ${CommunityObservationTable})`,
           )
           .run()
           .pipe(Effect.orDie)
