@@ -177,7 +177,13 @@ export const layer = Layer.effectDiscard(
                           ? "Not connected: this instance has not joined the community. Its owner turns that on in the Community app, after reading what it involves."
                         : state.reason === "airgap"
                           ? "Not connected: offline mode is on, so nothing goes in or out."
-                          : "Not connected: the transport that carries messages between instances does not exist yet.",
+                          : // 🔴 "Nobody to dial", NOT "not built". This read "the transport … does not
+                            // exist yet" long after one shipped — and `transport.ts` records the exact
+                            // distinction one file over: *"'We know nobody to dial' is a different
+                            // sentence to a person than 'this is not built yet', and it is one they can
+                            // fix in a minute."* An agent told the feature is missing stops trying; one
+                            // told there are no peers can say something useful to its user.
+                            "Not connected: this instance knows no peers to reach yet. Its owner can look for instances on their network from the Community screen.",
                 }
               }
 

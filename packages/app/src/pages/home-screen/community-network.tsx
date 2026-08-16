@@ -497,12 +497,20 @@ export const CommunityNetwork: Component = () => {
       await communityJoinChannel(current.http, channel())
       const result = await communityPost(current.http, channel(), body)
       setDraft("")
-      // ⚠️ Says which of the two things happened. "Sent" would be a lie while nothing can carry it,
-      // and silence would leave the user unsure whether their words went anywhere at all.
+      /**
+       * ⚠️ Says which of the two things happened. "Sent" would be a lie while nothing can carry it,
+       * and silence would leave the user unsure whether their words went anywhere at all.
+       *
+       * 🔴 The second line used to end "until the network part lands" — written when there was no
+       * transport, and left in place after one shipped. It told a user whose only problem was having
+       * no peers yet that the FEATURE did not exist, which is a reason to stop trying rather than to
+       * go and find someone. The message is retained and served to any peer that syncs later, so the
+       * honest sentence is about reachability, not about what is built.
+       */
       setSendNote(
         result.delivered
           ? "Sent."
-          : "Saved to your own copy — nobody can receive it yet, so it will not reach anyone until the network part lands.",
+          : "Saved to your own copy — no peer was reachable just now, so it will go out when one is.",
       )
       await historyActions.refetch()
     } catch (error) {
@@ -597,7 +605,12 @@ export const CommunityNetwork: Component = () => {
       <div class="flex flex-col gap-1">
         <span class="text-sm font-medium text-v2-text-text-base">Your own community</span>
         <span class="text-[12px] leading-snug text-v2-text-text-muted">
-          Runs between NovaClaw instances — no company in the middle, and nobody who can switch it off.
+          {/* ⚠️ Says "nobody ELSE". The line read "nobody who can switch it off" until a Turn off
+              button appeared two elements below it — a promise the screen itself contradicted. The
+              claim worth making is about who CANNOT: no company, no operator, no one but the person
+              reading this. */}
+          Runs between NovaClaw instances — no company in the middle, and nobody but you who can switch it
+          off.
         </span>
         <div class="mt-1 flex items-center gap-2">
           {/* A dot, not a warning triangle: not being connected yet is the ORDINARY state of a fresh
