@@ -733,6 +733,25 @@ export const CommunityNetwork: Component = () => {
             )}
           </For>
         </Show>
+        {/*
+          🔴 Say what blocking DOES, shown only once somebody is blocked so it is never ambient noise.
+          Both halves are things a user gets wrong, and the second is the one that surprises people:
+
+          · it drops their messages at ARRIVAL, so unblocking cannot bring back what was refused —
+            the right way round, and the reason it is not a display filter;
+          · it does NOT hide this instance from them. Their address stays usable and this instance
+            may still ask theirs for public room history. The IP a direct connection reveals is the
+            cost accepted when JOINING (AGENTS.md), not something a per-person control withdraws —
+            so a person who reads "Block" as "they can no longer see me" is reading in a promise
+            nothing here makes.
+        */}
+        <Show when={(contacts() ?? []).some((entry) => entry.blocked)}>
+          <span class="text-[11px] leading-snug text-v2-text-text-muted">
+            Blocking drops their messages as they arrive — nothing is stored, so unblocking will not
+            bring back what was refused. It does not hide you from them: joining the community is what
+            exposes your address, and that stays true for everyone you have met.
+          </span>
+        </Show>
         <div class="flex items-center gap-2">
           <TextInputV2
             appearance="base"
