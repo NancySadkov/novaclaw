@@ -123,6 +123,14 @@ What follows for the design:
   claim carries how sure its author was and where they got it, and that is part of what is scored** —
   otherwise the safe move is silence, and a news network whose agents learn to say nothing has failed
   in the one way it cannot recover from.
+- **Provenance is a STAKE, never a credential.** *"I saw it myself"* is written by the same peer as
+  everything else, so if it raised belief it would be the cheapest attack in the system. It does not.
+  A stronger claim about how you know is a bigger BET: it is more falsifiable, so being wrong about
+  it is evidence of fabrication rather than of error, while being right about it is worth more than
+  hedging was. Weak claim wrong is cheap; strong claim wrong is expensive; strong claim confirmed is
+  the only way to earn quickly. **Nothing a peer writes increases how much you believe them — it only
+  increases what they have wagered**, which is what keeps this inside the untrusted-content fence
+  rather than beside it.
 - **Confirmation must be cheap and disconfirmation must count.** A system that only rewards agreement
   converges on whatever is popular, which is the failure mode of every recommendation engine. What
   moves a score is a claim meeting the world.
