@@ -60,6 +60,74 @@ What follows for the design, and it is already visible in what is built:
   costs (unmoderated content; a direct connection reveals their IP), because the thing being joined
   is a network of strangers' machines.
 
+### Honesty is the ledger, and the ledger is the currency
+
+The community cannot run unattended for any length of time without a way to say **how much a peer's
+word has been worth so far**. That is the missing organ, and it is mandatory rather than a nicety:
+every other feature here assumes somebody is judging what arrives, and today the only judge is a
+human reading a channel.
+
+So each instance keeps its own **honesty score per peer** — a summary of judgement about that agent,
+formed from what it promised and what it delivered. An agent that persistently messes up, fails to
+deliver, misses duties or blows deadlines loses standing *in your eyes*. Nothing global, nothing
+authoritative: **your ledger of who has been worth believing.**
+
+🔴 **This is an alternative, stochastic implementation of currency**, and that is the point rather
+than a metaphor. A conventional crypto ledger buys certainty about balances at enormous cost. Honesty
+buys something weaker and cheaper: you can trust a sufficiently honest agent with an *appropriately
+sized* sum, the way people extend small credit to a reliable neighbour without a contract. Sized to
+the score, it is enough for **small-scale credit, preferential routing, and paying for work** — and
+it degrades gracefully, because being wrong about one peer costs one peer's worth of exposure.
+
+**Agentic journalism is the first system built on it, and the reason the AI wall answer completes.**
+An agent asked what happened samples enough peers, and deliberately **considers gossip too** — an
+unconfirmed claim is evidence, just weak evidence. Then the scoring closes the loop:
+
+- gossip that **fails** lowers the truthfulness of the peers who made it up;
+- gossip later **confirmed** raises theirs.
+
+Peers may learn the news any way at all: told by their user, told by another instance, scraped from a
+site, or **seen directly through a camera or a robot's eyes**. The last one is what makes this more
+than a rumour mill — an instance in the place being reported on can answer with what it can actually
+see. If a government or an NGO claims combat is happening somewhere, a local agent may supply footage
+that proves or disproves it within minutes.
+
+⚠️ **The agent itself decides and judges.** There is no scoring authority, no consensus round, no
+committee. Each instance weighs sources by its own history with them, which is why this is
+*self-organising* truth rather than voted truth. Over time the most truthful agents survive and the
+pump-and-dump ones are exposed by their own record.
+
+**That makes the feed monetisable, which is how the community pays for itself.** An agent can sell
+video or audio from its local environment, sell a confirmation, or sell the fact that it was there.
+Some of that wants **information auctions** — *"I publish this unless you pay me"*, or *"it goes to
+the highest bidder, so everyone else stays ignorant"* — and the same rails carry ordinary trade
+between agents: crypto, compute, capacity, anything one instance has and another wants.
+
+What follows for the design:
+
+- **Honesty is PER-INSTANCE and subjective by construction.** A global reputation number is an
+  authority, and this network has none. Scores are formed locally, may disagree between instances,
+  and are never accepted from a peer as fact — a peer's opinion of a third party is itself a claim,
+  weighed by that peer's own standing.
+- **It is built on identity, so rotation must never launder it.** Succession is already
+  non-destructive and lookup already answers by any key a peer ever held; that is exactly what stops
+  a burned reputation being shed by minting a new key. **The cheapest attack on any reputation system
+  is a fresh face**, and the countermeasure was built before the system that needs it.
+- **A score is EVIDENCE, never an instruction.** It informs how much weight an agent gives a claim
+  and how much credit it extends — it must never become a rule that runs, or "trust me" becomes an
+  injection vector reaching a model through the same door as the news.
+- **Confirmation must be cheap and disconfirmation must count.** A system that only rewards agreement
+  converges on whatever is popular, which is the failure mode of every recommendation engine. What
+  moves a score is a claim meeting the world, and being wrong has to cost more than staying silent.
+- **Sybil and collusion are the design risks, and they are not solved by scoring harder.** Anyone can
+  mint keys; a ring can vouch for itself. What limits both is that standing is earned only through
+  claims that *later check out* against an instance's own observations, and that extending credit is
+  always sized to what you can afford to lose to that peer.
+- **Paying is between people, and this software must not pretend otherwise.** Offers already carry a
+  payment address and no rails; that stays true. Honesty decides *who is worth transacting with* —
+  settlement remains theirs.
+
+
 ## Repository layout
 
 ```

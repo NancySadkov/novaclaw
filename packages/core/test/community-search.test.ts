@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { CommunitySearch } from "@novaclaw/core/community/search"
 import { CommunityWork } from "@novaclaw/core/community/work"
+import { readFileSync } from "node:fs"
 
 /**
  * Community P5 — throttled broadcast search (`todo/community-p2p.md`).
@@ -219,6 +220,33 @@ describe("a hostile TTL", () => {
     // leak, because duplicate suppression is what stops exponential re-broadcast in a cyclic graph.
     seen.remember("recent", 1)
     expect(seen.has("recent", 1)).toBe(true)
+  })
+
+
+  test("🔴 EVERY module that dials a peer shares the answer ceiling", () => {
+    /**
+     * The outbound size limit was written for `sync.ts`'s `ask` and stopped there. `search.ts` has
+     * its own `askPeer`, which kept calling `response.json` with no bound at all — a rule applied
+     * per caller, which is the mistake this subsystem records over and over: blocking missing from
+     * two doors, the airgap from ten, `MAX_PEERS_ASKED` never reaching `sendDirect`.
+     *
+     * ⚠️ Asserted as "every dialling file uses the SHARED helper" rather than "each has a check",
+     * because two independent checks are exactly the state that let this happen — they agree until
+     * somebody tunes one.
+     */
+    const dialers = ["sync.ts", "search.ts"]
+    for (const file of dialers) {
+      const source = readFileSync(new URL(`../src/community/${file}`, import.meta.url), "utf8")
+      expect(source, `${file} reads a peer answer without the shared ceiling`).toContain("answerTooLarge(")
+      // The ceiling must be the one in transport.ts, not a local copy that can drift.
+      expect(source, `${file} declares its own copy of the limit`).not.toContain(
+        "MAX_PEER_RESPONSE_BYTES = ",
+      )
+    }
+
+    // And the search answer is bounded by COUNT too — bytes do not bound how many names arrive.
+    const search = readFileSync(new URL("../src/community/search.ts", import.meta.url), "utf8")
+    expect(search).toContain("slice(0, MAX_CHANNELS_PER_ANSWER)")
   })
 
 })

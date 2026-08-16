@@ -11,7 +11,7 @@ import { CommunityPeers } from "./peers"
 import { CommunityReconcile } from "./reconcile"
 import { CommunitySuccession } from "./succession"
 import { CommunityTopic } from "./topic"
-import { httpRoutes } from "./transport"
+import { answerTooLarge, httpRoutes } from "./transport"
 import { makeGlobalNode } from "../effect/app-node"
 import { httpClient } from "../effect/app-node-platform"
 import { CommunityConsent } from "./consent"
@@ -126,27 +126,8 @@ export const MAX_LISTED_PER_ANSWER = 200
 export const MAX_PEERS_PER_ANSWER = 128
 export const MAX_SUCCESSIONS_PER_ANSWER = 64
 
-/**
- * 🔴 The most a PEER'S ANSWER may be, checked before it is read.
- *
- * `peer-body-limit.ts` closed this in the inbound direction after a 52.9 MB anonymous POST returned
- * 200 and cost +450 MB of commit. The OUTBOUND half was never closed: `ask` read `response.json`
- * with no ceiling at all, so every bound in this file — 256 ids, 256 messages, 8 KB bodies — was
- * applied to a structure that had already been buffered and parsed.
- *
- * Measured against a hostile peer serving one oversized answer: `/nearby` returned **6,000,001 bytes
- * and 400,000 channel names** to the caller, ingested, de-duplicated into a Map and handed to the
- * app. Nothing refused it at any layer.
- *
- * ⚠️ Wiring catch-up is what made this ordinary. Before it, dialling happened when a user pressed
- * "look for instances"; now every channel open asks up to 16 peers, and the answer is attacker-
- * controlled by definition.
- *
- * ⚠️ The ceiling is derived, not picked: the largest honest answer is a `sync/messages` reply of
- * `MAX_MESSAGES_PER_REQUEST` messages at `MAX_BODY_BYTES` each — about 2 MB of bodies — so 4 MB
- * leaves generous room for signatures, ids and framing while refusing anything of a different order.
- */
-export const MAX_PEER_RESPONSE_BYTES = 4 * 1024 * 1024
+// The peer-answer ceiling lives in `transport.ts` — one rule for every module that dials a peer.
+// It was declared here first and `search.ts` never got it, which is the per-caller mistake again.
 
 export const MAX_MESSAGES_PER_REQUEST = 256
 
@@ -354,9 +335,7 @@ export const layer = Layer.effect(
              * responder here is a NovaClaw instance answering with a JSON string, which always sets
              * it, and a peer that omits it is asking us to read an unknown quantity on trust.
              */
-            const declared = Number(response.headers["content-length"])
-            if (!Number.isFinite(declared) || declared > MAX_PEER_RESPONSE_BYTES)
-              return Effect.fail(new Error("peer answer too large"))
+            if (answerTooLarge(response.headers)) return Effect.fail(new Error("peer answer too large"))
             return response.json
           }),
           Effect.flatMap((json) => Schema.decodeUnknownEffect(schema)(json)),

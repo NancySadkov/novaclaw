@@ -97,6 +97,32 @@ export const INBOUND_PATH = "/api/community/inbound"
  * overlay arms use multiaddrs (`/ip4/…/udp/…/quic-v1`), which this must ignore rather than choke on.
  * A contact can therefore carry both kinds at once and each transport takes the ones it understands.
  */
+/**
+ * 🔴 The most a PEER'S ANSWER may be, checked before it is read — ONE rule, for every module that
+ * dials a peer.
+ *
+ * `peer-body-limit.ts` closed this inbound after a 52.9 MB anonymous POST returned 200 and cost
+ * +450 MB of commit. The outbound half was closed later, in `sync.ts`'s `ask` — and ONLY there.
+ * `search.ts` has its own `askPeer`, which kept reading `response.json` with no ceiling: the fix had
+ * been applied per caller, which is the mistake this subsystem records over and over (blocking
+ * missing from two doors, the airgap from ten, `MAX_PEERS_ASKED` never reaching `sendDirect`).
+ *
+ * ⚠️ Lives HERE because it is the one module both dialling files already import. A constant they
+ * each declared would drift the moment one was tuned.
+ *
+ * ⚠️ Derived, not picked: the largest honest answer is a `sync/messages` reply of 256 messages at
+ * 8 KB each — about 2 MB — so 4 MB refuses a different order of magnitude without touching real
+ * traffic. An answer that declares no length is refused for the reason the inbound limiter gives:
+ * every honest responder is an instance answering with a JSON string, which always sets it.
+ */
+export const MAX_PEER_RESPONSE_BYTES = 4 * 1024 * 1024
+
+/** Whether a peer's answer is small enough to read. Pure, so both callers share the DECISION. */
+export const answerTooLarge = (headers: Readonly<Record<string, string | undefined>>): boolean => {
+  const declared = Number(headers["content-length"])
+  return !Number.isFinite(declared) || declared > MAX_PEER_RESPONSE_BYTES
+}
+
 export const httpRoutes = (routes: readonly string[]): string[] =>
   routes.filter((route) => {
     try {

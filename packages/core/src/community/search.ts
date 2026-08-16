@@ -7,7 +7,7 @@ import { CommunityChannels } from "./channels"
 import { CommunityPeers } from "./peers"
 import { CommunityWork } from "./work"
 import { CommunityTopic } from "./topic"
-import { httpRoutes } from "./transport"
+import { answerTooLarge, httpRoutes } from "./transport"
 import { makeGlobalNode } from "../effect/app-node"
 import { httpClient } from "../effect/app-node-platform"
 import { InstanceIdentityStore } from "../instance-identity-store"
@@ -313,6 +313,14 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 
 const Answer = Schema.Struct({ channels: Schema.Array(Schema.String) })
 
+/**
+ * The most rooms one peer may name in a single search answer.
+ *
+ * ⚠️ `MAX_ASKED` bounds how many peers a search reaches; nothing bounded what each one returns, so
+ * the total was `peers × whatever they said`. A size limit is not a count limit.
+ */
+const MAX_CHANNELS_PER_ANSWER = 200
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -357,9 +365,23 @@ export const layer = Layer.effect(
         )
         .pipe(
           Effect.timeout(FORWARD_TIMEOUT_MS),
-          Effect.flatMap((response) => response.json),
+          Effect.flatMap((response) =>
+            /**
+             * 🔴 The same ceiling `sync.ts` applies — and this file did not have it. The outbound
+             * size limit was written for `ask` and stopped there, so a search answer was read with
+             * no bound at all while its sibling was guarded. One rule, in `transport.ts`, because
+             * two copies drift the moment one is tuned.
+             */
+            answerTooLarge(response.headers) ? Effect.fail(new Error("peer answer too large")) : response.json,
+          ),
           Effect.flatMap((json) => Schema.decodeUnknownEffect(Answer)(json)),
-          Effect.map((answer) => [...answer.channels]),
+          /**
+           * ⚠️ And a COUNT ceiling, which bytes do not give: every name here joins a Set that this
+           * returns to the app and to the agent tool, and `MAX_ASKED` bounds how many PEERS answer,
+           * never how much each one says. A peer hosting more rooms than this is not a case that
+           * exists — `channelsNearby` uses the same number for the same reason.
+           */
+          Effect.map((answer) => [...answer.channels].slice(0, MAX_CHANNELS_PER_ANSWER)),
           // A peer that is offline, slow or speaking a different version is the ordinary case, and
           // none of it may abort a search that other peers are answering.
           Effect.catchCause(() => Effect.succeed([] as string[])),
