@@ -19,6 +19,16 @@ export const CommunityContact = Schema.Struct({
   networkID: Schema.String,
   petname: Schema.optional(Schema.String),
   /**
+   * 🔴 The user's own trust rating, 1..5, absent when they never gave one.
+   *
+   * ⚠️ Declared here because it was NOT, and the symptom was perfect: the doorman flow stored a
+   * rating, the API answered a contact with no `trust`, and the screen showed nothing — identical
+   * to the value never having been written. The comment two fields down already warned that an
+   * undeclared field is dropped silently and looks exactly like a stale backend. Found by driving
+   * the real UI, not by any test.
+   */
+  trust: Schema.optional(Schema.Number),
+  /**
    * Keys this peer has rotated away from, newest first.
    *
    * 🔴 Declared here because attribution needs it: a message is signed by whatever key its author
@@ -93,6 +103,8 @@ const AddContact = Schema.Struct({
   networkID: Schema.String,
   petname: Schema.optional(Schema.String),
   routes: Schema.optional(Schema.Array(Schema.String)),
+  /** The user's own rating, when they are adding somebody they already decided to trust. */
+  trust: Schema.optional(Schema.Number),
 })
 
 /**

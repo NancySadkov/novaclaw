@@ -123,6 +123,29 @@ export const answerTooLarge = (headers: Readonly<Record<string, string | undefin
   return !Number.isFinite(declared) || declared > MAX_PEER_RESPONSE_BYTES
 }
 
+/**
+ * 🔴 What a PERSON types, turned into routes we can dial.
+ *
+ * `httpRoutes` requires a full URL, which is right for routes learned from mDNS or peer exchange —
+ * they always carry a scheme. It is wrong for a human: `new URL("127.0.0.1:4097")` parses with
+ * protocol `127.0.0.1:`, so a typed address was filtered out and the caller answered "nothing lives
+ * there" about a host that was answering perfectly. Found by typing an IP into the box.
+ *
+ * ⚠️ HTTPS is tried FIRST and http is the fallback, never the other way round. Preferring the
+ * plaintext form would silently downgrade every public host somebody pastes; the fallback exists
+ * because the common case on a LAN is a plain port, and refusing that would make the doorman door
+ * unusable exactly where it is needed most.
+ */
+export const typedRoutes = (address: string): string[] => {
+  const trimmed = address.trim()
+  if (trimmed === "") return []
+  const already = httpRoutes([trimmed])
+  if (already.length > 0) return already
+  // Anything that cannot be a host is not worth two dials.
+  if (!/^[A-Za-z0-9._\-]+(:\d{1,5})?(\/.*)?$/.test(trimmed)) return []
+  return [`https://${trimmed}`, `http://${trimmed}`]
+}
+
 export const httpRoutes = (routes: readonly string[]): string[] =>
   routes.filter((route) => {
     try {

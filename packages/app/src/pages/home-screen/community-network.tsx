@@ -12,6 +12,7 @@ import {
   communityChannels,
   communityArchivedChannels,
   communityDiscover,
+  communityDoorman,
   communityOffers,
   communityParticipation,
   communitySetParticipation,
@@ -484,6 +485,57 @@ export const CommunityNetwork: Component = () => {
     }
   }
 
+  /**
+   * 🔴 Naming a DOORMAN — an address you were given, and how far you trust whoever answers.
+   *
+   * Joining needs none of this: the button above finds instances on the LAN, through the seed
+   * records and by peer exchange, with nobody's permission. This is the other path, and AGENTS.md
+   * says when it matters — not at the door, but once TRANSACTIONS do. It is also what keeps the
+   * seeds a convenience: when every default door is shut, this one still opens.
+   *
+   * ⚠️ The rating is the USER's sentence and nothing else may write it. It is deliberately a
+   * coarse 1..5 rather than a percentage: only its ORDER is ever read, and a finer scale would
+   * promise a precision nobody has about a stranger.
+   */
+  const [trust, setTrust] = createSignal(0)
+  const [doormanNote, setDoormanNote] = createSignal("")
+  const [naming, setNaming] = createSignal(false)
+
+  const nameDoorman = async () => {
+    const current = connection()
+    const address = adding().trim()
+    if (!current || address === "" || trust() === 0) return
+    setNaming(true)
+    setDoormanNote("")
+    try {
+      const named = adding().trim()
+      const petname = addingName().trim()
+      const result = await communityDoorman(current.http, {
+        address: named,
+        trust: trust(),
+        ...(petname === "" ? {} : { petname }),
+      })
+      setDoormanNote(
+        result.found
+          ? `Added as a doorman you trust ${trust()} of 5.`
+          : // ⚠️ Nothing answered, so there is nobody to trust. A rating is a statement about a
+            // PERSON, and recording it against an address that answers nothing would attach the
+            // user's sentence to whoever is given that address next.
+            "Nothing answered there, so nobody was added. Check the address and try again.",
+      )
+      if (result.found) {
+        setAdding("")
+        setAddingName("")
+        setTrust(0)
+        await Promise.all([contactActions.refetch(), nearbyActions.refetch()])
+      }
+    } catch (error) {
+      setDoormanNote(error instanceof Error ? error.message : String(error))
+    } finally {
+      setNaming(false)
+    }
+  }
+
   const join = async () => {
     const current = connection()
     const name = joining().trim()
@@ -797,6 +849,33 @@ export const CommunityNetwork: Component = () => {
             Looks on this network, then asks whoever answers who else they know.
           </span>
         </div>
+        {/* 🔴 The doorman row. Joining never needs it; it is how a user says "I know this one, and
+            this is how far I trust them" once value is involved. */}
+        <div class="mt-1 flex items-center gap-2">
+          <span class="text-[11px] leading-snug text-v2-text-text-muted">Trust the address above:</span>
+          <For each={[1, 2, 3, 4, 5]}>
+            {(level) => (
+              <ButtonV2
+                variant={trust() === level ? "neutral" : "ghost"}
+                size="small"
+                onClick={() => setTrust(trust() === level ? 0 : level)}
+              >
+                {level}
+              </ButtonV2>
+            )}
+          </For>
+          <ButtonV2
+            variant="neutral"
+            size="small"
+            disabled={naming() || !adding().trim() || trust() === 0}
+            onClick={() => void nameDoorman()}
+          >
+            {naming() ? "Asking…" : "Add as doorman"}
+          </ButtonV2>
+        </div>
+        <Show when={doormanNote()}>
+          <span class="text-[11px] leading-snug text-v2-text-text-muted">{doormanNote()}</span>
+        </Show>
         <Show when={found()}>
           <span class="text-[11px] leading-snug text-v2-text-text-muted">{found()}</span>
         </Show>

@@ -11,7 +11,7 @@ import { CommunityPeers } from "./peers"
 import { CommunityReconcile } from "./reconcile"
 import { CommunitySuccession } from "./succession"
 import { CommunityTopic } from "./topic"
-import { answerTooLarge, httpRoutes } from "./transport"
+import { answerTooLarge, httpRoutes, typedRoutes } from "./transport"
 import { makeGlobalNode } from "../effect/app-node"
 import { httpClient } from "../effect/app-node-platform"
 import { CommunityConsent } from "./consent"
@@ -509,10 +509,16 @@ export const layer = Layer.effect(
          * it afterwards regardless.
          */
         if (!speaks()) return undefined
-        const [route] = httpRoutes([address])
-        if (route === undefined) return undefined
-        const health = yield* ask(route, IDENTITY_PATH, undefined, Health, "GET")
-        return health === undefined ? undefined : { networkID: health.networkID, route }
+        /**
+         * ⚠️ A TYPED address, so it may have no scheme — and `httpRoutes` drops those, which is
+         * how this answered "nobody lives there" about a host that was answering. Each candidate is
+         * tried in turn, secure first.
+         */
+        for (const route of typedRoutes(address)) {
+          const health = yield* ask(route, IDENTITY_PATH, undefined, Health, "GET")
+          if (health !== undefined) return { networkID: health.networkID, route }
+        }
+        return undefined
       }),
 
       learnFrom: Effect.fn("CommunitySync.learnFrom")(function* (addresses, source = "lan") {

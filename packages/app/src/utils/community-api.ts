@@ -129,6 +129,28 @@ export function communityDiscover(server: ServerConnection.HttpBase, addresses?:
 }
 
 /**
+ * Name a DOORMAN: an address you were given, and how far you trust whoever answers there.
+ *
+ * 🔴 Joining needs none of this — LAN, DNS seeds and peer exchange all work with nobody's
+ * permission. This is the other path, the one that matters once transactions do, and it is also what
+ * makes the seed list a convenience rather than a dependency: when every default door is shut, this
+ * one still opens.
+ *
+ * ⚠️ An ADDRESS, never a key. The instance there tells us who it is; asking a person to type 47
+ * characters of base64 is what principle 12 exists to forbid.
+ */
+export function communityDoorman(
+  server: ServerConnection.HttpBase,
+  input: { readonly address: string; readonly trust: number; readonly petname?: string },
+) {
+  return instanceFetch<{ readonly found: boolean; readonly networkID?: string }>(server, {
+    route: "api/community/doorman",
+    method: "POST",
+    body: { ...input },
+  })
+}
+
+/**
  * Move this instance to a new key and tell every reachable peer.
  *
  * ⚠️ Cannot undo a stolen key — whoever holds the secret can do this too, and sooner. Planned moves.
