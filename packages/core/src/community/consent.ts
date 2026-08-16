@@ -89,7 +89,7 @@ export const participates = (gate: Gate): boolean => refusals(gate).length === 0
 // not re-export what it would need — so this is a plain module-level value by necessity as well as
 // by choice.
 
-let live: { readonly read: () => unknown; readonly gate: Gate } | undefined
+let live: { readonly read: () => unknown; readonly gate: Gate; readonly config: unknown } | undefined
 
 /**
  * Publish the gate process-wide, reading config through `read`. Called when the layer is built.
@@ -111,7 +111,7 @@ export function install(read: () => unknown, policy: { readonly enabled: boolean
    */
   if (stored === undefined && live !== undefined) return live.gate
   const gate = resolveGate({ config: stored, policy })
-  live = { read, gate }
+  live = { read, gate, config: stored }
   return gate
 }
 
@@ -134,8 +134,9 @@ export function reload(policy: { readonly enabled: boolean }): Gate {
    * booted one rather than a second, subtly different path.
    */
   const read = live?.read ?? (() => readStoreConsent(DatabasePath.path()))
-  const gate = resolveGate({ config: read(), policy })
-  live = { read, gate }
+  const raw = read()
+  const gate = resolveGate({ config: raw, policy })
+  live = { read, gate, config: raw }
   return gate
 }
 
@@ -152,8 +153,23 @@ export function reload(policy: { readonly enabled: boolean }): Gate {
  * stored, whichever database that was.
  */
 export function applied(community: unknown, policy: { readonly enabled: boolean }): Gate {
-  const gate = resolveGate({ config: { community }, policy })
-  live = { read: live?.read ?? (() => readStoreConsent(DatabasePath.path())), gate }
+  const config = { community }
+  const gate = resolveGate({ config, policy })
+  /**
+   * 🔴 The CONFIG is remembered beside the gate, not just the gate.
+   *
+   * `live` used to hold a resolved gate and a reader that still pointed at the database, so after
+   * this call the two disagreed: the gate said what the caller had just applied, and the reader said
+   * what was on disk. Nothing noticed while consent was the only thing resolved from it — one
+   * boolean, read one way. It broke the moment a SECOND permission was resolved from the same row
+   * (answering, which costs tokens): the narrower switch read the stale half and refused, while the
+   * gate beside it said the user had consented.
+   *
+   * ⚠️ `read` is kept for `reload`, which must still see a value AFTER a write commits. What
+   * changes is that the config is no longer only obtainable by re-reading a source this call did not
+   * write to.
+   */
+  live = { read: live?.read ?? (() => readStoreConsent(DatabasePath.path())), gate, config }
   return gate
 }
 
@@ -163,6 +179,21 @@ export function applied(community: unknown, policy: { readonly enabled: boolean 
  * ⚠️ The default is the SAFE one and that is not an accident: an instance that has not wired this
  * up does not participate, rather than participating because nothing said otherwise.
  */
+/**
+ * The RAW stored config the gate was resolved from, for readers that need a sibling key.
+ *
+ * ⚠️ Deliberately returns `unknown` and reads through the same live `read()`, not a snapshot —
+ * the whole reason this module holds a reader rather than a value is that a captured object is the
+ * state at boot forever. A second key resolved from a stale copy would drift from the gate beside it.
+ *
+ * ⚠️ It is NOT a second source of truth about consent: `participates` stays the only answer to
+ * whether this instance takes part, and this exists so a NARROWER permission (answering, which costs
+ * tokens) can be read from the same row without re-implementing the reader.
+ */
+export function storedConfig(): unknown {
+  return live?.config
+}
+
 export function currentGate(): Gate {
   const stored = live?.gate
   /**

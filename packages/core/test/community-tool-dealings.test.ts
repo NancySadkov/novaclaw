@@ -3,6 +3,7 @@ import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
+import { CommunityAnswer } from "@novaclaw/core/community/answer"
 import { CommunityObservation } from "@novaclaw/core/community/observation"
 import { CommunityPeers } from "@novaclaw/core/community/peers"
 import { CommunityPost } from "@novaclaw/core/community/post"
@@ -52,6 +53,7 @@ const it = testEffect(
       CommunityTransport.node,
       CommunitySync.node,
       CommunityObservation.node,
+      CommunityAnswer.node,
     ]),
   ).pipe(Layer.provideMerge(captureTools), Layer.provideMerge(allowAll)),
 )

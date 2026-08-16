@@ -6,6 +6,7 @@ import { CommunityChannels } from "../community/channels"
 import { CommunityPeers } from "../community/peers"
 import { CommunityContacts } from "../community/contacts"
 import { CommunityConsent } from "../community/consent"
+import { CommunityAnswer } from "../community/answer"
 import { CommunityObservation } from "../community/observation"
 import { CommunityPost } from "../community/post"
 import { CommunitySync } from "../community/sync"
@@ -192,6 +193,8 @@ export const layer = Layer.effectDiscard(
     const posts = yield* CommunityPost.Service
     // The per-peer ledger. Reads and writes DEALINGS; it computes no score and holds no verdict.
     const ledger = yield* CommunityObservation.Service
+    // Answering is a NARROWER permission than joining, and it has its own budget.
+    const answers = yield* CommunityAnswer.Service
     const permission = yield* PermissionV2.Service
 
     yield* tools
@@ -232,8 +235,24 @@ export const layer = Layer.effectDiscard(
             Effect.gen(function* () {
               if (input.op === "status") {
                 const state = yield* transport.state()
-                return {
-                  message:
+                /**
+                 * 🔴 Whether this instance ANSWERS strangers, and how much of today is left.
+                 *
+                 * An agent that cannot see this cannot tell its user why nobody is getting replies,
+                 * and would guess — the same failure the "not built yet" sentence beside it caused
+                 * for the transport. Answering is OFF unless the user turned it on separately from
+                 * joining, because it spends tokens rather than bandwidth.
+                 */
+                const answering = yield* answers.state()
+                const answerLine =
+                  answering.refusal === "not-joined"
+                    ? ""
+                    : answering.refusal === "not-answering"
+                      ? " This instance does not answer questions from peers; its owner can turn that on in the Community app."
+                      : answering.refusal === "budget-spent"
+                        ? ` Today's budget for answering peers is spent (${answering.today} of ${answering.gate.perDay}).`
+                        : ` Answering peers: ${answering.today} of ${answering.gate.perDay} used today.`
+                const line =
                     state.kind === "online"
                       ? `Connected to ${state.peers} peer(s).`
                       : state.kind === "connecting"
@@ -248,8 +267,8 @@ export const layer = Layer.effectDiscard(
                             // sentence to a person than 'this is not built yet', and it is one they can
                             // fix in a minute."* An agent told the feature is missing stops trying; one
                             // told there are no peers can say something useful to its user.
-                            "Not connected: this instance knows no peers to reach yet. Its owner can look for instances on their network from the Community screen.",
-                }
+                            "Not connected: this instance knows no peers to reach yet. Its owner can look for instances on their network from the Community screen."
+                return { message: line + answerLine }
               }
 
               if (input.op === "peers") {
@@ -516,5 +535,6 @@ export const node = makeLocationNode({
     CommunityTransport.node,
     CommunitySync.node,
     CommunityObservation.node,
+    CommunityAnswer.node,
   ],
 })

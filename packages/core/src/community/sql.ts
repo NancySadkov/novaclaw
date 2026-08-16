@@ -173,6 +173,34 @@ export const CommunityOfferTable = sqliteTable("community_offer", {
 
 
 /**
+ * Community — ANSWERS GIVEN to peers (`notes/spec/honesty-ledger.md` §4d).
+ *
+ * 🔴 A row is one answer we spent tokens on. It exists so the BUDGET can be counted, and the
+ * budget is the feature: answering is the only thing this program does that spends the user's money
+ * on people they have never met.
+ *
+ * ⚠️ A COUNT per day, not a token total, and that is deliberate. Tokens are known only after the
+ * call, so a token budget can be overshot by the last answer; a count multiplied by the per-answer
+ * `maxTokens` is bounded BEFORE anything is spent. The cheaper primitive is the enforceable one.
+ *
+ * ⚠️ Kept even when the asker is a stranger we never record a dealing about — the observation
+ * store refuses subjects we have never encountered, by design, and the budget must not inherit that
+ * refusal. What we spend is our own business and is always known to us.
+ */
+export const CommunityAnsweredTable = sqliteTable(
+  "community_answered",
+  {
+    id: text().primaryKey(),
+    /** Who asked. Recorded so a single peer cannot quietly consume the whole day's budget. */
+    asker: text().notNull(),
+    /** Epoch millis we answered. */
+    at: integer().notNull(),
+    ...Timestamps,
+  },
+  (table) => [index("community_answered_at_idx").on(table.at)],
+)
+
+/**
  * Community — HONESTY, the per-peer ledger (`notes/spec/honesty-ledger.md`).
  *
  * 🔴 A row is a DEALING that happened, never a verdict about a peer. No score, weight, stake or
