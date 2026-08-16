@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { CommunityConsent } from "@novaclaw/core/community/consent"
 import { ConfigProvider, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { CommunityPeerPaths } from "../../src/server/routes/instance/httpapi/groups/community"
@@ -46,6 +47,20 @@ const ask = (handler: ReturnType<typeof app>, directory: string, body: unknown) 
 }
 
 describe("asking this instance a question", () => {
+  /**
+   * 🔴 The consent gate is PROCESS-WIDE, so a test that joins must un-join after itself.
+   *
+   * ⚠️ Found by the guard next door, and it was my regression. This file boots an instance with
+   * `consented: true`; that installs a granted gate for the whole process, and `install` DELIBERATELY
+   * refuses to clobber one from empty storage — *storage that says nothing is not storage that says
+   * no*. So the next test's FRESH install inherited consent, its peer door stood open, and
+   * `/api/community/listed` answered 200 where a shut door must answer 503.
+   *
+   * ⚠️ The leak runs the wrong way round from the obvious worry: a test that grants a permission
+   * weakens the ones after it, and every one of them still passes except the one that checks the
+   * door is shut.
+   */
+  afterEach(() => CommunityConsent.resetGate())
   afterEach(disposeAllInstances)
 
   test("🔴 a fresh install's peer door is SHUT, before any of this is reached", async () => {
