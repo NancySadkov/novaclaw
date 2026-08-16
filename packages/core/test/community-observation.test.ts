@@ -4,6 +4,7 @@ import { eq, sql } from "drizzle-orm"
 import { Effect } from "effect"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityObservation } from "@novaclaw/core/community/observation"
+import { CommunityPeers } from "@novaclaw/core/community/peers"
 import { CommunitySuccession } from "@novaclaw/core/community/succession"
 import { CommunitySuccessionTable } from "@novaclaw/core/community/sql"
 import { Database } from "@novaclaw/core/database/database"
@@ -26,6 +27,7 @@ const it = testEffect(
       InstanceIdentityStore.node,
       CommunitySuccession.node,
       CommunityContacts.node,
+      CommunityPeers.node,
       CommunityObservation.node,
     ]),
   ),
@@ -49,11 +51,27 @@ const rotation = (from: ReturnType<typeof stranger>, to: string, at = Date.now()
   }
 }
 
+
+/**
+ * 🔴 Engagement, established the way the network really does it — peer exchange handing us an
+ * address. `record` refuses a subject this instance has never encountered, so every test that means
+ * to record a dealing must first have HAD one; a test that skipped this would be asserting against
+ * the refusal path while believing it tested the happy one.
+ */
+let port = 20_000
+const met = (peers: CommunityPeers.Interface, networkID: string) =>
+  // ⚠️ A DISTINCT route per peer. `learn` deletes any other row claiming the same address, since
+  // one address answers as one instance — so a shared route made the second call quietly evict the
+  // first peer, and the dealing recorded against it was then refused as a stranger's.
+  peers.learn(networkID, [`127.0.0.1:${++port}`], "px")
+
 describe("CommunityObservation", () => {
   it.effect("a dealing goes in and comes back out", () =>
     Effect.gen(function* () {
       const ledger = yield* CommunityObservation.Service
+      const peers = yield* CommunityPeers.Service
       const peer = stranger().networkID
+      yield* met(peers, peer)
 
       yield* ledger.record({
         subject: peer,
@@ -76,9 +94,12 @@ describe("CommunityObservation", () => {
   it.effect("🔴 the record follows the PERSON through a rotation, asked by either key", () =>
     Effect.gen(function* () {
       const ledger = yield* CommunityObservation.Service
+      const peers = yield* CommunityPeers.Service
       const successions = yield* CommunitySuccession.Store
       const before = stranger()
       const after = stranger().networkID
+      yield* met(peers, before.networkID)
+      yield* met(peers, after)
 
       // Dealt with under the old key, and only then do they rotate — the order that matters.
       yield* ledger.record({ subject: before.networkID, at: 1_000, context: "delivery", outcome: "kept" })
@@ -100,10 +121,12 @@ describe("CommunityObservation", () => {
   it.effect("🔴 the chain outlives the record, for a peer who is NOT a contact", () =>
     Effect.gen(function* () {
       const ledger = yield* CommunityObservation.Service
+      const peers = yield* CommunityPeers.Service
       const successions = yield* CommunitySuccession.Store
       const contacts = yield* CommunityContacts.Service
       const before = stranger()
       const after = stranger().networkID
+      yield* met(peers, before.networkID)
 
       yield* ledger.record({ subject: before.networkID, at: 1_000, context: "delivery", outcome: "missed" })
       expect(yield* successions.remember(rotation(before, after))).toBe(true)
@@ -160,7 +183,9 @@ describe("CommunityObservation", () => {
     Effect.gen(function* () {
       const ledger = yield* CommunityObservation.Service
       const contacts = yield* CommunityContacts.Service
+      const peers = yield* CommunityPeers.Service
       const peer = stranger().networkID
+      yield* met(peers, peer)
       const before = yield* contacts.list()
 
       // Every outcome shape, in case one of them were ever tempted to "helpfully" remember a peer.

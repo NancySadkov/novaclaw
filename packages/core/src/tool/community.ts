@@ -315,7 +315,7 @@ export const layer = Layer.effectDiscard(
                  */
                 if (input.peer === undefined || input.context === undefined || input.outcome === undefined)
                   return { message: "record needs a peer, a context and an outcome." }
-                yield* ledger.record({
+                const recorded = yield* ledger.record({
                   subject: input.peer,
                   at: Date.now(),
                   context: input.context,
@@ -323,6 +323,14 @@ export const layer = Layer.effectDiscard(
                   ...(input.note === undefined ? {} : { note: input.note }),
                   ...(input.regarding === undefined ? {} : { about: input.regarding }),
                 })
+                if (recorded === undefined)
+                  return {
+                    message:
+                      "Not recorded: this instance has never encountered that peer - no contact, no known " +
+                      "address, no message from them. You can only note a dealing you actually had. If you " +
+                      "were told about them by somebody else, that is the other peer's claim, and it is a " +
+                      "dealing with THAT peer.",
+                  }
                 return { message: `Recorded: ${input.context} - ${input.outcome}.` }
               }
 

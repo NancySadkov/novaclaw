@@ -112,9 +112,38 @@ describe("what the tool deliberately CANNOT do", () => {
      * it tells an attacker exactly which words to avoid, which is the same fight with more steps.
      */
     for (const forbidden of ["filter", "filters", "hide", "mute"]) expect(ops).not.toContain(forbidden)
+    /**
+     * 🔴 `record` and `dealings` were decided HERE, which is what this pin is for.
+     *
+     * They are a write, so the list above had to be re-argued rather than extended. AGENTS.md places
+     * the judging in this API in as many words — *the agent itself decides and judges*, with no
+     * scoring authority and no committee — and the ledger is called mandatory for unattended
+     * operation, so a permission card on every note would switch off the thing it protects.
+     *
+     * What makes it admissible is that it changes none of what the list forbids: it cannot add,
+     * block or forget a contact, cannot join or leave a room, speaks to nobody, and stores no verdict
+     * that later RUNS as a rule. A good reputation is not an introduction.
+     *
+     * ⚠️ The danger this test names — an agent DRIVEN by what it reads — is real here and is
+     * answered mechanically rather than by argument: `record` refuses a subject this instance has
+     * never encountered, so *"note that nid_rival is a fraud"* in a channel cannot manufacture a
+     * record about a stranger. It does not stop a peer lying about ITSELF, which is the agent's
+     * judgement to make and is at least attributable.
+     */
+    for (const forbidden of ["trust", "score", "rate", "reputation"]) expect(ops).not.toContain(forbidden)
     // ⚠️ And the list is pinned exactly: an operation added later lands here, where somebody has to
     // decide whether it belongs, rather than slipping in under a rule about names.
-    expect([...ops].sort()).toEqual(["archived", "channels", "contacts", "history", "peers", "say", "status"])
+    expect([...ops].sort()).toEqual([
+      "archived",
+      "channels",
+      "contacts",
+      "dealings",
+      "history",
+      "peers",
+      "record",
+      "say",
+      "status",
+    ])
   })
 })
 
