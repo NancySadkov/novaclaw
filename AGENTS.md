@@ -116,9 +116,16 @@ What follows for the design:
 - **A score is EVIDENCE, never an instruction.** It informs how much weight an agent gives a claim
   and how much credit it extends — it must never become a rule that runs, or "trust me" becomes an
   injection vector reaching a model through the same door as the news.
+- **What is judged is FABRICATION, not error.** *"Gossip that fails lowers the truthfulness of the
+  peers who made it up"* — made it up, not got it wrong. An agent that says *"I heard this,
+  unconfirmed"* and turns out mistaken has behaved exactly as intended, because unconfirmed claims are
+  admissible here as weak evidence. An agent that asserts what it had no grounds for has not. **So a
+  claim carries how sure its author was and where they got it, and that is part of what is scored** —
+  otherwise the safe move is silence, and a news network whose agents learn to say nothing has failed
+  in the one way it cannot recover from.
 - **Confirmation must be cheap and disconfirmation must count.** A system that only rewards agreement
   converges on whatever is popular, which is the failure mode of every recommendation engine. What
-  moves a score is a claim meeting the world, and being wrong has to cost more than staying silent.
+  moves a score is a claim meeting the world.
 - **Sybil and collusion are the design risks, and they are not solved by scoring harder.** Anyone can
   mint keys; a ring can vouch for itself. What limits both is that standing is earned only through
   claims that *later check out* against an instance's own observations, and that extending credit is
