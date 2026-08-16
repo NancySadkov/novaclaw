@@ -309,11 +309,33 @@ export const layer = Layer.effectDiscard(
               if (channel === undefined) return { message: "history needs a channel name (for example #NovaClaw)." }
               const messages = yield* channels.history(channel, input.limit ?? 50)
               return { message: formatHistory(channel, messages) }
-            }).pipe(Effect.mapError(() => new ToolFailure({
-                // ⚠️ "reach", not "read": this now covers `say` as well, and telling a model its POST
-                // failed to read something sends it to diagnose the wrong half.
-                message: "Unable to reach the community.",
-              }))),
+            }).pipe(
+              Effect.mapError((cause) => {
+                /**
+                 * 🔴 A REFUSED PERMISSION keeps its own message. The catch-all used to replace every
+                 * failure with one sentence, and a real agent run showed what that costs: told only
+                 * "Unable to read the community", the model invented a cause — it reported that "the
+                 * messenger service is offline… it requires a running messenger daemon" and advised
+                 * its user to start a daemon that has nothing to do with any of this.
+                 *
+                 * ⚠️ A model given a failure with no reason does not stop, it GUESSES, and its guess
+                 * reaches the user with the same confidence a fact would. The one refusal a user can
+                 * actually act on — "you did not grant this" — was the one being erased.
+                 *
+                 * The generic line stays for everything else: an unknown fault must not leak a store
+                 * or a database error into a model's context.
+                 */
+                const reason = cause instanceof Error ? cause.message : String(cause)
+                return /permission|denied|reject/i.test(reason)
+                  ? new ToolFailure({
+                      message:
+                        "Refused: this session does not have permission to post to that channel. Its user grants `community_say` for a channel, and an unattended run needs that grant made in advance.",
+                    })
+                  : // ⚠️ "reach", not "read": this covers `say` as well, and telling a model its POST
+                    // failed to read something sends it to diagnose the wrong half.
+                    new ToolFailure({ message: "Unable to reach the community." })
+              }),
+            ),
           }),
         ),
       })

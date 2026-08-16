@@ -127,3 +127,28 @@ describe("say when the module is not running", () => {
       expect(say).toContain(condition)
   })
 })
+
+describe("what a refused permission tells the model", () => {
+  /**
+   * 🔴 Observed on a real agent run, which is the only place this could show. Denied
+   * `community_say` in an unattended session, the tool returned its catch-all — "Unable to read the
+   * community" — and the model INVENTED a cause: it told its user "the messenger service is
+   * offline… it requires a running messenger daemon" and advised starting a daemon unrelated to any
+   * of this.
+   *
+   * ⚠️ A model handed a failure with no reason does not stop, it GUESSES, and the guess reaches the
+   * user with the same confidence a fact would. The one refusal a user can act on — "you did not
+   * grant this" — was exactly the one being erased by the catch-all.
+   */
+  test("🔴 a permission refusal keeps its reason; everything else stays generic", () => {
+    const source = readFileSync(new URL("../src/tool/community.ts", import.meta.url), "utf8")
+    const mapper = source.slice(source.indexOf("Effect.mapError"))
+
+    // The refusal names the action and says a grant must precede an unattended run.
+    expect(mapper).toContain("community_say")
+    expect(mapper).toContain("in advance")
+    // ⚠️ And the generic line SURVIVES for unknown faults: a store or database error must not leak
+    // into a model's context just because permission errors now pass through.
+    expect(mapper).toContain("Unable to reach the community.")
+  })
+})
