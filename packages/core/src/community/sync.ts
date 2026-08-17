@@ -652,14 +652,36 @@ export const layer = Layer.effect(
       learnFrom: Effect.fn("CommunitySync.learnFrom")(function* (addresses, source = "lan") {
         if (!speaks()) return 0
         let learned = 0
-        for (const address of httpRoutes(addresses)) {
-          // ⚠️ ASK who they are rather than trusting a claim attached to the address. The reply is
-          // only a claim too — anyone can serve a health endpoint — but a peer's key is not a secret
-          // and every message it sends is verified against it anyway. What this buys is that the
-          // route is real and reaches something that speaks our protocol.
-          const health = yield* ask(address, IDENTITY_PATH, undefined, Health, "GET")
-          if (health === undefined) continue
-          if (yield* peers.learn(health.networkID, [address], source)) learned++
+        for (const address of addresses) {
+          /**
+           * 🔴 `typedRoutes`, not `httpRoutes` — because not every source carries a scheme.
+           *
+           * `httpRoutes` drops anything `new URL()` cannot parse, which is right for mDNS and peer
+           * exchange, where a scheme always rides along. **The DHT hands back bare `host:port`**, so
+           * every address the public directory found was filtered out HERE, before a single dial —
+           * `dht.ts` said its result was "exactly what `learnFrom` already consumes" and it was not.
+           * The sidecar could work perfectly and no peer would ever be added. Found by having one
+           * instance ask another and watching `no-route` come back for an address just learned.
+           *
+           * ⚠️ Costs at most one extra dial, and only for scheme-less entries: `typedRoutes` returns
+           * a well-formed URL unchanged, and otherwise tries HTTPS before plaintext so a pasted
+           * public host is never silently downgraded.
+           */
+          for (const route of typedRoutes(address)) {
+            // ⚠️ ASK who they are rather than trusting a claim attached to the address. The reply
+            // is only a claim too — anyone can serve a health endpoint — but a peer's key is not a
+            // secret and every message it sends is verified against it anyway. What this buys is
+            // that the route is real and reaches something that speaks our protocol.
+            const health = yield* ask(route, IDENTITY_PATH, undefined, Health, "GET")
+            if (health === undefined) continue
+            /**
+             * ⚠️ The route STORED is the one that answered, scheme and all — so everything
+             * downstream that filters with `httpRoutes` keeps working on it. Storing the bare form
+             * would move this same defect one step later, into `sendDirect` and `askPeer`.
+             */
+            if (yield* peers.learn(health.networkID, [route], source)) learned++
+            break
+          }
         }
         return learned
       }),
