@@ -872,11 +872,28 @@ export const CommunityPeerApi = HttpApi.make("communityPeer").add(
         }),
       ),
       HttpApiEndpoint.get("communityIdentity", CommunityPeerPaths.identity, {
+        /**
+         * 🔴 A CHALLENGE the caller chose — Codex review P1.
+         *
+         * Everything else in this answer is static, so it is a quotation: a hostile endpoint replays
+         * a victim's published tuple and every caller believes the route belongs to them. A
+         * signature over 32 bytes the answerer could not predict is the only part of this response
+         * that means possession.
+         *
+         * ⚠️ OPTIONAL on the wire, mandatory for our own probes. An instance that asks without one
+         * still gets the old shape — a legacy peer stays reachable — while `sync` refuses any answer
+         * whose proof does not verify. Unlike the succession co-signature, which had to be a hard
+         * break because a one-sided statement is forgeable by design, an unproven identity answer is
+         * only useless to the caller.
+         */
+        query: Schema.Struct({ challenge: Schema.optional(Schema.String) }),
         success: described(
           Schema.Struct({
             networkID: Schema.String,
             sealingKey: Schema.optional(Schema.String),
             sealingSignature: Schema.optional(Schema.String),
+            /** Signature over the domain-separated challenge. Absent when none was asked for. */
+            proof: Schema.optional(Schema.String),
           }),
           "Who lives at this address, and the key to seal to",
         ),

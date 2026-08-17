@@ -1,5 +1,7 @@
 export * as CommunitySync from "./sync"
 
+import { randomBytes } from "node:crypto"
+
 import { Context, Effect, Layer, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { CommunityChannels } from "./channels"
@@ -308,6 +310,11 @@ const Health = Schema.Struct({
   networkID: Schema.String,
   sealingKey: Schema.optional(Schema.String),
   sealingSignature: Schema.optional(Schema.String),
+  /**
+   * ⚠️ Declared, or the decode DROPS it and every probe fails to prove — the trap this file records
+   * twice already (the offer envelope, the succession statement).
+   */
+  proof: Schema.optional(Schema.String),
 })
 const Successions = Schema.Struct({
   statements: Schema.Array(
@@ -479,6 +486,38 @@ export const layer = Layer.effect(
     })
 
     /**
+     * 🔴 **WHO answers at this address — proven, not claimed** (Codex review P1, 2026-08-17).
+     *
+     * Every caller here used to take `networkID` off a plain `GET` and believe it. Nothing in that
+     * response was bound to the request, so a hostile endpoint that replayed a victim's published
+     * tuple became that victim as far as this instance was concerned: it could be prepended to the
+     * user's contact routes by `reached`, accept a DM it cannot open and return the uniform ack so
+     * `sendDirect` reported success, and have its unsigned refusal recorded as a first-hand dealing
+     * about somebody else.
+     *
+     * So the caller mints 32 random bytes and demands a signature over them. A peer that does not
+     * answer the challenge is not refused as hostile — it is simply not PROVEN, and every use here
+     * needs proof.
+     *
+     * ⚠️ The nonce is per PROBE, never cached. A reused challenge is a static claim again, one round
+     * later.
+     */
+    const probeIdentity = Effect.fn("CommunitySync.probeIdentity")(function* (route: string, budgetMs?: number) {
+      const challenge = randomBytes(InstanceIdentityStore.CHALLENGE_BYTES).toString("base64url")
+      const health = yield* ask(
+        route,
+        `${IDENTITY_PATH}?challenge=${challenge}`,
+        undefined,
+        Health,
+        "GET",
+        ...(budgetMs === undefined ? [] : ([budgetMs] as const)),
+      )
+      if (health === undefined) return undefined
+      if (!InstanceIdentityStore.verifyIdentityProof(health.networkID, challenge, health.proof)) return undefined
+      return health
+    })
+
+    /**
      * 🔴 A peer ANSWERED us at this address — the one place that fact gets recorded.
      *
      * `contacts.observe` is documented as "repair… the self-healing story, safe for an agent or the
@@ -534,7 +573,7 @@ export const layer = Layer.effect(
         if (addresses.length === 0) return { sent: false, reason: "no-route" }
 
         for (const address of addresses) {
-          const health = yield* ask(address, IDENTITY_PATH, undefined, Health, "GET")
+          const health = yield* probeIdentity(address)
           // A different identity at that address means the route is stale or someone else is there.
           // Either way it is not the person we are writing to.
           if (health === undefined || health.networkID !== to) continue
@@ -602,14 +641,7 @@ export const layer = Layer.effect(
           // will abandon, and the caller is told `unreachable` rather than waiting for it.
           if (remaining <= 0) break
 
-          const health = yield* ask(
-            address,
-            IDENTITY_PATH,
-            undefined,
-            Health,
-            "GET",
-            Math.min(remaining, PER_REQUEST_TIMEOUT_MS),
-          )
+          const health = yield* probeIdentity(address, Math.min(remaining, PER_REQUEST_TIMEOUT_MS))
           // A different identity at that address means the route is stale or someone else is there.
           if (health === undefined || health.networkID !== to) continue
 
@@ -759,7 +791,7 @@ export const layer = Layer.effect(
          * tried in turn, secure first.
          */
         for (const route of typedRoutes(address)) {
-          const health = yield* ask(route, IDENTITY_PATH, undefined, Health, "GET")
+          const health = yield* probeIdentity(route)
           if (health !== undefined) return { networkID: health.networkID, route }
         }
         return undefined
@@ -798,7 +830,7 @@ export const layer = Layer.effect(
             // is only a claim too — anyone can serve a health endpoint — but a peer's key is not a
             // secret and every message it sends is verified against it anyway. What this buys is
             // that the route is real and reaches something that speaks our protocol.
-            const health = yield* ask(route, IDENTITY_PATH, undefined, Health, "GET")
+            const health = yield* probeIdentity(route)
             if (health === undefined) continue
             /**
              * ⚠️ The route STORED is the one that answered, scheme and all — so everything

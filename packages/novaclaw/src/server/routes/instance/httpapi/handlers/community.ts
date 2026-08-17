@@ -853,12 +853,29 @@ const TURN_TIMED_OUT = { timedOut: true } as const
       )
       .handle(
         "communityIdentity",
-        Effect.fn("CommunityHttpApi.communityIdentity")(function* () {
+        Effect.fn("CommunityHttpApi.communityIdentity")(function* (ctx) {
           const self = yield* selfIdentity.identity()
           // Minted on first request and kept, so one fetch teaches a peer both halves of who lives
           // here — the identity to verify against, and the key to seal to.
           const sealing = yield* selfIdentity.sealingKey()
-          return { networkID: self.networkID, sealingKey: sealing.publicKey, sealingSignature: sealing.signature }
+          /**
+           * 🔴 The one part of this answer that is not a quotation (Codex P1).
+           *
+           * ⚠️ Signed only over a well-formed challenge, and `identityProofBytes` is what decides
+           * that: it refuses anything that is not exactly 32 bytes, so this endpoint can never be
+           * turned into a signing oracle for bytes of an attacker's choosing or length.
+           */
+          const bytes =
+            ctx.query.challenge === undefined
+              ? undefined
+              : InstanceIdentityStore.identityProofBytes(ctx.query.challenge)
+          const proof = bytes === undefined ? undefined : yield* selfIdentity.sign(bytes)
+          return {
+            networkID: self.networkID,
+            sealingKey: sealing.publicKey,
+            sealingSignature: sealing.signature,
+            ...(proof === undefined ? {} : { proof: proof.toString("base64url") }),
+          }
         }),
       )
       .handle(

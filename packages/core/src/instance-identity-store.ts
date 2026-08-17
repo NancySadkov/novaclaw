@@ -127,6 +127,52 @@ export const successionBytes = (input: {
   return Buffer.concat(parts)
 }
 
+/**
+ * 🔴 **Proving that whoever answers an address HOLDS the key they name** — Codex review P1,
+ * 2026-08-17.
+ *
+ * The identity probe returned a `networkID`, a sealing key and a static sealing-key signature, and
+ * nothing in it was bound to the request. So the binding from a ROUTE to an IDENTITY was a string
+ * claim anyone serving that path could make: a hostile endpoint replays a victim's published tuple,
+ * and `identify`, `learnFrom`, `sendDirect` and `askPeer` all believe it. That is enough to become a
+ * victim's preferred route (`reached` prepends it to the user's contact routes), to accept ciphertext
+ * it cannot open and answer the uniform ack so `sendDirect` reports success, and — because a refusal
+ * is unsigned and recorded as a first-hand dealing — to write false observations about somebody.
+ *
+ * The fix is a nonce the CALLER chooses. A signature over bytes the answerer could not predict is
+ * possession; anything static is a quotation.
+ *
+ * ⚠️ Domain-separated and FIXED-LENGTH, so these bytes cannot be reinterpreted as any other signed
+ * thing in this protocol: every other envelope begins with its own domain string, and a challenge is
+ * exactly 32 bytes, so there is nothing to make ambiguous.
+ */
+const IDENTITY_PROOF_DOMAIN = "novaclaw/community/identity-proof/1"
+
+/** How many bytes a challenge is. Fixed, so the signed message cannot be extended or shortened. */
+export const CHALLENGE_BYTES = 32
+
+/** The exact bytes an instance signs to prove it holds the key it named, or `undefined` for junk. */
+export const identityProofBytes = (challenge: string): Uint8Array | undefined => {
+  const raw = Buffer.from(challenge, "base64url")
+  if (raw.length !== CHALLENGE_BYTES) return undefined
+  return Buffer.concat([Buffer.from(IDENTITY_PROOF_DOMAIN), raw])
+}
+
+/**
+ * Did the instance that answered really hold `networkID`?
+ *
+ * Total: a peer is untrusted bytes, and every malformed shape is `false` rather than a throw inside
+ * whatever was probing.
+ */
+export const verifyIdentityProof = (networkID: string, challenge: string, proof: string | undefined): boolean => {
+  if (typeof proof !== "string" || proof.length === 0) return false
+  const bytes = identityProofBytes(challenge)
+  if (bytes === undefined) return false
+  const signature = Buffer.from(proof, "base64url")
+  if (signature.length !== 64) return false
+  return verifySignature(networkID, bytes, signature)
+}
+
 export interface Identity {
   /** The local handle, minted once (`ins_…`). What mDNS and /global/health already advertise. */
   readonly id: string

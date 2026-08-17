@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { generateKeyPairSync } from "node:crypto"
+import { generateKeyPairSync, sign as nodeSign } from "node:crypto"
 import { Effect } from "effect"
 import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityConsent } from "@novaclaw/core/community/consent"
@@ -15,6 +15,7 @@ import { Database } from "@novaclaw/core/database/database"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { testEffect } from "./lib/effect"
+import { mintIdentity, type MintedIdentity } from "./lib/community"
 
 /**
  * 🔴 **Outbound rule 10 of the new-peer-door checklist: *"add a cooldown if the call can repeat."***
@@ -45,10 +46,26 @@ const it = testEffect(
   ),
 )
 
-const stranger = () => {
-  const { publicKey } = generateKeyPairSync("ed25519")
-  const raw = (publicKey.export({ type: "spki", format: "der" }) as Buffer).subarray(12)
-  return `nid_${raw.toString("base64url")}`
+const stranger = () => mintIdentity().networkID
+
+/**
+ * A stub that answers the identity probe the way a REAL peer must since Codex P1: with a signature
+ * over the caller's challenge.
+ *
+ * ⚠️ Before that change a bare `{networkID}` was enough, and this stub said so — which is precisely
+ * the claim the challenge exists to stop anyone making. The stub therefore holds a keypair now: a
+ * fixture that could not prove possession would be asserting that an unproven peer still counts.
+ */
+const provingIdentity = (identity: MintedIdentity, url: URL): Response | undefined => {
+  if (url.pathname !== "/api/community/identity") return undefined
+  const challenge = url.searchParams.get("challenge")
+  const bytes = challenge === null ? undefined : InstanceIdentityStore.identityProofBytes(challenge)
+  return Response.json({
+    networkID: identity.networkID,
+    ...(bytes === undefined
+      ? {}
+      : { proof: nodeSign(null, Buffer.from(bytes), identity.privateKey).toString("base64url") }),
+  })
 }
 
 /** Nothing answers here, so every ask reaches the dial and fails there — which is what we want to count. */
@@ -112,13 +129,14 @@ describe("and the guard actually BITES", () => {
       CommunityConsent.applied({ consented: true }, { enabled: true })
       const peers = yield* CommunityPeers.Service
       const sync = yield* CommunitySync.Service
-      const peer = stranger()
+      const identity = mintIdentity()
+      const peer = identity.networkID
 
       const server = Bun.serve({
         port: 0,
         fetch(request) {
-          const url = new URL(request.url)
-          if (url.pathname === "/api/community/identity") return Response.json({ networkID: peer })
+          const proving = provingIdentity(identity, new URL(request.url))
+          if (proving !== undefined) return proving
           // The ask itself fails, deliberately: what is under test is the STAMP, not the answer.
           return new Response("no", { status: 500 })
         },
