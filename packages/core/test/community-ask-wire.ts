@@ -16,16 +16,21 @@
 // cannot resolve it (nothing there declares it, which is why the other probes import only through
 // package sources). Typechecking still covers it, which is the half that rots silently.
 //
-// ⚠️ OPEN: B's network id is stable across runs even though its home directory is fresh each time,
-// so something of B's persists outside `XDG_DATA_HOME`. It is NOT the developer's store — that
-// instance has a different key, and this probe's writes do not appear in it — but the mechanism is
-// unexplained, and unexplained state in a harness is how false conclusions get made.
+// 🔴 ANSWERED (was: "B's network id is stable across runs, and the mechanism is unexplained").
+// An ORPHANED instance from an earlier run held the port, and every later run silently talked to it
+// instead of the B it had just spawned. `serve` re-execs its real server and the process in between
+// exits, so the listener is reparented and a tree-kill of our own child walks nothing. Both halves
+// are fixed below: the port is REFUSED if already held, and teardown kills whoever holds it.
+//
+// ⚠️ And the product question underneath it was measured rather than assumed: two instances started
+// at once, with separate homes, get DISTINCT identities. Isolation holds — the repeated key was this
+// harness reusing a zombie, never two instances sharing a peer.
 //
 // ⚠️ It needs no model unless you ask it to: with answering OFF, B REFUSES, which exercises every
 // step above and the refusal dealing. Pass `--answer` to start the stub model server and configure B
 // to answer for real.
 
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { Effect, Layer } from "effect"
@@ -39,6 +44,7 @@ import { CommunityPeers } from "../src/community/peers"
 import { CommunitySuccession } from "../src/community/succession"
 import { CommunitySync } from "../src/community/sync"
 import { Database } from "../src/database/database"
+import { KillTree } from "../src/util/kill-tree"
 import { LayerNode } from "../src/effect/layer-node"
 import { InstanceIdentityStore } from "../src/instance-identity-store"
 
@@ -90,15 +96,68 @@ const check = (ok: boolean, what: string) => {
   if (!ok) failures.push(what)
 }
 
-const children: Array<{ kill: () => void }> = []
+/**
+ * Kill whatever is LISTENING on a port, however it got there.
+ *
+ * 🔴 The pid is discovered from the port and the killing is delegated to `KillTree.killTreeSync` —
+ * the repo has exactly one process-tree kill and a ledger that refuses a second. Hand-rolling
+ * `taskkill /T /F` here was caught by that ledger, correctly: the reason this probe needs a tree kill
+ * at all is that `serve` re-execs its real server, which is precisely the case that helper exists for.
+ *
+ * ⚠️ Only the LOOKUP is platform-specific, because a pid is what the helper wants and the port is
+ * all we have: the listener was reparented, so nothing we spawned still points at it.
+ */
+const pidHolding = (port: number): number | undefined => {
+  try {
+    if (process.platform === "win32") {
+      const found = Bun.spawnSync([
+        "powershell.exe",
+        "-NoProfile",
+        "-Command",
+        `(Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1).OwningProcess`,
+      ])
+      const pid = Number(new TextDecoder().decode(found.stdout).trim())
+      return Number.isFinite(pid) && pid > 0 ? pid : undefined
+    }
+    const found = Bun.spawnSync(["lsof", "-ti", `tcp:${port}`])
+    const pid = Number(new TextDecoder().decode(found.stdout).split(String.fromCharCode(10))[0]?.trim())
+    return Number.isFinite(pid) && pid > 0 ? pid : undefined
+  } catch {
+    return undefined
+  }
+}
+
+const killWhoeverHolds = (port: number): void => {
+  const pid = pidHolding(port)
+  if (pid !== undefined) KillTree.killTreeSync(pid)
+}
+
+const children: Array<{ kill: () => void; readonly pid: number }> = []
 const stop = () => {
   for (const child of children) {
     try {
+      /**
+       * 🔴 The whole TREE, through the repo's one tree-kill — because `serve` runs its real server
+       * under a SUPERVISOR that restarts the child when it dies. Killing the listener alone just
+       * makes a new one, with the same environment and the same database: that is why an "orphan"
+       * kept coming back on this port and why B's identity looked frozen across runs.
+       */
+      KillTree.killTreeSync(child.pid)
       child.kill()
     } catch {
       /* already gone */
     }
   }
+  /**
+   * 🔴 And kill whoever actually HOLDS THE PORT, which is not necessarily anything we spawned.
+   *
+   * `serve` re-execs the real server and the process in between exits, so the listener is reparented
+   * and a tree-kill of our own child finds nothing to walk. Measured 2026-08-17: three orphans in a
+   * row survived teardown that way, and the first of them silently served every later run. The port
+   * is the thing that matters, so the port is what gets cleaned up.
+   */
+  killWhoeverHolds(B_PORT)
+
   try {
     rmSync(root, { recursive: true, force: true })
   } catch {
@@ -114,6 +173,23 @@ const waitFor = async (probe: () => Promise<boolean>, what: string, budgetMs = 6
     await new Promise((resolve) => setTimeout(resolve, 500))
   }
   throw new Error(`timed out waiting for ${what}`)
+}
+
+/**
+ * 🔴 REFUSE to reuse a server we did not start.
+ *
+ * Measured 2026-08-17: an orphan from the FIRST run held this port for an hour, and every run after
+ * it silently talked to that zombie instead of the isolated B it had just spawned — the giveaway was
+ * B's network id never changing across runs with fresh temp homes. A probe that quietly reuses a
+ * stranger's instance reports on state nobody in this run created.
+ */
+const portHeld = await fetch(`http://127.0.0.1:${B_PORT}/global/health`)
+  .then((response) => response.ok)
+  .catch(() => false)
+if (portHeld) {
+  console.error(`REFUSING TO RUN: something is already listening on ${B_PORT}.`)
+  console.error("It is probably an orphaned instance from an earlier run. Stop it and try again.")
+  process.exit(1)
 }
 
 // ── B: a real instance, on a real port, with its own database ────────────────────────────────────
@@ -141,8 +217,21 @@ const api = async (route: string, init?: RequestInit) => {
   return { status: response.status, body: await response.text() }
 }
 
-await waitFor(async () => (await api("/global/health")).status === 200, "instance B to listen")
+/**
+ * 🔴 B's own output is READ on failure. It was piped and never drained, so when B refused to start
+ * this probe could only say "timed out" — the one sentence that cannot be acted on. A harness that
+ * cannot explain why the thing it started did not start is not diagnosable.
+ */
+await waitFor(async () => (await api("/global/health")).status === 200, "instance B to listen").catch(async (cause) => {
+  const out = await new Response(b.stdout).text().catch(() => "")
+  const err = await new Response(b.stderr).text().catch(() => "")
+  console.error("\n--- instance B never listened; its own output follows ---")
+  console.error((out + err).slice(0, 2000) || "(B printed nothing at all)")
+  stop()
+  throw cause
+})
 log("B is listening", `127.0.0.1:${B_PORT}`)
+log("B home contents", readdirSync(bHome).join(", ") || "(empty)")
 
 const patch = (body: unknown) =>
   api("/config", {
