@@ -364,7 +364,42 @@ export const layer = Layer.effect(
           .returning({ id: CommunityContactTable.network_id })
           .all()
           .pipe(Effect.orDie)
-        return updated.length > 0
+        if (updated.length > 0) return true
+
+        /**
+         * 🔴 BLOCKING A STRANGER creates the row — because otherwise the promise is false.
+         *
+         * This updated an existing contact and did nothing when there was none, so somebody who found
+         * this instance through the public directory and started asking questions could not be blocked
+         * at all: the user had to ADD the person they wanted nothing to do with, first. The consent
+         * screen says *"you can block people, and that is the only power anyone has here"*, and it was
+         * untrue exactly where it mattered most.
+         *
+         * 🔴 (ff) is not violated by this, and it is worth saying why. That principle constrains
+         * AUTONOMY — *"autonomy may deepen a relationship the user made and may never make one"* — and
+         * the doorman door already records the other side of it: when the USER is the one making the
+         * relationship, a contact may be created, because *"refusing to record that would be enforcing
+         * a rule against the only party it exists to protect."* The agent cannot reach this: `block` is
+         * absent from the community tool's operations and pinned absent by its ledger.
+         *
+         * ⚠️ Only when BLOCKING. Un-blocking somebody unknown stays a no-op — there is nothing to
+         * undo, and minting a row to record the absence of a decision would be a dossier nobody asked
+         * for.
+         */
+        if (!blocked) return false
+        /**
+         * ⚠️ The id must PARSE, for the reason `add` gives: an id that is not a key can never have a
+         * signature verified against it, so blocking it would protect nobody from anybody. A typo must
+         * not mint a row that silently guards nothing.
+         */
+        if (InstanceIdentityStore.parseNetworkID(networkID) === undefined) return false
+        yield* db
+          .insert(CommunityContactTable)
+          .values({ network_id: networkID, blocked: true, routes: [] })
+          .onConflictDoNothing()
+          .run()
+          .pipe(Effect.orDie)
+        return true
       }),
 
       observe: Effect.fn("CommunityContacts.observe")(function* (networkID: string, routes: readonly string[]) {

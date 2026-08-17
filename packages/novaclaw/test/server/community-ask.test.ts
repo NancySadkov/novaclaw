@@ -159,28 +159,11 @@ describe("asking this instance a question", () => {
     const handler = app()
 
     /**
-     * ⚠️ ADDED first, then blocked — because `setBlocked` UPDATES a contact row and does nothing
-     * when there is none. That is worth knowing on its own: a stranger who has never been added
-     * cannot be blocked at all, so the user's "only power" currently requires adding the person you
-     * want nothing to do with. Recorded in the spec; out of scope for this door.
+     * 🔴 Blocked WITHOUT being added first — which is the whole point, and did not work until
+     * 2026-08-17. `setBlocked` updated a contact row and did nothing when there was none, so a
+     * stranger who found this instance through the public directory could not be blocked at all.
+     * The user had to add the person they wanted nothing to do with.
      */
-    const post = (route: string, body: unknown) =>
-      handler(
-        new Request(`http://localhost${route}`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-novaclaw-directory": tmp.path,
-            "content-length": String(new TextEncoder().encode(JSON.stringify(body)).length),
-          },
-          body: JSON.stringify(body),
-        }),
-        HttpApiApp.context,
-      )
-
-    const added = await post("/api/community/contact", { networkID: stranger.networkID })
-    expect(added.status, "the fixture must be able to add a contact").toBe(200)
-
     // Blocked through the user's own door, which is the only way anything becomes blocked.
     const blocking = await handler(
       new Request(`http://localhost/api/community/contact/${encodeURIComponent(stranger.networkID)}/block`, {
