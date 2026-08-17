@@ -6,7 +6,7 @@ import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { CommunitySuccession } from "./succession"
 import { InstanceIdentityStore } from "../instance-identity-store"
-import { CommunityContactTable } from "./sql"
+import { CommunityContactTable, CommunityObservationTable } from "./sql"
 
 /**
  * Community P3 — the contact list (`todo/community-p2p.md`).
@@ -327,6 +327,30 @@ export const layer = Layer.effect(
           .returning({ id: CommunityContactTable.network_id })
           .all()
           .pipe(Effect.orDie)
+
+        /**
+         * 🔴 The DOSSIER goes too — §5(k) of `notes/spec/honesty-ledger.md`, *a dossier, not a log*:
+         * *"fails if `forget` leaves a score behind"*.
+         *
+         * There is no score column by design, but the observations ARE the file on that person: what
+         * they promised, what they delivered, and this agent's own prose about them. Measured
+         * 2026-08-17: forget removed the address book entry and kept every note, which is not
+         * forgetting somebody — it is only losing the ability to write to them.
+         *
+         * ⚠️ The whole CHAIN, for the reason the rows above are chained: notes are recorded against
+         * the key held AT THE TIME, so deleting only the current one would leave a person's earlier
+         * identities carrying their history.
+         *
+         * ⚠️ Done HERE rather than by the caller, so a second caller cannot forget half. The spec
+         * leaves it open whether a re-added peer's history returns; what it does not leave open is
+         * the default, *because the opposite is unrecoverable once shipped*.
+         */
+        yield* db
+          .delete(CommunityObservationTable)
+          .where(inArray(CommunityObservationTable.subject, chain))
+          .run()
+          .pipe(Effect.orDie)
+
         return removed.length > 0
       }),
 

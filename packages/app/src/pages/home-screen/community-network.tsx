@@ -716,6 +716,23 @@ export const CommunityNetwork: Component = () => {
                 someone to list machines running NovaClaw without ever talking to them. There is no version of
                 this that is both serverless and private about who is here.
               </li>
+              {/* 🔴 The FOURTH thing, and the only one that is about the user's own machine rather
+                  than about what leaves it. §5(k) of the honesty ledger requires this disclosure "by
+                  the time any of this ships", and the store, the agent's operations and the automatic
+                  recording of every question asked have all shipped.
+
+                  ⚠️ It says AI-WRITTEN, and it should: a file of judgements about named people,
+                  composed by a model, is a different thing to a log of what happened, and somebody
+                  deciding whether to join deserves the first description rather than the second. The
+                  last sentence is a promise the code now keeps — `forget` deletes the notes with the
+                  contact, which it did not until it was checked. */}
+              <li class="text-[12px] leading-snug text-v2-text-text-base">
+                <b>Your instance keeps notes about people.</b> When it deals with someone — asks them
+                something, is answered or refused — it records how that went, in its own words, so it can
+                judge who is worth listening to later. The notes are written by the AI, they are about
+                identifiable people, and they stay on this machine: nothing is published or shared. Forgetting
+                someone deletes theirs.
+              </li>
             </ul>
             <span class="mt-2 text-[11px] leading-snug text-v2-text-text-muted">
               You can turn it off again at any time, here in Community settings.
