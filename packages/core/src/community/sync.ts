@@ -12,7 +12,7 @@ import { CommunityPeers } from "./peers"
 import { CommunityReconcile } from "./reconcile"
 import { CommunitySuccession } from "./succession"
 import { CommunityTopic } from "./topic"
-import { answerTooLarge, httpRoutes, typedRoutes } from "./transport"
+import { answerTooLarge, MAX_ANSWER_BYTES, MAX_PEER_RESPONSE_BYTES, httpRoutes, typedRoutes } from "./transport"
 import { makeGlobalNode } from "../effect/app-node"
 import { httpClient } from "../effect/app-node-platform"
 import { InstanceIdentityStore } from "../instance-identity-store"
@@ -415,6 +415,8 @@ export const layer = Layer.effect(
       method: "POST" | "GET" = "POST",
       /** ⚠️ Per call, because one of these routes costs the peer a model turn and the rest are reads. */
       budgetMs: number = PER_REQUEST_TIMEOUT_MS,
+      /** ⚠️ Per call for the same reason: 4 MB is derived from a page of messages, not from a sentence. */
+      ceilingBytes: number = MAX_PEER_RESPONSE_BYTES,
     ) =>
       http
         .execute(
@@ -432,7 +434,8 @@ export const layer = Layer.effect(
              * responder here is a NovaClaw instance answering with a JSON string, which always sets
              * it, and a peer that omits it is asking us to read an unknown quantity on trust.
              */
-            if (answerTooLarge(response.headers)) return Effect.fail(new Error("peer answer too large"))
+            if (answerTooLarge(response.headers, ceilingBytes))
+              return Effect.fail(new Error("peer answer too large"))
             return response.json
           }),
           Effect.flatMap((json) => Schema.decodeUnknownEffect(schema)(json)),
@@ -636,6 +639,7 @@ export const layer = Layer.effect(
             AnswerReply,
             "POST",
             Math.max(1, Math.min(deadline - Date.now(), ANSWER_TIMEOUT_MS)),
+            MAX_ANSWER_BYTES,
           )
           if (reply === undefined) continue
           yield* reached(to, address)

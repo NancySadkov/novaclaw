@@ -117,10 +117,33 @@ export const INBOUND_PATH = "/api/community/inbound"
  */
 export const MAX_PEER_RESPONSE_BYTES = 4 * 1024 * 1024
 
-/** Whether a peer's answer is small enough to read. Pure, so both callers share the DECISION. */
-export const answerTooLarge = (headers: Readonly<Record<string, string | undefined>>): boolean => {
+/**
+ * The ceiling for one ANSWER, which is a different shape from a page of messages.
+ *
+ * 🔴 4 MB is derived from `sync/messages` — 256 messages at 8 KB — and reusing it here accepts
+ * five hundred times what any honest answerer can produce. The answering side bounds itself by
+ * `maxTokens` (2048 by default, call it 8 KB of text), so a reply in the megabytes is not a verbose
+ * peer, it is a peer doing something else.
+ *
+ * ⚠️ The agent's context is already protected downstream — tool output is truncated centrally —
+ * so what this bounds is what we TRANSFER, HOLD and VERIFY before that: a signature check runs over
+ * whatever arrived. 64 KB is eight times the honest maximum, which leaves room for a long answer and
+ * none for a payload.
+ */
+export const MAX_ANSWER_BYTES = 64 * 1024
+
+/**
+ * Whether a peer's answer is small enough to read. Pure, so both callers share the DECISION.
+ *
+ * @param ceiling - the limit for THIS route. Defaults to the sync-sized one; an answer passes its own,
+ * because a rule derived for one shape is not a rule for another.
+ */
+export const answerTooLarge = (
+  headers: Readonly<Record<string, string | undefined>>,
+  ceiling: number = MAX_PEER_RESPONSE_BYTES,
+): boolean => {
   const declared = Number(headers["content-length"])
-  return !Number.isFinite(declared) || declared > MAX_PEER_RESPONSE_BYTES
+  return !Number.isFinite(declared) || declared > ceiling
 }
 
 /**

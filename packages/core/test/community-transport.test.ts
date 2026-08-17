@@ -1,7 +1,7 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { CommunityConsent } from "@novaclaw/core/community/consent"
-import { CommunityTransport } from "@novaclaw/core/community/transport"
+import { CommunityTransport, MAX_ANSWER_BYTES, answerTooLarge } from "@novaclaw/core/community/transport"
 import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
@@ -126,4 +126,35 @@ describe("CommunityTransport", () => {
     }),
   )
 
+})
+
+describe("an ANSWER has its own ceiling", () => {
+  test("🔴 the sync limit is not the answer limit", () => {
+    /**
+     * 🔴 4 MB is DERIVED from `sync/messages` — 256 messages at 8 KB — and reusing it for a
+     * single answer accepts five hundred times what an honest answerer can produce: the answering
+     * side bounds itself by `maxTokens`, 2048 by default, which is about 8 KB of text.
+     *
+     * ⚠️ The agent's context is protected downstream, because tool output is truncated centrally.
+     * What this bounds is what we TRANSFER, HOLD and VERIFY before that — a signature check runs
+     * over whatever arrived.
+     */
+    const oneMegabyte = { "content-length": String(1024 * 1024) }
+    expect(answerTooLarge(oneMegabyte), "a megabyte is fine for a page of messages").toBe(false)
+    expect(answerTooLarge(oneMegabyte, MAX_ANSWER_BYTES), "and absurd for one answer").toBe(true)
+  })
+
+  test("⚠️ a long but honest answer still fits", () => {
+    // Eight times the honest maximum: room for a verbose reply, none for a payload.
+    expect(answerTooLarge({ "content-length": String(8 * 1024) }, MAX_ANSWER_BYTES)).toBe(false)
+    expect(answerTooLarge({ "content-length": String(MAX_ANSWER_BYTES) }, MAX_ANSWER_BYTES)).toBe(false)
+    expect(answerTooLarge({ "content-length": String(MAX_ANSWER_BYTES + 1) }, MAX_ANSWER_BYTES)).toBe(true)
+  })
+
+  test("⚠️ an answer that declares NO length is refused at either ceiling", () => {
+    // The reason the inbound limiter gives: every honest responder is an instance answering with a
+    // JSON string, which always sets it.
+    expect(answerTooLarge({}, MAX_ANSWER_BYTES)).toBe(true)
+    expect(answerTooLarge({})).toBe(true)
+  })
 })
