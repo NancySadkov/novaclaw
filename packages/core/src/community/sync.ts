@@ -338,6 +338,21 @@ const Ack = Schema.Struct({ received: Schema.Boolean })
 
 const PER_REQUEST_TIMEOUT_MS = 10_000
 
+/**
+ * How long to wait for an ANSWER, which is the one request that costs the other side a model turn.
+ *
+ * 🔴 Ten seconds is right for the rest of this file — a summary, a page of ids, a DM ack are all
+ * database reads. It is far too short for an answer: a reasoning model on the default 2048-token
+ * budget routinely takes longer, so `askPeer` gave up before any honest instance could reply and the
+ * vision's own scenario — *"one Nova asks another what happened in the world today"* — could not
+ * complete against a real model at all. It only ever succeeded here against a stub that answers
+ * instantly.
+ *
+ * ⚠️ It is deliberately LONGER than the answering side's own turn bound, so the peer stops working
+ * before we stop waiting. The other way round wastes their tokens on an answer nobody will read.
+ */
+export const ANSWER_TIMEOUT_MS = 60_000
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -379,6 +394,8 @@ export const layer = Layer.effect(
       body: unknown,
       schema: Schema.Codec<A, I>,
       method: "POST" | "GET" = "POST",
+      /** ⚠️ Per call, because one of these routes costs the peer a model turn and the rest are reads. */
+      budgetMs: number = PER_REQUEST_TIMEOUT_MS,
     ) =>
       http
         .execute(
@@ -387,7 +404,7 @@ export const layer = Layer.effect(
             : HttpClientRequest.post(`${route.replace(/\/+$/, "")}${path}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
         )
         .pipe(
-          Effect.timeout(PER_REQUEST_TIMEOUT_MS),
+          Effect.timeout(budgetMs),
           Effect.flatMap((response) => {
             /**
              * ⚠️ Refused on the DECLARED length, before the body is read — the only place the check
@@ -576,7 +593,7 @@ export const layer = Layer.effect(
             if (!oldest.done) lastAsked.delete(oldest.value)
           }
 
-          const reply = yield* ask(address, ASK_PATH, payload, AnswerReply, "POST")
+          const reply = yield* ask(address, ASK_PATH, payload, AnswerReply, "POST", ANSWER_TIMEOUT_MS)
           if (reply === undefined) continue
           yield* reached(to, address)
 

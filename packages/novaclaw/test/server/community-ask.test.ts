@@ -3,6 +3,7 @@ import { generateKeyPairSync, sign as nodeSign } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { CommunityAnswer } from "@novaclaw/core/community/answer"
 import { CommunityConsent } from "@novaclaw/core/community/consent"
+import { CommunitySync } from "@novaclaw/core/community/sync"
 import { ConfigProvider, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { CommunityPeerPaths } from "../../src/server/routes/instance/httpapi/groups/community"
@@ -99,6 +100,47 @@ describe("what a stranger can make this instance spend", () => {
       answering.slice(emptyCheck).indexOf("answers.spent"),
       "and there must be no second spend after it, which would double-count",
     ).toBe(-1)
+  })
+
+  test("🔴 the answering TURN is bounded in time, inside the permit", () => {
+    /**
+     * 🔴 `ReasoningBudget` bounds tokens; nothing bounded TIME. The 30-second cap on resolving the
+     * model carries the reason in its own comment — *"a stuck resolve would hold a stranger's
+     * connection open indefinitely"* — and it was never applied to the stream.
+     *
+     * 🔴 The cost that matters is not the one caller: a slow turn holds the ONE permit, so every
+     * other peer is told `busy` until it ends. A single hung provider takes this instance out of the
+     * network for everybody.
+     */
+    const answering = handlerSource.slice(handlerSource.indexOf('"communityAsk"'))
+    const permit = answering.indexOf("withPermitsIfAvailable")
+    const bound = answering.indexOf("ANSWERING_TURN_MS")
+    const closed = answering.indexOf("Option.isNone(answer)")
+
+    expect(bound, "the turn must have a wall-clock bound").toBeGreaterThan(-1)
+    /**
+     * ⚠️ INSIDE the permit, so the release happens with it. Timing out AROUND the semaphore would
+     * answer the caller and leave the work running behind the lock — the same door still shut, with
+     * nobody able to see why.
+     */
+    expect(bound, "and it must sit inside the permit").toBeGreaterThan(permit)
+    expect(bound, "before the permit's result is inspected").toBeLessThan(closed)
+  })
+
+  test("🔴 an asker waits LONGER than the answerer works", () => {
+    /**
+     * The two bounds are a pair, and the order between them is the whole point: the peer must stop
+     * before we stop waiting. The other way round spends their tokens on an answer nobody will read.
+     *
+     * ⚠️ And the asker's own budget had to grow. Ten seconds is right for a summary or a page of
+     * ids — database reads — and far too short for a model turn, so `askPeer` gave up before any
+     * honest instance could reply. The vision's own scenario could not complete against a real model;
+     * it only ever succeeded against a stub that answers instantly.
+     */
+    expect(CommunitySync.ANSWER_TIMEOUT_MS).toBeGreaterThan(10_000)
+    const turnBound = Number(/const ANSWERING_TURN_MS = ([0-9_]+)/.exec(handlerSource)?.[1]?.replace(/_/g, "") ?? "0")
+    expect(turnBound, "the answering turn must be bounded").toBeGreaterThan(0)
+    expect(turnBound, "and must end before the asker gives up").toBeLessThan(CommunitySync.ANSWER_TIMEOUT_MS)
   })
 
   test("⚠️ a turn that never RAN still costs nothing", () => {

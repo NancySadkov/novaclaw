@@ -27,7 +27,7 @@ import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { Log } from "@novaclaw/schema/log"
 import { EffectBridge } from "@/effect/bridge"
-import { Effect, Option, Semaphore, Stream } from "effect"
+import { Duration, Effect, Option, Semaphore, Stream } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { InvalidRequestError } from "../errors"
@@ -517,6 +517,26 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
      * same denial with a longer timeout.
      */
     const locations = yield* LocationServiceMap.Service
+/**
+ * How long one answering turn may run before it is abandoned.
+ *
+ * 🔴 `ReasoningBudget` bounds TOKENS; nothing bounded TIME. The same comment that put a 30-second
+ * cap on resolving the model — *"a stuck resolve would hold a stranger's connection open
+ * indefinitely"* — applies with more force to the stream, and was not applied there.
+ *
+ * 🔴 Two costs, and the second is the one that matters: a slow turn holds the ONE permit, so every
+ * other peer is told `busy` for as long as it runs. A single hung provider takes this instance out of
+ * the network for everybody.
+ *
+ * ⚠️ Set BELOW the asker's own `ANSWER_TIMEOUT_MS` (60 s), so we stop working before they stop
+ * waiting. Generating past that point spends the user's tokens on an answer that cannot be delivered
+ * — and now that the spend is counted when the model STARTS, it spends their daily budget too.
+ */
+const ANSWERING_TURN_MS = 45_000
+
+/** Distinguishes "the turn ran out of time" from "the model was never reachable", which read the same before. */
+const TURN_TIMED_OUT = { timedOut: true } as const
+
     const turn = Semaphore.makeUnsafe(1)
 
     /**
@@ -676,7 +696,7 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
                       return Effect.void
                     }),
                   )
-                return chunks.join("") as string | undefined
+                return chunks.join("") as string | undefined | typeof TURN_TIMED_OUT
               }).pipe(
                 /**
                  * 🔴 BOTH contexts, and the asymmetry is why the happy path never ran.
@@ -719,11 +739,33 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
                     Effect.as(undefined),
                   ),
                 ),
+                /**
+                 * 🔴 The whole TURN is bounded, not just the resolve. `ReasoningBudget` counts
+                 * tokens; a model that streams slowly, or a provider that stalls mid-response, is
+                 * bounded by neither — and it holds the ONE permit while it does, so every other peer
+                 * is told `busy` until it finishes. One hung provider takes this instance out of the
+                 * network for everybody.
+                 *
+                 * ⚠️ INSIDE the permit, so the release happens with it. Timing out around the
+                 * semaphore would answer the caller and leave the work running behind the lock.
+                 */
+                Effect.timeoutOrElse({
+                  duration: Duration.millis(ANSWERING_TURN_MS),
+                  orElse: () => Effect.succeed<string | undefined | typeof TURN_TIMED_OUT>(TURN_TIMED_OUT),
+                }),
               ),
             )
 
           // Nobody got the permit: somebody else's question is being answered right now.
           if (Option.isNone(answer)) return { refused: "busy" as const }
+          /**
+           * ⚠️ A turn that ran out of TIME is named, like every other refusal here. The asker is
+           * about to give up anyway; what this protects is the permit, and the owner's tokens.
+           */
+          // ⚠️ Discriminated by TYPE, not by identity: TypeScript does not narrow an object
+          // comparison, and an unnarrowed union here would hide the empty-answer check below it.
+          if (answer.value !== undefined && typeof answer.value !== "string")
+            return { refused: "unavailable" as const }
           // ⚠️ Distinct from "no-answer": the model never ran, rather than running and saying nothing.
           if (answer.value === undefined) return { refused: "unavailable" as const }
           const text = answer.value.trim()
