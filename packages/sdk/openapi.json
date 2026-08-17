@@ -38821,6 +38821,9 @@
                   }
                 },
                 "additionalProperties": false
+              },
+              "announce": {
+                "type": "string"
               }
             },
             "additionalProperties": false

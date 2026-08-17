@@ -4290,6 +4290,7 @@ export type ConfigInfo = {
        */
       maxTokens?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     }
+    announce?: string
   }
   telemetry?: {
     enabled?: boolean

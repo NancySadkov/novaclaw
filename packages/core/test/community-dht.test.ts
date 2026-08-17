@@ -192,6 +192,36 @@ describe("CommunityDht.find", () => {
     expect(sidecar.state.written.filter((line) => line.includes('"find"')).length).toBe(2)
   })
 
+  test("🔴 a MALFORMED announce address is never published, and does not cost the lookup", async () => {
+    /**
+     * The address is typed by a user, and the point of publishing is that strangers act on it. A
+     * malformed one would still announce the room — the sidecar just fails to attach an address —
+     * putting a record in the commons that names nobody.
+     *
+     * ⚠️ And the lookup still happens: a wrong setting must cost the advertisement, never the
+     * discovery.
+     */
+    const sidecar = scripted([peers(["1.1.1.1:4096"])])
+    const found = await run(
+      Effect.gen(function* () {
+        const dht = yield* CommunityDht.Service
+        return yield* dht.find({ announce: "not an address" })
+      }),
+      { start: sidecar.start },
+    )
+    expect(found).toEqual(["1.1.1.1:4096"])
+    expect(sidecar.state.written, "junk must not reach the commons").toEqual(['{"op":"find"}'])
+  })
+
+  test("⚠️ what counts as announceable", () => {
+    expect(CommunityDht.isAnnounceable("203.0.113.9:4096")).toBe(true)
+    expect(CommunityDht.isAnnounceable("nova.example.com:443")).toBe(true)
+    expect(CommunityDht.isAnnounceable(" 203.0.113.9:4096 "), "a pasted address carries whitespace").toBe(true)
+    expect(CommunityDht.isAnnounceable("203.0.113.9")).toBe(false)
+    expect(CommunityDht.isAnnounceable("https://nova.example.com:443")).toBe(false)
+    expect(CommunityDht.isAnnounceable("")).toBe(false)
+  })
+
   test("⚠️ without an announce, nothing is advertised", async () => {
     // Announcing is only honest from somewhere reachable; a NAT'd instance publishing an address
     // nobody can dial is a promise it cannot keep, so looking must not imply advertising.

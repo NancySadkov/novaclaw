@@ -241,17 +241,6 @@ export class Info extends Schema.Class<Info>("Config.Info")({
         "The Community app's on/off switch. Requires `consented`; airgap/offline mode forces it off independently.",
     }),
     /**
-     * 🔴 ANSWERING strangers' questions — a THIRD condition, and narrower than the two above.
-     *
-     * Joining costs bandwidth and reveals an IP; answering costs TOKENS, which is a different order
-     * of consent and so gets its own switch rather than riding on `enabled`.
-     *
-     * ⚠️ Declared here because it was NOT, and the failure was total and silent: the config
-     * PATCH succeeded, the value was STRIPPED by this schema, and the gate read a key that could
-     * never be stored — so the whole capability was unreachable in production while every test
-     * passed. Found by turning it on against a live instance and watching nothing change.
-     */
-    /**
      * 🔴 Where the DEFAULT door looks — and the ability to shut it.
      *
      * Joining asks DNS for a first address so somebody who knows nobody still reaches the network.
@@ -277,6 +266,17 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       .annotate({
         description: "The default way in for somebody who knows nobody. A convenience — never the only door.",
       }),
+    /**
+     * 🔴 ANSWERING strangers' questions — a THIRD condition, and narrower than the two above.
+     *
+     * Joining costs bandwidth and reveals an IP; answering costs TOKENS, which is a different order
+     * of consent and so gets its own switch rather than riding on `enabled`.
+     *
+     * ⚠️ Declared here because it was NOT, and the failure was total and silent: the config
+     * PATCH succeeded, the value was STRIPPED by this schema, and the gate read a key that could
+     * never be stored — so the whole capability was unreachable in production while every test
+     * passed. Found by turning it on against a live instance and watching nothing change.
+     */
     answers: Schema.Struct({
       enabled: Schema.Boolean.pipe(Schema.optional).annotate({
         description:
@@ -297,6 +297,29 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       .annotate({
         description: "Answering peers' questions: off unless turned on, and bounded by a daily and a per-asker count.",
       }),
+    /**
+     * 🔴 PUBLISHING this instance's address to the public DHT — a FOURTH decision, and the
+     * strongest of them.
+     *
+     * Joining reveals this machine's IP to peers it talks to; answering spends tokens; this puts an
+     * address in a public directory that anyone can read without ever talking to us. The vision
+     * accepts being findable as the price of true p2p, and says so on the consent screen — but that
+     * is about being enumerable once you are IN the network, not about volunteering to be its front
+     * door. So it gets its own key, off by default.
+     *
+     * 🔴 NEVER INFERRED. An instance cannot know its own external address: what it can see are
+     * interfaces, and a machine behind a NAT sees private ones. Publishing a guess is publishing a
+     * promise nobody can keep — measured 2026-08-17, when a perfectly reachable host advertised
+     * loopback and a docker bridge because it trusted interface enumeration. The user knows which
+     * address they forwarded; nothing else does.
+     *
+     * ⚠️ Absent is the ordinary state and costs nothing: an unreachable instance DIALS OUT, so it
+     * never needed to be found. Whoever sets this carries the front door for everybody else.
+     */
+    announce: Schema.String.pipe(Schema.optional).annotate({
+      description:
+        "The address other instances can knock on, as host:port, published to the public DHT so strangers can find this one. Absent (the default) means this instance looks for peers but never advertises itself. Set it only if this address really reaches you from the internet — a wrong one publishes a door nobody can open.",
+    }),
   })
     .pipe(Schema.optional)
     .annotate({

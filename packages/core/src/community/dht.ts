@@ -91,6 +91,19 @@ export const parse = (line: string): ReadonlyArray<string> => {
 }
 
 /**
+ * Whether an address is worth publishing.
+ *
+ * 🔴 The announce address is TYPED BY A USER, and the whole point of publishing is that strangers
+ * act on it. A malformed one still announces the room — the sidecar simply fails to attach an
+ * address to it — which puts a record in the commons that names nobody. Refused here so the junk
+ * never leaves this machine.
+ *
+ * ⚠️ This says the address is well FORMED, never that it is reachable. Nothing on this machine can
+ * know that, which is why the setting exists for a person to answer.
+ */
+export const isAnnounceable = (address: string): boolean => /^[A-Za-z0-9._\-[\]]+:\d{1,5}$/.test(address.trim())
+
+/**
  * The living sidecar, reduced to what this module needs of it.
  *
  * ⚠️ An interface rather than a `ChildProcess` so the seam is exercisable without a Rust toolchain.
@@ -238,9 +251,15 @@ export const layerWith = (options: Options = {}): Layer.Layer<Service> =>
              * buy nothing — and this is a second reason the node wants to be long-lived: a process
              * that exits after one lookup can never republish anything.
              */
-            if (input?.announce !== undefined && input.announce !== announced) {
-              const reply = yield* ask(JSON.stringify({ op: "announce", addr: input.announce }))
-              if (reply !== undefined) announced = input.announce
+            /**
+             * ⚠️ A malformed address is DROPPED, not passed on — and the lookup still happens. The
+             * setting being wrong must cost the user the advertisement, never the discovery.
+             */
+            const advertise =
+              input?.announce !== undefined && isAnnounceable(input.announce) ? input.announce.trim() : undefined
+            if (advertise !== undefined && advertise !== announced) {
+              const reply = yield* ask(JSON.stringify({ op: "announce", addr: advertise }))
+              if (reply !== undefined) announced = advertise
             }
             const reply = yield* ask(JSON.stringify({ op: "find" }))
             return reply === undefined ? [] : parse(reply)

@@ -23,6 +23,7 @@ const decode = Schema.decodeUnknownSync(Config.Info)
  *   consented / enabled          → `community/consent.ts`  (participation)
  *   answers.*                    → `community/answer.ts`   (the token-spending gate and its budget)
  *   seeds.*                      → the discover handler    (the default door, and refusing it)
+ *   announce                     → the discover handler    (the address published to the public DHT)
  *
  * ⚠️ Adding a reader without adding it here leaves the same hole open, so the list is part of the
  * change rather than an afterthought — the same discipline the framing and orphan ledgers use.
@@ -32,6 +33,7 @@ const EVERY_COMMUNITY_SETTING = {
   enabled: true,
   answers: { enabled: true, perDay: 7, perPeerPerDay: 3 },
   seeds: { enabled: false, host: "my-own-zone.example" },
+  announce: "203.0.113.9:4096",
 } as const
 
 describe("community settings survive the config schema", () => {

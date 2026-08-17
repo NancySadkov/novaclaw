@@ -210,7 +210,7 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
            * centralised seed at all is that it is a convenience the network survives losing.
            */
           const stored = CommunityConsent.storedConfig() as
-            | { community?: { seeds?: { enabled?: boolean; host?: string } } }
+            | { community?: { seeds?: { enabled?: boolean; host?: string }; announce?: string } }
             | undefined
           const seeds = yield* CommunitySeeds.resolve({
             ...(stored?.community?.seeds === undefined ? {} : { settings: stored.community.seeds }),
@@ -224,24 +224,26 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
            * that never compiled it simply finds no peers here. That must cost nothing, which is why
            * every failure in `find` answers `[]` rather than raising.
            *
-           * ⚠️ We do NOT announce. Announcing is only honest from somewhere reachable, and an
-           * instance behind a NAT would be publishing a promise nobody can keep. Whoever runs a
-           * reachable instance can pass an address here, and until that distinction is made
-           * properly this looks without advertising.
-           *
-           * ⚠️ The justification used to cite a measurement that a NAT'd announcement is not
-           * findable. That measurement was withdrawn on 2026-08-17 — the probe `await`ed an
-           * `async *generator` and published nothing, so the result was an artefact. The rule
-           * survives on its own terms (do not promise what you cannot keep), which is why the code
-           * is unchanged; the false citation is not worth keeping.
-           *
-           * ⚠️ This lookup is CHEAP AND OFTEN EMPTY by design, and it is awaited here. Measured
-           * 2026-08-17: the sidecar is spawned per discovery, so its Kademlia table is shallow and
-           * a cold lookup finds only well-replicated records. `notes/spec/community-p2p.md` records
-           * the fix — a lazily started but long-lived sidecar — and until then this must stay a
-           * short attempt, never a wait: the LAN and a typed address are the guarantees.
+           * 🔴 And we announce ONLY what the user typed. Publishing an address to a public
+           * directory is a decision above joining and above answering: it is read by people who
+           * never talk to us, and an instance cannot know its own external address — it sees
+           * interfaces, and a NAT'd machine sees private ones. Absent is the ordinary state and
+           * costs nothing, because an unreachable instance dials OUT and never needed to be found.
            */
-          const viaDht = yield* dht.find()
+          const announce = stored?.community?.announce
+          /**
+           * 🔴 The AIRGAP, and participation, checked HERE — `AGENTS.md` design principle 4: offline
+           * mode forces this off independently of every other switch. A DHT lookup is egress, and an
+           * announcement is egress that leaves an address behind in a public directory for anyone to
+           * read later. A user who turned the community off, or turned the airgap on, must not go on
+           * advertising a door — and unlike a dialled peer, an announcement OUTLIVES the request.
+           *
+           * ⚠️ Silently `[]`, in the same shape a missing sidecar produces, because that is what
+           * the caller already handles.
+           */
+          const viaDht = CommunityConsent.participates(CommunityConsent.currentGate())
+            ? yield* dht.find(announce === undefined ? {} : { announce })
+            : []
 
           yield* sync.learnFrom(lan, "lan")
           yield* sync.learnFrom(seeds, "dns")
