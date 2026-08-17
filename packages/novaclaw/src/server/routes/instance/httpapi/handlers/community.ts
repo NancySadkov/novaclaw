@@ -621,6 +621,18 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
                       orElse: () => Effect.die("resolveDefault timed out"),
                     }),
                   )
+                /**
+                 * 🔴 From here on the model RUNS, and that is what the budget must count.
+                 *
+                 * The spend used to be recorded only once an answer existed, so that a failed turn
+                 * "does not consume the day". The half of that reasoning which was wrong: an EMPTY
+                 * completion is a turn that ran and cost real tokens — and a reasoning model on a
+                 * tight thinking budget returns exactly that, as this program measured (18 of 24 at
+                 * 300 tokens). A stranger able to induce one could spend the user's tokens without
+                 * ever moving a counter, which is a bound enforced on our side of the wire and not on
+                 * theirs.
+                 */
+                yield* answers.spent(ctx.payload.asker)
                 const chunks: string[] = []
                 /**
                  * 🔴 The THINKING is bounded, not just the total — the mechanism the title pass
@@ -719,12 +731,11 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
           if (text === "") return { refused: "no-answer" as const }
 
           /**
-           * ⚠️ Spent AFTER the answer exists, so a failed turn does not consume the day — and
-           * the dealing is recorded because answering IS one. `record` refuses subjects we have never
-           * encountered, so a first-time asker simply leaves no ledger entry; the SPEND is counted
-           * either way, because what we spend is always our own business.
+           * ⚠️ The spend is already recorded — it happens the moment the model starts, not here.
+           * What survives from the original reasoning is the part that was right: a turn that never
+           * RAN must not consume the day, which is why `busy` and `unavailable` still cost nothing.
+           * A turn that ran and said nothing has already spent the tokens, so it counts.
            */
-          yield* answers.spent(ctx.payload.asker)
           /**
            * 🔴 FIRST-HAND, so the dealing is actually recorded.
            *

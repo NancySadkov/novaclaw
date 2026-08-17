@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { generateKeyPairSync, sign as nodeSign } from "node:crypto"
+import { readFileSync } from "node:fs"
 import { CommunityAnswer } from "@novaclaw/core/community/answer"
 import { CommunityConsent } from "@novaclaw/core/community/consent"
 import { ConfigProvider, Layer } from "effect"
@@ -65,6 +66,56 @@ const asker = () => {
     },
   }
 }
+
+describe("what a stranger can make this instance spend", () => {
+  const handlerSource = readFileSync(
+    new URL("../../src/server/routes/instance/httpapi/handlers/community.ts", import.meta.url),
+    "utf8",
+  )
+
+  test("🔴 the budget counts a TURN THAT RAN, not an answer that arrived", () => {
+    /**
+     * 🔴 The spend used to be recorded only once an answer existed, so that "a failed turn does not
+     * consume the day". Half of that was right and half was a hole: an EMPTY completion is a turn
+     * that ran and cost real tokens — and a reasoning model on a tight thinking budget returns
+     * exactly that, as this program measured (18 of 24 at 300 tokens).
+     *
+     * So a stranger who could induce an empty completion spent the user's tokens without ever moving
+     * a counter. The spec's own rule: *a bound's enforcement is on the ATTACKER's path* — compare
+     * its cost to what the attack costs THEM. Theirs was one signed request.
+     *
+     * ⚠️ Checked structurally, because the alternative needs a model that can be made to answer
+     * nothing on demand. What matters is the ORDER, and the order is visible.
+     */
+    const answering = handlerSource.slice(handlerSource.indexOf('"communityAsk"'))
+    const spend = answering.indexOf("answers.spent")
+    const stream = answering.indexOf("ReasoningBudget.stream")
+    const emptyCheck = answering.indexOf('refused: "no-answer"')
+
+    expect(spend, "the handler must record a spend at all").toBeGreaterThan(-1)
+    expect(spend, "and it must be recorded BEFORE the model runs").toBeLessThan(stream)
+    expect(spend, "not after the check that discards an empty answer").toBeLessThan(emptyCheck)
+    expect(
+      answering.slice(emptyCheck).indexOf("answers.spent"),
+      "and there must be no second spend after it, which would double-count",
+    ).toBe(-1)
+  })
+
+  test("⚠️ a turn that never RAN still costs nothing", () => {
+    /**
+     * The half of the original reasoning that was right, and it must survive the fix: `busy` (nobody
+     * got the permit) and `unavailable` (no model resolved) both return before the stream, so they
+     * are still free. A budget that charged for those would let one stranger's question, refused for
+     * our own reasons, consume another's share.
+     */
+    const answering = handlerSource.slice(handlerSource.indexOf('"communityAsk"'))
+    const spend = answering.indexOf("answers.spent")
+    expect(answering.indexOf('refused: "busy"'), "busy is decided after the spend point").toBeGreaterThan(spend)
+    // ⚠️ `unavailable` is returned when `resolveDefault` yielded nothing — which happens BEFORE the
+    // stream, and therefore before the spend, inside the answering effect.
+    expect(answering).toContain('refused: "unavailable"')
+  })
+})
 
 describe("asking this instance a question", () => {
   /**
