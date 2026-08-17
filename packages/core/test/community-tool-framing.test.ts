@@ -151,7 +151,11 @@ describe("every community operation is classified for framing", () => {
         CommunityTopic.topicOf("#NovaClaw"),
         CommunityWork.prove(yield* CommunityMessage.sign({ channel: "#NovaClaw", body: "a stranger speaks" }))!,
       )
-      yield* peers.learn(peer, ["127.0.0.1:41000"], "px")
+      // ⚠️ A full URL from a DIALLED source. Since review 1.3 `learn` validates routes at store
+      // time and a route a stranger NAMED may not be loopback, so the old bare `127.0.0.1:41000`
+      // px fixture stored no peer at all — and `dealings` then rendered "unknown peer", which
+      // carries no foreign words for the frame to be observed on.
+      yield* peers.learn(peer, ["http://127.0.0.1:41000"], "lan")
       yield* ledger.record({ subject: peer, at: 1_000, context: "news", outcome: "confirmed", note: "said it rained" })
       /**
        * ⚠️ `archived` lists channels left but STILL HELD, so leaving an empty one shows nothing

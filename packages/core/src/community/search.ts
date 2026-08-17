@@ -4,10 +4,12 @@ import { randomUUID } from "node:crypto"
 import { Context, Effect, Layer, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { CommunityChannels } from "./channels"
+import { CommunityContacts } from "./contacts"
 import { CommunityPeers } from "./peers"
+import { CommunityReach } from "./reach"
 import { CommunityWork } from "./work"
 import { CommunityTopic } from "./topic"
-import { answerTooLarge, httpRoutes } from "./transport"
+import { answerTooLarge } from "./transport"
 import { makeGlobalNode } from "../effect/app-node"
 import { httpClient } from "../effect/app-node-platform"
 import { InstanceIdentityStore } from "../instance-identity-store"
@@ -332,6 +334,7 @@ export const layer = Layer.effect(
     const speaks = () => CommunityConsent.participates(CommunityConsent.currentGate())
     const channels = yield* CommunityChannels.Service
     const peers = yield* CommunityPeers.Service
+    const contacts = yield* CommunityContacts.Service
     const identity = yield* InstanceIdentityStore.Service
     const http = yield* HttpClient.HttpClient
 
@@ -352,8 +355,17 @@ export const layer = Layer.effect(
       return advertised.filter((name) => CommunityTopic.canonical(name).includes(wanted))
     })
 
+    /**
+     * 🔴 Contacts AND peers, through the shared builder (review 1.14, 1.9).
+     *
+     * This read `peers.list()` ONLY, so search never asked the people the user had actually added:
+     * `contactAdd` writes the contacts table, and a fresh install whose one entry point is a
+     * hand-added contact got empty results until peer exchange happened to return that peer. It
+     * dialled the untrusted table and skipped the trusted one — and, through the same omission,
+     * dialled peers the user had BLOCKED.
+     */
     const routes = Effect.fn("CommunitySearch.routes")(function* () {
-      return (yield* peers.list()).flatMap((peer) => httpRoutes(peer.routes))
+      return (yield* CommunityReach.reachable({ contacts, peers })).map((entry) => entry.route)
     })
 
     const askPeer = (route: string, query: Query) =>
@@ -460,5 +472,12 @@ export const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: Service,
   layer,
-  deps: [Offline.node, CommunityChannels.node, CommunityPeers.node, InstanceIdentityStore.node, httpClient],
+  deps: [
+    Offline.node,
+    CommunityChannels.node,
+    CommunityContacts.node,
+    CommunityPeers.node,
+    InstanceIdentityStore.node,
+    httpClient,
+  ],
 })

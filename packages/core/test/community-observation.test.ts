@@ -63,7 +63,10 @@ const met = (peers: CommunityPeers.Interface, networkID: string) =>
   // ⚠️ A DISTINCT route per peer. `learn` deletes any other row claiming the same address, since
   // one address answers as one instance — so a shared route made the second call quietly evict the
   // first peer, and the dealing recorded against it was then refused as a stranger's.
-  peers.learn(networkID, [`127.0.0.1:${++port}`], "px")
+  // ⚠️ A full URL from a DIALLED source. `learn` validates routes at store time since review 1.3
+  // (a scheme-less string is not a route anything could dial) and refuses loopback from HEARSAY,
+  // so the old `px` + bare `127.0.0.1:port` fixture now stores nothing at all.
+  peers.learn(networkID, [`http://127.0.0.1:${++port}`], "lan")
 
 describe("CommunityObservation", () => {
   it.effect("a dealing goes in and comes back out", () =>

@@ -517,8 +517,19 @@ describe("two instances", () => {
 
       /**
        * Now the same block with Bob reachable as a LEARNED PEER, which is how a blocked stranger is
-       * actually known. The exchange really happens — `peers: 1` is the part that makes the result
-       * mean something — and every message he offers is refused at ingress.
+       * actually known.
+       *
+       * 🔴 **This used to expect `peers: 1` — "the exchange really happens, and every message he
+       * offers is refused at ingress" — and that expectation was review finding 1.9 written down as
+       * a property.** Dialling someone you have blocked tells them you are online, hands them your
+       * traffic, and on the broadcast path sent them the user's own messages
+       * (`POST /blocked/api/community/inbound`, observed on the wire). Refusing what they say while
+       * still speaking to them is a block in one direction only — the direction that helps them.
+       *
+       * ⚠️ The half this test exists for is unchanged and is now stronger: a blocked stranger lives
+       * in the PEER table, not in contacts, and that table is exactly where the block used not to
+       * reach. Ingress refusal is pinned where it belongs, at the door (`community-channels`,
+       * `community-canonical-id`).
        */
       const dialledAndRefused = await Effect.runPromise(
         Effect.gen(function* () {
@@ -530,7 +541,7 @@ describe("two instances", () => {
           return { result, held: (yield* channels.history(BLOCKED_ROOM)).length }
         }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
       )
-      expect(dialledAndRefused.result.peers).toBe(1)
+      expect(dialledAndRefused.result.peers).toBe(0)
       expect(dialledAndRefused.result.fetched).toBe(0)
       expect(dialledAndRefused.held).toBe(0)
 
@@ -778,7 +789,7 @@ describe("two instances", () => {
       const bobKey = await Effect.runPromise(
         Effect.gen(function* () {
           const peers = yield* CommunityPeers.Service
-          expect(yield* peers.learn(carol, [carolRoute], "px")).toBe(true)
+          expect(yield* peers.learn(carol, [carolRoute], "lan")).toBe(true)
           return (yield* InstanceIdentityStore.Service.pipe(Effect.flatMap((store) => store.identity()))).networkID
         }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
       )
@@ -976,7 +987,7 @@ describe("two instances", () => {
         Effect.gen(function* () {
           const peers = yield* CommunityPeers.Service
           const store = yield* InstanceIdentityStore.Service
-          yield* peers.learn(carolKey, [`http://127.0.0.1:${carolServer!.port}`], "px")
+          yield* peers.learn(carolKey, [`http://127.0.0.1:${carolServer!.port}`], "lan")
           return (yield* store.identity()).networkID
         }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
       )
@@ -986,7 +997,7 @@ describe("two instances", () => {
           const peers = yield* CommunityPeers.Service
           const search = yield* CommunitySearch.Service
           // Everything Alice knows: one address, Bob's.
-          yield* peers.learn(bobKey, [`http://127.0.0.1:${bobServer!.port}`], "px")
+          yield* peers.learn(bobKey, [`http://127.0.0.1:${bobServer!.port}`], "lan")
           return yield* search.search("bread")
         }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
       )
@@ -1187,7 +1198,7 @@ describe("two instances", () => {
           const peers = yield* CommunityPeers.Service
           const sync = yield* CommunitySync.Service
           yield* channels.join("#NovaClaw")
-          yield* peers.learn(bobKey, [`http://127.0.0.1:${server!.port}`], "px")
+          yield* peers.learn(bobKey, [`http://127.0.0.1:${server!.port}`], "lan")
           return yield* sync.sync("#NovaClaw")
         }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
       )
@@ -1244,7 +1255,7 @@ describe("two instances", () => {
           for (let index = 0; index < 40; index++) {
             const key = Buffer.alloc(32)
             key.writeUInt32BE(index + 1, 0)
-            yield* peers.learn(`nid_${key.toString("base64url")}`, [`http://127.0.0.1:${server!.port}/p${index}`], "px")
+            yield* peers.learn(`nid_${key.toString("base64url")}`, [`http://127.0.0.1:${server!.port}/p${index}`], "lan")
           }
           yield* posts.post("#NovaClaw", "to everyone at once?")
         }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
@@ -1292,7 +1303,7 @@ describe("two instances", () => {
           for (let index = 0; index < 200; index++) {
             const key = Buffer.alloc(32)
             key.writeUInt32BE(index + 1, 0)
-            yield* peers.learn(`nid_${key.toString("base64url")}`, [`http://127.0.0.1:${server!.port}/p${index}`], "px")
+            yield* peers.learn(`nid_${key.toString("base64url")}`, [`http://127.0.0.1:${server!.port}/p${index}`], "lan")
           }
           return yield* search.search("nothing-has-this")
         }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),

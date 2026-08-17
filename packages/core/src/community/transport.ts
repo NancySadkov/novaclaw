@@ -10,6 +10,8 @@ import { CommunityMessage } from "./message"
 import { makeGlobalNode } from "../effect/app-node"
 import { httpClient } from "../effect/app-node-platform"
 import { CommunityConsent } from "./consent"
+import { CommunityReach } from "./reach"
+import { CommunityRoute } from "./route"
 import { Offline } from "../offline"
 
 /**
@@ -162,22 +164,29 @@ export const answerTooLarge = (
 export const typedRoutes = (address: string): string[] => {
   const trimmed = address.trim()
   if (trimmed === "") return []
-  const already = httpRoutes([trimmed])
-  if (already.length > 0) return already
+  // ⚠️ The SAME validator every other route goes through (`route.ts`), not a scheme check: a typed
+  // address is still an address, and "the user typed it" is not a reason to dial a URL carrying a
+  // query, a fragment or userinfo.
+  const already = CommunityRoute.dialable(trimmed)
+  if (already !== undefined) return [already]
   // Anything that cannot be a host is not worth two dials.
   if (!/^[A-Za-z0-9._\-]+(:\d{1,5})?(\/.*)?$/.test(trimmed)) return []
-  return [`https://${trimmed}`, `http://${trimmed}`]
+  // ⚠️ And the two candidates go through the validator as well. That regex's `(\/.*)?` tail accepts
+  // `?` and `#`, so a typed `example.com/a?x=` would otherwise become a dialable route carrying a
+  // query — the same injection as 1.3, entering through the one door that is supposed to be for
+  // humans.
+  return CommunityRoute.dialableAll([`https://${trimmed}`, `http://${trimmed}`])
 }
 
-export const httpRoutes = (routes: readonly string[]): string[] =>
-  routes.filter((route) => {
-    try {
-      const protocol = new URL(route).protocol
-      return protocol === "https:" || protocol === "http:"
-    } catch {
-      return false
-    }
-  })
+/**
+ * Every route in this list we are willing to dial.
+ *
+ * ⚠️ **This used to be the only validator, and it checked the SCHEME** — which is finding 1.3: a
+ * route ending in `#` or `?x=` passed it and then put our API path into the fragment or query. It
+ * now delegates to `CommunityRoute`, so the name survives for its callers while the rule is the one
+ * rule.
+ */
+export const httpRoutes = (routes: readonly string[]): string[] => CommunityRoute.dialableAll(routes)
 
 /** How long to wait on one peer. A slow peer must never hold up the others. */
 const PER_PEER_TIMEOUT_MS = 8_000
@@ -227,17 +236,14 @@ export const layer = Layer.effect(
        * ⚠️ A peer is still not a contact. This grants no trust: it is a list of places to send a
        * signed, work-proven message that every receiver judges on its own terms.
        */
-      const known = yield* contacts.bootstrap()
-      const learned = yield* peers.list()
-      const out: { networkID: string; route: string }[] = []
-      const already = new Set<string>()
-      for (const entry of [...known, ...learned])
-        for (const route of httpRoutes(entry.routes))
-          if (!already.has(route)) {
-            already.add(route)
-            out.push({ networkID: entry.networkID, route })
-          }
-      return out
+      /**
+       * 🔴 ONE builder, shared with `sync` and `search` (review 1.9). This function used to union a
+       * BLOCK-FILTERED `contacts.bootstrap()` with an UNFILTERED `peers.list()`, so a blocked peer
+       * still contributed a route and `publish` sent them the user's own messages — observed on the
+       * wire as `POST /blocked/api/community/inbound`. Six broadcast paths each built their own list;
+       * fixing one of them was never going to be the mechanism.
+       */
+      return yield* CommunityReach.reachable({ contacts, peers })
     })
 
     const state = Effect.fn("CommunityTransportHttp.state")(function* () {

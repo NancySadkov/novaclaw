@@ -72,7 +72,10 @@ let port = 30_000
  * otherwise it asserts against the refusal while believing otherwise.
  */
 const met = (peers: CommunityPeers.Interface, networkID: string) =>
-  peers.learn(networkID, [`127.0.0.1:${++port}`], "px")
+  // ⚠️ A DISTINCT, ROUTABLE address per peer. `learn` validates routes at store time since review
+  // 1.3, and a route a STRANGER named may not be loopback — so the old bare `127.0.0.1:port`
+  // fixture stored nothing and every dealing below was refused as a stranger's.
+  peers.learn(networkID, [`https://peer${++port}.example`], "px")
 
 const ctx = { sessionID: "ses", agent: "build", assistantMessageID: "msg", toolCallID: "c1" } as any
 const invoke = (input: unknown) =>
@@ -185,8 +188,8 @@ describe("the agent can keep its own record", () => {
       const newcomer = stranger()
 
       // Learned the way peer exchange really supplies them: the doorman's answer carried the newcomer.
-      yield* peers.learn(doorman, [`127.0.0.1:${++port}`], "px")
-      yield* peers.learn(newcomer, [`127.0.0.1:${++port}`], "px", doorman)
+      yield* peers.learn(doorman, [`https://peer${++port}.example`], "px")
+      yield* peers.learn(newcomer, [`https://peer${++port}.example`], "px", doorman)
 
       /**
        * ⚠️ A first asker has no dealings by construction, so this sentence is the ONLY thing the
@@ -206,10 +209,10 @@ describe("the agent can keep its own record", () => {
       const latecomer = stranger()
       const newcomer = stranger()
 
-      yield* peers.learn(newcomer, [`127.0.0.1:${++port}`], "px", doorman)
+      yield* peers.learn(newcomer, [`https://peer${++port}.example`], "px", doorman)
       // A second peer names them later. That is not a re-introduction, and if it overwrote the edge
       // an attacker could own a peer's provenance simply by being the last to mention them.
-      yield* peers.learn(newcomer, [`127.0.0.1:${++port}`], "px", latecomer)
+      yield* peers.learn(newcomer, [`https://peer${++port}.example`], "px", latecomer)
 
       const out = yield* invoke({ op: "dealings", peer: newcomer })
       expect(out.structured.message).toContain(doorman)
@@ -224,8 +227,8 @@ describe("the agent can keep its own record", () => {
       const guru = stranger()
       const faces = [stranger(), stranger(), stranger()]
 
-      yield* peers.learn(guru, [`127.0.0.1:${++port}`], "px")
-      for (const face of faces) yield* peers.learn(face, [`127.0.0.1:${++port}`], "px", guru)
+      yield* peers.learn(guru, [`https://peer${++port}.example`], "px")
+      for (const face of faces) yield* peers.learn(face, [`https://peer${++port}.example`], "px", guru)
 
       /**
        * 🔴 Three peers agreeing looks like independent confirmation whether they are three
@@ -267,10 +270,10 @@ describe("the agent can keep its own record", () => {
       const newcomer = stranger()
 
       // The user typed this doorman's address and said how far they trust them.
-      yield* peers.learn(doorman, [`127.0.0.1:${++port}`], "px")
+      yield* peers.learn(doorman, [`https://peer${++port}.example`], "px")
       yield* contacts.add({ networkID: doorman, petname: "my guru", trust: 4 })
       // The doorman then told us about somebody.
-      yield* peers.learn(newcomer, [`127.0.0.1:${++port}`], "px", doorman)
+      yield* peers.learn(newcomer, [`https://peer${++port}.example`], "px", doorman)
 
       const out = (yield* invoke({ op: "dealings", peer: newcomer })).structured.message
       /**
@@ -291,8 +294,8 @@ describe("the agent can keep its own record", () => {
       const stranger1 = stranger()
       const newcomer = stranger()
 
-      yield* peers.learn(stranger1, [`127.0.0.1:${++port}`], "px")
-      yield* peers.learn(newcomer, [`127.0.0.1:${++port}`], "px", stranger1)
+      yield* peers.learn(stranger1, [`https://peer${++port}.example`], "px")
+      yield* peers.learn(newcomer, [`https://peer${++port}.example`], "px", stranger1)
 
       /**
        * 🔴 The common case, and the one a rating system flatters itself about. Almost everybody

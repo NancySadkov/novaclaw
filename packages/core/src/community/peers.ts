@@ -6,6 +6,7 @@ import { CommunityContacts } from "./contacts"
 import { CommunityPeerTable } from "./sql"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
+import { CommunityRoute } from "./route"
 import { InstanceIdentityStore } from "../instance-identity-store"
 
 /**
@@ -149,6 +150,23 @@ export const layer = Layer.effect(
         // publish would spend a round trip talking into a mirror.
         if (networkID === (yield* identity.identity()).networkID) return false
 
+        /**
+         * 🔴 VALIDATED AT STORE TIME, and hearsay is held to the stricter rule (review 1.3).
+         *
+         * Whatever a peer-exchange answer carried used to be stored verbatim, and every dialler
+         * composes `route + path` — so a route ending in `#` or `?x=` sent our request wherever the
+         * string said. Observed: `GET /admin/reboot` from inside the user's LAN, and `sample`
+         * re-served the poisoned rows to everyone who asked us for peers.
+         *
+         * ⚠️ Hearsay is every source except `lan` and `manual` — see `CommunityRoute.isHearsay`. A
+         * route the USER typed or one WE saw on our own network may legitimately be a private or
+         * loopback address; one a stranger told us about, whether over peer exchange, the public
+         * DHT or a DNS seed, may not, because those addresses mean something only to the machine
+         * that resolves them.
+         */
+        const clean = CommunityRoute.dialableAll(routes, { hearsay: CommunityRoute.isHearsay(source) })
+        if (clean.length === 0) return false
+
         const existing = yield* db
           .select()
           .from(CommunityPeerTable)
@@ -164,19 +182,30 @@ export const layer = Layer.effect(
          * box. That is not merely untidy. `reachable` de-duplicates by ROUTE, so only one of the two
          * is ever dialled — possibly the dead one — which means `seen` marks the wrong row alive and
          * eviction can keep the identity nobody answers as while dropping the one that works.
+         *
+         * 🔴 **ONLY for a route we DIALLED, and that restriction is finding 1.5.**
+         *
+         * The rule is sound when the route answered us — one address is one instance, so an older
+         * row claiming it is stale. It is unsound for hearsay: a peer-exchange answer naming
+         * somebody else's route deleted the VERIFIED row for that address, and the next `learn`
+         * re-inserted it with whatever introducer was in scope, rewriting the doorman edge —
+         * *"introducer: doorman → … → LATECOMER"*. That edge is the one Sybil signal AGENTS.md
+         * names, and anyone who answers a PX request could write it. Hearsay may ADD a row; it may
+         * not evict one.
          */
-        for (const route of routes) {
-          yield* db
-            .delete(CommunityPeerTable)
-            .where(
-              and(
-                sql`EXISTS (SELECT 1 FROM json_each(${CommunityPeerTable.routes}) WHERE value = ${route})`,
-                sql`${CommunityPeerTable.network_id} <> ${networkID}`,
-              ),
-            )
-            .run()
-            .pipe(Effect.orDie)
-        }
+        if (source !== "px")
+          for (const route of clean) {
+            yield* db
+              .delete(CommunityPeerTable)
+              .where(
+                and(
+                  sql`EXISTS (SELECT 1 FROM json_each(${CommunityPeerTable.routes}) WHERE value = ${route})`,
+                  sql`${CommunityPeerTable.network_id} <> ${networkID}`,
+                ),
+              )
+              .run()
+              .pipe(Effect.orDie)
+          }
 
         /**
          * Additive and de-duplicated: a LAN address and a public address are both true at once, and
@@ -197,7 +226,7 @@ export const layer = Layer.effect(
          * the cap drop exactly the address that repairs a peer who has moved — the case these routes
          * exist for.
          */
-        const merged = [...new Set([...routes, ...(existing?.routes ?? [])])].slice(0, MAX_ROUTES_PER_PEER)
+        const merged = [...new Set([...clean, ...(existing?.routes ?? [])])].slice(0, MAX_ROUTES_PER_PEER)
         if (existing === undefined) {
           yield* db
             .insert(CommunityPeerTable)

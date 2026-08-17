@@ -124,11 +124,20 @@ describe("CommunityPeers", () => {
       const after = identity(12)
       const address = "http://192.168.1.50:4096"
 
-      yield* peers.learn(before, [address], "px")
+      yield* peers.learn(before, [address], "lan")
       expect((yield* peers.list()).map((peer) => peer.networkID)).toEqual([before])
 
-      // The same box, answering under its new key after a rotation.
-      yield* peers.learn(after, [address], "px")
+      /**
+       * The same box, answering under its new key after a rotation.
+       *
+       * ⚠️ A DIALLED source, and after 2026-08-17 (review 1.5) that is the whole condition. This
+       * rule is sound about a route that ANSWERED us; applied to hearsay it let any peer-exchange
+       * answer delete a verified row and re-insert it with a new introducer, rewriting the doorman
+       * edge AGENTS.md relies on to tell a cluster from a consensus. The cost of the restriction is
+       * named rather than hidden: a rotation learned ONLY through hearsay leaves both rows until one
+       * of them is dialled. `community-reach.test.ts` pins that direction.
+       */
+      yield* peers.learn(after, [address], "lan")
       const listed = yield* peers.list()
       expect(listed.map((peer) => peer.networkID)).toEqual([after])
       expect([...listed[0]!.routes]).toEqual([address])
@@ -162,10 +171,21 @@ describe("CommunityPeers", () => {
     const reachable = source.slice(source.indexOf("const reachable = Effect.gen"))
     const body = reachable.slice(0, reachable.indexOf("\n    })"))
 
-    expect(body).toContain("slice(0, MAX_PEERS_ASKED)")
-    // The cap must be the LAST thing that happens to the list — slicing before de-duplication would
-    // count spellings of one box rather than distinct boxes.
-    expect(body.indexOf("slice(0, MAX_PEERS_ASKED)")).toBeGreaterThan(body.indexOf("already.add(route)"))
+    /**
+     * ⚠️ The shape moved when the dial list gained ONE builder (review 1.9): the cap is now the
+     * `limit` the shared `CommunityReach.reachable` applies after de-duplication, rather than a
+     * slice written out here. Both halves are asserted — the call and the constant — so the number
+     * still cannot be deleted or quietly replaced with a literal.
+     */
+    expect(body).toContain("CommunityReach.reachable(")
+    expect(body).toContain("limit: MAX_PEERS_ASKED")
+    /**
+     * The cap must be the LAST thing that happens to the list — slicing before de-duplication would
+     * count spellings of one box rather than distinct boxes. That ordering moved into the shared
+     * builder with the list itself, so it is asserted where it now lives.
+     */
+    const reach = readFileSync(new URL("../src/community/reach.ts", import.meta.url), "utf8")
+    expect(reach.indexOf("out.slice(0, input.limit)")).toBeGreaterThan(reach.indexOf("already.add(route)"))
     expect(CommunitySync.MAX_PEERS_ASKED).toBeLessThanOrEqual(32)
   })
 

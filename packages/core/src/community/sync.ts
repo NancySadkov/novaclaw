@@ -9,10 +9,12 @@ import { CommunityMessage } from "./message"
 import { CommunityObservation } from "./observation"
 import { CommunityOffer } from "./offer"
 import { CommunityPeers } from "./peers"
+import { CommunityReach } from "./reach"
+import { CommunityRoute } from "./route"
 import { CommunityReconcile } from "./reconcile"
 import { CommunitySuccession } from "./succession"
 import { CommunityTopic } from "./topic"
-import { answerTooLarge, MAX_ANSWER_BYTES, MAX_PEER_RESPONSE_BYTES, httpRoutes, typedRoutes } from "./transport"
+import { answerTooLarge, MAX_ANSWER_BYTES, MAX_PEER_RESPONSE_BYTES, typedRoutes } from "./transport"
 import { makeGlobalNode } from "../effect/app-node"
 import { httpClient } from "../effect/app-node-platform"
 import { InstanceIdentityStore } from "../instance-identity-store"
@@ -453,16 +455,6 @@ export const layer = Layer.effect(
      * would still be there and would be useless. The orphan ledger found it — `seen` had no caller.
      */
     const reachable = Effect.gen(function* () {
-      const known = yield* contacts.bootstrap()
-      const learned = yield* peers.list()
-      const out: { networkID: string; route: string }[] = []
-      const already = new Set<string>()
-      for (const entry of [...known, ...learned])
-        for (const route of httpRoutes(entry.routes))
-          if (!already.has(route)) {
-            already.add(route)
-            out.push({ networkID: entry.networkID, route })
-          }
       /**
        * 🔴 BREADTH CAP, and its absence was the seventh finding surviving in the paths that fix
        * never reached. `transport.publish` and `search.broadcast` both cap fan-out at 8; every loop
@@ -477,7 +469,7 @@ export const layer = Layer.effect(
        * spellings of the same one. Contacts come first in the list this is built from, so the
        * people the user actually added are the ones that survive the cut.
        */
-      return out.slice(0, MAX_PEERS_ASKED)
+      return yield* CommunityReach.reachable({ contacts, peers, limit: MAX_PEERS_ASKED })
     })
 
     /**
@@ -521,12 +513,7 @@ export const layer = Layer.effect(
      * block reached the half it was written on and no further.
      */
     const dialableRoutes = Effect.fn("CommunitySync.dialableRoutes")(function* (to: string) {
-      const blocked = (yield* contacts.list()).some((entry) => entry.networkID === to && entry.blocked)
-      if (blocked) return [] as string[]
-      const known = [...(yield* contacts.bootstrap()), ...(yield* peers.list())].filter(
-        (entry) => entry.networkID === to,
-      )
-      return httpRoutes(known.flatMap((entry) => entry.routes))
+      return yield* CommunityReach.routesFor({ contacts, peers, to })
     })
     return Service.of({
       sendDirect: Effect.fn("CommunitySync.sendDirect")(function* (to: string, body: string) {
@@ -790,7 +777,17 @@ export const layer = Layer.effect(
            * a well-formed URL unchanged, and otherwise tries HTTPS before plaintext so a pasted
            * public host is never silently downgraded.
            */
-          for (const route of typedRoutes(address)) {
+          /**
+           * 🔴 The address-class rule applies to the PROBE, not only to the store (review 1.3).
+           *
+           * `learnFrom` dials each candidate before it stores anything, so validating only inside
+           * `peers.learn` would leave the dial itself — a `GET` to whatever a public DHT entry or a
+           * DNS seed named, from inside the user's network — as the SSRF primitive, with the
+           * refusal arriving one step too late to matter.
+           */
+          for (const route of typedRoutes(address).filter(
+            (candidate) => CommunityRoute.dialable(candidate, { hearsay: CommunityRoute.isHearsay(source) }) !== undefined,
+          )) {
             // ⚠️ ASK who they are rather than trusting a claim attached to the address. The reply
             // is only a claim too — anyone can serve a health endpoint — but a peer's key is not a
             // secret and every message it sends is verified against it anyway. What this buys is

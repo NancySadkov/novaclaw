@@ -27,7 +27,13 @@ describe("the shapes an address arrives in", () => {
 
   test("⚠️ HTTPS is tried FIRST, so a pasted public host is never silently downgraded", () => {
     const [first] = typedRoutes("nova.example.com:443")
-    expect(first).toBe("https://nova.example.com:443")
+    /**
+     * ⚠️ The DEFAULT port is dropped, because routes are canonicalised since review 1.3:
+     * `https://host:443` and `https://host` are one address, and storing both spellings would make
+     * every route-keyed check (de-duplication, `learn`'s uniqueness rule, the dial list) per-
+     * spelling — the same defect as a `nid_` that was really a spelling.
+     */
+    expect(first).toBe("https://nova.example.com")
   })
 
   test("an address that already carries a scheme is passed through UNCHANGED", () => {
