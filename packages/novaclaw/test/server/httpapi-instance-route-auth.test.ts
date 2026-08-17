@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { ConfigProvider, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
+import { CommunityConsent } from "@novaclaw/core/community/consent"
 import { CommunityPeerPaths } from "../../src/server/routes/instance/httpapi/groups/community"
 import { EventPaths } from "../../src/server/routes/instance/httpapi/groups/event"
 import { PtyPaths } from "@novaclaw/protocol/groups/pty"
@@ -42,6 +43,9 @@ async function cancelBody(response: Response) {
 }
 
 afterEach(async () => {
+  // The consent gate is process-wide: a test that opens the peer door must close it again, or the
+  // next file's "never consented" case is silently testing a joined instance.
+  CommunityConsent.resetGate()
   await disposeAllInstances()
   await resetDatabase()
 })
@@ -119,17 +123,42 @@ describe("HttpApi instance route authorization", () => {
     }
     expect(Object.keys(METHOD).sort()).toEqual(Object.keys(CommunityPeerPaths).sort())
 
+    /**
+     * 🔴 **This half was VACUOUS until 2026-08-17 (review finding 1.19), in two ways at once.**
+     *
+     * The fixture's database has never consented, so every peer path answered **503 at the peer
+     * door before `Authorization` could run** — observed for all twelve. And an in-process `Request`
+     * carries no `content-length`, so every peer POST was refused **413** by the size cap. Both are
+     * ≠ 401, so the assertion below passed while testing nothing about authorization: a peer door
+     * that started demanding credentials would have been invisible here.
+     *
+     * So the door is OPENED first, and the assertion is now on the status a peer actually receives —
+     * `400`, its empty body failing the endpoint's own schema. That is a status only reachable
+     * THROUGH the auth boundary, which is what makes the check able to fail.
+     */
+    CommunityConsent.applied({ consented: true, enabled: true }, { enabled: false })
+
     for (const [key, route] of Object.entries(CommunityPeerPaths)) {
       const method = METHOD[key as keyof typeof CommunityPeerPaths]
       const anonymous = await server.request(route, {
         method,
-        headers: method === "POST" ? { ...headers, "content-type": "application/json" } : headers,
+        headers:
+          method === "POST"
+            ? { ...headers, "content-type": "application/json", "content-length": "2" }
+            : headers,
         ...(method === "POST" ? { body: "{}" } : {}),
       })
       await cancelBody(anonymous)
       expect(anonymous.status, `${method} ${route} must not demand credentials — peers cannot supply them`).not.toBe(
         401,
       )
+      // ⚠️ The positive half: it REACHED its handler. Without this the test is satisfied by any
+      // refusal that happens to differ from 401 — which is exactly how it went green for a year.
+      expect(anonymous.status, `${method} ${route} must reach its handler, not a gate`).toBeLessThan(500)
+      expect(
+        [400, 200, 404].includes(anonymous.status),
+        `${method} ${route} answered ${anonymous.status}; a peer door answers its own schema, not a guard`,
+      ).toBe(true)
     }
 
     // ⚠️ The other direction, on the paths that carry the OWNER's data. `offers` is the one that

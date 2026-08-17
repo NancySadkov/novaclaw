@@ -107,6 +107,15 @@ describe("the peer door is on the matched ROUTE, not the URL string (p2p 1.1)", 
     expect(Object.keys(METHOD).sort()).toEqual(Object.keys(CommunityPeerPaths).sort())
     await using tmp = await tmpdir({ git: true, config: { formatter: false } })
     const server = app()
+    /**
+     * ⚠️ Stated, not inherited. The un-joined state is also the default, so this line looks
+     * redundant — and it is the difference between a test and a coincidence: the gate is
+     * process-wide, so a file that ran earlier in the same `bun test` and left it open turns every
+     * assertion below into "a joined instance answered its peers", which is the correct behaviour
+     * for the state it was actually in. Measured: this test passed alone and failed in the full
+     * directory run for exactly that reason.
+     */
+    CommunityConsent.applied({ consented: false, enabled: false }, { enabled: false })
 
     for (const [key, path] of Object.entries(CommunityPeerPaths)) {
       const method = METHOD[key as keyof typeof CommunityPeerPaths]

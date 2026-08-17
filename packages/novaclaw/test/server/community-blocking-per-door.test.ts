@@ -87,25 +87,47 @@ describe("every peer door is classified for blocking", () => {
     expect(Object.keys(DOORS).sort()).toEqual(Object.keys(CommunityPeerPaths).sort())
   })
 
-  test("🔴 every `blocks` door has a blocking check somewhere on its path", () => {
+  /**
+   * 🔴 **Where each `caller` door's check lives — because "somewhere on the path" was VACUOUS.**
+   *
+   * Until 2026-08-17 (review finding 1.19) this loop asserted that ONE concatenation of five files
+   * contained the word `blocked`, once per door. `contacts.ts` declares the column, so the string is
+   * always present: deleting the channel check AND the DM check left this ledger green, and only
+   * `ask` was pinned by a shape of its own. A check that cannot fail on the thing it vouches for is
+   * not a check.
+   *
+   * ⚠️ Still coarse about POSITION (a door may check in its store or in its handler) and now exact
+   * about SURFACE: each door names the file its own refusal lives in, so deleting that refusal fails
+   * this ledger at that door's name. A new `caller` door has to answer the question rather than
+   * inherit a sibling's answer.
+   */
+  const CALLER_CHECK: Record<string, { readonly surface: string; readonly shape: string }> = {
+    inbound: { surface: "channels", shape: "contact?.blocked === true" },
+    dm: { surface: "dm", shape: "contact?.blocked === true" },
+    ask: { surface: "handlers", shape: "asking?.blocked === true" },
+  }
+
+  test("🔴 every `caller` door's blocking check is in ITS OWN source, by shape", () => {
     /**
-     * ⚠️ Deliberately coarse: it asserts that the check EXISTS on the path, not where. `inbound` and
-     * `dm` check inside their stores, `ask` checks in the handler, and demanding one shape would
-     * force the wrong one somewhere.
-     *
      * ⚠️ Comments stripped first — the standing rule here, and it earned its place twice: a guard
      * fired on prose explaining why a call was absent, and before that a comment described a blocking
      * check on the DM door that had never been implemented. **A comment is not evidence.**
      */
-    const surfaces = [strip(handlers), ...stores.map((store) => strip(store.text))].join("\n")
+    const callers = Object.entries(DOORS)
+      .filter(([, kind]) => kind === "caller")
+      .map(([door]) => door)
+    // Derived both ways, like the classification itself: a `caller` door with nowhere named fails
+    // here rather than silently sharing another door's evidence.
+    expect(callers.sort(), "every caller door must name where its refusal lives").toEqual(
+      Object.keys(CALLER_CHECK).sort(),
+    )
 
-    for (const [door, kind] of Object.entries(DOORS)) {
-      if (kind !== "caller") continue
-      expect(surfaces, `${door} attributes to an author, so a block must be able to stop it`).toContain("blocked")
+    for (const door of callers) {
+      const { surface, shape } = CALLER_CHECK[door]!
+      const text =
+        surface === "handlers" ? strip(handlers) : strip(stores.find((store) => store.name === surface)!.text)
+      expect(text, `${door} attributes to an author, so ITS source must refuse a blocked one`).toContain(shape)
     }
-    // The specific one that was missing until 2026-08-17, pinned by its own shape so a later edit
-    // cannot delete it and still satisfy the loop above through a sibling door's check.
-    expect(strip(handlers), "the ask door checks the asker").toContain("asking?.blocked === true")
   })
 
   test("🔴 a `content` door filters what it SERVES, even though anyone may ask", () => {
