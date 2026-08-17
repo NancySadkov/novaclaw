@@ -107,10 +107,16 @@ describe("what asking may not do", () => {
     expect(noRouteExit).not.toContain("dealing(")
     expect(noRouteExit).not.toContain("recordFirstHand")
 
-    // And a refusal IS a dealing: "they would not answer" is what standing is made of, and keeping
-    // only the flattering half would be a lie of omission.
-    expect(body).toContain('dealing("refused")')
-    expect(body).toContain('dealing("answered")')
+    /**
+     * And a refusal IS a dealing: "they would not answer" is what standing is made of, and keeping
+     * only the flattering half would be a lie of omission.
+     *
+     * ⚠️ Asserted through the NAMED outcomes rather than their spelling — this pinned
+     * `dealing("refused")` as a string until §5(j) made the mechanical outcomes a vocabulary, and a
+     * test that pins a spelling fails on the rename rather than on the behaviour.
+     */
+    expect(body).toContain("dealing(CommunityObservation.Outcome.REFUSED)")
+    expect(body).toContain("dealing(CommunityObservation.Outcome.ANSWERED)")
   })
 
   test("🔴 the answer is VERIFIED before it is believed, and must come from the peer we asked", () => {

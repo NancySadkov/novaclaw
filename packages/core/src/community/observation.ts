@@ -39,6 +39,51 @@ export interface Observation {
   readonly about?: string
 }
 
+/**
+ * 🔴 The outcomes CODE writes, as opposed to the agent's own prose.
+ *
+ * Two vocabularies share this column and always will: an agent records its judgement in a word of its
+ * own choosing (*kept, missed, confirmed, contradicted, fabricated* — the tool suggests those and
+ * constrains nothing), while the machinery records what MECHANICALLY happened. Naming the second set
+ * keeps a later call site from inventing a synonym for a value that already exists, because
+ * `no-reply` and `no-answer` in one column are how a reading of that column quietly goes wrong.
+ *
+ * 🔴 **The split below is the one §5(j) of `notes/spec/honesty-ledger.md` demands**: *"a peer who
+ * answers nothing for a month — fails if their standing dropped for silence alone."* A peer that
+ * declines, or is out of budget, or is simply switched off, has told us NOTHING about its honesty:
+ * that is an absence of evidence, not evidence of a broken promise. Recording both kinds in one flat
+ * column with no marker is how a future policy comes to read a refusal as a failure.
+ *
+ * ⚠️ This is deliberately NOT a policy. It assigns no weight and no direction; it records which
+ * facts are of which kind, so that the policy — still absent by design — is able to honour (j)
+ * rather than having to guess from strings.
+ */
+export const Outcome = {
+  /** They answered, and the answer verified. The only outcome here that is evidence of anything. */
+  ANSWERED: "answered",
+  /** They declined. */
+  REFUSED: "refused",
+  /** They replied with neither an answer nor a reason. */
+  NO_ANSWER: "no-answer",
+  /** They replied with an answer we could not attribute to them. */
+  UNSIGNED: "unsigned-answer",
+  /** Signed by somebody else — a good answer to a question we never put to them. */
+  MISATTRIBUTED: "answered-by-another",
+} as const
+
+/**
+ * 🔴 Outcomes that are an ABSENCE of evidence rather than evidence of dishonesty — §5(j).
+ *
+ * Silence is not a lie. A peer answering nothing may be out of budget, switched off, asleep, or
+ * simply uninterested, and none of those is a broken promise. A policy that reads this set as
+ * negative fails the check; one that ignores it entirely cannot.
+ *
+ * ⚠️ `UNSIGNED` and `MISATTRIBUTED` are deliberately NOT here. Those are not silence: something
+ * arrived claiming to be an answer and could not be attributed, which is a fact about the peer's
+ * behaviour rather than about its availability.
+ */
+export const SILENCE: ReadonlySet<string> = new Set([Outcome.REFUSED, Outcome.NO_ANSWER])
+
 export interface Input {
   readonly subject: string
   readonly at: number

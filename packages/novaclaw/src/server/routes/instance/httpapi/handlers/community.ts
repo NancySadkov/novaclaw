@@ -698,7 +698,7 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
             subject: ctx.payload.asker,
             at: Date.now(),
             context: "answer",
-            outcome: "answered",
+            outcome: CommunityObservation.Outcome.ANSWERED,
           })
           /**
            * 🔴 SIGNED, which is what makes the system prompt's claim true.

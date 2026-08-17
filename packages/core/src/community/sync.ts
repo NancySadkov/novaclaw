@@ -553,11 +553,11 @@ export const layer = Layer.effect(
             ledger.recordFirstHand({ subject: to, at: Date.now(), context: "asked", outcome })
 
           if (reply.refused !== undefined) {
-            yield* dealing("refused")
+            yield* dealing(CommunityObservation.Outcome.REFUSED)
             return { refused: reply.refused }
           }
           if (reply.answer === undefined) {
-            yield* dealing("no-answer")
+            yield* dealing(CommunityObservation.Outcome.NO_ANSWER)
             return { reason: "no-answer" }
           }
 
@@ -577,7 +577,7 @@ export const layer = Layer.effect(
             signature: reply.signature ?? "",
           }
           if (!CommunityAnswer.verify(signed)) {
-            yield* dealing("unsigned-answer")
+            yield* dealing(CommunityObservation.Outcome.UNSIGNED)
             return { reason: "bad-signature" }
           }
           /**
@@ -585,11 +585,11 @@ export const layer = Layer.effect(
            * perfectly good answer to a question we did not put to them.
            */
           if (signed.author !== to) {
-            yield* dealing("answered-by-another")
+            yield* dealing(CommunityObservation.Outcome.MISATTRIBUTED)
             return { reason: "wrong-author" }
           }
 
-          yield* dealing("answered")
+          yield* dealing(CommunityObservation.Outcome.ANSWERED)
           return { answer: reply.answer, author: signed.author }
         }
         return { reason: "unreachable" }
