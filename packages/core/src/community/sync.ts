@@ -342,16 +342,35 @@ const PER_REQUEST_TIMEOUT_MS = 10_000
  * How long to wait for an ANSWER, which is the one request that costs the other side a model turn.
  *
  * 🔴 Ten seconds is right for the rest of this file — a summary, a page of ids, a DM ack are all
- * database reads. It is far too short for an answer: a reasoning model on the default 2048-token
- * budget routinely takes longer, so `askPeer` gave up before any honest instance could reply and the
- * vision's own scenario — *"one Nova asks another what happened in the world today"* — could not
- * complete against a real model at all. It only ever succeeded here against a stub that answers
- * instantly.
+ * database reads. It is too short for a model turn, so `askPeer` gave up before an honest instance
+ * could reply.
  *
- * ⚠️ It is deliberately LONGER than the answering side's own turn bound, so the peer stops working
+ * ⚠️ **This is a BACKSTOP, not the mechanism.** The answering turn is already bounded where it
+ * should be: `ReasoningBudget` counts reasoning tokens live, nudges the model as they run down, and
+ * has a MECHANICAL hard stop that forces an answer when they are gone — the same machinery the title
+ * pass uses to generate with almost no reasoning at all. A token budget bounds the MODEL; it cannot
+ * bound a provider that stalls mid-stream or a socket that never closes, and that is the only thing
+ * this number is for.
+ *
+ * ⚠️ Deliberately LONGER than the answering side's own wall-clock bound, so the peer stops working
  * before we stop waiting. The other way round wastes their tokens on an answer nobody will read.
  */
 export const ANSWER_TIMEOUT_MS = 60_000
+
+/**
+ * The most time ONE `askPeer` may take in total, across every address it tries.
+ *
+ * 🔴 A per-request budget inside a loop is not a budget. A peer may hold up to
+ * `MAX_CONTACT_ROUTES` (6) addresses, so raising the per-answer wait to 60 s took the worst case
+ * from 120 s to **420 s** — seven minutes of an agent, and of the person waiting on it, for one
+ * question. That regression arrived with the fix on the line above, which is exactly how a bound
+ * granted in one place becomes a hang in another.
+ *
+ * ⚠️ Sized for ONE honest attempt — a probe plus a full answer — and a little slack. Further
+ * addresses are tried only with what is left, so a peer with six stale routes costs the same as a
+ * peer with one.
+ */
+export const ASK_TOTAL_MS = 75_000
 
 export const layer = Layer.effect(
   Service,
@@ -576,8 +595,25 @@ export const layer = Layer.effect(
         )
         const payload = { asker: self.networkID, question, at, signature: signature.toString("base64url") }
 
+        /**
+         * ⚠️ ONE deadline for the whole call, not one per address. Each attempt gets whatever is
+         * left, so trying six routes costs what trying one costs.
+         */
+        const deadline = Date.now() + ASK_TOTAL_MS
         for (const address of addresses) {
-          const health = yield* ask(address, IDENTITY_PATH, undefined, Health, "GET")
+          const remaining = deadline - Date.now()
+          // Not enough left to probe AND answer: stopping is more honest than starting something we
+          // will abandon, and the caller is told `unreachable` rather than waiting for it.
+          if (remaining <= 0) break
+
+          const health = yield* ask(
+            address,
+            IDENTITY_PATH,
+            undefined,
+            Health,
+            "GET",
+            Math.min(remaining, PER_REQUEST_TIMEOUT_MS),
+          )
           // A different identity at that address means the route is stale or someone else is there.
           if (health === undefined || health.networkID !== to) continue
 
@@ -593,7 +629,14 @@ export const layer = Layer.effect(
             if (!oldest.done) lastAsked.delete(oldest.value)
           }
 
-          const reply = yield* ask(address, ASK_PATH, payload, AnswerReply, "POST", ANSWER_TIMEOUT_MS)
+          const reply = yield* ask(
+            address,
+            ASK_PATH,
+            payload,
+            AnswerReply,
+            "POST",
+            Math.max(1, Math.min(deadline - Date.now(), ANSWER_TIMEOUT_MS)),
+          )
           if (reply === undefined) continue
           yield* reached(to, address)
 

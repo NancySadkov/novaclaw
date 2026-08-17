@@ -147,6 +147,52 @@ describe("and the guard actually BITES", () => {
   )
 })
 
+describe("how long ONE ask can take", () => {
+  it.effect("🔴 six stale routes cost what one costs", () =>
+    Effect.gen(function* () {
+      /**
+       * 🔴 A per-request budget inside a loop is not a budget. A peer may hold up to
+       * `MAX_CONTACT_ROUTES` addresses, so raising the per-answer wait to 60 s took the worst case
+       * from 120 s to 420 s — seven minutes of an agent, and of whoever is waiting on it, for one
+       * question. That regression arrived WITH the fix that raised the wait, which is how a bound
+       * granted in one place becomes a hang in another.
+       *
+       * ⚠️ Timed against a peer whose every address is dead, which is the shape that used to
+       * multiply. The assertion is deliberately loose — what is under test is that the total is
+       * bounded by ONE deadline rather than by the number of routes, not the exact figure.
+       */
+      CommunityConsent.applied({ consented: true }, { enabled: true })
+      const peers = yield* CommunityPeers.Service
+      const sync = yield* CommunitySync.Service
+      const peer = stranger()
+
+      const many = Array.from({ length: 6 }, (_, index) => `http://127.0.0.1:${4 + index}`)
+      yield* peers.learn(peer, many, "lan")
+
+      const started = Date.now()
+      const result = yield* sync.askPeer(peer, "what happened today?")
+      const took = Date.now() - started
+
+      expect(result.reason).toBe("unreachable")
+      // Six dead routes, each refused instantly by the OS: the point is that nothing multiplied.
+      expect(took, "six routes must not cost six budgets").toBeLessThan(CommunitySync.ASK_TOTAL_MS)
+    }),
+  )
+
+  it.effect("⚠️ and the budgets stay in the order that makes them mean anything", () =>
+    Effect.gen(function* () {
+      /**
+       * Three numbers, and only their RELATIONSHIP is a guarantee: an answer may take longer than a
+       * database read; one whole ask may take a little more than one answer; and neither may exceed
+       * the seam's own backstop.
+       */
+      expect(CommunitySync.ANSWER_TIMEOUT_MS).toBeGreaterThan(10_000)
+      expect(CommunitySync.ASK_TOTAL_MS).toBeGreaterThanOrEqual(CommunitySync.ANSWER_TIMEOUT_MS)
+      expect(CommunitySync.ASK_TOTAL_MS).toBeLessThan(6 * CommunitySync.ANSWER_TIMEOUT_MS)
+    }),
+  )
+})
+
 describe("what the agent is told", () => {
   it.effect("🔴 a cooldown refusal names it as OURS, not as the peer being silent", () =>
     Effect.gen(function* () {

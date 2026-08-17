@@ -520,9 +520,15 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
 /**
  * How long one answering turn may run before it is abandoned.
  *
- * 🔴 `ReasoningBudget` bounds TOKENS; nothing bounded TIME. The same comment that put a 30-second
- * cap on resolving the model — *"a stuck resolve would hold a stranger's connection open
- * indefinitely"* — applies with more force to the stream, and was not applied there.
+ * ⚠️ **Not a substitute for the token budget, which already does the harder half.**
+ * `ReasoningBudget` counts reasoning live, nudges the model as it runs down, and MECHANICALLY forces
+ * an answer when it is gone — the same machinery the title pass uses to generate with almost none.
+ * That bounds the MODEL. What it cannot bound is a provider that stalls mid-stream or a socket that
+ * never closes, and no token ceiling ever will.
+ *
+ * 🔴 The same comment that put a 30-second cap on resolving the model — *"a stuck resolve would
+ * hold a stranger's connection open indefinitely"* — applies with more force to the stream, and was
+ * not applied there.
  *
  * 🔴 Two costs, and the second is the one that matters: a slow turn holds the ONE permit, so every
  * other peer is told `busy` for as long as it runs. A single hung provider takes this instance out of
