@@ -191,12 +191,50 @@ What follows for the design:
   settlement remains theirs.
 
 
+### Being ENUMERABLE is the price of true P2P, and the user is told plainly
+
+🔴 **Anyone crawling the DHT can list NovaClaw instances without ever talking to one** — and
+that is accepted (owner, 2026-08-17). It is not a defect to be engineered away: a network with no
+directory anybody owns is a network whose directory is public. The alternative is a server that
+knows who is online, which is the thing this design exists to refuse.
+
+⚠️ **So there is no separate switch for it.** Joining the community means being findable, and
+splitting that into two decisions would offer a privacy that does not exist — an instance nobody
+can find is an instance nobody can reach, which is not participation with more discretion, it is
+non-participation with extra steps.
+
+🔴 **It does change what the consent screen owes the user.** The warning today says peers you talk
+to will see your IP; announcing to a DHT is stronger, and the difference is the point of that screen.
+*"The people you speak to know where you are"* and *"a list of this software's users is public"* are
+different sentences, and a user in a country where the second one is dangerous deserves the second
+sentence. **The consent text says so when the DHT ships** — the screen exists to state the
+architecture's costs, not to make them sound smaller.
+
 ### The network bootstraps from a PUBLIC DHT, never from novaclaw.app
 
 🔴 **novaclaw.app is a static page about Nova. It is not responsible for the network** (owner,
 2026-08-17). A seed hostname the project controls would make every instance ask our permission to
 find its peers — the exact shape "there is no list to seize" exists to refuse, and a single domain
 is far easier to seize than a list.
+
+🔴 **And the decisive argument is LIABILITY, not architecture** (owner, 2026-08-17). A bootstrap
+host we run is the address people complain to. Somebody gets insulted in an unmoderated room and the
+abuse report arrives at our VPS — for content nobody here can delete, in a network with no
+moderator by design. Running the front door makes us the party that looks responsible for what comes
+through it.
+
+🔴 **It is also the only version that works where it is needed most** (owner, 2026-08-17). A
+domain and a VPS are one DNS entry and one IP to block, and in Russia or China that is a morning's
+work for whoever does the blocking. A DHT has no such address — it is peers all the way down, and
+blocking it means blocking a commons that plenty of other things depend on.
+
+⚠️ So the users who most need an unmoderated network of their own are exactly the ones a
+centralised bootstrap would fail first, and they would fail SILENTLY: the app would sit there finding
+nobody, looking broken rather than blocked.
+
+⚠️ The DHT is already bootstrapped and already carries strangers' traffic. Joining it strengthens
+a commons instead of building a parallel one, and there is no wheel to reinvent — which is the rare
+case where the cheapest option and the safest option are the same one.
 
 🔴 **The automatic door is a public Kademlia DHT.** Every instance with Community enabled joins
 it and finds the others there, using libp2p's existing public provisions rather than infrastructure
