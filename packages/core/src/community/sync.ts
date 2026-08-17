@@ -445,6 +445,26 @@ export const layer = Layer.effect(
       yield* contacts.observe(networkID, merged)
     })
 
+
+    /**
+     * 🔴 Every address we may dial for ONE peer, with the user's BLOCK honoured — §5(i) of
+     * `notes/spec/honesty-ledger.md`: *the user outranks the ledger*, and `AGENTS.md` keeps who you
+     * block out of the agent's reach entirely.
+     *
+     * ⚠️ Blocking is stored on the CONTACT row and `bootstrap()` honours it, but a peer met on the
+     * LAN, through peer exchange or through the DHT lives in the PEERS table — which both dialling
+     * paths also read. Measured 2026-08-17: a blocked peer still contributed a route from there, so
+     * an agent could put a question to somebody its user had blocked, or send them a message. The
+     * block reached the half it was written on and no further.
+     */
+    const dialableRoutes = Effect.fn("CommunitySync.dialableRoutes")(function* (to: string) {
+      const blocked = (yield* contacts.list()).some((entry) => entry.networkID === to && entry.blocked)
+      if (blocked) return [] as string[]
+      const known = [...(yield* contacts.bootstrap()), ...(yield* peers.list())].filter(
+        (entry) => entry.networkID === to,
+      )
+      return httpRoutes(known.flatMap((entry) => entry.routes))
+    })
     return Service.of({
       sendDirect: Effect.fn("CommunitySync.sendDirect")(function* (to: string, body: string) {
         if (!speaks()) return { sent: false, reason: "offline" }
@@ -454,10 +474,7 @@ export const layer = Layer.effect(
          * answers there. A peer describing another peer's sealing key would be exactly the
          * substitution `compose` refuses — so it is never asked.
          */
-        const known = [...(yield* contacts.bootstrap()), ...(yield* peers.list())].filter(
-          (entry) => entry.networkID === to,
-        )
-        const addresses = known.flatMap((entry) => httpRoutes(entry.routes))
+        const addresses = yield* dialableRoutes(to)
         if (addresses.length === 0) return { sent: false, reason: "no-route" }
 
         for (const address of addresses) {
@@ -490,14 +507,11 @@ export const layer = Layer.effect(
         if (!speaks()) return { reason: "offline" }
 
         /**
-         * ⚠️ Only routes belonging to THIS peer, and their identity is read from the instance that
-         * answers there — the same rule `sendDirect` follows, for the same reason: an address is
-         * hearsay, and the only thing that settles who is behind it is asking.
+         * ⚠️ Only routes belonging to THIS peer, blocked peers excluded, and their identity is read
+         * from the instance that answers there — an address is hearsay, and the only thing that
+         * settles who is behind it is asking.
          */
-        const known = [...(yield* contacts.bootstrap()), ...(yield* peers.list())].filter(
-          (entry) => entry.networkID === to,
-        )
-        const addresses = known.flatMap((entry) => httpRoutes(entry.routes))
+        const addresses = yield* dialableRoutes(to)
         if (addresses.length === 0) return { reason: "no-route" }
 
         const self = yield* identity.identity()

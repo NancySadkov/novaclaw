@@ -85,6 +85,8 @@ if (root === undefined || process.env["NOVACLAW_DB"] === undefined) {
 }
 
 const wantAnswer = process.argv.includes("--answer")
+/** {i}: the user outranks the ledger — a blocked peer stays blocked, however it became reachable. */
+const wantBlocked = process.argv.includes("--blocked")
 const B_PORT = 4098
 const STUB_PORT = 4111
 
@@ -341,6 +343,19 @@ const program = Effect.gen(function* () {
   const learned = yield* sync.learnFrom([`127.0.0.1:${B_PORT}`], "dht")
   log("A learned from a DHT-shaped address", `127.0.0.1:${B_PORT} -> ${learned} peer(s)`)
 
+  if (wantBlocked) {
+    /**
+     * 🔴 §5(i) of `notes/spec/honesty-ledger.md`: *the user outranks the ledger*, and the vision
+     * keeps who you block out of the agent's reach entirely. A peer known through the LAN, peer
+     * exchange or the DHT lives in the PEERS table, and `askPeer` reads that table — so this asks
+     * whether blocking actually stops a dial, or only stops the contact half.
+     */
+    const contacts = yield* CommunityContacts.Service
+    yield* contacts.add({ networkID: peer, routes: [`http://127.0.0.1:${B_PORT}`] })
+    yield* contacts.setBlocked(peer, true)
+    log("B is BLOCKED by the user", peer.slice(0, 24) + "…")
+  }
+
   const before = (yield* ledger.about(peer)).length
   const question = "what happened in the world today?"
   const started = Date.now()
@@ -363,7 +378,13 @@ const program = Effect.gen(function* () {
   const recorded = after.at(0) as { readonly outcome?: string } | undefined
   console.log("   dealings now:", after.length, JSON.stringify(recorded ?? null).slice(0, 220))
 
-  if (wantAnswer && result.refused === "unavailable") {
+  if (wantBlocked) {
+    check(
+      result.answer === undefined && result.refused === undefined,
+      "a BLOCKED peer is not dialled at all — §5(i), the user outranks the ledger",
+    )
+    check(after.length === before, "and nothing is recorded about somebody we must not have contacted")
+  } else if (wantAnswer && result.refused === "unavailable") {
     /**
      * ⚠️ Not a failure of the asking side, and it must not be reported as one. `unavailable`
      * means B accepted the question and had no MODEL to answer it with — the stub server is
