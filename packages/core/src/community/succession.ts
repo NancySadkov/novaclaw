@@ -29,6 +29,25 @@ export interface Statement {
   readonly at: number
   /** Signature by the PREDECESSOR over the canonical bytes. */
   readonly signature: string
+  /**
+   * 🔴 Signature by the SUCCESSOR over the same bytes — review 2026-08-17, finding 1.4.
+   *
+   * The door is `anonymous` on the premise that "a statement is about the sender's OWN key". That
+   * was half true: it is equally about the SUCCESSOR's key, and nothing asked that side. Three
+   * attacks were run against the real stores with only the predecessor's signature required:
+   *
+   *   · **block transfer** — a blocked attacker issues `attacker→victim` for a victim we have never
+   *     heard of; `contacts.get(victim)` comes back `{petname:"attacker", blocked:true}`, the
+   *     victim's next signed post is rejected as blocked, and the address book lists the victim's
+   *     key as "attacker (blocked, 1 former key)";
+   *   · **dossier smear** — `about(target)` gains the liar's fabricated dealings;
+   *   · **reverse laundering** — a fresh key retires ITSELF into a trusted contact, and `about(wolf)`
+   *     returns the doorman's record.
+   *
+   * Requiring both is what makes the statement a claim two parties made rather than one party's
+   * assertion about someone else.
+   */
+  readonly successorSignature: string
 }
 
 /**
@@ -47,15 +66,31 @@ export const canonicalBytes = InstanceIdentityStore.successionBytes
  */
 export const verify = (statement: Statement): boolean => {
   if (typeof statement.predecessor !== "string" || typeof statement.successor !== "string") return false
-  if (typeof statement.signature !== "string" || !Number.isFinite(statement.at)) return false
+  if (typeof statement.signature !== "string" || typeof statement.successorSignature !== "string") return false
+  /**
+   * 🔴 A SAFE, NON-NEGATIVE integer — finding 1.12, and it was a 500 on the wire.
+   *
+   * `successionBytes` writes this with `writeBigUInt64BE`, which THROWS on a negative or
+   * out-of-range value. `Number.isFinite` let `at: -1` through, so an anonymous `POST
+   * /api/community/succession` answered **500 UnknownError** (a bad signature answers 200) and wrote
+   * a full `Cause.pretty` stack — absolute source paths included — into the owner's log, free and
+   * unauthenticated. Worse: after OUR rotate, `sync.successions` calls `remember` on every reachable
+   * peer's statements, so one hostile `at:-1` aborted that loop AFTER the key had already changed.
+   */
+  if (!Number.isSafeInteger(statement.at) || statement.at < 0) return false
   // 🔴 A statement naming itself as its own successor is nonsense that would otherwise verify
   // perfectly: the signature is valid, and following it would leave a contact pointing at a key that
   // never changed while recording a rotation that never happened.
   if (statement.predecessor === statement.successor) return false
   if (InstanceIdentityStore.parseNetworkID(statement.successor) === undefined) return false
   const signature = Buffer.from(statement.signature, "base64url")
-  if (signature.length !== 64) return false
-  return InstanceIdentityStore.verifySignature(statement.predecessor, canonicalBytes(statement), signature)
+  const successorSignature = Buffer.from(statement.successorSignature, "base64url")
+  if (signature.length !== 64 || successorSignature.length !== 64) return false
+  const bytes = canonicalBytes(statement)
+  // BOTH, over the same bytes. The predecessor says "this new key is also me"; the successor says
+  // "I accept that name" — and it is the second half that a stranger cannot forge about somebody.
+  if (!InstanceIdentityStore.verifySignature(statement.predecessor, bytes, signature)) return false
+  return InstanceIdentityStore.verifySignature(statement.successor, bytes, successorSignature)
 }
 
 /**
@@ -125,6 +160,7 @@ export const layer = Layer.effect(
             successor_id: statement.successor,
             claimed_at: statement.at,
             signature: statement.signature,
+            successor_signature: statement.successorSignature,
           })
           // A key rotates once: the first proven chain wins, and a later fork changes nothing.
           .onConflictDoNothing()
@@ -178,6 +214,7 @@ export const layer = Layer.effect(
           successor: row.successor_id,
           at: row.claimed_at,
           signature: row.signature,
+          successorSignature: row.successor_signature,
         }))
       }),
     })

@@ -190,6 +190,7 @@ describe("CommunityContacts", () => {
         successor: `nid_${Buffer.alloc(32, 8).toString("base64url")}`,
         at: Date.now(),
         signature: Buffer.alloc(64).toString("base64url"),
+        successorSignature: Buffer.alloc(64).toString("base64url"),
       }
       expect(yield* contacts.follow(forged)).toBe(false)
       expect(yield* contacts.get(known)).toBeDefined()

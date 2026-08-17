@@ -163,6 +163,18 @@ export const CommunitySuccessionTable = sqliteTable("community_succession", {
   /** The author's claimed time, signed. Retained because it is inside the signed bytes. */
   claimed_at: integer().notNull(),
   signature: text().notNull(),
+  /**
+   * 🔴 The SUCCESSOR's signature over the same canonical bytes (review 2026-08-17, finding 1.4).
+   *
+   * Without it a statement was signed by one side only, so anyone could point a key they hold at a
+   * key they do not: a blocked attacker issued `attacker→victim` and the victim's next signed post
+   * was rejected as blocked, their key listed in the address book under the attacker's petname.
+   *
+   * ⚠️ NOT NULL and no default. A row that predates the rule would otherwise read as co-signed
+   * while carrying nothing, which is the shape a `$default` produces and the reason a column like
+   * this must fail loudly instead.
+   */
+  successor_signature: text().notNull(),
   ...Timestamps,
 })
 

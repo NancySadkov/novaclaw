@@ -14,6 +14,7 @@ import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { testEffect } from "./lib/effect"
+import { cosignedRotation } from "./lib/community"
 
 /**
  * Community P4 — the channel log (`todo/community-p2p.md`).
@@ -312,13 +313,12 @@ describe("CommunityChannels", () => {
       // They rotate, and prove it with a statement signed by the key they are leaving.
       const fresh = generateKeyPairSync("ed25519")
       const newID = `nid_${(fresh.publicKey.export({ type: "spki", format: "der" }) as Buffer).subarray(12).toString("base64url")}`
-      const body = { predecessor: oldID, successor: newID, at: Date.now() }
-      const statement = {
-        ...body,
-        signature: nodeSign(null, Buffer.from(CommunitySuccession.canonicalBytes(body)), old.privateKey).toString(
-          "base64url",
-        ),
-      }
+      // ⚠️ Co-signed: since review 1.4 a statement needs the SUCCESSOR's signature too, so this
+      // fixture holds both keypairs rather than only the retiring one.
+      const statement = cosignedRotation(
+        { networkID: oldID, privateKey: old.privateKey },
+        { networkID: newID, privateKey: fresh.privateKey },
+      )
       expect(yield* contacts.follow(statement)).toBe(true)
 
       // The address book shows ONE person, at their new key, still blocked and still named.

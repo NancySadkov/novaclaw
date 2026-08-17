@@ -2,11 +2,13 @@ import { generateKeyPairSync, sign as nodeSign } from "node:crypto"
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { CommunityMessage } from "@novaclaw/core/community/message"
+import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunitySuccession } from "@novaclaw/core/community/succession"
 import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { testEffect } from "./lib/effect"
+import { cosignedRotation, forgedRotation, mintIdentity } from "./lib/community"
 
 /**
  * Community P1 — key rotation (`todo/community-p2p.md`).
@@ -17,7 +19,16 @@ import { testEffect } from "./lib/effect"
  */
 
 const it = testEffect(
-  LayerNode.compile(LayerNode.group([Database.node, InstanceIdentityStore.node, CommunitySuccession.node])),
+  LayerNode.compile(
+    LayerNode.group([
+      Database.node,
+      InstanceIdentityStore.node,
+      CommunitySuccession.node,
+      // Finding 1.4 drives `contacts.follow` directly: the block-transfer attack is about what a
+      // half-signed statement does to the ADDRESS BOOK, which no succession-only test can see.
+      CommunityContacts.node,
+    ]),
+  ),
 )
 
 describe("CommunitySuccession", () => {
@@ -78,6 +89,7 @@ describe("CommunitySuccession", () => {
         successor: `nid_${Buffer.alloc(32, 9).toString("base64url")}`,
         at: Date.now(),
         signature: real.statement.signature,
+        successorSignature: real.statement.successorSignature,
       }
       expect(CommunitySuccession.verify(hijack)).toBe(false)
       // The chain therefore ends at the genuine successor, not the attacker's key.
@@ -114,16 +126,10 @@ describe("CommunitySuccession", () => {
        * reached — the test passed with the guard deleted. A self-succession has to be GENUINELY
        * SIGNED to test the rule, which is also the only form an attacker could send.
        */
-      const { publicKey, privateKey } = generateKeyPairSync("ed25519")
-      const raw = (publicKey.export({ type: "spki", format: "der" }) as Buffer).subarray(12)
-      const self = `nid_${raw.toString("base64url")}`
-      const body = { predecessor: self, successor: self, at: Date.now() }
-      const selfish = {
-        ...body,
-        signature: nodeSign(null, Buffer.from(CommunitySuccession.canonicalBytes(body)), privateKey).toString(
-          "base64url",
-        ),
-      }
+      const me = mintIdentity()
+      // Co-signed by construction — it is the same key on both ends, which is what makes this the
+      // one forgery a self-succession does not even need a second party for.
+      const selfish = cosignedRotation(me, me)
       // Cryptographically perfect, and still refused: following it would record a rotation that
       // never happened while leaving the key unchanged.
       expect(CommunitySuccession.verify(selfish)).toBe(false)
@@ -131,10 +137,26 @@ describe("CommunitySuccession", () => {
       for (const broken of [
         { ...statement, signature: "" },
         { ...statement, signature: "!!!!" },
+        { ...statement, successorSignature: "" },
+        { ...statement, successorSignature: "!!!!" },
         { ...statement, successor: "alice" },
         { ...statement, at: Number.NaN },
+        /**
+         * 🔴 The two that were a 500 ON THE WIRE, not merely a false (finding 1.12).
+         * `successionBytes` writes `at` with `writeBigUInt64BE`, which THROWS out of range — and
+         * `verify` only asked `Number.isFinite`. An anonymous `POST /api/community/succession` with
+         * `at: -1` answered 500 UnknownError and wrote a full stack with absolute source paths into
+         * the owner's log, free and unauthenticated, while a merely-bad signature answered 200.
+         */
+        { ...statement, at: -1 },
+        { ...statement, at: Number.MAX_SAFE_INTEGER + 2 },
+        { ...statement, at: 1.5 },
       ])
         expect(CommunitySuccession.verify(broken)).toBe(false)
+
+      // ⚠️ And it must not THROW either: the door is anonymous, so a throw is a 500 and a stack in
+      // the log. `verify` is total by contract and this is the case that proved it was not.
+      expect(() => CommunitySuccession.verify({ ...statement, at: -1 })).not.toThrow()
     }),
   )
 })
@@ -150,28 +172,91 @@ describe("the statement store is BOUNDED", () => {
        * are retiring, and every one is a row.
        */
       const store = yield* CommunitySuccession.Store
-      const mint = () => {
-        const { publicKey, privateKey } = generateKeyPairSync("ed25519")
-        const raw = (publicKey.export({ type: "spki", format: "der" }) as Buffer).subarray(12)
-        return { id: `nid_${raw.toString("base64url")}`, privateKey }
-      }
+      const mint = mintIdentity
 
       for (let index = 0; index < CommunitySuccession.MAX_STATEMENTS + 40; index++) {
         const from = mint()
         const to = mint()
-        const body = { predecessor: from.id, successor: to.id, at: Date.now() }
-        const statement = {
-          ...body,
-          signature: nodeSign(null, Buffer.from(CommunitySuccession.canonicalBytes(body)), from.privateKey).toString(
-            "base64url",
-          ),
-        }
+        const statement = cosignedRotation(from, to)
         // Genuinely valid — this is not a forgery, which is exactly why a signature check cannot stop it.
         expect(CommunitySuccession.verify(statement)).toBe(true)
         yield* store.remember(statement)
       }
 
       expect((yield* store.known()).length).toBeLessThanOrEqual(CommunitySuccession.MAX_STATEMENTS)
+    }),
+  )
+})
+
+/**
+ * 🔴 P2P review 2026-08-17, finding 1.4 — **a statement was signed by ONE side, so anyone could
+ * point a key they hold at a key they do not.**
+ *
+ * The door is `anonymous` on the premise that "a statement is about the sender's OWN key" (spec
+ * 2391–2393). Half true: it is equally about the SUCCESSOR's key, and nothing asked that side.
+ * These are the three attacks the review ran against the real stores, each of which succeeded.
+ */
+describe("a succession needs BOTH keys (finding 1.4)", () => {
+  it.effect("🔴 block transfer: a blocked attacker cannot hand their block to a stranger", () =>
+    Effect.gen(function* () {
+      const contacts = yield* CommunityContacts.Service
+      const attacker = mintIdentity()
+      const victim = mintIdentity()
+
+      yield* contacts.add({ networkID: attacker.networkID, petname: "attacker" })
+      yield* contacts.setBlocked(attacker.networkID, true)
+
+      /**
+       * The victim is a stranger to this instance and has signed nothing. Before the co-signature,
+       * `follow` accepted this: `contacts.get(victim)` came back `{petname:"attacker",
+       * blocked:true}`, the victim's next signed post was rejected as blocked, and the address book
+       * listed the VICTIM's key as "attacker (blocked, 1 former key)".
+       */
+      const forged = forgedRotation(attacker, victim.networkID)
+      expect(CommunitySuccession.verify(forged)).toBe(false)
+      expect(yield* contacts.follow(forged)).toBe(false)
+      expect(yield* contacts.get(victim.networkID)).toBeUndefined()
+      expect((yield* contacts.get(attacker.networkID))?.blocked).toBe(true)
+
+      // The control: with the victim's own signature it IS a rotation, and behaves like one. A guard
+      // that refused every statement would pass every line above and break rotation entirely.
+      const real = cosignedRotation(attacker, victim)
+      expect(CommunitySuccession.verify(real)).toBe(true)
+      expect(yield* contacts.follow(real)).toBe(true)
+      expect((yield* contacts.get(attacker.networkID))?.networkID).toBe(victim.networkID)
+    }),
+  )
+
+  it.effect("🔴 reverse laundering: a fresh key cannot retire ITSELF into a trusted contact", () =>
+    Effect.gen(function* () {
+      const successions = yield* CommunitySuccession.Store
+      const wolf = mintIdentity()
+      const trusted = mintIdentity()
+
+      /**
+       * The other direction, and the one `follow` alone did not close: rather than pushing their
+       * name onto a stranger, the attacker retires a key they just minted INTO somebody with a
+       * record — inheriting the standing that key earned. `remember` accepted it, so `about(wolf)`
+       * answered with the doorman's dealings.
+       */
+      const laundering = forgedRotation(wolf, trusted.networkID)
+      expect(CommunitySuccession.verify(laundering)).toBe(false)
+      expect(yield* successions.remember(laundering)).toBe(false)
+      expect(yield* successions.known()).toEqual([])
+    }),
+  )
+
+  it.effect("🔴 the chain will not walk through a half-signed link", () =>
+    Effect.gen(function* () {
+      const first = mintIdentity()
+      const second = mintIdentity()
+      const stolen = mintIdentity()
+
+      // A genuine first hop, then a forged second one stapled on — the shape that captures an
+      // identity by extending somebody else's chain.
+      const genuine = cosignedRotation(first, second)
+      const stapled = forgedRotation(second, stolen.networkID)
+      expect(CommunitySuccession.resolve(first.networkID, [genuine, stapled])).toBe(second.networkID)
     }),
   )
 })

@@ -123,6 +123,13 @@ const messageKey = (shared: Buffer, ephemeralPublic: Buffer, recipientPublic: Bu
  *
  * Returns `undefined` for a key that does not parse — a peer that published nonsense is refused
  * rather than encrypted to badly.
+ *
+ * 🔴 …and for a key that PARSES and cannot be agreed with (review 2026-08-17, finding 1.12). An
+ * all-zero or order-1 X25519 point decodes fine and carries a perfectly valid signature, and
+ * `diffieHellman` then throws `ERR_CRYPTO_OPERATION_FAILED` — so publishing one made the SENDER's
+ * own request 500 rather than refusing the recipient. A peer's key is untrusted input, and this
+ * function's contract is that untrusted input produces `undefined`, never an exception in whatever
+ * happened to be composing a message.
  */
 export const seal = (recipientPublicKey: string, plaintext: string): Envelope | undefined => {
   const recipient = parsePublic(recipientPublicKey)
@@ -136,7 +143,14 @@ export const seal = (recipientPublicKey: string, plaintext: string): Envelope | 
   )
   const recipientRaw = Buffer.from(recipientPublicKey, "base64url")
 
-  const shared = diffieHellman({ privateKey: ephemeral.privateKey, publicKey: recipient })
+  let shared: Buffer
+  try {
+    shared = diffieHellman({ privateKey: ephemeral.privateKey, publicKey: recipient })
+  } catch {
+    // A small-order or otherwise degenerate point. Refusing is the same answer as an unparseable
+    // key, because from the caller's side it is the same fact: this recipient cannot be sealed to.
+    return undefined
+  }
   const key = messageKey(shared, ephemeralPublic, recipientRaw)
 
   /**

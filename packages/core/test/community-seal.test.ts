@@ -170,3 +170,29 @@ describe("the published sealing key", () => {
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
 })
+
+describe("a recipient key we cannot agree with is REFUSED, never thrown (finding 1.12)", () => {
+  test("🔴 a small-order point parses, carries a valid signature, and seals to nothing", () => {
+    /**
+     * P2P review 2026-08-17: an all-zero or order-1 X25519 point decodes as a key perfectly well, so
+     * `parsePublic` accepts it — and `diffieHellman` then throws `ERR_CRYPTO_OPERATION_FAILED`. The
+     * throw landed in whoever was COMPOSING a direct message, so publishing such a key as your
+     * sealing key made the SENDER's own request 500. A peer's key is untrusted input and this
+     * module's contract is that untrusted input answers `undefined`.
+     */
+    for (const degenerate of [
+      Buffer.alloc(32, 0),
+      // Order 1 and order 2 points from RFC 7748 §6.1's small-subgroup list.
+      Buffer.from("0100000000000000000000000000000000000000000000000000000000000000", "hex"),
+      Buffer.from("e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800", "hex"),
+    ]) {
+      const key = degenerate.toString("base64url")
+      expect(() => CommunitySeal.seal(key, "hello")).not.toThrow()
+      expect(CommunitySeal.seal(key, "hello")).toBeUndefined()
+    }
+
+    // The control: an honest key still seals, so this refuses the degenerate case and not the feature.
+    const honest = CommunitySeal.generate()
+    expect(CommunitySeal.seal(honest.publicKey, "hello")).toBeDefined()
+  })
+})

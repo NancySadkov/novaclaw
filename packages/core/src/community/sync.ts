@@ -316,6 +316,12 @@ const Successions = Schema.Struct({
       successor: Schema.String,
       at: Schema.Number,
       signature: Schema.String,
+      /**
+       * ⚠️ Declared or the decode DROPS it, and the whole statement then fails to verify — the same
+       * trap the offer envelope above records, which this repo has now been bitten by in both
+       * directions. Any field added to a signed envelope must be added here too.
+       */
+      successorSignature: Schema.String,
     }),
   ),
 })

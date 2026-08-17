@@ -54,6 +54,8 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
     const dht = yield* CommunityDht.Service
     const bridge = yield* EffectBridge.make()
     const posts = yield* CommunityPost.Service
+    // Rotation writes its own statement here before announcing it — see `communityRotate`.
+    const successions = yield* CommunitySuccession.Store
 
     return handlers
       .handle(
@@ -144,6 +146,16 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
            * everyone who knew them.
            */
           const rotated = yield* identity.rotate()
+          /**
+           * 🔴 KEPT before it is announced (review 2026-08-17).
+           *
+           * The statement used to exist only for the length of the announce round: peers that were
+           * offline could ask us for successions afterwards and get everyone's but OURS, so the one
+           * rotation this instance is the authority on was the one it could not answer for. A
+           * statement's whole purpose is that somebody who was away can still find their way to the
+           * current key — and ours is the only one we can never re-learn from anybody else.
+           */
+          yield* successions.remember(rotated.statement)
           // Announce AND collect in one pass: the peers worth telling are the ones worth asking.
           const spread = yield* sync.successions(rotated.statement)
           return { networkID: rotated.identity.networkID, told: spread.told }

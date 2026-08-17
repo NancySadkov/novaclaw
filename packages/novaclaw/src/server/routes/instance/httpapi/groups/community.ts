@@ -731,8 +731,25 @@ const SyncMessages = Schema.Struct({ messages: Schema.Array(PeerMessage) })
 const PeerSuccession = Schema.Struct({
   predecessor: Schema.String,
   successor: Schema.String,
-  at: Schema.Number,
+  /**
+   * 🔴 A non-negative integer, refused by the SCHEMA rather than only by `verify` (review 1.12).
+   *
+   * `successionBytes` writes this with `writeBigUInt64BE`, which throws out of range — so `at: -1`
+   * on this anonymous door answered 500 and wrote a full stack into the owner's log for free. The
+   * store-side guard is the one that must hold; declaring it here as well means the wire says what
+   * it means and a decode failure reads as 400 rather than as a crash.
+   */
+  at: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   signature: Schema.String,
+  /**
+   * 🔴 The SUCCESSOR's signature over the same bytes (finding 1.4).
+   *
+   * ⚠️ Declared, because an undeclared field is silently DROPPED — in BOTH directions on this
+   * struct, which is payload and response at once. Dropped on the way in, every statement fails to
+   * verify and rotation looks like a signing bug; dropped on the way out, we hand peers statements
+   * they must refuse.
+   */
+  successorSignature: Schema.String,
 })
 
 /** A sealed direct message on the wire. The body is opaque to everyone but its recipient. */

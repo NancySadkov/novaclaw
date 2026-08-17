@@ -259,6 +259,7 @@ export default {
           \`successor_id\` text NOT NULL,
           \`claimed_at\` integer NOT NULL,
           \`signature\` text NOT NULL,
+          \`successor_signature\` text NOT NULL,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL
         );

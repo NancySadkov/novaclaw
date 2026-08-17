@@ -11,6 +11,7 @@ import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { testEffect } from "./lib/effect"
+import { cosignedRotation, mintIdentity, type MintedIdentity } from "./lib/community"
 
 /**
  * Community — HONESTY, the per-peer ledger (`notes/spec/honesty-ledger.md`).
@@ -34,22 +35,15 @@ const it = testEffect(
 )
 
 /** A fresh identity nobody has met, plus the ability to sign as it. */
-const stranger = () => {
-  const { publicKey, privateKey } = generateKeyPairSync("ed25519")
-  const raw = (publicKey.export({ type: "spki", format: "der" }) as Buffer).subarray(12)
-  return { networkID: `nid_${raw.toString("base64url")}`, privateKey }
-}
+const stranger = mintIdentity
 
-/** `predecessor` saying, in its own signature, that it is now `successor`. */
-const rotation = (from: ReturnType<typeof stranger>, to: string, at = Date.now()) => {
-  const body = { predecessor: from.networkID, successor: to, at }
-  return {
-    ...body,
-    signature: nodeSign(null, Buffer.from(CommunitySuccession.canonicalBytes(body)), from.privateKey).toString(
-      "base64url",
-    ),
-  }
-}
+/**
+ * `predecessor` saying it is now `successor`, **and the successor accepting** (review 1.4).
+ *
+ * ⚠️ The successor is now a KEYPAIR rather than a bare id: a statement needs both signatures, so a
+ * fixture that could only produce one half would be building a forgery and asserting it works.
+ */
+const rotation = (from: MintedIdentity, to: MintedIdentity, at = Date.now()) => cosignedRotation(from, to, at)
 
 
 /**
@@ -100,18 +94,18 @@ describe("CommunityObservation", () => {
       const peers = yield* CommunityPeers.Service
       const successions = yield* CommunitySuccession.Store
       const before = stranger()
-      const after = stranger().networkID
+      const after = stranger()
       yield* met(peers, before.networkID)
-      yield* met(peers, after)
+      yield* met(peers, after.networkID)
 
       // Dealt with under the old key, and only then do they rotate — the order that matters.
       yield* ledger.record({ subject: before.networkID, at: 1_000, context: "delivery", outcome: "kept" })
       expect(yield* successions.remember(rotation(before, after))).toBe(true)
-      yield* ledger.record({ subject: after, at: 2_000, context: "delivery", outcome: "missed" })
+      yield* ledger.record({ subject: after.networkID, at: 2_000, context: "delivery", outcome: "missed" })
 
       // ⚠️ Asked by the NEW key, the old dealing is still theirs. That is the whole anti-whitewash
       // claim: the past stays attached to the person who earned it.
-      const byNew = yield* ledger.about(after)
+      const byNew = yield* ledger.about(after.networkID)
       expect(byNew.length).toBe(2)
       expect(byNew.map((entry) => entry.outcome)).toEqual(["missed", "kept"])
 
@@ -128,7 +122,7 @@ describe("CommunityObservation", () => {
       const successions = yield* CommunitySuccession.Store
       const contacts = yield* CommunityContacts.Service
       const before = stranger()
-      const after = stranger().networkID
+      const after = stranger()
       yield* met(peers, before.networkID)
 
       yield* ledger.record({ subject: before.networkID, at: 1_000, context: "delivery", outcome: "missed" })
@@ -140,17 +134,17 @@ describe("CommunityObservation", () => {
        * be dead code and the assertion would still hold.
        */
       expect(yield* contacts.get(before.networkID)).toBeUndefined()
-      expect(yield* contacts.get(after)).toBeUndefined()
+      expect(yield* contacts.get(after.networkID)).toBeUndefined()
 
       // Enough unrelated rotations to push the cap past our statement several times over.
       for (let index = 0; index < CommunitySuccession.MAX_STATEMENTS + 50; index++) {
         const noise = stranger()
-        yield* successions.remember(rotation(noise, stranger().networkID))
+        yield* successions.remember(rotation(noise, stranger()))
       }
 
       // ⚠️ Without the eviction pin this is where the record silently detaches: the link is gone,
       // so the old dealing belongs to a key nobody can connect to the peer standing in front of us.
-      const dealings = yield* ledger.about(after)
+      const dealings = yield* ledger.about(after.networkID)
       expect(dealings.length).toBe(1)
       expect(dealings[0]!.outcome).toBe("missed")
     }),
@@ -161,14 +155,14 @@ describe("CommunityObservation", () => {
       const { db } = yield* Database.Service
       const successions = yield* CommunitySuccession.Store
       const before = stranger()
-      const after = stranger().networkID
+      const after = stranger()
 
       // Identical to the test above except that nothing was ever recorded about this peer. If this
       // ALSO survived, the pin would be proving nothing and the cap would simply not be working.
       expect(yield* successions.remember(rotation(before, after))).toBe(true)
       for (let index = 0; index < CommunitySuccession.MAX_STATEMENTS + 50; index++) {
         const noise = stranger()
-        yield* successions.remember(rotation(noise, stranger().networkID))
+        yield* successions.remember(rotation(noise, stranger()))
       }
 
       // Observed DIRECTLY rather than through the chain walk: the statement itself is gone, which is

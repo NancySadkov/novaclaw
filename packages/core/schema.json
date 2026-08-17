@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "c3a69c0f-1c19-4a68-925d-ec222bdf2564",
+  "id": "0825e5d6-67ac-4da7-9a52-30929db7bd49",
   "prevIds": [
-    "3dd2878f-3388-417f-b33a-9af2732c0554"
+    "c3a69c0f-1c19-4a68-925d-ec222bdf2564"
   ],
   "ddl": [
     {
@@ -1777,6 +1777,16 @@
       "default": null,
       "generated": null,
       "name": "signature",
+      "entityType": "columns",
+      "table": "community_succession"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "successor_signature",
       "entityType": "columns",
       "table": "community_succession"
     },

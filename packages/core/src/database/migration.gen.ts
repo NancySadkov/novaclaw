@@ -108,5 +108,6 @@ export const migrations = (
     import("./migration/20260816201827_add_peer_introducer"),
     import("./migration/20260816204530_add_community_answered"),
     import("./migration/20260816215708_add_contact_trust"),
+    import("./migration/20260817222746_add_succession_cosignature"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

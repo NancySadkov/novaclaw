@@ -212,12 +212,21 @@ export interface Interface {
   readonly openSealed: (envelope: CommunitySeal.Envelope) => Effect.Effect<string | undefined>
 }
 
-/** What `rotate` hands back: the retiring key's own signature over the handover. */
+/** What `rotate` hands back: BOTH keys' signatures over the handover. */
 export interface SuccessorStatement {
   readonly predecessor: string
   readonly successor: string
   readonly at: number
+  /** The retiring key's signature — "this new key is also me". */
   readonly signature: string
+  /**
+   * The new key's signature over the same bytes — "I accept that name" (review 1.4).
+   *
+   * ⚠️ Both, or a stranger can point a key they hold at a key they do not: a blocked attacker
+   * issuing `attacker→victim` transferred their block onto the victim, and a fresh key could retire
+   * ITSELF into a trusted contact and inherit that contact's record.
+   */
+  readonly successorSignature: string
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/InstanceIdentityStore") {}
@@ -359,14 +368,21 @@ export const layer = Layer.effect(
         }
         /**
          * ⚠️ Signed with the OLD key, and it has to be: the whole claim is "the peer you already
-         * trust says this new key is also them". A statement signed by the NEW key would prove
-         * nothing to anyone — the successor is a stranger until the predecessor vouches for it.
+         * trust says this new key is also them". A statement signed by the NEW key alone would
+         * prove nothing to anyone — the successor is a stranger until the predecessor vouches.
          */
-        const signature = sign(
-          null,
-          Buffer.from(successionBytes(statement)),
-          privateKeyFromRaw(Buffer.from(previousSecret, "base64url")),
-        )
+        const bytes = Buffer.from(successionBytes(statement))
+        const signature = sign(null, bytes, privateKeyFromRaw(Buffer.from(previousSecret, "base64url")))
+        /**
+         * 🔴 And with the NEW key too — review 2026-08-17, finding 1.4.
+         *
+         * One signature made the statement a claim about SOMEBODY ELSE's key that only the claimant
+         * had to authorise, so a stranger could point a key they hold at one they do not: block
+         * transfer, dossier smear, and a fresh key retiring itself INTO a trusted contact. Signing
+         * both ends costs one extra `sign` on an operation that happens a handful of times in an
+         * instance's life, and it is what makes the link a thing two parties agreed to.
+         */
+        const successorSignature = sign(null, bytes, privateKeyFromRaw(nextSecret))
 
         yield* db
           .update(InstanceIdentityTable)
@@ -379,7 +395,11 @@ export const layer = Layer.effect(
 
         return {
           identity: { id: stored.id, networkID: networkID(nextPublic), publicKey: nextPublic },
-          statement: { ...statement, signature: signature.toString("base64url") },
+          statement: {
+            ...statement,
+            signature: signature.toString("base64url"),
+            successorSignature: successorSignature.toString("base64url"),
+          },
         }
       }),
       backup: Effect.fn("InstanceIdentityStore.backup")(function* () {
