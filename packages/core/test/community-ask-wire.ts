@@ -87,7 +87,18 @@ if (root === undefined || process.env["NOVACLAW_DB"] === undefined) {
 const wantAnswer = process.argv.includes("--answer")
 /** {i}: the user outranks the ledger — a blocked peer stays blocked, however it became reachable. */
 const wantBlocked = process.argv.includes("--blocked")
-const B_PORT = 4098
+/**
+ * 🔴 A FRESH port per run, not a fixed one.
+ *
+ * With 4098 hard-coded, a run that followed a just-killed predecessor would intermittently see B log
+ * *"listening on 127.0.0.1:4098"* while every connection attempt failed for the full sixty-second
+ * budget — a new bind can succeed while the previous socket is still shutting down, and the harness
+ * then blamed whatever it had changed most recently. It cost this probe two separate misdiagnoses:
+ * first the re-exec, then "the machine is busy".
+ *
+ * ⚠️ The port is the only thing two runs ever shared. Removing the sharing removes the class.
+ */
+const B_PORT = 41000 + Math.floor(Math.random() * 4000)
 const STUB_PORT = 4111
 
 const log = (step: string, detail: string) => console.log(`${step.padEnd(34)} ${detail}`)
@@ -405,6 +416,20 @@ const program = Effect.gen(function* () {
     check(result.answer !== undefined, "B ANSWERED, and the signature verified")
     check(result.author === peer, "the answer is attributed to B, not merely signed by somebody")
     check(recorded?.outcome === "answered", "the dealing records that they answered")
+
+    /**
+     * 🔴 The SPEND, observed on B rather than inferred from here. Answering moves that instance's
+     * daily counter, and until now that was pinned only by reading the source for the ORDER of two
+     * statements. This is the behaviour those statements exist to produce.
+     *
+     * ⚠️ And it is honest about its reach: if the spend drifted back to "only on success" this
+     * would still pass. The case it was moved for — a turn that RAN and produced nothing — cannot be
+     * staged with a stub that always answers, so the ORDER stays pinned structurally too.
+     */
+    const participation = yield* Effect.promise(() => api("/api/community/participation"))
+    const state = JSON.parse(participation.body) as { answers?: { today?: number; perDay?: number } }
+    console.log("   B's budget after answering:", JSON.stringify(state.answers))
+    check(state.answers?.today === 1, "answering moved B's daily budget by exactly one")
   } else {
     check(result.refused !== undefined, "B refused, because answering is off — and SAID so rather than going quiet")
     check(result.answer === undefined, "a refusal carries no answer")
