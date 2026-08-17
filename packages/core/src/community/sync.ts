@@ -55,6 +55,28 @@ import { Offline } from "../offline"
 export const SYNC_COOLDOWN_MS = 30_000
 
 /**
+ * How long before the SAME question may be put to the SAME peer again.
+ *
+ * 🔴 The new-peer-door checklist's outbound rule 10: *"add a cooldown if the call can repeat"*. An
+ * ask repeats trivially — the permission is granted per peer and saved, so an "always" answer makes
+ * every later ask free from the user's side, and a model loop repeats in milliseconds.
+ *
+ * ⚠️ Tuned to what it PROTECTS, and that is somebody else's machine: an ask is a MODEL TURN on
+ * their hardware, not the round trip `SYNC_COOLDOWN_MS` guards. Their per-asker budget defaults to
+ * FIVE A DAY, so a loop that fires the same question in one burst spends their whole allowance on
+ * one repeated sentence and leaves nothing for a question that mattered.
+ *
+ * ⚠️ Keyed on peer AND question, deliberately. A follow-up is legitimate and often immediate — an
+ * agent reads an answer and asks the obvious next thing — so a per-peer window would punish exactly
+ * the conversation this feature exists to have. An IDENTICAL repeat is always pathological.
+ *
+ * ⚠️ And it is honest about what it does not stop: a loop that varies its wording walks straight
+ * through. The bound that does not depend on our politeness is the peer's own budget, which is why
+ * that was built first.
+ */
+export const ASK_COOLDOWN_MS = 60_000
+
+/**
  * The most channels whose last-sync time is remembered.
  *
  * ⚠️ A ceiling rather than an expiry sweep, for the reason `search.ts` records one file over: a
@@ -332,6 +354,8 @@ export const layer = Layer.effect(
      * catching up matters most, so it should never be the thing a stale stamp suppresses.
      */
     const lastSynced = new Map<string, number>()
+    /** When each (peer, question) pair was last asked — in memory, like the catch-up stamps above. */
+    const lastAsked = new Map<string, number>()
     const contacts = yield* CommunityContacts.Service
     const channels = yield* CommunityChannels.Service
     const peers = yield* CommunityPeers.Service
@@ -514,6 +538,15 @@ export const layer = Layer.effect(
         const addresses = yield* dialableRoutes(to)
         if (addresses.length === 0) return { reason: "no-route" }
 
+        /**
+         * ⚠️ Checked AFTER the routes, so a peer we cannot reach is told the truth about why, and
+         * BEFORE the dial, which is the only place a cooldown saves anybody anything.
+         */
+        const repeat = `${to}::${question.trim()}`
+        const now = Date.now()
+        const asked = lastAsked.get(repeat)
+        if (asked !== undefined && now - asked < ASK_COOLDOWN_MS) return { reason: "too-soon" }
+
         const self = yield* identity.identity()
         const at = Date.now()
         /**
@@ -530,6 +563,18 @@ export const layer = Layer.effect(
           const health = yield* ask(address, IDENTITY_PATH, undefined, Health, "GET")
           // A different identity at that address means the route is stale or someone else is there.
           if (health === undefined || health.networkID !== to) continue
+
+          /**
+           * ⚠️ Stamped once there is genuinely somebody to ask, for the reason the catch-up
+           * cooldown records: recording the ATTEMPT would let an instance that reached nobody refuse
+           * to try again for a minute, and a fresh install does exactly that.
+           */
+          lastAsked.set(repeat, now)
+          if (lastAsked.size > MAX_SYNC_STAMPS) {
+            // Insertion order is eviction order, which for a rolling window is oldest-first.
+            const oldest = lastAsked.keys().next()
+            if (!oldest.done) lastAsked.delete(oldest.value)
+          }
 
           const reply = yield* ask(address, ASK_PATH, payload, AnswerReply, "POST")
           if (reply === undefined) continue

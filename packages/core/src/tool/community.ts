@@ -133,6 +133,13 @@ export const askFailure = (peer: string, reason: string | undefined): string => 
       return `The reply to that question was signed by somebody else, so it was discarded — it is not an answer from ${peer}.`
     case "no-answer":
       return `${peer} replied without an answer and without a reason.`
+    case "too-soon":
+      /**
+       * ⚠️ Named as OURS, not theirs. An agent told only "could not ask" would report the peer as
+       * unresponsive; what actually happened is that we declined to spend their budget on a question
+       * we already put to them a moment ago.
+       */
+      return `That exact question already went to ${peer} in the last minute, so it was not sent again. Answering costs them a model turn — ask something different, or wait.`
     default:
       return `Could not ask ${peer} (${reason ?? "unknown"}).`
   }
