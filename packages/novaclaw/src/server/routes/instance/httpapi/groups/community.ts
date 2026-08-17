@@ -418,6 +418,16 @@ export const CommunityApi = HttpApi.make("community").add(
               /** How many answers have been given today, so a user can see the budget moving. */
               today: Schema.Number,
             }),
+            /**
+             * 🔴 The address this instance publishes to the public DHT, so the panel can SHOW what
+             * is being advertised. Absent means it looks without advertising, which is the default.
+             *
+             * ⚠️ Declared in the same edit as the handler that returns it, for the reason written
+             * one field up: a value computed and then dropped by this schema reads as a feature that
+             * does not work. For an address it would be worse than confusing — a user cannot tell
+             * "not published" from "published and not shown", and one of those is a privacy answer.
+             */
+            announce: Schema.optional(Schema.String),
           }),
           "Whether this instance is on the network, and every reason it is not",
         ),

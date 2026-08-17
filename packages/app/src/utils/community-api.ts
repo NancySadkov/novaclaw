@@ -236,6 +236,8 @@ export function communityParticipation(server: ServerConnection.HttpBase) {
       readonly perDay: number
       readonly today: number
     }
+    /** The address published to the public DHT, when the user has set one. */
+    readonly announce?: string
   }>(server, { route: "api/community/participation" })
 }
 
@@ -256,6 +258,12 @@ export function communitySetParticipation(
      * than bandwidth. Nothing here may turn it on as a side effect of joining.
      */
     readonly answers?: { readonly enabled?: boolean; readonly perDay?: number }
+    /**
+     * 🔴 The address this instance publishes to the public DHT — a decision above joining and
+     * above answering: it is read by people who never talk to us, and it outlives the request that
+     * created it. Empty string clears it.
+     */
+    readonly announce?: string
   },
 ) {
   return instanceFetch<unknown>(server, { route: "config", method: "PATCH", body: { community: value } })

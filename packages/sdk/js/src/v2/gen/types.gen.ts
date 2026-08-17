@@ -9420,6 +9420,7 @@ export type CommunityParticipationResponses = {
       perDay: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
       today: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     }
+    announce?: string
   }
 }
 

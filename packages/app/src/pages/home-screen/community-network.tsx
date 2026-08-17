@@ -148,11 +148,13 @@ export const CommunityNetwork: Component = () => {
     communityParticipation(value.http),
   )
   const [switching, setSwitching] = createSignal(false)
+  const [publishing, setPublishing] = createSignal("")
 
   const setParticipation = async (value: {
     consented?: boolean
     enabled?: boolean
     answers?: { enabled?: boolean; perDay?: number }
+    announce?: string
   }) => {
     const current = connection()
     if (!current) return
@@ -955,6 +957,54 @@ export const CommunityNetwork: Component = () => {
               {`${participation()?.answers.today ?? 0} of ${participation()?.answers.perDay ?? 0} answered today. Each reply is signed by this instance, so a careless one costs your standing.`}
             </Show>
           </span>
+        </div>
+        {/* 🔴 PUBLISHING this instance's address — the strongest switch on this panel, and the
+            only one that leaves something behind. Joining reveals this machine's IP to peers it
+            talks to; answering spends tokens; this puts an address in a public directory that
+            anyone can read WITHOUT ever talking to us, and it outlives the moment it was set.
+            AGENTS.md accepts being findable as the price of true p2p — but that is about being
+            enumerable once you are in, not about volunteering to be the network's front door.
+
+            ⚠️ It is TYPED, never detected. An instance sees its interfaces, and a machine behind a
+            NAT sees private ones; a guess publishes a door nobody can open. The person who
+            forwarded the port is the only one who knows. */}
+        <div class="mt-2 flex items-start gap-2">
+          <Show
+            when={participation()?.announce}
+            fallback={
+              <>
+                <TextInputV2
+                  appearance="base"
+                  value={publishing()}
+                  onInput={(event) => setPublishing(event.currentTarget.value)}
+                  placeholder="your-address:4096"
+                  spellcheck={false}
+                  autocapitalize="off"
+                  autocorrect="off"
+                />
+                <ButtonV2
+                  variant="neutral"
+                  size="small"
+                  disabled={switching() || publishing().trim() === ""}
+                  onClick={() => void setParticipation({ announce: publishing().trim() })}
+                >
+                  Publish this address
+                </ButtonV2>
+                <span class="text-[11px] leading-snug text-v2-text-text-muted">
+                  Off. Other instances find this one on your network, from addresses you type, and through
+                  peers you already know. Publishing lets strangers find you directly — set it only if
+                  this address really reaches you from the internet.
+                </span>
+              </>
+            }
+          >
+            <ButtonV2 variant="neutral" size="small" disabled={switching()} onClick={() => void setParticipation({ announce: "" })}>
+              Stop publishing
+            </ButtonV2>
+            <span class="text-[11px] leading-snug text-v2-text-text-muted">
+              {`Published as ${participation()?.announce}. Anyone reading the public directory can see it, and it stays there for a while after you stop.`}
+            </span>
+          </Show>
         </div>
         {/* 🔴 The doorman row. Joining never needs it; it is how a user says "I know this one, and
             this is how far I trust them" once value is involved. */}

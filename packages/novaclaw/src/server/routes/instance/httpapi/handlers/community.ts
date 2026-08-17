@@ -315,6 +315,14 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
         Effect.fn("CommunityHttpApi.communityParticipation")(function* () {
           const gate = CommunityConsent.currentGate()
           const answering = yield* answers.state()
+          /**
+           * ⚠️ Read from the STORED config, which is where the user's answer lives. Declaring the
+           * field without this line is the failure that has happened twice here already: a 200 that
+           * shows nothing, indistinguishable from never having set it.
+           */
+          const published = (
+            CommunityConsent.storedConfig() as { community?: { announce?: string } } | undefined
+          )?.community?.announce
           return {
             participating: CommunityConsent.participates(gate),
             consented: gate.consented,
@@ -325,6 +333,7 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
               perDay: answering.gate.perDay,
               today: answering.today,
             },
+            ...(published === undefined || published === "" ? {} : { announce: published }),
           }
         }),
       )
