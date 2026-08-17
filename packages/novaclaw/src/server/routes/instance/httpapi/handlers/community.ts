@@ -256,8 +256,18 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
               Effect.gen(function* () {
                 const viaDht = yield* dht.find(announce === undefined ? {} : { announce })
                 if (viaDht.length > 0) yield* sync.learnFrom(viaDht, "dht")
+                /**
+                 * 🔴 The ONE signal that this ran. Everything inside is silent by design — no
+                 * binary, no peers and a crashed sidecar all mean "nothing found" — and detaching it
+                 * removed the last way to tell that from a fiber that never executed.
+                 *
+                 * ⚠️ The COUNT only. Which peers came back is a set of strangers' network
+                 * locations, and a log is the wrong place to keep those.
+                 */
+                yield* Log.event("community.dht.searched", { "community.peers": viaDht.length })
               }).pipe(
-                // Silent by design, like every other DHT failure: no peers is the ordinary answer.
+                // Silent to the CALLER by design, like every other DHT failure: no peers is the
+                // ordinary answer, and a discovery must never fail a join.
                 Effect.catchCause(() => Effect.void),
               ),
             )

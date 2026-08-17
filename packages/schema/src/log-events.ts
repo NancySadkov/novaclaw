@@ -2116,6 +2116,25 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/session/runner/maintenance.ts",
   },
+  /**
+   * 🔴 The only signal that DHT discovery ran at all.
+   *
+   * The lookup is detached (a ten-second Kademlia query must not sit in front of a button) and every
+   * failure inside it is silent by design — no binary, no peers and a crashed sidecar are all
+   * "nothing found", which is what the caller wants. Put together that is a feature nobody can tell
+   * apart from one that never executes: a fiber that dies quietly leaves no trace, which is precisely
+   * the trap this codebase has hit before.
+   *
+   * ⚠️ `count`, not a list of addresses. How many peers came back is an operational fact; WHO they
+   * are is a set of strangers' network locations, and a log is the wrong place for it.
+   */
+  "community.dht.searched": {
+    level: "info",
+    message: "asked the public DHT who else is out there",
+    attributes: { "community.peers": "count" },
+    content: "none",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/community.ts",
+  },
   "community.answer.failed": {
     level: "warn",
     message: "answering a peer failed before any answer existed",
