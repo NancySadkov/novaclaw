@@ -1,12 +1,12 @@
 export * as CommunityContacts from "./contacts"
 
-import { eq, inArray } from "drizzle-orm"
+import { eq, inArray, or } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { CommunitySuccession } from "./succession"
 import { InstanceIdentityStore } from "../instance-identity-store"
-import { CommunityContactTable, CommunityObservationTable } from "./sql"
+import { CommunityContactTable, CommunityObservationTable, CommunitySuccessionTable } from "./sql"
 
 /**
  * Community P3 — the contact list (`todo/community-p2p.md`).
@@ -316,14 +316,43 @@ export const layer = Layer.effect(
          * peer's earlier keys behind as rows that still resolve — so a user who forgot someone would
          * still be attributing that person's old messages to them, and still blocking on an entry
          * they believe is gone.
+         *
+         * 🔴 **And the chain is read from BOTH stores — review finding 1.17.** It used to be built
+         * from contact rows alone, which left three ways for the person to survive being forgotten,
+         * all measured: the succession STORE kept the rows naming their keys (and re-served them on
+         * `GET /api/community/succession`, so we went on publishing somebody's key history after
+         * their own user erased them); observations attached to a key linked only through that store
+         * were never in the chain, so `about(B)` still returned the file on them; and a peer who was
+         * never ADDED had no deletion path at all — `forget` returned false and did nothing, while
+         * the consent screen promised "forgetting someone deletes theirs".
          */
         const rows = yield* db.select().from(CommunityContactTable).all().pipe(Effect.orDie)
-        const target = (yield* resolveRow(networkID))?.network_id
-        if (target === undefined) return false
-        const chain = [target, ...formerIDs(rows, target)]
+        const statements = yield* db.select().from(CommunitySuccessionTable).all().pipe(Effect.orDie)
+        /**
+         * Every key we have reason to believe is the same person, walked in BOTH directions and
+         * transitively — a rotation is a chain, and a user who forgets someone means all of them.
+         *
+         * ⚠️ Starts from the resolved contact row when there IS one, and from the bare key when
+         * there is not. That single fallback is what gives a never-added peer a deletion path.
+         */
+        const target = (yield* resolveRow(networkID))?.network_id ?? networkID
+        const chain = new Set<string>([target, ...formerIDs(rows, target)])
+        for (let added = true; added; ) {
+          added = false
+          for (const link of statements) {
+            if (chain.has(link.network_id) && !chain.has(link.successor_id)) {
+              chain.add(link.successor_id)
+              added = true
+            }
+            if (chain.has(link.successor_id) && !chain.has(link.network_id)) {
+              chain.add(link.network_id)
+              added = true
+            }
+          }
+        }
         const removed = yield* db
           .delete(CommunityContactTable)
-          .where(inArray(CommunityContactTable.network_id, chain))
+          .where(inArray(CommunityContactTable.network_id, [...chain]))
           .returning({ id: CommunityContactTable.network_id })
           .all()
           .pipe(Effect.orDie)
@@ -345,13 +374,39 @@ export const layer = Layer.effect(
          * leaves it open whether a re-added peer's history returns; what it does not leave open is
          * the default, *because the opposite is unrecoverable once shipped*.
          */
-        yield* db
+        const forgottenNotes = yield* db
           .delete(CommunityObservationTable)
-          .where(inArray(CommunityObservationTable.subject, chain))
-          .run()
+          .where(inArray(CommunityObservationTable.subject, [...chain]))
+          .returning({ subject: CommunityObservationTable.subject })
+          .all()
           .pipe(Effect.orDie)
 
-        return removed.length > 0
+        /**
+         * 🔴 And the SUCCESSION rows naming them (1.17). Two reasons, and the second is the one that
+         * makes this not merely tidiness: they are what re-attaches the dossier — `about` resolves
+         * through this table, so a note we could not see would come back the moment the chain was
+         * walked again — and `GET /api/community/succession` SERVES them, so forgetting someone
+         * while continuing to publish their key history is not forgetting them at all.
+         */
+        const forgottenLinks = yield* db
+          .delete(CommunitySuccessionTable)
+          .where(
+            or(
+              inArray(CommunitySuccessionTable.network_id, [...chain]),
+              inArray(CommunitySuccessionTable.successor_id, [...chain]),
+            ),
+          )
+          .returning({ id: CommunitySuccessionTable.network_id })
+          .all()
+          .pipe(Effect.orDie)
+
+        /**
+         * ⚠️ True when ANYTHING was forgotten, not only when a contact row went. A peer we dealt with
+         * but never added has no contact row by construction — that is the population the honesty
+         * ledger exists for — and answering `false` while deleting their file would tell the user
+         * their request did nothing.
+         */
+        return removed.length > 0 || forgottenNotes.length > 0 || forgottenLinks.length > 0
       }),
 
       setBlocked: Effect.fn("CommunityContacts.setBlocked")(function* (networkID: string, blocked: boolean) {

@@ -659,6 +659,18 @@ const FRAMED = [
   // ("message bodies") rather than by PROVENANCE ("anything a stranger wrote") leaves behind
   // whatever the category missed.** Ask of a FRAMED file not "does it frame" but "what else does it
   // emit, and who wrote that".
+  //
+  // 🔴 Asked again on 2026-08-17, and the answer was a THIRD producer: the `ask` refusal. A peer's
+  // reason for not answering is unsigned free text (only the answer branch is verified) and it was
+  // interpolated into our own sentence with no frame at all — while this entry sat green, because
+  // the file frames elsewhere. Its answer is not a frame but a CLOSED VOCABULARY
+  // (`refusalSentence`): the peer's bytes stop at `askPeer` and never enter the turn, so there is
+  // nothing here to fence. Behaviour is pinned in `community-ask-refusal.test.ts` against a real
+  // hostile socket, and the shape in `community-tool-framing.test.ts`.
+  //
+  // ⭐ Which sharpens the audit question one more turn: a producer can be safe by carrying no
+  // foreign bytes at all, and that is STRONGER than framing — but only a per-producer check can
+  // tell the two apart from "nobody looked".
   "community.ts",
   "db-registry.ts",
   "log.ts",

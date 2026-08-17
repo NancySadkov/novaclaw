@@ -248,7 +248,11 @@ export interface Interface {
   ) => Effect.Effect<{
     readonly answer?: string
     readonly author?: string
-    readonly refused?: string
+    /**
+     * 🔴 A TOKEN, never the peer's bytes (review 1.6). Their free text was interpolated into the
+     * model's sentence unframed and unverified; `"unrecognised"` is what an unknown reason becomes.
+     */
+    readonly refused?: CommunityAnswer.WireRefusal | "unrecognised"
     readonly reason?: string
   }>
   readonly successions: (
@@ -688,7 +692,13 @@ export const layer = Layer.effect(
 
           if (reply.refused !== undefined) {
             yield* dealing(CommunityObservation.Outcome.REFUSED)
-            return { refused: reply.refused }
+            /**
+             * 🔴 Mapped to our own vocabulary HERE, at the seam the bytes arrive at, rather than
+             * anywhere they are rendered. The `refused` branch is the one part of an ask reply that
+             * carries no signature — only `answer` is verified — so it is a stranger's free text
+             * with our sentence wrapped around it, which is how it reached the model unframed.
+             */
+            return { refused: CommunityAnswer.asWireRefusal(reply.refused) ?? "unrecognised" }
           }
           if (reply.answer === undefined) {
             yield* dealing(CommunityObservation.Outcome.NO_ANSWER)

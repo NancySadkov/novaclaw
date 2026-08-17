@@ -208,6 +208,40 @@ describe("every community operation is classified for framing", () => {
       expect(body, "an answer must reach the model framed").toContain("framedAnswer(peer, result.answer)")
       // ⚠️ And the raw string must never be handed back unframed by some later edit.
       expect(body).not.toContain("message: result.answer")
+
+      /**
+       * 🔴 **The REFUSAL half, which this ledger did not have — review finding 1.6.**
+       *
+       * It stated the rule ("the reason string a peer supplies is theirs, so it must never be
+       * pasted in raw") and then checked only the answer branch, so the defect it describes sat
+       * green underneath it for as long as it existed. The reason now reaches the model through
+       * `refusalSentence`, a fixed table keyed on OUR vocabulary, so there is no peer text here to
+       * frame or escape — `community-ask-refusal.test.ts` drives that against a real hostile socket.
+       */
+      expect(body, "a refusal must be rendered from our vocabulary").toContain("refusalSentence(peer, result.refused)")
+      expect(body, "the peer's own bytes may never be interpolated").not.toContain("${result.refused}")
+    }),
+  )
+
+  /**
+   * 🔴 The vocabulary must COVER what an honest instance sends, or the fix quietly breaks the
+   * feature: a refusal we ourselves emit but forgot to list here renders as "unrecognised", which is
+   * a lie about a peer that answered correctly.
+   */
+  it.effect("🔴 every refusal OUR peer handler sends is in the closed vocabulary", () =>
+    Effect.gen(function* () {
+      const handlers = readFileSync(
+        new URL("../../novaclaw/src/server/routes/instance/httpapi/handlers/community.ts", import.meta.url),
+        "utf8",
+      )
+      const emitted = [...handlers.matchAll(/refused:\s*"([a-z-]+)"/g)].map((match) => match[1]!)
+      // The scan must find them at all — an empty list satisfies every loop below.
+      expect(emitted.length, "the scan must find the refusals we send").toBeGreaterThan(3)
+      for (const token of new Set(emitted))
+        expect(
+          (CommunityAnswer.WIRE_REFUSALS as readonly string[]).includes(token),
+          `we send "${token}" but a peer receiving it would read "unrecognised"`,
+        ).toBe(true)
     }),
   )
 })
