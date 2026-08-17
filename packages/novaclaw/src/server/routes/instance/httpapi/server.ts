@@ -26,6 +26,7 @@ import { CommunityObservation } from "@novaclaw/core/community/observation"
 import { CommunityOffer } from "@novaclaw/core/community/offer"
 import { CommunitySearch } from "@novaclaw/core/community/search"
 import { CommunitySuccession } from "@novaclaw/core/community/succession"
+import { CommunityDht } from "@novaclaw/core/community/dht"
 import { CommunitySync } from "@novaclaw/core/community/sync"
 import { CommunityTransport } from "@novaclaw/core/community/transport"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
@@ -265,6 +266,7 @@ const app = LayerNode.group([
   CommunitySuccession.node,
   CommunitySync.node,
   CommunityTransport.node,
+  CommunityDht.node,
   CommunityPost.node,
   SkillConfigStore.node,
   ReferenceConfigStore.node,

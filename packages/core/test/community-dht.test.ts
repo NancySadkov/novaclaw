@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import { CommunityDht } from "@novaclaw/core/community/dht"
 
 /**
@@ -9,12 +9,60 @@ import { CommunityDht } from "@novaclaw/core/community/dht"
  * not there**. It is a Rust binary and the app builds without a cargo toolchain, so "no binary" is
  * the ORDINARY state, not a fault — and it must cost nothing beyond the peers it would have found.
  *
- * ⚠️ These never spawn the real sidecar. What is under test is the seam: that failure is silent,
- * that a stranger's output is validated on THIS side of the process boundary too, and that the
- * result is the same shape `learnFrom` already consumes.
+ * 🔴 The rest is about LIFETIME, because that is what a live run changed. The sidecar used to be
+ * spawned per lookup and killed after, which meant every query in production ran against a
+ * three-entry routing table and found nobody — green in every test, dead in the only configuration
+ * that ships. These pin the properties that fix buys: one node reused, one announcement, a dead node
+ * replaced, and two callers never reading each other's replies.
+ *
+ * ⚠️ None of them spawn the real sidecar. A test that needs a Rust toolchain to run is a test that
+ * stops running.
  */
 
-const run = <A>(effect: Effect.Effect<A>) => Effect.runPromise(effect)
+/** A sidecar that never was — the ordinary machine. */
+const absent = () => undefined
+
+/**
+ * A scripted sidecar. `replies` are handed out in order, one per request; `undefined` means "say
+ * nothing", which is how a wedged child is spelled.
+ */
+const scripted = (replies: ReadonlyArray<string | undefined>) => {
+  const state = {
+    starts: 0,
+    written: [] as Array<string>,
+    stopped: 0,
+    kill: undefined as undefined | (() => void),
+  }
+  const start = () => {
+    state.starts += 1
+    let onLine: ((line: string) => void) | undefined
+    let onExit: (() => void) | undefined
+    state.kill = () => onExit?.()
+    const node: CommunityDht.Node = {
+      write: (line) => {
+        state.written.push(line.trim())
+        const reply = replies[state.written.length - 1]
+        if (reply !== undefined) queueMicrotask(() => onLine?.(reply))
+      },
+      onLine: (handler) => {
+        onLine = handler
+      },
+      onExit: (handler) => {
+        onExit = handler
+      },
+      stop: () => {
+        state.stopped += 1
+      },
+    }
+    return node
+  }
+  return { state, start }
+}
+
+const run = <A>(effect: Effect.Effect<A, never, CommunityDht.Service>, options: CommunityDht.Options) =>
+  Effect.runPromise(Effect.provide(effect, CommunityDht.layerWith(options)) as Effect.Effect<A>)
+
+const peers = (addresses: ReadonlyArray<string>) => JSON.stringify({ peers: addresses })
 
 describe("CommunityDht.parse", () => {
   test("🔴 addresses that could not be dialled are dropped, not passed on", () => {
@@ -48,70 +96,183 @@ describe("CommunityDht.parse", () => {
 describe("CommunityDht.find", () => {
   test("🔴 a MISSING sidecar answers no peers — the ordinary case on most machines", async () => {
     const found = await run(
-      CommunityDht.find({
-        binary: "definitely-not-a-real-binary-anywhere",
-        run: () => Promise.reject(new Error("ENOENT")),
+      Effect.gen(function* () {
+        const dht = yield* CommunityDht.Service
+        return yield* dht.find()
       }),
+      { start: absent },
     )
     expect(found).toEqual([])
   })
 
-  test("🔴 a HANGING sidecar does not hold discovery open", async () => {
+  test("🔴 a HANGING sidecar does not hold discovery open, and is not kept", async () => {
     /**
      * ⚠️ The failure easiest to miss and worst to ship: a child that neither answers nor exits. The
      * caller is a user waiting on a button, and the design says an unreachable DHT costs freshness,
      * never the join.
+     *
+     * 🔴 And now that the node is LONG-LIVED, a silent one must be killed rather than kept — keeping
+     * it would poison every later lookup with a process that never answers.
      */
+    const sidecar = scripted([undefined])
     const started = Date.now()
-    // A short budget here, because what is under test is that the backstop FIRES — not how long the
-    // production one is. The default is deliberately longer than any test should sit waiting.
-    const found = await run(CommunityDht.find({ binary: "x", timeoutMs: 1_000, run: () => new Promise(() => {}) }))
+    const found = await run(
+      Effect.gen(function* () {
+        const dht = yield* CommunityDht.Service
+        return yield* dht.find()
+      }),
+      // A short budget, because what is under test is that the backstop FIRES — not how long the
+      // production one is. The default is deliberately longer than any test should sit waiting.
+      { start: sidecar.start, timeoutMs: 500 },
+    )
     expect(found).toEqual([])
     expect(Date.now() - started).toBeLessThan(4_000)
+    expect(sidecar.state.stopped, "a wedged sidecar must be stopped, not kept for the next lookup").toBe(1)
   })
 
   test("peers the sidecar reports come back in the shape learnFrom consumes", async () => {
+    const sidecar = scripted([peers(["203.0.113.9:4096", "peer.example:8443"])])
     const found = await run(
-      CommunityDht.find({
-        binary: "x",
-        run: () => Promise.resolve([JSON.stringify({ peers: ["203.0.113.9:4096", "peer.example:8443"] })]),
+      Effect.gen(function* () {
+        const dht = yield* CommunityDht.Service
+        return yield* dht.find()
       }),
+      { start: sidecar.start },
     )
     expect(found).toEqual(["203.0.113.9:4096", "peer.example:8443"])
   })
 
-  test("🔴 with an announce, the ANSWER is read — not the acknowledgement before it", async () => {
+  test("🔴 the sidecar is started ONCE and reused across lookups", async () => {
     /**
-     * The sidecar replies once per request, so announcing shifts the answer down a line. Reading the
-     * first reply would return `{"announced":true}` — which parses, contains no peers, and looks
-     * exactly like a DHT that found nobody.
+     * The whole point of the rewrite. Measured live 2026-08-17: a per-lookup sidecar queries a
+     * three-entry routing table and finds nobody, while a node that stays alive reaches ~150 entries
+     * within a minute. A second `start` here would mean every lookup pays the cold table again.
      */
+    const sidecar = scripted([peers(["1.1.1.1:4096"]), peers(["2.2.2.2:4096"])])
     const found = await run(
-      CommunityDht.find({
-        binary: "x",
-        announce: "203.0.113.9:4096",
-        run: (_binary, lines) => {
-          expect(lines.length).toBe(2)
-          expect(lines[0]).toContain("announce")
-          return Promise.resolve([JSON.stringify({ announced: true }), JSON.stringify({ peers: ["1.2.3.4:4096"] })])
-        },
+      Effect.gen(function* () {
+        const dht = yield* CommunityDht.Service
+        const first = yield* dht.find()
+        const second = yield* dht.find()
+        return [first, second]
       }),
+      { start: sidecar.start },
     )
-    expect(found).toEqual(["1.2.3.4:4096"])
+    expect(found).toEqual([["1.1.1.1:4096"], ["2.2.2.2:4096"]])
+    expect(sidecar.state.starts, "the sidecar must be started once, not once per lookup").toBe(1)
+  })
+
+  test("🔴 nothing is started until the first lookup", async () => {
+    // Startup speed is first-class and joining is a decision: a user who never opens the community
+    // must never pay for a Kademlia node. Building the layer must therefore spawn NOTHING.
+    const sidecar = scripted([peers([])])
+    await Effect.runPromise(
+      Effect.provide(Effect.void, CommunityDht.layerWith({ start: sidecar.start })) as Effect.Effect<void>,
+    )
+    expect(sidecar.state.starts, "building the layer must not spawn a DHT node").toBe(0)
+  })
+
+  test("🔴 announcing happens ONCE per living sidecar, not once per lookup", async () => {
+    /**
+     * kad republishes a provider record on its own schedule for as long as the node lives, so a
+     * second announcement buys nothing. This is also the second reason the node wants to be
+     * long-lived: a process that exits after one lookup can never republish anything.
+     */
+    const sidecar = scripted([JSON.stringify({ announced: true }), peers(["1.1.1.1:4096"]), peers(["1.1.1.1:4096"])])
+    await run(
+      Effect.gen(function* () {
+        const dht = yield* CommunityDht.Service
+        yield* dht.find({ announce: "203.0.113.9:4096" })
+        yield* dht.find({ announce: "203.0.113.9:4096" })
+      }),
+      { start: sidecar.start },
+    )
+    const announces = sidecar.state.written.filter((line) => line.includes("announce"))
+    expect(announces.length, "the same address must not be announced twice").toBe(1)
+    expect(sidecar.state.written.filter((line) => line.includes('"find"')).length).toBe(2)
   })
 
   test("⚠️ without an announce, nothing is advertised", async () => {
     // Announcing is only honest from somewhere reachable; a NAT'd instance publishing an address
     // nobody can dial is a promise it cannot keep, so looking must not imply advertising.
+    const sidecar = scripted([peers([])])
     await run(
-      CommunityDht.find({
-        binary: "x",
-        run: (_binary, lines) => {
-          expect(lines.length).toBe(1)
-          expect(lines[0]).not.toContain("announce")
-          return Promise.resolve([JSON.stringify({ peers: [] })])
-        },
+      Effect.gen(function* () {
+        const dht = yield* CommunityDht.Service
+        return yield* dht.find()
       }),
+      { start: sidecar.start },
     )
+    expect(sidecar.state.written).toEqual(['{"op":"find"}'])
+  })
+
+  test("🔴 a sidecar that DIES is replaced on the next lookup, and re-announces", async () => {
+    /**
+     * ⚠️ Long-lived is not immortal: the child can crash, be killed by the OS, or be an old build
+     * that exits. A dead node that is never replaced turns one crash into a permanently silent DHT,
+     * which looks exactly like a machine that never built the sidecar.
+     */
+    const sidecar = scripted([
+      JSON.stringify({ announced: true }),
+      peers(["1.1.1.1:4096"]),
+      JSON.stringify({ announced: true }),
+      peers(["2.2.2.2:4096"]),
+    ])
+    const found = await run(
+      Effect.gen(function* () {
+        const dht = yield* CommunityDht.Service
+        const first = yield* dht.find({ announce: "203.0.113.9:4096" })
+        yield* Effect.sync(() => sidecar.state.kill?.())
+        const second = yield* dht.find({ announce: "203.0.113.9:4096" })
+        return [first, second]
+      }),
+      { start: sidecar.start },
+    )
+    expect(found).toEqual([["1.1.1.1:4096"], ["2.2.2.2:4096"]])
+    expect(sidecar.state.starts, "a dead sidecar must be replaced").toBe(2)
+    const announces = sidecar.state.written.filter((line) => line.includes("announce"))
+    expect(announces.length, "a REPLACED sidecar knows nothing — it must be told again").toBe(2)
+  })
+
+  test("🔴 two lookups at once do not read each other's replies", async () => {
+    /**
+     * The protocol is one reply per line with nothing tying a reply to its request, so overlapping
+     * callers would swap answers. Harmless while the sidecar lived for exactly one call; a real
+     * hazard now that it is shared.
+     */
+    const sidecar = scripted([peers(["1.1.1.1:4096"]), peers(["2.2.2.2:4096"])])
+    const found = await run(
+      Effect.gen(function* () {
+        const dht = yield* CommunityDht.Service
+        return yield* Effect.all([dht.find(), dht.find()], { concurrency: 2 })
+      }),
+      { start: sidecar.start },
+    )
+    expect(found.map((list) => [...list]).sort()).toEqual([["1.1.1.1:4096"], ["2.2.2.2:4096"]])
+    expect(sidecar.state.starts).toBe(1)
+  })
+
+  test("🔴 closing the scope stops the sidecar", async () => {
+    // A DHT node outliving the instance that wanted it is a background process nobody asked for,
+    // holding connections nobody is using.
+    const sidecar = scripted([peers([])])
+    await Effect.runPromise(
+      Effect.provide(
+        Effect.gen(function* () {
+          const dht = yield* CommunityDht.Service
+          yield* dht.find()
+        }),
+        CommunityDht.layerWith({ start: sidecar.start }),
+      ) as Effect.Effect<void>,
+    )
+    expect(sidecar.state.stopped, "the sidecar must not outlive the layer that started it").toBe(1)
+  })
+})
+
+describe("the layer", () => {
+  test("⚠️ the default layer exists and needs nothing", () => {
+    // It resolves the binary path lazily, so merely constructing it must not touch the filesystem
+    // in a way that can fail on a machine with no sidecar.
+    expect(Layer.isLayer(CommunityDht.layer)).toBe(true)
   })
 })

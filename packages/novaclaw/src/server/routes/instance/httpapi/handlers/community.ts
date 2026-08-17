@@ -50,6 +50,7 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
     const offers = yield* CommunityOffer.Service
     const peersStore = yield* CommunityPeers.Service
     const transport = yield* CommunityTransport.Service
+    const dht = yield* CommunityDht.Service
     const posts = yield* CommunityPost.Service
 
     return handlers
@@ -240,7 +241,7 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
            * the fix — a lazily started but long-lived sidecar — and until then this must stay a
            * short attempt, never a wait: the LAN and a typed address are the guarantees.
            */
-          const viaDht = yield* CommunityDht.find()
+          const viaDht = yield* dht.find()
 
           yield* sync.learnFrom(lan, "lan")
           yield* sync.learnFrom(seeds, "dns")
