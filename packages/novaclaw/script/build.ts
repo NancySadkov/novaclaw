@@ -216,6 +216,24 @@ const hostBuilt = path.resolve(dir, "../host/build", hostLibrary)
 await $`bun ${path.resolve(dir, "../host/build.ts")}`.catch((error) => {
   console.warn(`WARNING: could not build the host module — ${error?.stderr?.toString().trim() || error}`)
 })
+
+/**
+ * The DHT sidecar (`packages/dht`), which finds instances through a public Kademlia DHT.
+ *
+ * ⚠️ Same rules as the host module and for the same reasons: built here because we own it, shipped
+ * BESIDE the executable because a compiled binary has no `node_modules`, and NOT fatal when it is
+ * missing — the app must build on a machine that has never heard of Rust, and an instance without
+ * it simply finds no peers through the DHT.
+ *
+ * 🔴 But every target that ends up without one is NAMED below. A release whose discovery is
+ * silently DHT-less looks identical to a network with nobody in it, and the person who can fix that
+ * is the one reading this build's output.
+ */
+const dhtBinary = process.platform === "win32" ? "novaclaw-dht.exe" : "novaclaw-dht"
+const dhtBuilt = path.resolve(dir, "../dht/target/release", dhtBinary)
+await $`bun ${path.resolve(dir, "../dht/build.ts")}`.catch((error) => {
+  console.warn(`WARNING: could not build the DHT sidecar — ${error?.stderr?.toString().trim() || error}`)
+})
 for (const item of targets) {
   const name = [
     pkg.name,
@@ -288,6 +306,15 @@ for (const item of targets) {
     await Bun.write(`dist/${name}/bin/${hostLibrary}`, Bun.file(hostBuilt))
   } else {
     console.warn(`WARNING: ${name} ships NO host library (${hostLibrary}) — file watching is off in it.`)
+  }
+
+  // ⚠️ Only the target matching THIS machine can get one: cargo cross-compilation is not wired up,
+  // so every other target ships without and says so. Discovery still works there — LAN, peer
+  // exchange, and addresses the user types — which is exactly why this is a warning and not a stop.
+  if (item.os === process.platform && item.arch === process.arch && existsSync(dhtBuilt)) {
+    await Bun.write(`dist/${name}/bin/${dhtBinary}`, Bun.file(dhtBuilt))
+  } else {
+    console.warn(`WARNING: ${name} ships NO DHT sidecar (${dhtBinary}) — it discovers by LAN and typed addresses only.`)
   }
 
   // Smoke test: only run if binary is for current platform — and only when the UI is actually

@@ -1,5 +1,8 @@
 export * as CommunityDht from "./dht"
 
+import { existsSync } from "node:fs"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { Effect } from "effect"
 
 /**
@@ -39,7 +42,17 @@ export const binaryPath = (): string => {
   const override = process.env["NOVACLAW_DHT_BINARY"]
   if (override !== undefined && override !== "") return override
   const exe = process.platform === "win32" ? "novaclaw-dht.exe" : "novaclaw-dht"
-  return new URL(`../../../dht/target/release/${exe}`, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")
+
+  /**
+   * 🔴 BESIDE THE EXECUTABLE FIRST, then the dev tree — the same order `packages/host` uses, and
+   * for the same reason: **a compiled binary has no `node_modules`**, so a path relative to this
+   * module resolves to nothing in a packaged app. Checking the dev path first would work on the
+   * machine that built it and nowhere else, which is the failure that looks like "the DHT does not
+   * work in the release".
+   */
+  const beside = path.join(path.dirname(process.execPath), exe)
+  if (existsSync(beside)) return beside
+  return fileURLToPath(new URL(`../../../dht/target/release/${exe}`, import.meta.url))
 }
 
 /**
