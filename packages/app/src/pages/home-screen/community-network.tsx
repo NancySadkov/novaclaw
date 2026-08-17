@@ -366,7 +366,22 @@ export const CommunityNetwork: Component = () => {
   const status = createMemo(() => {
     const state = transport()
     if (state === undefined) return "Checking…"
-    if (state.kind === "online") return `Connected · ${state.peers} ${state.peers === 1 ? "peer" : "peers"}`
+    /**
+     * 🔴 "Known", not "Connected" — because that is what the number IS. `state()` counts distinct
+     * peers whose address we hold, from contacts and peer exchange. Nothing is dialled to produce it,
+     * and nothing here is a connection: this transport dials OUT when it has something to send.
+     *
+     * ⚠️ So "Connected · 5 peers" told a user they were reaching five instances when what was true
+     * is that five are worth trying. If all five are off, the old line said Connected and the user
+     * had no way to know otherwise. The comment beside the COUNT already holds this surface to that
+     * standard — *"the sort of small lie this UI is not allowed to tell"* — while the word next to it
+     * was making a bigger claim than the number behind it.
+     *
+     * ⚠️ Verifying it properly would mean dialling every peer on each render, which is a real cost
+     * for a line that is always on screen. Saying what is actually known costs nothing.
+     */
+    if (state.kind === "online")
+      return `Ready · ${state.peers} ${state.peers === 1 ? "peer" : "peers"} known`
     if (state.kind === "connecting") return "Connecting…"
     if (state.reason === "airgap") return "Offline mode is on — nothing goes in or out"
     // ⚠️ Three different sentences, because they are three different situations for the person
