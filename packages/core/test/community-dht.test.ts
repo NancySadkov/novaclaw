@@ -336,6 +336,51 @@ describe("CommunityDht.find", () => {
   })
 })
 
+describe("an announcement is only claimed when it happened", () => {
+  test("🔴 `announced: false` is NOT recorded as published, and is retried", async () => {
+    /**
+     * 🔴 The sidecar waits for a routing table worth publishing into and then for the query's own
+     * result, so `false` is a real answer — it reports failure when there was no network to publish
+     * to. This seam used to treat ANY reply as success, which meant the address was remembered, the
+     * `advertise !== announced` guard was false ever after, and the failed announcement was never
+     * tried again. The instance believed it was published for the rest of the session, and so did
+     * its owner.
+     */
+    const sidecar = scripted([
+      JSON.stringify({ announced: false }),
+      peers([]),
+      JSON.stringify({ announced: true }),
+      peers([]),
+    ])
+    const state = await run(
+      Effect.gen(function* () {
+        const dht = yield* CommunityDht.Service
+        yield* dht.find({ announce: "203.0.113.9:4096" })
+        const failed = yield* dht.announced()
+        yield* dht.find({ announce: "203.0.113.9:4096" })
+        return { failed, then: yield* dht.announced() }
+      }),
+      { start: sidecar.start },
+    )
+
+    expect(state.failed?.published, "a refused announcement must not read as published").toBe(false)
+    expect(state.then?.published, "and the next discovery must try again").toBe(true)
+    const announces = sidecar.state.written.filter((line) => line.includes("announce"))
+    expect(announces.length, "twice: the first failed, so it was not remembered").toBe(2)
+  })
+
+  test("⚠️ a CONFIRMED announcement is not repeated", () => {
+    // The other half of the same rule: kad republishes on its own schedule for as long as the node
+    // lives, so re-announcing an address it already took buys nothing.
+    expect(CommunityDht.announcedOk(JSON.stringify({ announced: true }))).toBe(true)
+    expect(CommunityDht.announcedOk(JSON.stringify({ announced: false }))).toBe(false)
+    // ⚠️ Anything that is not an explicit `true` is a failure: a malformed line, an empty one, or a
+    // reply from something that is not our sidecar at all.
+    expect(CommunityDht.announcedOk("not json")).toBe(false)
+    expect(CommunityDht.announcedOk(JSON.stringify({ peers: [] }))).toBe(false)
+  })
+})
+
 describe("the layer", () => {
   test("⚠️ the default layer exists and needs nothing", () => {
     // It resolves the binary path lazily, so merely constructing it must not touch the filesystem

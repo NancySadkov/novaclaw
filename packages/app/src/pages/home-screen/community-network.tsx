@@ -1019,7 +1019,15 @@ export const CommunityNetwork: Component = () => {
               Stop publishing
             </ButtonV2>
             <span class="text-[11px] leading-snug text-v2-text-text-muted">
-              {`Published as ${participation()?.announce}. Anyone reading the public directory can see it, and it stays there for a while after you stop.`}
+              {/* 🔴 Says what is KNOWN, not what was asked for. This read "Published as X" because the
+                  CONFIG said so, which is a claim about the user's intention wearing the clothes of a
+                  claim about the network — and an announcement genuinely fails when there is no
+                  routing table to publish into. Three states, because there are three. */}
+              {participation()?.announceConfirmed === true
+                ? `Published as ${participation()?.announce}. Anyone reading the public directory can see it, and it stays there for a while after you stop.`
+                : participation()?.announceConfirmed === false
+                  ? `Not published yet — the network did not accept ${participation()?.announce} on the last try. It will be attempted again; if it keeps failing, check that this address really reaches you from the internet.`
+                  : `Set to ${participation()?.announce}. It is announced the next time this instance looks for peers, and this line will say whether the network took it.`}
             </span>
           </Show>
         </div>

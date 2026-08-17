@@ -9421,6 +9421,7 @@ export type CommunityParticipationResponses = {
       today: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     }
     announce?: string
+    announceConfirmed?: boolean
   }
 }
 

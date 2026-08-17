@@ -349,6 +349,9 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
           const published = (
             CommunityConsent.storedConfig() as { community?: { announce?: string } } | undefined
           )?.community?.announce
+          // ⚠️ Compared against the address the DHT was actually given: a user who edited the setting
+          // since the last attempt must not see the OLD address's verdict attached to the new one.
+          const announcedState = yield* dht.announced()
           return {
             participating: CommunityConsent.participates(gate),
             consented: gate.consented,
@@ -360,6 +363,14 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
               today: answering.today,
             },
             ...(published === undefined || published === "" ? {} : { announce: published }),
+            /**
+             * ⚠️ Declared AND forwarded in the same edit. This field has been lost in each
+             * direction separately before, and for a claim about whether strangers can find you, a
+             * silently dropped value is worse than an absent one.
+             */
+            ...(announcedState === undefined || announcedState.address !== published
+              ? {}
+              : { announceConfirmed: announcedState.published }),
           }
         }),
       )

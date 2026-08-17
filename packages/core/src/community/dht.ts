@@ -139,6 +139,22 @@ export const readLines = (state: { buffer: string }, chunk: string): ReadonlyArr
 }
 
 /**
+ * Did the sidecar say it PUBLISHED?
+ *
+ * 🔴 `announced: false` is a real answer, not a formality. The sidecar waits for a routing table
+ * worth publishing into and then for the query's own result, so it reports failure when there was no
+ * network to publish to — and this seam used to treat any reply at all as success, which meant a
+ * failed announcement was recorded as done and never retried.
+ */
+export const announcedOk = (line: string): boolean => {
+  try {
+    return (JSON.parse(line) as { announced?: unknown }).announced === true
+  } catch {
+    return false
+  }
+}
+
+/**
  * The living sidecar, reduced to what this module needs of it.
  *
  * ⚠️ An interface rather than a `ChildProcess` so the seam is exercisable without a Rust toolchain.
@@ -172,6 +188,14 @@ export interface Interface {
    * whose announcement would be a promise nobody can keep.
    */
   readonly find: (input?: { readonly announce?: string }) => Effect.Effect<ReadonlyArray<string>>
+  /**
+   * What the last announcement attempt CLAIMED, or `undefined` if none has been made this session.
+   *
+   * 🔴 So a surface can stop asserting what nobody confirmed. The panel said "Published as X"
+   * because the CONFIG said so, which is a statement about the user's intention rather than about the
+   * network — and an announcement genuinely fails when there is no routing table to publish into.
+   */
+  readonly announced: () => Effect.Effect<{ readonly address: string; readonly published: boolean } | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/CommunityDht") {}
@@ -195,6 +219,8 @@ export const layerWith = (options: Options = {}): Layer.Layer<Service> =>
       let alive = false
       /** The address last successfully announced, so a reconnect re-announces and a repeat does not. */
       let announced: string | undefined
+      /** What the last announcement attempt claimed, so a caller can stop asserting something nobody confirmed. */
+      let lastAnnounce: { readonly address: string; readonly published: boolean } | undefined
       let pending: ((line: string | undefined) => void) | undefined
 
       const ensure = (): Node | undefined => {
@@ -294,14 +320,25 @@ export const layerWith = (options: Options = {}): Layer.Layer<Service> =>
               input?.announce !== undefined && isAnnounceable(input.announce) ? input.announce.trim() : undefined
             if (advertise !== undefined && advertise !== announced) {
               const reply = yield* ask(JSON.stringify({ op: "announce", addr: advertise }))
-              if (reply !== undefined) announced = advertise
+              /**
+               * 🔴 Remembered only when it actually PUBLISHED. Recording the address on any reply
+               * meant `advertise !== announced` was false ever after, so an announcement that failed
+               * because the routing table was still empty was never tried again — the instance
+               * believed it was published for the rest of the session, and so did its owner.
+               *
+               * ⚠️ Leaving it unset is what makes the next discovery retry, which is exactly when
+               * conditions are likely to be better: the node has been alive longer.
+               */
+              const published = reply !== undefined && announcedOk(reply)
+              if (published) announced = advertise
+              lastAnnounce = { address: advertise, published }
             }
             const reply = yield* ask(JSON.stringify({ op: "find" }))
             return reply === undefined ? [] : parse(reply)
           }),
         )
 
-      return Service.of({ find })
+      return Service.of({ find, announced: () => Effect.sync(() => lastAnnounce) })
     }),
   )
 

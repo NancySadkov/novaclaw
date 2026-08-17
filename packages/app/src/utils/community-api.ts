@@ -238,6 +238,12 @@ export function communityParticipation(server: ServerConnection.HttpBase) {
     }
     /** The address published to the public DHT, when the user has set one. */
     readonly announce?: string
+    /**
+     * Whether the network CONFIRMED that address — a different fact from whether the user asked for
+     * it. Absent means no attempt has been made yet this session, which is the ordinary state after a
+     * restart and must not be shown as failure.
+     */
+    readonly announceConfirmed?: boolean
   }>(server, { route: "api/community/participation" })
 }
 

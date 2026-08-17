@@ -3860,6 +3860,9 @@
                     },
                     "announce": {
                       "type": "string"
+                    },
+                    "announceConfirmed": {
+                      "type": "boolean"
                     }
                   },
                   "required": ["participating", "consented", "enabled", "refusals", "answers"],

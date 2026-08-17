@@ -428,6 +428,16 @@ export const CommunityApi = HttpApi.make("community").add(
              * "not published" from "published and not shown", and one of those is a privacy answer.
              */
             announce: Schema.optional(Schema.String),
+            /**
+             * 🔴 Whether the network CONFIRMED it, which is a different fact from whether the user
+             * asked for it. An announcement fails when there is no routing table to publish into, and
+             * the panel was asserting "Published" from the config alone — a claim about intention
+             * dressed as a claim about the world.
+             *
+             * ⚠️ Absent means "not attempted yet this session", which is the ordinary state right
+             * after a restart and must not read as failure.
+             */
+            announceConfirmed: Schema.optional(Schema.Boolean),
           }),
           "Whether this instance is on the network, and every reason it is not",
         ),
