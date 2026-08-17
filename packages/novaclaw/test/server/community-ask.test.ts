@@ -142,6 +142,72 @@ describe("asking this instance a question", () => {
     expect(body.answer).toBeUndefined()
   })
 
+  test("🔴 a BLOCKED asker is refused, and cannot tell that it was blocked", async () => {
+    /**
+     * 🔴 The checklist's inbound rule 4 — *"check blocking if the operation attributes anything to
+     * an author, and check it at INGRESS"* — applied to the one door that costs the user MONEY.
+     *
+     * A blocked peer could not reach this user in a room or by direct message, and could still make
+     * them spend tokens answering it. The consent screen says *"you can block people, and that is the
+     * only power anyone has here"*, which was untrue of exactly the door where it mattered most.
+     */
+    const stranger = asker()
+    await using tmp = await tmpdir({
+      git: true,
+      config: { formatter: false, community: { consented: true, answers: { enabled: true } } },
+    })
+    const handler = app()
+
+    /**
+     * ⚠️ ADDED first, then blocked — because `setBlocked` UPDATES a contact row and does nothing
+     * when there is none. That is worth knowing on its own: a stranger who has never been added
+     * cannot be blocked at all, so the user's "only power" currently requires adding the person you
+     * want nothing to do with. Recorded in the spec; out of scope for this door.
+     */
+    const post = (route: string, body: unknown) =>
+      handler(
+        new Request(`http://localhost${route}`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-novaclaw-directory": tmp.path,
+            "content-length": String(new TextEncoder().encode(JSON.stringify(body)).length),
+          },
+          body: JSON.stringify(body),
+        }),
+        HttpApiApp.context,
+      )
+
+    const added = await post("/api/community/contact", { networkID: stranger.networkID })
+    expect(added.status, "the fixture must be able to add a contact").toBe(200)
+
+    // Blocked through the user's own door, which is the only way anything becomes blocked.
+    const blocking = await handler(
+      new Request(`http://localhost/api/community/contact/${encodeURIComponent(stranger.networkID)}/block`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-novaclaw-directory": tmp.path,
+          "content-length": String(new TextEncoder().encode(JSON.stringify({ blocked: true })).length),
+        },
+        body: JSON.stringify({ blocked: true }),
+      }),
+      HttpApiApp.context,
+    )
+    expect(blocking.status, "the fixture must actually block somebody").toBe(200)
+
+    const response = await ask(handler, tmp.path, stranger.ask("what happened today?"))
+    const body = (await response.json()) as { answer?: string; refused?: string }
+
+    expect(body.answer, "a blocked peer must not be answered").toBeUndefined()
+    /**
+     * ⚠️ And the refusal is INDISTINGUISHABLE from an instance that simply is not answering today.
+     * The DM door drops its verdict for the same reason: a stranger must not be able to learn that
+     * this user singled them out.
+     */
+    expect(body.refused).toBe("not-answering")
+  })
+
   test("🔴 an UNSIGNED ask is refused — `asker` is not a field you may simply claim", async () => {
     /**
      * ⚠️ Answering must be ON for this to test anything. The handler refuses in CHEAPEST-first

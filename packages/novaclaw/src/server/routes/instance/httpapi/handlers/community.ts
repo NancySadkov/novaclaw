@@ -561,6 +561,26 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
 
           if (!CommunityAnswer.verifyAsk(ctx.payload)) return { refused: "unsigned" as const }
 
+          /**
+           * 🔴 BLOCKING applies here too — the checklist's inbound rule 4, *"check blocking if the
+           * operation attributes anything to an author, and check it at INGRESS"*, and the exact
+           * mirror of the outbound gap found a day earlier. A blocked peer could not reach this user
+           * in a room or by direct message, and could still make them SPEND TOKENS answering it.
+           *
+           * The consent screen tells people *"you can block people, and that is the only power anyone
+           * has here"*, which was not true of the one door that costs the user money.
+           *
+           * ⚠️ Refused as `not-answering`, deliberately indistinguishable from an instance that
+           * simply is not answering today — the DM door drops its verdict for the same reason, so a
+           * stranger cannot learn they were singled out.
+           *
+           * ⚠️ Before `allowed`, so a blocked asker does not move this user's budget accounting at
+           * all, and after `verifyAsk`, because a refusal keyed on WHO is asking is worthless against
+           * an identity nobody proved.
+           */
+          const asking = yield* contacts.get(ctx.payload.asker)
+          if (asking?.blocked === true) return { refused: "not-answering" as const }
+
           const refusal = yield* answers.allowed(ctx.payload.asker)
           if (refusal !== undefined) return { refused: refusal }
 
