@@ -132,8 +132,7 @@ import { memoMap } from "@novaclaw/core/effect/memo-map"
 import { compressionLayer } from "./middleware/compression"
 import { corsVaryFix } from "./middleware/cors-vary"
 import { emptyJsonBodyLayer } from "./middleware/empty-json-body"
-import { peerAirgapLayer } from "./middleware/peer-airgap"
-import { peerBodyLimitLayer } from "./middleware/peer-body-limit"
+import { peerDoorLayer } from "./middleware/peer-door"
 import { errorLayer } from "./middleware/error"
 import { fenceLayer } from "./middleware/fence"
 import { schemaErrorLayer } from "./middleware/schema-error"
@@ -197,7 +196,11 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
 )
 
 const instanceRoutes = instanceApiRoutes.pipe(
-  Layer.provide([httpApiAuthLayer, workspaceRoutingLive, instanceContextLayer, schemaErrorLayer]),
+  // `peerDoorLayer` — consent/airgap/size for the `communityPeer` group. Provided HERE, beside the
+  // authorization middleware it mirrors, because both are group middleware on this API: the guard
+  // that used to run on every request by comparing URL strings now runs on exactly the routes the
+  // router matched to a peer endpoint. See middleware/peer-door.ts.
+  Layer.provide([httpApiAuthLayer, peerDoorLayer, workspaceRoutingLive, instanceContextLayer, schemaErrorLayer]),
 )
 const serverRoutes = HttpApiBuilder.layer(runtimeApi()).pipe(
   Layer.provide(handlers),
@@ -444,8 +447,6 @@ export function createRoutes(
       compressionLayer,
       corsVaryFix,
       fenceLayer,
-      peerAirgapLayer,
-      peerBodyLimitLayer,
       emptyJsonBodyLayer,
       cors(corsOptions),
       MoveSession.defaultLayer,

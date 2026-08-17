@@ -2,6 +2,7 @@ import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { InvalidRequestError } from "../errors"
 import { Authorization } from "../middleware/authorization"
+import { PeerDoor } from "../middleware/peer-door"
 import { described } from "./metadata"
 
 /**
@@ -951,6 +952,18 @@ export const CommunityPeerApi = HttpApi.make("communityPeer").add(
         }),
       ),
     )
+    /**
+     * 🔴 The consent gate, the airgap and the size cap — attached to the GROUP, so they are decided
+     * from the route the router matched rather than from the URL string a stranger chose.
+     *
+     * Until 2026-08-17 these lived in two router middlewares that compared `request.url` to
+     * `CommunityPeerPaths` by string equality, and `/API/community/identity/` was therefore served
+     * in full by an instance that had never joined. See `../middleware/peer-door.ts` for the
+     * measurements. Attaching it here is also what makes a door added LATER inherit the rules
+     * instead of needing to be remembered — the same reason `Authorization` is a group middleware
+     * on every other group in this file.
+     */
+    .middleware(PeerDoor)
     .annotateMerge(
       OpenApi.annotations({
         title: "community-peer",
