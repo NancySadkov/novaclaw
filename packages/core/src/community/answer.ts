@@ -40,10 +40,30 @@ export interface Gate {
   readonly perDay: number
   /** How many of those any ONE peer may take, so a single asker cannot consume the day. */
   readonly perPeerPerDay: number
+  /**
+   * 🔴 The per-answer token ceiling — a KNOB, because a fixed one silently breaks whole model
+   * families.
+   *
+   * A thinking model spends this budget on reasoning before it writes anything, so a ceiling that
+   * suits a terse model returns NOTHING from a reasoning one: the turn succeeds, the completion is
+   * empty, and the asker is told "no-answer" as though we had nothing to say. Measured here on a
+   * live Qwen 3.6 at 512, which produced exactly that.
+   *
+   * ⚠️ It is also the other half of the spend bound: exposure is perDay times THIS, so raising it
+   * raises what a day can cost. That is precisely why it belongs to the user rather than to a
+   * constant in the code.
+   */
+  readonly maxTokens: number
 }
 
 export const DEFAULT_PER_DAY = 20
 export const DEFAULT_PER_PEER_PER_DAY = 5
+
+/**
+ * ⚠️ 2048, not 512. A reasoning model needs room to think before it answers, and the failure mode of
+ * too little is silence rather than a short answer — which reads as "this instance knows nothing".
+ */
+export const DEFAULT_MAX_TOKENS = 2_048
 
 /**
  * ⚠️ `config` is `unknown` for the reason `consent.ts` gives at length: importing the config schema
@@ -52,7 +72,7 @@ export const DEFAULT_PER_PEER_PER_DAY = 5
  */
 export const resolveGate = (input: { readonly config: unknown; readonly joined: boolean }): Gate => {
   const answers = (
-    input.config as { community?: { answers?: { enabled?: unknown; perDay?: unknown; perPeerPerDay?: unknown } } } | undefined
+    input.config as { community?: { answers?: { enabled?: unknown; perDay?: unknown; perPeerPerDay?: unknown; maxTokens?: unknown } } } | undefined
   )?.community?.answers
   const positive = (value: unknown, fallback: number) =>
     typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : fallback
@@ -62,6 +82,7 @@ export const resolveGate = (input: { readonly config: unknown; readonly joined: 
     enabled: answers?.enabled === true,
     perDay: positive(answers?.perDay, DEFAULT_PER_DAY),
     perPeerPerDay: positive(answers?.perPeerPerDay, DEFAULT_PER_PEER_PER_DAY),
+    maxTokens: positive(answers?.maxTokens, DEFAULT_MAX_TOKENS),
   }
 }
 

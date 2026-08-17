@@ -53,7 +53,38 @@ const me = asker()
 console.log(`asking ${target} as ${me.networkID.slice(0, 20)}…\n`)
 
 console.log("1. a properly SIGNED question")
-console.log("  ", JSON.stringify(await post(me.sign("what happened today?"))))
+{
+  const question = "what happened today?"
+  const first = await post(me.sign(question))
+  console.log("  ", first.body.slice(0, 160))
+  /**
+   * 🔴 VERIFY what came back, the way a real asker must — from the reply, plus the question and
+   * identity only they hold. An answer that cannot be verified can never be shown to anyone as this
+   * peer's word, which is the entire reason it is signed, and nothing on the answering side would
+   * ever report that.
+   */
+  try {
+    const parsed = JSON.parse(first.body) as {
+      answer?: string
+      author?: string
+      at?: number
+      signature?: string
+    }
+    if (parsed.answer !== undefined && parsed.signature !== undefined) {
+      const ok = CommunityAnswer.verify({
+        author: parsed.author!,
+        asker: me.networkID,
+        question,
+        answer: parsed.answer,
+        at: parsed.at!,
+        signature: parsed.signature,
+      })
+      console.log("   signature verifies:", ok)
+    }
+  } catch {
+    console.log("   (not a signed answer)")
+  }
+}
 
 console.log("\n2. the same question, but claiming to be SOMEBODY ELSE")
 const victim = asker().networkID

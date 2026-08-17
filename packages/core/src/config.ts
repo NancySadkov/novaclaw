@@ -288,6 +288,10 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       perPeerPerDay: Schema.Number.pipe(Schema.optional).annotate({
         description: "How many of the day's answers any ONE peer may take, so a single asker cannot consume it.",
       }),
+      maxTokens: Schema.Number.pipe(Schema.optional).annotate({
+        description:
+          "Token ceiling for one answer. A reasoning model spends this on thinking before it writes, so too small a value returns an EMPTY answer rather than a short one. Exposure is perDay times this.",
+      }),
     })
       .pipe(Schema.optional)
       .annotate({

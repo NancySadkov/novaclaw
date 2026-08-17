@@ -20,6 +20,10 @@ import { CommunityTransport } from "@novaclaw/core/community/transport"
 import { LLM, LLMClient, LLMEvent, Message, SystemPart } from "@novaclaw/llm"
 import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
 import { llmClient } from "@novaclaw/core/effect/app-node-platform"
+import { Location } from "@novaclaw/core/location"
+import { LocationServiceMap } from "@novaclaw/core/location-services"
+import { AbsolutePath } from "@novaclaw/core/schema"
+import { Log } from "@novaclaw/schema/log"
 import { Effect, Option, Semaphore, Stream } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
@@ -433,6 +437,7 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
      * ⚠️ Refused, not queued: a queue turns "we are busy" into an unbounded wait, which is the
      * same denial with a longer timeout.
      */
+    const locations = yield* LocationServiceMap.Service
     const turn = Semaphore.makeUnsafe(1)
 
     /**
@@ -530,7 +535,8 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
                       // 🔴 NO TOOLS. An instance that answers strangers with a full agent is a remote
                       // shell with extra steps; what it may use is what it would say aloud in a room.
                       tools: [],
-                      generation: { maxTokens: 512 },
+                      // The user's ceiling: too small returns silence from a reasoning model.
+                      generation: { maxTokens: overall.gate.maxTokens },
                     }),
                   )
                   .pipe(
@@ -541,6 +547,21 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
                   )
                 return chunks.join("") as string | undefined
               }).pipe(
+                /**
+                 * 🔴 BOTH contexts, and the asymmetry is why the happy path never ran.
+                 *
+                 * `LLMClient` is a GLOBAL node and needs `AppNodeBuilder`; `SessionRunnerModel` is a
+                 * LOCATION service and needs a location. Providing only the first failed with
+                 * "Service not found: SessionRunnerModel" — and since that failure is caught and
+                 * turned into a named refusal, answering reported "unavailable" forever while looking
+                 * like a model problem. The memory handler records the mirror of this trap one file
+                 * over: a location context alone does not satisfy the global client.
+                 *
+                 * ⚠️ The instance's own working directory, because answering a stranger belongs to
+                 * no project. The turn reads nothing from the location — it has no tools and no
+                 * files — it is needed only to resolve which model this instance would use.
+                 */
+                Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(process.cwd()) }))),
                 Effect.provide(AppNodeBuilder.build(llmClient)),
                 /**
                  * 🔴 A model we cannot reach is a REFUSAL, not a 500.
@@ -554,7 +575,19 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
                  * is somebody else's request holding OUR permit — dying inside the semaphore is
                  * how a transient model problem becomes a stuck door.
                  */
-                Effect.catchCause(() => Effect.succeed(undefined)),
+                /**
+                 * 🔴 The refusal is named to the ASKER; the CAUSE is named to the owner.
+                 *
+                 * Swallowing it entirely was the same mistake as the 500 in the other direction: a
+                 * stranger should not be told why our model is unhappy, and the person running the
+                 * instance has nothing else to look at. "unavailable" with no log is a feature that
+                 * cannot be diagnosed by anybody.
+                 */
+                Effect.catchCause((cause) =>
+                  Log.event("community.answer.failed", { "community.cause": Log.fault(cause) }).pipe(
+                    Effect.as(undefined),
+                  ),
+                ),
               ),
             )
 

@@ -2115,6 +2115,13 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/session/runner/maintenance.ts",
   },
+  "community.answer.failed": {
+    level: "warn",
+    message: "answering a peer failed before any answer existed",
+    attributes: { "community.cause": "fault" },
+    content: "none",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/community.ts",
+  },
   "session.title.generate.empty": {
     level: "warn",
     message: "auto-title: model returned an empty completion",
