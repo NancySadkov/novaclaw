@@ -53,16 +53,36 @@ export const layer = Layer.effect(
     const fs = yield* FSUtil.Service
 
     const cleanup = Effect.fn("Truncate.cleanup")(function* () {
-      const cutoff = Identifier.timestamp(
-        Identifier.create("tool", "ascending", Date.now() - Duration.toMillis(RETENTION)),
-      )
+      /**
+       * 🔴 Age comes from the FILE, not from its name.
+       *
+       * This decoded the timestamp out of each id and compared it against a decoded cutoff, and both
+       * numbers are wrong: `identifier.create` packs `timestamp * 4096 + counter` into 48 bits, but
+       * that value needs 53 — so the decoded time WRAPS every ~795 days. Measured 2026-08-17, on the
+       * wrong side of a wrap: "now" decoded to 919,495 while "seven days ago" decoded to
+       * 68,374,796,231, so the cutoff sat above everything and cleanup deleted files it was written
+       * to preserve. Real loss: truncated tool output a user may still want to read.
+       *
+       * ⚠️ An mtime is what "older than seven days" MEANS for a file, and it cannot wrap. The id
+       * keeps doing what it is good at — ordering and uniqueness — and stops being asked for a clock.
+       */
+      const cutoff = Date.now() - Duration.toMillis(RETENTION)
       const entries = yield* fs.readDirectory(TRUNCATION_DIR).pipe(
         Effect.map((all) => all.filter((name) => name.startsWith("tool_"))),
         Effect.catch(() => Effect.succeed([])),
       )
       for (const entry of entries) {
-        if (Identifier.timestamp(entry) >= cutoff) continue
-        yield* fs.remove(path.join(TRUNCATION_DIR, entry)).pipe(Effect.catch(() => Effect.void))
+        const file = path.join(TRUNCATION_DIR, entry)
+        /**
+         * ⚠️ A file we cannot stat is LEFT ALONE. Deleting on a failed read would turn a transient
+         * permissions error into data loss, which is the direction this function must never fail in.
+         */
+        const modified = yield* Effect.tryPromise(async () => (await import("node:fs/promises")).stat(file)).pipe(
+          Effect.map((stats) => stats.mtimeMs),
+          Effect.catch(() => Effect.succeed(Number.POSITIVE_INFINITY)),
+        )
+        if (modified >= cutoff) continue
+        yield* fs.remove(file).pipe(Effect.catch(() => Effect.void))
       }
     })
 

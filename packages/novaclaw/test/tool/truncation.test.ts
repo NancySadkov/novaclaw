@@ -253,6 +253,26 @@ describe("Truncate", () => {
 
         yield* writeFileStringScoped(old, "old content")
         yield* writeFileStringScoped(recent, "recent content")
+
+        /**
+         * 🔴 The AGE is set on the files, because that is what cleanup reads now.
+         *
+         * It used to be implied by the timestamp baked into each id, and that was never a clock:
+         * `identifier.create` packs `timestamp * 4096 + counter` into 48 bits of a 53-bit value, so
+         * the decoded time wraps every ~795 days. On 2026-08-17 this test began failing for real —
+         * "now" decoded BELOW "seven days ago", the cutoff sat above everything, and cleanup deleted
+         * the file it is supposed to keep. The fixture hid that for as long as both sides of the
+         * comparison were equally wrong.
+         */
+        const seconds = (ms: number) => ms / 1000
+        const age = (file: string, ms: number) =>
+          Effect.promise(async () => {
+            const { utimes } = await import("node:fs/promises")
+            await utimes(file, seconds(Date.now()), seconds(Date.now() - ms))
+          })
+        yield* age(old, 10 * DAY_MS)
+        yield* age(recent, 3 * DAY_MS)
+
         yield* svc.cleanup()
 
         expect(yield* fs.exists(old)).toBe(false)
