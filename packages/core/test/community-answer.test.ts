@@ -92,6 +92,36 @@ describe("CommunityAnswer", () => {
     }),
   )
 
+  it.effect("🔴 the token ceiling defaults high enough for a REASONING model", () =>
+    Effect.gen(function* () {
+      const answers = yield* CommunityAnswer.Service
+      answering()
+
+      /**
+       * 🔴 Measured, not chosen. At 512 a live Qwen 3.6 spent the whole budget thinking and
+       * returned an EMPTY completion — the turn succeeded, and the asker was told "no-answer" as
+       * though this instance had nothing to say. The default has to leave room to think.
+       *
+       * ⚠️ It is also half the spend bound: exposure is perDay times this, which is why it is a
+       * knob and why the default matters — most users will never change it.
+       */
+      expect((yield* answers.state()).gate.maxTokens).toBe(CommunityAnswer.DEFAULT_MAX_TOKENS)
+      expect(CommunityAnswer.DEFAULT_MAX_TOKENS).toBeGreaterThanOrEqual(2_048)
+    }),
+  )
+
+  it.effect("⚠️ a nonsense ceiling falls back rather than answering with silence", () =>
+    Effect.gen(function* () {
+      const answers = yield* CommunityAnswer.Service
+      CommunityConsent.applied(
+        { consented: true, answers: { enabled: true, maxTokens: "plenty" } },
+        { enabled: false },
+      )
+      // A bad value must not become a tiny one: too small is not a smaller answer, it is NO answer.
+      expect((yield* answers.state()).gate.maxTokens).toBe(CommunityAnswer.DEFAULT_MAX_TOKENS)
+    }),
+  )
+
   it.effect("⚠️ a nonsense limit falls back rather than disabling the feature", () =>
     Effect.gen(function* () {
       const answers = yield* CommunityAnswer.Service
