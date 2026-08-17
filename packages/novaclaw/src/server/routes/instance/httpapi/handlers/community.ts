@@ -26,6 +26,7 @@ import { Location } from "@novaclaw/core/location"
 import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { Log } from "@novaclaw/schema/log"
+import { EffectBridge } from "@/effect/bridge"
 import { Effect, Option, Semaphore, Stream } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
@@ -51,6 +52,7 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
     const peersStore = yield* CommunityPeers.Service
     const transport = yield* CommunityTransport.Service
     const dht = yield* CommunityDht.Service
+    const bridge = yield* EffectBridge.make()
     const posts = yield* CommunityPost.Service
 
     return handlers
@@ -232,22 +234,36 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
            */
           const announce = stored?.community?.announce
           /**
-           * 🔴 The AIRGAP, and participation, checked HERE — `AGENTS.md` design principle 4: offline
-           * mode forces this off independently of every other switch. A DHT lookup is egress, and an
-           * announcement is egress that leaves an address behind in a public directory for anyone to
-           * read later. A user who turned the community off, or turned the airgap on, must not go on
-           * advertising a door — and unlike a dialled peer, an announcement OUTLIVES the request.
+           * 🔴 DETACHED, because a DHT lookup costs about TEN SECONDS and this is a button.
            *
-           * ⚠️ Silently `[]`, in the same shape a missing sidecar produces, because that is what
-           * the caller already handles.
+           * Measured 2026-08-17: with the sidecar present, `discover` took longer than five seconds
+           * and a server test timed out on it. A cold Kademlia node has to fill a routing table
+           * (~2 s) before a query can walk anywhere (~8 s), and no budget fixes that — a shorter one
+           * just guarantees it finds nobody. `AGENTS.md` is explicit that *the DHT is a convenience,
+           * and a convenience that slows the guarantees down is not one*: the LAN, peer exchange and
+           * a typed address are the guarantees, and they must not queue behind it.
+           *
+           * ⚠️ So the lookup runs in the background and its peers land in the table for the NEXT
+           * discovery. Nothing is lost: the node is long-lived now, so the second lookup is warm, and
+           * `learnFrom` is idempotent — it asks each address who lives there before recording anything.
+           *
+           * ⚠️ `bridge.fork` rather than `Effect.fork`: a child of the REQUEST's scope is
+           * interrupted the moment the response is written, which for a ten-second lookup means it
+           * never finishes once.
            */
-          const viaDht = CommunityConsent.participates(CommunityConsent.currentGate())
-            ? yield* dht.find(announce === undefined ? {} : { announce })
-            : []
+          if (CommunityConsent.participates(CommunityConsent.currentGate()))
+            bridge.fork(
+              Effect.gen(function* () {
+                const viaDht = yield* dht.find(announce === undefined ? {} : { announce })
+                if (viaDht.length > 0) yield* sync.learnFrom(viaDht, "dht")
+              }).pipe(
+                // Silent by design, like every other DHT failure: no peers is the ordinary answer.
+                Effect.catchCause(() => Effect.void),
+              ),
+            )
 
           yield* sync.learnFrom(lan, "lan")
           yield* sync.learnFrom(seeds, "dns")
-          yield* sync.learnFrom(viaDht, "dht")
           yield* sync.learnFrom(supplied, "manual")
           const exchange = yield* sync.discover()
           return {

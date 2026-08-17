@@ -60,34 +60,33 @@ import { InstanceIdentityStore } from "../src/instance-identity-store"
  * ⚠️ So the env is set for a CHILD process and this one only launches it. The child verifies the
  * path it actually got, rather than trusting that setting the variable was enough.
  */
+/**
+ * 🔴 ISOLATION IS REQUIRED, NOT ARRANGED HERE — because `import` runs before any assignment in
+ * this file, so setting the variables in the module body is far too late. The database path is
+ * resolved as the core modules load, and a version of this probe that set them here ran instance A
+ * against the DEVELOPER'S OWN STORE, leaving two observations and a peer row in it.
+ *
+ * ⚠️ A re-exec was tried instead and made things worse in a way worth recording: the relaunched
+ * child could never reach the instance it had just spawned, while the identical code run directly
+ * reached it on the first attempt. Rather than ship a mechanism whose failure mode is a sixty-second
+ * silence, the requirement is stated and CHECKED — `Database.path()` is verified to live inside the
+ * temp root further down, because setting a variable is not the same as the path having been taken.
+ */
 const CHILD = "NOVACLAW_ASK_WIRE_CHILD"
-if (process.env[CHILD] === undefined) {
+const root = process.env[CHILD]
+if (root === undefined || process.env["NOVACLAW_DB"] === undefined) {
   const home = mkdtempSync(path.join(tmpdir(), "novaclaw-ask-wire-"))
   mkdirSync(path.join(home, "a"), { recursive: true })
   mkdirSync(path.join(home, "b"), { recursive: true })
-  const child = Bun.spawn(["bun", import.meta.path, ...process.argv.slice(2)], {
-    env: {
-      ...process.env,
-      [CHILD]: home,
-      NOVACLAW_DB: path.join(home, "a", "novaclaw.db"),
-      XDG_DATA_HOME: path.join(home, "a"),
-    },
-    stdout: "inherit",
-    stderr: "inherit",
-  })
-  const code = await child.exited
-  try {
-    rmSync(home, { recursive: true, force: true })
-  } catch {
-    /* windows may still hold the sqlite handle; the directory is disposable */
-  }
-  process.exit(code)
+  console.error("This probe must be started with an ISOLATED environment, or instance A writes into a real store.")
+  console.error("A disposable one has been prepared. Run:")
+  console.error(`  NOVACLAW_ASK_WIRE_CHILD='${home}' NOVACLAW_DB='${path.join(home, "a", "novaclaw.db")}' XDG_DATA_HOME='${path.join(home, "a")}' bun ${import.meta.path}${process.argv.slice(2).join(" ") === "" ? "" : " " + process.argv.slice(2).join(" ")}`)
+  process.exit(1)
 }
 
 const wantAnswer = process.argv.includes("--answer")
 const B_PORT = 4098
 const STUB_PORT = 4111
-const root = process.env[CHILD]!
 
 const log = (step: string, detail: string) => console.log(`${step.padEnd(34)} ${detail}`)
 const failures: string[] = []
@@ -222,7 +221,13 @@ const api = async (route: string, init?: RequestInit) => {
  * this probe could only say "timed out" — the one sentence that cannot be acted on. A harness that
  * cannot explain why the thing it started did not start is not diagnosable.
  */
-await waitFor(async () => (await api("/global/health")).status === 200, "instance B to listen").catch(async (cause) => {
+let attempts = 0
+await waitFor(async () => {
+  const probe = await api("/global/health")
+  attempts += 1
+  if (attempts <= 3 || attempts % 20 === 0) console.log(`  health attempt ${attempts}: status ${probe.status} body ${probe.body.slice(0, 60)}`)
+  return probe.status === 200
+}, "instance B to listen").catch(async (cause) => {
   const out = await new Response(b.stdout).text().catch(() => "")
   const err = await new Response(b.stderr).text().catch(() => "")
   console.error("\n--- instance B never listened; its own output follows ---")
@@ -252,6 +257,27 @@ if (wantAnswer) {
   children.push(stub)
   await waitFor(async () => (await fetch(`http://127.0.0.1:${STUB_PORT}/v1/models`)).ok, "the stub model server")
   log("stub model server", `127.0.0.1:${STUB_PORT}`)
+
+  /**
+   * 🔴 B needs a MODEL, or it answers `unavailable` — which is a correct refusal and proves
+   * nothing about answering. The answering turn calls `resolveDefault()`, so what it needs is a
+   * provider it can reach and a default naming it, `providerID/modelID`.
+   *
+   * ⚠️ Pointed at the stub, never at a real vendor: this must not spend anybody's tokens, and an
+   * answer whose text we CHOSE is what lets the assertion below be about the wire rather than about
+   * a model's mood.
+   */
+  const configured = await patch({
+    providers: {
+      stub: {
+        name: "Stub",
+        api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: `http://127.0.0.1:${STUB_PORT}/v1` },
+        models: { "stub-model": { name: "Stub model" } },
+      },
+    },
+    model: "stub/stub-model",
+  })
+  log("B's model", configured.status === 200 ? "stub/stub-model" : `REFUSED (${configured.status}) ${configured.body.slice(0, 120)}`)
 }
 
 const identity = JSON.parse((await api("/api/community/identity")).body) as { networkID?: string }
