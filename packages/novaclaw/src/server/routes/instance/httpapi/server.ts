@@ -132,6 +132,7 @@ import { memoMap } from "@novaclaw/core/effect/memo-map"
 import { compressionLayer } from "./middleware/compression"
 import { corsVaryFix } from "./middleware/cors-vary"
 import { emptyJsonBodyLayer } from "./middleware/empty-json-body"
+import { mutationOriginLayer } from "./middleware/mutation-origin"
 import { peerDoorLayer } from "./middleware/peer-door"
 import { errorLayer } from "./middleware/error"
 import { fenceLayer } from "./middleware/fence"
@@ -447,6 +448,9 @@ export function createRoutes(
       compressionLayer,
       corsVaryFix,
       fenceLayer,
+      // Refuses a mutation carrying a foreign `Origin` — the CSRF shape a passwordless install is
+      // open to. Ordered before the body middlewares so nothing is read for a request we refuse.
+      mutationOriginLayer,
       emptyJsonBodyLayer,
       cors(corsOptions),
       MoveSession.defaultLayer,
