@@ -43,11 +43,21 @@ export const networkID = (publicKey: Uint8Array): string =>
  *
  * ⚠️ Length is checked, not assumed. `createPublicKey` on a short buffer throws inside whatever call
  * happens to be verifying, which reads as a crash rather than as "that peer sent us nonsense".
+ *
+ * 🔴 **CANONICAL ONLY, and that is the whole security property** (p2p review 2026-08-17, 1.2).
+ * `Buffer.from(…, "base64url")` is lenient: it accepts the std alphabet, `=` padding, trailing
+ * junk, interior whitespace, and low-bit variants of the final character — so ONE key had
+ * unbounded spellings that all verified. Every guard downstream (`contacts.get`, the blocked flag,
+ * the DM `peer` column, `answers.allowed`, the spend row, the dealing subject, the message PK)
+ * compares the LITERAL string, so a blocked author simply re-spelled themselves and was stored.
+ * Re-encoding and demanding the same string back makes a non-canonical author fail signature
+ * verification at every door at once — a key is a key again, not a spelling.
  */
 export const parseNetworkID = (value: string): Buffer | undefined => {
   if (!value.startsWith(NETWORK_ID_PREFIX)) return undefined
   const raw = Buffer.from(value.slice(NETWORK_ID_PREFIX.length), "base64url")
-  return raw.length === 32 ? raw : undefined
+  if (raw.length !== 32 || networkID(raw) !== value) return undefined
+  return raw
 }
 
 /** Verify a signature against a peer's network id. Never throws: a bad key is just `false`. */
