@@ -146,13 +146,36 @@ describe("what the tool deliberately CANNOT do", () => {
      * invisible to a name-based check.
      */
     const toolSource = fs.readFileSync(path.join(import.meta.dir, "..", "src", "tool", "community.ts"), "utf8")
-    expect(toolSource).not.toContain("recordFirstHand")
+    /**
+     * ⚠️ COMMENTS STRIPPED FIRST — the standing rule that a regex over raw source counts PROSE,
+     * the same one `community-no-rails.test.ts` follows. This fired on 2026-08-17 against a comment
+     * explaining why the tool does NOT call it, which is exactly the note a later reader needs; a
+     * guard that forbids naming the danger teaches people to delete the explanation instead of the
+     * call. A real call still matches, which is the whole assertion.
+     */
+    const withoutComments = toolSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
+    expect(withoutComments).not.toContain("recordFirstHand")
 
     for (const forbidden of ["trust", "score", "rate", "reputation"]) expect(ops).not.toContain(forbidden)
     // ⚠️ And the list is pinned exactly: an operation added later lands here, where somebody has to
     // decide whether it belongs, rather than slipping in under a rule about names.
+    /**
+     * 🔴 `ask` was decided HERE on 2026-08-17, which is what this pin is for.
+     *
+     * It SPEAKS, so the forbidden list above had to be re-argued rather than extended. The argument
+     * is the vision's own: *"One Nova asks another 'what happened in the world today?' instead of
+     * reaching for web search"* is the destination `AGENTS.md` describes, and the answering endpoint
+     * had shipped with no caller — every instance could be asked and none could ask.
+     *
+     * ⚠️ What keeps it inside the ruling that everything changing the user's STANDING stays out of
+     * reach: asking changes nothing about who they trust, block, or are in a room with. It puts one
+     * question to one peer, under a permission scoped to that peer, and brings back a stranger's
+     * words — which arrive FRAMED, because an answer we asked for is the most convincing untrusted
+     * text this tool carries.
+     */
     expect([...ops].sort()).toEqual([
       "archived",
+      "ask",
       "channels",
       "contacts",
       "dealings",
@@ -190,15 +213,49 @@ describe("what the tool may DO, not just read", () => {
     expect(source).not.toContain('save: ["*"]')
   })
 
-  test("🔴 the READ operations still assert nothing", () => {
+  test("🔴 the READ operations still assert nothing — and exactly TWO operations speak", () => {
     /**
      * ⚠️ Deliberate: making a read cost a card would train people to approve community cards by
      * reflex, which is exactly how the one that matters gets waved through. Reading is ambient-safe
      * — it cannot mutate the host, cannot egress, and cannot change what a later session runs.
+     *
+     * 🔴 Raised from one to TWO on 2026-08-17, and the count is the point: it forces a second
+     * speaking capability to be argued rather than accumulated. `ask` is the argument.
+     *
+     * `AGENTS.md` makes an instance asking another for what it knows the POINT of the network —
+     * *"One Nova asks another 'what happened in the world today?' instead of reaching for web
+     * search"* — and the answering endpoint had shipped with no caller anywhere in NovaClaw, so
+     * every instance could be asked and none could ask. That is the gap this closes.
+     *
+     * ⚠️ And it is priced separately from `say`, never folded into it: posting puts our words in
+     * a room, while asking puts a question to one peer and spends THEIR tokens to answer it. A
+     * grant to chat in #bread must not authorise interrogating strangers, so `community_ask` is its
+     * own action scoped to the ONE peer.
      */
     const source = readFileSync(new URL("../src/tool/community.ts", import.meta.url), "utf8")
     const asserts = source.split("permission.assert").length - 1
-    expect(asserts).toBe(1)
+    expect(asserts, "a third assert means a third speaking capability — argue it here first").toBe(2)
+    expect(source).toContain('action: "community_ask"')
+    expect(source).toContain("resources: [peer]")
+    expect(source).toContain("save: [peer]")
+    expect(source).not.toContain('save: ["*"]')
+  })
+
+  test("🔴 community_ask is NOT ambient-safe, and its refusal names ITSELF", () => {
+    /**
+     * The grant has to be absent from the baseline to mean anything, exactly as `community_say` is.
+     *
+     * ⚠️ And the refusal must name the right grant. The tool's error mapper is shared by every
+     * operation and described POSTING, so a refused question used to tell the user to grant
+     * `community_say` for a channel that had nothing to do with it — the same invent-a-cause
+     * failure that mapper exists to prevent, arriving from our own text instead of the model's.
+     */
+    const baseline = JSON.stringify(PermissionV2.AMBIENT_SAFE_BASELINE)
+    expect(baseline).not.toContain("community_ask")
+
+    const source = readFileSync(new URL("../src/tool/community.ts", import.meta.url), "utf8")
+    expect(source).toContain("permission to ask that peer")
+    expect(source).toContain("`community_ask` for a peer")
   })
 
   test("🔴 community_say is NOT ambient-safe, so it falls through to ask", () => {

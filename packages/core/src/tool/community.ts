@@ -104,6 +104,40 @@ export const framedDealings = (lines: readonly string[]): string =>
   SessionOrigin.externalContentFrame("your own earlier notes about peers, which may quote what those peers said") +
   lines.join(NEWLINE)
 
+/**
+ * 🔴 A peer's ANSWER, framed — the most dangerous text this tool carries.
+ *
+ * Channel messages arrive whether or not we wanted them; an answer arrives because our own agent
+ * asked for it, which is precisely what makes it convincing. It was requested, it is on topic, and
+ * it will be read as a result rather than as a stranger's words. `AGENTS.md` is explicit that
+ * everything a peer says is untrusted content reaching a model, and that the framing helper is the
+ * feature's safety boundary rather than hygiene.
+ *
+ * ⚠️ The AUTHOR rides in the frame. A claim with no attribution cannot be weighed by standing,
+ * and standing is the entire mechanism the vision offers for deciding what to believe.
+ */
+export const framedAnswer = (peer: string, answer: string): string =>
+  SessionOrigin.externalContentFrame(`an answer from ${peer}, whose instance wrote it and staked its standing on it`) +
+  answer
+
+/** Why an ask brought nothing back, in words that name the half that failed. */
+export const askFailure = (peer: string, reason: string | undefined): string => {
+  switch (reason) {
+    case "no-route":
+      return `No way to reach ${peer} yet — no address is known for them. Discovery or an address from their owner would fix that.`
+    case "unreachable":
+      return `${peer} could not be reached just now. Nothing was spent, and asking again later may work.`
+    case "bad-signature":
+      return `${peer} replied, but the answer was not signed by them, so it was discarded. Treat that as a fault, not an answer.`
+    case "wrong-author":
+      return `The reply to that question was signed by somebody else, so it was discarded — it is not an answer from ${peer}.`
+    case "no-answer":
+      return `${peer} replied without an answer and without a reason.`
+    default:
+      return `Could not ask ${peer} (${reason ?? "unknown"}).`
+  }
+}
+
 export const formatHistory = (
   channel: string,
   messages: readonly { readonly author: string; readonly receivedAt: number; readonly body: string }[],
@@ -137,9 +171,21 @@ const CATCH_UP_BUDGET_MS = 5_000
 const NEWLINE = "\n"
 
 export const Input = Schema.Struct({
-  op: Schema.Literals(["channels", "history", "contacts", "peers", "archived", "status", "say", "dealings", "record"]).annotate({
+  op: Schema.Literals([
+    "channels",
+    "history",
+    "contacts",
+    "peers",
+    "archived",
+    "status",
+    "say",
+    "ask",
+    "dealings",
+    "record",
+  ]).annotate({
     description:
-      "channels: joined channels · history: recent messages in one channel · say: post a message to a channel · contacts: people the user added · " +
+      "channels: joined channels · history: recent messages in one channel · say: post a message to a channel · " +
+      "ask: put a question to ONE peer and get their answer · contacts: people the user added · " +
       "peers: instances reachable on the network · archived: channels left but still held · status: whether the network can carry messages · " +
       "dealings: how a peer has behaved with you so far · record: note how a dealing with a peer actually went",
   }),
@@ -155,7 +201,12 @@ export const Input = Schema.Struct({
     description: "What to post, for `say`. Requires the community_say permission for that channel.",
   }),
   peer: Schema.String.pipe(Schema.optional).annotate({
-    description: "The peer's network id (nid_...), for `dealings` and `record`. Any key they have ever used works.",
+    description:
+      "The peer's network id (nid_...), for `dealings`, `record` and `ask`. Any key they have ever used works.",
+  }),
+  question: Schema.String.pipe(Schema.optional).annotate({
+    description:
+      "What to ask, for `ask`. It is sent to that one peer and answered by their instance, spending THEIR tokens — so ask what they would plausibly know, and expect nothing back if they are not answering.",
   }),
   context: Schema.String.pipe(Schema.optional).annotate({
     description:
@@ -483,6 +534,66 @@ export const layer = Layer.effectDiscard(
                 }
               }
 
+              if (input.op === "ask") {
+                /**
+                 * 🔴 The vision's own scenario, and the half that did not exist: *"One Nova asks
+                 * another 'what happened in the world today?' instead of reaching for web search."*
+                 * The answering endpoint shipped first and had no caller inside NovaClaw at all —
+                 * every instance could be asked and none could ask.
+                 *
+                 * ⚠️ It is a SECOND speaking capability, and priced like the first. `say` puts our
+                 * words in a room; this puts a question to one peer and spends THEIR tokens to get
+                 * an answer. A grant to chat in #bread must not authorise interrogating strangers,
+                 * so it asserts its own action, scoped to the ONE peer.
+                 */
+                const peer = input.peer
+                if (peer === undefined) return { message: "ask needs a peer's network id (nid_...)." }
+                const question = input.question?.trim()
+                if (!question) return { message: "ask needs a question." }
+
+                // Refused BEFORE the permission card, for the reason `say` gives: approving something
+                // that cannot leave the machine spends the user's attention on nothing.
+                const asking = CommunityConsent.currentGate()
+                if (!CommunityConsent.participates(asking))
+                  return {
+                    message: asking.airgap
+                      ? "Not asked: offline mode is on, so nothing leaves this machine."
+                      : asking.consented
+                        ? "Not asked: the community is switched off. Its owner can turn it back on in the Community app."
+                        : "Not asked: this instance has not joined the community. Its owner turns that on in the Community app, after reading what it involves.",
+                  }
+
+                yield* permission.assert({
+                  action: "community_ask",
+                  resources: [peer],
+                  save: [peer],
+                  metadata: { peer, bytes: question.length },
+                  sessionID: context.sessionID,
+                  agent: context.agent,
+                  source: {
+                    type: "tool" as const,
+                    messageID: context.assistantMessageID,
+                    callID: context.toolCallID,
+                  },
+                })
+
+                const result = yield* sync.askPeer(peer, question)
+
+                /**
+                 * ⚠️ The DEALING is recorded by `askPeer` itself, not here — deliberately, and a
+                 * ledger test enforces it. `recordFirstHand` skips the engagement bound because its
+                 * callers are code that just performed the dealing, and that argument collapses the
+                 * moment a model can reach it. Recording inside the code that made the request keeps
+                 * the exemption true: it knows whether the peer actually replied, and this branch
+                 * does not.
+                 */
+
+                if (result.answer !== undefined) return { message: framedAnswer(peer, result.answer) }
+                if (result.refused !== undefined)
+                  return { message: `${peer} is not answering questions right now (${result.refused}).` }
+                return { message: askFailure(peer, result.reason) }
+              }
+
               const channel = input.channel
               if (channel === undefined) return { message: "history needs a channel name (for example #NovaClaw)." }
               /**
@@ -527,10 +638,19 @@ export const layer = Layer.effectDiscard(
                  * strings existed.
                  */
                 const tag = (cause as { readonly _tag?: unknown })?._tag
+                /**
+                 * ⚠️ The message names the grant that was ACTUALLY refused. This mapper is shared
+                 * by every operation, and it described posting — so once `ask` also asserted a
+                 * permission, a refused question told the user to grant `community_say` for a
+                 * channel that had nothing to do with it. That is the same invent-a-cause failure
+                 * this branch exists to prevent, arriving from our own text instead of the model's.
+                 */
                 return typeof tag === "string" && /Rejected|Denied/.test(tag)
                   ? new ToolFailure({
                       message:
-                        "Refused: this session does not have permission to post to that channel. Its user grants `community_say` for a channel, and an unattended run needs that grant made in advance.",
+                        input.op === "ask"
+                          ? "Refused: this session does not have permission to ask that peer. Its user grants `community_ask` for a peer, and an unattended run needs that grant made in advance."
+                          : "Refused: this session does not have permission to post to that channel. Its user grants `community_say` for a channel, and an unattended run needs that grant made in advance.",
                     })
                   : // ⚠️ "reach", not "read": this covers `say` as well, and telling a model its POST
                     // failed to read something sends it to diagnose the wrong half.

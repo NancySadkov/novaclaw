@@ -33,6 +33,12 @@ describe("what this instance dials on a peer", () => {
     ["sync.dm", CommunitySync.DM_PATH],
     ["sync.offer", CommunitySync.OFFER_PATH],
     ["sync.identity", CommunitySync.IDENTITY_PATH],
+    /**
+     * 🔴 Added 2026-08-17 with the ASKING half. `communityAsk` had shipped with no caller inside
+     * NovaClaw at all, so this instance never dialled it — the endpoint answered questions nothing
+     * here could send.
+     */
+    ["sync.ask", CommunitySync.ASK_PATH],
     ["search", CommunitySearch.SEARCH_PATH],
     ["transport.inbound", CommunityTransport.INBOUND_PATH],
   ]

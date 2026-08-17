@@ -6,6 +6,7 @@ import { CommunityChannels } from "./channels"
 import { CommunityContacts } from "./contacts"
 import { CommunityDirect } from "./dm"
 import { CommunityMessage } from "./message"
+import { CommunityObservation } from "./observation"
 import { CommunityOffer } from "./offer"
 import { CommunityPeers } from "./peers"
 import { CommunityReconcile } from "./reconcile"
@@ -14,6 +15,8 @@ import { CommunityTopic } from "./topic"
 import { answerTooLarge, httpRoutes, typedRoutes } from "./transport"
 import { makeGlobalNode } from "../effect/app-node"
 import { httpClient } from "../effect/app-node-platform"
+import { InstanceIdentityStore } from "../instance-identity-store"
+import { CommunityAnswer } from "./answer"
 import { CommunityConsent } from "./consent"
 import { Offline } from "../offline"
 
@@ -73,6 +76,9 @@ export const LISTED_PATH = "/api/community/listed"
 export const SUCCESSION_PATH = "/api/community/succession"
 /** Where a peer accepts a direct message. */
 export const DM_PATH = "/api/community/dm"
+
+/** Where a peer answers questions. The other half of `communityAsk`, which had no caller until now. */
+export const ASK_PATH = "/api/community/ask"
 /** What a peer offers — collected while discovering, since it is the same round of asking. */
 export const OFFER_PATH = "/api/community/offer"
 
@@ -202,6 +208,23 @@ export interface Interface {
     to: string,
     body: string,
   ) => Effect.Effect<{ readonly sent: boolean; readonly reason?: string }>
+  /**
+   * 🔴 Ask ONE peer a question, and bring back what they said — the vision's own scenario: *"One
+   * Nova asks another 'what happened in the world today?' instead of reaching for web search."*
+   *
+   * ⚠️ The answer is a stranger's words and arrives UNVERIFIED until checked here: the reply is
+   * refused unless its signature covers the author, the asker, the question and the answer, so a
+   * reply cannot be replayed from another exchange or edited on the way.
+   */
+  readonly askPeer: (
+    to: string,
+    question: string,
+  ) => Effect.Effect<{
+    readonly answer?: string
+    readonly author?: string
+    readonly refused?: string
+    readonly reason?: string
+  }>
   readonly successions: (
     announce?: CommunitySuccession.Statement,
   ) => Effect.Effect<{ readonly told: number; readonly learned: number }>
@@ -210,6 +233,14 @@ export interface Interface {
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/CommunitySync") {}
 
 /** What a peer sends back. Parsed rather than trusted: a peer is an untrusted source of bytes. */
+const AnswerReply = Schema.Struct({
+  answer: Schema.optional(Schema.String),
+  refused: Schema.optional(Schema.String),
+  author: Schema.optional(Schema.String),
+  at: Schema.optional(Schema.Number),
+  signature: Schema.optional(Schema.String),
+})
+
 const Summary = Schema.Struct({ buckets: Schema.Array(Schema.String) })
 const Ids = Schema.Struct({ ids: Schema.Array(Schema.String) })
 const Listed = Schema.Struct({ channels: Schema.Array(Schema.String) })
@@ -289,6 +320,8 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const offline = yield* Offline.Service
+    const identity = yield* InstanceIdentityStore.Service
+    const ledger = yield* CommunityObservation.Service
     // 🔴 `speaks()` rather than the airgap alone: an instance that has not JOINED must not reach out
     // either. Gating only the inbound door was the first attempt and it left the bigger half open —
     // outbound connections are precisely what reveal the user's IP to a stranger, which is the thing
@@ -451,6 +484,101 @@ export const layer = Layer.effect(
           }
         }
         return { sent: false, reason: "unreachable" }
+      }),
+
+      askPeer: Effect.fn("CommunitySync.askPeer")(function* (to: string, question: string) {
+        if (!speaks()) return { reason: "offline" }
+
+        /**
+         * ⚠️ Only routes belonging to THIS peer, and their identity is read from the instance that
+         * answers there — the same rule `sendDirect` follows, for the same reason: an address is
+         * hearsay, and the only thing that settles who is behind it is asking.
+         */
+        const known = [...(yield* contacts.bootstrap()), ...(yield* peers.list())].filter(
+          (entry) => entry.networkID === to,
+        )
+        const addresses = known.flatMap((entry) => httpRoutes(entry.routes))
+        if (addresses.length === 0) return { reason: "no-route" }
+
+        const self = yield* identity.identity()
+        const at = Date.now()
+        /**
+         * 🔴 SIGNED, because the answering side bounds its budget PER ASKER. An unsigned `asker`
+         * is a name anybody can write, so the share we consume would be charged to whoever we
+         * claimed to be — and the dealing they record on answering would name them, not us.
+         */
+        const signature = yield* identity.sign(
+          CommunityAnswer.askBytes({ asker: self.networkID, question, at }),
+        )
+        const payload = { asker: self.networkID, question, at, signature: signature.toString("base64url") }
+
+        for (const address of addresses) {
+          const health = yield* ask(address, IDENTITY_PATH, undefined, Health, "GET")
+          // A different identity at that address means the route is stale or someone else is there.
+          if (health === undefined || health.networkID !== to) continue
+
+          const reply = yield* ask(address, ASK_PATH, payload, AnswerReply, "POST")
+          if (reply === undefined) continue
+          yield* reached(to, address)
+
+          /**
+           * 🔴 THE DEALING, recorded here — the half of *"answering is a dealing recorded on both
+           * sides"* that had nowhere to happen. The answering instance already records that it
+           * answered; without this the ledger only ever hears from the party being judged.
+           *
+           * ⚠️ Recorded ONLY once they actually replied, and that bound is the whole reason this
+           * lives in `sync` rather than in the tool. `recordFirstHand` skips the engagement check
+           * because its callers just performed the dealing; a version that recorded before a reply
+           * would let an agent mint first-hand observations about any stranger it could NAME, which
+           * is precisely the attack the engagement bound exists to stop. A refusal and a malformed
+           * answer are both real dealings and both count — *"they would not answer"* is exactly
+           * what standing is made of, and keeping only the flattering half would be a lie of
+           * omission.
+           */
+          const dealing = (outcome: string) =>
+            ledger.recordFirstHand({ subject: to, at: Date.now(), context: "asked", outcome })
+
+          if (reply.refused !== undefined) {
+            yield* dealing("refused")
+            return { refused: reply.refused }
+          }
+          if (reply.answer === undefined) {
+            yield* dealing("no-answer")
+            return { reason: "no-answer" }
+          }
+
+          /**
+           * 🔴 VERIFIED, or thrown away. The whole value of an answer is that its author staked
+           * their standing on it — which is worth exactly nothing if we accept a reply we cannot
+           * attribute. The signature covers the author, US, the question and the answer, so a reply
+           * to somebody else's question cannot be replayed at us and the text cannot be edited in
+           * flight by whatever carried it.
+           */
+          const signed = {
+            author: reply.author ?? "",
+            asker: self.networkID,
+            question,
+            answer: reply.answer,
+            at: reply.at ?? 0,
+            signature: reply.signature ?? "",
+          }
+          if (!CommunityAnswer.verify(signed)) {
+            yield* dealing("unsigned-answer")
+            return { reason: "bad-signature" }
+          }
+          /**
+           * ⚠️ And the author must be the peer we ASKED. A valid signature by somebody else is a
+           * perfectly good answer to a question we did not put to them.
+           */
+          if (signed.author !== to) {
+            yield* dealing("answered-by-another")
+            return { reason: "wrong-author" }
+          }
+
+          yield* dealing("answered")
+          return { answer: reply.answer, author: signed.author }
+        }
+        return { reason: "unreachable" }
       }),
 
       successions: Effect.fn("CommunitySync.successions")(function* (announce) {
@@ -736,6 +864,8 @@ export const node = makeGlobalNode({
     CommunitySuccession.node,
     CommunityDirect.node,
     CommunityOffer.node,
+    CommunityObservation.node,
+    InstanceIdentityStore.node,
     httpClient,
   ],
 })

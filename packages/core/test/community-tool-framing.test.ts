@@ -1,5 +1,6 @@
 import { generateKeyPairSync } from "node:crypto"
 import { describe, expect } from "bun:test"
+import { readFileSync } from "node:fs"
 import { Effect, Layer } from "effect"
 import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityConsent } from "@novaclaw/core/community/consent"
@@ -102,7 +103,25 @@ const CLASSIFICATION: Record<string, "foreign" | "own"> = {
   status: "own",
   say: "own",
   record: "own",
+  /**
+   * 🔴 `ask` is FOREIGN, and it is the sharpest case in this table.
+   *
+   * Every other foreign op carries words that arrived unbidden — a channel filled up, a peer was
+   * listed. An answer arrives because our own agent ASKED for it, which is exactly what makes it
+   * read as a result rather than as a stranger's claim: it was requested, it is on topic, and it
+   * lands in context looking like something we computed.
+   *
+   * ⚠️ Its refusal and failure sentences are ours, and unframed on purpose — but the reason
+   * string a peer supplies for refusing is theirs, so it must never be pasted in raw.
+   */
+  ask: "foreign",
 }
+
+/**
+ * Foreign ops whose stranger-words require a peer that ANSWERS, which this unit cannot stand up.
+ * They are proven at the source instead — never exempted.
+ */
+const PROVEN_AT_SOURCE: Record<string, true> = { ask: true }
 
 describe("every community operation is classified for framing", () => {
   it.effect("🔴 the classification covers the op list EXACTLY", () =>
@@ -156,6 +175,7 @@ describe("every community operation is classified for framing", () => {
 
       for (const [op, kind] of Object.entries(CLASSIFICATION)) {
         if (kind !== "foreign") continue
+        if (op in PROVEN_AT_SOURCE) continue
         const out = yield* invoke(inputs[op])
         const message = out.structured.message
         // ⚠️ An op with nothing to show is not evidence — a fence cannot be observed on an empty
@@ -163,6 +183,27 @@ describe("every community operation is classified for framing", () => {
         expect(message.length, `${op} rendered nothing, so it proves nothing`).toBeGreaterThan(40)
         expect(message, `${op} emits strangers' words WITHOUT the shared frame`).toContain(FRAME)
       }
+    }),
+  )
+
+  it.effect("🔴 and the ops whose foreign words need a live PEER are pinned at the source", () =>
+    Effect.gen(function* () {
+      /**
+       * ⚠️ `ask` emits a stranger's words only when a peer actually answers, and this unit has no
+       * peer to answer. Invoking it here reaches `no-route`, whose sentence is OURS — so the loop
+       * above would assert the frame against text that contains nothing foreign and pass for the
+       * wrong reason, which is the failure its own "rendered nothing proves nothing" guard exists to
+       * refuse.
+       *
+       * So the property is pinned where it lives: the answer path returns `framedAnswer`, and
+       * `community-tool-ask.test.ts` checks that helper actually fences and attributes.
+       */
+      const source = readFileSync(new URL("../src/tool/community.ts", import.meta.url), "utf8")
+      const branch = source.slice(source.indexOf('if (input.op === "ask")'))
+      const body = branch.slice(0, branch.indexOf("const channel = input.channel"))
+      expect(body, "an answer must reach the model framed").toContain("framedAnswer(peer, result.answer)")
+      // ⚠️ And the raw string must never be handed back unframed by some later edit.
+      expect(body).not.toContain("message: result.answer")
     }),
   )
 })
