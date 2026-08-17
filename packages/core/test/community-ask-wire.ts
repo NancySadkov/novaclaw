@@ -365,8 +365,16 @@ const program = Effect.gen(function* () {
 
   console.log("\nwhat the wire proved:")
   check(learned === 1, "a bare host:port was LEARNED — the step the DHT path died at")
-  const reached = result.answer !== undefined || result.refused !== undefined
-  check(reached, "A resolved a route to B and got a REPLY over the socket")
+  /**
+   * 🔴 INVERTED under `--blocked`, where the whole point is that nothing was dialled and nothing
+   * was recorded. Running these anyway made a successful block report "2 CHECKS FAILED" — a harness
+   * that cries failure at the behaviour it was asked to prove is worse than none, because the next
+   * person believes it.
+   */
+  if (!wantBlocked) {
+    const reached = result.answer !== undefined || result.refused !== undefined
+    check(reached, "A resolved a route to B and got a REPLY over the socket")
+  }
 
   /**
    * 🔴 The DEALING, which is the half of *"answering is a dealing recorded on both sides"* that had
@@ -374,7 +382,7 @@ const program = Effect.gen(function* () {
    * for a peer we merely named.
    */
   const after = yield* ledger.about(peer)
-  check(after.length === before + 1, "exactly one dealing was recorded about B")
+  if (!wantBlocked) check(after.length === before + 1, "exactly one dealing was recorded about B")
   const recorded = after.at(0) as { readonly outcome?: string } | undefined
   console.log("   dealings now:", after.length, JSON.stringify(recorded ?? null).slice(0, 220))
 
