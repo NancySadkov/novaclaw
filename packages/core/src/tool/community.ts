@@ -576,6 +576,23 @@ export const layer = Layer.effectDiscard(
                 })
 
                 const posted = yield* posts.post(room, body)
+                /**
+                 * 🔴 Branches on `stored` FIRST — review finding 1.13.
+                 *
+                 * This read only `delivered`, so every refusal at the ingress door reported the
+                 * cheerful second sentence: "Posted to #x. …stored and will go out when a peer is
+                 * reachable" — false on both counts. It fired on the ordinary path rather than an
+                 * exotic one: joined `#NovaClaw`, posting to `#novaclaw` was refused as
+                 * not-subscribed (fixed at that door too), and the agent was told it had posted.
+                 *
+                 * ⚠️ A message that looks sent and never leaves is worse than a refusal — the same
+                 * rule the participation gate above states, applied to the outcome instead of the
+                 * precondition.
+                 */
+                if (!posted.stored)
+                  return {
+                    message: `Not posted to ${room}: this instance refused its own message at the channel door. Nothing was stored and nothing was sent.`,
+                  }
                 return {
                   message: posted.delivered
                     ? `Posted to ${room}, and it reached a live peer.`

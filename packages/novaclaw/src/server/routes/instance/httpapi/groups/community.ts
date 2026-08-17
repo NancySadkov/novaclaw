@@ -700,10 +700,17 @@ const PeerAck = Schema.Struct({ received: Schema.Literal(true) })
 /**
  * Community P4 — the three steps of a catch-up, served to whoever asks.
  *
- * 🔴 Addressed by TOPIC throughout, and an unknown topic answers EMPTY rather than "no such channel".
- * The two are indistinguishable to the asker, which is the point: a peer must not be able to map
- * which rooms this instance is in by walking topic hashes, and reconciliation needs no such answer to
- * work — an empty summary simply means there is nothing here to catch up on.
+ * 🔴 Addressed by TOPIC throughout, and an unknown topic answers EMPTY rather than "no such channel"
+ * — reconciliation needs no such answer to work, and an empty summary simply means there is nothing
+ * here to catch up on.
+ *
+ * ⚠️ **This used to claim a peer therefore "cannot map which rooms this instance is in", and that
+ * was measured FALSE (review 1.10).** An unknown topic and a joined-but-EMPTY room are genuinely
+ * indistinguishable; a joined room with messages is not — its digests are non-empty. A prober who
+ * knows a room name and can post one proof-of-work message into it can confirm membership. The
+ * design accepts that (`AGENTS.md`: *being findable is the price*) rather than gating sync on
+ * `listed`, which would break catch-up in unlisted rooms; what is not accepted is a comment
+ * promising a property the code does not have.
  */
 const SyncTopic = Schema.Struct({ topic: Schema.String })
 const SyncSummary = Schema.Struct({ buckets: Schema.Array(Schema.String) })

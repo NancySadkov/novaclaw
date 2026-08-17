@@ -269,10 +269,18 @@ export const layer = Layer.effect(
         if (!InstanceIdentityStore.verifySealingKey(input.to, input.sealingKey, input.sealingSignature))
           return { rejected: "unverified" as const }
 
-        const sealed = CommunitySeal.seal(input.sealingKey, input.body)
-        if (sealed === undefined) return { rejected: "unverified" as const }
-
+        /**
+         * ⚠️ Our own identity is read BEFORE the seal now, because the seal is bound to the PAIR
+         * (finding 1.8): ciphertext that named only its recipient could be re-signed by a third
+         * party and filed under their name in the recipient's history.
+         */
         const self = (yield* identity.identity()).networkID
+        const sealed = CommunitySeal.seal(
+          input.sealingKey,
+          input.body,
+          CommunitySeal.envelopeAAD(self, input.to),
+        )
+        if (sealed === undefined) return { rejected: "unverified" as const }
         // ⚠️ `from` comes from OUR identity, never from a caller: a composer that accepted an author
         // would happily sign as us and attribute to someone else.
         const unsigned: Unsigned = { to: input.to, from: self, at: Date.now(), sealed }
@@ -322,7 +330,9 @@ export const layer = Layer.effect(
         const contact = yield* contacts.get(message.from)
         if (contact?.blocked === true) return { rejected: "blocked" as const }
 
-        const body = yield* identity.openSealed(message.sealed)
+        // ⚠️ The same pair the sender bound in. A re-signed envelope carries somebody else's `from`,
+        // so the tag fails and this answers `unreadable` — which is the truth about it.
+        const body = yield* identity.openSealed(message.sealed, { from: message.from, to: message.to })
         // Addressed to us and yet unreadable means it was sealed to a key we do not hold — an old
         // key, or a substitution. Either way it is not something to keep as if it were a message.
         if (body === undefined) return { rejected: "unreadable" as const }

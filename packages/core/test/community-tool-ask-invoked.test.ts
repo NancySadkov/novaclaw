@@ -145,6 +145,48 @@ describe("the OTHER speaking op, invoked", () => {
     }),
   )
 
+  it.effect("🔴 the SAME room spelled differently is the same room (finding 1.13)", () =>
+    Effect.gen(function* () {
+      /**
+       * `record`'s subscription check was `eq(name, channel)` on the raw string and ran BEFORE the
+       * canonical comparison, so an instance joined to `#NovaClaw` refused its own user's post to
+       * `#novaclaw` — and `say`, which read only `delivered`, reported that refusal as "Posted …
+       * stored and will go out when a peer is reachable". False on both counts, on the ordinary
+       * path: varying case is how a model refers to one room twice.
+       */
+      yield* Layer.build(CommunityTool.layer).pipe(Effect.scoped, Effect.orDie)
+      CommunityConsent.applied({ consented: true }, { enabled: true })
+      const channels = yield* CommunityChannels.Service
+      yield* channels.join("#NovaClaw")
+
+      const out = yield* invoke({ op: "say", channel: "#novaclaw", body: "same room, other spelling" })
+      expect(out.structured.message, "a spelling is not a different room").not.toContain("Not posted")
+
+      // And it landed in the room we actually joined, rather than creating a second one.
+      const history = yield* channels.history("#NovaClaw", 10)
+      expect(history.some((entry) => entry.body === "same room, other spelling")).toBe(true)
+      expect((yield* channels.channels()).map((entry) => entry.name)).toEqual(["#NovaClaw"])
+    }),
+  )
+
+  it.effect("🔴 a post the door REFUSES is reported as refused, not as stored", () =>
+    Effect.gen(function* () {
+      /**
+       * The other half of 1.13, and the one that made it dangerous: `say` branched on `delivered`
+       * alone, so every ingress refusal rendered the cheerful sentence. An agent told it had posted
+       * reports success to its user for a message that does not exist.
+       */
+      yield* Layer.build(CommunityTool.layer).pipe(Effect.scoped, Effect.orDie)
+      CommunityConsent.applied({ consented: true }, { enabled: true })
+      const channels = yield* CommunityChannels.Service
+
+      const out = yield* invoke({ op: "say", channel: "#never-joined", body: "into the void" })
+      expect(out.structured.message).toContain("Not posted")
+      expect(out.structured.message, "and it must not claim a queue it is not in").not.toContain("will go out")
+      expect(yield* channels.history("#never-joined", 10)).toEqual([])
+    }),
+  )
+
   it.effect("⚠️ a missing body is refused, and a missing channel names itself", () =>
     Effect.gen(function* () {
       yield* Layer.build(CommunityTool.layer).pipe(Effect.scoped, Effect.orDie)

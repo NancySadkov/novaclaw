@@ -19,29 +19,36 @@ import { testEffect } from "./lib/effect"
  * failure looks identical.
  */
 
+/**
+ * The pair every envelope is bound to since review finding 1.8 — sender and recipient. These cases
+ * are about the SEAL, so they all use one pair; the binding itself is exercised below.
+ */
+const PAIR_ENDS = { from: "nid_alice", to: "nid_bob" } as const
+const PAIR = CommunitySeal.envelopeAAD(PAIR_ENDS.from, PAIR_ENDS.to)
+
 describe("CommunitySeal", () => {
   test("a sealed message opens for its recipient, and for nobody else", () => {
     const alice = CommunitySeal.generate()
     const bob = CommunitySeal.generate()
     const eve = CommunitySeal.generate()
 
-    const envelope = CommunitySeal.seal(bob.publicKey, "meet me at the usual place")!
+    const envelope = CommunitySeal.seal(bob.publicKey, "meet me at the usual place", PAIR)!
     expect(envelope).toBeDefined()
 
-    expect(CommunitySeal.unseal(bob.secretKey, envelope)).toBe("meet me at the usual place")
+    expect(CommunitySeal.unseal(bob.secretKey, envelope, PAIR)).toBe("meet me at the usual place")
     // 🔴 The whole point. Eve holds a perfectly valid key of the right type and gets nothing.
-    expect(CommunitySeal.unseal(eve.secretKey, envelope)).toBeUndefined()
+    expect(CommunitySeal.unseal(eve.secretKey, envelope, PAIR)).toBeUndefined()
     // Not even the SENDER can reopen it: the ephemeral secret was discarded when `seal` returned,
     // which is the forward secrecy — a sender whose key is later recovered cannot reread their sent
     // messages, because the key that sealed them no longer exists anywhere.
-    expect(CommunitySeal.unseal(alice.secretKey, envelope)).toBeUndefined()
+    expect(CommunitySeal.unseal(alice.secretKey, envelope, PAIR)).toBeUndefined()
   })
 
   test("🔴 the ciphertext is never the plaintext, and never repeats", () => {
     const bob = CommunitySeal.generate()
     const secret = "the same words twice"
-    const first = CommunitySeal.seal(bob.publicKey, secret)!
-    const second = CommunitySeal.seal(bob.publicKey, secret)!
+    const first = CommunitySeal.seal(bob.publicKey, secret, PAIR)!
+    const second = CommunitySeal.seal(bob.publicKey, secret, PAIR)!
 
     // Sealing the same text twice must produce different bytes: a deterministic envelope tells an
     // observer that two messages are identical without opening either.
@@ -49,8 +56,8 @@ describe("CommunitySeal", () => {
     expect(first.iv).not.toBe(second.iv)
     expect(first.epk).not.toBe(second.epk)
     // And both still open.
-    expect(CommunitySeal.unseal(bob.secretKey, first)).toBe(secret)
-    expect(CommunitySeal.unseal(bob.secretKey, second)).toBe(secret)
+    expect(CommunitySeal.unseal(bob.secretKey, first, PAIR)).toBe(secret)
+    expect(CommunitySeal.unseal(bob.secretKey, second, PAIR)).toBe(secret)
 
     // The plaintext must not survive anywhere in the envelope.
     const wire = JSON.stringify(first)
@@ -60,7 +67,7 @@ describe("CommunitySeal", () => {
 
   test("🔴 ANY tampering is refused — the tag is verified, not decoration", () => {
     const bob = CommunitySeal.generate()
-    const envelope = CommunitySeal.seal(bob.publicKey, "transfer approved")!
+    const envelope = CommunitySeal.seal(bob.publicKey, "transfer approved", PAIR)!
 
     const flip = (value: string) => {
       const raw = Buffer.from(value, "base64url")
@@ -78,20 +85,20 @@ describe("CommunitySeal", () => {
       { ...envelope, ct: Buffer.from(envelope.ct, "base64url").subarray(0, 8).toString("base64url") },
       { ...envelope, ct: "", iv: "", epk: "" },
     ])
-      expect(CommunitySeal.unseal(bob.secretKey, broken)).toBeUndefined()
+      expect(CommunitySeal.unseal(bob.secretKey, broken, PAIR)).toBeUndefined()
 
     // Untouched, it still opens — so the refusals above are the tamper check firing, not a seal that
     // never worked.
-    expect(CommunitySeal.unseal(bob.secretKey, envelope)).toBe("transfer approved")
+    expect(CommunitySeal.unseal(bob.secretKey, envelope, PAIR)).toBe("transfer approved")
   })
 
   test("🔴 malformed keys are refused rather than thrown on — a peer is untrusted input", () => {
     const bob = CommunitySeal.generate()
     for (const bad of ["", "!!!!", "short", Buffer.alloc(31).toString("base64url"), Buffer.alloc(64).toString("base64url")]) {
       // Sealing TO nonsense must refuse rather than encrypt badly.
-      expect(CommunitySeal.seal(bad, "hello")).toBeUndefined()
+      expect(CommunitySeal.seal(bad, "hello", PAIR)).toBeUndefined()
       // Opening WITH nonsense must refuse rather than crash the request that carried it.
-      expect(CommunitySeal.unseal(bad, CommunitySeal.seal(bob.publicKey, "hello")!)).toBeUndefined()
+      expect(CommunitySeal.unseal(bad, CommunitySeal.seal(bob.publicKey, "hello", PAIR)!, PAIR)).toBeUndefined()
     }
     expect(CommunitySeal.parsePublic(bob.publicKey)).toBeDefined()
     expect(CommunitySeal.parsePublic("not-a-key")).toBeUndefined()
@@ -111,9 +118,9 @@ describe("CommunitySeal", () => {
 
   test("survives an empty body and a large one", () => {
     const bob = CommunitySeal.generate()
-    expect(CommunitySeal.unseal(bob.secretKey, CommunitySeal.seal(bob.publicKey, "")!)).toBe("")
+    expect(CommunitySeal.unseal(bob.secretKey, CommunitySeal.seal(bob.publicKey, "", PAIR)!, PAIR)).toBe("")
     const long = "🔴".repeat(20_000)
-    expect(CommunitySeal.unseal(bob.secretKey, CommunitySeal.seal(bob.publicKey, long)!)).toBe(long)
+    expect(CommunitySeal.unseal(bob.secretKey, CommunitySeal.seal(bob.publicKey, long, PAIR)!, PAIR)).toBe(long)
   })
 })
 
@@ -161,12 +168,14 @@ describe("the published sealing key", () => {
 
       // And what was sealed to the published key really opens here — the round trip through storage,
       // not just through the pure module.
-      const envelope = CommunitySeal.seal(first.publicKey, "for your eyes only")!
-      expect(yield* store.openSealed(envelope)).toBe("for your eyes only")
+      const envelope = CommunitySeal.seal(first.publicKey, "for your eyes only", PAIR)!
+      expect(yield* store.openSealed(envelope, PAIR_ENDS)).toBe("for your eyes only")
 
       // Something sealed to somebody else does not open, and does not throw.
       const stranger = CommunitySeal.generate()
-      expect(yield* store.openSealed(CommunitySeal.seal(stranger.publicKey, "not for us")!)).toBeUndefined()
+      expect(
+        yield* store.openSealed(CommunitySeal.seal(stranger.publicKey, "not for us", PAIR)!, PAIR_ENDS),
+      ).toBeUndefined()
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
 })
@@ -187,12 +196,59 @@ describe("a recipient key we cannot agree with is REFUSED, never thrown (finding
       Buffer.from("e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800", "hex"),
     ]) {
       const key = degenerate.toString("base64url")
-      expect(() => CommunitySeal.seal(key, "hello")).not.toThrow()
-      expect(CommunitySeal.seal(key, "hello")).toBeUndefined()
+      expect(() => CommunitySeal.seal(key, "hello", PAIR)).not.toThrow()
+      expect(CommunitySeal.seal(key, "hello", PAIR)).toBeUndefined()
     }
 
     // The control: an honest key still seals, so this refuses the degenerate case and not the feature.
     const honest = CommunitySeal.generate()
-    expect(CommunitySeal.seal(honest.publicKey, "hello")).toBeDefined()
+    expect(CommunitySeal.seal(honest.publicKey, "hello", PAIR)).toBeDefined()
+  })
+})
+
+/**
+ * 🔴 P2P review 2026-08-17, finding 1.8 — **the seal bound the recipient but not the SENDER.**
+ *
+ * The key was derived from `DOMAIN‖epk‖recipientPub` and nothing about who sent it, so ciphertext
+ * was portable between senders. Measured against the real stores: a third party copies `(epk, iv,
+ * ct)` out of an Alice→Bob message and signs a fresh envelope `{to: Bob, from: Carol}`. Bob unseals
+ * it — the bytes really are for him — and files ALICE's plaintext in his conversation with CAROL.
+ * Carol cannot read what she forwarded, but a reply quoting it hands it straight to her, and the
+ * property the whole feature rests on — *what I read from C, C wrote* — is gone.
+ */
+describe("an envelope is bound to its PAIR, not just its recipient (finding 1.8)", () => {
+  test("🔴 re-signing somebody else's ciphertext under a new sender does not open", () => {
+    const bob = CommunitySeal.generate()
+    const alice = { networkID: "nid_alice" }
+    const carol = { networkID: "nid_carol" }
+
+    const envelope = CommunitySeal.seal(
+      bob.publicKey,
+      "ALICE'S SECRET: the meeting moved to Tuesday",
+      CommunitySeal.envelopeAAD(alice.networkID, "nid_bob"),
+    )!
+
+    // Bob opens it as what it is: a message from Alice.
+    expect(CommunitySeal.unseal(bob.secretKey, envelope, CommunitySeal.envelopeAAD(alice.networkID, "nid_bob"))).toBe(
+      "ALICE'S SECRET: the meeting moved to Tuesday",
+    )
+
+    // Carol forwards the SAME sealed bytes under her own name. Before the AAD this opened, and Bob
+    // stored Alice's words in his history with Carol.
+    expect(
+      CommunitySeal.unseal(bob.secretKey, envelope, CommunitySeal.envelopeAAD(carol.networkID, "nid_bob")),
+      "a forwarded envelope must not open under a new sender",
+    ).toBeUndefined()
+
+    // …and the recipient half still binds too: the same envelope claimed to be for somebody else.
+    expect(
+      CommunitySeal.unseal(bob.secretKey, envelope, CommunitySeal.envelopeAAD(alice.networkID, "nid_carol")),
+    ).toBeUndefined()
+  })
+
+  test("the AAD is unambiguous — two pairs cannot spell the same bytes", () => {
+    // Length-prefixed, like every other signed structure here. Concatenated, `("ab","c")` and
+    // `("a","bc")` are one string, and one AAD would authenticate a pair it was never made for.
+    expect(CommunitySeal.envelopeAAD("ab", "c").equals(CommunitySeal.envelopeAAD("a", "bc"))).toBe(false)
   })
 })

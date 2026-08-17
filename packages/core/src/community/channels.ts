@@ -91,6 +91,12 @@ export interface Stored extends CommunityMessage.Proven {
 
 /** Why an incoming message was not stored. Recorded because "nothing appeared" is unreadable. */
 export type Rejection =
+  /**
+   * 🔴 Older than the oldest message this room still keeps (review 1.11). Not a forgery and not a
+   * duplicate — a replay of history we pruned, which proof-of-work cannot price because the work
+   * was already paid once and travels with the message.
+   */
+  | "stale"
   | "unverified"
   | "unproven"
   | "wrong-channel"
@@ -108,9 +114,11 @@ export interface Interface {
   /**
    * Tell other instances (or stop telling them) that we are in this channel.
    *
-   * 🔴 The user's own answer to discovery-versus-privacy. Being in a room is not public: the sync
-   * endpoints answer an unknown topic exactly like an empty one so nobody can map our rooms, and a
-   * discovery reply naming every joined channel would hand over that map through another door.
+   * 🔴 The user's own answer to discovery-versus-privacy: a discovery reply naming every joined
+   * channel would hand a stranger the map of where this instance talks, so it names only these.
+   *
+   * ⚠️ It is NOT a secrecy guarantee about the rooms it leaves out — see `channel.sql.ts`, which
+   * records the measured limit (review 1.10) and why the design accepts it.
    */
   readonly setListed: (channel: string, listed: boolean) => Effect.Effect<boolean>
   /** The channels this instance is willing to be seen in — the ONLY ones discovery may reveal. */
@@ -403,7 +411,22 @@ export const layer = Layer.effect(
         // ⚠️ And the same rule on the way in, beside the size bound it belongs with: a room name is
         // an identifier, and one carrying newlines is a payload wearing a name.
         if (!isPlainChannelName(message.channel ?? "")) return { rejected: "too-large" as const }
-        if ((yield* subscribed(channel)) === undefined) return { rejected: "not-subscribed" as const }
+        /**
+         * 🔴 Resolved CANONICALLY, not by string equality — review finding 1.13.
+         *
+         * `subscribed()` is `eq(name, channel)` on the raw string, and it ran BEFORE the canonical
+         * comparison below. So an instance joined to `#NovaClaw` refused its own user's post to
+         * `#novaclaw`: `stored: false`, `rejected: "not-subscribed"`. Varying case is "the ordinary
+         * way a model refers to the same room twice" (spec §14), so this fired on the normal path,
+         * not an attack — and `say` then reported the refused post as stored and outbound.
+         *
+         * ⚠️ The same lesson as the `nid_` and the peer door: a name that is really a SPELLING makes
+         * every string-keyed check per-spelling. `joinedAs` is the one place that maps a topic to
+         * the name we actually joined under.
+         */
+        const joined = yield* joinedAs(channel)
+        if (joined === undefined) return { rejected: "not-subscribed" as const }
+        channel = joined
         /**
          * ⚠️ The channel check is kept SEPARATE from `verifyOn` only to name the two rejections
          * apart — a caller needs to know whether a message was forged or merely misdelivered. The
@@ -454,6 +477,43 @@ export const layer = Layer.effect(
          */
         const contact = yield* contacts.get(message.author)
         if (contact?.blocked === true) return { rejected: "blocked" as const }
+
+        /**
+         * 🔴 **THE ADMISSION HORIZON — review finding 1.11: pruned history replays at ZERO cost.**
+         *
+         * Proof-of-work binds to the SIGNATURE and the nonce travels with the message, so a message
+         * that has already been solved once is free to send again forever. Dedupe is the message
+         * primary key — which stops a replay only while the row is still here. `RETAIN_PER_CHANNEL`
+         * prunes at 5,000, and `pruneNow` keeps by `received_at DESC`, so a replayed message counts
+         * as the NEWEST thing in the room and the eviction it triggers falls on genuinely new
+         * messages. Run at N=12: four pruned messages replayed with their original nonces were all
+         * STORED with a fresh `receivedAt`, at the top of the history.
+         *
+         * The bound is the retention window itself: a message whose SIGNED `at` predates the oldest
+         * thing we still keep is, by construction, something we either already had or dropped on
+         * purpose. Catch-up wants newer content in a full room; nobody needs to re-deliver the past
+         * we chose not to keep.
+         *
+         * ⚠️ The author's OWN claimed time, not our receive time, and that asymmetry is the point:
+         * `received_at` is ours to set and would make every replay look current, which is exactly
+         * the defect. `at` is inside the signature, so a replayer cannot move it without redoing
+         * both the signature and the ~49 ms of work — at which point they are simply a new message.
+         *
+         * ⚠️ Only in a FULL room. Below the retention bound nothing has been pruned, so there is no
+         * horizon to enforce and a legitimately old message from a peer we just met still lands.
+         */
+        const held = yield* db
+          .$count(CommunityMessageTable, eq(CommunityMessageTable.channel, channel))
+          .pipe(Effect.orDie)
+        if (held >= RETAIN_PER_CHANNEL) {
+          const [oldest] = yield* db
+            .select({ at: sql<number>`min(${CommunityMessageTable.claimed_at})` })
+            .from(CommunityMessageTable)
+            .where(eq(CommunityMessageTable.channel, channel))
+            .all()
+            .pipe(Effect.orDie)
+          if (oldest?.at != null && message.at < Number(oldest.at)) return { rejected: "stale" as const }
+        }
 
         const id = messageID(message)
         const receivedAt = Date.now()

@@ -5,6 +5,7 @@ import { CommunityTool } from "@novaclaw/core/tool/community"
 import { SessionOrigin } from "@novaclaw/core/session/origin"
 import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityMessageTable } from "@novaclaw/core/community/channel.sql"
+import { CommunityReconcile } from "@novaclaw/core/community/reconcile"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityMessage } from "@novaclaw/core/community/message"
 import { CommunitySuccession } from "@novaclaw/core/community/succession"
@@ -709,4 +710,104 @@ describe("CommunityChannels", () => {
     }),
   )
 
+})
+
+/**
+ * 🔴 P2P review 2026-08-17, finding 1.11 — **pruned history replays at ZERO proof-of-work, and
+ * evicts genuinely new messages.**
+ *
+ * Work binds to the signature and the nonce travels with the message, so a message solved once is
+ * free to resend forever. Dedupe is the primary key, which only holds while the row is still here —
+ * and `pruneNow` keeps by `received_at DESC`, so a replay counts as the newest thing in the room and
+ * the eviction it causes falls on real messages. Run at N=12: four pruned messages replayed with
+ * their original nonces were all stored, at the top of the history.
+ */
+describe("the admission horizon (finding 1.11)", () => {
+  const RETAIN = CommunityChannels.RETAIN_PER_CHANNEL
+
+  it.effect("🔴 a full room refuses a message older than the oldest it kept", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const channels = yield* CommunityChannels.Service
+      yield* channels.join(CHANNEL)
+
+      /**
+       * Fill the room to its bound directly — the point under test is the horizon, and paying ~49 ms
+       * of proof-of-work five thousand times would make this test take four minutes.
+       */
+      for (let start = 0; start < RETAIN; start += 500) {
+        const rows = Array.from({ length: Math.min(500, RETAIN - start) }, (_, offset) => {
+          const index = start + offset
+          return {
+            id: `held-${index}`,
+            channel: CHANNEL,
+            author: "nid_whoever",
+            claimed_at: 10_000 + index,
+            received_at: 10_000 + index,
+            body: "kept",
+            signature: `sig-${index}`,
+            nonce: 0,
+          }
+        })
+        yield* db.insert(CommunityMessageTable).values(rows).run().pipe(Effect.orDie)
+      }
+
+      // A message claiming a time before the oldest row we hold: by construction it is either
+      // something we already had, or something we pruned on purpose.
+      const replayed = proven(fromStranger({ channel: CHANNEL, body: "from the pruned past", at: 5_000 }))
+      expect(yield* channels.record(CHANNEL, replayed)).toEqual({ rejected: "stale" })
+
+      // ⚠️ And the control that matters: a CURRENT message still lands, so the horizon bounds the
+      // past rather than closing the room.
+      const fresh = proven(fromStranger({ channel: CHANNEL, body: "today", at: Date.now() }))
+      expect("stored" in (yield* channels.record(CHANNEL, fresh))).toBe(true)
+    }),
+  )
+
+  it.effect("⚠️ a room BELOW its bound has no horizon — an old message from a new peer still lands", () =>
+    Effect.gen(function* () {
+      /**
+       * The horizon exists because pruning destroyed the dedupe, so it may only apply where pruning
+       * happens. A quiet room that refused old messages would break the ordinary case this feature
+       * is for: meeting someone who has been talking for a year and catching up on what they said.
+       */
+      const channels = yield* CommunityChannels.Service
+      yield* channels.join(CHANNEL)
+      const old = proven(fromStranger({ channel: CHANNEL, body: "written long ago", at: 1_000 }))
+      expect("stored" in (yield* channels.record(CHANNEL, old))).toBe(true)
+    }),
+  )
+})
+
+/**
+ * 🔴 P2P review 2026-08-17, finding 1.10 — **what the summary endpoint actually hides, pinned so the
+ * comments cannot drift back into promising more.**
+ *
+ * Four comments and the panel said a peer "cannot map which rooms this instance is in". Measured:
+ * `#backlog` (joined, 3 messages) answered 3 non-empty digests of 64; `#private` (joined, empty) and
+ * `#neverjoined` answered identically. So the indistinguishability is real for a QUIET room and
+ * false for a room with content — and a prober who knows a name can seed one message into it.
+ *
+ * The design accepts that (`AGENTS.md`: *being findable is the price*; gating sync on `listed` would
+ * break catch-up in exactly the rooms the flag exists for). What it does not accept is prose
+ * claiming otherwise — so this states the real property in a form that can fail.
+ */
+describe("what a topic summary reveals (finding 1.10)", () => {
+  it.effect("🔴 an EMPTY joined room and an unknown one are identical — and a busy one is not", () =>
+    Effect.gen(function* () {
+      const channels = yield* CommunityChannels.Service
+      yield* channels.join("#private")
+
+      const empty = CommunityReconcile.summarize(yield* channels.ids("#private"))
+      const unknown = CommunityReconcile.summarize([])
+      expect(empty, "a quiet room must look exactly like a room we are not in").toEqual(unknown)
+
+      // …and the honest half: one message makes the difference visible, which is the exposure the
+      // comments used to deny. Stated, not fixed.
+      yield* channels.record("#private", proven(yield* CommunityMessage.sign({ channel: "#private", body: "hi" })))
+      const busy = CommunityReconcile.summarize(yield* channels.ids("#private"))
+      expect(busy).not.toEqual(unknown)
+      expect(busy.length, "the LENGTH still tells nothing — that half IS closed").toBe(unknown.length)
+    }),
+  )
 })

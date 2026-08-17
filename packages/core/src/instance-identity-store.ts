@@ -255,7 +255,14 @@ export interface Interface {
    * ⚠️ The secret is decrypted per call and never leaves this service, exactly like `sign`. A caller
    * that could obtain it could read every DM this instance will ever receive.
    */
-  readonly openSealed: (envelope: CommunitySeal.Envelope) => Effect.Effect<string | undefined>
+  /**
+   * ⚠️ Takes the PAIR the envelope claims, because the seal is bound to it (review 1.8). An
+   * envelope re-signed by a third party names a different sender and therefore does not open.
+   */
+  readonly openSealed: (
+    envelope: CommunitySeal.Envelope,
+    pair: { readonly from: string; readonly to: string },
+  ) => Effect.Effect<string | undefined>
 }
 
 /** What `rotate` hands back: BOTH keys' signatures over the handover. */
@@ -384,11 +391,14 @@ export const layer = Layer.effect(
         return { publicKey, signature: signature.toString("base64url") }
       }),
 
-      openSealed: Effect.fn("InstanceIdentityStore.openSealed")(function* (envelope: CommunitySeal.Envelope) {
+      openSealed: Effect.fn("InstanceIdentityStore.openSealed")(function* (
+        envelope: CommunitySeal.Envelope,
+        pair: { readonly from: string; readonly to: string },
+      ) {
         const stored = yield* row()
         if (!stored?.sealing_secret_key) return undefined
         const secret = yield* cipher.decrypt(stored.sealing_secret_key, SEALING_AAD).pipe(Effect.orDie)
-        return CommunitySeal.unseal(secret, envelope)
+        return CommunitySeal.unseal(secret, envelope, CommunitySeal.envelopeAAD(pair.from, pair.to))
       }),
 
       sign: Effect.fn("InstanceIdentityStore.sign")(function* (message: Uint8Array) {

@@ -40,6 +40,8 @@ import {
 
 /** Domain separation: bytes derived here must never be usable as any other key this program derives. */
 const DOMAIN = "novaclaw/community/direct-message/1"
+/** Its own tag, so the AAD can never be mistaken for the key-derivation info above. */
+const AAD_DOMAIN = "novaclaw/community/direct-message-aad/1"
 
 /** X25519 raw keys are 32 bytes; the DER wrappers `node:crypto` wants are fixed prefixes. */
 const X25519_SPKI_PREFIX = Buffer.from("302a300506032b656e032100", "hex")
@@ -113,6 +115,36 @@ const parseSecret = (encoded: string): KeyObject | undefined => {
  * agreement happened to produce the same bytes — and more practically, it is what makes the key
  * unique to this pair and this message rather than to the raw agreement alone.
  */
+/**
+ * 🔴 **The bytes that bind an envelope to its SENDER as well as its recipient** — review finding 1.8.
+ *
+ * The key derivation covers the recipient (`DOMAIN‖epk‖recipientPub`) and nothing about who sent it,
+ * so ciphertext was portable between senders. Measured against the real stores: a third party copies
+ * `(epk, iv, ct)` from an Alice→Bob message and signs a fresh envelope `{to: Bob, from: Carol}`. Bob
+ * unseals it — the sealed bytes are still for him — and stores ALICE's plaintext in his conversation
+ * with CAROL: `history(carol) = ["in: ALICE'S SECRET…"]`. Carol cannot read what she forwarded, but
+ * a human or an agent replying to it quotes it straight back to her, and the property this feature
+ * rests on — *what I read from C, C wrote* — is gone.
+ *
+ * ⚠️ Length-prefixed, like every other signed structure here: `from‖to` concatenated is ambiguous,
+ * so one AAD would authenticate a pair it was never made for.
+ *
+ * ⚠️ AAD rather than folding the pair into the HKDF `info`. Both bind, and the trade is honest: the
+ * derivation is the SENDER's to compute, while additional authenticated data is checked by GCM at
+ * `final()` — so a mismatch reads as "this envelope is not for this conversation" rather than as
+ * random plaintext, and `unseal` already answers `undefined` on that path.
+ */
+export const envelopeAAD = (from: string, to: string): Buffer => {
+  const parts: Buffer[] = [Buffer.from(AAD_DOMAIN)]
+  for (const value of [from, to]) {
+    const bytes = Buffer.from(value, "utf8")
+    const length = Buffer.alloc(4)
+    length.writeUInt32BE(bytes.length, 0)
+    parts.push(length, bytes)
+  }
+  return Buffer.concat(parts)
+}
+
 const messageKey = (shared: Buffer, ephemeralPublic: Buffer, recipientPublic: Buffer): Buffer =>
   Buffer.from(
     hkdfSync("sha256", shared, Buffer.alloc(0), Buffer.concat([Buffer.from(DOMAIN), ephemeralPublic, recipientPublic]), 32),
@@ -131,7 +163,16 @@ const messageKey = (shared: Buffer, ephemeralPublic: Buffer, recipientPublic: Bu
  * function's contract is that untrusted input produces `undefined`, never an exception in whatever
  * happened to be composing a message.
  */
-export const seal = (recipientPublicKey: string, plaintext: string): Envelope | undefined => {
+export const seal = (
+  recipientPublicKey: string,
+  plaintext: string,
+  /**
+   * 🔴 Who this envelope is FROM and TO (finding 1.8). Without it the ciphertext is portable: a
+   * third party can re-sign the same sealed bytes under their own name and have the recipient file
+   * somebody else's words in a conversation with them.
+   */
+  aad: Buffer,
+): Envelope | undefined => {
   const recipient = parsePublic(recipientPublicKey)
   if (recipient === undefined) return undefined
 
@@ -164,6 +205,7 @@ export const seal = (recipientPublicKey: string, plaintext: string): Envelope | 
    */
   const iv = randomBytes(12)
   const cipher = createCipheriv("aes-256-gcm", key, iv)
+  cipher.setAAD(aad)
   const body = Buffer.concat([cipher.update(Buffer.from(plaintext, "utf8")), cipher.final()])
   return {
     epk: ephemeralPublic.toString("base64url"),
@@ -180,7 +222,7 @@ export const seal = (recipientPublicKey: string, plaintext: string): Envelope | 
  * distinguishing them is precisely what a padding-oracle attack needs, and "why did this fail" is
  * never information a sender is owed.
  */
-export const unseal = (recipientSecretKey: string, envelope: Envelope): string | undefined => {
+export const unseal = (recipientSecretKey: string, envelope: Envelope, aad: Buffer): string | undefined => {
   try {
     const secret = parseSecret(recipientSecretKey)
     if (secret === undefined) return undefined
@@ -199,6 +241,9 @@ export const unseal = (recipientSecretKey: string, envelope: Envelope): string |
     if (carried.length < 16) return undefined
 
     const decipher = createDecipheriv("aes-256-gcm", key, iv)
+    // ⚠️ Before the tag is set and `final()` runs: the AAD is part of what the tag authenticates, so
+    // an envelope re-signed by somebody else fails here rather than opening into their conversation.
+    decipher.setAAD(aad)
     // The tag is the last 16 bytes, and `final()` is what verifies it — a decrypt that skipped this
     // would return attacker-chosen plaintext and look like it worked.
     decipher.setAuthTag(carried.subarray(carried.length - 16))

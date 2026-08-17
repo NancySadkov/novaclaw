@@ -19,10 +19,22 @@ export const CommunityChannelTable = sqliteTable("community_channel", {
    * 🔴 Whether this instance tells other people it is in this channel.
    *
    * Discovery and privacy are the same question asked from two sides, and this is where the user
-   * answers it. Being IN a room is not public information: the sync endpoints deliberately answer an
-   * unknown topic exactly like an empty one, so a stranger cannot map which rooms this instance is in
-   * by walking topic hashes. A discovery reply that named every joined channel would hand over that
-   * same map through a different door.
+   * answers it. A discovery reply that named every joined channel would hand a stranger the map of
+   * where this instance talks, so it names only what the user marked here.
+   *
+   * ⚠️ **What this buys, stated exactly — review finding 1.10 corrected a claim that was too
+   * strong.** The sync endpoints answer an unknown topic exactly like an EMPTY joined one, so a
+   * prober learns nothing from a quiet room. They do NOT hide a room that has messages in it: for a
+   * joined room with content the digests are non-empty, and one measured probe (`#backlog`, joined,
+   * 3 messages → 3 non-empty of 64 buckets; `#private`, joined and empty, and `#neverjoined` → 0)
+   * tells membership from non-membership. Someone who knows the room NAME and can post one
+   * proof-of-work message into it can therefore confirm we are there.
+   *
+   * ⚠️ That is accepted rather than fixed, and `AGENTS.md` is why: *"Being findable is the price…
+   * the alternative is a server that knows who is online, so this is accepted and the consent screen
+   * says it plainly."* Gating sync on `listed` would close it and break catch-up in exactly the
+   * rooms this flag exists to keep quiet. So `listed` means **we never ANNOUNCE this room**, not
+   * "nobody can tell".
    *
    * ⚠️ Defaults to FALSE, which is the opposite of principle 12(a)'s "work by default", and
    * deliberately so: the default here is not a convenience setting but a disclosure, and the harm of
