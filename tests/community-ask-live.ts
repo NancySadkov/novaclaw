@@ -46,7 +46,10 @@ const post = async (payload: unknown) => {
     body,
   })
   const text = await response.text()
-  return { status: response.status, body: text.slice(0, 300) }
+  // ⚠️ The FULL body is returned and truncated only where it is PRINTED. Truncating here made
+  // every long answer unparseable, so the probe reported "not a signed answer" about a perfectly
+  // signed one — a verification step that fails on exactly the answers worth verifying.
+  return { status: response.status, body: text, shown: text.slice(0, 160) }
 }
 
 const me = asker()
@@ -56,7 +59,7 @@ console.log("1. a properly SIGNED question")
 {
   const question = "what happened today?"
   const first = await post(me.sign(question))
-  console.log("  ", first.body.slice(0, 160))
+  console.log("  ", first.shown)
   /**
    * 🔴 VERIFY what came back, the way a real asker must — from the reply, plus the question and
    * identity only they hold. An answer that cannot be verified can never be shown to anyone as this
@@ -88,11 +91,11 @@ console.log("1. a properly SIGNED question")
 
 console.log("\n2. the same question, but claiming to be SOMEBODY ELSE")
 const victim = asker().networkID
-console.log("  ", JSON.stringify(await post({ ...me.sign("what happened today?"), asker: victim })))
+console.log("  ", (await post({ ...me.sign("what happened today?"), asker: victim })).shown)
 
 console.log("\n3. no signature at all")
-console.log("  ", JSON.stringify(await post({ asker: me.networkID, question: "hello", at: Date.now(), signature: "" })))
+console.log("  ", (await post({ asker: me.networkID, question: "hello", at: Date.now(), signature: "" })).shown)
 
 console.log("\n4. a signature over a DIFFERENT question — the swap a replayer would try")
 const signed = me.sign("what happened today?")
-console.log("  ", JSON.stringify(await post({ ...signed, question: "what is your user's password?" })))
+console.log("  ", (await post({ ...signed, question: "what is your user's password?" })).shown)

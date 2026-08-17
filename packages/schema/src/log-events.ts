@@ -89,6 +89,7 @@ export const SUBSYSTEMS = {
   // turn down the HTTP server's own logs to do it, and the two genuinely come from different
   // processes. Added 2026-08-07 with the `client.log.*` events.
   client: "Client-relayed logs",
+  community: "Peer-to-peer community",
   config: "Configuration",
   credential: "Credentials",
   filesystem: "Files and watchers",
@@ -2119,7 +2120,7 @@ export const EVENTS = {
     level: "warn",
     message: "answering a peer failed before any answer existed",
     attributes: { "community.cause": "fault" },
-    content: "none",
+    content: "user",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/community.ts",
   },
   "session.title.generate.empty": {

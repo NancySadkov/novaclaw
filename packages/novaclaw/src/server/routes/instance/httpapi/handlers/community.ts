@@ -18,6 +18,7 @@ import { CommunitySync } from "@novaclaw/core/community/sync"
 import { CommunityTopic } from "@novaclaw/core/community/topic"
 import { CommunityTransport } from "@novaclaw/core/community/transport"
 import { LLM, LLMClient, LLMEvent, Message, SystemPart } from "@novaclaw/llm"
+import { ReasoningBudget } from "@novaclaw/core/session/runner/reasoning-budget"
 import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
 import { llmClient } from "@novaclaw/core/effect/app-node-platform"
 import { Location } from "@novaclaw/core/location"
@@ -523,9 +524,25 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
                     }),
                   )
                 const chunks: string[] = []
-                yield* llm
-                  .stream(
-                    LLM.request({
+                /**
+                 * 🔴 The THINKING is bounded, not just the total — the mechanism the title pass
+                 * already uses (owner, 2026-08-17).
+                 *
+                 * Raising `maxTokens` alone only bought a reasoning model more room to think itself
+                 * out of answering: it spent the budget and returned an empty completion, and the
+                 * asker was told "no-answer" as though we had nothing to say. `ReasoningBudget`
+                 * counts reasoning tokens live, nudges as they run down, and has a MECHANICAL hard
+                 * stop that re-issues the turn with thinking structurally disabled. That is the
+                 * difference between hoping a model stops thinking and making it.
+                 *
+                 * ⚠️ `maintenance.ts` records the pairing hazard beside its own use: reasoning-
+                 * budget argues its safety from phases inheriting an UNSET max_tokens, and an
+                 * explicit ceiling weakens that argument, so the two numbers must be re-checked
+                 * together if either moves. Here the ceiling is the user's knob, which is exactly the
+                 * thing that can move — so the budget is deliberately a small fraction of it.
+                 */
+                yield* ReasoningBudget.stream({
+                  request: LLM.request({
                       model,
                       system: [SystemPart.make(CommunityAnswer.SYSTEM)],
                       // 🔴 FRAMED. The question is a stranger's words entering a model's context, and
@@ -537,8 +554,12 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
                       tools: [],
                       // The user's ceiling: too small returns silence from a reasoning model.
                       generation: { maxTokens: overall.gate.maxTokens },
-                    }),
-                  )
+                  }),
+                  stream: (next) => llm.stream(next),
+                  // A quarter of the answer's ceiling: enough to think, never enough to think INSTEAD
+                  // of answering, and it scales with the knob rather than drifting away from it.
+                  budget: Math.max(64, Math.floor(overall.gate.maxTokens / 4)),
+                })
                   .pipe(
                     Stream.runForEach((event) => {
                       if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
