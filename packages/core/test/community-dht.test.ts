@@ -93,6 +93,43 @@ describe("CommunityDht.parse", () => {
   })
 })
 
+describe("reading the sidecar's output", () => {
+  test("🔴 an unterminated flood is REFUSED rather than accumulated", () => {
+    /**
+     * 🔴 A ceiling of OUR OWN. The reader holds bytes until it sees a newline, so a child that
+     * never sends one grows this process's memory for as long as it runs — and this file already
+     * said the sidecar "could crash mid-line, be an old build, or be something else entirely on a
+     * machine where the path was overridden" while reading its output without a limit.
+     */
+    const state = { buffer: "" }
+    expect(CommunityDht.readLines(state, "x".repeat(1024))).toEqual([])
+    expect(CommunityDht.readLines(state, "x".repeat(CommunityDht.MAX_REPLY_BYTES))).toBeUndefined()
+  })
+
+  test("⚠️ a long BURST of complete lines is not an overrun", () => {
+    /**
+     * The distinction that keeps the ceiling honest: what must be bounded is UNTERMINATED text, not
+     * throughput. Checking before draining would refuse a peer-rich reply for being long.
+     */
+    const state = { buffer: "" }
+    const NEWLINE = String.fromCharCode(10)
+    // ⚠️ Deliberately larger than the ceiling: a burst that did not exceed it would prove nothing
+    // about the difference between "long" and "unterminated".
+    const many = Array.from({ length: 8_000 }, (_, index) => `{"line":${index},"pad":"xxxxxxxxxx"}`).join(NEWLINE) + NEWLINE
+    expect(many.length).toBeGreaterThan(CommunityDht.MAX_REPLY_BYTES)
+    const lines = CommunityDht.readLines(state, many)
+    expect(lines?.length).toBe(8_000)
+    expect(state.buffer, "nothing unterminated is left holding memory").toBe("")
+  })
+
+  test("lines split across chunks are reassembled", () => {
+    // The ordinary case, and the reason the buffer exists at all: a reply can arrive in pieces.
+    const state = { buffer: "" }
+    expect(CommunityDht.readLines(state, '{"peers":')).toEqual([])
+    expect(CommunityDht.readLines(state, '["1.2.3.4:1"]}' + String.fromCharCode(10))).toEqual(['{"peers":["1.2.3.4:1"]}'])
+  })
+})
+
 describe("CommunityDht.find", () => {
   test("🔴 a MISSING sidecar answers no peers — the ordinary case on most machines", async () => {
     const found = await run(

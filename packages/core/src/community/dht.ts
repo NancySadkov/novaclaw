@@ -104,6 +104,41 @@ export const parse = (line: string): ReadonlyArray<string> => {
 export const isAnnounceable = (address: string): boolean => /^[A-Za-z0-9._\-[\]]+:\d{1,5}$/.test(address.trim())
 
 /**
+ * The most bytes an unterminated reply may occupy before the sidecar is treated as broken.
+ *
+ * 🔴 A ceiling of OUR OWN — the rule this subsystem keeps relearning: *wherever a value somebody
+ * else controls becomes our allocation, it needs a bound we chose.* The reader accumulates until it
+ * sees a newline, so a child that never sends one grows this process's memory for as long as it runs.
+ *
+ * ⚠️ This file already said the sidecar "could crash mid-line, be an old build, or be something
+ * else entirely on a machine where the path was overridden" — and then read its output without a
+ * limit. 64 KB is thousands of times the largest honest reply, which carries at most `MAX_DHT_PEERS`
+ * `host:port` strings.
+ */
+export const MAX_REPLY_BYTES = 64 * 1024
+
+/**
+ * A line-buffered reader with a ceiling. Returns the complete lines in a chunk, or `undefined` once
+ * the sidecar has overrun it.
+ */
+export const readLines = (state: { buffer: string }, chunk: string): ReadonlyArray<string> | undefined => {
+  state.buffer += chunk
+  const lines: string[] = []
+  for (;;) {
+    const at = state.buffer.indexOf("\n")
+    if (at < 0) break
+    lines.push(state.buffer.slice(0, at))
+    state.buffer = state.buffer.slice(at + 1)
+  }
+  /**
+   * ⚠️ Checked AFTER draining, so a legitimate burst of many COMPLETE lines is never mistaken for
+   * an overrun. What matters is how much UNTERMINATED text is being held.
+   */
+  if (state.buffer.length > MAX_REPLY_BYTES) return undefined
+  return lines
+}
+
+/**
  * The living sidecar, reduced to what this module needs of it.
  *
  * ⚠️ An interface rather than a `ChildProcess` so the seam is exercisable without a Rust toolchain.
@@ -288,20 +323,28 @@ export const node = makeGlobalNode({ service: Service, layer, deps: [] })
 const startNode = (binary: string): Node | undefined => {
   try {
     const child = spawn(binary, [], { stdio: ["pipe", "pipe", "ignore"] })
-    let buffer = ""
+    const state = { buffer: "" }
     let onLine: ((line: string) => void) | undefined
     let onExit: (() => void) | undefined
     child.on("error", () => onExit?.())
     child.on("close", () => onExit?.())
     child.stdout.on("data", (chunk: Buffer) => {
-      buffer += chunk.toString()
-      for (;;) {
-        const at = buffer.indexOf("\n")
-        if (at < 0) break
-        const line = buffer.slice(0, at)
-        buffer = buffer.slice(at + 1)
-        onLine?.(line)
+      const lines = readLines(state, chunk.toString())
+      if (lines === undefined) {
+        /**
+         * ⚠️ Treated as a DEATH, not a parse failure: a child sending an unterminated flood is
+         * not going to recover, and the caller's contract is that every failure means "no peers".
+         * Killing it also stops the flood, which a silent `return` would not.
+         */
+        try {
+          child.kill()
+        } catch {
+          // Already gone.
+        }
+        onExit?.()
+        return
       }
+      for (const line of lines) onLine?.(line)
     })
     return {
       write: (line) => child.stdin.write(line),
