@@ -684,7 +684,7 @@ export const CommunityNetwork: Component = () => {
           <Show when={neverAsked()}>
             <span class="text-[12px] leading-snug text-v2-text-text-muted">
               NovaClaw instances can talk to each other directly — yours and other people's. It is off until you
-              turn it on, and there are two things to know first.
+              turn it on, and there are three things to know first.
             </span>
             {/* Stated plainly and without euphemism. Both are consequences of the architecture, not
                 defects in it, and a person cannot consent to what they were not told. */}
@@ -698,6 +698,21 @@ export const CommunityNetwork: Component = () => {
                 <b>Other people will see your IP address.</b> Because there is no central server, your machine
                 connects directly to theirs — so anyone you talk to learns roughly where you are, in the way any
                 direct connection reveals.
+              </li>
+              {/* 🔴 The THIRD thing, added when the DHT shipped, and it is a different sentence from
+                  the one above it. "The people you speak to know where you are" is the cost of a direct
+                  connection; "this software's users are a public list" is the cost of a public directory,
+                  and somebody in a country where the second one is dangerous deserves the second one.
+
+                  ⚠️ The screen exists to state the architecture's costs, not to make them sound
+                  smaller. This is accepted as the price of a network nobody owns — the alternative is a
+                  server that knows who is online — and it is not a separate switch, because an instance
+                  nobody can find is an instance nobody can reach. */}
+              <li class="text-[12px] leading-snug text-v2-text-text-base">
+                <b>Being findable is public.</b> Instances announce themselves in a shared public directory so
+                strangers can find each other without anyone running a server. That means it is possible for
+                someone to list machines running NovaClaw without ever talking to them. There is no version of
+                this that is both serverless and private about who is here.
               </li>
             </ul>
             <span class="mt-2 text-[11px] leading-snug text-v2-text-text-muted">
