@@ -22,7 +22,8 @@ use libp2p::{
     identify, kad,
     multiaddr::Protocol,
     noise, ping,
-    swarm::{NetworkBehaviour, SwarmEvent},
+    core::Endpoint,
+    swarm::{ConnectionId, NetworkBehaviour, SwarmEvent},
     tcp, yamux, Multiaddr, PeerId,
 };
 use serde::{Deserialize, Serialize};
@@ -64,6 +65,32 @@ const FIND_BUDGET: Duration = Duration::from_secs(8);
 /// a dial each.
 const MAX_PEERS: usize = 8;
 
+/// How long an `announce` may take, warm-up included, before it answers honestly that it failed.
+///
+/// 🔴 Longer than `FIND_BUDGET` on purpose, and it does NOT sit in front of a user. Announcing runs
+/// once for an instance that has decided it is reachable; finding runs whenever somebody opens the
+/// community and is the thing that must feel instant.
+const ANNOUNCE_BUDGET: Duration = Duration::from_secs(30);
+
+/// Peers the routing table must hold before publishing is worth attempting.
+///
+/// 🔴 A publish reaches the peers CLOSEST TO THE KEY, chosen from the ones we know. Measured
+/// 2026-08-17: `announce` arriving one line after startup published into a **3-entry** table and the
+/// record reached nobody — confirmed absent from the public DHT by an outside instrument while this
+/// program reported success. Twenty is roughly a full bucket: enough for the query to have somewhere
+/// to walk, far below the ~150 the table reaches within a minute.
+const MIN_TABLE_TO_PUBLISH: usize = 20;
+
+/// How long a `find` waits for a routing table before querying anyway.
+///
+/// 🔴 Without this the feature is DEAD IN PRODUCTION and green everywhere else. The seam spawns
+/// this process, writes `find`, reads one reply and closes stdin — so **every** production find is a
+/// cold one, issued milliseconds after startup against a 3-entry table. Measured 2026-08-17: two cold
+/// finds returned nothing while a find after a 30 s sleep returned the peer. The warm-up is nearly
+/// free: the table crosses 20 entries in **1.5-2.0 s** (50 in 2.5-3.0 s), so this buys the whole
+/// feature for about two seconds and never lets a slow network hold the budget open.
+const WARM_UP_BUDGET: Duration = Duration::from_secs(5);
+
 #[derive(NetworkBehaviour)]
 struct Behaviour {
     kad: kad::Behaviour<kad::store::MemoryStore>,
@@ -91,8 +118,25 @@ struct Reply {
     mode: Option<String>,
 }
 
+/// The room's DHT key: the **multihash** of [`ROOM`], not its bare digest.
+///
+/// 🔴 The two-byte prefix is the whole point. Kademlia keys are opaque bytes, so a bare
+/// `Sha256::digest` "works" — it announces and looks up against itself perfectly, and every test
+/// passes. But every other implementation of this DHT keys on a CID's multihash (`sha2-256`, 32
+/// bytes), so a bare digest puts us in a room of our own that nothing else can name. Measured
+/// 2026-08-17: the reachability probe and this sidecar disagreed exactly here, and the probe's
+/// verdicts were about a room the product never used — a silence that read as "the DHT does not
+/// carry our announcements" for as long as nobody compared the two key derivations.
+///
+/// ⚠️ Being nameable by ordinary tooling is a FEATURE here, not a leak: `notes/spec/community-p2p.md`
+/// records the ruling that enumerability is the price of true p2p. It is also the only reason the
+/// announcement can be checked from outside our own code, which is how this defect was found.
 fn room_key() -> kad::RecordKey {
-    kad::RecordKey::new(&Sha256::digest(ROOM.as_bytes()).to_vec())
+    let mut key = Vec::with_capacity(34);
+    key.push(0x12); // sha2-256
+    key.push(0x20); // 32 bytes
+    key.extend_from_slice(&Sha256::digest(ROOM.as_bytes()));
+    kad::RecordKey::new(&key)
 }
 
 /// `host:port` → `/ip4/host/tcp/port/http` (or `/dns4/…` for a name).
@@ -179,24 +223,7 @@ async fn main() -> Result<()> {
                             mode: Some(format!("{:?}", swarm.behaviour().kad.mode()).to_lowercase()),
                             ..Default::default()
                         },
-                        Ok(Request::Announce { addr }) => {
-                            /*
-                             * 🔴 The address the INSTANCE believes peers can knock on, advertised as
-                             * an external multiaddr so identify carries it to whoever finds us.
-                             *
-                             * ⚠️ Announcing is only honest from somewhere reachable. We do not check
-                             * that here — a NAT'd instance announcing costs the network a useless
-                             * record and costs itself nothing, and the caller is better placed to
-                             * know. Measured 2026-08-17: an announcement with only private addresses
-                             * does not become findable, which is survivable because an unreachable
-                             * instance dials OUT and never needed to be found.
-                             */
-                            if let Some(ma) = http_multiaddr(&addr) {
-                                swarm.add_external_address(ma);
-                            }
-                            let ok = swarm.behaviour_mut().kad.start_providing(room_key()).is_ok();
-                            Reply { announced: Some(ok), ..Default::default() }
-                        }
+                        Ok(Request::Announce { addr }) => announce(&mut swarm, &addr).await,
                         Ok(Request::Find) => find(&mut swarm).await,
                         // ⚠️ A malformed line is ANSWERED, not fatal: the parent is entitled to one
                         // reply per line, or it waits forever for one that never comes.
@@ -212,15 +239,131 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// One bounded discovery: ask who provides the room, dial them, and keep the `/http` endpoints they
-/// advertise.
+/// The `/http` endpoints kad already knows for a peer.
+///
+/// ⚠️ `handle_pending_outbound_connection` is how kad supplies addresses to the swarm for a dial;
+/// asking it directly is the same question without the dial. Anything that is not an `/http` address
+/// is dropped: a peer's libp2p listen addresses are where its DHT node lives, not where its instance
+/// answers.
+fn endpoints_of(swarm: &mut libp2p::Swarm<Behaviour>, peer: PeerId) -> Vec<String> {
+    swarm
+        .behaviour_mut()
+        .kad
+        .handle_pending_outbound_connection(ConnectionId::new_unchecked(0), Some(peer), &[], Endpoint::Dialer)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(http_address)
+        .collect()
+}
+
+/// A duration constant, overridable by env for MEASUREMENT.
+///
+/// ⚠️ Not a feature knob and not documented as one: the defaults are the product. It exists because
+/// choosing `FIND_BUDGET` and `WARM_UP_BUDGET` well needs them varied against the live network, and a
+/// budget nobody can vary is a budget nobody re-measures.
+fn budget(name: &str, default: Duration) -> Duration {
+    std::env::var(name)
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .map(Duration::from_secs)
+        .unwrap_or(default)
+}
+
+/// Whether the field diagnostic on stderr is on. Read per call, never cached: a sidecar that must
+/// be turned up in the field is one somebody is already having a bad day with.
+fn debug_enabled() -> bool {
+    std::env::var_os("NOVACLAW_DHT_DEBUG").is_some()
+}
+
+fn table_size(swarm: &mut libp2p::Swarm<Behaviour>) -> usize {
+    swarm.behaviour_mut().kad.kbuckets().map(|b| b.num_entries()).sum()
+}
+
+/// Pump the swarm until the routing table is worth using, or the deadline passes.
+///
+/// ⚠️ Returns whether it got there. A publish MUST refuse when it did not; a lookup proceeds
+/// anyway, because a thin table still answers sometimes and the alternative is refusing to look.
+async fn warm_up(swarm: &mut libp2p::Swarm<Behaviour>, deadline: tokio::time::Instant) -> bool {
+    while table_size(swarm) < MIN_TABLE_TO_PUBLISH {
+        tokio::select! {
+            _ = tokio::time::sleep_until(deadline) => return false,
+            _ = swarm.select_next_some() => {}
+        }
+    }
+    true
+}
+
+/// Publish the room record, and answer whether it actually reached the network.
+///
+/// 🔴 `start_providing` returning `Ok` means the LOCAL store accepted the key. It is not publication
+/// and it cannot fail for any reason a caller cares about — the first version reported that value as
+/// `announced`, so the sidecar said `true` while an outside instrument confirmed the record was
+/// absent from the public DHT. What follows waits for the query itself, so `announced` names
+/// something that can be false.
+///
+/// ⚠️ Announcing is only honest from somewhere reachable, and that is still the CALLER's judgement:
+/// a NAT'd instance publishing an address nobody can dial costs the commons a useless record. An
+/// unreachable instance loses nothing by staying silent, because it dials out and was never going to
+/// be found.
+async fn announce(swarm: &mut libp2p::Swarm<Behaviour>, addr: &str) -> Reply {
+    /*
+     * The address the INSTANCE believes peers can knock on, advertised as an external multiaddr so
+     * identify carries it to whoever finds us.
+     */
+    if let Some(ma) = http_multiaddr(addr) {
+        swarm.add_external_address(ma);
+    }
+
+    let deadline = tokio::time::Instant::now() + ANNOUNCE_BUDGET;
+
+    // Somewhere to publish TO. A table that never fills means no network, and the honest answer to
+    // that is `false`, not a hang.
+    if !warm_up(swarm, deadline).await {
+        return Reply { announced: Some(false), ..Default::default() };
+    }
+
+    let Ok(query) = swarm.behaviour_mut().kad.start_providing(room_key()) else {
+        return Reply { announced: Some(false), ..Default::default() };
+    };
+
+    loop {
+        tokio::select! {
+            // ⚠️ A timeout is a FAILED announcement, reported as one. The caller's fallbacks — the
+            // LAN, peer exchange, a typed address — are what the design leans on anyway.
+            _ = tokio::time::sleep_until(deadline) => return Reply { announced: Some(false), ..Default::default() },
+            event = swarm.select_next_some() => {
+                if let SwarmEvent::Behaviour(BehaviourEvent::Kad(kad::Event::OutboundQueryProgressed {
+                    id, result: kad::QueryResult::StartProviding(result), ..
+                })) = event {
+                    if id == query {
+                        return Reply { announced: Some(result.is_ok()), ..Default::default() }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// One bounded discovery: ask who provides the room and keep the `/http` endpoints their records
+/// carry.
+///
+/// 🔴 It does NOT dial the providers. The endpoint arrives INSIDE the provider record, and dialling
+/// it as libp2p is impossible by construction — there is no `/http` transport in this swarm. Measured
+/// 2026-08-17: the first version dialled each provider and waited for identify to supply the address,
+/// which produced `MultiaddrNotSupported` for every provider and an empty answer while the address
+/// sat in the very error being discarded. Not dialling is also strictly cheaper and removes any
+/// dependence on the provider's libp2p port being reachable, which NovaClaw never promised: it
+/// promises HTTP.
 ///
 /// 🔴 It awaits ITS OWN query rather than returning whatever a previous one left behind — the first
 /// version did the latter, which meant the first `find` always answered empty and every later one
 /// answered stale.
 async fn find(swarm: &mut libp2p::Swarm<Behaviour>) -> Reply {
+    // A cold query answers nothing: see WARM_UP_BUDGET. Best effort — we look either way.
+    warm_up(swarm, tokio::time::Instant::now() + budget("NOVACLAW_DHT_WARMUP_SECS", WARM_UP_BUDGET)).await;
+
     let query = swarm.behaviour_mut().kad.get_providers(room_key());
-    let deadline = tokio::time::Instant::now() + FIND_BUDGET;
+    let deadline = tokio::time::Instant::now() + budget("NOVACLAW_DHT_FIND_SECS", FIND_BUDGET);
     let mut providers: HashSet<PeerId> = HashSet::new();
     let mut addresses: Vec<String> = Vec::new();
 
@@ -229,36 +372,57 @@ async fn find(swarm: &mut libp2p::Swarm<Behaviour>) -> Reply {
             break;
         }
         tokio::select! {
+            // ⚠️ The BACKSTOP, not the expected cost. The loop leaves as soon as the query says it
+            // is finished, so a budget rise does not become a latency rise.
             _ = tokio::time::sleep_until(deadline) => break,
-            event = swarm.select_next_some() => match event {
-                SwarmEvent::Behaviour(BehaviourEvent::Kad(kad::Event::OutboundQueryProgressed {
-                    id, result: kad::QueryResult::GetProviders(Ok(found)), ..
-                })) if id == query => {
-                    if let kad::GetProvidersOk::FoundProviders { providers: peers, .. } = found {
-                        for peer in peers {
-                            // ⚠️ Dialled so identify tells us where their INSTANCE answers. The DHT
-                            // record names a peer; only identify carries the `/http` endpoint.
-                            if providers.insert(peer) {
-                                let _ = swarm.dial(peer);
-                            }
-                        }
-                    }
+            event = swarm.select_next_some() => {
+                /*
+                 * ⚠️ A field diagnostic, on STDERR, off unless `NOVACLAW_DHT_DEBUG` is set. The parent
+                 * ignores stderr, so this can never corrupt the JSON-lines protocol. A discovery that
+                 * finds nobody is otherwise indistinguishable from one that found peers carrying no
+                 * usable address — a distinction that cost a whole investigation to make once.
+                 */
+                if debug_enabled() {
+                    eprintln!("[dht] {event:?}");
                 }
-                SwarmEvent::Behaviour(BehaviourEvent::Identify(identify::Event::Received { peer_id, info, .. })) => {
-                    if providers.contains(&peer_id) {
-                        for ma in info.listen_addrs.iter() {
-                            if let Some(addr) = http_address(ma) {
-                                if !addresses.contains(&addr) {
-                                    addresses.push(addr);
+                if let SwarmEvent::Behaviour(BehaviourEvent::Kad(kad::Event::OutboundQueryProgressed {
+                    id, result: kad::QueryResult::GetProviders(result), ..
+                })) = event
+                {
+                    if id == query {
+                        if let Ok(kad::GetProvidersOk::FoundProviders { providers: peers, .. }) = result {
+                            for peer in peers {
+                                if providers.insert(peer) {
+                                    for addr in endpoints_of(swarm, peer) {
+                                        if !addresses.contains(&addr) {
+                                            addresses.push(addr);
+                                        }
+                                    }
                                 }
                             }
                         }
+                        /*
+                         * 🔴 STOP once we have somewhere to knock — NOT on `step.last`.
+                         *
+                         * `step.last` looked like the principled condition and measured 0/3 against
+                         * 6/6 without it: it fires at ~12.8 s, before the network's providers arrive,
+                         * so honouring it ended every lookup just early enough to find nobody. What
+                         * the spec actually relies on is weaker and true: *one reachable instance is
+                         * a complete entry point, because peer exchange supplies everyone else.*
+                         *
+                         * So a hit leaves immediately and a miss pays the full budget, which is the
+                         * right way round: the budget bounds the bad case and never prices the good
+                         * one.
+                         */
+                        if !addresses.is_empty() {
+                            break;
+                        }
                     }
                 }
-                _ => {}
             }
         }
     }
+
     Reply { peers: addresses, ..Default::default() }
 }
 
@@ -303,9 +467,26 @@ mod tests {
 
     /// The room key is derived, not configured — every instance computes the same one without
     /// coordinating, which is what makes a constant room work at all.
+    /// 🔴 The key is pinned to BYTES computed outside this program, not to itself.
+    ///
+    /// ⚠️ The test this replaces asserted `len() == 32` — which is exactly what the defect produced,
+    /// so it passed for as long as the sidecar was wrong and would have failed on the fix. A key
+    /// compared only against itself agrees with itself in any room, including one nobody else can
+    /// name; the only assertion worth making here is against a value derived independently
+    /// (`sha2-256` multihash of the room string, the same bytes a CID carries).
     #[test]
-    fn the_room_key_is_stable() {
-        assert_eq!(room_key(), room_key());
-        assert_eq!(room_key().as_ref().len(), 32);
+    fn the_room_key_is_the_multihash_every_other_implementation_uses() {
+        let expected =
+            hex_bytes("1220b870bd7d2d1220267743739dfa2a11aab2d12da887138eeffae2ca12a6fbe974");
+        assert_eq!(room_key().as_ref(), expected.as_slice());
+        // 32 bytes of digest behind a 2-byte `sha2-256` prefix.
+        assert_eq!(room_key().as_ref().len(), 34);
+        assert_eq!(&room_key().as_ref()[..2], &[0x12, 0x20]);
+    }
+
+    fn hex_bytes(hex: &str) -> Vec<u8> {
+        (0..hex.len() / 2)
+            .map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).expect("valid hex"))
+            .collect()
     }
 }

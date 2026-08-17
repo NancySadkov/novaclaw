@@ -6,7 +6,11 @@
 //
 //   · the client reaches the commons  — 49 peers, 47-entry routing table, TCP only, behind NAT
 //   · lookups work                    — 15 providers for a long-lived public CID (the control)
-//   · a NAT'd announcement            — NOT findable, and the transport was built for that
+//
+// ⚠️ WITHDRAWN: "a NAT'd announcement is not findable". It was never measured. This file `await`ed an
+// `async *generator`, so the announcement half of every earlier run published NOTHING, and the zeroes
+// it produced were lookups for records that were never sent. The control passed throughout, which is
+// what made the zeroes look like a result about NAT instead of a broken instrument.
 //
 // ⚠️ Run this ON A HOST WITH A PUBLIC ADDRESS and an inbound TCP port. It must NOT be the project's
 // own VPS: `novaclaw.app is a static page about Nova and must not be responsible for the network`,
@@ -54,7 +58,23 @@ const mode = process.argv[2] ?? "control"
 const port = Number(process.argv[3] ?? 0)
 
 const node = await createLibp2p({
-  addresses: { listen: [`/ip4/0.0.0.0/tcp/${port}`] },
+  /**
+   * 🔴 BOTH stacks. A host can be publicly routable over IPv6 while sitting behind NAT on IPv4 —
+   * which is the ordinary situation for a machine on a modern home connection, and the only way this
+   * probe gets a REACHABLE announcement without renting a server. Listening on v4 alone would make
+   * such a host look unreachable when it is not.
+   */
+  addresses: {
+    listen: [`/ip4/0.0.0.0/tcp/${port}`, `/ip6/::/tcp/${port === 0 ? 0 : port + 1}`],
+    /**
+     * 🔴 STATE the public address; do not hope it is discovered. Measured 2026-08-17 on a VPS whose
+     * public IPv4 sits on eth0: listening on 0.0.0.0 enumerated a SUBSET of interfaces and missed it,
+     * so the announcement carried loopback and a docker bridge — addresses nobody can dial, from a
+     * host that is perfectly reachable. The lookup then found nothing, and the cause looked like the
+     * DHT rather than like an address list.
+     */
+    ...(process.env.ANNOUNCE_ADDR ? { announce: [process.env.ANNOUNCE_ADDR] } : {}),
+  },
   transports: [tcp()],
   connectionEncrypters: [noise()],
   streamMuxers: [yamux()],
@@ -103,8 +123,23 @@ if (mode === "control") {
 } else if (mode === "announce") {
   const cid = await roomCid()
   console.log("room CID:", cid.toString())
-  await node.services.dht.provide(cid)
-  console.log("announced. Leave this running, then run `find` elsewhere.")
+  /**
+   * 🔴 DRAINED, and the count is printed. `provide` is an `async *generator`: `await`ing it builds the
+   * generator and runs NOT ONE LINE of its body, so the original `await node.services.dht.provide(cid)`
+   * published nothing while looking exactly like a successful announcement. Every "0 providers" this
+   * probe reported before 2026-08-17 was a lookup for a record that was never sent — including the
+   * conclusion, since withdrawn, that a NAT'd announcement is not findable.
+   *
+   * ⚠️ The multiaddrs are passed EXPLICITLY. They are the second parameter, and a record that names
+   * no address is one nobody can act on.
+   */
+  let sent = 0
+  for await (const event of node.services.dht.provide(cid, node.getMultiaddrs())) {
+    if (event.name === "PEER_RESPONSE" && event.messageName === "ADD_PROVIDER") sent += 1
+  }
+  console.log(`announced — record accepted by ${sent} peer(s).`)
+  if (sent === 0) console.log("⚠️ NOBODY STORED IT. A `find` below would say nothing about reachability.")
+  console.log("Leave this running, then run `find` elsewhere.")
   await new Promise(() => {})
 } else {
   const cid = await roomCid()

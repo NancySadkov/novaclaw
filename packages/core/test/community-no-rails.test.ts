@@ -35,9 +35,42 @@ describe("the community settles nothing", () => {
   test("🔴 no module reaches for payment machinery", () => {
     // Names a payment integration would have to use. Deliberately broad: the point is to fail when
     // somebody starts, not to enumerate one library.
-    const machinery = /\b(invoice|lnurl|payInvoice|sendPayment|makePayment|settle[A-Z]|wallet|balance)\b/i
-    const offenders = sources.filter((file) => machinery.test(file.code)).map((file) => file.name)
+    const machinery = /\b(invoice|lnurl|payInvoice|sendPayment|makePayment|wallet|balance)\b/i
+
+    /**
+     * 🔴 CASE-SENSITIVE, and separate for that reason alone. This alternative used to live in the
+     * pattern above as `settle[A-Z]`, where the `/i` flag quietly nullified its own anchor: `[A-Z]`
+     * under `/i` matches any letter, so it flagged the ordinary word **`settled`**. It fired on
+     * `dht.ts`, whose `defaultRun` uses `let settled = false` as a promise guard — code with no
+     * relationship to payment at all.
+     *
+     * ⚠️ A guard that fires on normal code is not a guard: the only ways out are to rename innocent
+     * variables around it or to stop believing it, and both end with it deleted. The camelCase intent
+     * (`settleInvoice`, `settleUp`) is real, so it is kept — expressed so it means what it says.
+     */
+    const settlementCall = /\bsettle[A-Z]/
+
+    const offenders = sources
+      .filter((file) => machinery.test(file.code) || settlementCall.test(file.code))
+      .map((file) => file.name)
     expect(offenders, "a community module reached for payment machinery").toEqual([])
+  })
+
+  test("🔴 the guard still CATCHES what it is for — and no longer catches what it is not", () => {
+    /**
+     * ⚠️ Both halves, because this test exists to stop a fix from becoming a hole. Deleting the
+     * `settle` rule would have made the suite green too, and nothing would have noticed until
+     * somebody landed `settleInvoice`.
+     */
+    const machinery = /\b(invoice|lnurl|payInvoice|sendPayment|makePayment|wallet|balance)\b/i
+    const settlementCall = /\bsettle[A-Z]/
+    const flags = (code: string) => machinery.test(code) || settlementCall.test(code)
+
+    expect(flags("const x = settleInvoice(peer)"), "settleInvoice must still be caught").toBe(true)
+    expect(flags("await wallet.pay(1)"), "wallet must still be caught").toBe(true)
+    expect(flags("if (lnurl !== undefined) return"), "lnurl must still be caught").toBe(true)
+    expect(flags("let settled = false"), "an ordinary `settled` flag is not payment machinery").toBe(false)
+    expect(flags("promise.settled ?? resolve()"), "`settled` stays innocent in any casing").toBe(false)
   })
 
   test("⚠️ and the control: the guard can still SEE this directory", () => {

@@ -774,6 +774,7 @@ class ApiCommunityContact extends NovaClawApiClient {
       networkID: string
       petname?: string
       routes?: Array<string>
+      trust?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -781,6 +782,7 @@ class ApiCommunityContact extends NovaClawApiClient {
       networkID: parameters?.["networkID"],
       petname: parameters?.["petname"],
       routes: parameters?.["routes"],
+      trust: parameters?.["trust"],
     }
     return (options?.client ?? this.client).post<
       T.CommunityContactAddResponses,
@@ -1507,6 +1509,34 @@ class ApiCommunityPeer extends NovaClawApiClient {
   }
 
   /**
+   * Ask this instance a question
+   *
+   * The vision's destination: an agent that cannot read a site asks the other agents instead. OFF unless the owner turned it on separately from joining, because this is the one path that spends their tokens on strangers. Bounded three ways - a daily count, a per-asker share of it, and one turn at a time - and the turn itself runs with no tools, no files and no access to the owner's sessions or private messages. A refusal is NAMED rather than silent, because an asker told only 'no' cannot tell a closed door from a spent budget.
+   */
+  public ask<ThrowOnError extends boolean = false>(
+    parameters: {
+      asker: string
+      question: string
+      at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      signature: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = {
+      asker: parameters?.["asker"],
+      question: parameters?.["question"],
+      at: parameters?.["at"],
+      signature: parameters?.["signature"],
+    }
+    return (options?.client ?? this.client).post<T.CommunityPeerAskResponses, T.CommunityPeerAskErrors, ThrowOnError>({
+      url: "/api/community/ask",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
    * Who lives at this address
    *
    * The first thing a peer asks, and the only thing an address must yield to become a peer. The signature over the sealing key matters: a key taken on trust is one anybody in the path can swap for their own, and the sender would encrypt to the attacker with everything looking correct.
@@ -1623,6 +1653,28 @@ class ApiCommunity extends NovaClawApiClient {
     return (options?.client ?? this.client).post<T.CommunityRotateResponses, T.CommunityRotateErrors, ThrowOnError>({
       url: "/api/community/rotate",
       ...options,
+    })
+  }
+
+  /**
+   * Add a doorman by address, with a declared level of trust
+   *
+   * Joining needs no doorman - the network is reachable by LAN, by DNS seed and by peer exchange. This is the OTHER path: naming a host you actually trust and saying how far, which is what the trust ladder is built from and what matters once transactions are involved. It is also the guarantee that the seeds are a convenience rather than a dependency: when every default door is shut, this one still opens.
+   */
+  public doorman<ThrowOnError extends boolean = false>(
+    parameters: {
+      address: string
+      trust: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      petname?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { address: parameters?.["address"], trust: parameters?.["trust"], petname: parameters?.["petname"] }
+    return (options?.client ?? this.client).post<T.CommunityDoormanResponses, T.CommunityDoormanErrors, ThrowOnError>({
+      url: "/api/community/doorman",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
     })
   }
 

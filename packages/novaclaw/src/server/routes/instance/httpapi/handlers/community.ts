@@ -224,9 +224,21 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
            * every failure in `find` answers `[]` rather than raising.
            *
            * ⚠️ We do NOT announce. Announcing is only honest from somewhere reachable, and an
-           * instance behind a NAT would be publishing a promise nobody can keep — measured
-           * 2026-08-17. Whoever runs a reachable instance can pass an address here, and until that
-           * distinction is made properly this looks without advertising.
+           * instance behind a NAT would be publishing a promise nobody can keep. Whoever runs a
+           * reachable instance can pass an address here, and until that distinction is made
+           * properly this looks without advertising.
+           *
+           * ⚠️ The justification used to cite a measurement that a NAT'd announcement is not
+           * findable. That measurement was withdrawn on 2026-08-17 — the probe `await`ed an
+           * `async *generator` and published nothing, so the result was an artefact. The rule
+           * survives on its own terms (do not promise what you cannot keep), which is why the code
+           * is unchanged; the false citation is not worth keeping.
+           *
+           * ⚠️ This lookup is CHEAP AND OFTEN EMPTY by design, and it is awaited here. Measured
+           * 2026-08-17: the sidecar is spawned per discovery, so its Kademlia table is shallow and
+           * a cold lookup finds only well-replicated records. `notes/spec/community-p2p.md` records
+           * the fix — a lazily started but long-lived sidecar — and until then this must stay a
+           * short attempt, never a wait: the LAN and a typed address are the guarantees.
            */
           const viaDht = yield* CommunityDht.find()
 

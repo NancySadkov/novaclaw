@@ -2312,6 +2312,29 @@
                       "petname": {
                         "type": "string"
                       },
+                      "trust": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["NaN"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["-Infinity"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity", "-Infinity", "NaN"]
+                          }
+                        ]
+                      },
                       "formerIDs": {
                         "type": "array",
                         "items": {
@@ -2424,6 +2447,29 @@
                     "petname": {
                       "type": "string"
                     },
+                    "trust": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
                     "formerIDs": {
                       "type": "array",
                       "items": {
@@ -2533,6 +2579,29 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  "trust": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
                   }
                 },
                 "required": ["networkID"],
@@ -2982,6 +3051,101 @@
         ]
       }
     },
+    "/api/community/doorman": {
+      "post": {
+        "tags": ["community"],
+        "operationId": "community.doorman",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Who lives at that address, now recorded as a contact with the trust the user declared",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "found": {
+                      "type": "boolean"
+                    },
+                    "networkID": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["found"],
+                  "additionalProperties": false,
+                  "description": "Who lives at that address, now recorded as a contact with the trust the user declared"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Joining needs no doorman - the network is reachable by LAN, by DNS seed and by peer exchange. This is the OTHER path: naming a host you actually trust and saying how far, which is what the trust ladder is built from and what matters once transactions are involved. It is also the guarantee that the seeds are a convenience rather than a dependency: when every default door is shut, this one still opens.",
+        "summary": "Add a doorman by address, with a declared level of trust",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "trust": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  },
+                  "petname": {
+                    "type": "string"
+                  }
+                },
+                "required": ["address", "trust"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.doorman({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/community/discover": {
       "post": {
         "tags": ["community"],
@@ -2990,7 +3154,7 @@
         "security": [],
         "responses": {
           "200": {
-            "description": "How many peers were learned, and how many are now known",
+            "description": "How many peers were learned, how many are now known, and whether the seed door answered",
             "content": {
               "application/json": {
                 "schema": {
@@ -3064,11 +3228,37 @@
                           "enum": ["Infinity", "-Infinity", "NaN"]
                         }
                       ]
+                    },
+                    "seedsAsked": {
+                      "type": "boolean"
+                    },
+                    "seedsFound": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
                     }
                   },
-                  "required": ["learned", "asked", "peers"],
+                  "required": ["learned", "asked", "peers", "seedsAsked", "seedsFound"],
                   "additionalProperties": false,
-                  "description": "How many peers were learned, and how many are now known"
+                  "description": "How many peers were learned, how many are now known, and whether the seed door answered"
                 }
               }
             }
@@ -3611,9 +3801,65 @@
                         "type": "string",
                         "enum": ["never_consented", "switched_off", "airgap"]
                       }
+                    },
+                    "answers": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "perDay": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        },
+                        "today": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["enabled", "perDay", "today"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["participating", "consented", "enabled", "refusals"],
+                  "required": ["participating", "consented", "enabled", "refusals", "answers"],
                   "additionalProperties": false,
                   "description": "Whether this instance is on the network, and every reason it is not"
                 }
@@ -4919,6 +5165,129 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.peer.search({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/community/ask": {
+      "post": {
+        "tags": ["community-peer"],
+        "operationId": "community.peer.ask",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "An answer, or a NAMED refusal - never silence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "answer": {
+                      "type": "string"
+                    },
+                    "refused": {
+                      "type": "string"
+                    },
+                    "author": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "signature": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "An answer, or a NAMED refusal - never silence"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "The vision's destination: an agent that cannot read a site asks the other agents instead. OFF unless the owner turned it on separately from joining, because this is the one path that spends their tokens on strangers. Bounded three ways - a daily count, a per-asker share of it, and one turn at a time - and the turn itself runs with no tools, no files and no access to the owner's sessions or private messages. A refusal is NAMED rather than silent, because an asker told only 'no' cannot tell a closed door from a spent budget.",
+        "summary": "Ask this instance a question",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "asker": {
+                    "type": "string"
+                  },
+                  "question": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  },
+                  "signature": {
+                    "type": "string"
+                  }
+                },
+                "required": ["asker", "question", "at", "signature"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.community.peer.ask({\n  ...\n})"
           }
         ]
       }
@@ -36735,6 +37104,10 @@
                 "type": "string",
                 "enum": ["debug", "info", "warn", "error"]
               },
+              "community": {
+                "type": "string",
+                "enum": ["debug", "info", "warn", "error"]
+              },
               "config": {
                 "type": "string",
                 "enum": ["debug", "info", "warn", "error"]
@@ -38355,6 +38728,99 @@
               },
               "enabled": {
                 "type": "boolean"
+              },
+              "seeds": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "host": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "answers": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "perDay": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ],
+                    "description": "How many questions a day this instance will answer in total. Bounded before anything is spent."
+                  },
+                  "perPeerPerDay": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ],
+                    "description": "How many of the day's answers any ONE peer may take, so a single asker cannot consume it."
+                  },
+                  "maxTokens": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ],
+                    "description": "Token ceiling for one answer. A reasoning model spends this on thinking before it writes, so too small a value returns an EMPTY answer rather than a short one. Exposure is perDay times this."
+                  }
+                },
+                "additionalProperties": false
               }
             },
             "additionalProperties": false

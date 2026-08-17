@@ -3731,6 +3731,7 @@ export type ConfigV2Log = {
   retention_days?: number
   subsystems?: {
     client?: "debug" | "info" | "warn" | "error"
+    community?: "debug" | "info" | "warn" | "error"
     config?: "debug" | "info" | "warn" | "error"
     credential?: "debug" | "info" | "warn" | "error"
     filesystem?: "debug" | "info" | "warn" | "error"
@@ -4270,6 +4271,25 @@ export type ConfigInfo = {
   community?: {
     consented?: boolean
     enabled?: boolean
+    seeds?: {
+      enabled?: boolean
+      host?: string
+    }
+    answers?: {
+      enabled?: boolean
+      /**
+       * How many questions a day this instance will answer in total. Bounded before anything is spent.
+       */
+      perDay?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      /**
+       * How many of the day's answers any ONE peer may take, so a single asker cannot consume it.
+       */
+      perPeerPerDay?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      /**
+       * Token ceiling for one answer. A reasoning model spends this on thinking before it writes, so too small a value returns an EMPTY answer rather than a short one. Exposure is perDay times this.
+       */
+      maxTokens?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }
   }
   telemetry?: {
     enabled?: boolean
@@ -8784,6 +8804,7 @@ export type CommunityContactListResponses = {
   200: Array<{
     networkID: string
     petname?: string
+    trust?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     formerIDs?: Array<string>
     routes: Array<string>
     lastSeenAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
@@ -8799,6 +8820,7 @@ export type CommunityContactAddData = {
     networkID: string
     petname?: string
     routes?: Array<string>
+    trust?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   }
   path?: never
   query?: never
@@ -8825,6 +8847,7 @@ export type CommunityContactAddResponses = {
   200: {
     networkID: string
     petname?: string
+    trust?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     formerIDs?: Array<string>
     routes: Array<string>
     lastSeenAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
@@ -9039,6 +9062,42 @@ export type CommunityRotateResponses = {
 
 export type CommunityRotateResponse = CommunityRotateResponses[keyof CommunityRotateResponses]
 
+export type CommunityDoormanData = {
+  body: {
+    address: string
+    trust: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    petname?: string
+  }
+  path?: never
+  query?: never
+  url: "/api/community/doorman"
+}
+
+export type CommunityDoormanErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type CommunityDoormanError = CommunityDoormanErrors[keyof CommunityDoormanErrors]
+
+export type CommunityDoormanResponses = {
+  /**
+   * Who lives at that address, now recorded as a contact with the trust the user declared
+   */
+  200: {
+    found: boolean
+    networkID?: string
+  }
+}
+
+export type CommunityDoormanResponse = CommunityDoormanResponses[keyof CommunityDoormanResponses]
+
 export type CommunityDiscoverData = {
   body: {
     addresses?: Array<string>
@@ -9063,12 +9122,14 @@ export type CommunityDiscoverError = CommunityDiscoverErrors[keyof CommunityDisc
 
 export type CommunityDiscoverResponses = {
   /**
-   * How many peers were learned, and how many are now known
+   * How many peers were learned, how many are now known, and whether the seed door answered
    */
   200: {
     learned: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     asked: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     peers: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    seedsAsked: boolean
+    seedsFound: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   }
 }
 
@@ -9353,6 +9414,11 @@ export type CommunityParticipationResponses = {
     consented: boolean
     enabled: boolean
     refusals: Array<"never_consented" | "switched_off" | "airgap">
+    answers: {
+      enabled: boolean
+      perDay: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      today: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }
   }
 }
 
@@ -9828,6 +9894,42 @@ export type CommunityPeerSearchResponses = {
 }
 
 export type CommunityPeerSearchResponse = CommunityPeerSearchResponses[keyof CommunityPeerSearchResponses]
+
+export type CommunityPeerAskData = {
+  body: {
+    asker: string
+    question: string
+    at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    signature: string
+  }
+  path?: never
+  query?: never
+  url: "/api/community/ask"
+}
+
+export type CommunityPeerAskErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type CommunityPeerAskError = CommunityPeerAskErrors[keyof CommunityPeerAskErrors]
+
+export type CommunityPeerAskResponses = {
+  /**
+   * An answer, or a NAMED refusal - never silence
+   */
+  200: {
+    answer?: string
+    refused?: string
+    author?: string
+    at?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    signature?: string
+  }
+}
+
+export type CommunityPeerAskResponse = CommunityPeerAskResponses[keyof CommunityPeerAskResponses]
 
 export type CommunityPeerSuccessionTellData = {
   body: {
