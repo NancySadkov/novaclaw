@@ -51,7 +51,18 @@ describe("the consent screen states every cost", () => {
     // are about identifiable people, and that they never leave — each is a separate question a
     // reasonable person would ask, and a summary that dropped one would be the wrong summary.
     expect(copy, "who writes them").toContain("written by the AI")
-    expect(copy, "and that they stay put").toContain("stay on this machine")
+    /**
+     * 🔴 "Nothing is published or shared" was the first wording, and it was a promise the software
+     * cannot keep on its own. Nothing SENDS the notes — verified: no peer door serves them, and `sync`
+     * only ever writes them — but the user's own agent reads them, which is their entire purpose, and
+     * an agent that can also speak could quote one into a room.
+     *
+     * ⚠️ So the screen says the part that is true of the SOFTWARE and names the part that is true
+     * of the AGENT, rather than a sentence a careful reader could catch us out on. A consent screen
+     * is the last place to be approximately right.
+     */
+    expect(copy, "and that nothing sends them").toContain("no peer can ask for them")
+    expect(copy, "while naming who does read them").toContain("agent does read them")
     expect(copy, "and that forgetting is real — the code now keeps this promise").toContain("Forgetting")
   })
 

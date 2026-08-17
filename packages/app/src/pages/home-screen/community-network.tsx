@@ -730,8 +730,8 @@ export const CommunityNetwork: Component = () => {
                 <b>Your instance keeps notes about people.</b> When it deals with someone — asks them
                 something, is answered or refused — it records how that went, in its own words, so it can
                 judge who is worth listening to later. The notes are written by the AI, they are about
-                identifiable people, and they stay on this machine: nothing is published or shared. Forgetting
-                someone deletes theirs.
+                identifiable people, and nothing here sends them anywhere: no peer can ask for them. Your own
+                agent does read them, because that is what they are for. Forgetting someone deletes theirs.
               </li>
             </ul>
             <span class="mt-2 text-[11px] leading-snug text-v2-text-text-muted">
