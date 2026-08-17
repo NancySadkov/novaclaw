@@ -23,16 +23,20 @@ import { Tools } from "@novaclaw/core/tool/tools"
 import { testEffect } from "./lib/effect"
 
 /**
- * 🔴 **The `ask` branch of the tool, actually INVOKED.**
+ * 🔴 **BOTH speaking operations, actually INVOKED.**
  *
- * Everything about this operation has been checked at one remove: `askPeer` on the wire, the helpers
- * as pure functions, and the branch's ORDER by reading its source. What had never run is the branch
- * itself — the participation gate, the permission assert, the dealing note, and the framing of what
- * comes back — which is the part a model actually meets.
+ * Everything about them had been checked at one remove: `askPeer` on the wire, the helpers as pure
+ * functions, and each branch's ORDER by reading its source. What had never run is the branches
+ * themselves — the participation gate, the permission assert, the dealing note, the framing, and
+ * `say`'s refusal-before-post — which is the part a model actually meets.
  *
- * ⚠️ `CommunitySync` is substituted, and only it. The point is not to re-test the wire (the probe does
- * that against two real instances) but to drive everything the tool does AROUND it, with an answer we
- * control so the assertions are about the tool.
+ * ⚠️ `say` is the older of the two and had the same gap: its own suite drives `history` and a
+ * channel read through `Tool.settle`, and pins everything about `say` by reading the file. Finding it
+ * took looking for the newer defect in the older place.
+ *
+ * ⚠️ `CommunitySync` is substituted, and only it. The point is not to re-test the wire (the probe
+ * does that against two real instances) but to drive everything the tool does AROUND it, with an
+ * answer we control so the assertions are about the tool.
  */
 
 const registered: Record<string, Tool.AnyTool> = {}
@@ -94,6 +98,65 @@ const invoke = (input: unknown) =>
   Tool.settle(registered["community"]!, { id: "c1", name: "community", input } as never, ctx) as unknown as Effect.Effect<{
     readonly structured: { readonly message: string }
   }>
+
+describe("the OTHER speaking op, invoked", () => {
+  /**
+   * 🔴 `say` had never been executed either. Its own suite drives `history` and a channel read
+   * through `Tool.settle`, and pins everything about `say` — the gate before the permission card, the
+   * refusal wording — by READING the source. It is the older of the two speaking capabilities and had
+   * the same gap the newer one did.
+   */
+  it.effect("🔴 a shut door refuses BEFORE the permission card, and posts nothing", () =>
+    Effect.gen(function* () {
+      yield* Layer.build(CommunityTool.layer).pipe(Effect.scoped, Effect.orDie)
+      CommunityConsent.resetGate()
+      const channels = yield* CommunityChannels.Service
+      yield* channels.join("#NovaClaw")
+
+      const out = yield* invoke({ op: "say", channel: "#NovaClaw", body: "hello" })
+      expect(out.structured.message).toContain("has not joined the community")
+
+      /**
+       * ⚠️ And nothing was WRITTEN. A message that looks sent and never leaves is worse than a
+       * refusal, so the refusal must come before the post rather than after it.
+       */
+      const history = yield* channels.history("#NovaClaw", 10)
+      expect(history.length, "a refused post must not be stored").toBe(0)
+    }),
+  )
+
+  it.effect("🔴 joined, it posts — and says plainly that nobody carried it", () =>
+    Effect.gen(function* () {
+      /**
+       * ⚠️ The honest half of the success message. With no peer reachable the post is stored and
+       * waits, and an agent told "sent" would report success for a message nobody got.
+       */
+      yield* Layer.build(CommunityTool.layer).pipe(Effect.scoped, Effect.orDie)
+      CommunityConsent.applied({ consented: true }, { enabled: true })
+      const channels = yield* CommunityChannels.Service
+      yield* channels.join("#recipes")
+
+      const out = yield* invoke({ op: "say", channel: "#recipes", body: "sourdough at 220C" })
+      expect(out.structured.message).toContain("#recipes")
+      expect(out.structured.message, "no peer here, so it must not claim delivery").toContain("stored")
+
+      const history = yield* channels.history("#recipes", 10)
+      expect(history.some((entry) => entry.body === "sourdough at 220C"), "the post must exist").toBe(true)
+    }),
+  )
+
+  it.effect("⚠️ a missing body is refused, and a missing channel names itself", () =>
+    Effect.gen(function* () {
+      yield* Layer.build(CommunityTool.layer).pipe(Effect.scoped, Effect.orDie)
+      CommunityConsent.applied({ consented: true }, { enabled: true })
+
+      const noBody = yield* invoke({ op: "say", channel: "#NovaClaw" })
+      expect(noBody.structured.message).toContain("say needs a body")
+      const noChannel = yield* invoke({ op: "say", body: "hello" })
+      expect(noChannel.structured.message).toContain("say needs a channel")
+    }),
+  )
+})
 
 describe("the ask branch, invoked", () => {
   it.effect("🔴 an answer reaches the model FRAMED, and attributed", () =>
