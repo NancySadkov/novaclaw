@@ -164,6 +164,10 @@ const EXPECTED_ORPHANS: Record<string, string> = {
     "internal: the wire in this same file calls it on every received query — it is the door, not a capability waiting for one",
   "search.ts#widen":
     "internal: `broadcast` in this same file waves through it, widening only when a wave under-delivers",
+  "dht.ts#parse":
+    "internal helper: `find` in this same file parses the sidecar's reply with it — exported so the validation of data that arrived from strangers through a DHT can be tested without spawning a Rust binary",
+  "dht.ts#binaryPath":
+    "internal helper: `find` resolves the sidecar through it — exported so a packaged build can be pointed at its own copy and so the override can be asserted",
   "seeds.ts#parse":
     "internal helper: `resolve` in this same file calls it on whatever DNS returned — exported so the chunk-joining and the bound can be exercised without a network, which is the part most likely to be wrong",
   "reconcile.ts#bucketOf":

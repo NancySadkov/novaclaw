@@ -12,6 +12,7 @@ import { CommunityPeers } from "@novaclaw/core/community/peers"
 import { MDNS } from "@/server/mdns"
 import { CommunityReconcile } from "@novaclaw/core/community/reconcile"
 import { CommunitySearch } from "@novaclaw/core/community/search"
+import { CommunityDht } from "@novaclaw/core/community/dht"
 import { CommunitySeeds } from "@novaclaw/core/community/seeds"
 import { CommunitySuccession } from "@novaclaw/core/community/succession"
 import { CommunitySync } from "@novaclaw/core/community/sync"
@@ -214,8 +215,24 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
             ...(stored?.community?.seeds === undefined ? {} : { settings: stored.community.seeds }),
           })
 
+          /**
+           * 🔴 The public DHT — the automatic door for somebody who knows nobody and is not on a
+           * LAN with anyone.
+           *
+           * ⚠️ Silent and lazy: the sidecar is a Rust binary the app builds without, so a machine
+           * that never compiled it simply finds no peers here. That must cost nothing, which is why
+           * every failure in `find` answers `[]` rather than raising.
+           *
+           * ⚠️ We do NOT announce. Announcing is only honest from somewhere reachable, and an
+           * instance behind a NAT would be publishing a promise nobody can keep — measured
+           * 2026-08-17. Whoever runs a reachable instance can pass an address here, and until that
+           * distinction is made properly this looks without advertising.
+           */
+          const viaDht = yield* CommunityDht.find()
+
           yield* sync.learnFrom(lan, "lan")
           yield* sync.learnFrom(seeds, "dns")
+          yield* sync.learnFrom(viaDht, "dht")
           yield* sync.learnFrom(supplied, "manual")
           const exchange = yield* sync.discover()
           return {

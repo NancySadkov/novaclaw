@@ -48,10 +48,17 @@ const BOOTSTRAP: &[&str] = &[
 
 /// How long one `find` may take before answering with whatever it has.
 ///
-/// ⚠️ It ALWAYS answers. A discovery that hangs is worse than one that finds nothing: the caller is
-/// a user waiting on a button, and the design already says an unreachable DHT costs freshness, never
-/// the join.
-const FIND_BUDGET: Duration = Duration::from_secs(25);
+/// ⚠️ It ALWAYS answers. A discovery that hangs is worse than one that finds nothing: the caller
+/// is a user waiting on a button.
+///
+/// 🔴 EIGHT seconds, measured down from 25. At 25 the first live run took 25.2 s — and that time
+/// is spent in FRONT of a discovery that also looks on the LAN, so an instance sitting beside
+/// another one waited half a minute to be told about a neighbour it could see instantly. **The DHT
+/// is a convenience, and a convenience that slows the guarantees down is not one.**
+///
+/// ⚠️ A shorter budget finds fewer providers per call, and that is the right trade: one reachable
+/// instance is a complete entry point, because peer exchange supplies everyone else.
+const FIND_BUDGET: Duration = Duration::from_secs(8);
 
 /// Enough to bootstrap from. Peer exchange supplies the rest, so a long list buys nothing and costs
 /// a dial each.
