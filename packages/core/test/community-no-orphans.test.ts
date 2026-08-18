@@ -116,7 +116,19 @@ const sourcesExcept = (exclude: string): string[] => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name)
       if (entry.isDirectory()) walk(full)
-      else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts") && full !== exclude) files.push(full)
+      /**
+       * ⚠️ `.tsx` TOO, and its absence was a real blind spot (found 2026-08-18): the app's callers
+       * are components, so a capability used ONLY from the UI read as an orphan here and would have
+       * been reported as dead code to whoever came to prune it. `community/address.ts` was flagged
+       * the moment the Community panel became its only external caller.
+       */
+      else if (
+        (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) &&
+        !entry.name.endsWith(".test.ts") &&
+        !entry.name.endsWith(".test.tsx") &&
+        full !== exclude
+      )
+        files.push(full)
     }
   }
   walk(root)
@@ -170,6 +182,8 @@ const EXPECTED_ORPHANS: Record<string, string> = {
     "internal: the wire in this same file calls it on every received query — it is the door, not a capability waiting for one",
   "search.ts#widen":
     "internal: `broadcast` in this same file waves through it, widening only when a wave under-delivers",
+  "address.ts#splitAnnounce":
+    "internal helper: `isAnnounceable` in this same file IS its only caller — exported so the parse can be pinned directly, which is the half that was wrong before (a regex accepted `example.com:99999` and rejected `[2001:db8::1]:4096`). Asserting host and port beats inferring them from a boolean",
   "dht.ts#parse":
     "internal helper: `find` in this same file parses the sidecar's reply with it — exported so the validation of data that arrived from strangers through a DHT can be tested without spawning a Rust binary",
   "dht.ts#binaryPath":

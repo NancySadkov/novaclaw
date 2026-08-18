@@ -1,7 +1,7 @@
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { For, Show, createEffect, createMemo, createResource, createSignal, type Component } from "solid-js"
-import { CommunityDht } from "@novaclaw/core/community/dht"
+import { CommunityAddress } from "@novaclaw/core/community/address"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
@@ -186,7 +186,7 @@ export const CommunityNetwork: Component = () => {
    */
   const publishAddress = async () => {
     const typed = publishing().trim()
-    if (!CommunityDht.isAnnounceable(typed)) {
+    if (!CommunityAddress.isAnnounceable(typed)) {
       setAnnounceProblem(language.t("community.announce.malformed"))
       return
     }

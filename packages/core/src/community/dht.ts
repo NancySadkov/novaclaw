@@ -111,49 +111,12 @@ export const parse = (line: string): ReadonlyArray<string> => {
 }
 
 /**
- * Whether an address is worth publishing.
- *
- * 🔴 The announce address is TYPED BY A USER, and the whole point of publishing is that strangers
- * act on it. A malformed one still announces the room — the sidecar simply fails to attach an
- * address to it — which puts a record in the commons that names nobody. Refused here so the junk
- * never leaves this machine.
- *
- * ⚠️ This says the address is well FORMED, never that it is reachable. Nothing on this machine can
- * know that, which is why the setting exists for a person to answer.
+ * The announce rule lives in `./address`, a leaf with no store imports — see that file for why.
+ * Re-exported here because every existing caller reaches for it through `CommunityDht`.
  */
-export const isAnnounceable = (address: string): boolean => splitAnnounce(address) !== undefined
+export { isAnnounceable, splitAnnounce } from "./address"
 
-/**
- * `host:port`, PARSED — the host and the port, or `undefined` if it is neither.
- *
- * 🔴 This was a regex, and it was wrong in both directions (Codex review P3). It accepted any one to
- * five digits, so `example.com:99999` passed validation, reached the sidecar, failed to convert to a
- * multiaddr, and the room was announced anyway with no address attached — the UI reporting a
- * successful publish of a door nobody can open. And it rejected `[2001:db8::1]:4096`, so an
- * IPv6-only instance could not publish at all, while the address parser on the other side of the
- * pipe has understood IPv6 the whole time.
- *
- * ⚠️ Parse rather than match, because the bound that matters is arithmetic (1..65535) and a regex
- * cannot state it. The bracket form is required for IPv6 for the reason it exists at all: without
- * brackets the last colon is ambiguous, and guessing which colon is the port separator is how a
- * validator ends up disagreeing with the parser it feeds.
- */
-export const splitAnnounce = (address: string): { host: string; port: number } | undefined => {
-  const trimmed = address.trim()
-  if (trimmed === "") return undefined
-
-  const bracketed = /^\[([0-9A-Fa-f:.]+)\]:(\d{1,5})$/.exec(trimmed)
-  const plain = /^([A-Za-z0-9._-]+):(\d{1,5})$/.exec(trimmed)
-  const match = bracketed ?? plain
-  if (match === null) return undefined
-
-  const host = match[1]!
-  const port = Number(match[2]!)
-  // ⚠️ The whole point of parsing: a port is a 16-bit number, and 0 is not a port anyone answers on.
-  if (!Number.isInteger(port) || port < 1 || port > 65_535) return undefined
-  if (bracketed !== null && !host.includes(":")) return undefined
-  return { host, port }
-}
+import { CommunityAddress } from "./address"
 
 /**
  * The most bytes an unterminated reply may occupy before the sidecar is treated as broken.
@@ -465,7 +428,7 @@ export const layerWith = (options: Options = {}): Layer.Layer<Service> =>
              * setting being wrong must cost the user the advertisement, never the discovery.
              */
             const advertise =
-              input?.announce !== undefined && isAnnounceable(input.announce) ? input.announce.trim() : undefined
+              input?.announce !== undefined && CommunityAddress.isAnnounceable(input.announce) ? input.announce.trim() : undefined
             if (advertise !== undefined && advertise !== announced) {
               const reply = yield* ask(JSON.stringify({ op: "announce", addr: advertise }))
               /**
